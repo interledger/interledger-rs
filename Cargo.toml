@@ -1,0 +1,8 @@
+[package]
+name = "ilp-packet"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan@ripple.com>"]
+
+[dependencies]
+base64 = "0.6.0"
+byteorder = "1.0.0"
