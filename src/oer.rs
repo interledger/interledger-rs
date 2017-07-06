@@ -14,9 +14,14 @@ pub fn write_var_octet_string(data: &mut Vec<u8>, string: &Vec<u8>) -> Result<()
         data.write_u8(length as u8)?;
     } else {
         let bit_length_of_length = format!("{:b}", length).chars().count();
-        let length_of_length = {bit_length_of_length as f32 / 8.0}.ceil() as u8;
+        let length_of_length = {
+            bit_length_of_length as f32 / 8.0
+        }.ceil() as u8;
         data.write_u8(HIGH_BIT | length_of_length)?;
-        data.write_uint::<BigEndian>(length as u64, length_of_length as usize)?;
+        data.write_uint::<BigEndian>(
+            length as u64,
+            length_of_length as usize,
+        )?;
     }
     data.extend(string);
     Ok(())
@@ -35,7 +40,7 @@ pub fn read_var_octet_string(data: &[u8]) -> Result<&[u8], Error> {
         println!("got here");
         let length_prefix_length = length & LOWER_SEVEN_BITS;
         reader.read_uint::<BigEndian>(length_prefix_length as usize)? as usize
-        // TODO check for canonical length
+    // TODO check for canonical length
     } else {
         length as usize
     };
@@ -75,13 +80,9 @@ mod tests {
 
     #[test]
     fn it_reads_octet_string() {
-        assert_eq!(
-            read_var_octet_string(&vec![0]).unwrap(),
-            &[]);
+        assert_eq!(read_var_octet_string(&vec![0]).unwrap(), &[]);
 
-        assert_eq!(
-            read_var_octet_string(&vec![0x01, 0xb0]).unwrap(),
-            &[0xb0]);
+        assert_eq!(read_var_octet_string(&vec![0x01, 0xb0]).unwrap(), &[0xb0]);
 
         let mut larger = vec![0x82, 0x01, 0x00];
         let mut larger_string: Vec<u8> = Vec::with_capacity(256 as usize);
@@ -89,8 +90,6 @@ mod tests {
             larger_string.push(0xb0);
         }
         larger.extend(&larger_string);
-        assert_eq!(
-            read_var_octet_string(&larger).unwrap(),
-            &larger_string[..]);
+        assert_eq!(read_var_octet_string(&larger).unwrap(), &larger_string[..]);
     }
 }
