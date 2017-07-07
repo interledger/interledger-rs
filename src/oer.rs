@@ -80,7 +80,8 @@ mod tests {
 
     #[test]
     fn it_reads_octet_string() {
-        assert_eq!(read_var_octet_string(&vec![0]).unwrap(), &[]);
+        let empty: [u8; 0] = [];
+        assert_eq!(read_var_octet_string(&vec![0]).unwrap(), &empty);
 
         assert_eq!(read_var_octet_string(&vec![0x01, 0xb0]).unwrap(), &[0xb0]);
 
