@@ -181,6 +181,53 @@ impl IlqpBySourceRequest {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct IlqpByDestinationRequest {
+    destination_account: String,
+    destination_amount: u64,
+    destination_hold_duration: u32,
+}
+impl IlqpByDestinationRequest {
+    pub fn from_bytes(bytes: &[u8]) -> Result<IlqpByDestinationRequest, ParseError> {
+        let (packet_type, contents) = deserialize_envelope(bytes)?;
+        if packet_type != PacketType::IlqpByDestinationRequest {
+            return Err(ParseError::WrongType("attempted to deserialize other packet type as IlqpByDestinationRequest"));
+        }
+
+        let mut reader = Cursor::new(contents);
+        let destination_account_bytes = oer::read_var_octet_string(&contents[reader.position() as usize..])?;
+        let destination_account = String::from_utf8(destination_account_bytes.to_vec()).map_err(|_| {
+            ParseError::InvalidPacket("account not utf8")
+        })?;
+        reader.set_position((destination_account_bytes.len() + 1) as u64);
+        let destination_amount = reader.read_u64::<BigEndian>()?;
+        let destination_hold_duration = reader.read_u32::<BigEndian>()?;
+        Ok(IlqpByDestinationRequest {
+            destination_account: destination_account,
+            destination_amount: destination_amount,
+            destination_hold_duration: destination_hold_duration
+        })
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+        let mut bytes: Vec<u8> = Vec::new();
+        oer::write_var_octet_string(&mut bytes, &self.destination_account.to_string().into_bytes())?;
+        bytes.write_u64::<BigEndian>(self.destination_amount)?;
+        bytes.write_u32::<BigEndian>(self.destination_hold_duration)?;
+        bytes.write_u8(0)?; // extensibility
+        serialize_envelope(PacketType::IlqpByDestinationRequest, &bytes)
+    }
+
+    pub fn to_json_string(&self) -> Result<String, ParseError> {
+        serde_json::to_string(&self).map_err(|err| ParseError::Json(err))
+    }
+
+    pub fn from_json_str(string: &str) -> Result<IlqpByDestinationRequest, ParseError> {
+        let result: IlqpByDestinationRequest = serde_json::from_str(string)
+            .map_err(|err| ParseError::Json(err))?;
+        Ok(result)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -317,6 +364,35 @@ mod tests {
             };
 
             assert_eq!(IlqpBySourceRequest::from_bytes(&hex_to_bytes("041b0d6578616d706c652e616c6963650000000218711a0000000bb800")).unwrap(),
+            request)
+        }
+    }
+
+    #[cfg(test)]
+    mod ilqp_by_destination_request {
+        use super::*;
+
+        #[test]
+        fn serialize() {
+            let request = IlqpByDestinationRequest {
+                destination_amount: 9000000000,
+                destination_account: "example.alice".to_string(),
+                destination_hold_duration: 3000
+            };
+            assert_eq!(request.to_bytes().unwrap(),
+                hex_to_bytes("061b0d6578616d706c652e616c6963650000000218711a0000000bb800"))
+
+        }
+
+        #[test]
+        fn deserialize() {
+            let request = IlqpByDestinationRequest {
+                destination_amount: 9000000000,
+                destination_account: "example.alice".to_string(),
+                destination_hold_duration: 3000
+            };
+
+            assert_eq!(IlqpByDestinationRequest::from_bytes(&hex_to_bytes("061b0d6578616d706c652e616c6963650000000218711a0000000bb800")).unwrap(),
             request)
         }
     }
