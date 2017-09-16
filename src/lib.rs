@@ -7,6 +7,6 @@ extern crate serde_json;
 extern crate quick_error;
 extern crate base64;
 
-mod oer;
+pub mod oer;
 pub mod packet;
 pub mod errors;

@@ -1,13 +1,74 @@
-use std::io::{Cursor, Error};
+use std::io::{self, Cursor, Error, Read, Write, Result};
+use std::fmt::Debug;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
 
-// TODO maybe just further extend the byteorder traits and export that as OER, since it implements
-// all the functions except for the var octet strings
+// TODO don't copy the code over into the functions for the trait
 
-pub fn write_var_octet_string(data: &mut Vec<u8>, string: &Vec<u8>) -> Result<(), Error> {
+// TODO test traits
+pub trait ReadOerExt: Read + ReadBytesExt + Debug {
+    #[inline]
+    // TODO should this function return a vec or a slice?
+    fn read_var_octet_string(&mut self) -> Result<Vec<u8>> {
+        let length: u8 = self.read_u8()?;
+
+        println!("first length {}", length);
+
+        if length == 0 {
+            return Ok(vec![]);
+        }
+
+        let actual_length: u64 = if length & HIGH_BIT != 0 {
+            let length_prefix_length = length & LOWER_SEVEN_BITS;
+            // TODO check for canonical length
+            self.read_uint::<BigEndian>(length_prefix_length as usize)? as u64
+        } else {
+            length as u64
+        };
+
+        println!("actual length {}", actual_length);
+
+        // TODO handle if the length is too long
+        // TODO don't copy this twice
+        println!("read octet string of length {} {:?}", actual_length, self);
+        let mut buf = Vec::with_capacity(actual_length as usize);
+        self.take(actual_length).read_to_end(&mut buf)?;
+        Ok(buf)
+    }
+}
+
+// Add this trait to all Readable things when this is used
+impl<R: io::Read + ?Sized + Debug> ReadOerExt for R {}
+
+pub trait WriteOerExt: Write + WriteBytesExt {
+    #[inline]
+    fn write_var_octet_string(&mut self, string: &[u8]) -> Result<()> {
+        let length = string.len();
+
+        if length < 127 {
+            self.write_u8(length as u8)?;
+        } else {
+            let bit_length_of_length = format!("{:b}", length).chars().count();
+            let length_of_length = {
+                bit_length_of_length as f32 / 8.0
+            }.ceil() as u8;
+            self.write_u8(HIGH_BIT | length_of_length)?;
+            self.write_uint::<BigEndian>(
+                length as u64,
+                length_of_length as usize,
+                )?;
+        }
+        self.write_all(string)?;
+        Ok(())
+    }
+}
+
+// Add this trait to all Writable things when this is used
+impl<W: io::Write + ?Sized> WriteOerExt for W {}
+
+pub fn write_var_octet_string<T: Write + WriteBytesExt>(data: &mut T, string: &[u8]) -> Result<()> {
     let length = string.len();
 
     if length < 127 {
@@ -21,13 +82,14 @@ pub fn write_var_octet_string(data: &mut Vec<u8>, string: &Vec<u8>) -> Result<()
         data.write_uint::<BigEndian>(
             length as u64,
             length_of_length as usize,
-        )?;
+            )?;
     }
-    data.extend(string);
+    data.write_all(string)?;
     Ok(())
 }
 
-pub fn read_var_octet_string(data: &[u8]) -> Result<&[u8], Error> {
+// TODO make this so it doesn't have to be a u8 slice
+pub fn read_var_octet_string(data: &[u8]) -> Result<&[u8]> {
     let mut reader = Cursor::new(data);
     let length: u8 = reader.read_u8()?;
 
@@ -37,14 +99,12 @@ pub fn read_var_octet_string(data: &[u8]) -> Result<&[u8], Error> {
     }
 
     let actual_length: usize = if length & HIGH_BIT != 0 {
-        println!("got here");
         let length_prefix_length = length & LOWER_SEVEN_BITS;
         reader.read_uint::<BigEndian>(length_prefix_length as usize)? as usize
     // TODO check for canonical length
     } else {
         length as usize
     };
-
 
     let pos = reader.position() as usize;
 
@@ -53,11 +113,11 @@ pub fn read_var_octet_string(data: &[u8]) -> Result<&[u8], Error> {
 }
 
 #[cfg(test)]
-mod tests {
+mod standalone {
     use super::*;
 
     #[test]
-    fn it_writes_octet_strings() {
+    fn it_writes_var_octet_strings() {
         let mut empty = vec![];
         write_var_octet_string(&mut empty, &vec![]).unwrap();
         assert_eq!(empty, vec![0]);
@@ -79,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn it_reads_octet_string() {
+    fn it_reads_var_octet_strings() {
         let empty: [u8; 0] = [];
         assert_eq!(read_var_octet_string(&vec![0]).unwrap(), &empty);
 

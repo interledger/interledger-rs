@@ -65,9 +65,9 @@ pub enum IlpPacket {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IlpPayment {
-    amount: u64,
-    account: String,
-    data: Vec<u8>,
+    pub amount: u64,
+    pub account: String,
+    pub data: Vec<u8>,
 }
 
 // TODO there must be a better way of changing data to base64
@@ -135,9 +135,9 @@ impl IlpPayment {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct IlqpBySourceRequest {
-    destination_account: String,
-    source_amount: u64,
-    destination_hold_duration: u32,
+    pub destination_account: String,
+    pub source_amount: u64,
+    pub destination_hold_duration: u32,
 }
 impl IlqpBySourceRequest {
     pub fn from_bytes(bytes: &[u8]) -> Result<IlqpBySourceRequest, ParseError> {
@@ -183,9 +183,9 @@ impl IlqpBySourceRequest {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct IlqpByDestinationRequest {
-    destination_account: String,
-    destination_amount: u64,
-    destination_hold_duration: u32,
+    pub destination_account: String,
+    pub destination_amount: u64,
+    pub destination_hold_duration: u32,
 }
 impl IlqpByDestinationRequest {
     pub fn from_bytes(bytes: &[u8]) -> Result<IlqpByDestinationRequest, ParseError> {
