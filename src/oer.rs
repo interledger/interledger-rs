@@ -1,6 +1,6 @@
-use std::io::{self, Cursor, Error, Read, Write, Result};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt::Debug;
-use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
+use std::io::{self, Cursor, Read, Result, Write};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -14,8 +14,6 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
     fn read_var_octet_string(&mut self) -> Result<Vec<u8>> {
         let length: u8 = self.read_u8()?;
 
-        println!("first length {}", length);
-
         if length == 0 {
             return Ok(vec![]);
         }
@@ -28,11 +26,8 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
             length as u64
         };
 
-        println!("actual length {}", actual_length);
-
         // TODO handle if the length is too long
         // TODO don't copy this twice
-        println!("read octet string of length {} {:?}", actual_length, self);
         let mut buf = Vec::with_capacity(actual_length as usize);
         self.take(actual_length).read_to_end(&mut buf)?;
         Ok(buf)
@@ -51,14 +46,9 @@ pub trait WriteOerExt: Write + WriteBytesExt {
             self.write_u8(length as u8)?;
         } else {
             let bit_length_of_length = format!("{:b}", length).chars().count();
-            let length_of_length = {
-                bit_length_of_length as f32 / 8.0
-            }.ceil() as u8;
+            let length_of_length = { bit_length_of_length as f32 / 8.0 }.ceil() as u8;
             self.write_u8(HIGH_BIT | length_of_length)?;
-            self.write_uint::<BigEndian>(
-                length as u64,
-                length_of_length as usize,
-                )?;
+            self.write_uint::<BigEndian>(length as u64, length_of_length as usize)?;
         }
         self.write_all(string)?;
         Ok(())
@@ -75,14 +65,9 @@ pub fn write_var_octet_string<T: Write + WriteBytesExt>(data: &mut T, string: &[
         data.write_u8(length as u8)?;
     } else {
         let bit_length_of_length = format!("{:b}", length).chars().count();
-        let length_of_length = {
-            bit_length_of_length as f32 / 8.0
-        }.ceil() as u8;
+        let length_of_length = { bit_length_of_length as f32 / 8.0 }.ceil() as u8;
         data.write_u8(HIGH_BIT | length_of_length)?;
-        data.write_uint::<BigEndian>(
-            length as u64,
-            length_of_length as usize,
-            )?;
+        data.write_uint::<BigEndian>(length as u64, length_of_length as usize)?;
     }
     data.write_all(string)?;
     Ok(())

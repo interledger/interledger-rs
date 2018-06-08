@@ -1,7 +1,6 @@
 use std;
-use std::error::Error;
-use serde_json;
-use base64;
+use std::str::{Utf8Error};
+use chrono;
 
 quick_error! {
     #[derive(Debug)]
@@ -11,15 +10,15 @@ quick_error! {
             description(err.description())
             cause(err)
         }
-        Json(err: serde_json::Error) {
-        //Json(descr: &'static str) {
-            //from(err: serde_json::Error) -> (err.description())
-            //from(err: serde::de::value::Error) -> (err.description())
-            //from(err: serde::ser::Error) -> (err.description())
-            //from(err: serde::Deserializer<'de>::Error) -> ("json parsing error", err.description())
-            //description(descr)
+        Utf8(err: Utf8Error) {
+            from()
             description(err.description())
-            display("JSON Parsing Error {}", err.description())
+            cause(err)
+        }
+        Chrono(err: chrono::ParseError) {
+            from()
+            description(err.description())
+            cause(err)
         }
         WrongType(descr: &'static str) {
             description(descr)
@@ -28,11 +27,6 @@ quick_error! {
         InvalidPacket(descr: &'static str) {
             description(descr)
             display("Invalid Packet {}", descr)
-        }
-        Base64(err: base64::DecodeError) {
-            from()
-            description(err.description())
-            display("Invalid Base64 {}", err.description())
         }
         Other(err: Box<std::error::Error>) {
             cause(&**err)

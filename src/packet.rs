@@ -1,399 +1,310 @@
-use oer;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use chrono::prelude::*;
+use chrono::{DateTime, Utc};
 use errors::ParseError;
-use std::io::{Cursor};
-use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use serde_json;
-use base64;
+use oer::{ReadOerExt, WriteOerExt};
+use regex::Regex;
+use std::io::prelude::*;
+use std::io::Cursor;
+use std::str;
+
+// Note this format includes a dot before the milliseconds so we need to remove that before using the output
+static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%.3f";
+lazy_static! {
+    static ref INTERLEDGER_TIMESTAMP_REGEX: Regex =
+        Regex::new(r"^(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})(?P<hour>\d{2})(?P<minute>\d{2})(?P<second>\d{2})(?P<millisecond>\d{3})$").unwrap();
+}
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
 enum PacketType {
-    IlpPayment = 1,
-    IlqpLiquidityRequest = 2,
-    IlqpLiquidityResponse = 3,
-    IlqpBySourceRequest = 4,
-    IlqpBySourceResponse = 5,
-    IlqpByDestinationRequest = 6,
-    IlqpByDestinationResponse = 7,
-    IlpError = 8,
+    IlpPrepare = 12,
+    IlpFulfill = 13,
+    IlpReject = 14,
     Unknown,
 }
 impl From<u8> for PacketType {
     fn from(type_int: u8) -> Self {
         match type_int {
-            1 => PacketType::IlpPayment,
-            2 => PacketType::IlqpLiquidityRequest,
-            3 => PacketType::IlqpLiquidityResponse,
-            4 => PacketType::IlqpBySourceRequest,
-            5 => PacketType::IlqpBySourceResponse,
-            6 => PacketType::IlqpByDestinationRequest,
-            7 => PacketType::IlqpByDestinationResponse,
-            8 => PacketType::IlpError,
+            12 => PacketType::IlpPrepare,
+            13 => PacketType::IlpFulfill,
+            14 => PacketType::IlpReject,
             _ => PacketType::Unknown,
         }
-
     }
 }
 
-fn serialize_envelope(packet_type: PacketType, contents: &Vec<u8>) -> Result<Vec<u8>, ParseError> {
+fn serialize_envelope(packet_type: PacketType, contents: &[u8]) -> Result<Vec<u8>, ParseError> {
     // TODO do this mutably so we don't need to copy the data
     let mut packet = Vec::new();
     packet.write_u8(packet_type as u8)?;
-    oer::write_var_octet_string(&mut packet, contents)?;
+    packet.write_var_octet_string(contents)?;
     Ok(packet)
 }
 
-fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, &[u8]), ParseError> {
+fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, Vec<u8>), ParseError> {
     let mut reader = Cursor::new(bytes);
     let packet_type = PacketType::from(reader.read_u8()?);
-    let pos = reader.position() as usize;
-    let slice: &[u8] = &reader.get_ref()[pos..];
-    Ok((packet_type, oer::read_var_octet_string(slice)?))
+    Ok((packet_type, reader.read_var_octet_string()?))
 }
 
 pub enum IlpPacket {
-    IlpPayment,
-    IlqpLiquidityRequest,
-    IlqpLiquidityResponse,
-    IlqpBySourceRequest,
-    IlqpBySourceResponse,
-    IlqpByDestinationRequest,
-    IlqpByDestinationResponse,
-    IlpError,
+    IlpPrepare,
+    IlpFulfill,
+    IlpReject,
 }
 // TODO add IlpPacket trait with serialization functions
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IlpPayment {
+pub struct IlpPrepare {
     pub amount: u64,
-    pub account: String,
+    pub expires_at: DateTime<Utc>,
+    // TODO make this just a pointer
+    pub execution_condition: [u8; 32],
+    pub destination: String,
     pub data: Vec<u8>,
 }
 
-// TODO there must be a better way of changing data to base64
-#[derive(Serialize, Deserialize)]
-struct IlpPaymentForJson {
-    amount: u64,
-    account: String,
-    data: String
-}
-
-impl IlpPayment {
-    pub fn from_bytes(bytes: &[u8]) -> Result<IlpPayment, ParseError> {
+impl IlpPrepare {
+    pub fn from_bytes(bytes: &[u8]) -> Result<IlpPrepare, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
-        if packet_type != PacketType::IlpPayment {
-            return Err(ParseError::WrongType("attempted to deserialize other packet type as IlpPayment"));
+        if packet_type != PacketType::IlpPrepare {
+            return Err(ParseError::WrongType(
+                "attempted to deserialize other packet type as IlpPrepare",
+            ));
         }
 
         let mut reader = Cursor::new(contents);
         let amount = reader.read_u64::<BigEndian>()?;
-        let account_bytes = oer::read_var_octet_string(&contents[reader.position() as usize..])?;
-        let account = String::from_utf8(account_bytes.to_vec()).map_err(|_| {
-            ParseError::InvalidPacket("account not utf8")
-        })?;
-        let start_of_data_pos = reader.position() + account.len() as u64 + 1;
-        let data_bytes = oer::read_var_octet_string(&contents[start_of_data_pos as usize..])?;
-        let data = data_bytes.to_vec();
-        Ok(IlpPayment {
-            amount: amount,
-            account: account,
-            data: data,
+        let mut expires_at_buf = [0; 17];
+        reader.read(&mut expires_at_buf)?;
+        let expires_at_str = str::from_utf8(&expires_at_buf)?;
+        // TODO do this conversion without using a regex
+        let expires_at_rfc3339 = INTERLEDGER_TIMESTAMP_REGEX
+            .replace(
+                expires_at_str,
+                "${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}Z",
+            )
+            .into_owned();
+        let expires_at = DateTime::parse_from_rfc3339(&expires_at_rfc3339)?.with_timezone(&Utc);
+        let mut execution_condition = [0; 32];
+        reader.read(&mut execution_condition)?;
+        let destination_bytes = reader.read_var_octet_string()?;
+        // TODO make sure address is only ASCII characters
+        let destination = String::from_utf8(destination_bytes.to_vec())
+            .map_err(|_| ParseError::InvalidPacket("destination is not utf8"))?;
+        let data = reader.read_var_octet_string()?.to_vec();
+        Ok(IlpPrepare {
+            amount,
+            expires_at,
+            execution_condition,
+            destination,
+            data,
         })
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
         bytes.write_u64::<BigEndian>(self.amount)?;
-        oer::write_var_octet_string(&mut bytes, &self.account.to_string().into_bytes())?;
-        oer::write_var_octet_string(&mut bytes, &self.data)?;
-        bytes.write_u8(0)?; // extensibility
-        serialize_envelope(PacketType::IlpPayment, &bytes)
-    }
-
-    pub fn to_json_string(&self) -> Result<String, ParseError> {
-        let data_string = base64::encode_config(&self.data, base64::URL_SAFE_NO_PAD);
-        let for_json = IlpPaymentForJson {
-            amount: self.amount,
-            account: self.account.to_string(),
-            data: data_string
-        };
-        serde_json::to_string(&for_json).map_err(|err| ParseError::Json(err))
-    }
-
-    pub fn from_json_str(string: &str) -> Result<IlpPayment, ParseError> {
-        let json_rep: IlpPaymentForJson = serde_json::from_str(string)
-            .map_err(|err| ParseError::Json(err))?;
-        let data = base64::decode_config(&json_rep.data, base64::URL_SAFE_NO_PAD)
-            .map_err(|err| ParseError::Base64(err))?;
-        Ok(IlpPayment {
-            amount: json_rep.amount,
-            account: json_rep.account.to_string(),
-            data: data
-        })
+        bytes.write(
+            self.expires_at
+                .format(INTERLEDGER_TIMESTAMP_FORMAT)
+                .to_string()
+                .replace(".", "")
+                .as_bytes(),
+        )?;
+        bytes.write(&self.execution_condition)?;
+        bytes.write_var_octet_string(&self.destination.to_string().into_bytes())?;
+        bytes.write_var_octet_string(&self.data)?;
+        serialize_envelope(PacketType::IlpPrepare, &bytes)
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct IlqpBySourceRequest {
-    pub destination_account: String,
-    pub source_amount: u64,
-    pub destination_hold_duration: u32,
+#[derive(Debug, PartialEq, Clone)]
+pub struct IlpFulfill {
+    pub fulfillment: [u8; 32],
+    pub data: Vec<u8>,
 }
-impl IlqpBySourceRequest {
-    pub fn from_bytes(bytes: &[u8]) -> Result<IlqpBySourceRequest, ParseError> {
+
+impl IlpFulfill {
+    pub fn from_bytes(bytes: &[u8]) -> Result<IlpFulfill, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
-        if packet_type != PacketType::IlqpBySourceRequest {
-            return Err(ParseError::WrongType("attempted to deserialize other packet type as IlqpBySourceRequest"));
+        if packet_type != PacketType::IlpFulfill {
+            return Err(ParseError::WrongType(
+                "attempted to deserialize other packet type as IlpFulfill",
+            ));
         }
 
         let mut reader = Cursor::new(contents);
-        let destination_account_bytes = oer::read_var_octet_string(&contents[reader.position() as usize..])?;
-        let destination_account = String::from_utf8(destination_account_bytes.to_vec()).map_err(|_| {
-            ParseError::InvalidPacket("account not utf8")
-        })?;
-        reader.set_position((destination_account_bytes.len() + 1) as u64);
-        let source_amount = reader.read_u64::<BigEndian>()?;
-        let destination_hold_duration = reader.read_u32::<BigEndian>()?;
-        Ok(IlqpBySourceRequest {
-            destination_account: destination_account,
-            source_amount: source_amount,
-            destination_hold_duration: destination_hold_duration
+        let mut fulfillment = [0; 32];
+        reader.read(&mut fulfillment)?;
+        let data = reader.read_var_octet_string()?.to_vec();
+        Ok(IlpFulfill { fulfillment, data })
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write(&self.fulfillment)?;
+        bytes.write_var_octet_string(&self.data)?;
+        serialize_envelope(PacketType::IlpFulfill, &bytes)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IlpReject {
+    pub code: String,
+    pub message: String,
+    pub triggered_by: String,
+    pub data: Vec<u8>,
+}
+
+impl IlpReject {
+    pub fn from_bytes(bytes: &[u8]) -> Result<IlpReject, ParseError> {
+        let (packet_type, contents) = deserialize_envelope(bytes)?;
+        if packet_type != PacketType::IlpReject {
+            return Err(ParseError::WrongType(
+                "attempted to deserialize other packet type as IlpReject",
+            ));
+        }
+
+        let mut reader = Cursor::new(contents);
+        let mut code_bytes = [0; 3];
+        reader.read(&mut code_bytes)?;
+        // TODO: make sure code is valid
+        let code = String::from_utf8(code_bytes.to_vec())
+            .map_err(|_| ParseError::InvalidPacket("code is not utf8"))?;
+        let triggered_by_bytes = reader.read_var_octet_string()?;
+        let triggered_by = String::from_utf8(triggered_by_bytes.to_vec())
+            .map_err(|_| ParseError::InvalidPacket("triggered_by is not utf8"))?;
+        let message_bytes = reader.read_var_octet_string()?;
+        let message = String::from_utf8(message_bytes.to_vec())
+            .map_err(|_| ParseError::InvalidPacket("message is not utf8"))?;
+        let data = reader.read_var_octet_string()?.to_vec();
+
+        Ok(IlpReject {
+            code,
+            message,
+            triggered_by,
+            data,
         })
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
-        oer::write_var_octet_string(&mut bytes, &self.destination_account.to_string().into_bytes())?;
-        bytes.write_u64::<BigEndian>(self.source_amount)?;
-        bytes.write_u32::<BigEndian>(self.destination_hold_duration)?;
-        bytes.write_u8(0)?; // extensibility
-        serialize_envelope(PacketType::IlqpBySourceRequest, &bytes)
-    }
-
-    pub fn to_json_string(&self) -> Result<String, ParseError> {
-        serde_json::to_string(&self).map_err(|err| ParseError::Json(err))
-    }
-
-    pub fn from_json_str(string: &str) -> Result<IlqpBySourceRequest, ParseError> {
-        let result: IlqpBySourceRequest = serde_json::from_str(string)
-            .map_err(|err| ParseError::Json(err))?;
-        Ok(result)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct IlqpByDestinationRequest {
-    pub destination_account: String,
-    pub destination_amount: u64,
-    pub destination_hold_duration: u32,
-}
-impl IlqpByDestinationRequest {
-    pub fn from_bytes(bytes: &[u8]) -> Result<IlqpByDestinationRequest, ParseError> {
-        let (packet_type, contents) = deserialize_envelope(bytes)?;
-        if packet_type != PacketType::IlqpByDestinationRequest {
-            return Err(ParseError::WrongType("attempted to deserialize other packet type as IlqpByDestinationRequest"));
-        }
-
-        let mut reader = Cursor::new(contents);
-        let destination_account_bytes = oer::read_var_octet_string(&contents[reader.position() as usize..])?;
-        let destination_account = String::from_utf8(destination_account_bytes.to_vec()).map_err(|_| {
-            ParseError::InvalidPacket("account not utf8")
-        })?;
-        reader.set_position((destination_account_bytes.len() + 1) as u64);
-        let destination_amount = reader.read_u64::<BigEndian>()?;
-        let destination_hold_duration = reader.read_u32::<BigEndian>()?;
-        Ok(IlqpByDestinationRequest {
-            destination_account: destination_account,
-            destination_amount: destination_amount,
-            destination_hold_duration: destination_hold_duration
-        })
-    }
-
-    pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-        let mut bytes: Vec<u8> = Vec::new();
-        oer::write_var_octet_string(&mut bytes, &self.destination_account.to_string().into_bytes())?;
-        bytes.write_u64::<BigEndian>(self.destination_amount)?;
-        bytes.write_u32::<BigEndian>(self.destination_hold_duration)?;
-        bytes.write_u8(0)?; // extensibility
-        serialize_envelope(PacketType::IlqpByDestinationRequest, &bytes)
-    }
-
-    pub fn to_json_string(&self) -> Result<String, ParseError> {
-        serde_json::to_string(&self).map_err(|err| ParseError::Json(err))
-    }
-
-    pub fn from_json_str(string: &str) -> Result<IlqpByDestinationRequest, ParseError> {
-        let result: IlqpByDestinationRequest = serde_json::from_str(string)
-            .map_err(|err| ParseError::Json(err))?;
-        Ok(result)
+        let mut code = [0; 3];
+        self.code.as_bytes().read(&mut code)?;
+        bytes.write(&code)?;
+        bytes.write_var_octet_string(&self.triggered_by.as_bytes())?;
+        bytes.write_var_octet_string(&self.message.as_bytes())?;
+        bytes.write_var_octet_string(&self.data)?;
+        serialize_envelope(PacketType::IlpReject, &bytes)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hex;
 
-    fn hex_to_bytes(hex: &str) -> Vec<u8> {
-        let mut chars = hex.chars();
-        let mut bytes = Vec::new();
-        for _i in 0..(hex.len() / 2) {
-            let first: u8 = chars.next().unwrap().to_digit(16).unwrap() as u8;
-            let second: u8 = chars.next().unwrap().to_digit(16).unwrap() as u8;
-            let byte = (first << 4) | second;
-            bytes.push(byte)
-        }
-        bytes
+    lazy_static! {
+        static ref DATA: Vec<u8> = hex::decode("6c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
     }
 
     #[cfg(test)]
-    mod ilp_payment {
+    mod ilp_prepare {
         use super::*;
 
-        #[test]
-        fn serialize() {
-            let without_data = IlpPayment {
+        lazy_static! {
+            static ref EXPIRES_AT: DateTime<Utc> = DateTime::parse_from_rfc3339("2018-06-07T20:48:42.483Z").unwrap().with_timezone(&Utc);
+            static ref EXECUTION_CONDITION: [u8; 32] = {
+                let mut buf = [0; 32];
+                buf.copy_from_slice(&hex::decode("117b434f1a54e9044f4f54923b2cff9e4a6d420ae281d5025d7bb040c4b4c04a").unwrap()[..32]);
+                buf
+            };
+
+            static ref PREPARE_1: IlpPrepare = IlpPrepare {
                 amount: 107,
-                account: "example.alice".to_string(),
-                data: vec![],
+                destination: "example.alice".to_string(),
+                expires_at: *EXPIRES_AT,
+                execution_condition: *EXECUTION_CONDITION,
+                data: DATA.to_vec(),
             };
+            // TODO find a better way of loading test fixtures
+            static ref PREPARE_1_SERIALIZED: Vec<u8> = hex::decode("0c82014b000000000000006b3230313830363037323034383432343833117b434f1a54e9044f4f54923b2cff9e4a6d420ae281d5025d7bb040c4b4c04a0d6578616d706c652e616c6963658201016c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
+        }
+
+        #[test]
+        fn from_bytes() {
             assert_eq!(
-                without_data.to_bytes().unwrap(),
-                hex_to_bytes("0118000000000000006b0d6578616d706c652e616c6963650000"),
-                "without data"
-                );
-
-            let with_data = IlpPayment {
-                amount: 100,
-                account: "example.bob".to_string(),
-                data: base64::decode("ZZZZ").unwrap(),
-            };
-            assert_eq!(
-                with_data.to_bytes().unwrap(),
-                hex_to_bytes("011900000000000000640b6578616d706c652e626f620365965900"),
-                "with data"
-                );
+                IlpPrepare::from_bytes(&PREPARE_1_SERIALIZED).unwrap(),
+                *PREPARE_1
+            );
         }
 
         #[test]
-        fn deserialize() {
-            let without_data = IlpPayment {
-                amount: 107,
-                account: "example.alice".to_string(),
-                data: vec![],
-            };
-            assert_eq!(
-                IlpPayment::from_bytes(
-                    &hex_to_bytes("0118000000000000006b0d6578616d706c652e616c6963650000")[..],
-                    ).unwrap(),
-                    without_data,
-                    "without data"
-                    );
-
-            let with_data = IlpPayment {
-                amount: 100,
-                account: "example.bob".to_string(),
-                data: base64::decode("ZZZZ").unwrap(),
-            };
-            assert_eq!(
-                IlpPayment::from_bytes(
-                    &hex_to_bytes("011900000000000000640b6578616d706c652e626f620365965900")[..],
-                    ).unwrap(),
-                    with_data,
-                    "with data"
-                    );
-        }
-
-        #[test]
-        fn encode_as_json() {
-            let without_data = IlpPayment {
-                amount: 107,
-                account: "example.alice".to_string(),
-                data: vec![],
-            };
-            assert_eq!(without_data.to_json_string().unwrap(), "{\"amount\":107,\"account\":\"example.alice\",\"data\":\"\"}");
-
-            let with_data = IlpPayment {
-                amount: 100,
-                account: "example.bob".to_string(),
-                data: base64::decode("ZZZZ").unwrap(),
-            };
-            assert_eq!(with_data.to_json_string().unwrap(), "{\"amount\":100,\"account\":\"example.bob\",\"data\":\"ZZZZ\"}");
-        }
-
-        #[test]
-        fn decode_as_json() {
-            let without_data = IlpPayment {
-                amount: 107,
-                account: "example.alice".to_string(),
-                data: vec![],
-            };
-            assert_eq!(IlpPayment::from_json_str("{\"amount\":107,\"account\":\"example.alice\",\"data\":\"\"}").unwrap(), without_data);
-
-            let with_data = IlpPayment {
-                amount: 100,
-                account: "example.bob".to_string(),
-                data: base64::decode("ZZZZ").unwrap(),
-            };
-            assert_eq!(IlpPayment::from_json_str("{\"amount\":100,\"account\":\"example.bob\",\"data\":\"ZZZZ\"}").unwrap(), with_data);
-        }
-    }
-
-
-    #[cfg(test)]
-    mod ilqp_by_source_request {
-        use super::*;
-
-        #[test]
-        fn serialize() {
-            let request = IlqpBySourceRequest {
-                source_amount: 9000000000,
-                destination_account: "example.alice".to_string(),
-                destination_hold_duration: 3000
-            };
-            assert_eq!(request.to_bytes().unwrap(),
-                hex_to_bytes("041b0d6578616d706c652e616c6963650000000218711a0000000bb800"))
-
-        }
-
-        #[test]
-        fn deserialize() {
-            let request = IlqpBySourceRequest {
-                source_amount: 9000000000,
-                destination_account: "example.alice".to_string(),
-                destination_hold_duration: 3000
-            };
-
-            assert_eq!(IlqpBySourceRequest::from_bytes(&hex_to_bytes("041b0d6578616d706c652e616c6963650000000218711a0000000bb800")).unwrap(),
-            request)
+        fn to_bytes() {
+            assert_eq!(PREPARE_1.to_bytes().unwrap(), *PREPARE_1_SERIALIZED);
         }
     }
 
     #[cfg(test)]
-    mod ilqp_by_destination_request {
+    mod ilp_fulfill {
         use super::*;
 
-        #[test]
-        fn serialize() {
-            let request = IlqpByDestinationRequest {
-                destination_amount: 9000000000,
-                destination_account: "example.alice".to_string(),
-                destination_hold_duration: 3000
+        lazy_static! {
+            static ref FULFILLMENT: [u8; 32] = {
+                let mut buf = [0; 32];
+                buf.copy_from_slice(&hex::decode("117b434f1a54e9044f4f54923b2cff9e4a6d420ae281d5025d7bb040c4b4c04a").unwrap()[..32]);
+                buf
             };
-            assert_eq!(request.to_bytes().unwrap(),
-                hex_to_bytes("061b0d6578616d706c652e616c6963650000000218711a0000000bb800"))
 
+            static ref FULFILL_1: IlpFulfill = IlpFulfill {
+                fulfillment: *FULFILLMENT,
+                data: DATA.to_vec(),
+            };
+            static ref FULFILL_1_SERIALIZED: Vec<u8> = hex::decode("0d820124117b434f1a54e9044f4f54923b2cff9e4a6d420ae281d5025d7bb040c4b4c04a8201016c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
         }
 
         #[test]
-        fn deserialize() {
-            let request = IlqpByDestinationRequest {
-                destination_amount: 9000000000,
-                destination_account: "example.alice".to_string(),
-                destination_hold_duration: 3000
+        fn from_bytes() {
+            assert_eq!(
+                IlpFulfill::from_bytes(&FULFILL_1_SERIALIZED).unwrap(),
+                *FULFILL_1
+            );
+        }
+
+        #[test]
+        fn to_bytes() {
+            assert_eq!(FULFILL_1.to_bytes().unwrap(), *FULFILL_1_SERIALIZED);
+        }
+    }
+
+    #[cfg(test)]
+    mod ilp_reject {
+        use super::*;
+
+        lazy_static! {
+            static ref REJECT_1: IlpReject = IlpReject {
+                code: "F99".to_string(),
+                triggered_by: "example.connector".to_string(),
+                message: "Some error".to_string(),
+                data: DATA.to_vec()
             };
 
-            assert_eq!(IlqpByDestinationRequest::from_bytes(&hex_to_bytes("061b0d6578616d706c652e616c6963650000000218711a0000000bb800")).unwrap(),
-            request)
+            static ref REJECT_1_SERIALIZED: Vec<u8> = hex::decode("0e820124463939116578616d706c652e636f6e6e6563746f720a536f6d65206572726f728201016c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
+        }
+
+        #[test]
+        fn from_bytes() {
+            assert_eq!(
+                IlpReject::from_bytes(&REJECT_1_SERIALIZED).unwrap(),
+                *REJECT_1
+            );
+        }
+
+        #[test]
+        fn to_bytes() {
+            assert_eq!(REJECT_1.to_bytes().unwrap(), *REJECT_1_SERIALIZED);
         }
     }
 }
