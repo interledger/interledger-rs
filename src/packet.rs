@@ -1,5 +1,4 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use chrono::prelude::*;
 use chrono::{DateTime, Utc};
 use errors::ParseError;
 use oer::{ReadOerExt, WriteOerExt};
@@ -48,12 +47,17 @@ fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, Vec<u8>), ParseErro
     Ok((packet_type, reader.read_var_octet_string()?))
 }
 
+pub trait Serializable<T> {
+    fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
+
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
+}
+
 pub enum IlpPacket {
     IlpPrepare,
     IlpFulfill,
     IlpReject,
 }
-// TODO add IlpPacket trait with serialization functions
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IlpPrepare {
@@ -65,8 +69,8 @@ pub struct IlpPrepare {
     pub data: Vec<u8>,
 }
 
-impl IlpPrepare {
-    pub fn from_bytes(bytes: &[u8]) -> Result<IlpPrepare, ParseError> {
+impl Serializable<IlpPrepare> for IlpPrepare {
+    fn from_bytes(bytes: &[u8]) -> Result<IlpPrepare, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpPrepare {
             return Err(ParseError::WrongType(
@@ -103,7 +107,7 @@ impl IlpPrepare {
         })
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
         bytes.write_u64::<BigEndian>(self.amount)?;
         bytes.write(
@@ -126,8 +130,8 @@ pub struct IlpFulfill {
     pub data: Vec<u8>,
 }
 
-impl IlpFulfill {
-    pub fn from_bytes(bytes: &[u8]) -> Result<IlpFulfill, ParseError> {
+impl Serializable<IlpFulfill> for IlpFulfill {
+    fn from_bytes(bytes: &[u8]) -> Result<IlpFulfill, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpFulfill {
             return Err(ParseError::WrongType(
@@ -142,7 +146,7 @@ impl IlpFulfill {
         Ok(IlpFulfill { fulfillment, data })
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
         bytes.write(&self.fulfillment)?;
         bytes.write_var_octet_string(&self.data)?;
@@ -158,8 +162,8 @@ pub struct IlpReject {
     pub data: Vec<u8>,
 }
 
-impl IlpReject {
-    pub fn from_bytes(bytes: &[u8]) -> Result<IlpReject, ParseError> {
+impl Serializable<IlpReject> for IlpReject {
+    fn from_bytes(bytes: &[u8]) -> Result<IlpReject, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpReject {
             return Err(ParseError::WrongType(
@@ -189,7 +193,7 @@ impl IlpReject {
         })
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
         let mut code = [0; 3];
         self.code.as_bytes().read(&mut code)?;
