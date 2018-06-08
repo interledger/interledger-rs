@@ -1,18 +1,13 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, TimeZone};
 use errors::ParseError;
 use oer::{ReadOerExt, WriteOerExt};
-use regex::Regex;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
 
 // Note this format includes a dot before the milliseconds so we need to remove that before using the output
-static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%.3f";
-lazy_static! {
-    static ref INTERLEDGER_TIMESTAMP_REGEX: Regex =
-        Regex::new(r"^(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})(?P<hour>\d{2})(?P<minute>\d{2})(?P<second>\d{2})(?P<millisecond>\d{3})$").unwrap();
-}
+static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
@@ -82,15 +77,8 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         let amount = reader.read_u64::<BigEndian>()?;
         let mut expires_at_buf = [0; 17];
         reader.read(&mut expires_at_buf)?;
-        let expires_at_str = str::from_utf8(&expires_at_buf)?;
-        // TODO do this conversion without using a regex
-        let expires_at_rfc3339 = INTERLEDGER_TIMESTAMP_REGEX
-            .replace(
-                expires_at_str,
-                "${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}Z",
-            )
-            .into_owned();
-        let expires_at = DateTime::parse_from_rfc3339(&expires_at_rfc3339)?.with_timezone(&Utc);
+        let expires_at_str = String::from_utf8(expires_at_buf.to_vec())?;
+        let expires_at = Utc.datetime_from_str(&expires_at_str, INTERLEDGER_TIMESTAMP_FORMAT)?.with_timezone(&Utc);
         let mut execution_condition = [0; 32];
         reader.read(&mut execution_condition)?;
         let destination_bytes = reader.read_var_octet_string()?;
@@ -114,8 +102,7 @@ impl Serializable<IlpPrepare> for IlpPrepare {
             self.expires_at
                 .format(INTERLEDGER_TIMESTAMP_FORMAT)
                 .to_string()
-                .replace(".", "")
-                .as_bytes(),
+                .as_bytes()
         )?;
         bytes.write(&self.execution_condition)?;
         bytes.write_var_octet_string(&self.destination.to_string().into_bytes())?;

@@ -1,5 +1,6 @@
 use std;
-use std::str::{Utf8Error};
+use std::str::Utf8Error;
+use std::string::FromUtf8Error;
 use chrono;
 
 quick_error! {
@@ -11,6 +12,11 @@ quick_error! {
             cause(err)
         }
         Utf8(err: Utf8Error) {
+            from()
+            description(err.description())
+            cause(err)
+        }
+        FromUtf8(err: FromUtf8Error) {
             from()
             description(err.description())
             cause(err)

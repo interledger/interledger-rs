@@ -7,8 +7,7 @@ license = "Apache-2.0"
 
 [dependencies]
 byteorder = "1.0.0"
-chrono = "0.4.2"
+chrono = { path = "../chrono" }
 hex = "0.3.2"
 lazy_static = "1.0.1"
 quick-error = "1.2.0"
-regex = "1.0.0"
