@@ -1,6 +1,6 @@
 [package]
 name = "ilp-packet"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "ILP packet (de)serializer library"
 license = "Apache-2.0"
