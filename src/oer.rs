@@ -1,6 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt::Debug;
-use std::io::{self, Cursor, Read, Result, Write};
+use std::io::{self, Cursor, Read, Result, Write, Error, ErrorKind};
+use num_bigint::BigUint;
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -32,6 +33,12 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
         self.take(actual_length).read_to_end(&mut buf)?;
         Ok(buf)
     }
+
+    #[inline]
+    fn read_var_uint(&mut self) -> Result<BigUint> {
+        let mut contents = self.read_var_octet_string()?;
+        Ok(BigUint::from_bytes_be(&contents))
+    }
 }
 
 // Add this trait to all Readable things when this is used
@@ -51,6 +58,13 @@ pub trait WriteOerExt: Write + WriteBytesExt {
             self.write_uint::<BigEndian>(length as u64, length_of_length as usize)?;
         }
         self.write_all(string)?;
+        Ok(())
+    }
+
+    #[inline]
+    // Write a u64 as an OER VarUInt
+    fn write_var_uint(&mut self, uint: BigUint) -> Result<()> {
+        self.write_var_octet_string(&uint.to_bytes_be())?;
         Ok(())
     }
 }

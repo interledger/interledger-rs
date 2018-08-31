@@ -1,8 +1,8 @@
 [package]
-name = "ilp-packet"
+name = "ilp"
 version = "0.3.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
-description = "ILP packet (de)serializer library"
+description = "Interledger client library"
 license = "Apache-2.0"
 
 [dependencies]
@@ -10,4 +10,5 @@ byteorder = "1.0.0"
 chrono = "0.4.4"
 hex = "0.3.2"
 lazy_static = "1.0.1"
+num-bigint = "0.2.0"
 quick-error = "1.2.0"
