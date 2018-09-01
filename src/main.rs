@@ -2,12 +2,15 @@ extern crate ilp;
 extern crate tokio;
 
 use tokio::prelude::*;
-use ilp::plugin_btp::{PluginBtp, Plugin};
+use ilp::plugin_btp::{connect_async, PluginBtp, Plugin};
 
 fn main() {
-  let plugin = PluginBtp::new("ws://localhost:7768").unwrap();
-  let connect = plugin.connect().map_err(|e| {
-    println!("Error: {}", e);
-  });
-  tokio::runtime::run(connect);
+  let future = connect_async("ws://localhost:7768")
+    .and_then(|plugin| {
+      plugin.send_data(vec![1, 2, 3])
+    })
+    .and_then(|(plugin, response)| {
+      println!("Got response {}", response);
+    });
+  tokio::runtime::run(future);
 }
