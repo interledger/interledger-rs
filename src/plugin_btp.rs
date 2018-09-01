@@ -9,8 +9,8 @@ use futures::stream::{Stream, SplitSink, SplitStream};
 use url::{Url, ParseError};
 
 pub trait Plugin {
-  fn send_data(&mut self, data: &[u8]) -> Box<Future<Item = (Self, Vec<u8>), Error = ()>>;
-  fn send_money(&mut self, amount: u64) -> Box<Future<Item = Self, Error = ()>>;
+  fn send_data(self, data: &[u8]) -> Box<Future<Item = (Vec<u8>, Self), Error = ()>>;
+  fn send_money(self, amount: u64) -> Box<Future<Item = Self, Error = ()>>;
 }
 
 pub struct PluginBtp {
@@ -20,15 +20,17 @@ pub struct PluginBtp {
 }
 
 impl Plugin for PluginBtp {
-  fn send_data(&mut self, data: &[u8]) -> Box<Future<Item = (Self, Vec<u8>), Error = ()>> {
+  fn send_data(self, data: &[u8]) -> Box<Future<Item = (Vec<u8>, Self), Error = ()>> {
     let future = ok(()).and_then(|_| {
-      Ok((self, vec![]))
+      println!("Sending data {:?}", data.clone());
+      Ok((vec![], self))
     });
     Box::new(future)
   }
 
-  fn send_money(&mut self, amount: u64) -> Box<Future<Item = Self, Error = ()>> {
+  fn send_money(self, amount: u64) -> Box<Future<Item = Self, Error = ()>> {
     let future = ok(()).and_then(|_| {
+      println!("Sending money {}", amount);
       Ok(self)
     });
     Box::new(future)
@@ -37,8 +39,8 @@ impl Plugin for PluginBtp {
 
 pub fn connect_async(server: &str) -> Box<Future<Item = PluginBtp, Error = ()> + 'static + Send> {
   let server = Url::parse(server).unwrap();
-  let future = connect_websocket(server).and_then(move |(ws_stream, _ )| {
-    println!("Connected to ${}", server);
+  let future = connect_websocket(server.clone()).and_then(move |(ws_stream, _ )| {
+    println!("Connected to ${}", &server);
     let (ws_sink, ws_stream) = ws_stream.split();
     Ok(PluginBtp {
       server,
