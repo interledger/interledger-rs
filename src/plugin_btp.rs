@@ -7,9 +7,10 @@ use futures::Future;
 use futures::future::{ok};
 use futures::stream::{Stream, SplitSink, SplitStream};
 use url::{Url, ParseError};
+use bytes::{Bytes};
 
 pub trait Plugin {
-  fn send_data(self, data: &[u8]) -> Box<Future<Item = (Vec<u8>, Self), Error = ()>>;
+  fn send_data(self, data: Bytes) -> Box<Future<Item = (Bytes, Self), Error = ()>>;
   fn send_money(self, amount: u64) -> Box<Future<Item = Self, Error = ()>>;
 }
 
@@ -20,17 +21,17 @@ pub struct PluginBtp {
 }
 
 impl Plugin for PluginBtp {
-  fn send_data(self, data: &[u8]) -> Box<Future<Item = (Vec<u8>, Self), Error = ()>> {
+  fn send_data(self, data: Bytes) -> Box<Future<Item = (Bytes, Self), Error = ()>> {
+    println!("Sending data {:?}", data.clone());
     let future = ok(()).and_then(|_| {
-      println!("Sending data {:?}", data.clone());
-      Ok((vec![], self))
+      Ok((Bytes::from_slice(&vec![]), self))
     });
     Box::new(future)
   }
 
   fn send_money(self, amount: u64) -> Box<Future<Item = Self, Error = ()>> {
+    println!("Sending money {}", amount);
     let future = ok(()).and_then(|_| {
-      println!("Sending money {}", amount);
       Ok(self)
     });
     Box::new(future)

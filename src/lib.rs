@@ -12,6 +12,7 @@ extern crate tokio_tungstenite;
 extern crate tokio_tcp;
 extern crate tungstenite;
 extern crate url;
+extern crate bytes;
 
 pub mod errors;
 pub mod oer;
