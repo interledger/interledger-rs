@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::io::{Read, Write};
 use btp_packet::{BtpMessage, BtpResponse, Serializable, ProtocolData, ContentType};
 use tokio_tungstenite::{connect_async as connect_websocket, WebSocketStream, MaybeTlsStream};
 use tungstenite::{Error as WebSocketError, Message as WebSocketMessage};
@@ -15,31 +16,43 @@ pub enum PluginItem {
   Money(u64),
 }
 
-pub struct PluginBtp {
-  server: Url,
-  ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
+pub struct PluginBtp<S> {
+  inner: S,
   request_id: u32,
 }
 
-impl Stream for PluginBtp {
+impl<S> Stream for PluginBtp<S>
+where
+  S: Stream,
+  S::Item: Into<Vec<u8>>,
+  S::Error: StdError, //<Item = Into<Vec<u8>>, Error = Into<StdError>>
+{
   type Item = PluginItem;
-  type Error = Box<StdError>;
+  type Error = ();
 
-  fn poll(&mut self) -> Result<Async<Option<Self::Item>>, Self::Error> {
-    match self.ws.poll() {
-      Ok(Async::Ready(Some(ws_message))) => {
+  fn poll(&mut self) -> Result<Async<Option<PluginItem>>, Self::Error> {
+    match self.inner.poll() {
+      Ok(Async::Ready(Some(message))) => {
         // TODO parse the websocket message
-        println!("Got response {:?}", ws_message);
+        // println!("Got response {:?}", message);
         Ok(Async::Ready(Some(PluginItem::Money(1))))
       },
       Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
       Ok(Async::NotReady) => Ok(Async::NotReady),
-      Err(e) => Err(Box::from(e))
+      Err(e) => {
+        println!("Error: {}", e);
+        Err(())
+      }
     }
   }
 }
 
-impl Sink for PluginBtp {
+impl<S> Sink for PluginBtp<S>
+where
+  S: Sink,
+  S::SinkItem: From<Vec<u8>>,
+  S::SinkError: StdError,
+{
   type SinkItem = PluginItem;
   type SinkError = ();
 
@@ -57,8 +70,8 @@ impl Sink for PluginBtp {
             data: data.to_vec()
           }]
         };
-        let ws_message = WebSocketMessage::Binary(btp.to_bytes().unwrap());
-        self.ws.start_send(ws_message)
+        let serialized = btp.to_bytes().unwrap();
+        self.inner.start_send(serialized)
           .map(|result| {
             match result {
               AsyncSink::Ready => AsyncSink::Ready,
@@ -76,19 +89,18 @@ impl Sink for PluginBtp {
   }
 
   fn poll_complete(&mut self) -> Result<Async<()>, Self::SinkError> {
-    self.ws.poll_complete().map_err(|e| {
+    self.inner.poll_complete().map_err(|e| {
       println!("Polling error {}", e);
     })
   }
 }
 
-pub fn connect_async(server: &str) -> Box<Future<Item = PluginBtp, Error = ()> + 'static + Send> {
+pub fn connect_async(server: &str) -> Box<Future<Item = PluginBtp<WebSocketStream<MaybeTlsStream<TcpStream>>>, Error = ()> + 'static + Send> {
   let server = Url::parse(server).unwrap();
   let future = connect_websocket(server.clone()).and_then(move |(ws, _ )| {
     println!("Connected to ${}", &server);
     Ok(PluginBtp {
-      server,
-      ws,
+      inner: ws,
       request_id: 0,
     })
   }).map_err(|e| {
