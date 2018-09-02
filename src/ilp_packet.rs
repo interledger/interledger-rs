@@ -5,6 +5,7 @@ use oer::{ReadOerExt, WriteOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
+pub use util::Serializable;
 
 // Note this format includes a dot before the milliseconds so we need to remove that before using the output
 static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
@@ -42,16 +43,33 @@ fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, Vec<u8>), ParseErro
     Ok((packet_type, reader.read_var_octet_string()?))
 }
 
-pub trait Serializable<T> {
-    fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
-
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
+#[derive(Debug, PartialEq, Clone)]
+pub enum IlpPacket {
+    Prepare(IlpPrepare),
+    Fulfill(IlpFulfill),
+    Reject(IlpReject),
+    Unknown
 }
 
-pub enum IlpPacket {
-    IlpPrepare,
-    IlpFulfill,
-    IlpReject,
+impl Serializable<IlpPacket> for IlpPacket {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, ParseError> {
+        match PacketType::from(bytes[0]) {
+            PacketType::IlpPrepare => Ok(IlpPacket::Prepare(IlpPrepare::from_bytes(bytes)?)),
+            PacketType::IlpFulfill => Ok(IlpPacket::Fulfill(IlpFulfill::from_bytes(bytes)?)),
+            PacketType::IlpReject => Ok(IlpPacket::Reject(IlpReject::from_bytes(bytes)?)),
+            _ => Err(ParseError::InvalidPacket(&format!("Unknown packet type: {}", bytes[0])))
+        }
+    }
+
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+        match self {
+            IlpPacket::Prepare(packet) => Ok(packet.to_bytes()?),
+            IlpPacket::Fulfill(packet) => Ok(packet.to_bytes()?),
+            IlpPacket::Reject(packet) => Ok(packet.to_bytes()?),
+            IlpPacket::Unknown => Err(ParseError::InvalidPacket("Cannot serialize unknown packet type")),
+        }
+
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
