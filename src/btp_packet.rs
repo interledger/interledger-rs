@@ -7,15 +7,9 @@ use std::io::Cursor;
 use std::str;
 use num_bigint::BigUint;
 use std::ops::Add;
+pub use util::Serializable;
 
 static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
-
-pub enum BtpPacket {
-  Message(BtpMessage),
-  Response(BtpResponse),
-  Error(BtpError),
-  Unknown,
-}
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
@@ -36,6 +30,35 @@ impl From<u8> for PacketType {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum BtpPacket {
+  Message(BtpMessage),
+  Response(BtpResponse),
+  Error(BtpError),
+  Unknown,
+}
+
+impl Serializable<BtpPacket> for BtpPacket {
+  fn from_bytes(bytes: &[u8]) -> Result<BtpPacket, ParseError> {
+    match PacketType::from(bytes[0]) {
+      PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
+      PacketType::Response => Ok(BtpPacket::Response(BtpResponse::from_bytes(bytes)?)),
+      PacketType::Error => Ok(BtpPacket::Error(BtpError::from_bytes(bytes)?)),
+      PacketType::Unknown => Err(ParseError::InvalidPacket(&format!("Unknown packet type: {}", bytes[0]))),
+    }
+  }
+
+  fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+    match self {
+      BtpPacket::Message(packet) => Ok(packet.to_bytes()?),
+      BtpPacket::Response(packet) => Ok(packet.to_bytes()?),
+      BtpPacket::Error(packet) => Ok(packet.to_bytes()?),
+      Unknown => Err(ParseError::InvalidPacket("Cannot serialize unknown packet type"))
+    }
+  }
+}
+
+
 fn serialize_envelope(packet_type: PacketType, request_id: u32, contents: &[u8]) -> Result<Vec<u8>, ParseError> {
   let mut packet = Vec::new();
   packet.write_u8(packet_type as u8)?;
@@ -49,12 +72,6 @@ fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, Vec<u8>), ParseErro
   let packet_type = PacketType::from(reader.read_u8()?);
   let contents = reader.read_var_octet_string()?;
   Ok((packet_type, contents))
-}
-
-pub trait Serializable<T> {
-    fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
-
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
