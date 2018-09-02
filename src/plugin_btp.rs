@@ -1,11 +1,9 @@
 use std::error::Error as StdError;
-use std::io::{Read, Write};
-use btp_packet::{BtpMessage, BtpResponse, Serializable, ProtocolData, ContentType};
+use btp_packet::{BtpMessage, BtpResponse, Serializable, ProtocolData, ContentType, deserialize_packet, BtpPacket};
 use tokio_tungstenite::{connect_async as connect_websocket, WebSocketStream, MaybeTlsStream};
 use tungstenite::{Error as WebSocketError, Message as WebSocketMessage};
 use tokio_tcp::TcpStream;
 use futures::{Future, Async, AsyncSink};
-use futures::future::{ok};
 use futures::stream::{Stream, SplitSink, SplitStream};
 use futures::sink::{Sink};
 use url::{Url, ParseError};
@@ -25,7 +23,7 @@ impl<S> Stream for PluginBtp<S>
 where
   S: Stream,
   S::Item: Into<Vec<u8>>,
-  S::Error: StdError, //<Item = Into<Vec<u8>>, Error = Into<StdError>>
+  S::Error: StdError,
 {
   type Item = PluginItem;
   type Error = ();
@@ -33,14 +31,34 @@ where
   fn poll(&mut self) -> Result<Async<Option<PluginItem>>, Self::Error> {
     match self.inner.poll() {
       Ok(Async::Ready(Some(message))) => {
+        let packet = deserialize_packet(&message.into()).unwrap();
+        match packet {
+          BtpPacket::Message(message) => {
+            for protocol_data in message.protocol_data.into_iter() {
+              match protocol_data.protocol_name.as_ref() {
+                "ilp" => {
+                  return Ok(Async::Ready(Some(PluginItem::Data(Bytes::from(protocol_data.data)))))
+                },
+                _ => return Err(())
+              }
+            }
+            return Err(())
+          },
+          BtpPacket::Response(response) => {
+            // TODO how do we match up requests and responses?
+            // should that happen in this stream thing or in something that wraps it?
+
+          },
+          _ => return Err(())
+        }
         // TODO parse the websocket message
         // println!("Got response {:?}", message);
-        Ok(Async::Ready(Some(PluginItem::Money(1))))
+        // Ok(Async::Ready(Some(PluginItem::Money(1))))
       },
       Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
       Ok(Async::NotReady) => Ok(Async::NotReady),
       Err(e) => {
-        println!("Error: {}", e);
+        // println!("Error: {}", e);
         Err(())
       }
     }
@@ -71,7 +89,7 @@ where
           }]
         };
         let serialized = btp.to_bytes().unwrap();
-        self.inner.start_send(serialized)
+        self.inner.start_send(serialized.into())
           .map(|result| {
             match result {
               AsyncSink::Ready => AsyncSink::Ready,

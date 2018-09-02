@@ -10,6 +10,13 @@ use std::ops::Add;
 
 static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
 
+pub enum BtpPacket {
+  Message(BtpMessage),
+  Response(BtpResponse),
+  Error(BtpError),
+  Unknown,
+}
+
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
 enum PacketType {
@@ -210,6 +217,16 @@ impl Serializable<BtpError> for BtpError {
     writer.write_var_octet_string(&contents)?;
     Ok(writer)
   }
+}
+
+pub fn deserialize_packet(bytes: &[u8]) -> Result<BtpPacket, ParseError> {
+  let packet = match PacketType::from(bytes[0]) {
+    PacketType::Message => BtpPacket::Message(BtpMessage::from_bytes(bytes)?),
+    PacketType::Response => BtpPacket::Response(BtpResponse::from_bytes(bytes)?),
+    PacketType::Error => BtpPacket::Error(BtpError::from_bytes(bytes)?),
+    _ => BtpPacket::Unknown
+  };
+  Ok(packet)
 }
 
 #[cfg(test)]
