@@ -1,22 +1,19 @@
-use std::error::Error as StdError;
-use btp_packet::{BtpMessage, BtpResponse, Serializable, ProtocolData, ContentType, deserialize_packet, BtpPacket};
-use tokio_tungstenite::{connect_async as connect_websocket, WebSocketStream, MaybeTlsStream};
-use tungstenite::{Error as WebSocketError, Message as WebSocketMessage};
-use tokio_tcp::TcpStream;
-use futures::{Future, Async, AsyncSink};
-use futures::stream::{Stream, SplitSink, SplitStream};
-use futures::sink::{Sink};
-use url::{Url, ParseError};
+pub use btp_packet::ContentType; // reexport
+use btp_packet::{
+  deserialize_packet, BtpMessage, BtpPacket, BtpResponse, ProtocolData, Serializable,
+};
 use bytes::{Bytes, BytesMut};
-
-pub enum PluginItem {
-  Data(Bytes),
-  Money(u64),
-}
+use futures::sink::Sink;
+use futures::stream::{SplitSink, SplitStream, Stream};
+use futures::{Async, AsyncSink, Future, Poll, StartSend};
+use std::error::Error as StdError;
+use tokio_tcp::TcpStream;
+use tokio_tungstenite::{connect_async as connect_websocket, MaybeTlsStream, WebSocketStream};
+use tungstenite::{Error as WebSocketError, Message as WebSocketMessage};
+use url::{ParseError, Url};
 
 pub struct PluginBtp<S> {
   inner: S,
-  request_id: u32,
 }
 
 impl<S> Stream for PluginBtp<S>
@@ -25,42 +22,15 @@ where
   S::Item: Into<Vec<u8>>,
   S::Error: StdError,
 {
-  type Item = PluginItem;
+  type Item = BtpPacket;
   type Error = ();
 
-  fn poll(&mut self) -> Result<Async<Option<PluginItem>>, Self::Error> {
-    match self.inner.poll() {
-      Ok(Async::Ready(Some(message))) => {
-        let packet = deserialize_packet(&message.into()).unwrap();
-        match packet {
-          BtpPacket::Message(message) => {
-            for protocol_data in message.protocol_data.into_iter() {
-              match protocol_data.protocol_name.as_ref() {
-                "ilp" => {
-                  return Ok(Async::Ready(Some(PluginItem::Data(Bytes::from(protocol_data.data)))))
-                },
-                _ => return Err(())
-              }
-            }
-            return Err(())
-          },
-          BtpPacket::Response(response) => {
-            // TODO how do we match up requests and responses?
-            // should that happen in this stream thing or in something that wraps it?
-
-          },
-          _ => return Err(())
-        }
-        // TODO parse the websocket message
-        // println!("Got response {:?}", message);
-        // Ok(Async::Ready(Some(PluginItem::Money(1))))
-      },
-      Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
-      Ok(Async::NotReady) => Ok(Async::NotReady),
-      Err(e) => {
-        // println!("Error: {}", e);
-        Err(())
-      }
+  fn poll(&mut self) -> Poll<Option<BtpPacket>, Self::Error> {
+    if let Some(serialized) = try_ready!(self.inner.poll().map_err(|e| {})) {
+      let packet = deserialize_packet(&serialized.into()).unwrap();
+      Ok(Async::Ready(Some(packet)))
+    } else {
+      Ok(Async::Ready(None))
     }
   }
 }
@@ -71,39 +41,21 @@ where
   S::SinkItem: From<Vec<u8>>,
   S::SinkError: StdError,
 {
-  type SinkItem = PluginItem;
+  type SinkItem = BtpPacket;
   type SinkError = ();
 
-  fn start_send(&mut self, item: PluginItem) -> Result<AsyncSink<Self::SinkItem>, Self::SinkError> {
-    match item {
-      PluginItem::Data(data) => {
-        let btp = BtpMessage {
-          request_id: {
-            self.request_id += 1;
-            self.request_id
-          },
-          protocol_data: vec![ProtocolData {
-            protocol_name: String::from("ilp"),
-            content_type: ContentType::ApplicationOctetStream,
-            data: data.to_vec()
-          }]
-        };
-        let serialized = btp.to_bytes().unwrap();
-        self.inner.start_send(serialized.into())
-          .map(|result| {
-            match result {
-              AsyncSink::Ready => AsyncSink::Ready,
-              AsyncSink::NotReady(_) => AsyncSink::NotReady(PluginItem::Data(data))
-            }
-          })
-          .map_err(|err| {
-            println!("Error sending {}", err);
-          })
-      },
-      PluginItem::Money(amount) => {
-        Err(())
-      }
-    }
+  fn start_send(&mut self, item: BtpPacket) -> StartSend<Self::SinkItem, Self::SinkError> {
+    let serialized = item.to_bytes().unwrap();
+    self
+      .inner
+      .start_send(serialized.into())
+      .map(|result| match result {
+        AsyncSink::Ready => AsyncSink::Ready,
+        AsyncSink::NotReady(_) => AsyncSink::NotReady(item),
+      })
+      .map_err(|err| {
+        println!("Error sending {}", err);
+      })
   }
 
   fn poll_complete(&mut self) -> Result<Async<()>, Self::SinkError> {
@@ -113,16 +65,45 @@ where
   }
 }
 
-pub fn connect_async(server: &str) -> Box<Future<Item = PluginBtp<WebSocketStream<MaybeTlsStream<TcpStream>>>, Error = ()> + 'static + Send> {
+pub fn connect_async(
+  server: &str,
+) -> Box<
+  Future<Item = PluginBtp<WebSocketStream<MaybeTlsStream<TcpStream>>>, Error = ()> + 'static + Send,
+> {
   let server = Url::parse(server).unwrap();
-  let future = connect_websocket(server.clone()).and_then(move |(ws, _ )| {
-    println!("Connected to ${}", &server);
-    Ok(PluginBtp {
-      inner: ws,
-      request_id: 0,
-    })
-  }).map_err(|e| {
-    println!("Error connecting: {}", e);
+  let auth_packet = BtpPacket::Message(BtpMessage {
+    request_id: 0,
+    protocol_data: vec![
+      ProtocolData {
+        protocol_name: String::from("auth"),
+        content_type: ContentType::ApplicationOctetStream,
+        data: vec![],
+      },
+      ProtocolData {
+        protocol_name: String::from("auth_username"),
+        content_type: ContentType::TextPlainUtf8,
+        data: String::from(server.username()).into_bytes(),
+      },
+      ProtocolData {
+        protocol_name: String::from("auth_token"),
+        content_type: ContentType::TextPlainUtf8,
+        data: String::from(server.password().unwrap()).into_bytes(),
+      },
+    ],
   });
+  let future = connect_websocket(server.clone())
+    .and_then(|(ws, _)| {
+      // println!("Connected to ${}", &server);
+      Ok(PluginBtp { inner: ws })
+    })
+    .map_err(|e| {
+      println!("Error connecting: {}", e);
+    })
+    .and_then(move |plugin| {
+      plugin.send(auth_packet)
+    })
+    .map_err(|e| {
+      println!("Error sending auth message");
+    });
   Box::new(future)
 }

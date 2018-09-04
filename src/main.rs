@@ -4,16 +4,20 @@ extern crate bytes;
 extern crate futures;
 
 use tokio::prelude::*;
-use ilp::plugin_btp::{connect_async, PluginBtp, PluginItem};
+use ilp::plugin_btp::{connect_async, PluginBtp};
 use bytes::Bytes;
 use futures::{Stream, Sink};
+use ilp::IlpOrBtpPacket;
+use ilp::ilp_packet_stream::IlpPacketStream;
+use ilp::ilp_fulfillment_checker::IlpFulfillmentChecker;
 
 
 fn main() {
   let future = connect_async("ws://localhost:7768")
   .and_then(|plugin| {
-    plugin.send(PluginItem::Data(Bytes::from(vec![0, 1, 2])))
-    .map(|_| { () })
+    let (btp_stream, btp_sink) = plugin.split();
+
+    Ok(())
   });
   tokio::runtime::run(future);
 }

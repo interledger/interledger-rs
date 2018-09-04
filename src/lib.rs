@@ -14,6 +14,7 @@ extern crate tokio_tcp;
 extern crate tungstenite;
 extern crate url;
 extern crate bytes;
+extern crate ring;
 
 pub mod errors;
 pub mod oer;
@@ -21,4 +22,7 @@ pub mod ilp_packet;
 pub mod ilp_packet_stream;
 pub mod btp_packet;
 pub mod plugin_btp;
+pub mod ilp_fulfillment_checker;
 mod util;
+
+pub use util::IlpOrBtpPacket;
