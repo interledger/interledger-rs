@@ -26,11 +26,11 @@ quick_error! {
             description(err.description())
             cause(err)
         }
-        WrongType(descr: &'static str) {
+        WrongType(descr: String) {
             description(descr)
             display("Wrong Type {}", descr)
         }
-        InvalidPacket(descr: &'static str) {
+        InvalidPacket(descr: String) {
             description(descr)
             display("Invalid Packet {}", descr)
         }
