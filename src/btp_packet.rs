@@ -44,7 +44,7 @@ impl Serializable<BtpPacket> for BtpPacket {
       PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
       PacketType::Response => Ok(BtpPacket::Response(BtpResponse::from_bytes(bytes)?)),
       PacketType::Error => Ok(BtpPacket::Error(BtpError::from_bytes(bytes)?)),
-      PacketType::Unknown => Err(ParseError::InvalidPacket(&format!("Unknown packet type: {}", bytes[0]))),
+      PacketType::Unknown => Err(ParseError::InvalidPacket(format!("Unknown packet type: {}", bytes[0]))),
     }
   }
 
@@ -53,7 +53,7 @@ impl Serializable<BtpPacket> for BtpPacket {
       BtpPacket::Message(packet) => Ok(packet.to_bytes()?),
       BtpPacket::Response(packet) => Ok(packet.to_bytes()?),
       BtpPacket::Error(packet) => Ok(packet.to_bytes()?),
-      Unknown => Err(ParseError::InvalidPacket("Cannot serialize unknown packet type"))
+      Unknown => Err(ParseError::InvalidPacket(String::from("Cannot serialize unknown packet type")))
     }
   }
 }

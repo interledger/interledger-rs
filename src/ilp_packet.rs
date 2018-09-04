@@ -57,7 +57,7 @@ impl Serializable<IlpPacket> for IlpPacket {
             PacketType::IlpPrepare => Ok(IlpPacket::Prepare(IlpPrepare::from_bytes(bytes)?)),
             PacketType::IlpFulfill => Ok(IlpPacket::Fulfill(IlpFulfill::from_bytes(bytes)?)),
             PacketType::IlpReject => Ok(IlpPacket::Reject(IlpReject::from_bytes(bytes)?)),
-            _ => Err(ParseError::InvalidPacket(&format!("Unknown packet type: {}", bytes[0])))
+            _ => Err(ParseError::InvalidPacket(format!("Unknown packet type: {}", bytes[0])))
         }
     }
 
@@ -66,7 +66,7 @@ impl Serializable<IlpPacket> for IlpPacket {
             IlpPacket::Prepare(packet) => Ok(packet.to_bytes()?),
             IlpPacket::Fulfill(packet) => Ok(packet.to_bytes()?),
             IlpPacket::Reject(packet) => Ok(packet.to_bytes()?),
-            IlpPacket::Unknown => Err(ParseError::InvalidPacket("Cannot serialize unknown packet type")),
+            IlpPacket::Unknown => Err(ParseError::InvalidPacket(String::from("Cannot serialize unknown packet type"))),
         }
 
     }
@@ -87,7 +87,7 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpPrepare {
             return Err(ParseError::WrongType(
-                "attempted to deserialize other packet type as IlpPrepare",
+                String::from("attempted to deserialize other packet type as IlpPrepare")
             ));
         }
 
@@ -102,7 +102,7 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         let destination_bytes = reader.read_var_octet_string()?;
         // TODO make sure address is only ASCII characters
         let destination = String::from_utf8(destination_bytes.to_vec())
-            .map_err(|_| ParseError::InvalidPacket("destination is not utf8"))?;
+            .map_err(|_| ParseError::InvalidPacket(String::from("destination is not utf8")))?;
         let data = reader.read_var_octet_string()?.to_vec();
         Ok(IlpPrepare {
             amount,
@@ -140,7 +140,7 @@ impl Serializable<IlpFulfill> for IlpFulfill {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpFulfill {
             return Err(ParseError::WrongType(
-                "attempted to deserialize other packet type as IlpFulfill",
+                String::from("attempted to deserialize other packet type as IlpFulfill"),
             ));
         }
 
@@ -172,7 +172,7 @@ impl Serializable<IlpReject> for IlpReject {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpReject {
             return Err(ParseError::WrongType(
-                "attempted to deserialize other packet type as IlpReject",
+                String::from("attempted to deserialize other packet type as IlpReject"),
             ));
         }
 
@@ -181,13 +181,13 @@ impl Serializable<IlpReject> for IlpReject {
         reader.read(&mut code_bytes)?;
         // TODO: make sure code is valid
         let code = String::from_utf8(code_bytes.to_vec())
-            .map_err(|_| ParseError::InvalidPacket("code is not utf8"))?;
+            .map_err(|_| ParseError::InvalidPacket(String::from("code is not utf8")))?;
         let triggered_by_bytes = reader.read_var_octet_string()?;
         let triggered_by = String::from_utf8(triggered_by_bytes.to_vec())
-            .map_err(|_| ParseError::InvalidPacket("triggered_by is not utf8"))?;
+            .map_err(|_| ParseError::InvalidPacket(String::from("triggered_by is not utf8")))?;
         let message_bytes = reader.read_var_octet_string()?;
         let message = String::from_utf8(message_bytes.to_vec())
-            .map_err(|_| ParseError::InvalidPacket("message is not utf8"))?;
+            .map_err(|_| ParseError::InvalidPacket(String::from("message is not utf8")))?;
         let data = reader.read_var_octet_string()?.to_vec();
 
         Ok(IlpReject {
