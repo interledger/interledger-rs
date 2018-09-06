@@ -12,11 +12,11 @@ use tokio_tungstenite::{connect_async as connect_websocket, MaybeTlsStream, WebS
 use tungstenite::{Error as WebSocketError, Message as WebSocketMessage};
 use url::{ParseError, Url};
 
-pub struct PluginBtp<S> {
+pub struct BtpPacketStream<S> {
   inner: S,
 }
 
-impl<S> Stream for PluginBtp<S>
+impl<S> Stream for BtpPacketStream<S>
 where
   S: Stream,
   S::Item: Into<Vec<u8>>,
@@ -35,7 +35,7 @@ where
   }
 }
 
-impl<S> Sink for PluginBtp<S>
+impl<S> Sink for BtpPacketStream<S>
 where
   S: Sink,
   S::SinkItem: From<Vec<u8>>,
@@ -68,7 +68,7 @@ where
 pub fn connect_async(
   server: &str,
 ) -> Box<
-  Future<Item = PluginBtp<WebSocketStream<MaybeTlsStream<TcpStream>>>, Error = ()> + 'static + Send,
+  Future<Item = BtpPacketStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, Error = ()> + 'static + Send,
 > {
   let server = Url::parse(server).unwrap();
   let auth_packet = BtpPacket::Message(BtpMessage {
@@ -94,7 +94,7 @@ pub fn connect_async(
   let future = connect_websocket(server.clone())
     .and_then(|(ws, _)| {
       // println!("Connected to ${}", &server);
-      Ok(PluginBtp { inner: ws })
+      Ok(BtpPacketStream { inner: ws })
     })
     .map_err(|e| {
       println!("Error connecting: {}", e);
