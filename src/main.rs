@@ -15,9 +15,11 @@ use ilp::ilp_fulfillment_checker::IlpFulfillmentChecker;
 fn main() {
   let future = connect_async("ws://localhost:7768")
   .and_then(|plugin| {
-    let (btp_stream, btp_sink) = plugin.split();
-
+    Ok(IlpFulfillmentChecker::new(IlpPacketStream::new(plugin)))
+  })
+  .and_then(|stream| {
     Ok(())
   });
+
   tokio::runtime::run(future);
 }
