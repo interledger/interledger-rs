@@ -4,10 +4,23 @@ use ilp_packet::{IlpPacket, Serializable};
 use util::IlpOrBtpPacket;
 use std::collections::HashMap;
 use ring::digest::{digest, SHA256};
+use chrono::{DateTime, Utc};
 
 pub struct IlpFulfillmentChecker<S> {
   inner: S,
-  packets: HashMap<u32, Vec<u8>>,
+  packets: HashMap<u32, (Vec<u8>, DateTime<Utc>)>,
+}
+
+impl<S> IlpFulfillmentChecker<S>
+where
+  S: Stream<Item = IlpOrBtpPacket, Error = ()> + Sink<SinkItem = IlpOrBtpPacket, SinkError = ()>,
+{
+  pub fn new(stream: S) -> Self {
+    IlpFulfillmentChecker {
+      inner: stream,
+      packets: HashMap::new(),
+    }
+  }
 }
 
 impl<S> Stream for IlpFulfillmentChecker<S>
@@ -21,11 +34,12 @@ where
     let item = try_ready!(self.inner.poll());
     match item {
       Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill))) => {
-        if let Some(condition) = self.packets.get(&request_id) {
-          if fulfillment_matches_condition(&fulfill.fulfillment, condition) {
+        if let Some((condition, expires_at)) = self.packets.get(&request_id) {
+          if fulfillment_matches_condition(&fulfill.fulfillment, condition)
+            && expires_at >= &Utc::now() {
             Ok(Async::Ready(Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill)))))
           } else {
-            // Fulfillment doesn't match
+            // Fulfillment doesn't match or is expired
             Ok(Async::NotReady)
           }
         } else {
@@ -55,7 +69,7 @@ where
       if let IlpPacket::Prepare(prepare) = &ilp {
         self
           .packets
-          .insert(*request_id, prepare.execution_condition.to_vec());
+          .insert(*request_id, (prepare.execution_condition.to_vec(), prepare.expires_at.clone()));
       }
     }
 

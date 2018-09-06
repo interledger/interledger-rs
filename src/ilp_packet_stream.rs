@@ -8,6 +8,17 @@ pub struct IlpPacketStream<S> {
   inner: S,
 }
 
+impl<S> IlpPacketStream<S>
+where
+  S: Stream<Item = BtpPacket, Error = ()> + Sink<SinkItem = BtpPacket, SinkError = ()>,
+ {
+  pub fn new(stream: S) -> Self {
+    IlpPacketStream {
+      inner: stream
+    }
+  }
+}
+
 impl<S> Stream for IlpPacketStream<S>
 where
   S: Stream<Item = BtpPacket, Error = ()>,
