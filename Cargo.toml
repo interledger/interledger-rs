@@ -16,7 +16,7 @@ num-bigint = "0.2.0"
 quick-error = "1.2.0"
 ring = "0.13.2"
 tokio = "0.1.8"
-tokio-tungstenite = "0.6.0"
+tokio-tungstenite = { git = "https://github.com/emschwartz/tokio-tungstenite" }
 tokio-tcp = "0.1.1"
-tungstenite = "0.6.0"
+tungstenite = { git = "https://github.com/emschwartz/tungstenite-rs" }
 url = "1.7.1"
