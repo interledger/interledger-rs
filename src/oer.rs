@@ -2,16 +2,14 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt::Debug;
 use std::io::{self, Cursor, Read, Result, Write, Error, ErrorKind};
 use num_bigint::BigUint;
+use bytes::{Buf, BufMut, Bytes, IntoBuf};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
 
-// TODO don't copy the code over into the functions for the trait
-
 // TODO test traits
 pub trait ReadOerExt: Read + ReadBytesExt + Debug {
     #[inline]
-    // TODO should this function return a vec or a slice?
     fn read_var_octet_string(&mut self) -> Result<Vec<u8>> {
         let length: u8 = self.read_u8()?;
 
@@ -28,7 +26,6 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
         };
 
         // TODO handle if the length is too long
-        // TODO don't copy this twice
         let mut buf = Vec::with_capacity(actual_length as usize);
         self.take(actual_length).read_to_end(&mut buf)?;
         Ok(buf)
@@ -36,7 +33,7 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
 
     #[inline]
     fn read_var_uint(&mut self) -> Result<BigUint> {
-        let mut contents = self.read_var_octet_string()?;
+        let contents = self.read_var_octet_string()?;
         Ok(BigUint::from_bytes_be(&contents))
     }
 }
@@ -72,57 +69,79 @@ pub trait WriteOerExt: Write + WriteBytesExt {
 // Add this trait to all Writable things when this is used
 impl<W: io::Write + ?Sized> WriteOerExt for W {}
 
-pub fn write_var_octet_string<T: Write + WriteBytesExt>(data: &mut T, string: &[u8]) -> Result<()> {
-    let length = string.len();
+pub trait BufOerExt: Buf + Sized {
+    #[inline]
+    // TODO should this return a Bytes type or a Buf?
+    fn get_var_octet_string(&mut self) -> Bytes {
+        let length: u8 = self.get_u8();
 
-    if length < 127 {
-        data.write_u8(length as u8)?;
-    } else {
-        let bit_length_of_length = format!("{:b}", length).chars().count();
-        let length_of_length = { bit_length_of_length as f32 / 8.0 }.ceil() as u8;
-        data.write_u8(HIGH_BIT | length_of_length)?;
-        data.write_uint::<BigEndian>(length as u64, length_of_length as usize)?;
+        if length == 0 {
+            return Bytes::new();
+        }
+
+        let actual_length: usize = if length & HIGH_BIT != 0 {
+            let length_prefix_length = length & LOWER_SEVEN_BITS;
+            // TODO check for canonical length
+            self.get_uint_be(length_prefix_length as usize) as usize
+        } else {
+            length as usize
+        };
+
+        // TODO handle if the length is too long
+        let buf = Bytes::from(self.bytes()).slice_to(actual_length);
+        self.advance(actual_length);
+        buf
     }
-    data.write_all(string)?;
-    Ok(())
+
+    #[inline]
+    fn get_var_uint(&mut self) -> BigUint {
+        let contents = self.get_var_octet_string();
+        BigUint::from_bytes_be(&contents[..])
+    }
 }
 
-// TODO make this so it doesn't have to be a u8 slice
-pub fn read_var_octet_string(data: &[u8]) -> Result<&[u8]> {
-    let mut reader = Cursor::new(data);
-    let length: u8 = reader.read_u8()?;
+impl<B: Buf + Sized> BufOerExt for B {}
 
-    if length == 0 {
-        let empty: [u8; 0] = [];
-        return Ok(&empty.to_owned());
+pub trait MutBufOerExt: BufMut + Sized {
+    #[inline]
+    fn put_var_octet_string<B>(&mut self, buf: B)
+    where B: IntoBuf
+    {
+        let buf = buf.into_buf();
+        let length = buf.remaining();
+
+        if length < 127 {
+            self.put_u8(length as u8);
+        } else {
+            let bit_length_of_length = format!("{:b}", length).chars().count();
+            let length_of_length = { bit_length_of_length as f32 / 8.0 }.ceil() as u8;
+            self.put_u8(HIGH_BIT | length_of_length);
+            self.put_uint_be(length as u64, length_of_length as usize);
+        }
+        self.put(buf);
     }
 
-    let actual_length: usize = if length & HIGH_BIT != 0 {
-        let length_prefix_length = length & LOWER_SEVEN_BITS;
-        reader.read_uint::<BigEndian>(length_prefix_length as usize)? as usize
-    // TODO check for canonical length
-    } else {
-        length as usize
-    };
-
-    let pos = reader.position() as usize;
-
-    // TODO handle if the length is too long
-    Ok(&data[pos..(pos + actual_length)])
+    #[inline]
+    // Write a u64 as an OER VarUInt
+    fn put_var_uint(&mut self, uint: BigUint) {
+        self.put_var_octet_string(&uint.to_bytes_be());
+    }
 }
+
+impl<B: BufMut + Sized> MutBufOerExt for B {}
 
 #[cfg(test)]
-mod standalone {
+mod writer_ext {
     use super::*;
 
     #[test]
     fn it_writes_var_octet_strings() {
         let mut empty = vec![];
-        write_var_octet_string(&mut empty, &vec![]).unwrap();
+        empty.write_var_octet_string(&vec![]).unwrap();
         assert_eq!(empty, vec![0]);
 
         let mut one = vec![];
-        write_var_octet_string(&mut one, &vec![0xb0]).unwrap();
+        one.write_var_octet_string(&vec![0xb0]).unwrap();
         assert_eq!(one, vec![0x01, 0xb0]);
 
         let mut larger = vec![];
@@ -130,19 +149,25 @@ mod standalone {
         for _ in 0..256 {
             larger_string.push(0xb0);
         }
-        write_var_octet_string(&mut larger, &larger_string).unwrap();
+        larger.write_var_octet_string(&larger_string).unwrap();
         let mut expected = vec![0x82, 0x01, 0x00];
         expected.extend(larger_string);
         assert_eq!(larger.len(), 259);
         assert_eq!(larger, expected);
     }
+}
+
+#[cfg(test)]
+mod reader_ext {
+    use super::*;
 
     #[test]
     fn it_reads_var_octet_strings() {
-        let empty: [u8; 0] = [];
-        assert_eq!(read_var_octet_string(&vec![0]).unwrap(), &empty);
+        let nothing = vec![0];
+        assert_eq!(Cursor::new(nothing).read_var_octet_string().unwrap().len(), 0);
 
-        assert_eq!(read_var_octet_string(&vec![0x01, 0xb0]).unwrap(), &[0xb0]);
+        let two_bytes = vec![0x01, 0xb0];
+        assert_eq!(Cursor::new(two_bytes).read_var_octet_string().unwrap(), &[0xb0]);
 
         let mut larger = vec![0x82, 0x01, 0x00];
         let mut larger_string: Vec<u8> = Vec::with_capacity(256 as usize);
@@ -150,6 +175,6 @@ mod standalone {
             larger_string.push(0xb0);
         }
         larger.extend(&larger_string);
-        assert_eq!(read_var_octet_string(&larger).unwrap(), &larger_string[..]);
+        assert_eq!(Cursor::new(larger).read_var_octet_string().unwrap(), &larger_string[..]);
     }
 }
