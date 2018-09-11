@@ -5,7 +5,10 @@ use oer::{ReadOerExt, WriteOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
+use bytes::{Bytes, BytesMut};
 pub use util::Serializable;
+
+// TODO zero-copy (de)serialization
 
 // Note this format includes a dot before the milliseconds so we need to remove that before using the output
 static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
@@ -77,9 +80,27 @@ pub struct IlpPrepare {
     pub amount: u64,
     pub expires_at: DateTime<Utc>,
     // TODO make this just a pointer
-    pub execution_condition: [u8; 32],
+    pub execution_condition: Bytes,
     pub destination: String,
-    pub data: Vec<u8>,
+    pub data: Bytes,
+}
+
+impl IlpPrepare {
+    pub fn new<A, B, C, D>(destination: A, amount: u64, execution_condition: B, expires_at: C, data: D) -> Self
+    where
+        String: From<A>,
+        Bytes: From<B>,
+        DateTime<Utc>: From<C>,
+        Bytes: From<D>,
+    {
+        IlpPrepare {
+            amount,
+            destination: String::from(destination),
+            execution_condition: Bytes::from(execution_condition),
+            expires_at: DateTime::from(expires_at),
+            data: Bytes::from(data)
+        }
+    }
 }
 
 impl Serializable<IlpPrepare> for IlpPrepare {
@@ -97,17 +118,17 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         reader.read(&mut expires_at_buf)?;
         let expires_at_str = String::from_utf8(expires_at_buf.to_vec())?;
         let expires_at = Utc.datetime_from_str(&expires_at_str, INTERLEDGER_TIMESTAMP_FORMAT)?.with_timezone(&Utc);
-        let mut execution_condition = [0; 32];
-        reader.read(&mut execution_condition)?;
+        let mut execution_condition: [u8; 32] = [0; 32];
+        reader.read_exact(&mut execution_condition)?;
         let destination_bytes = reader.read_var_octet_string()?;
         // TODO make sure address is only ASCII characters
         let destination = String::from_utf8(destination_bytes.to_vec())
             .map_err(|_| ParseError::InvalidPacket(String::from("destination is not utf8")))?;
-        let data = reader.read_var_octet_string()?.to_vec();
+        let data = Bytes::from(reader.read_var_octet_string()?);
         Ok(IlpPrepare {
             amount,
             expires_at,
-            execution_condition,
+            execution_condition: Bytes::from(&execution_condition[..]),
             destination,
             data,
         })
@@ -131,8 +152,22 @@ impl Serializable<IlpPrepare> for IlpPrepare {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IlpFulfill {
-    pub fulfillment: [u8; 32],
-    pub data: Vec<u8>,
+    pub fulfillment: Bytes,
+    pub data: Bytes,
+}
+
+impl IlpFulfill {
+    pub fn new<F, D>(fulfillment: F, data: D) -> Self
+    where
+        Bytes: From<F>,
+        Bytes: From<D>,
+    {
+        // TODO check fulfillment length
+        IlpFulfill {
+            fulfillment: Bytes::from(fulfillment),
+            data: Bytes::from(data),
+        }
+    }
 }
 
 impl Serializable<IlpFulfill> for IlpFulfill {
@@ -147,14 +182,14 @@ impl Serializable<IlpFulfill> for IlpFulfill {
         let mut reader = Cursor::new(contents);
         let mut fulfillment = [0; 32];
         reader.read(&mut fulfillment)?;
-        let data = reader.read_var_octet_string()?.to_vec();
-        Ok(IlpFulfill { fulfillment, data })
+        let data = reader.read_var_octet_string()?;
+        Ok(IlpFulfill::new(&fulfillment[..], data))
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
-        bytes.write(&self.fulfillment)?;
-        bytes.write_var_octet_string(&self.data)?;
+        bytes.write(&self.fulfillment[0..32])?;
+        bytes.write_var_octet_string(&self.data[..])?;
         serialize_envelope(PacketType::IlpFulfill, &bytes)
     }
 }
@@ -164,7 +199,24 @@ pub struct IlpReject {
     pub code: String,
     pub message: String,
     pub triggered_by: String,
-    pub data: Vec<u8>,
+    pub data: Bytes,
+}
+
+impl IlpReject {
+    pub fn new<C, M, T, D>(code: C, message: M, triggered_by: T, data: D) -> Self
+    where
+        String: From<C>,
+        String: From<M>,
+        String: From<T>,
+        Bytes: From<D>,
+        {
+            IlpReject {
+                code: String::from(code),
+                message: String::from(message),
+                triggered_by: String::from(triggered_by),
+                data: Bytes::from(data),
+            }
+        }
 }
 
 impl Serializable<IlpReject> for IlpReject {
@@ -188,14 +240,14 @@ impl Serializable<IlpReject> for IlpReject {
         let message_bytes = reader.read_var_octet_string()?;
         let message = String::from_utf8(message_bytes.to_vec())
             .map_err(|_| ParseError::InvalidPacket(String::from("message is not utf8")))?;
-        let data = reader.read_var_octet_string()?.to_vec();
+        let data = Bytes::from(reader.read_var_octet_string()?.to_vec());
 
-        Ok(IlpReject {
+        Ok(IlpReject::new(
             code,
             message,
             triggered_by,
             data,
-        })
+        ))
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
@@ -205,7 +257,7 @@ impl Serializable<IlpReject> for IlpReject {
         bytes.write(&code)?;
         bytes.write_var_octet_string(&self.triggered_by.as_bytes())?;
         bytes.write_var_octet_string(&self.message.as_bytes())?;
-        bytes.write_var_octet_string(&self.data)?;
+        bytes.write_var_octet_string(&self.data[..])?;
         serialize_envelope(PacketType::IlpReject, &bytes)
     }
 }
@@ -235,8 +287,8 @@ mod tests {
                 amount: 107,
                 destination: "example.alice".to_string(),
                 expires_at: *EXPIRES_AT,
-                execution_condition: *EXECUTION_CONDITION,
-                data: DATA.to_vec(),
+                execution_condition: Bytes::from(&EXECUTION_CONDITION[..]),
+                data: Bytes::from(DATA.to_vec()),
             };
             // TODO find a better way of loading test fixtures
             static ref PREPARE_1_SERIALIZED: Vec<u8> = hex::decode("0c82014b000000000000006b3230313830363037323034383432343833117b434f1a54e9044f4f54923b2cff9e4a6d420ae281d5025d7bb040c4b4c04a0d6578616d706c652e616c6963658201016c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
@@ -267,10 +319,10 @@ mod tests {
                 buf
             };
 
-            static ref FULFILL_1: IlpFulfill = IlpFulfill {
-                fulfillment: *FULFILLMENT,
-                data: DATA.to_vec(),
-            };
+            static ref FULFILL_1: IlpFulfill = IlpFulfill::new(
+                &FULFILLMENT[..],
+                DATA.to_vec(),
+            );
             static ref FULFILL_1_SERIALIZED: Vec<u8> = hex::decode("0d820124117b434f1a54e9044f4f54923b2cff9e4a6d420ae281d5025d7bb040c4b4c04a8201016c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
         }
 
@@ -293,12 +345,12 @@ mod tests {
         use super::*;
 
         lazy_static! {
-            static ref REJECT_1: IlpReject = IlpReject {
-                code: "F99".to_string(),
-                triggered_by: "example.connector".to_string(),
-                message: "Some error".to_string(),
-                data: DATA.to_vec()
-            };
+            static ref REJECT_1: IlpReject = IlpReject::new(
+                "F99",
+                "Some error",
+                "example.connector",
+                DATA.to_vec(),
+            );
 
             static ref REJECT_1_SERIALIZED: Vec<u8> = hex::decode("0e820124463939116578616d706c652e636f6e6e6563746f720a536f6d65206572726f728201016c99f6a969473028ef46e09b471581c915b6d5496329c1e3a1c2748d7422a7bdcc798e286cabe3197cccfc213e930b8dba57c7abdf2d1f3b2511689de4f0eff441f53da0feffd23249a355b26c3bd0256d5122e7ccdf159fd6cb083dd73cb29397967871becd04890492119c5e3e6b024be35de26466f60c16d90a21054fb13800120cfb85b0df76e50aacd68526fd043026d3d02010c671987a1f6501b5085f0d7d5897624be5862f98c01df65792970181a87d0f3c586a0ca6bd89dc372c45eef5b38a6307b16f1d7d31e8d92e5982c9dd2986eaad581f212d43da9c5cb7b948fc18914be90219709d0c26d3b5f4ad879d8494bb3aebfe612ec54041e4a380f0").unwrap();
         }
