@@ -1,7 +1,6 @@
-use super::super::super::ilp::{IlpPacket, Serializable};
 use super::packet::{BtpMessage, BtpPacket, BtpResponse, ContentType, ProtocolData};
 use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
-use std::error::Error as StdError;
+use ilp::{IlpPacket, Serializable};
 
 pub struct IlpPacketStream<S> {
   inner: S,

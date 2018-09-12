@@ -63,22 +63,6 @@ impl Serializable<BtpPacket> for BtpPacket {
   }
 }
 
-
-fn serialize_envelope(packet_type: PacketType, request_id: u32, contents: &[u8]) -> Result<Vec<u8>, ParseError> {
-  let mut packet = Vec::new();
-  packet.write_u8(packet_type as u8)?;
-  packet.write_u32::<BigEndian>(request_id)?;
-  packet.write_var_octet_string(contents)?;
-  Ok(packet)
-}
-
-fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, Vec<u8>), ParseError> {
-  let mut reader = Cursor::new(bytes);
-  let packet_type = PacketType::from(reader.read_u8()?);
-  let contents = reader.read_var_octet_string()?;
-  Ok((packet_type, contents))
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum ContentType {
   ApplicationOctetStream = 0,

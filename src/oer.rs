@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt::Debug;
-use std::io::{self, Cursor, Read, Result, Write, Error, ErrorKind};
+use std::io::{self, Read, Result, Write};
 use num_bigint::BigUint;
 use bytes::{Buf, BufMut, Bytes, IntoBuf};
 
@@ -160,6 +160,7 @@ mod writer_ext {
 #[cfg(test)]
 mod reader_ext {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn it_reads_var_octet_strings() {
