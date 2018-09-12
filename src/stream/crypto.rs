@@ -8,11 +8,22 @@ const AUTH_TAG_LENGTH: usize = 16;
 
 lazy_static! {
   static ref ENCRYPTION_KEY_STRING: &'static [u8] = "ilp_stream_encryption".as_bytes();
+  static ref FULFILLMENT_GENERATION_STRING: &'static [u8] = "ilp_stream_fulfillment".as_bytes();
 }
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
   let key = hmac::SigningKey::new(&digest::SHA256, key);
   let output = hmac::sign(&key, message);
+  Bytes::from(output.as_ref())
+}
+
+pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> Bytes {
+  let key = hmac_sha256(shared_secret, &FULFILLMENT_GENERATION_STRING);
+  hmac_sha256(&key[..], &data)
+}
+
+pub fn fulfillment_to_condition(fulfillment: &[u8]) -> Bytes {
+  let output = digest::digest(&digest::SHA256, fulfillment);
   Bytes::from(output.as_ref())
 }
 
@@ -76,6 +87,23 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> BytesMut {
     }).len();
   ciphertext.truncate(length);
   ciphertext
+}
+
+#[cfg(test)]
+mod fulfillment_and_condition {
+  use super::*;
+
+  lazy_static! {
+    static ref SHARED_SECRET: Vec<u8> = vec![126,219,117,93,118,248,249,211,20,211,65,110,237,80,253,179,81,146,229,67,231,49,92,127,254,230,144,102,103,166,150,36];
+    static ref DATA: Vec<u8> = vec![119,248,213,234,63,200,224,140,212,222,105,159,246,203,66,155,151,172,68,24,76,232,90,10,237,146,189,73,248,196,177,108,115,223];
+    static ref FULFILLMENT: Vec<u8> = vec![24,6,56,73,229,236,88,227,82,112,152,49,152,73,182,183,198,7,233,124,119,65,13,68,54,108,120,193,59,226,107,39];
+  }
+
+  #[test]
+  fn it_generates_the_same_fulfillment_as_javascript() {
+    let fulfillment = generate_fulfillment(&SHARED_SECRET, &DATA);
+    assert_eq!(fulfillment.to_vec(), *FULFILLMENT);
+  }
 }
 
 #[cfg(test)]
