@@ -7,15 +7,8 @@ extern crate chrono;
 extern crate env_logger;
 
 use tokio::prelude::*;
-use ilp::btp_packet_stream::{connect_async, BtpPacketStream};
-use bytes::Bytes;
-use futures::{Stream, Sink};
-use ilp::IlpOrBtpPacket;
-use ilp::ilp_packet_stream::IlpPacketStream;
-use ilp::ilp_packet::{IlpPacket, IlpPrepare, IlpFulfill, IlpReject};
-use ilp::ilp_fulfillment_checker::IlpFulfillmentChecker;
-use ilp::btp_request_id_checker::BtpRequestIdCheckerStream;
-use chrono::{DateTime, Utc, Duration};
+use ilp::plugin::btp::{connect_async, ClientPlugin};
+use ilp::ilp::{IlpPacket, IlpFulfill};
 use std::sync::{Arc,Mutex};
 
 fn main() {
@@ -25,10 +18,7 @@ fn main() {
   // let condition: [u8; 32] = [121,203,69,48,239,26,252,52,244,82,21,241,100,236,118,173,180,61,29,142,220,139,58,106,218,127,56,181,145,93,3,244];
 
   let future = connect_async("ws://bob:bob@localhost:7768")
-  .and_then(|stream| {
-    Ok(IlpFulfillmentChecker::new(IlpPacketStream::new(BtpRequestIdCheckerStream::new(stream))))
-  })
-  .and_then(move |plugin| {
+  .and_then(move |plugin: ClientPlugin| {
     println!("Conected receiver");
 
     let (sink, stream) = plugin.split();
@@ -37,9 +27,9 @@ fn main() {
     stream.for_each(move |packet| {
       println!("Receiver got packet: {:?}", packet.clone());
 
-      if let IlpOrBtpPacket::Ilp(request_id, IlpPacket::Prepare(_prepare)) = packet {
+      if let (request_id, IlpPacket::Prepare(_prepare)) = packet {
         let mut sink = sink.lock().unwrap();
-        let fulfill = IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(IlpFulfill::new(
+        let fulfill = (request_id, IlpPacket::Fulfill(IlpFulfill::new(
           fulfillment[..].to_vec(),
           &vec![] as &[u8],
         )));

@@ -7,16 +7,10 @@ extern crate chrono;
 extern crate env_logger;
 
 use tokio::prelude::*;
-use ilp::btp_packet_stream::{connect_async, BtpPacketStream};
+use ilp::plugin::btp::{connect_async, ClientPlugin};
+use ilp::ilp::{IlpPacket, IlpPrepare};
+use chrono::{Utc, Duration};
 use bytes::Bytes;
-use futures::{Stream, Sink};
-use ilp::IlpOrBtpPacket;
-use ilp::ilp_packet_stream::IlpPacketStream;
-use ilp::ilp_packet::{IlpPacket, IlpPrepare, IlpFulfill, IlpReject};
-use ilp::ilp_fulfillment_checker::IlpFulfillmentChecker;
-use ilp::btp_request_id_checker::BtpRequestIdCheckerStream;
-use chrono::{DateTime, Utc, Duration};
-use std::sync::{Arc,Mutex};
 
 fn main() {
   env_logger::init();
@@ -28,17 +22,12 @@ fn main() {
   ];
 
   let future = connect_async("ws://alice:alice@localhost:7768")
-    .and_then(|stream| {
-      Ok(IlpFulfillmentChecker::new(IlpPacketStream::new(
-        BtpRequestIdCheckerStream::new(stream),
-      )))
-    })
-    .and_then(move |plugin| {
+    .and_then(move |plugin: ClientPlugin| {
       println!("Conected sender");
 
       let (sink, stream) = plugin.split();
 
-      let prepare = IlpOrBtpPacket::Ilp(
+      let prepare = (
         99,
         IlpPacket::Prepare(IlpPrepare::new(
           String::from("private.moneyd.local.bob"),

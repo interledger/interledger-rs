@@ -1,15 +1,20 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chrono::{DateTime, Utc, TimeZone};
-use errors::ParseError;
+use super::errors::ParseError;
 use oer::{ReadOerExt, WriteOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
 use num_bigint::BigUint;
 use std::ops::Add;
-pub use util::Serializable;
 
 static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
+
+pub trait Serializable<T> {
+    fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
+
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
+}
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]

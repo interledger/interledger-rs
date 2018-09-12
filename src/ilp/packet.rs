@@ -1,17 +1,22 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chrono::{DateTime, Utc, TimeZone};
-use errors::ParseError;
+use super::errors::ParseError;
 use oer::{ReadOerExt, WriteOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
 use bytes::{Bytes, BytesMut};
-pub use util::Serializable;
 
 // TODO zero-copy (de)serialization
 
 // Note this format includes a dot before the milliseconds so we need to remove that before using the output
 static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
+
+pub trait Serializable<T> {
+    fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
+
+    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
+}
 
 #[derive(Debug, PartialEq)]
 #[repr(u8)]

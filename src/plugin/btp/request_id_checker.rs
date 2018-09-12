@@ -1,4 +1,4 @@
-use btp_packet::{BtpMessage, BtpPacket, BtpResponse, ProtocolData};
+use super::{BtpMessage, BtpPacket, BtpResponse, ProtocolData};
 use futures::{Stream, Sink, Async, StartSend, Poll};
 use std::collections::HashSet;
 

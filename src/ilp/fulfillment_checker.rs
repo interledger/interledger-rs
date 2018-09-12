@@ -1,7 +1,6 @@
 use std::error::{Error as StdError};
 use futures::{Stream, Sink, Async, AsyncSink, StartSend, Poll};
-use ilp_packet::{IlpPacket, Serializable};
-use util::IlpOrBtpPacket;
+use super::{IlpPacket, Serializable};
 use std::collections::HashMap;
 use ring::digest::{digest, SHA256};
 use chrono::{DateTime, Utc};
@@ -13,7 +12,7 @@ pub struct IlpFulfillmentChecker<S> {
 
 impl<S> IlpFulfillmentChecker<S>
 where
-  S: Stream<Item = IlpOrBtpPacket, Error = ()> + Sink<SinkItem = IlpOrBtpPacket, SinkError = ()>,
+  S: Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
   pub fn new(stream: S) -> Self {
     IlpFulfillmentChecker {
@@ -25,15 +24,15 @@ where
 
 impl<S> Stream for IlpFulfillmentChecker<S>
 where
-  S: Stream<Item = IlpOrBtpPacket, Error = ()> + Sink<SinkItem = IlpOrBtpPacket, SinkError = ()>,
+  S: Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
-  type Item = IlpOrBtpPacket;
+  type Item = (u32, IlpPacket);
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     let item = try_ready!(self.inner.poll());
     match item {
-      Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill))) => {
+      Some((request_id, IlpPacket::Fulfill(fulfill))) => {
         if let Some((condition, expires_at)) = self.packets.remove(&request_id) {
           if !fulfillment_matches_condition(&fulfill.fulfillment, condition.as_ref()) {
             warn!("Got invalid Fulfill with request id {}: {:?} (invalid fulfillment. original condition: {:x?})", request_id, fulfill, condition);
@@ -47,7 +46,7 @@ where
             Ok(Async::NotReady)
           } else {
             debug!("Got valid Fulfill matching prepare with request id: {}: {:?}", request_id, fulfill);
-            Ok(Async::Ready(Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill)))))
+            Ok(Async::Ready(Some((request_id, IlpPacket::Fulfill(fulfill)))))
           }
         } else {
           // We never saw the Prepare that corresponds to this
@@ -55,9 +54,7 @@ where
           Ok(Async::NotReady)
         }
       },
-      Some(item) => {
-        Ok(Async::Ready(Some(item)))
-      },
+      Some(item) => Ok(Async::Ready(Some(item))),
       None => {
         Ok(Async::Ready(None))
       }
@@ -67,18 +64,16 @@ where
 
 impl<S> Sink for IlpFulfillmentChecker<S>
 where
-  S: Sink<SinkItem = IlpOrBtpPacket, SinkError = ()>,
+  S: Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
-  type SinkItem = IlpOrBtpPacket;
+  type SinkItem = (u32, IlpPacket);
   type SinkError = ();
 
   fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-    if let IlpOrBtpPacket::Ilp(request_id, ilp) = &item {
-      if let IlpPacket::Prepare(prepare) = &ilp {
-        self
-          .packets
-          .insert(*request_id, (prepare.execution_condition.to_vec(), prepare.expires_at.clone()));
-      }
+    if let (request_id, IlpPacket::Prepare(prepare)) = &item {
+      self
+        .packets
+        .insert(*request_id, (prepare.execution_condition.to_vec(), prepare.expires_at.clone()));
     }
 
     self.inner.start_send(item)
