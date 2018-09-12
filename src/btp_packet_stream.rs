@@ -3,7 +3,7 @@ use btp_packet::{
   deserialize_packet, BtpMessage, BtpPacket, BtpResponse, ProtocolData, Serializable,
 };
 use bytes::{Bytes, BytesMut};
-use futures::sink::Sink;
+use futures::Sink;
 use futures::stream::{SplitSink, SplitStream, Stream};
 use futures::{Async, AsyncSink, Future, Poll, StartSend};
 use std::error::Error as StdError;
@@ -11,6 +11,9 @@ use tokio_tcp::TcpStream;
 use tokio_tungstenite::{connect_async as connect_websocket, MaybeTlsStream, WebSocketStream};
 use tungstenite::{Error as WebSocketError, Message as WebSocketMessage};
 use url::{ParseError, Url};
+use futures::future::{ok, done};
+
+pub type BtpStream = BtpPacketStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 pub struct BtpPacketStream<S> {
   inner: S,
@@ -26,9 +29,19 @@ where
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<BtpPacket>, Self::Error> {
-    if let Some(serialized) = try_ready!(self.inner.poll().map_err(|e| {})) {
-      let packet = deserialize_packet(&serialized.into()).unwrap();
-      Ok(Async::Ready(Some(packet)))
+    let poll_result = self.inner.poll().map_err(|err| {
+      error!("Error polling: {:?}", err)
+    });
+    if let Some(serialized) = try_ready!(poll_result) {
+      let serialized_vec: Vec<u8> = serialized.into();
+      trace!("Got packet: {:?}", &serialized_vec);
+      if let Ok(packet) = deserialize_packet(&serialized_vec) {
+      trace!("Parsed BTP packet: {:?}", packet.clone());
+        Ok(Async::Ready(Some(packet)))
+      } else {
+        warn!("Ignoring unknown BTP packet {:x?}", &serialized_vec);
+        Ok(Async::NotReady)
+      }
     } else {
       Ok(Async::Ready(None))
     }
@@ -45,6 +58,7 @@ where
   type SinkError = ();
 
   fn start_send(&mut self, item: BtpPacket) -> StartSend<Self::SinkItem, Self::SinkError> {
+    trace!("Sending BTP packet: {:?}", item.clone());
     let serialized = item.to_bytes().unwrap();
     self
       .inner
@@ -65,11 +79,7 @@ where
   }
 }
 
-pub fn connect_async(
-  server: &str,
-) -> Box<
-  Future<Item = BtpPacketStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, Error = ()> + 'static + Send,
-> {
+pub fn connect_async(server: &str) -> impl Future<Item = BtpStream, Error = ()> + 'static + Send {
   let server = Url::parse(server).unwrap();
   let auth_packet = BtpPacket::Message(BtpMessage {
     request_id: 0,
@@ -91,19 +101,29 @@ pub fn connect_async(
       },
     ],
   });
-  let future = connect_websocket(server.clone())
-    .and_then(|(ws, _)| {
-      // println!("Connected to ${}", &server);
-      Ok(BtpPacketStream { inner: ws })
+  let mut server_without_auth = server.clone();
+  server_without_auth.set_username("").unwrap();
+  server_without_auth.set_password(None).unwrap();
+  debug!("Connecting WebSocket: {}", &server_without_auth);
+  connect_websocket(server.clone())
+    .map_err(|err| {
+      error!("Error connecting to websocket: {:?}", err);
     })
-    .map_err(|e| {
-      println!("Error connecting: {}", e);
-    })
+    .and_then(|(ws, _handshake)| Ok(BtpPacketStream { inner: ws }))
     .and_then(move |plugin| {
-      plugin.send(auth_packet)
+      plugin
+        .send(auth_packet)
+        .map_err(|err| {
+          error!("Error sending auth packet: {:?}", err);
+        })
+        .and_then(move |plugin| {
+          plugin
+            .into_future()
+            .and_then(move |(_auth_response, plugin)| {
+              info!("Connected to server: {}", server_without_auth);
+              Ok(plugin)
+            })
+            .map_err(|(err, _plugin)| error!("Error getting auth response: {:?}", err))
+        })
     })
-    .map_err(|e| {
-      println!("Error sending auth message");
-    });
-  Box::new(future)
 }

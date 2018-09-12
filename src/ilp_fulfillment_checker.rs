@@ -34,16 +34,24 @@ where
     let item = try_ready!(self.inner.poll());
     match item {
       Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill))) => {
-        if let Some((condition, expires_at)) = self.packets.get(&request_id) {
-          if fulfillment_matches_condition(&fulfill.fulfillment, condition)
-            && expires_at >= &Utc::now() {
-            Ok(Async::Ready(Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill)))))
-          } else {
-            // Fulfillment doesn't match or is expired
+        if let Some((condition, expires_at)) = self.packets.remove(&request_id) {
+          if !fulfillment_matches_condition(&fulfill.fulfillment, condition.as_ref()) {
+            warn!("Got invalid Fulfill with request id {}: {:?} (invalid fulfillment. original condition: {:x?})", request_id, fulfill, condition);
+            // TODO do this without removing / reinserting each time
+            self.packets.insert(request_id, (condition, expires_at));
             Ok(Async::NotReady)
+          } else if &expires_at < &Utc::now() {
+            warn!("Got invalid Fulfill with request id {}: {:?} (already expired)", request_id, fulfill);
+            // TODO do this without removing / reinserting each time
+            self.packets.insert(request_id, (condition, expires_at));
+            Ok(Async::NotReady)
+          } else {
+            debug!("Got valid Fulfill matching prepare with request id: {}: {:?}", request_id, fulfill);
+            Ok(Async::Ready(Some(IlpOrBtpPacket::Ilp(request_id, IlpPacket::Fulfill(fulfill)))))
           }
         } else {
           // We never saw the Prepare that corresponds to this
+          warn!("Got Fulfill for unknown request id {}: {:?}", request_id, fulfill);
           Ok(Async::NotReady)
         }
       },

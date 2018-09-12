@@ -15,6 +15,8 @@ extern crate tungstenite;
 extern crate url;
 extern crate bytes;
 extern crate ring;
+#[macro_use]
+extern crate log;
 
 pub mod errors;
 pub mod oer;
