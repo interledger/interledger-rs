@@ -41,7 +41,7 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
 // Add this trait to all Readable things when this is used
 impl<R: io::Read + ?Sized + Debug> ReadOerExt for R {}
 
-pub trait WriteOerExt: Write + WriteBytesExt {
+pub trait WriteOerExt: Write + WriteBytesExt + Debug {
     #[inline]
     fn write_var_octet_string(&mut self, string: &[u8]) -> Result<()> {
         let length = string.len();
@@ -67,7 +67,7 @@ pub trait WriteOerExt: Write + WriteBytesExt {
 }
 
 // Add this trait to all Writable things when this is used
-impl<W: io::Write + ?Sized> WriteOerExt for W {}
+impl<W: io::Write + ?Sized + Debug> WriteOerExt for W {}
 
 pub trait BufOerExt: Buf + Sized {
     #[inline]

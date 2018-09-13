@@ -18,9 +18,9 @@ pub trait Serializable<T> {
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
-enum PacketType {
+pub enum PacketType {
     IlpPrepare = 12,
     IlpFulfill = 13,
     IlpReject = 14,
