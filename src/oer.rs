@@ -60,7 +60,7 @@ pub trait WriteOerExt: Write + WriteBytesExt + Debug {
 
     #[inline]
     // Write a u64 as an OER VarUInt
-    fn write_var_uint(&mut self, uint: BigUint) -> Result<()> {
+    fn write_var_uint(&mut self, uint: &BigUint) -> Result<()> {
         self.write_var_octet_string(&uint.to_bytes_be())?;
         Ok(())
     }

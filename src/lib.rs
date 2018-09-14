@@ -16,6 +16,7 @@ extern crate tungstenite;
 extern crate url;
 #[macro_use]
 extern crate log;
+extern crate num_traits;
 
 pub mod ilp;
 pub mod oer;

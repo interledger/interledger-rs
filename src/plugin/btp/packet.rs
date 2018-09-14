@@ -16,7 +16,7 @@ pub trait Serializable<T> {
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 enum PacketType {
     Message = 6,
@@ -111,7 +111,8 @@ fn write_protocol_data(
   writer: &mut Vec<u8>,
   protocol_data: &[ProtocolData],
 ) -> Result<(), ParseError> {
-  writer.write_var_uint(BigUint::from(protocol_data.len()))?;
+  let length = BigUint::from(protocol_data.len());
+  writer.write_var_uint(&length)?;
   for entry in protocol_data {
     writer.write_var_octet_string(entry.protocol_name.as_bytes())?;
     writer.write_u8(entry.content_type.clone() as u8)?;
