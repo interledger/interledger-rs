@@ -1,47 +1,31 @@
 use super::crypto::{fulfillment_to_condition, generate_fulfillment};
 use super::StreamPacket;
 use bytes::Bytes;
-use futures::stream::Fuse;
 use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 use ilp::{IlpPacket, IlpReject};
 
-pub struct StreamPacketStream<T: Stream, U> {
+pub struct StreamPacketStream<S: Stream + Sink> {
   shared_secret: Bytes,
-  sink: Option<U>,
-  stream: Option<Fuse<T>>,
-  buffered: Option<T::Item>,
+  inner: S,
+  buffered: Option<S::SinkItem>,
 }
 
-impl<T, U> StreamPacketStream<T, U>
+impl<S> StreamPacketStream<S>
 where
-  T: Stream<Item = (u32, IlpPacket), Error = ()>,
-  U: Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
+  S:
+    Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
-  pub fn new(shared_secret: Bytes, stream: T, sink: U) -> Self {
+  pub fn new(shared_secret: Bytes, stream: S) -> Self {
     StreamPacketStream {
       shared_secret,
-      stream: Some(stream.fuse()),
-      sink: Some(sink),
+      inner: stream,
       buffered: None,
     }
   }
 
-  fn sink_mut(&mut self) -> Option<&mut U> {
-    self.sink.as_mut()
-  }
-
-  fn stream_mut(&mut self) -> Option<&mut T> {
-    self.stream.as_mut().map(|x| x.get_mut())
-  }
-
-  fn try_start_send(&mut self, item: T::Item) -> Poll<(), U::SinkError> {
+  fn try_start_send(&mut self, item: S::SinkItem) -> Poll<(), S::SinkError> {
     debug_assert!(self.buffered.is_none());
-    if let AsyncSink::NotReady(item) = self
-      .sink_mut()
-      .take()
-      .expect("Attempted to poll after completion")
-      .start_send(item)?
-    {
+    if let AsyncSink::NotReady(item) = self.inner.start_send(item)? {
       self.buffered = Some(item);
       return Ok(Async::NotReady);
     }
@@ -49,10 +33,10 @@ where
   }
 }
 
-impl<T, U> Stream for StreamPacketStream<T, U>
+impl<S> Stream for StreamPacketStream<S>
 where
-  T: Stream<Item = (u32, IlpPacket), Error = ()>,
-  U: Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
+  S:
+    Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
   type Item = (u32, IlpPacket, Option<StreamPacket>);
   type Error = ();
@@ -65,13 +49,7 @@ where
       return Ok(Async::NotReady);
     }
 
-    let next_item = try_ready!(
-      self
-        .stream_mut()
-        .take()
-        .expect("Attempted to poll after completion")
-        .poll()
-    );
+    let next_item = try_ready!(self.inner.poll());
 
     if next_item.is_none() {
       return Ok(Async::Ready(None));
@@ -169,10 +147,10 @@ where
   }
 }
 
-impl<T, U> Sink for StreamPacketStream<T, U>
+impl<S> Sink for StreamPacketStream<S>
 where
-  T: Stream<Item = (u32, IlpPacket), Error = ()>,
-  U: Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
+  S:
+    Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
   type SinkItem = (u32, IlpPacket, Option<StreamPacket>);
   type SinkError = ();
@@ -184,9 +162,7 @@ where
 
     // Replace the packet data with the encrypted STREAM packet
     let (packet, stream_packet) = if let Some(stream_packet) = stream_packet {
-      let encrypted = stream_packet
-        .to_encrypted(&self.shared_secret[..])
-        .unwrap();
+      let encrypted = stream_packet.to_encrypted(&self.shared_secret[..]).unwrap();
 
       match packet {
         IlpPacket::Prepare(mut packet) => {
@@ -213,9 +189,7 @@ where
     };
 
     self
-      .sink_mut()
-      .take()
-      .expect("Attempted to send after completion")
+      .inner
       .start_send((request_id, packet))
       .map(|result| match result {
         AsyncSink::Ready => AsyncSink::Ready,
@@ -226,10 +200,6 @@ where
   }
 
   fn poll_complete(&mut self) -> Result<Async<()>, Self::SinkError> {
-    self
-      .sink_mut()
-      .take()
-      .expect("Attempted to send after completion")
-      .poll_complete()
+    self.inner.poll_complete()
   }
 }
