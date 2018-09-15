@@ -711,5 +711,4 @@ mod serialization {
       *PACKET
     );
   }
-
 }

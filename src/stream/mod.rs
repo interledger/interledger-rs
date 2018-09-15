@@ -1,7 +1,7 @@
 mod crypto;
 mod packet;
 mod errors;
-// mod packet_stream;
+mod packet_stream;
 
-pub use self::packet::*;
-// pub use packet_stream::StreamPacketStream;
+use self::packet::*;
+use self::packet_stream::StreamPacketStream;

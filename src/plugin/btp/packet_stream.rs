@@ -67,13 +67,13 @@ where
         AsyncSink::NotReady(_) => AsyncSink::NotReady(item),
       })
       .map_err(|err| {
-        println!("Error sending {}", err);
+        error!("Error sending BTP packet: {}", err);
       })
   }
 
   fn poll_complete(&mut self) -> Result<Async<()>, Self::SinkError> {
     self.inner.poll_complete().map_err(|e| {
-      println!("Polling error {}", e);
+      error!("Polling error {}", e);
     })
   }
 }
