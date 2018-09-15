@@ -1,5 +1,4 @@
 use bytes::{Bytes, BytesMut};
-use oer::{BufOerExt, MutBufOerExt};
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
 
@@ -27,7 +26,7 @@ pub fn fulfillment_to_condition(fulfillment: &[u8]) -> Bytes {
   Bytes::from(output.as_ref())
 }
 
-pub fn encrypt(shared_secret: &[u8], mut plaintext: BytesMut) -> BytesMut {
+pub fn encrypt(shared_secret: &[u8], plaintext: BytesMut) -> BytesMut {
   // Generate a random nonce or IV
   let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
   SystemRandom::new().fill(&mut nonce[..]).unwrap();

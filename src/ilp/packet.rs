@@ -5,7 +5,7 @@ use oer::{ReadOerExt, WriteOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 
 // TODO zero-copy (de)serialization
 

@@ -1,7 +1,7 @@
 use super::crypto::{decrypt, encrypt};
 use super::errors::ParseError;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use ilp::PacketType as IlpPacketType;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;

@@ -26,17 +26,17 @@ where
     if let Some(packet) = try_ready!(self.inner.poll()) {
       if let BtpPacket::Message(packet) = &packet {
         if packet.protocol_data.len() > 0 && packet.protocol_data[0].protocol_name == "ilp" {
-          let parsed_ilp_packet =
-            IlpPacket::from_bytes(&packet.protocol_data[0].data).map_err(|e| {})?;
-          trace!("Got ILP packet: {:?}", parsed_ilp_packet);
-          return Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))));
+          if let Ok(parsed_ilp_packet) = IlpPacket::from_bytes(&packet.protocol_data[0].data) {
+            trace!("Got ILP packet: {:?}", parsed_ilp_packet);
+            return Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))));
+          }
         }
       } else if let BtpPacket::Response(packet) = &packet {
         if packet.protocol_data.len() > 0 && packet.protocol_data[0].protocol_name == "ilp" {
-          let parsed_ilp_packet =
-            IlpPacket::from_bytes(&packet.protocol_data[0].data).map_err(|e| {})?;
-          trace!("Got ILP packet: {:?}", parsed_ilp_packet);
-          return Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))));
+          if let Ok(parsed_ilp_packet) = IlpPacket::from_bytes(&packet.protocol_data[0].data) {
+            trace!("Got ILP packet: {:?}", parsed_ilp_packet);
+            return Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))));
+          }
         }
       }
 

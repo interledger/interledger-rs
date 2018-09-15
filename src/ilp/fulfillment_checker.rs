@@ -1,6 +1,5 @@
-use std::error::{Error as StdError};
-use futures::{Stream, Sink, Async, AsyncSink, StartSend, Poll};
-use super::{IlpPacket, Serializable};
+use futures::{Stream, Sink, Async, StartSend, Poll};
+use super::IlpPacket;
 use std::collections::HashMap;
 use ring::digest::{digest, SHA256};
 use chrono::{DateTime, Utc};

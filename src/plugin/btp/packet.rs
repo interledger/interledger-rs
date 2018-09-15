@@ -58,7 +58,7 @@ impl Serializable<BtpPacket> for BtpPacket {
       BtpPacket::Message(packet) => Ok(packet.to_bytes()?),
       BtpPacket::Response(packet) => Ok(packet.to_bytes()?),
       BtpPacket::Error(packet) => Ok(packet.to_bytes()?),
-      Unknown => Err(ParseError::InvalidPacket(String::from("Cannot serialize unknown packet type")))
+      BtpPacket::Unknown => Err(ParseError::InvalidPacket(String::from("Cannot serialize unknown packet type")))
     }
   }
 }
@@ -129,8 +129,10 @@ pub struct BtpMessage {
 impl Serializable<BtpMessage> for BtpMessage {
   fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, ParseError> {
     let mut reader = Cursor::new(bytes);
-    let packet_type = PacketType::from(reader.read_u8()?);
-    // TODO check this is the Message type
+    let packet_type = reader.read_u8()?;
+    if PacketType::from(packet_type) != PacketType::Message {
+      return Err(ParseError::InvalidPacket(format!("Cannot parse Message from packet of type {}, expected type {}", packet_type, PacketType::Message as u8)));
+    }
     let request_id = reader.read_u32::<BigEndian>()?;
     let mut contents = Cursor::new(reader.read_var_octet_string()?);
     let protocol_data = read_protocol_data(&mut contents)?;
@@ -156,8 +158,10 @@ pub struct BtpResponse {
 impl Serializable<BtpResponse> for BtpResponse {
   fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, ParseError> {
     let mut reader = Cursor::new(bytes);
-    let packet_type = PacketType::from(reader.read_u8()?);
-    // TODO check this is the Response type
+    let packet_type = reader.read_u8()?;
+    if PacketType::from(packet_type) != PacketType::Response {
+      return Err(ParseError::InvalidPacket(format!("Cannot parse Response from packet of type {}, expected type {}", packet_type, PacketType::Response as u8)));
+    }
     let request_id = reader.read_u32::<BigEndian>()?;
     let mut contents = Cursor::new(reader.read_var_octet_string()?);
     let protocol_data = read_protocol_data(&mut contents)?;
@@ -187,8 +191,10 @@ pub struct BtpError {
 impl Serializable<BtpError> for BtpError {
   fn from_bytes(bytes: &[u8]) -> Result<BtpError, ParseError> {
     let mut reader = Cursor::new(bytes);
-    let packet_type = PacketType::from(reader.read_u8()?);
-    // TODO check this is the Response type
+    let packet_type = reader.read_u8()?;
+    if PacketType::from(packet_type) != PacketType::Response {
+      return Err(ParseError::InvalidPacket(format!("Cannot parse Response from packet of type {}, expected type {}", packet_type, PacketType::Response as u8)));
+    }
     let request_id = reader.read_u32::<BigEndian>()?;
     let mut contents = Cursor::new(reader.read_var_octet_string()?);
     let mut code: [u8; 3] = [0; 3];
