@@ -1,5 +1,5 @@
 use super::crypto::{decrypt, encrypt};
-use super::errors::ParseError;
+use errors::ParseError;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use ilp::PacketType as IlpPacketType;

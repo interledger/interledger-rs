@@ -2,9 +2,8 @@ mod packet;
 mod packet_stream;
 mod request_id_checker;
 mod ilp_packet_stream;
-mod errors;
 
-pub use self::errors::ParseError;
+pub use errors::ParseError;
 pub use self::ilp_packet_stream::IlpPacketStream;
 pub use self::packet::{
   deserialize_packet, BtpError, BtpMessage, BtpPacket, BtpResponse, ContentType, ProtocolData,

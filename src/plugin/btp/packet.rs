@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chrono::{DateTime, Utc, TimeZone};
-use super::errors::ParseError;
+use errors::ParseError;
 use oer::{ReadOerExt, WriteOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;

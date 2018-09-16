@@ -1,1 +1,12 @@
+use futures::{Stream, Sink};
+use ilp::IlpPacket;
+
 pub mod btp;
+
+pub type IlpRequest = (u32, IlpPacket);
+pub type PluginStream = Stream<Item = IlpRequest, Error = ()>;
+pub type PluginSink = Sink<SinkItem = IlpRequest, SinkError = ()>;
+pub trait Plugin:
+  Stream<Item = IlpRequest, Error = ()> + Sink<SinkItem = IlpRequest, SinkError = ()>
+{
+}
