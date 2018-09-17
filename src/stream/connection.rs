@@ -24,9 +24,8 @@ struct DataMoneyStreamInternal {
 }
 
 // TODO can we hardcode the type of S to be a Plugin?
-pub struct Connection<S> {
-  plugin: S,
-  shared_secret: Bytes,
+pub struct Connection<S: Stream + Sink> {
+  plugin: StreamPacketStream<S>,
   source_account: String,
   destination_account: String,
   streams: Arc<Mutex<HashMap<u64, DataMoneyStreamInternal>>>,
@@ -38,19 +37,22 @@ where
   S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + Sized,
 {
   pub fn new(
-    plugin: S,
+    plugin: StreamPacketStream<S>,
     source_account: String,
     destination_account: String,
-    shared_secret: Bytes,
+    is_server: bool,
   ) -> Self
   {
+    let next_stream_id = match is_server {
+      true => 2,
+      false => 1,
+    };
     Connection {
       plugin,
       source_account,
       destination_account,
-      shared_secret,
       streams: Arc::new(Mutex::new(HashMap::new())),
-      next_stream_id: 1,
+      next_stream_id,
     }
   }
 

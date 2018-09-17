@@ -29,11 +29,12 @@ where
     .and_then(move |(config, plugin)| {
       let client_address: String = config.client_address;
       let conn = Connection::new(
-        plugin,
+        StreamPacketStream::new(Bytes::from(shared_secret), plugin),
         client_address,
         String::from(destination_account),
-        Bytes::from(shared_secret),
+        false,
       );
+      debug!("Created connection");
       Ok(conn)
     })
 }
