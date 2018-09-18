@@ -1,4 +1,6 @@
 use futures::{Stream, Sink};
+use futures::sync::mpsc::{unbounded, UnboundedSender, UnboundedReceiver};
+use std::sync::{Arc, Mutex};
 use ilp::IlpPacket;
 
 pub mod btp;
@@ -7,6 +9,6 @@ pub type IlpRequest = (u32, IlpPacket);
 pub type PluginStream = Stream<Item = IlpRequest, Error = ()>;
 pub type PluginSink = Sink<SinkItem = IlpRequest, SinkError = ()>;
 pub trait Plugin:
-  Stream<Item = IlpRequest, Error = ()> + Sink<SinkItem = IlpRequest, SinkError = ()>
+  Stream<Item = IlpRequest, Error = ()> + Sink<SinkItem = IlpRequest, SinkError = ()> + Sized + Send + Sync
 {
 }

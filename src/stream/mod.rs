@@ -11,12 +11,15 @@ use bytes::Bytes;
 use futures::Future;
 use ildcp;
 use plugin::{IlpRequest, Plugin};
+use ilp::IlpPacket;
+
+pub type StreamRequest = (u32, IlpPacket, Option<StreamPacket>);
 
 pub fn connect_async<S, T, U>(
   plugin: S,
   destination_account: T,
   shared_secret: U,
-) -> impl Future<Item = Connection<impl Plugin>, Error = ()>
+) -> impl Future<Item = Connection, Error = ()>
 where
   S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()>,
   String: From<T>,

@@ -1,6 +1,9 @@
-use super::{StreamPacketStream};
-use futures::{Stream, Sink};
-use futures::sync::mpsc::{unbounded, SendError};
+use super::{StreamPacketStream, StreamRequest};
+use super::packet::*;
+use futures::{Future, Stream, Sink};
+use futures::sync::mpsc::{unbounded, SendError, UnboundedSender, UnboundedReceiver};
+use futures::future::ok;
+use tokio::spawn;
 use ilp::{IlpPacket, IlpPrepare, IlpFulfill};
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -9,51 +12,74 @@ use plugin::{Plugin, IlpRequest};
 
 pub struct DataMoneyStream {
   pub id: u64,
-  incoming_data: Arc<Mutex<Stream<Item = Bytes, Error = ()>>>,
-  outgoing_data: Arc<Mutex<Sink<SinkItem = Bytes, SinkError = SendError<Bytes>>>>,
-  incoming_money: Arc<Mutex<Stream<Item = u64, Error = ()>>>,
-  outgoing_money: Arc<Mutex<Sink<SinkItem = u64, SinkError = SendError<u64>>>>,
+  incoming_data: UnboundedReceiver<Bytes>,
+  outgoing_data: UnboundedSender<Bytes>,
+  incoming_money: UnboundedReceiver<u64>,
+  outgoing_money: UnboundedSender<u64>,
 }
 
 // Used on the connection side
 struct DataMoneyStreamInternal {
-  outgoing_data: Arc<Mutex<Stream<Item = Bytes, Error = ()>>>,
-  incoming_data: Arc<Mutex<Sink<SinkItem = Bytes, SinkError = SendError<Bytes>>>>,
-  outgoing_money: Arc<Mutex<Stream<Item = u64, Error = ()>>>,
-  incoming_money: Arc<Mutex<Sink<SinkItem = u64, SinkError = SendError<u64>>>>,
+  // These are named the same as for the DataMoneyStream but they are the opposite sides of the channels
+  outgoing_data: UnboundedReceiver<Bytes>,
+  incoming_data: UnboundedSender<Bytes>,
+  outgoing_money: UnboundedReceiver<u64>,
+  incoming_money: UnboundedSender<u64>,
 }
 
 // TODO can we hardcode the type of S to be a Plugin?
-pub struct Connection<S: Stream + Sink> {
-  plugin: StreamPacketStream<S>,
+pub struct Connection {
+  plugin_sender: UnboundedSender<StreamRequest>,
   source_account: String,
   destination_account: String,
   streams: Arc<Mutex<HashMap<u64, DataMoneyStreamInternal>>>,
   next_stream_id: u64,
 }
 
-impl<S> Connection<S>
-where
-  S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + Sized,
-{
-  pub fn new(
+impl Connection {
+  pub fn new<S>(
     plugin: StreamPacketStream<S>,
     source_account: String,
     destination_account: String,
     is_server: bool,
   ) -> Self
+  where
+    S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()>,
   {
     let next_stream_id = match is_server {
       true => 2,
       false => 1,
     };
-    Connection {
-      plugin,
+
+    let (sender, receiver) = unbounded::<StreamRequest>();
+    let plugin = Arc::new(plugin);
+
+    let forward_to_plugin = Arc::clone(&mut plugin)
+      .send_all(receiver)
+      .map(|_| ())
+      .map_err(|err| {
+        error!("Error forwarding request to plugin: {:?}", err);
+      });
+    spawn(forward_to_plugin);
+
+    let connection = Connection {
+      plugin_sender: sender,
       source_account,
       destination_account,
       streams: Arc::new(Mutex::new(HashMap::new())),
       next_stream_id,
-    }
+    };
+
+    let handle_packets = Arc::clone(&mut plugin)
+      .for_each(|(request_id, packet, stream_packet)| {
+        connection.handle_packet(request_id, packet, stream_packet)
+      }).map(|_| ())
+      .map_err(|err| {
+        error!("Error handling incoming packet: {:?}", err);
+      });
+    spawn(handle_packets);
+
+    connection
   }
 
   pub fn create_stream(&mut self) -> DataMoneyStream {
@@ -67,21 +93,27 @@ where
     let (send_outgoing_money, recv_outgoing_money) = unbounded::<u64>();
 
     let internal = DataMoneyStreamInternal {
-      incoming_data: Arc::new(Mutex::new(send_incoming_data)),
-      outgoing_data: Arc::new(Mutex::new(recv_outgoing_data)),
-      incoming_money: Arc::new(Mutex::new(send_incoming_money)),
-      outgoing_money: Arc::new(Mutex::new(recv_outgoing_money)),
+      incoming_data: send_incoming_data,
+      outgoing_data: recv_outgoing_data,
+      incoming_money: send_incoming_money,
+      outgoing_money: recv_outgoing_money,
     };
 
     self.streams.lock().unwrap().insert(id, internal);
 
     DataMoneyStream {
       id,
-      incoming_data: Arc::new(Mutex::new(recv_incoming_data)),
-      outgoing_data: Arc::new(Mutex::new(send_outgoing_data)),
-      incoming_money: Arc::new(Mutex::new(recv_incoming_money)),
-      outgoing_money: Arc::new(Mutex::new(send_outgoing_money)),
+      incoming_data: recv_incoming_data,
+      outgoing_data: send_outgoing_data,
+      incoming_money: recv_incoming_money,
+      outgoing_money: send_outgoing_money,
     }
+  }
+
+  fn handle_packet(&self, request_id: u32, packet: IlpPacket, stream_packet: Option<StreamPacket>) -> impl Future<Item = (), Error = ()> {
+    println!("STREAM got packet {:?} {:?}", packet, stream_packet);
+
+    ok(())
   }
 }
 

@@ -1,5 +1,5 @@
 use super::crypto::{fulfillment_to_condition, generate_fulfillment};
-use super::StreamPacket;
+use super::{StreamPacket, StreamRequest};
 use bytes::Bytes;
 use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 use ilp::{IlpPacket, IlpReject};
@@ -38,7 +38,7 @@ where
   S:
     Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
-  type Item = (u32, IlpPacket, Option<StreamPacket>);
+  type Item = StreamRequest;
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -152,7 +152,7 @@ where
   S:
     Stream<Item = (u32, IlpPacket), Error = ()> + Sink<SinkItem = (u32, IlpPacket), SinkError = ()>,
 {
-  type SinkItem = (u32, IlpPacket, Option<StreamPacket>);
+  type SinkItem = StreamRequest;
   type SinkError = ();
 
   fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
