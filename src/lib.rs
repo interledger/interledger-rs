@@ -18,6 +18,12 @@ extern crate url;
 #[macro_use]
 extern crate log;
 extern crate num_traits;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
+extern crate serde;
+extern crate reqwest;
+extern crate base64;
 
 pub mod ilp;
 pub mod oer;
@@ -25,3 +31,4 @@ pub mod plugin;
 pub mod stream;
 pub mod ildcp;
 pub mod errors;
+pub mod spsp;

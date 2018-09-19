@@ -13,11 +13,12 @@ pub use self::packet_stream::BtpPacketStream;
 pub use self::request_id_checker::BtpRequestIdCheckerStream;
 
 
-use super::super::ilp::{IlpPacket, IlpFulfillmentChecker};
+use ilp::{IlpPacket, IlpFulfillmentChecker};
 use futures::{Future, Stream, Sink, Poll, StartSend};
 use tokio_tcp::TcpStream;
 use tokio_tungstenite::{connect_async as connect_websocket, MaybeTlsStream, WebSocketStream};
 use url::Url;
+use super::Plugin;
 
 pub type BtpStream = BtpPacketStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 pub type IlpRequest = (u32, IlpPacket);
@@ -26,6 +27,11 @@ pub type IlpRequest = (u32, IlpPacket);
 
 pub struct ClientPlugin {
   inner: IlpFulfillmentChecker<IlpPacketStream<BtpRequestIdCheckerStream<BtpStream>>>
+}
+
+
+impl Plugin for ClientPlugin {
+
 }
 
 impl Stream for ClientPlugin {

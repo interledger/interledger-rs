@@ -26,16 +26,22 @@ pub fn fulfillment_to_condition(fulfillment: &[u8]) -> Bytes {
   Bytes::from(output.as_ref())
 }
 
-pub fn encrypt(shared_secret: &[u8], plaintext: BytesMut) -> BytesMut {
+pub fn random_condition() -> Bytes {
+  let mut condition_slice: [u8; 32] = [0; 32];
+  SystemRandom::new().fill(&mut condition_slice);
+  Bytes::from(&condition_slice[..])
+}
+
+pub fn encrypt(shared_secret: Bytes, plaintext: BytesMut) -> BytesMut {
   // Generate a random nonce or IV
   let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
   SystemRandom::new().fill(&mut nonce[..]).unwrap();
 
-  encrypt_with_nonce(shared_secret, plaintext, &nonce)
+  encrypt_with_nonce(shared_secret, plaintext, Bytes::from(&nonce[..]))
 }
 
-fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8]) -> BytesMut {
-  let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
+fn encrypt_with_nonce(shared_secret: Bytes, mut plaintext: BytesMut, nonce: Bytes) -> BytesMut {
+  let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
   let key = aead::SealingKey::new(&aead::AES_256_GCM, &key).unwrap();
 
   let additional_data: &[u8] = &vec![];
@@ -68,8 +74,8 @@ fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8
 }
 
 
-pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> BytesMut {
-  let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
+pub fn decrypt(shared_secret: Bytes, mut ciphertext: BytesMut) -> BytesMut {
+  let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
   let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key).unwrap();
 
   let nonce = ciphertext.split_to(NONCE_LENGTH);
@@ -118,20 +124,20 @@ mod encrypt_decrypt_test {
 
   #[test]
   fn it_encrypts_to_same_as_javascript() {
-    let encrypted = encrypt_with_nonce(&SHARED_SECRET, BytesMut::from(&PLAINTEXT[..]), &NONCE[..]);
+    let encrypted = encrypt_with_nonce(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&PLAINTEXT[..]), Bytes::from(&NONCE[..]));
     assert_eq!(encrypted.to_vec(), *CIPHERTEXT);
   }
 
   #[test]
   fn it_decrypts_javascript_ciphertext() {
-    let decrypted = decrypt(&SHARED_SECRET, BytesMut::from(&CIPHERTEXT[..]));
+    let decrypted = decrypt(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&CIPHERTEXT[..]));
     assert_eq!(decrypted.to_vec(), *PLAINTEXT);
   }
 
   #[test]
   fn it_losslessly_encrypts_and_decrypts() {
-    let ciphertext = encrypt(&SHARED_SECRET, BytesMut::from(&PLAINTEXT[..]));
-    let decrypted = decrypt(&SHARED_SECRET, ciphertext);
+    let ciphertext = encrypt(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&PLAINTEXT[..]));
+    let decrypted = decrypt(Bytes::from(&SHARED_SECRET[..]), ciphertext);
     assert_eq!(decrypted.to_vec(), *PLAINTEXT);
   }
 }

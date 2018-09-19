@@ -1,7 +1,7 @@
 use super::crypto::{decrypt, encrypt};
 use errors::ParseError;
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use ilp::PacketType as IlpPacketType;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -13,16 +13,16 @@ const STREAM_VERSION: u8 = 1;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamPacket {
-  sequence: u64,
-  ilp_packet_type: IlpPacketType,
-  prepare_amount: u64,
-  frames: Vec<Frame>,
+  pub sequence: u64,
+  pub ilp_packet_type: IlpPacketType,
+  pub prepare_amount: u64,
+  pub frames: Vec<Frame>,
 }
 
 impl StreamPacket {
-  pub fn from_encrypted(shared_secret: &[u8], ciphertext: &[u8]) -> Result<Self, ParseError> {
+  pub fn from_encrypted(shared_secret: Bytes, ciphertext: BytesMut) -> Result<Self, ParseError> {
     // TODO handle decryption failure
-    let decrypted = decrypt(shared_secret, BytesMut::from(ciphertext));
+    let decrypted = decrypt(shared_secret, ciphertext);
     StreamPacket::from_bytes_unencrypted(&decrypted[..])
   }
 
@@ -128,10 +128,10 @@ impl StreamPacket {
     })
   }
 
-  pub fn to_encrypted(&self, shared_secret: &[u8]) -> Result<Vec<u8>, ParseError> {
+  pub fn to_encrypted(&self, shared_secret: Bytes) -> Result<Bytes, ParseError> {
     let bytes = self.to_bytes_unencrypted()?;
     let ciphertext = encrypt(shared_secret, BytesMut::from(bytes)).to_vec();
-    Ok(ciphertext)
+    Ok(Bytes::from(ciphertext))
   }
 
   fn to_bytes_unencrypted(&self) -> Result<Vec<u8>, ParseError> {
@@ -309,8 +309,8 @@ pub trait SerializableFrame: Sized {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionCloseFrame {
-  code: ErrorCode,
-  message: String,
+  pub code: ErrorCode,
+  pub message: String,
 }
 
 impl SerializableFrame for ConnectionCloseFrame {
@@ -330,7 +330,7 @@ impl SerializableFrame for ConnectionCloseFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionNewAddressFrame {
-  source_account: String,
+  pub source_account: String,
 }
 
 impl SerializableFrame for ConnectionNewAddressFrame {
@@ -348,8 +348,8 @@ impl SerializableFrame for ConnectionNewAddressFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionAssetDetailsFrame {
-  source_asset_code: String,
-  source_asset_scale: u8,
+  pub source_asset_code: String,
+  pub source_asset_scale: u8,
 }
 
 impl SerializableFrame for ConnectionAssetDetailsFrame {
@@ -372,7 +372,7 @@ impl SerializableFrame for ConnectionAssetDetailsFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionMaxDataFrame {
-  max_offset: BigUint,
+  pub max_offset: BigUint,
 }
 
 impl SerializableFrame for ConnectionMaxDataFrame {
@@ -390,7 +390,7 @@ impl SerializableFrame for ConnectionMaxDataFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionDataBlockedFrame {
-  max_offset: BigUint,
+  pub max_offset: BigUint,
 }
 
 impl SerializableFrame for ConnectionDataBlockedFrame {
@@ -408,7 +408,7 @@ impl SerializableFrame for ConnectionDataBlockedFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionMaxStreamIdFrame {
-  max_stream_id: BigUint,
+  pub max_stream_id: BigUint,
 }
 
 impl SerializableFrame for ConnectionMaxStreamIdFrame {
@@ -426,7 +426,7 @@ impl SerializableFrame for ConnectionMaxStreamIdFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionStreamIdBlockedFrame {
-  max_stream_id: BigUint,
+  pub max_stream_id: BigUint,
 }
 
 impl SerializableFrame for ConnectionStreamIdBlockedFrame {
@@ -472,8 +472,8 @@ impl SerializableFrame for StreamCloseFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMoneyFrame {
-  stream_id: BigUint,
-  shares: BigUint,
+  pub stream_id: BigUint,
+  pub shares: BigUint,
 }
 
 impl SerializableFrame for StreamMoneyFrame {
@@ -493,9 +493,9 @@ impl SerializableFrame for StreamMoneyFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMaxMoneyFrame {
-  stream_id: BigUint,
-  receive_max: BigUint,
-  total_received: BigUint,
+  pub stream_id: BigUint,
+  pub receive_max: BigUint,
+  pub total_received: BigUint,
 }
 
 impl SerializableFrame for StreamMaxMoneyFrame {
@@ -521,9 +521,9 @@ impl SerializableFrame for StreamMaxMoneyFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMoneyBlockedFrame {
-  stream_id: BigUint,
-  send_max: BigUint,
-  total_sent: BigUint,
+  pub stream_id: BigUint,
+  pub send_max: BigUint,
+  pub total_sent: BigUint,
 }
 
 impl SerializableFrame for StreamMoneyBlockedFrame {
@@ -549,9 +549,9 @@ impl SerializableFrame for StreamMoneyBlockedFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamDataFrame {
-  stream_id: BigUint,
-  offset: BigUint,
-  data: Vec<u8>,
+  pub stream_id: BigUint,
+  pub offset: BigUint,
+  pub data: Vec<u8>,
 }
 
 impl SerializableFrame for StreamDataFrame {
@@ -577,8 +577,8 @@ impl SerializableFrame for StreamDataFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMaxDataFrame {
-  stream_id: BigUint,
-  max_offset: BigUint,
+  pub stream_id: BigUint,
+  pub max_offset: BigUint,
 }
 
 impl SerializableFrame for StreamMaxDataFrame {
@@ -601,8 +601,8 @@ impl SerializableFrame for StreamMaxDataFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamDataBlockedFrame {
-  stream_id: BigUint,
-  max_offset: BigUint,
+  pub stream_id: BigUint,
+  pub max_offset: BigUint,
 }
 
 impl SerializableFrame for StreamDataBlockedFrame {
