@@ -1,9 +1,8 @@
+mod ilp_packet_stream;
 mod packet;
 mod packet_stream;
 mod request_id_checker;
-mod ilp_packet_stream;
 
-pub use errors::ParseError;
 pub use self::ilp_packet_stream::IlpPacketStream;
 pub use self::packet::{
   deserialize_packet, BtpError, BtpMessage, BtpPacket, BtpResponse, ContentType, ProtocolData,
@@ -11,28 +10,23 @@ pub use self::packet::{
 };
 pub use self::packet_stream::BtpPacketStream;
 pub use self::request_id_checker::BtpRequestIdCheckerStream;
+pub use errors::ParseError;
 
-
-use ilp::{IlpPacket, IlpFulfillmentChecker};
-use futures::{Future, Stream, Sink, Poll, StartSend};
+use super::Plugin;
+use futures::{Future, Poll, Sink, StartSend, Stream};
+use ilp::{IlpFulfillmentChecker, IlpPacket};
 use tokio_tcp::TcpStream;
 use tokio_tungstenite::{connect_async as connect_websocket, MaybeTlsStream, WebSocketStream};
 use url::Url;
-use super::Plugin;
 
 pub type BtpStream = BtpPacketStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 pub type IlpRequest = (u32, IlpPacket);
 
-// TODO make plugin a trait
-
 pub struct ClientPlugin {
-  inner: IlpFulfillmentChecker<IlpPacketStream<BtpRequestIdCheckerStream<BtpStream>>>
+  inner: IlpFulfillmentChecker<IlpPacketStream<BtpRequestIdCheckerStream<BtpStream>>>,
 }
 
-
-impl Plugin for ClientPlugin {
-
-}
+impl Plugin for ClientPlugin {}
 
 impl Stream for ClientPlugin {
   type Item = IlpRequest;
@@ -59,13 +53,14 @@ impl Sink for ClientPlugin {
 pub fn connect_async(
   server: &str,
 ) -> impl Future<Item = ClientPlugin, Error = ()> + 'static + Send {
-  connect_btp_stream(server)
-    .and_then(|stream| {
-      let with_id_checker = BtpRequestIdCheckerStream::new(stream);
-      let with_ilp_parsing = IlpPacketStream::new(with_id_checker);
-      let with_fulfillment_checker = IlpFulfillmentChecker::new(with_ilp_parsing);
-      Ok(ClientPlugin {inner: with_fulfillment_checker})
+  connect_btp_stream(server).and_then(|stream| {
+    let with_id_checker = BtpRequestIdCheckerStream::new(stream);
+    let with_ilp_parsing = IlpPacketStream::new(with_id_checker);
+    let with_fulfillment_checker = IlpFulfillmentChecker::new(with_ilp_parsing);
+    Ok(ClientPlugin {
+      inner: with_fulfillment_checker,
     })
+  })
 }
 
 pub fn connect_btp_stream(
@@ -101,22 +96,19 @@ pub fn connect_btp_stream(
   connect_websocket(server.clone())
     .map_err(|err| {
       error!("Error connecting to websocket: {:?}", err);
-    })
-    .and_then(|(ws, _handshake)| Ok(BtpPacketStream::new(ws)))
+    }).and_then(|(ws, _handshake)| Ok(BtpPacketStream::new(ws)))
     .and_then(move |plugin| {
       plugin
         .send(auth_packet)
         .map_err(|err| {
           error!("Error sending auth packet: {:?}", err);
-        })
-        .and_then(move |plugin| {
+        }).and_then(move |plugin| {
           plugin
             .into_future()
             .and_then(move |(_auth_response, plugin)| {
               info!("Connected to server: {}", server_without_auth);
               Ok(plugin)
-            })
-            .map_err(|(err, _plugin)| error!("Error getting auth response: {:?}", err))
+            }).map_err(|(err, _plugin)| error!("Error getting auth response: {:?}", err))
         })
     })
 }

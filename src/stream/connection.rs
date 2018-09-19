@@ -1,19 +1,19 @@
+use super::crypto::{generate_condition, random_condition};
 use super::packet::*;
-use super::{StreamPacket, StreamRequest};
+use super::StreamPacket;
 use bytes::Bytes;
+use chrono::{Duration, Utc};
 use futures::future::ok;
-use futures::sync::mpsc::{unbounded, SendError, UnboundedReceiver, UnboundedSender};
-use futures::{Future, Sink, Stream, Async, Poll};
-use futures::stream::{poll_fn, Peekable};
+use futures::stream::poll_fn;
+use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::{Async, Future, Poll, Sink, Stream};
 use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
-use plugin::{IlpRequest, Plugin};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio;
-use super::crypto::{random_condition, generate_condition};
-use chrono::{Utc, Duration};
 use num_bigint::BigUint;
+use plugin::IlpRequest;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use tokio;
 
 pub struct DataMoneyStream {
   pub id: u64,
@@ -101,11 +101,8 @@ impl Connection {
         // TODO is this going to cause problems because the function won't keep polling?
         Ok(Async::NotReady)
       }
-    })
-    .for_each(move |(request, conn)| {
-      conn.outgoing.send(request)
-      .map(|_| ())
-      .map_err(|err| {
+    }).for_each(move |(request, conn)| {
+      conn.outgoing.send(request).map(|_| ()).map_err(|err| {
         error!("Error sending outgoing request {:?}", err);
       })
     });
@@ -157,7 +154,6 @@ impl Connection {
 
     let streams = self.streams.read().ok()?;
     for (stream_id, mut stream) in streams.iter() {
-      debug!("Checking if stream {} has money or data to send", stream_id);
       if let Ok(ref mut outgoing_money) = stream.outgoing_money.try_lock() {
         if let Ok(Async::Ready(Some(amount))) = outgoing_money.poll() {
           outgoing_amount += amount;
@@ -167,13 +163,18 @@ impl Connection {
           }));
           debug!("Stream {} is going to send {}", stream_id, amount);
         }
-      } {
-        debug!("Unable to get lock on outgoing_money for stream {}", stream_id);
+      } else {
+        debug!(
+          "Unable to get lock on outgoing_money for stream {}",
+          stream_id
+        );
       }
 
       if let Ok(ref mut outgoing_data) = stream.outgoing_data.try_lock() {
         if let Ok(Async::Ready(Some(data))) = outgoing_data.poll() {
-          let offset = stream.outgoing_data_offset.fetch_add(data.len(), Ordering::SeqCst);
+          let offset = stream
+            .outgoing_data_offset
+            .fetch_add(data.len(), Ordering::SeqCst);
           frames.push(Frame::StreamData(StreamDataFrame {
             stream_id: BigUint::from(*stream_id),
             data: data.to_vec(),
@@ -181,7 +182,10 @@ impl Connection {
           }));
         }
       } else {
-        debug!("Unable to get lock on outgoing_data for stream {}", stream_id);
+        debug!(
+          "Unable to get lock on outgoing_data for stream {}",
+          stream_id
+        );
       }
     }
 
@@ -194,7 +198,9 @@ impl Connection {
         prepare_amount: 0,
         frames,
       };
-      let encrypted = stream_packet.to_encrypted(self.shared_secret.clone()).unwrap();
+      let encrypted = stream_packet
+        .to_encrypted(self.shared_secret.clone())
+        .unwrap();
       let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
       let packet = IlpPacket::Prepare(IlpPrepare::new(
         self.destination_account.to_string(),
@@ -205,7 +211,10 @@ impl Connection {
       ));
       let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
       let request = (request_id, packet);
-      debug!("Sending STREAM packet: {:?} in ILP packet: {:?}", stream_packet, request);
+      debug!(
+        "Sending STREAM packet: {:?} in ILP packet: {:?}",
+        stream_packet, request
+      );
       Some(request)
     }
   }
@@ -216,8 +225,8 @@ impl Connection {
       ilp_packet_type: PacketType::IlpPrepare,
       prepare_amount: 0,
       frames: vec![Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-        source_account: self.source_account.to_string()
-      })]
+        source_account: self.source_account.to_string(),
+      })],
     });
   }
 
@@ -229,7 +238,9 @@ impl Connection {
       0,
       random_condition(),
       Utc::now() + Duration::seconds(30),
-      stream_packet.to_encrypted(self.shared_secret.clone()).unwrap()
+      stream_packet
+        .to_encrypted(self.shared_secret.clone())
+        .unwrap(),
     ));
     self.outgoing.unbounded_send((request_id, prepare)).unwrap();
   }

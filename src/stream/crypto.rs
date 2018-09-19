@@ -33,7 +33,7 @@ pub fn generate_condition(shared_secret: Bytes, data: Bytes) -> Bytes {
 
 pub fn random_condition() -> Bytes {
   let mut condition_slice: [u8; 32] = [0; 32];
-  SystemRandom::new().fill(&mut condition_slice);
+  SystemRandom::new().fill(&mut condition_slice).unwrap();
   Bytes::from(&condition_slice[..])
 }
 

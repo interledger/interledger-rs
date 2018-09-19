@@ -27,21 +27,56 @@ where
       if let BtpPacket::Message(packet) = &packet {
         if packet.protocol_data.len() > 0 && packet.protocol_data[0].protocol_name == "ilp" {
           if let Ok(parsed_ilp_packet) = IlpPacket::from_bytes(&packet.protocol_data[0].data) {
-            trace!("Got ILP packet: {:?}", parsed_ilp_packet);
-            return Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))));
+            trace!(
+              "Parsed ILP packet: {} {:?}",
+              packet.request_id,
+              parsed_ilp_packet
+            );
+            Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))))
+          } else {
+            trace!(
+              "Unable to parse ILP packet from BTP packet protocol data: {:x?}",
+              packet.protocol_data[0].data
+            );
+            // TODO is this problematic that we're returning NotReady even though the underlying stream returned ready?
+            Ok(Async::NotReady)
           }
+        } else {
+          trace!(
+            "Ignoring BTP packet that had no ILP packet in it {:?}",
+            packet
+          );
+          Ok(Async::NotReady)
         }
       } else if let BtpPacket::Response(packet) = &packet {
         if packet.protocol_data.len() > 0 && packet.protocol_data[0].protocol_name == "ilp" {
           if let Ok(parsed_ilp_packet) = IlpPacket::from_bytes(&packet.protocol_data[0].data) {
-            trace!("Got ILP packet: {:?}", parsed_ilp_packet);
-            return Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))));
+            trace!(
+              "Parsed ILP packet: {} {:?}",
+              packet.request_id,
+              parsed_ilp_packet
+            );
+            Ok(Async::Ready(Some((packet.request_id, parsed_ilp_packet))))
+          } else {
+            trace!(
+              "Unable to parse ILP packet from BTP packet protocol data: {:x?}",
+              packet.protocol_data[0].data
+            );
+            Ok(Async::NotReady)
           }
+        } else {
+          trace!(
+            "Ignoring BTP packet that had no ILP packet in it {:?}",
+            packet
+          );
+          Ok(Async::NotReady)
         }
+      } else {
+        trace!("Ignoring unexpected BTP packet {:?}", packet);
+        Ok(Async::NotReady)
       }
-
-      Ok(Async::NotReady)
     } else {
+      trace!("Stream ended");
       Ok(Async::Ready(None))
     }
   }

@@ -1,9 +1,7 @@
 use futures::Future;
-use bytes::Bytes;
 use reqwest::async::Client;
 use plugin::Plugin;
 use stream::{connect_async as connect_stream, Connection};
-use std::sync::Arc;
 use serde::{de, Deserialize, Deserializer};
 use base64;
 

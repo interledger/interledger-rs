@@ -33,15 +33,15 @@ where
     });
     if let Some(serialized) = try_ready!(poll_result) {
       let serialized_vec: Vec<u8> = serialized.into();
-      trace!("Got packet: {:?}", &serialized_vec);
       if let Ok(packet) = deserialize_packet(&serialized_vec) {
-      trace!("Parsed BTP packet: {:?}", packet.clone());
+        trace!("Parsed BTP packet: {:?}", packet);
         Ok(Async::Ready(Some(packet)))
       } else {
         warn!("Ignoring unknown BTP packet {:x?}", &serialized_vec);
         Ok(Async::NotReady)
       }
     } else {
+      trace!("Stream ended");
       Ok(Async::Ready(None))
     }
   }
@@ -57,7 +57,7 @@ where
   type SinkError = ();
 
   fn start_send(&mut self, item: BtpPacket) -> StartSend<Self::SinkItem, Self::SinkError> {
-    trace!("Sending BTP packet: {:?}", item.clone());
+    trace!("Sending BTP packet: {:?}", item);
     let serialized = item.to_bytes().unwrap();
     self
       .inner

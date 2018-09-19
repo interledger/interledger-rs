@@ -10,7 +10,6 @@ use futures::Future;
 use ildcp;
 use plugin::{IlpRequest, Plugin};
 use ilp::IlpPacket;
-use std::sync::Arc;
 use tokio;
 use futures::{Stream, Sink};
 use futures::sync::mpsc;
@@ -54,7 +53,10 @@ where
       let handle_packets = incoming_sender
         .sink_map_err(|_| ())
         .send_all(stream)
-            .map(|_| ())
+        .and_then(|_| {
+          debug!("Finished forwarding packets from plugin to Connection");
+          Ok(())
+        })
         .map_err(|err| {
           error!("Error handling incoming packet: {:?}", err);
         });

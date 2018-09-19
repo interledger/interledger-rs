@@ -1,6 +1,4 @@
 use futures::{Stream, Sink};
-use futures::sync::mpsc::{unbounded, UnboundedSender, UnboundedReceiver};
-use std::sync::{Arc, Mutex};
 use ilp::IlpPacket;
 
 pub mod btp;

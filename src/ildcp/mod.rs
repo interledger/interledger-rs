@@ -75,7 +75,7 @@ pub fn get_config(
       plugin
         .into_future()
         .and_then(|(next, plugin)| {
-          if let Some((request_id, IlpPacket::Fulfill(fulfill))) = next {
+          if let Some((_request_id, IlpPacket::Fulfill(fulfill))) = next {
             if let Ok(response) = IldcpResponse::from_fulfill(fulfill) {
               debug!("Got ILDCP response: {:?}", response);
               Ok((response, plugin))
