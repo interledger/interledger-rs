@@ -37,7 +37,7 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = ()> {
     })
 }
 
-pub fn connect_async<S>(plugin: S, server: &str) -> impl Future<Item = Arc<Connection>, Error = ()>
+pub fn connect_async<S>(plugin: S, server: &str) -> impl Future<Item = Connection, Error = ()>
 where
   S: Plugin + 'static
 {

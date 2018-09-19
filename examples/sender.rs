@@ -11,8 +11,9 @@ use ilp::plugin::btp::{connect_async, ClientPlugin};
 use ilp::ilp::{IlpPacket, IlpPrepare};
 use chrono::{Utc, Duration};
 use bytes::Bytes;
-use ilp::stream::{connect_async as connect_stream};
+use ilp::stream::{connect_async as connect_stream, Connection};
 use ilp::spsp::{connect_async as connect_spsp};
+use std::sync::Arc;
 
 
 fn main() {
@@ -25,6 +26,18 @@ fn main() {
       println!("Conected sender");
 
       connect_spsp(plugin, spsp_server)
+    })
+    .and_then(|mut conn: Connection| {
+      let stream = conn.create_stream();
+      stream.outgoing_money.send(100)
+        .and_then(|_| {
+          // TODO make this happen only when the money is received
+          println!("Sent money");
+          Ok(())
+        })
+        .map_err(|err| {
+          println!("Error sending: {:?}", err);
+        })
     })
     .then(|_| Ok(()));
 

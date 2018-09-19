@@ -3,40 +3,55 @@ use super::{StreamPacket, StreamRequest};
 use bytes::Bytes;
 use futures::future::ok;
 use futures::sync::mpsc::{unbounded, SendError, UnboundedReceiver, UnboundedSender};
-use futures::{Future, Sink, Stream};
-use ilp::{IlpFulfill, IlpPacket, IlpPrepare, PacketType};
+use futures::{Future, Sink, Stream, Async, Poll};
+use futures::stream::{poll_fn, Peekable};
+use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
 use plugin::{IlpRequest, Plugin};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio;
-use super::crypto::{random_condition};
+use super::crypto::{random_condition, generate_condition};
 use chrono::{Utc, Duration};
+use num_bigint::BigUint;
 
 pub struct DataMoneyStream {
   pub id: u64,
-  incoming_data: UnboundedReceiver<Bytes>,
-  outgoing_data: UnboundedSender<Bytes>,
-  incoming_money: UnboundedReceiver<u64>,
-  outgoing_money: UnboundedSender<u64>,
+  pub incoming_data: UnboundedReceiver<Bytes>,
+  pub outgoing_data: UnboundedSender<Bytes>,
+  pub incoming_money: UnboundedReceiver<u64>,
+  pub outgoing_money: UnboundedSender<u64>,
 }
 
 // Used on the connection side
 struct DataMoneyStreamInternal {
   // These are named the same as for the DataMoneyStream but they are the opposite sides of the channels
-  outgoing_data: UnboundedReceiver<Bytes>,
-  incoming_data: UnboundedSender<Bytes>,
-  outgoing_money: UnboundedReceiver<u64>,
-  incoming_money: UnboundedSender<u64>,
+  outgoing_data: Arc<Mutex<UnboundedReceiver<Bytes>>>,
+  incoming_data: Arc<Mutex<UnboundedSender<Bytes>>>,
+  outgoing_money: Arc<Mutex<UnboundedReceiver<u64>>>,
+  incoming_money: Arc<Mutex<UnboundedSender<u64>>>,
+  outgoing_data_offset: Arc<AtomicUsize>,
 }
 
-// TODO can we hardcode the type of S to be a Plugin?
+#[derive(Clone)]
 pub struct Connection {
+  state: Arc<RwLock<ConnectionState>>,
   outgoing: UnboundedSender<IlpRequest>,
   shared_secret: Bytes,
-  source_account: String,
-  destination_account: String,
+  source_account: Arc<String>,
+  destination_account: Arc<String>,
   streams: Arc<RwLock<HashMap<u64, DataMoneyStreamInternal>>>,
-  next_stream_id: u64,
+  next_stream_id: Arc<AtomicUsize>,
+  next_packet_sequence: Arc<AtomicUsize>,
+  next_request_id: Arc<AtomicUsize>,
+}
+
+#[derive(PartialEq, Debug)]
+enum ConnectionState {
+  Opening,
+  Open,
+  Closed,
+  Closing,
 }
 
 impl Connection {
@@ -47,34 +62,60 @@ impl Connection {
     source_account: String,
     destination_account: String,
     is_server: bool,
-  ) -> Arc<Self> {
+  ) -> Self {
     let next_stream_id = match is_server {
       true => 2,
       false => 1,
     };
 
-    let conn = Arc::new(Connection {
+    let conn = Connection {
+      state: Arc::new(RwLock::new(ConnectionState::Opening)),
       outgoing,
       shared_secret,
-      source_account,
-      destination_account,
+      source_account: Arc::new(source_account),
+      destination_account: Arc::new(destination_account),
       streams: Arc::new(RwLock::new(HashMap::new())),
-      next_stream_id,
-    });
+      next_stream_id: Arc::new(AtomicUsize::new(next_stream_id)),
+      next_packet_sequence: Arc::new(AtomicUsize::new(1)),
+      next_request_id: Arc::new(AtomicUsize::new(1)),
+    };
 
+    // Handle incoming packets
     // TODO how do we stop it from handling more packets if we want to close the connection?
-    let conn_clone = Arc::clone(&conn);
+    let conn_clone = conn.clone();
     let handle_packets = incoming.for_each(move |request| conn_clone.handle_packet(request));
     tokio::spawn(handle_packets);
 
     conn.send_handshake();
 
+    // Send outgoing packets
+    let outgoing_conn = conn.clone();
+    let send_outgoing = poll_fn(move || -> Poll<Option<(IlpRequest, Connection)>, ()> {
+      debug!("Polling for outgoing packet");
+      if *outgoing_conn.state.read().unwrap() == ConnectionState::Closed {
+        return Ok(Async::Ready(None));
+      }
+      if let Some(request) = outgoing_conn.load_outgoing_packet() {
+        Ok(Async::Ready(Some((request, outgoing_conn.to_owned()))))
+      } else {
+        // TODO is this going to cause problems because the function won't keep polling?
+        Ok(Async::NotReady)
+      }
+    })
+    .for_each(move |(request, conn)| {
+      conn.outgoing.send(request)
+      .map(|_| ())
+      .map_err(|err| {
+        error!("Error sending outgoing request {:?}", err);
+      })
+    });
+    tokio::spawn(send_outgoing);
+
     conn
   }
 
   pub fn create_stream(&mut self) -> DataMoneyStream {
-    let id = self.next_stream_id;
-    self.next_stream_id += 2;
+    let id = self.next_stream_id.fetch_add(2, Ordering::SeqCst) as u64;
 
     // TODO should we use bounded streams?
     let (send_incoming_data, recv_incoming_data) = unbounded::<Bytes>();
@@ -83,13 +124,16 @@ impl Connection {
     let (send_outgoing_money, recv_outgoing_money) = unbounded::<u64>();
 
     let internal = DataMoneyStreamInternal {
-      incoming_data: send_incoming_data,
-      outgoing_data: recv_outgoing_data,
-      incoming_money: send_incoming_money,
-      outgoing_money: recv_outgoing_money,
+      incoming_data: Arc::new(Mutex::new(send_incoming_data)),
+      outgoing_data: Arc::new(Mutex::new(recv_outgoing_data)),
+      incoming_money: Arc::new(Mutex::new(send_incoming_money)),
+      outgoing_money: Arc::new(Mutex::new(recv_outgoing_money)),
+      outgoing_data_offset: Arc::new(AtomicUsize::new(0)),
     };
 
     self.streams.write().unwrap().insert(id, internal);
+
+    debug!("Created stream {}", id);
 
     DataMoneyStream {
       id,
@@ -101,8 +145,69 @@ impl Connection {
   }
 
   fn handle_packet(&self, request: IlpRequest) -> impl Future<Item = (), Error = ()> {
-    println!("Got packet: {:?}", request);
+    debug!("Handling packet: {:?}", request);
     ok(())
+  }
+
+  fn load_outgoing_packet(&self) -> Option<IlpRequest> {
+    debug!("Loading outgoing packet");
+
+    let mut frames: Vec<Frame> = Vec::new();
+    let mut outgoing_amount: u64 = 0;
+
+    let streams = self.streams.read().ok()?;
+    for (stream_id, mut stream) in streams.iter() {
+      debug!("Checking if stream {} has money or data to send", stream_id);
+      if let Ok(ref mut outgoing_money) = stream.outgoing_money.try_lock() {
+        if let Ok(Async::Ready(Some(amount))) = outgoing_money.poll() {
+          outgoing_amount += amount;
+          frames.push(Frame::StreamMoney(StreamMoneyFrame {
+            stream_id: BigUint::from(*stream_id),
+            shares: BigUint::from(amount),
+          }));
+          debug!("Stream {} is going to send {}", stream_id, amount);
+        }
+      } {
+        debug!("Unable to get lock on outgoing_money for stream {}", stream_id);
+      }
+
+      if let Ok(ref mut outgoing_data) = stream.outgoing_data.try_lock() {
+        if let Ok(Async::Ready(Some(data))) = outgoing_data.poll() {
+          let offset = stream.outgoing_data_offset.fetch_add(data.len(), Ordering::SeqCst);
+          frames.push(Frame::StreamData(StreamDataFrame {
+            stream_id: BigUint::from(*stream_id),
+            data: data.to_vec(),
+            offset: BigUint::from(offset),
+          }));
+        }
+      } else {
+        debug!("Unable to get lock on outgoing_data for stream {}", stream_id);
+      }
+    }
+
+    if frames.len() == 0 {
+      None
+    } else {
+      let stream_packet = StreamPacket {
+        sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+        ilp_packet_type: PacketType::IlpPrepare,
+        prepare_amount: 0,
+        frames,
+      };
+      let encrypted = stream_packet.to_encrypted(self.shared_secret.clone()).unwrap();
+      let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
+      let packet = IlpPacket::Prepare(IlpPrepare::new(
+        self.destination_account.to_string(),
+        outgoing_amount,
+        condition,
+        Utc::now() + Duration::seconds(30),
+        encrypted,
+      ));
+      let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
+      let request = (request_id, packet);
+      debug!("Sending STREAM packet: {:?} in ILP packet: {:?}", stream_packet, request);
+      Some(request)
+    }
   }
 
   fn send_handshake(&self) {
@@ -111,7 +216,7 @@ impl Connection {
       ilp_packet_type: PacketType::IlpPrepare,
       prepare_amount: 0,
       frames: vec![Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-        source_account: self.source_account.clone()
+        source_account: self.source_account.to_string()
       })]
     });
   }
@@ -120,7 +225,7 @@ impl Connection {
     let request_id = 1;
     let prepare = IlpPacket::Prepare(IlpPrepare::new(
       // TODO do we need to clone this?
-      self.destination_account.clone(),
+      self.destination_account.to_string(),
       0,
       random_condition(),
       Utc::now() + Duration::seconds(30),

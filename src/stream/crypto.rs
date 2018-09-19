@@ -16,14 +16,19 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
   Bytes::from(output.as_ref())
 }
 
-pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> Bytes {
-  let key = hmac_sha256(shared_secret, &FULFILLMENT_GENERATION_STRING);
-  hmac_sha256(&key[..], &data)
+pub fn generate_fulfillment(shared_secret: Bytes, data: Bytes) -> Bytes {
+  let key = hmac_sha256(&shared_secret[..], &FULFILLMENT_GENERATION_STRING);
+  hmac_sha256(&key[..], &data[..])
 }
 
-pub fn fulfillment_to_condition(fulfillment: &[u8]) -> Bytes {
-  let output = digest::digest(&digest::SHA256, fulfillment);
+pub fn fulfillment_to_condition(fulfillment: Bytes) -> Bytes {
+  let output = digest::digest(&digest::SHA256, &fulfillment[..]);
   Bytes::from(output.as_ref())
+}
+
+pub fn generate_condition(shared_secret: Bytes, data: Bytes) -> Bytes {
+  let fulfillment = generate_fulfillment(shared_secret, data);
+  fulfillment_to_condition(fulfillment)
 }
 
 pub fn random_condition() -> Bytes {
@@ -106,7 +111,7 @@ mod fulfillment_and_condition {
 
   #[test]
   fn it_generates_the_same_fulfillment_as_javascript() {
-    let fulfillment = generate_fulfillment(&SHARED_SECRET, &DATA);
+    let fulfillment = generate_fulfillment(Bytes::from(&SHARED_SECRET[..]), Bytes::from(&DATA[..]));
     assert_eq!(fulfillment.to_vec(), *FULFILLMENT);
   }
 }

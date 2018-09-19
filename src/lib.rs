@@ -18,6 +18,7 @@ extern crate url;
 #[macro_use]
 extern crate log;
 extern crate num_traits;
+// TODO do we need all of the dependencies above just to do the SPSP GET request?
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;

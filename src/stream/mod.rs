@@ -1,7 +1,6 @@
 mod connection;
 mod crypto;
 mod packet;
-mod packet_stream;
 
 pub use self::connection::Connection;
 use self::packet::*;
@@ -22,7 +21,7 @@ pub fn connect_async<S, T, U>(
   plugin: S,
   destination_account: T,
   shared_secret: U,
-) -> impl Future<Item = Arc<Connection>, Error = ()>
+) -> impl Future<Item = Connection, Error = ()>
 where
   S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
   String: From<T>,
