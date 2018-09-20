@@ -34,6 +34,13 @@ fn main() {
         .map_err(|err| {
           println!("Error sending: {:?}", err);
         })
+        .and_then(move |_| {
+          conn.close()
+        })
+        .and_then(|_| {
+          println!("Closed connection");
+          Ok(())
+        })
     })
     .then(|_| Ok(()));
 

@@ -24,6 +24,10 @@ impl DataMoneyStream {
   pub fn send_money(&mut self, amount: u64) -> impl Future<Item = (), Error = ()> {
     self.conn.send_money(self.id, amount)
   }
+
+  pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
+    self.conn.close_stream(self.id)
+  }
 }
 
 #[derive(Clone)]
@@ -97,6 +101,45 @@ impl Connection {
     };
 
     self.send_packet(amount, stream_packet)
+  }
+
+  pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
+    {
+      let mut state = self.state.write().unwrap();
+      *state = ConnectionState::Closing;
+    }
+
+    let stream_packet = StreamPacket {
+      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+      ilp_packet_type: PacketType::IlpPrepare,
+      prepare_amount: 0,
+      frames: vec![Frame::ConnectionClose(ConnectionCloseFrame {
+        code: ErrorCode::NoError,
+        message: String::new(),
+      })],
+    };
+
+    let state = Arc::clone(&self.state);
+    self.send_packet(0, stream_packet).and_then(move |_| {
+      let mut state = state.write().unwrap();
+      *state = ConnectionState::Closed;
+      Ok(())
+    })
+  }
+
+  pub fn close_stream(&mut self, stream_id: u64) -> impl Future<Item = (), Error = ()> {
+    let stream_packet = StreamPacket {
+      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+      ilp_packet_type: PacketType::IlpPrepare,
+      prepare_amount: 0,
+      frames: vec![Frame::StreamClose(StreamCloseFrame {
+        stream_id: BigUint::from(stream_id),
+        code: ErrorCode::NoError,
+        message: String::new(),
+      })],
+    };
+
+    self.send_packet(0, stream_packet)
   }
 
   fn send_packet(
@@ -174,6 +217,7 @@ impl Connection {
     });
   }
 
+  // TODO wait for response
   fn send_unfulfillable_prepare(&self, stream_packet: StreamPacket) -> () {
     let request_id = 1;
     let prepare = IlpPacket::Prepare(IlpPrepare::new(
@@ -213,12 +257,10 @@ impl Future for WaitForResponse {
           self
             .incoming_queue
             .clone() // TODO avoid cloning this?
-            .send((request_id, packet))
+            .unbounded_send((request_id, packet))
             .map_err(|err| {
               error!("Error re-queuing request {} {:?}", request_id, err);
-            })
-            // TODO handle this in an async way (buffering item if it doesn't send)
-            .wait().unwrap();
+            });
           trace!("Requeued response to request {}", request_id);
           Ok(Async::NotReady)
         }

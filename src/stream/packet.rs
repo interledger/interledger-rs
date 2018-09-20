@@ -444,9 +444,9 @@ impl SerializableFrame for ConnectionStreamIdBlockedFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamCloseFrame {
-  stream_id: BigUint,
-  code: ErrorCode,
-  message: String,
+  pub stream_id: BigUint,
+  pub code: ErrorCode,
+  pub message: String,
 }
 
 impl SerializableFrame for StreamCloseFrame {
