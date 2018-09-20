@@ -24,11 +24,11 @@ fn main() {
       connect_spsp(plugin, spsp_server)
     })
     .and_then(|mut conn: Connection| {
-      let mut stream = conn.create_stream();
-      stream.send_money(100)
-        .and_then(|_| {
-          // TODO make this happen only when the money is received
-          println!("Sent money");
+      let stream = conn.create_stream();
+      // TODO should send_money return the stream so we don't need to clone it?
+      stream.clone().send_money(100)
+        .and_then(move |_| {
+          println!("Sent money on stream. Total sent: {}, total delivered: {}", stream.total_sent(), stream.total_delivered());
           Ok(())
         })
         .map_err(|err| {
