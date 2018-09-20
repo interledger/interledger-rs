@@ -24,8 +24,8 @@ fn main() {
       connect_spsp(plugin, spsp_server)
     })
     .and_then(|mut conn: Connection| {
-      let stream = conn.create_stream();
-      stream.outgoing_money.send(100)
+      let mut stream = conn.create_stream();
+      stream.send_money(100)
         .and_then(|_| {
           // TODO make this happen only when the money is received
           println!("Sent money");

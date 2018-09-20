@@ -16,31 +16,25 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio;
 
 pub struct DataMoneyStream {
-  pub id: u64,
-  pub incoming_data: UnboundedReceiver<Bytes>,
-  pub outgoing_data: UnboundedSender<Bytes>,
-  pub incoming_money: UnboundedReceiver<u64>,
-  pub outgoing_money: UnboundedSender<u64>,
+  id: u64,
+  conn: Connection,
 }
 
-// Used on the connection side
-struct DataMoneyStreamInternal {
-  // These are named the same as for the DataMoneyStream but they are the opposite sides of the channels
-  outgoing_data: Arc<Mutex<UnboundedReceiver<Bytes>>>,
-  incoming_data: Arc<Mutex<UnboundedSender<Bytes>>>,
-  outgoing_money: Arc<Mutex<UnboundedReceiver<u64>>>,
-  incoming_money: Arc<Mutex<UnboundedSender<u64>>>,
-  outgoing_data_offset: Arc<AtomicUsize>,
+impl DataMoneyStream {
+  pub fn send_money(&mut self, amount: u64) -> impl Future<Item = (), Error = ()> {
+    self.conn.send_money(self.id, amount)
+  }
 }
 
 #[derive(Clone)]
 pub struct Connection {
   state: Arc<RwLock<ConnectionState>>,
   outgoing: UnboundedSender<IlpRequest>,
+  incoming: Arc<Mutex<UnboundedReceiver<IlpRequest>>>,
+  incoming_queue: UnboundedSender<IlpRequest>,
   shared_secret: Bytes,
   source_account: Arc<String>,
   destination_account: Arc<String>,
-  streams: Arc<RwLock<HashMap<u64, DataMoneyStreamInternal>>>,
   next_stream_id: Arc<AtomicUsize>,
   next_packet_sequence: Arc<AtomicUsize>,
   next_request_id: Arc<AtomicUsize>,
@@ -68,155 +62,105 @@ impl Connection {
       false => 1,
     };
 
-    let conn = Connection {
+    let (sender, receiver) = unbounded::<IlpRequest>();
+    let queue_incoming = incoming.forward(sender.clone().sink_map_err(|err| {
+      error!("Error forwarding request to queue {:?}", err);
+    }))
+    .then(|_| Ok(()));
+    tokio::spawn(queue_incoming);
+
+    Connection {
       state: Arc::new(RwLock::new(ConnectionState::Opening)),
       outgoing,
+      incoming: Arc::new(Mutex::new(receiver)),
+      incoming_queue: sender.clone(),
       shared_secret,
       source_account: Arc::new(source_account),
       destination_account: Arc::new(destination_account),
-      streams: Arc::new(RwLock::new(HashMap::new())),
       next_stream_id: Arc::new(AtomicUsize::new(next_stream_id)),
       next_packet_sequence: Arc::new(AtomicUsize::new(1)),
       next_request_id: Arc::new(AtomicUsize::new(1)),
+    }
+  }
+
+  pub fn send_money(&mut self, stream_id: u64, amount: u64) -> impl Future<Item = (), Error = ()> {
+    // TODO figure out max packet amount
+
+    let stream_packet = StreamPacket {
+      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+      ilp_packet_type: PacketType::IlpPrepare,
+      prepare_amount: 0, // TODO set min amount
+      frames: vec![Frame::StreamMoney(StreamMoneyFrame {
+        stream_id: BigUint::from(stream_id),
+        shares: BigUint::from(amount),
+      })],
     };
 
-    // Handle incoming packets
-    // TODO how do we stop it from handling more packets if we want to close the connection?
-    let conn_clone = conn.clone();
-    let handle_packets = incoming.for_each(move |request| conn_clone.handle_packet(request));
-    tokio::spawn(handle_packets);
+    self.send_packet(amount, stream_packet)
+  }
 
-    conn.send_handshake();
-
-    // Send outgoing packets
-    let outgoing_conn = conn.clone();
-    let send_outgoing = poll_fn(move || -> Poll<Option<(IlpRequest, Connection)>, ()> {
-      debug!("Polling for outgoing packet");
-      if *outgoing_conn.state.read().unwrap() == ConnectionState::Closed {
-        return Ok(Async::Ready(None));
-      }
-      if let Some(request) = outgoing_conn.load_outgoing_packet() {
-        Ok(Async::Ready(Some((request, outgoing_conn.to_owned()))))
-      } else {
-        // TODO is this going to cause problems because the function won't keep polling?
-        Ok(Async::NotReady)
-      }
-    }).for_each(move |(request, conn)| {
-      conn.outgoing.send(request).map(|_| ()).map_err(|err| {
-        error!("Error sending outgoing request {:?}", err);
+  fn send_packet(
+    &mut self,
+    amount: u64,
+    packet: StreamPacket,
+  ) -> impl Future<Item = (), Error = ()> {
+    let encrypted = packet.to_encrypted(self.shared_secret.clone()).unwrap();
+    let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
+    let prepare = IlpPacket::Prepare(IlpPrepare::new(
+      self.destination_account.to_string(),
+      amount,
+      condition,
+      Utc::now() + Duration::seconds(30),
+      encrypted,
+    ));
+    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
+    let request = (request_id, prepare);
+    debug!(
+      "Sending STREAM packet: {:?} in ILP packet: {:?}",
+      packet, request
+    );
+    let wait_for_response = self.wait_for_response(request_id);
+    self.outgoing.clone().send(request)
+      .map(|_| ())
+      .map_err(move |err| {
+        error!("Error sending outgoing packet with request id {}: {:?} {:?}", request_id.clone(), err, packet);
       })
-    });
-    tokio::spawn(send_outgoing);
+      .and_then(|_| wait_for_response)
+      .and_then(move |response| {
+        if let IlpPacket::Fulfill(fulfill) = response {
+          debug!("Request {} was fulfilled", request_id.clone());
+          Ok(())
+        } else if let IlpPacket::Reject(reject) = response {
+          error!("Request {} was rejected: {:?}", request_id.clone(), reject);
+          Err(())
+        } else {
+          Err(())
+        }
+      })
+  }
 
-    conn
+  fn wait_for_response(&mut self, request_id: u32) -> impl Future<Item = IlpPacket, Error = ()> {
+    WaitForResponse {
+      request_id,
+      incoming: Arc::clone(&self.incoming),
+      incoming_queue: self.incoming_queue.clone(),
+    }
   }
 
   pub fn create_stream(&mut self) -> DataMoneyStream {
     let id = self.next_stream_id.fetch_add(2, Ordering::SeqCst) as u64;
 
-    // TODO should we use bounded streams?
-    let (send_incoming_data, recv_incoming_data) = unbounded::<Bytes>();
-    let (send_outgoing_data, recv_outgoing_data) = unbounded::<Bytes>();
-    let (send_incoming_money, recv_incoming_money) = unbounded::<u64>();
-    let (send_outgoing_money, recv_outgoing_money) = unbounded::<u64>();
-
-    let internal = DataMoneyStreamInternal {
-      incoming_data: Arc::new(Mutex::new(send_incoming_data)),
-      outgoing_data: Arc::new(Mutex::new(recv_outgoing_data)),
-      incoming_money: Arc::new(Mutex::new(send_incoming_money)),
-      outgoing_money: Arc::new(Mutex::new(recv_outgoing_money)),
-      outgoing_data_offset: Arc::new(AtomicUsize::new(0)),
-    };
-
-    self.streams.write().unwrap().insert(id, internal);
-
     debug!("Created stream {}", id);
 
     DataMoneyStream {
       id,
-      incoming_data: recv_incoming_data,
-      outgoing_data: send_outgoing_data,
-      incoming_money: recv_incoming_money,
-      outgoing_money: send_outgoing_money,
+      conn: self.clone(),
     }
   }
 
   fn handle_packet(&self, request: IlpRequest) -> impl Future<Item = (), Error = ()> {
     debug!("Handling packet: {:?}", request);
     ok(())
-  }
-
-  fn load_outgoing_packet(&self) -> Option<IlpRequest> {
-    debug!("Loading outgoing packet");
-
-    let mut frames: Vec<Frame> = Vec::new();
-    let mut outgoing_amount: u64 = 0;
-
-    let streams = self.streams.read().ok()?;
-    for (stream_id, mut stream) in streams.iter() {
-      if let Ok(ref mut outgoing_money) = stream.outgoing_money.try_lock() {
-        if let Ok(Async::Ready(Some(amount))) = outgoing_money.poll() {
-          outgoing_amount += amount;
-          frames.push(Frame::StreamMoney(StreamMoneyFrame {
-            stream_id: BigUint::from(*stream_id),
-            shares: BigUint::from(amount),
-          }));
-          debug!("Stream {} is going to send {}", stream_id, amount);
-        }
-      } else {
-        debug!(
-          "Unable to get lock on outgoing_money for stream {}",
-          stream_id
-        );
-      }
-
-      if let Ok(ref mut outgoing_data) = stream.outgoing_data.try_lock() {
-        if let Ok(Async::Ready(Some(data))) = outgoing_data.poll() {
-          let offset = stream
-            .outgoing_data_offset
-            .fetch_add(data.len(), Ordering::SeqCst);
-          frames.push(Frame::StreamData(StreamDataFrame {
-            stream_id: BigUint::from(*stream_id),
-            data: data.to_vec(),
-            offset: BigUint::from(offset),
-          }));
-        }
-      } else {
-        debug!(
-          "Unable to get lock on outgoing_data for stream {}",
-          stream_id
-        );
-      }
-    }
-
-    if frames.len() == 0 {
-      None
-    } else {
-      let stream_packet = StreamPacket {
-        sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
-        ilp_packet_type: PacketType::IlpPrepare,
-        prepare_amount: 0,
-        frames,
-      };
-      let encrypted = stream_packet
-        .to_encrypted(self.shared_secret.clone())
-        .unwrap();
-      let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
-      let packet = IlpPacket::Prepare(IlpPrepare::new(
-        self.destination_account.to_string(),
-        outgoing_amount,
-        condition,
-        Utc::now() + Duration::seconds(30),
-        encrypted,
-      ));
-      let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
-      let request = (request_id, packet);
-      debug!(
-        "Sending STREAM packet: {:?} in ILP packet: {:?}",
-        stream_packet, request
-      );
-      Some(request)
-    }
   }
 
   fn send_handshake(&self) {
@@ -243,6 +187,51 @@ impl Connection {
         .unwrap(),
     ));
     self.outgoing.unbounded_send((request_id, prepare)).unwrap();
+  }
+}
+
+struct WaitForResponse {
+  request_id: u32,
+  incoming: Arc<Mutex<UnboundedReceiver<IlpRequest>>>,
+  incoming_queue: UnboundedSender<IlpRequest>,
+}
+
+impl Future for WaitForResponse {
+  type Item = IlpPacket;
+  type Error = ();
+
+  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    if let Ok(ref mut incoming) = self.incoming.try_lock() {
+      let item = try_ready!(incoming.poll().map_err(|err| {
+        error!("Error polling incoming {:?}", err);
+      }));
+      if let Some((request_id, packet)) = item {
+        // TODO check that the response is valid
+        if request_id == self.request_id {
+          Ok(Async::Ready(packet))
+        } else {
+          self
+            .incoming_queue
+            .clone() // TODO avoid cloning this?
+            .send((request_id, packet))
+            .map_err(|err| {
+              error!("Error re-queuing request {} {:?}", request_id, err);
+            })
+            // TODO handle this in an async way (buffering item if it doesn't send)
+            .wait().unwrap();
+          trace!("Requeued response to request {}", request_id);
+          Ok(Async::NotReady)
+        }
+      } else {
+        error!(
+          "Stream ended before we got response for request ID: {}",
+          self.request_id
+        );
+        Err(())
+      }
+    } else {
+      Ok(Async::NotReady)
+    }
   }
 }
 
