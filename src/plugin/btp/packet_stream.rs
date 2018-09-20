@@ -64,7 +64,10 @@ where
       .start_send(serialized.into())
       .map(|result| match result {
         AsyncSink::Ready => AsyncSink::Ready,
-        AsyncSink::NotReady(_) => AsyncSink::NotReady(item),
+        AsyncSink::NotReady(_) => {
+          debug!("BTP packet sink was not ready to send {:?}", item);
+          AsyncSink::NotReady(item)
+        },
       })
       .map_err(|err| {
         error!("Error sending BTP packet: {}", err);

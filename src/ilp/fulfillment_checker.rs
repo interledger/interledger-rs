@@ -53,8 +53,14 @@ where
           Ok(Async::NotReady)
         }
       },
+      Some((request_id, IlpPacket::Reject(reject))) => {
+        debug!("Prepare with request id {} was rejected", request_id);
+        self.packets.remove(&request_id);
+        Ok(Async::Ready(Some((request_id, IlpPacket::Reject(reject)))))
+      },
       Some(item) => Ok(Async::Ready(Some(item))),
       None => {
+        trace!("Stream ended");
         Ok(Async::Ready(None))
       }
     }

@@ -28,18 +28,31 @@ where
 
   fn poll(&mut self) -> Poll<Option<BtpPacket>, Self::Error> {
     if let Some(packet) = try_ready!(self.inner.poll()) {
-      if let BtpPacket::Response(response) = &packet {
-        if !self.outgoing_ids.remove(&response.request_id) {
-          return Ok(Async::NotReady)
-        }
-      } else if let BtpPacket::Error(error) = &packet {
-        if !self.outgoing_ids.remove(&error.request_id) {
-          return Ok(Async::NotReady)
+      match packet {
+        BtpPacket::Message(message) => Ok(Async::Ready(Some(BtpPacket::Message(message)))),
+        BtpPacket::Response(response) => {
+          if self.outgoing_ids.remove(&response.request_id) {
+            Ok(Async::Ready(Some(BtpPacket::Response(response))))
+          } else {
+            trace!("Ignoring BTP packet because there is no pending request with that ID {:?}", response);
+            Ok(Async::NotReady)
+          }
+        },
+        BtpPacket::Error(error) => {
+          if self.outgoing_ids.remove(&error.request_id) {
+            Ok(Async::Ready(Some(BtpPacket::Error(error))))
+          } else {
+            trace!("Ignoring BTP packet because there is no pending request with that ID {:?}", error);
+            Ok(Async::NotReady)
+          }
+        },
+        _ => {
+          debug!("Ignoring unexpected BTP packet type {:?}", packet);
+          Ok(Async::NotReady)
         }
       }
-
-      Ok(Async::Ready(Some(packet)))
     } else {
+      trace!("Stream ended");
       Ok(Async::Ready(None))
     }
   }
@@ -54,8 +67,12 @@ where
 
   fn start_send(&mut self, item: BtpPacket) -> StartSend<Self::SinkItem, Self::SinkError> {
     if let BtpPacket::Message(message) = &item {
-      // TODO check that this isn't a duplicate id
-      self.outgoing_ids.insert(message.request_id);
+      if self.outgoing_ids.insert(message.request_id) {
+        trace!("Storing outgoing request ID {}", message.request_id);
+      } else {
+        trace!("Duplicate request ID {}", message.request_id);
+        return Err(())
+      }
     }
 
     self.inner.start_send(item)
