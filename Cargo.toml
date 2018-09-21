@@ -28,3 +28,8 @@ tokio-tungstenite = { git = "https://github.com/emschwartz/tokio-tungstenite" }
 tokio-tcp = "0.1.1"
 tungstenite = { git = "https://github.com/emschwartz/tungstenite-rs" }
 url = "1.7.1"
+webpki = "0.18.1"
+
+[dependencies.rustls]
+version = "0.13.1"
+features = ["dangerous_configuration"]

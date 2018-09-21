@@ -25,6 +25,7 @@ extern crate serde_json;
 extern crate serde;
 extern crate reqwest;
 extern crate base64;
+extern crate rustls;
 
 pub mod ilp;
 pub mod oer;
@@ -33,3 +34,4 @@ pub mod stream;
 pub mod ildcp;
 pub mod errors;
 pub mod spsp;
+pub mod tls;
