@@ -1,140 +1,197 @@
-use plugin::{Plugin, IlpRequest};
-use rustls::{ClientConfig, ClientSession, ServerConfig, ServerSession};
-use std::io::{Read, Write, Error, ErrorKind, Cursor};
-use byteorder::{WriteBytesExt, ReadBytesExt};
-use oer::{ReadOerExt, WriteOerExt};
-use ilp::{IlpPacket, IlpPrepare, IlpReject};
-use futures::{Future, Async};
 use bytes::Bytes;
+use chrono::{Duration, Utc};
+use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
+use ilp::{IlpPacket, IlpPrepare, IlpReject};
+use oer::{ReadOerExt, WriteOerExt};
+use plugin::{IlpRequest, Plugin};
 use ring::rand::{SecureRandom, SystemRandom};
-use chrono::{Utc, Duration};
-use std::cmp::min;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use rustls::Session;
+use std::io::Cursor;
 
-pub struct PluginReaderWriter <S: Plugin> {
-  plugin: S,
-  source_account: String,
+static TLS_KEY_EXPORT_LABEL: &'static str = "EXPERIMENTAL interledger stream tls";
+
+pub fn connect_async<P, S>(
+  plugin: P,
+  tls_session: S,
+  destination_account: &str,
+) -> impl Future<Item = (Bytes, P), Error = ()>
+where
+  P: Plugin,
+  S: Session,
+{
+  ConnectTls {
+    plugin: Some(plugin),
+    destination_account: String::from(destination_account),
+    tls_session,
+    buffered_outgoing: None,
+    pending_request: None,
+    // TODO need a better way of keeping track of outgoing request IDs for a plugin
+    next_request_id: 1,
+  }
+}
+
+pub struct ConnectTls<P: Stream + Sink, S: Session> {
+  plugin: Option<P>,
+  // TODO the server doesn't know the destination account
   destination_account: String,
-  incoming_buffer: Option<Bytes>,
-  next_request_id: Arc<AtomicUsize>,
+  tls_session: S,
+  buffered_outgoing: Option<P::SinkItem>,
+  pending_request: Option<u32>,
+  next_request_id: u32,
 }
 
-impl<S> PluginReaderWriter<S>
-where S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()>
+impl<P, S> Future for ConnectTls<P, S>
+where
+  P: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()>,
+  S: Session,
 {
-  pub fn new(plugin: S, source_account: String, destination_account: String) -> Self {
-    PluginReaderWriter {
-      plugin,
-      source_account,
-      destination_account,
-      incoming_buffer: None,
-      next_request_id: Arc::new(AtomicUsize::from(1)),
+  type Item = (Bytes, P);
+  type Error = ();
+
+  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    let mut plugin = {
+      if let Some(plugin) = self.plugin.take() {
+        plugin
+      } else {
+        // TODO should this be an error?
+        debug!("No plugin to poll");
+        return Ok(Async::NotReady);
+      }
+    };
+
+    // Try sending buffered request first
+    if let Some(item) = self.buffered_outgoing.take() {
+      if let AsyncSink::NotReady(item) = plugin.start_send(item)? {
+        debug!("Plugin still not ready to send, re-buffering request");
+        self.buffered_outgoing = Some(item);
+        return Ok(Async::NotReady);
+      } else {
+        debug!("Sent buffered request");
+      }
     }
-  }
-}
 
-impl<S> Write for PluginReaderWriter<S>
-where S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()>
-{
-  fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-    let mut data: Vec<u8> = Vec::new();
-    let len = buf.len();
-    data.write_var_octet_string(buf)?;
-    let prepare = IlpPacket::Prepare(IlpPrepare::new(
-      self.destination_account.clone(),
-      0,
-      random_condition(),
-      // TODO use random expiry
-      Utc::now() + Duration::seconds(30),
-      data,
-    ));
-    // TODO should we call poll_complete?
-    let request_id: u32 = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
-    self.plugin.start_send((request_id, prepare))
-      .map(|_| len)
-      .map_err(|_err| {
-        error!("Error sending data to plugin");
-        Error::new(ErrorKind::Other, "Error sending data to plugin")
-      })
-  }
-
-  fn flush(&mut self) -> Result<(), Error> {
-    // TODO change this! looping over a future is terrible!
+    // Try reading incoming packet
     loop {
-      // TODO it would be better to call self.plugin.flush but that requires owning the plugin
-      let next = self.plugin.poll_complete()
-        .map_err(|_err| {
-          Error::new(ErrorKind::Other, "Error flushing to plugin")
-        })?;
-      if let Async::Ready(_) = next {
-        return Ok(())
-      }
-    }
-  }
-}
-
-impl <S> Read for PluginReaderWriter<S>
-where S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()>
-{
-  fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-    if let Some(mut buffered) = self.incoming_buffer.take() {
-      let (bytes_read, rest) = read_from_bytes(&mut buffered, buf);
-      if rest.is_some() {
-        self.incoming_buffer = rest;
-      }
-      return Ok(bytes_read)
-    }
-
-    match self.plugin.poll() {
-      Ok(Async::Ready(Some((request_id, packet)))) => {
-        match packet {
-          IlpPacket::Prepare(mut prepare) => {
-            let mut reader = Cursor::new(prepare.data);
-            let mut data = Bytes::from(reader.read_var_octet_string().unwrap());
-            let (bytes_read, rest) = read_from_bytes(&mut data, buf);
-            if rest.is_some() {
-              self.incoming_buffer = rest;
+      // Poll until we get a NotReady
+      // Note: this makes sure Tokio knows we're still waiting for more
+      match plugin.poll()? {
+        Async::Ready(Some((request_id, packet))) => match packet {
+          IlpPacket::Prepare(prepare) => {
+            debug!(
+              "Reading {} bytes of TLS data from incoming Prepare packet {}",
+              prepare.data.len(),
+              request_id
+            );
+            if prepare.data.len() > 0 {
+              let mut prepare_reader = Cursor::new(prepare.data);
+              let data = prepare_reader.read_var_octet_string().map_err(|err| {
+                error!("Error reading TLS data from packet {}: {:?}", request_id, err);
+              })?;
+              let mut reader = Cursor::new(data);
+              self.tls_session.read_tls(&mut reader).map_err(|err| {
+                error!("Error reading TLS packets: {:?}", err);
+              })?;
             }
-
-            // TODO make sure this is sent
-            self.plugin.start_send((request_id, IlpPacket::Reject(IlpReject::new(
-              "F99",
-              "",
-              "",
-              Bytes::new(),
-            )))).unwrap();
-
-            Ok(bytes_read)
-          },
-          // TODO send data on Reject packets
-          // IlpPacket::Reject(reject) => {
-          // },
-          _ => Err(Error::new(ErrorKind::Interrupted, "Got unexpected ILP packet"))
-        }
-      },
-      Ok(Async::Ready(None)) => Ok(0),
-      Ok(Async::NotReady) => Err(Error::new(ErrorKind::Interrupted, "No incoming packet")),
-      Err(()) => Err(Error::new(ErrorKind::BrokenPipe, "Got error while polling plugin")),
+            self.pending_request = Some(request_id);
+          }
+          IlpPacket::Reject(reject) => {
+            debug!(
+              "Reading {} bytes of TLS data from incoming Reject packet {}",
+              reject.data.len(),
+              request_id
+            );
+            if reject.data.len() > 0 {
+              let mut reject_reader = Cursor::new(reject.data);
+              let data = reject_reader.read_var_octet_string().map_err(|err| {
+                error!("Error reading TLS data from packet {}: {:?}", request_id, err);
+              })?;
+              let mut reader = Cursor::new(data);
+              self.tls_session.read_tls(&mut reader).map_err(|err| {
+                error!("Error reading TLS packets: {:?}", err);
+              })?;
+            }
+          }
+          _ => return Err(()),
+        },
+        Async::Ready(None) => return Err(()),
+        Async::NotReady => break,
+      };
+      self.tls_session.process_new_packets().map_err(|err| {
+        error!("Error processing TLS packet {:?}", err);
+      })?;
     }
-  }
-}
 
-fn read_from_bytes(from: &mut Bytes, to: &mut [u8]) -> (usize, Option<Bytes>) {
-  let from_len = from.len();
-  let to_len = to.len();
+    // Try sending outgoing packets
+    let mut to_send: Vec<u8> = Vec::new();
+    while self.tls_session.wants_write() {
+      debug!("Writing outgoing TLS data");
+      self.tls_session.write_tls(&mut to_send).map_err(|err| {
+        error!("Error writing TLS packets from session {:?}", err);
+      })?;
+    }
+    if to_send.len() > 0 {
+      let mut data: Vec<u8> = Vec::new();
+      data.write_var_octet_string(&to_send).unwrap();
 
-  if from_len > to_len {
-    let rest = from.split_off(to_len);
-    to.clone_from_slice(&from[..]);
-    (to_len, Some(rest))
-  } else if from_len < to_len {
-    let (to_slice, _rest) = to.split_at_mut(from_len);
-    to_slice.clone_from_slice(&from[..]);
-    (from_len, None)
-  } else {
-    to.clone_from_slice(&from[..]);
-    (to_len, None)
+      // Either send the data on a reject or prepare
+      let request = {
+        if let Some(request_id) = self.pending_request.take() {
+          let reject = IlpPacket::Reject(IlpReject::new(
+            "F99",
+            "",
+            "", // TODO include our address?
+            data,
+          ));
+          (request_id, reject)
+        } else {
+          let prepare = IlpPacket::Prepare(IlpPrepare::new(
+            self.destination_account.clone(),
+            0,
+            random_condition(),
+            // TODO use random expiry
+            Utc::now() + Duration::seconds(30),
+            data,
+          ));
+          let request_id = self.next_request_id;
+          self.next_request_id += 1;
+          (request_id, prepare)
+        }
+      };
+
+      debug!("Sending request with TLS data {:?}", request);
+      if let AsyncSink::NotReady(item) = plugin.start_send(request)? {
+        debug!("Plugin not ready to send, buffering request ");
+        self.buffered_outgoing = Some(item);
+        return Ok(Async::NotReady);
+      }
+    }
+
+    // Make sure we don't leave a Prepare hanging
+    if let Some(request_id) = self.pending_request.take() {
+      let reject = IlpPacket::Reject(IlpReject::new("F99", "", "", Bytes::new()));
+      if let AsyncSink::NotReady(item) = plugin.start_send((request_id, reject))? {
+        self.buffered_outgoing = Some(item);
+        return Ok(Async::NotReady);
+      }
+    }
+
+    // Export key material from TLS session
+    if !self.tls_session.is_handshaking() {
+      let mut shared_secret: [u8; 32] = [0; 32];
+      self
+        .tls_session
+        // TODO do we need something for the Context?
+        .export_keying_material(&mut shared_secret, TLS_KEY_EXPORT_LABEL.as_bytes(), None)
+        .map_err(|err| {
+          error!("Error exporting keying material {}", err);
+        })?;
+      println!("Shared secret {:x?}", &shared_secret[..]);
+      return Ok(Async::Ready((Bytes::from(&shared_secret[..]), plugin)));
+    }
+    debug!("Still handshaking, will poll again");
+
+    self.plugin = Some(plugin);
+    Ok(Async::NotReady)
   }
 }
 
