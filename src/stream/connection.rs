@@ -80,6 +80,7 @@ impl Connection {
     source_account: String,
     destination_account: String,
     is_server: bool,
+    next_request_id: Arc<AtomicUsize>,
   ) -> Self {
     let next_stream_id = match is_server {
       true => 2,
@@ -93,7 +94,7 @@ impl Connection {
       })).then(|_| Ok(()));
     tokio::spawn(queue_incoming);
 
-    Connection {
+    let conn = Connection {
       state: Arc::new(RwLock::new(ConnectionState::Opening)),
       outgoing,
       incoming: Arc::new(Mutex::new(receiver)),
@@ -103,8 +104,15 @@ impl Connection {
       destination_account: Arc::new(destination_account),
       next_stream_id: Arc::new(AtomicUsize::new(next_stream_id)),
       next_packet_sequence: Arc::new(AtomicUsize::new(1)),
-      next_request_id: Arc::new(AtomicUsize::new(1)),
+      next_request_id,
+    };
+
+    // TODO figure out a better way to send the initial packet - get the exchange rate and wait for response
+    if !is_server {
+      conn.send_handshake();
     }
+
+    conn
   }
 
   pub fn send_money(&mut self, stream_id: u64, amount: u64) -> impl Future<Item = u64, Error = ()> {
@@ -343,72 +351,3 @@ impl Future for WaitForResponse {
     }
   }
 }
-
-// fn parse_stream_packet_from_request(shared_secret: Bytes, (_id: u32, packet: IlpPacket)) -> (Option<StreamPacket>, bool) {
-//     match packet {
-//       IlpPacket::Prepare(packet) => {
-//         // Check that the condition matches what we regenerate
-//         let fulfillment = generate_fulfillment(&self.shared_secret[..], &packet.data[..]);
-//         let condition = fulfillment_to_condition(&fulfillment);
-//         let fulfillable = condition == packet.execution_condition;
-
-//         // Check if we can decrypt and parse the STREAM packet
-//         // TODO don't copy the packet data
-//         let stream_packet = StreamPacket::from_encrypted(shared_secret, BytesMut::from(&packet.data[..]))
-//           .map_err(|err| {
-//             warn!("Got ILP packet with data we cannot parse: {:?}", packet);
-//           })
-//           .ok();
-//         (stream_packet, fulfillable)
-//       }
-//       IlpPacket::Fulfill(packet) => {
-//         // Check if we can decrypt and parse the STREAM packet
-//         if let Ok(stream_packet) =
-//           StreamPacket::from_encrypted(&self.shared_secret[..], &packet.data[..])
-//         {
-//           Ok(Async::Ready(Some((
-//             request_id,
-//             IlpPacket::Fulfill(packet),
-//             Some(stream_packet),
-//           ))))
-//         } else {
-//           warn!(
-//             "Got ILP Fulfill for request: {} with no data attached: {:?}",
-//             request_id, packet
-//           );
-//           Ok(Async::Ready(Some((
-//             request_id,
-//             IlpPacket::Fulfill(packet),
-//             None,
-//           ))))
-//         }
-//       }
-//       IlpPacket::Reject(packet) => {
-//         // Check if we can decrypt and parse the STREAM packet
-//         if let Ok(stream_packet) =
-//           StreamPacket::from_encrypted(&self.shared_secret[..], &packet.data[..])
-//         {
-//           Ok(Async::Ready(Some((
-//             request_id,
-//             IlpPacket::Reject(packet),
-//             Some(stream_packet),
-//           ))))
-//         } else {
-//           Ok(Async::Ready(Some((
-//             request_id,
-//             IlpPacket::Reject(packet),
-//             None,
-//           ))))
-//         }
-//       }
-//       IlpPacket::Unknown => {
-//         warn!("Got ILP packet with no data: {:?}", packet);
-//         let reject = (
-//           request_id,
-//           IlpPacket::Reject(IlpReject::new("F06", "", "", Bytes::new())),
-//         );
-//         self.try_start_send(reject)?;
-//         Ok(Async::NotReady)
-//       }
-//     }
-// }

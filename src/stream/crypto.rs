@@ -8,6 +8,7 @@ const AUTH_TAG_LENGTH: usize = 16;
 lazy_static! {
   static ref ENCRYPTION_KEY_STRING: &'static [u8] = "ilp_stream_encryption".as_bytes();
   static ref FULFILLMENT_GENERATION_STRING: &'static [u8] = "ilp_stream_fulfillment".as_bytes();
+  static ref SHARED_SECRET_GENERATION_STRING: &'static [u8] = "ilp_stream_shared_secret".as_bytes();
 }
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
@@ -35,6 +36,17 @@ pub fn random_condition() -> Bytes {
   let mut condition_slice: [u8; 32] = [0; 32];
   SystemRandom::new().fill(&mut condition_slice).unwrap();
   Bytes::from(&condition_slice[..])
+}
+
+pub fn generate_token() -> Bytes {
+  let mut token: [u8; 18] = [0; 18];
+  SystemRandom::new().fill(&mut token).unwrap();
+  Bytes::from(&token[..])
+}
+
+pub fn generate_shared_secret_from_token(server_secret: Bytes, token: Bytes) -> Bytes {
+  let key = hmac_sha256(&server_secret[..], &SHARED_SECRET_GENERATION_STRING);
+  hmac_sha256(&key[..], &token[..])
 }
 
 pub fn encrypt(shared_secret: Bytes, plaintext: BytesMut) -> BytesMut {
@@ -79,7 +91,7 @@ fn encrypt_with_nonce(shared_secret: Bytes, mut plaintext: BytesMut, nonce: Byte
 }
 
 
-pub fn decrypt(shared_secret: Bytes, mut ciphertext: BytesMut) -> BytesMut {
+pub fn decrypt(shared_secret: Bytes, mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
   let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
   let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key).unwrap();
 
@@ -91,12 +103,11 @@ pub fn decrypt(shared_secret: Bytes, mut ciphertext: BytesMut) -> BytesMut {
   ciphertext.unsplit(auth_tag);
 
   let length = aead::open_in_place(&key, &nonce[..], additional_data, 0, ciphertext.as_mut())
-    .unwrap_or_else(|err| {
+    .map_err(|err| {
       error!("Error decrypting {:?}", err);
-      panic!(err);
-    }).len();
+    })?.len();
   ciphertext.truncate(length);
-  ciphertext
+  Ok(ciphertext)
 }
 
 #[cfg(test)]
@@ -136,13 +147,13 @@ mod encrypt_decrypt_test {
   #[test]
   fn it_decrypts_javascript_ciphertext() {
     let decrypted = decrypt(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&CIPHERTEXT[..]));
-    assert_eq!(decrypted.to_vec(), *PLAINTEXT);
+    assert_eq!(decrypted.unwrap().to_vec(), *PLAINTEXT);
   }
 
   #[test]
   fn it_losslessly_encrypts_and_decrypts() {
     let ciphertext = encrypt(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&PLAINTEXT[..]));
     let decrypted = decrypt(Bytes::from(&SHARED_SECRET[..]), ciphertext);
-    assert_eq!(decrypted.to_vec(), *PLAINTEXT);
+    assert_eq!(decrypted.unwrap().to_vec(), *PLAINTEXT);
   }
 }

@@ -22,7 +22,10 @@ pub struct StreamPacket {
 impl StreamPacket {
   pub fn from_encrypted(shared_secret: Bytes, ciphertext: BytesMut) -> Result<Self, ParseError> {
     // TODO handle decryption failure
-    let decrypted = decrypt(shared_secret, ciphertext);
+    let decrypted = decrypt(shared_secret, ciphertext)
+      .map_err(|err| {
+        ParseError::InvalidPacket(String::from("Unable to decrypt packet"))
+      })?;
     StreamPacket::from_bytes_unencrypted(&decrypted[..])
   }
 

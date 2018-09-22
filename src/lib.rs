@@ -26,6 +26,7 @@ extern crate serde;
 extern crate reqwest;
 extern crate base64;
 extern crate rustls;
+extern crate hyper;
 
 pub mod ilp;
 pub mod oer;

@@ -1,22 +1,43 @@
-use futures::Future;
-use reqwest::async::Client;
-use plugin::Plugin;
-use stream::{connect_async as connect_stream, Connection};
-use serde::{de, Deserialize, Deserializer};
 use base64;
+use bytes::Bytes;
+use futures::{Future, Stream};
+use hyper::service::service_fn_ok;
+use hyper::{Body, Request, Response, Server, StatusCode};
+use plugin::Plugin;
+use reqwest::async::Client;
+use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
+use serde_json;
+use stream::{connect_async as connect_stream, Connection, StreamListener};
+use ring::rand::{SecureRandom, SystemRandom};
+use std::sync::Arc;
+use tokio;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SpspResponse {
   destination_account: String,
-  #[serde(deserialize_with = "deserialize_base64")]
+  #[serde(with = "serde_base64")]
   shared_secret: Vec<u8>,
 }
 
-fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where D: Deserializer<'de>
-{
+// From https://github.com/serde-rs/json/issues/360#issuecomment-330095360
+mod serde_base64 {
+  use base64;
+  use serde::{de, Deserialize, Deserializer, Serializer};
+
+  pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: Serializer,
+  {
+    serializer.serialize_str(&base64::encode(bytes))
+  }
+
+  pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
     let s = <&str>::deserialize(deserializer)?;
     base64::decode(s).map_err(de::Error::custom)
+  }
 }
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = ()> {
@@ -26,22 +47,76 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = ()> {
     .send()
     .map_err(|err| {
       error!("Error querying SPSP server {:?}", err);
-    })
-    .and_then(|mut res| {
-      res.json::<SpspResponse>()
-        .map_err(|err| {
-          error!("Error parsing SPSP response: {:?}", err);
-        })
+    }).and_then(|mut res| {
+      res.json::<SpspResponse>().map_err(|err| {
+        error!("Error parsing SPSP response: {:?}", err);
+      })
     })
 }
 
 pub fn connect_async<S>(plugin: S, server: &str) -> impl Future<Item = Connection, Error = ()>
 where
-  S: Plugin + 'static
+  S: Plugin + 'static,
 {
   query(server)
-    .and_then(|spsp| {
-      connect_stream(plugin, spsp.destination_account, spsp.shared_secret)
-    })
+    .and_then(|spsp| connect_stream(plugin, spsp.destination_account, spsp.shared_secret))
+}
 
+pub fn listen<S>(plugin: S, server_secret: Bytes, port: u16) -> impl Future<Item = (), Error = ()>
+// TODO don't require it to be static
+where
+  S: Plugin + 'static,
+{
+  StreamListener::bind::<'static>(plugin, server_secret).and_then(move |(listener, connection_generator)| {
+    let addr = ([127, 0, 0, 1], port).into();
+
+    let secret_generator = Arc::new(connection_generator);
+    let service = move || {
+      let secret_generator = Arc::clone(&secret_generator);
+      service_fn_ok(move |_req: Request<Body>| {
+        let (destination_account, shared_secret) = secret_generator.generate_address_and_secret("");
+        debug!(
+          "Generated address and shared secret for account {}",
+          destination_account
+        );
+        let spsp_response = SpspResponse {
+          destination_account: destination_account.to_string(),
+          shared_secret: shared_secret.to_vec(),
+        };
+
+        Response::builder()
+          .header("Content-Type", "application/json")
+          .status(StatusCode::OK)
+          .body(Body::from(serde_json::to_string(&spsp_response).unwrap()))
+          .unwrap()
+      })
+    };
+
+    let handle_connections = listener.for_each(|conn: Connection| {
+      println!("Got connection");
+
+      Ok(())
+    })
+    .then(|_| Ok(()));
+    tokio::spawn(handle_connections);
+
+    Server::bind(&addr).serve(service).map_err(|err| {
+      error!("Server error: {:?}", err);
+    })
+  })
+}
+
+pub fn listen_with_random_secret<S>(plugin: S, port: u16) -> impl Future<Item = (), Error = ()>
+// TODO don't require it to be static
+where
+  S: Plugin + 'static,
+{
+  let server_secret = random_secret();
+  listen(plugin, server_secret, port)
+}
+
+pub fn random_secret() -> Bytes {
+  let mut secret: [u8; 32] = [0; 32];
+  SystemRandom::new().fill(&mut secret).unwrap();
+  Bytes::from(&secret[..])
 }
