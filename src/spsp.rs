@@ -5,11 +5,11 @@ use hyper::service::service_fn_ok;
 use hyper::{Body, Request, Response, Server, StatusCode};
 use plugin::Plugin;
 use reqwest::async::Client;
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json;
-use stream::{connect_async as connect_stream, Connection, StreamListener};
-use ring::rand::{SecureRandom, SystemRandom};
 use std::sync::Arc;
+use stream::{connect_async as connect_stream, Connection, StreamListener};
 use tokio;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -28,7 +28,7 @@ mod serde_base64 {
   where
     S: Serializer,
   {
-    serializer.serialize_str(&base64::encode(bytes))
+    serializer.serialize_str(&base64::encode_config(bytes, base64::URL_SAFE_NO_PAD))
   }
 
   pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -36,7 +36,8 @@ mod serde_base64 {
     D: Deserializer<'de>,
   {
     let s = <&str>::deserialize(deserializer)?;
-    base64::decode(s).map_err(de::Error::custom)
+    // TODO also accept non-URL safe
+    base64::decode_config(s, base64::URL_SAFE).map_err(de::Error::custom)
   }
 }
 
@@ -62,51 +63,57 @@ where
     .and_then(|spsp| connect_stream(plugin, spsp.destination_account, spsp.shared_secret))
 }
 
-pub fn listen<S>(plugin: S, server_secret: Bytes, port: u16) -> impl Future<Item = (), Error = ()>
+pub fn listen<S>(
+  plugin: S,
+  server_secret: Bytes,
+  port: u16,
+) -> impl Future<Item = StreamListener, Error = ()>
 // TODO don't require it to be static
 where
   S: Plugin + 'static,
 {
-  StreamListener::bind::<'static>(plugin, server_secret).and_then(move |(listener, connection_generator)| {
-    let addr = ([127, 0, 0, 1], port).into();
+  StreamListener::bind::<'static>(plugin, server_secret).and_then(
+    move |(listener, connection_generator)| {
+      let addr = ([127, 0, 0, 1], port).into();
 
-    let secret_generator = Arc::new(connection_generator);
-    let service = move || {
-      let secret_generator = Arc::clone(&secret_generator);
-      service_fn_ok(move |_req: Request<Body>| {
-        let (destination_account, shared_secret) = secret_generator.generate_address_and_secret("");
-        debug!(
-          "Generated address and shared secret for account {}",
-          destination_account
-        );
-        let spsp_response = SpspResponse {
-          destination_account: destination_account.to_string(),
-          shared_secret: shared_secret.to_vec(),
-        };
+      let secret_generator = Arc::new(connection_generator);
+      let service = move || {
+        let secret_generator = Arc::clone(&secret_generator);
+        service_fn_ok(move |_req: Request<Body>| {
+          let (destination_account, shared_secret) =
+            secret_generator.generate_address_and_secret("");
+          debug!(
+            "Generated address and shared secret for account {}",
+            destination_account
+          );
+          let spsp_response = SpspResponse {
+            destination_account: destination_account.to_string(),
+            shared_secret: shared_secret.to_vec(),
+          };
 
-        Response::builder()
-          .header("Content-Type", "application/json")
-          .status(StatusCode::OK)
-          .body(Body::from(serde_json::to_string(&spsp_response).unwrap()))
-          .unwrap()
-      })
-    };
+          Response::builder()
+            .header("Content-Type", "application/json")
+            .status(StatusCode::OK)
+            .body(Body::from(serde_json::to_string(&spsp_response).unwrap()))
+            .unwrap()
+        })
+      };
 
-    let handle_connections = listener.for_each(|conn: Connection| {
-      println!("Got connection");
+      // TODO give the user a way to turn it off
+      let run_server = Server::bind(&addr).serve(service).map_err(|err| {
+        error!("Server error: {:?}", err);
+      });
+      tokio::spawn(run_server);
 
-      Ok(())
-    })
-    .then(|_| Ok(()));
-    tokio::spawn(handle_connections);
-
-    Server::bind(&addr).serve(service).map_err(|err| {
-      error!("Server error: {:?}", err);
-    })
-  })
+      Ok(listener)
+    },
+  )
 }
 
-pub fn listen_with_random_secret<S>(plugin: S, port: u16) -> impl Future<Item = (), Error = ()>
+pub fn listen_with_random_secret<S>(
+  plugin: S,
+  port: u16,
+) -> impl Future<Item = StreamListener, Error = ()>
 // TODO don't require it to be static
 where
   S: Plugin + 'static,
@@ -115,7 +122,7 @@ where
   listen(plugin, server_secret, port)
 }
 
-pub fn random_secret() -> Bytes {
+fn random_secret() -> Bytes {
   let mut secret: [u8; 32] = [0; 32];
   SystemRandom::new().fill(&mut secret).unwrap();
   Bytes::from(&secret[..])

@@ -51,38 +51,6 @@ where
     })
 }
 
-fn plugin_to_channels<S>(plugin: S) -> (UnboundedSender<S::Item>, UnboundedReceiver<S::Item>)
-where
-  S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
-{
-  let (sink, stream) = plugin.split();
-  let (outgoing_sender, outgoing_receiver) = unbounded::<IlpRequest>();
-  let (incoming_sender, incoming_receiver) = unbounded::<IlpRequest>();
-
-  // Forward packets from Connection to plugin
-  let receiver = outgoing_receiver.map_err(|err| {
-    error!("Broken connection worker chan {:?}", err);
-  });
-  let forward_to_plugin = sink.send_all(receiver).map(|_| ()).map_err(|err| {
-    error!("Error forwarding request to plugin: {:?}", err);
-  });
-  tokio::spawn(forward_to_plugin);
-
-  // Forward packets from plugin to Connection
-  let handle_packets = incoming_sender
-    .sink_map_err(|_| ())
-    .send_all(stream)
-    .and_then(|_| {
-      debug!("Finished forwarding packets from plugin to Connection");
-      Ok(())
-    }).map_err(|err| {
-      error!("Error handling incoming packet: {:?}", err);
-    });
-  tokio::spawn(handle_packets);
-
-  (outgoing_sender, incoming_receiver)
-}
-
 #[derive(Clone)]
 pub struct ConnectionGenerator {
   source_account: String,
@@ -162,8 +130,53 @@ impl Stream for StreamListener {
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-    if let Some((request_id, packet)) = try_ready!(self.incoming_receiver.poll()) {
+    loop {
+      debug!("StreamListener checking plugin for more incoming packets");
+      let next = try_ready!(self.incoming_receiver.poll());
+      if next.is_none() {
+        debug!("Incoming stream closed");
+        return Ok(Async::Ready(None));
+      }
+      let (request_id, packet) = next.unwrap();
       match packet {
+        IlpPacket::Fulfill(fulfill) => {
+          let connection_id = self
+            .pending_requests
+            .lock()
+            .unwrap()
+            .get(&request_id)
+            .unwrap()
+            .to_string();
+          let connections = self.connections.read().unwrap();
+          let incoming_tx = connections.get(&connection_id).unwrap();
+          debug!(
+            "Sending Fulfill for request {} to connection {}",
+            request_id, connection_id
+          );
+          incoming_tx
+            .unbounded_send((request_id, IlpPacket::Fulfill(fulfill)))
+            .unwrap();
+          continue;
+        }
+        IlpPacket::Reject(reject) => {
+          let connection_id = self
+            .pending_requests
+            .lock()
+            .unwrap()
+            .get(&request_id)
+            .unwrap()
+            .to_string();
+          let connections = self.connections.read().unwrap();
+          let incoming_tx = connections.get(&connection_id).unwrap();
+          debug!(
+            "Sending Reject for request {} to connection {}",
+            request_id, connection_id
+          );
+          incoming_tx
+            .unbounded_send((request_id, IlpPacket::Reject(reject)))
+            .unwrap();
+          continue;
+        }
         IlpPacket::Prepare(prepare) => {
           let local_address = prepare
             .destination
@@ -180,7 +193,7 @@ impl Stream for StreamListener {
               )).map_err(|_| {
                 error!("Error sending reject");
               })?;
-            return Ok(Async::NotReady);
+            continue;
           }
           let connection_id = local_address_parts[0];
 
@@ -195,7 +208,20 @@ impl Stream for StreamListener {
           // }
 
           let is_new_connection = !self.connections.read().unwrap().contains_key(connection_id);
-          if is_new_connection {
+          if !is_new_connection {
+            trace!(
+              "Sending request {} to connection {}",
+              request_id,
+              connection_id
+            );
+            // Send the packet to the Connection
+            let connections = self.connections.read().unwrap();
+            let channel = connections.get(connection_id).unwrap();
+            channel
+              .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
+              .unwrap();
+            continue;
+          } else {
             // Check that the connection is legitimate by decrypting the packet
             let shared_secret = crypto::generate_shared_secret_from_token(
               self.server_secret.clone(),
@@ -237,7 +263,7 @@ impl Stream for StreamListener {
                     )).map_err(|_| {
                       error!("Error sending reject");
                     })?;
-                  return Ok(Async::NotReady);
+                  continue;
                 }
               } else {
                 warn!(
@@ -252,7 +278,7 @@ impl Stream for StreamListener {
                   )).map_err(|_| {
                     error!("Error sending reject");
                   })?;
-                return Ok(Async::NotReady);
+                continue;
               }
             };
 
@@ -268,14 +294,16 @@ impl Stream for StreamListener {
             let (outgoing_tx, outgoing_rx) = unbounded::<IlpRequest>();
             let connection_id = Arc::new(connection_id.to_string());
             let pending_requests = Arc::clone(&self.pending_requests);
+            let connection_id_clone = Arc::clone(&connection_id);
             let outgoing_rx = outgoing_rx.inspect(move |(request_id, packet)| {
               let request_id = request_id.clone();
+              let connection_id = Arc::clone(&connection_id_clone);
               if let IlpPacket::Prepare(_prepare) = packet {
                 // TODO avoid storing the connection_id over and over
                 pending_requests
                   .lock()
                   .unwrap()
-                  .insert(request_id, Arc::clone(&connection_id));
+                  .insert(request_id, connection_id);
               }
             });
             let forward_outgoing = self
@@ -299,25 +327,62 @@ impl Stream for StreamListener {
               true,
               Arc::clone(&self.next_request_id),
             );
+
+            incoming_tx
+              .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
+              .map_err(|err| {
+                error!(
+                  "Error sending request {} to connection {}: {:?}",
+                  request_id,
+                  connection_id.clone(),
+                  err
+                );
+              })?;
+
             return Ok(Async::Ready(Some(conn)));
           }
-
-          // Send the packet to the Connection
-          let connections = self.connections.read().unwrap();
-          let channel = connections.get(connection_id).unwrap();
-          channel.unbounded_send((request_id, IlpPacket::Prepare(prepare))).unwrap();
-
-          Ok(Async::NotReady)
         }
-        IlpPacket::Fulfill(fulfill) => Ok(Async::NotReady),
-        IlpPacket::Reject(reject) => Ok(Async::NotReady),
         _ => {
           debug!("Ignoring unknown ILP packet");
-          Ok(Async::NotReady)
+          continue;
         }
       }
-    } else {
-      Ok(Async::Ready(None))
     }
   }
+}
+
+fn plugin_to_channels<S>(plugin: S) -> (UnboundedSender<S::Item>, UnboundedReceiver<S::Item>)
+where
+  S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
+{
+  let (sink, stream) = plugin.split();
+  let (outgoing_sender, outgoing_receiver) = unbounded::<IlpRequest>();
+  let (incoming_sender, incoming_receiver) = unbounded::<IlpRequest>();
+
+  // Forward packets from Connection to plugin
+  let receiver = outgoing_receiver.map_err(|err| {
+    error!("Broken connection worker chan {:?}", err);
+  });
+  let forward_to_plugin = sink.send_all(receiver.inspect(|request| {
+    debug!("Forwarding request to plugin {:?}", request);
+  })).map(|_| ()).map_err(|err| {
+    error!("Error forwarding request to plugin: {:?}", err);
+  });
+  tokio::spawn(forward_to_plugin);
+
+  // Forward packets from plugin to Connection
+  let handle_packets = incoming_sender
+    .sink_map_err(|_| ())
+    .send_all(stream.inspect(|request| {
+      debug!("Forwarding request from plugin to Connection {:?}", request);
+    }))
+    .and_then(|_| {
+      debug!("Finished forwarding packets from plugin to Connection");
+      Ok(())
+    }).map_err(|err| {
+      error!("Error handling incoming packet: {:?}", err);
+    });
+  tokio::spawn(handle_packets);
+
+  (outgoing_sender, incoming_receiver)
 }

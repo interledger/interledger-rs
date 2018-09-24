@@ -26,7 +26,7 @@ fn main() {
     .and_then(|mut conn: Connection| {
       let stream = conn.create_stream();
       // TODO should send_money return the stream so we don't need to clone it?
-      stream.clone().send_money(100)
+      stream.clone().send(100)
         .and_then(move |_| {
           println!("Sent money on stream. Total sent: {}, total delivered: {}", stream.total_sent(), stream.total_delivered());
           Ok(())
@@ -34,9 +34,9 @@ fn main() {
         .map_err(|err| {
           println!("Error sending: {:?}", err);
         })
-        .and_then(move |_| {
-          conn.close()
-        })
+        // .and_then(move |_| {
+        //   conn.close()
+        // })
         .and_then(|_| {
           println!("Closed connection");
           Ok(())
