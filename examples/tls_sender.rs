@@ -44,7 +44,7 @@ fn main() {
       let tls_session = ClientSession::new(&Arc::new(config), dns_name);
 
       connect_tls(plugin, tls_session, "private.moneyd.local.bob").and_then(
-        |(shared_secret, plugin)| {
+        |(shared_secret, _plugin)| {
           println!("Shared secret {:x?}", &shared_secret[..]);
           Ok(())
         },

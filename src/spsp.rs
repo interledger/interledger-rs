@@ -1,12 +1,10 @@
-use base64;
 use bytes::Bytes;
-use futures::{Future, Stream};
+use futures::Future;
 use hyper::service::service_fn_ok;
 use hyper::{Body, Request, Response, Server, StatusCode};
 use plugin::Plugin;
 use reqwest::async::Client;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json;
 use std::sync::Arc;
 use stream::{connect_async as connect_stream, Connection, StreamListener};

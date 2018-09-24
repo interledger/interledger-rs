@@ -11,9 +11,9 @@ use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::Future;
 use futures::{Async, Poll, Sink, Stream};
 use ildcp;
-use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
+use ilp::{IlpPacket, IlpReject, PacketType};
 use plugin::{IlpRequest, Plugin};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio;
@@ -85,7 +85,7 @@ pub struct StreamListener {
   // TODO do these need to be wrapped in Mutexes?
   connections: Arc<RwLock<HashMap<String, UnboundedSender<IlpRequest>>>>,
   pending_requests: Arc<Mutex<HashMap<u32, Arc<String>>>>,
-  closed_connections: Arc<Mutex<HashSet<String>>>,
+  // closed_connections: Arc<Mutex<HashSet<String>>>,
   next_request_id: Arc<AtomicUsize>,
 }
 
@@ -111,7 +111,7 @@ impl StreamListener {
           server_secret: server_secret.clone(),
           connections: Arc::new(RwLock::new(HashMap::new())),
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
-          closed_connections: Arc::new(Mutex::new(HashSet::new())),
+          // closed_connections: Arc::new(Mutex::new(HashSet::new())),
           next_request_id: Arc::new(AtomicUsize::new(1)),
         };
 

@@ -3,15 +3,13 @@ use super::packet::*;
 use super::StreamPacket;
 use bytes::{Bytes, BytesMut};
 use chrono::{Duration, Utc};
-use futures::future::ok;
-use futures::{Async, Future, Poll, Sink, Stream, StartSend, AsyncSink};
+use futures::{Async, Poll, Sink, Stream, StartSend, AsyncSink};
 use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use plugin::IlpRequest;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use tokio;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::{HashMap, VecDeque};
 use hex;
@@ -143,9 +141,9 @@ pub struct Connection {
 #[derive(PartialEq, Debug)]
 enum ConnectionState {
   Opening,
-  Open,
-  Closed,
-  Closing,
+  // Open,
+  // Closed,
+  // Closing,
 }
 
 impl Connection {

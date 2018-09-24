@@ -41,7 +41,7 @@ fn main() {
 
       let tls_session = rustls::ServerSession::new(&Arc::new(config));
 
-      connect_tls(plugin, tls_session, "private.moneyd.local.alice").and_then(|(shared_secret, plugin)| {
+      connect_tls(plugin, tls_session, "private.moneyd.local.alice").and_then(|(shared_secret, _plugin)| {
         println!("Shared secret {:x?}", &shared_secret[..]);
         Ok(())
       })

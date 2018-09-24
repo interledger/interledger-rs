@@ -8,10 +8,8 @@ extern crate env_logger;
 
 use tokio::prelude::*;
 use ilp::plugin::btp::{connect_async, ClientPlugin};
-use ilp::ilp::{IlpPacket, IlpFulfill};
 use ilp::stream::Connection;
 use ilp::spsp::listen_with_random_secret;
-use std::sync::{Arc,Mutex};
 use futures::{Stream};
 
 fn main() {
