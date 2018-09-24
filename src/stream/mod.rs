@@ -1,12 +1,12 @@
+mod client;
 mod connection;
 mod crypto;
-mod packet;
-mod client;
 mod listener;
+mod packet;
 
-pub use self::connection::Connection;
-pub use self::listener::{StreamListener, ConnectionGenerator};
 pub use self::client::connect_async;
+pub use self::connection::Connection;
+pub use self::listener::{ConnectionGenerator, StreamListener};
 use self::packet::*;
 
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
@@ -30,9 +30,7 @@ where
   let receiver = outgoing_receiver.map_err(|err| {
     error!("Broken connection worker chan {:?}", err);
   });
-  let forward_to_plugin = sink.send_all(receiver.inspect(|request| {
-    debug!("Forwarding request to plugin {:?}", request);
-  })).map(|_| ()).map_err(|err| {
+  let forward_to_plugin = sink.send_all(receiver).map(|_| ()).map_err(|err| {
     error!("Error forwarding request to plugin: {:?}", err);
   });
   tokio::spawn(forward_to_plugin);
@@ -40,9 +38,7 @@ where
   // Forward packets from plugin to Connection
   let handle_packets = incoming_sender
     .sink_map_err(|_| ())
-    .send_all(stream.inspect(|request| {
-      debug!("Forwarding request from plugin to Connection {:?}", request);
-    }))
+    .send_all(stream)
     .and_then(|_| {
       debug!("Finished forwarding packets from plugin to Connection");
       Ok(())

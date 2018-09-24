@@ -23,13 +23,16 @@ fn main() {
       .and_then(|listener| {
         listener.for_each(|conn: Connection| {
           println!("Got incoming connection");
-          conn.for_each(|stream| {
+          let handle_connection = conn.for_each(|stream| {
             println!("Got incoming stream");
             stream.for_each(|amount| {
               println!("Got incoming money {}", amount);
               Ok(())
             })
-          })
+          });
+
+          tokio::spawn(handle_connection);
+          Ok(())
         })
         .map_err(|err| {
           println!("Error in listener {:?}", err);
