@@ -94,7 +94,7 @@ impl Stream for StreamListener {
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     loop {
-      debug!("StreamListener checking plugin for more incoming packets");
+      trace!("Polling plugin for more incoming packets");
       let next = try_ready!(self.incoming_receiver.poll());
       if next.is_none() {
         debug!("Incoming stream closed");
@@ -112,7 +112,7 @@ impl Stream for StreamListener {
             .to_string();
           let connections = self.connections.read().unwrap();
           let incoming_tx = connections.get(&connection_id).unwrap();
-          debug!(
+          trace!(
             "Sending Fulfill for request {} to connection {}",
             request_id, connection_id
           );
@@ -131,7 +131,7 @@ impl Stream for StreamListener {
             .to_string();
           let connections = self.connections.read().unwrap();
           let incoming_tx = connections.get(&connection_id).unwrap();
-          debug!(
+          trace!(
             "Sending Reject for request {} to connection {}",
             request_id, connection_id
           );
@@ -173,7 +173,7 @@ impl Stream for StreamListener {
           let is_new_connection = !self.connections.read().unwrap().contains_key(connection_id);
           if !is_new_connection {
             trace!(
-              "Sending request {} to connection {}",
+              "Sending Prepare {} to connection {}",
               request_id,
               connection_id
             );

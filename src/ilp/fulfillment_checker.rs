@@ -3,6 +3,7 @@ use super::IlpPacket;
 use std::collections::HashMap;
 use ring::digest::{digest, SHA256};
 use chrono::{DateTime, Utc};
+use hex;
 
 pub struct IlpFulfillmentChecker<S> {
   inner: S,
@@ -34,27 +35,26 @@ where
       Some((request_id, IlpPacket::Fulfill(fulfill))) => {
         if let Some((condition, expires_at)) = self.packets.remove(&request_id) {
           if !fulfillment_matches_condition(&fulfill.fulfillment, condition.as_ref()) {
-            warn!("Got invalid Fulfill with request id {}: {:?} (invalid fulfillment. original condition: {:x?})", request_id, fulfill, condition);
+            warn!("Got invalid fulfillment with request id {}: {} (invalid fulfillment. original condition: {:x?})", request_id, hex::encode(&fulfill.fulfillment[..]), hex::encode(&condition[..]));
             // TODO do this without removing / reinserting each time
             self.packets.insert(request_id, (condition, expires_at));
             Ok(Async::NotReady)
           } else if &expires_at < &Utc::now() {
-            warn!("Got invalid Fulfill with request id {}: {:?} (already expired)", request_id, fulfill);
+            warn!("Got invalid Fulfill with request id {} (expired at: {})", request_id, expires_at.to_rfc3339());
             // TODO do this without removing / reinserting each time
             self.packets.insert(request_id, (condition, expires_at));
             Ok(Async::NotReady)
           } else {
-            debug!("Got valid Fulfill matching prepare with request id: {}: {:?}", request_id, fulfill);
+            trace!("Got valid Fulfill matching prepare with request id: {}: {}", request_id, hex::encode(&fulfill.fulfillment[..]));
             Ok(Async::Ready(Some((request_id, IlpPacket::Fulfill(fulfill)))))
           }
         } else {
           // We never saw the Prepare that corresponds to this
-          warn!("Got Fulfill for unknown request id {}: {:?}", request_id, fulfill);
+          warn!("Got Fulfill for unknown request id {}: {}", request_id, hex::encode(&fulfill.fulfillment[..]));
           Ok(Async::NotReady)
         }
       },
       Some((request_id, IlpPacket::Reject(reject))) => {
-        debug!("Prepare with request id {} was rejected", request_id);
         self.packets.remove(&request_id);
         Ok(Async::Ready(Some((request_id, IlpPacket::Reject(reject)))))
       },

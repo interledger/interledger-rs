@@ -185,7 +185,7 @@ impl Connection {
   }
 
   fn try_send(&mut self) -> Result<(), ()> {
-    debug!("Checking if we should send an outgoing packet");
+    trace!("Checking if we should send an outgoing packet");
 
     let mut outgoing_amount: u64 = 0;
     let mut frames: Vec<Frame> = Vec::new();
@@ -213,7 +213,7 @@ impl Connection {
     }
 
     if frames.len() == 0 {
-      debug!("Not sending packet, no frames need to be sent");
+      trace!("Not sending packet, no frames need to be sent");
       return Ok(())
     }
 
@@ -257,7 +257,7 @@ impl Connection {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
     loop {
-      debug!("Polling for incoming requests");
+      trace!("Polling for incoming requests");
       let next = {
         if let Ok(mut incoming) = self.incoming.try_lock() {
           incoming.poll()
@@ -282,7 +282,7 @@ impl Connection {
           return Ok(())
         },
         Ok(Async::NotReady) => {
-          debug!("No more incoming requests for now");
+          trace!("No more incoming requests for now");
           return Ok(())
         },
         Err(err) => {
@@ -487,7 +487,7 @@ impl Stream for Connection {
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-    debug!("Polling for new incoming streams");
+    trace!("Polling for new incoming streams");
     self.try_handle_incoming()?;
 
     if let Ok(mut new_streams) = self.new_streams.try_lock() {
