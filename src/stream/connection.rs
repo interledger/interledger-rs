@@ -3,7 +3,7 @@ use super::packet::*;
 use super::StreamPacket;
 use bytes::{Bytes, BytesMut};
 use chrono::{Duration, Utc};
-use futures::{Async, Poll, Sink, Stream, StartSend, AsyncSink};
+use futures::{Async, Poll, Stream};
 use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -13,112 +13,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::{HashMap, VecDeque};
 use hex;
-
-#[derive(Clone)]
-pub struct MoneyStream {
-  id: u64,
-  // TODO should this be a reference?
-  conn: Connection,
-  send_max: Arc<AtomicUsize>,
-  pending: Arc<AtomicUsize>,
-  sent: Arc<AtomicUsize>,
-  delivered: Arc<AtomicUsize>,
-  received: Arc<AtomicUsize>,
-  last_reported_received: Arc<AtomicUsize>,
-}
-
-impl MoneyStream {
-  fn new(id: u64, connection: Connection) -> Self {
-    MoneyStream {
-      id,
-      conn: connection,
-      send_max: Arc::new(AtomicUsize::new(0)),
-      pending: Arc::new(AtomicUsize::new(0)),
-      sent: Arc::new(AtomicUsize::new(0)),
-      delivered: Arc::new(AtomicUsize::new(0)),
-      received: Arc::new(AtomicUsize::new(0)),
-      last_reported_received: Arc::new(AtomicUsize::new(0)),
-    }
-  }
-
-  pub fn total_sent(&self) -> u64 {
-    self.sent.load(Ordering::SeqCst) as u64
-  }
-
-  pub fn total_delivered(&self) -> u64 {
-    self.delivered.load(Ordering::SeqCst) as u64
-  }
-
-  pub fn total_received(&self) -> u64 {
-    self.received.load(Ordering::SeqCst) as u64
-  }
-
-  fn pending(&self) -> u64 {
-    self.pending.load(Ordering::SeqCst) as u64
-  }
-
-  fn add_to_pending(&self, amount: u64) {
-    self.pending.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  fn pending_to_sent(&self, amount: u64) {
-    self.pending.fetch_sub(amount as usize, Ordering::SeqCst);
-    self.sent.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  fn send_max(&self) -> u64 {
-    self.send_max.load(Ordering::SeqCst) as u64
-  }
-
-  fn add_received(&self, amount: u64) {
-    self.received.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  // pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
-  //   self.conn.close_stream(self.id)
-  // }
-}
-
-impl Stream for MoneyStream {
-  type Item = u64;
-  type Error = ();
-
-  fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-    self.conn.try_handle_incoming()?;
-
-    let total_received = self.received.load(Ordering::SeqCst);
-    let last_reported_received = self.last_reported_received.load(Ordering::SeqCst);
-    let amount_received = total_received - last_reported_received;
-    if amount_received > 0 {
-      self.last_reported_received.store(total_received, Ordering::SeqCst);
-      Ok(Async::Ready(Some(amount_received as u64)))
-    } else {
-      Ok(Async::NotReady)
-    }
-  }
-}
-
-impl Sink for MoneyStream {
-  type SinkItem = u64;
-  type SinkError = ();
-
-  fn start_send(&mut self, amount: u64) -> StartSend<Self::SinkItem, Self::SinkError> {
-    self.send_max.fetch_add(amount as usize, Ordering::SeqCst);
-    self.conn.try_send()?;
-    Ok(AsyncSink::Ready)
-  }
-
-  fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-    self.conn.try_send()?;
-    self.conn.try_handle_incoming()?;
-
-    if self.sent.load(Ordering::SeqCst) >= self.send_max.load(Ordering::SeqCst) {
-      Ok(Async::Ready(()))
-    } else {
-      Ok(Async::NotReady)
-    }
-  }
-}
+use super::money_stream::{MoneyStream, MoneyStreamInternal};
 
 #[derive(Clone)]
 pub struct Connection {
@@ -133,7 +28,7 @@ pub struct Connection {
   next_packet_sequence: Arc<AtomicUsize>,
   next_request_id: Arc<AtomicUsize>,
   streams: Arc<RwLock<HashMap<u64, MoneyStream>>>,
-  pending_outgoing_packets: Arc<Mutex<HashMap<u32, StreamPacket>>>,
+  pending_outgoing_packets: Arc<Mutex<HashMap<u32, (u64, StreamPacket)>>>,
   new_streams: Arc<Mutex<VecDeque<u64>>>,
   // TODO add connection-level stats
 }
@@ -184,113 +79,12 @@ impl Connection {
     conn
   }
 
-  fn try_send(&mut self) -> Result<(), ()> {
-    trace!("Checking if we should send an outgoing packet");
-
-    let mut outgoing_amount: u64 = 0;
-    let mut frames: Vec<Frame> = Vec::new();
-
-    let streams = {
-      if let Ok(streams) = self.streams.read() {
-        streams
-      } else {
-        debug!("Unable to get read lock on streams while trying to send");
-        return Ok(());
-      }
-    };
-
-    // TODO don't send more than max packet amount
-    for stream in streams.values() {
-      let amount_to_send = stream.send_max() - stream.pending() - stream.total_sent();
-      if amount_to_send > 0 {
-        stream.add_to_pending(amount_to_send);
-        outgoing_amount += amount_to_send;
-        frames.push(Frame::StreamMoney(StreamMoneyFrame {
-          stream_id: BigUint::from(stream.id),
-          shares: BigUint::from(amount_to_send),
-        }));
-      }
-    }
-
-    if frames.len() == 0 {
-      trace!("Not sending packet, no frames need to be sent");
-      return Ok(())
-    }
-
-    let stream_packet = StreamPacket {
-      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
-      ilp_packet_type: PacketType::IlpPrepare,
-      prepare_amount: 0, // TODO set min amount
-      frames,
-    };
-
-    let encrypted = stream_packet.to_encrypted(self.shared_secret.clone()).unwrap();
-    let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
-    let prepare = IlpPrepare::new(
-      self.destination_account.to_string(),
-      outgoing_amount,
-      condition,
-      Utc::now() + Duration::seconds(30),
-      encrypted,
-    );
-    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
-    let request = (request_id, IlpPacket::Prepare(prepare));
-    debug!(
-      "Sending outgoing request {} with stream packet: {:?}",
-      request_id, stream_packet
-    );
-
-    self.pending_outgoing_packets.lock().map_err(|err| {
-      error!("Cannot acquire lock on pending_outgoing_packets: {:?}", err);
-    })?.insert(request_id, stream_packet.clone());
-
-    self.outgoing.unbounded_send(request)
-      .map_err(|err| {
-        error!("Error sending outgoing packet: {:?}", err);
-      })?;
-
-    Ok(())
-  }
-
-  // TODO will Tokio register the interest even if we're not returning Async::NotReady?
-  fn try_handle_incoming(&mut self) -> Result<(), ()> {
-    // Handle incoming requests until there are no more
-    // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
-    loop {
-      trace!("Polling for incoming requests");
-      let next = {
-        if let Ok(mut incoming) = self.incoming.try_lock() {
-          incoming.poll()
-        } else {
-          debug!("Unable to acquire lock on incoming stream");
-          return Ok(());
-        }
-      };
-
-      match next {
-        Ok(Async::Ready(Some((request_id, packet)))) => {
-          match packet {
-            IlpPacket::Prepare(prepare) => self.handle_incoming_prepare(request_id, prepare)?,
-            IlpPacket::Fulfill(fulfill) => self.handle_fulfill(request_id, fulfill)?,
-            IlpPacket::Reject(reject) => self.handle_reject(request_id, reject)?,
-            _ => {}
-          }
-        },
-        Ok(Async::Ready(None)) => {
-          error!("Incoming stream closed");
-          // TODO should this error?
-          return Ok(())
-        },
-        Ok(Async::NotReady) => {
-          trace!("No more incoming requests for now");
-          return Ok(())
-        },
-        Err(err) => {
-          error!("Error polling incoming request stream: {:?}", err);
-          return Err(())
-        }
-      };
-    }
+  pub fn create_stream(&mut self) -> MoneyStream {
+    let id = self.next_stream_id.fetch_add(2, Ordering::SeqCst) as u64;
+    let stream = MoneyStream::new(id, self.clone());
+    self.streams.write().unwrap().insert(id, stream.clone());
+    debug!("Created stream {}", id);
+    stream
   }
 
   fn handle_incoming_prepare(&mut self, request_id: u32, prepare: IlpPrepare) -> Result<(), ()> {
@@ -390,7 +184,15 @@ impl Connection {
   fn handle_fulfill(&mut self, request_id: u32, fulfill: IlpFulfill) -> Result<(), ()> {
     debug!("Request {} was fulfilled with fulfillment: {}", request_id, hex::encode(&fulfill.fulfillment[..]));
 
-    let original_request = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+    let (original_amount, original_request) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+
+    let response = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(fulfill.data)).ok();
+    let total_delivered = {
+      match response {
+        Some(packet) => packet.prepare_amount.to_u64().unwrap(),
+        None => 0,
+      }
+    };
 
     for frame in original_request.frames.iter() {
       match frame {
@@ -398,8 +200,12 @@ impl Connection {
           let stream_id = frame.stream_id.to_u64().unwrap();
           let streams = self.streams.read().unwrap();
           let stream = streams.get(&stream_id).unwrap();
-          let amount = frame.shares.to_u64().unwrap();
-          stream.pending_to_sent(amount);
+
+          let shares = frame.shares.to_u64().unwrap();
+          stream.pending_to_sent(shares);
+
+          let amount_delivered: u64 = total_delivered * shares / original_amount;
+          stream.add_delivered(amount_delivered);
         },
         _ => {},
       }
@@ -413,44 +219,28 @@ impl Connection {
   fn handle_reject(&mut self, request_id: u32, reject: IlpReject) -> Result<(), ()> {
     debug!("Request {} was rejected with code: {}", request_id, reject.code);
 
+    let (_original_amount, original_request) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+
+    // let response = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(reject.data)).ok();
+
+    let streams = self.streams.read().unwrap();
+
+    // Release pending money
+    for frame in original_request.frames.iter() {
+      match frame {
+        Frame::StreamMoney(frame) => {
+          let stream_id = frame.stream_id.to_u64().unwrap();
+          let stream = streams.get(&stream_id).unwrap();
+
+          let shares = frame.shares.to_u64().unwrap();
+          stream.subtract_from_pending(shares);
+        },
+        _ => {},
+      }
+    }
     // TODO handle response frames
 
     Ok(())
-  }
-
-  // pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
-  //   {
-  //     let mut state = self.state.write().unwrap();
-  //     *state = ConnectionState::Closing;
-  //   }
-
-  //   let stream_packet = StreamPacket {
-  //     sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
-  //     ilp_packet_type: PacketType::IlpPrepare,
-  //     prepare_amount: 0,
-  //     frames: vec![Frame::ConnectionClose(ConnectionCloseFrame {
-  //       code: ErrorCode::NoError,
-  //       message: String::new(),
-  //     })],
-  //   };
-
-  //   let state = Arc::clone(&self.state);
-  //   self.send_packet(0, stream_packet).and_then(move |_| {
-  //     let mut state = state.write().unwrap();
-  //     *state = ConnectionState::Closed;
-  //     Ok(())
-  //   })
-  // }
-
-  pub fn create_stream(&mut self) -> MoneyStream {
-    let id = self.next_stream_id.fetch_add(2, Ordering::SeqCst) as u64;
-    debug!("Created stream {}", id);
-
-    let stream = MoneyStream::new(id, self.clone());
-
-    self.streams.write().unwrap().insert(id, stream.clone());
-
-    stream
   }
 
   fn send_handshake(&self) {
@@ -480,6 +270,31 @@ impl Connection {
     ));
     self.outgoing.unbounded_send((request_id, prepare)).unwrap();
   }
+
+  // pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
+  //   {
+  //     let mut state = self.state.write().unwrap();
+  //     *state = ConnectionState::Closing;
+  //   }
+
+  //   let stream_packet = StreamPacket {
+  //     sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+  //     ilp_packet_type: PacketType::IlpPrepare,
+  //     prepare_amount: 0,
+  //     frames: vec![Frame::ConnectionClose(ConnectionCloseFrame {
+  //       code: ErrorCode::NoError,
+  //       message: String::new(),
+  //     })],
+  //   };
+
+  //   let state = Arc::clone(&self.state);
+  //   self.send_packet(0, stream_packet).and_then(move |_| {
+  //     let mut state = state.write().unwrap();
+  //     *state = ConnectionState::Closed;
+  //     Ok(())
+  //   })
+  // }
+
 }
 
 impl Stream for Connection {
@@ -506,6 +321,123 @@ impl Stream for Connection {
       debug!("Unable to acquire lock on new_streams");
       // TODO should we return an error here?
       Ok(Async::NotReady)
+    }
+  }
+}
+
+// Only used by other modules in this crate
+pub trait ConnectionInternal {
+  fn try_send(&mut self) -> Result<(), ()>;
+  fn try_handle_incoming(&mut self) -> Result<(), ()>;
+}
+
+impl ConnectionInternal for Connection {
+  fn try_send(&mut self) -> Result<(), ()> {
+    trace!("Checking if we should send an outgoing packet");
+
+    let mut outgoing_amount: u64 = 0;
+    let mut frames: Vec<Frame> = Vec::new();
+
+    let streams = {
+      if let Ok(streams) = self.streams.read() {
+        streams
+      } else {
+        debug!("Unable to get read lock on streams while trying to send");
+        return Ok(());
+      }
+    };
+
+    // TODO don't send more than max packet amount
+    for stream in streams.values() {
+      let amount_to_send = stream.send_max() - stream.pending() - stream.total_sent();
+      if amount_to_send > 0 {
+        stream.add_to_pending(amount_to_send);
+        outgoing_amount += amount_to_send;
+        frames.push(Frame::StreamMoney(StreamMoneyFrame {
+          stream_id: BigUint::from(stream.id()),
+          shares: BigUint::from(amount_to_send),
+        }));
+      }
+    }
+
+    if frames.len() == 0 {
+      trace!("Not sending packet, no frames need to be sent");
+      return Ok(())
+    }
+
+    let stream_packet = StreamPacket {
+      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+      ilp_packet_type: PacketType::IlpPrepare,
+      prepare_amount: 0, // TODO set min amount
+      frames,
+    };
+
+    let encrypted = stream_packet.to_encrypted(self.shared_secret.clone()).unwrap();
+    let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
+    let prepare = IlpPrepare::new(
+      self.destination_account.to_string(),
+      outgoing_amount,
+      condition,
+      Utc::now() + Duration::seconds(30),
+      encrypted,
+    );
+    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
+    let request = (request_id, IlpPacket::Prepare(prepare));
+    debug!(
+      "Sending outgoing request {} with stream packet: {:?}",
+      request_id, stream_packet
+    );
+
+    self.pending_outgoing_packets.lock().map_err(|err| {
+      error!("Cannot acquire lock on pending_outgoing_packets: {:?}", err);
+    })?.insert(request_id, (outgoing_amount, stream_packet.clone()));
+
+    self.outgoing.unbounded_send(request)
+      .map_err(|err| {
+        error!("Error sending outgoing packet: {:?}", err);
+      })?;
+
+    Ok(())
+  }
+
+  // TODO will Tokio register the interest even if we're not returning Async::NotReady?
+  fn try_handle_incoming(&mut self) -> Result<(), ()> {
+    // Handle incoming requests until there are no more
+    // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
+    loop {
+      trace!("Polling for incoming requests");
+      let next = {
+        if let Ok(mut incoming) = self.incoming.try_lock() {
+          incoming.poll()
+        } else {
+          debug!("Unable to acquire lock on incoming stream");
+          return Ok(());
+        }
+      };
+
+      match next {
+        Ok(Async::Ready(Some((request_id, packet)))) => {
+          match packet {
+            IlpPacket::Prepare(prepare) => self.handle_incoming_prepare(request_id, prepare)?,
+            IlpPacket::Fulfill(fulfill) => self.handle_fulfill(request_id, fulfill)?,
+            IlpPacket::Reject(reject) => self.handle_reject(request_id, reject)?,
+            _ => {}
+          }
+        },
+        Ok(Async::Ready(None)) => {
+          error!("Incoming stream closed");
+          // TODO should this error?
+          return Ok(())
+        },
+        Ok(Async::NotReady) => {
+          trace!("No more incoming requests for now");
+          return Ok(())
+        },
+        Err(err) => {
+          error!("Error polling incoming request stream: {:?}", err);
+          return Err(())
+        }
+      };
     }
   }
 }

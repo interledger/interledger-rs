@@ -3,10 +3,12 @@ mod connection;
 mod crypto;
 mod listener;
 mod packet;
+mod money_stream;
 
 pub use self::client::connect_async;
 pub use self::connection::Connection;
 pub use self::listener::{ConnectionGenerator, StreamListener};
+pub use self::money_stream::MoneyStream;
 use self::packet::*;
 
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};

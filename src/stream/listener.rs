@@ -101,6 +101,9 @@ impl Stream for StreamListener {
         return Ok(Async::Ready(None));
       }
       let (request_id, packet) = next.unwrap();
+
+      // Forward requests to the right Connection
+      // Also check if we got a new incoming Connection
       match packet {
         IlpPacket::Fulfill(fulfill) => {
           let connection_id = self
@@ -170,6 +173,7 @@ impl Stream for StreamListener {
           //   return Ok(Async::NotReady);
           // }
 
+          // If this is for an existing connection, just forward it along
           let is_new_connection = !self.connections.read().unwrap().contains_key(connection_id);
           if !is_new_connection {
             trace!(
