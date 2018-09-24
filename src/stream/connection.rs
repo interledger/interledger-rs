@@ -257,7 +257,7 @@ impl Connection {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
     loop {
-      debug!("Checking for incoming request");
+      debug!("Polling for incoming requests");
       let next = {
         if let Ok(mut incoming) = self.incoming.try_lock() {
           incoming.poll()
@@ -282,6 +282,7 @@ impl Connection {
           return Ok(())
         },
         Ok(Async::NotReady) => {
+          debug!("No more incoming requests for now");
           return Ok(())
         },
         Err(err) => {
@@ -486,6 +487,7 @@ impl Stream for Connection {
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    debug!("Polling for new incoming streams");
     self.try_handle_incoming()?;
 
     if let Ok(mut new_streams) = self.new_streams.try_lock() {
