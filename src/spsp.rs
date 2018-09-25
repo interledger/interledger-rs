@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::Future;
+use futures::{Future, Sink};
 use hyper::service::service_fn_ok;
 use hyper::{Body, Request, Response, Server, StatusCode};
 use plugin::Plugin;
@@ -26,7 +26,7 @@ mod serde_base64 {
   where
     S: Serializer,
   {
-    serializer.serialize_str(&base64::encode_config(bytes, base64::URL_SAFE_NO_PAD))
+    serializer.serialize_str(&base64::encode(bytes))
   }
 
   pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -35,7 +35,7 @@ mod serde_base64 {
   {
     let s = <&str>::deserialize(deserializer)?;
     // TODO also accept non-URL safe
-    base64::decode_config(s, base64::URL_SAFE).map_err(de::Error::custom)
+    base64::decode(s).map_err(de::Error::custom)
   }
 }
 
@@ -47,6 +47,7 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = ()> {
     .map_err(|err| {
       error!("Error querying SPSP server {:?}", err);
     }).and_then(|mut res| {
+      debug!("Got SPSP response {:?}", res);
       res.json::<SpspResponse>().map_err(|err| {
         error!("Error parsing SPSP response: {:?}", err);
       })
@@ -59,6 +60,20 @@ where
 {
   query(server)
     .and_then(|spsp| connect_stream(plugin, spsp.destination_account, spsp.shared_secret))
+}
+
+pub fn pay<S>(plugin: S, server: &str, source_amount: u64) -> impl Future<Item = u64, Error = ()>
+where
+  S: Plugin + 'static,
+{
+  connect_async(plugin, server)
+    .and_then(move |mut conn: Connection| {
+      let stream = conn.create_stream();
+      stream.clone().send(source_amount)
+        .and_then(move |_| {
+          Ok(stream.total_delivered())
+        })
+    })
 }
 
 pub fn listen<S>(
@@ -90,7 +105,7 @@ where
           };
 
           Response::builder()
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/spsp4+json")
             .status(StatusCode::OK)
             .body(Body::from(serde_json::to_string(&spsp_response).unwrap()))
             .unwrap()
