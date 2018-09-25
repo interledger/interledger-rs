@@ -7,7 +7,7 @@ extern crate chrono;
 extern crate env_logger;
 
 use tokio::prelude::*;
-use ilp::plugin::btp::{connect_async, ClientPlugin};
+use ilp::plugin::btp::connect_to_moneyd;
 use ilp::stream::Connection;
 use ilp::spsp::listen_with_random_secret;
 use futures::{Stream};
@@ -15,8 +15,8 @@ use futures::{Stream};
 fn main() {
   env_logger::init();
 
-  let future = connect_async("ws://bob:bob@localhost:7768")
-  .and_then(move |plugin: ClientPlugin| {
+  let future = connect_to_moneyd()
+  .and_then(move |plugin| {
     println!("Conected receiver");
 
     listen_with_random_secret(plugin, 3000)
