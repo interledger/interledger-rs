@@ -1,0 +1,19 @@
+[package]
+name = "node"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan.mark.schwartz@gmail.com>"]
+license = "Apache-2.0"
+build = "build.rs"
+exclude = ["artifacts.json", "index.node"]
+
+[lib]
+name = "node"
+crate-type = ["dylib"]
+
+[build-dependencies]
+neon-build = "0.2.0"
+
+[dependencies]
+futures = "0.1.24"
+ilp = { path="../../.." }
+neon = "0.2.0"
