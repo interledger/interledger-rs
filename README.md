@@ -5,20 +5,28 @@
 ### STREAM
 
 - [x] Stream server
-- [ ] Handle incoming money
+- [x] Handle incoming money
+- [ ] Check stream packet responses correspond to the right requests
 - [ ] Sending data
+- [ ] Stream and connection closing
 - [ ] Determining exchange rate, max packet amount
 - [ ] Window + congestion avoidance
-- [ ] Connection-level statistics
+- [ ] Respect flow control
+- [ ] ERROR HANDLING
+
+### Language bindings
+- [ ] Node using Neon
+- [ ] WASM using wasm-pack
+- [ ] Python
 
 ### TLS
 
 - [x] Test out creating STREAM connections using rustls
 - [ ] TLS server that listens for multiple connections (Stream<Connection>)
+- [ ] DNS for looking up ILP address?
 
 ### Plugin
 
-- [ ] Split plugin into channels so sending doesn't consume it?
 - [ ] Request ID handling - should the plugin track the next outgoing ID?
 - [ ] Balance logic
 - [ ] Payment channels
