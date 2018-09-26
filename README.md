@@ -6,7 +6,7 @@
 
 - [x] Stream server
 - [x] Handle incoming money
-- [ ] Check stream packet responses correspond to the right requests
+- [x] Check stream packet responses correspond to the right requests
 - [ ] Sending data
 - [ ] Stream and connection closing
 - [ ] Determining exchange rate, max packet amount

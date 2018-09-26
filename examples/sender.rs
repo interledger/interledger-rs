@@ -8,7 +8,6 @@ extern crate env_logger;
 
 use tokio::prelude::*;
 use ilp::plugin::btp::connect_to_moneyd;
-use ilp::stream::Connection;
 use ilp::spsp::pay;
 
 

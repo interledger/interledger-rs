@@ -184,9 +184,26 @@ impl Connection {
   fn handle_fulfill(&mut self, request_id: u32, fulfill: IlpFulfill) -> Result<(), ()> {
     debug!("Request {} was fulfilled with fulfillment: {}", request_id, hex::encode(&fulfill.fulfillment[..]));
 
-    let (original_amount, original_request) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+    let (original_amount, original_packet) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
 
-    let response = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(fulfill.data)).ok();
+    let response = {
+      let decrypted = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(fulfill.data)).ok();
+      if let Some(packet) = decrypted {
+        if packet.sequence != original_packet.sequence {
+          warn!("Got Fulfill with stream packet whose sequence does not match the original request. Request ID: {}, sequence: {}, fulfill packet: {:?}", request_id, original_packet.sequence, packet);
+          None
+        } else if packet.ilp_packet_type != PacketType::IlpFulfill {
+          warn!("Got Fulfill with stream packet that should have been on a differen type of ILP packet. Request ID: {}, fulfill packet: {:?}", request_id, packet);
+          None
+        } else {
+          trace!("Got Fulfill with stream packet: {:?}", packet);
+          Some(packet)
+        }
+      } else {
+        None
+      }
+    };
+
     let total_delivered = {
       match response {
         Some(packet) => packet.prepare_amount.to_u64().unwrap(),
@@ -194,7 +211,7 @@ impl Connection {
       }
     };
 
-    for frame in original_request.frames.iter() {
+    for frame in original_packet.frames.iter() {
       match frame {
         Frame::StreamMoney(frame) => {
           let stream_id = frame.stream_id.to_u64().unwrap();
@@ -219,14 +236,30 @@ impl Connection {
   fn handle_reject(&mut self, request_id: u32, reject: IlpReject) -> Result<(), ()> {
     debug!("Request {} was rejected with code: {}", request_id, reject.code);
 
-    let (_original_amount, original_request) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+    let (_original_amount, original_packet) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
 
-    // let response = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(reject.data)).ok();
+    let _response = {
+      let decrypted = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(reject.data)).ok();
+      if let Some(packet) = decrypted {
+        if packet.sequence != original_packet.sequence {
+          warn!("Got Reject with stream packet whose sequence does not match the original request. Request ID: {}, sequence: {}, packet: {:?}", request_id, original_packet.sequence, packet);
+          None
+        } else if packet.ilp_packet_type != PacketType::IlpReject {
+          warn!("Got Reject with stream packet that should have been on a differen type of ILP packet. Request ID: {}, packet: {:?}", request_id, packet);
+          None
+        } else {
+          trace!("Got Reject with stream packet: {:?}", packet);
+          Some(packet)
+        }
+      } else {
+        None
+      }
+    };
 
     let streams = self.streams.read().unwrap();
 
     // Release pending money
-    for frame in original_request.frames.iter() {
+    for frame in original_packet.frames.iter() {
       match frame {
         Frame::StreamMoney(frame) => {
           let stream_id = frame.stream_id.to_u64().unwrap();
@@ -400,7 +433,6 @@ impl ConnectionInternal for Connection {
     Ok(())
   }
 
-  // TODO will Tokio register the interest even if we're not returning Async::NotReady?
   fn try_handle_incoming(&mut self) -> Result<(), ()> {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
