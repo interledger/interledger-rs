@@ -25,6 +25,7 @@ serde = "1.0.79"
 serde_derive = "1.0.79"
 serde_json = "1.0.27"
 tokio = "0.1.8"
+tokio-io = "0.1.8"
 tokio-tungstenite = { git = "https://github.com/emschwartz/tokio-tungstenite" }
 tokio-tcp = "0.1.1"
 tungstenite = { git = "https://github.com/emschwartz/tungstenite-rs" }

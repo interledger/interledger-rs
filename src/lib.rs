@@ -11,6 +11,7 @@ extern crate futures;
 extern crate bytes;
 extern crate ring;
 extern crate tokio;
+extern crate tokio_io;
 extern crate tokio_tcp;
 extern crate tokio_tungstenite;
 extern crate tungstenite;

@@ -7,7 +7,7 @@
 - [x] Stream server
 - [x] Handle incoming money
 - [x] Check stream packet responses correspond to the right requests
-- [ ] Sending data
+- [x] Sending data
 - [ ] Stream and connection closing
 - [ ] Determining exchange rate, max packet amount
 - [ ] Window + congestion avoidance
@@ -37,3 +37,7 @@
 - [ ] Static routing table, multiple plugins
 - [ ] Routing protocol
 - [ ] Scaling plugin store and other persistance
+
+### Performance
+
+- [ ] Zero-copy parsing

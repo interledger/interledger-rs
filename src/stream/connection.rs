@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::{HashMap, VecDeque};
 use hex;
-use super::money_stream::{MoneyStream, MoneyStreamInternal};
+use super::data_money_stream::{DataMoneyStream, DataMoneyStreamInternal, MoneyStreamInternal, DataStreamInternal};
 
 #[derive(Clone)]
 pub struct Connection {
@@ -27,9 +27,10 @@ pub struct Connection {
   next_stream_id: Arc<AtomicUsize>,
   next_packet_sequence: Arc<AtomicUsize>,
   next_request_id: Arc<AtomicUsize>,
-  streams: Arc<RwLock<HashMap<u64, MoneyStream>>>,
+  streams: Arc<RwLock<HashMap<u64, DataMoneyStream>>>,
   pending_outgoing_packets: Arc<Mutex<HashMap<u32, (u64, StreamPacket)>>>,
   new_streams: Arc<Mutex<VecDeque<u64>>>,
+  frames_to_resend: Arc<Mutex<Vec<Frame>>>,
   // TODO add connection-level stats
 }
 
@@ -69,6 +70,7 @@ impl Connection {
       streams: Arc::new(RwLock::new(HashMap::new())),
       pending_outgoing_packets: Arc::new(Mutex::new(HashMap::new())),
       new_streams: Arc::new(Mutex::new(VecDeque::new())),
+      frames_to_resend: Arc::new(Mutex::new(Vec::new())),
     };
 
     // TODO figure out a better way to send the initial packet - get the exchange rate and wait for response
@@ -79,15 +81,15 @@ impl Connection {
     conn
   }
 
-  pub fn create_stream(&mut self) -> MoneyStream {
+  pub fn create_stream(&self) -> DataMoneyStream {
     let id = self.next_stream_id.fetch_add(2, Ordering::SeqCst) as u64;
-    let stream = MoneyStream::new(id, self.clone());
+    let stream = DataMoneyStream::new(id, self.clone());
     self.streams.write().unwrap().insert(id, stream.clone());
     debug!("Created stream {}", id);
     stream
   }
 
-  fn handle_incoming_prepare(&mut self, request_id: u32, prepare: IlpPrepare) -> Result<(), ()> {
+  fn handle_incoming_prepare(&self, request_id: u32, prepare: IlpPrepare) -> Result<(), ()> {
     debug!("Handling incoming prepare {}", request_id);
 
     let response_frames: Vec<Frame> = Vec::new();
@@ -111,6 +113,9 @@ impl Connection {
     for frame in stream_packet.frames.iter() {
       match frame {
         Frame::StreamMoney(frame) => {
+          self.handle_new_stream(frame.stream_id.to_u64().unwrap());
+        },
+        Frame::StreamData(frame) => {
           self.handle_new_stream(frame.stream_id.to_u64().unwrap());
         },
         // TODO handle other frames that open streams
@@ -138,10 +143,12 @@ impl Connection {
           let stream = streams.get(&stream_id).unwrap();
           let amount: u64 = frame.shares.to_u64().unwrap() * prepare.amount / total_money_shares;
           debug!("Stream {} received {}", stream_id, amount);
-          stream.add_received(amount);
+          stream.money.add_received(amount);
         }
       }
     }
+
+    self.handle_incoming_data(&stream_packet).unwrap();
 
     // Fulfill or reject Preapre
     if is_fulfillable {
@@ -174,14 +181,29 @@ impl Connection {
   fn handle_new_stream(&self, stream_id: u64) {
     // TODO make sure they don't open streams with our number (even or odd, depending on whether we're the client or server)
     let is_new = !self.streams.read().unwrap().contains_key(&stream_id);
-    let stream = MoneyStream::new(stream_id, self.clone());
+    let stream = DataMoneyStream::new(stream_id, self.clone());
     if is_new {
       self.streams.write().unwrap().insert(stream_id, stream);
     }
     debug!("Got new stream {}", stream_id);
   }
 
-  fn handle_fulfill(&mut self, request_id: u32, fulfill: IlpFulfill) -> Result<(), ()> {
+  fn handle_incoming_data(&self, stream_packet: &StreamPacket) -> Result<(), ()> {
+    for frame in stream_packet.frames.iter() {
+      if let Frame::StreamData(frame) = frame {
+        let stream_id = frame.stream_id.to_u64().unwrap();
+        let streams = self.streams.read().unwrap();
+        let stream = streams.get(&stream_id).unwrap();
+        // TODO make sure the offset number isn't too big
+        let data = frame.data.clone();
+        let offset = frame.offset.to_usize().unwrap();
+        stream.data.push_incoming_data(data, offset)?;
+      }
+    }
+    Ok(())
+  }
+
+  fn handle_fulfill(&self, request_id: u32, fulfill: IlpFulfill) -> Result<(), ()> {
     debug!("Request {} was fulfilled with fulfillment: {}", request_id, hex::encode(&fulfill.fulfillment[..]));
 
     let (original_amount, original_packet) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
@@ -205,9 +227,9 @@ impl Connection {
     };
 
     let total_delivered = {
-      match response {
-        Some(packet) => packet.prepare_amount.to_u64().unwrap(),
-        None => 0,
+      match response.as_ref() {
+        Some(packet) => packet.prepare_amount,
+        None => 0
       }
     };
 
@@ -219,13 +241,17 @@ impl Connection {
           let stream = streams.get(&stream_id).unwrap();
 
           let shares = frame.shares.to_u64().unwrap();
-          stream.pending_to_sent(shares);
+          stream.money.pending_to_sent(shares);
 
           let amount_delivered: u64 = total_delivered * shares / original_amount;
-          stream.add_delivered(amount_delivered);
+          stream.money.add_delivered(amount_delivered);
         },
         _ => {},
       }
+    }
+
+    if let Some(packet) = response.as_ref() {
+      self.handle_incoming_data(&packet)?;
     }
 
     // TODO handle response frames
@@ -233,12 +259,12 @@ impl Connection {
     Ok(())
   }
 
-  fn handle_reject(&mut self, request_id: u32, reject: IlpReject) -> Result<(), ()> {
+  fn handle_reject(&self, request_id: u32, reject: IlpReject) -> Result<(), ()> {
     debug!("Request {} was rejected with code: {}", request_id, reject.code);
 
-    let (_original_amount, original_packet) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+    let (_original_amount, mut original_packet) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
 
-    let _response = {
+    let response = {
       let decrypted = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(reject.data)).ok();
       if let Some(packet) = decrypted {
         if packet.sequence != original_packet.sequence {
@@ -266,12 +292,27 @@ impl Connection {
           let stream = streams.get(&stream_id).unwrap();
 
           let shares = frame.shares.to_u64().unwrap();
-          stream.subtract_from_pending(shares);
+          stream.money.subtract_from_pending(shares);
         },
         _ => {},
       }
     }
     // TODO handle response frames
+
+    if let Some(packet) = response.as_ref() {
+      self.handle_incoming_data(&packet)?;
+    }
+
+    // Only resend frames if they didn't get to the receiver
+    if response.is_none() {
+      let mut frames_to_resend = self.frames_to_resend.lock().unwrap();
+      while original_packet.frames.len() > 0 {
+        match original_packet.frames.pop().unwrap() {
+          Frame::StreamData(frame) => frames_to_resend.push(Frame::StreamData(frame)),
+          _ => {}
+        }
+      }
+    }
 
     Ok(())
   }
@@ -331,7 +372,7 @@ impl Connection {
 }
 
 impl Stream for Connection {
-  type Item = MoneyStream;
+  type Item = DataMoneyStream;
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -360,12 +401,12 @@ impl Stream for Connection {
 
 // Only used by other modules in this crate
 pub trait ConnectionInternal {
-  fn try_send(&mut self) -> Result<(), ()>;
-  fn try_handle_incoming(&mut self) -> Result<(), ()>;
+  fn try_send(&self) -> Result<(), ()>;
+  fn try_handle_incoming(&self) -> Result<(), ()>;
 }
 
 impl ConnectionInternal for Connection {
-  fn try_send(&mut self) -> Result<(), ()> {
+  fn try_send(&self) -> Result<(), ()> {
     trace!("Checking if we should send an outgoing packet");
 
     let mut outgoing_amount: u64 = 0;
@@ -382,14 +423,26 @@ impl ConnectionInternal for Connection {
 
     // TODO don't send more than max packet amount
     for stream in streams.values() {
-      let amount_to_send = stream.send_max() - stream.pending() - stream.total_sent();
+      let amount_to_send = stream.money.send_max() - stream.money.pending() - stream.money.total_sent();
       if amount_to_send > 0 {
-        stream.add_to_pending(amount_to_send);
+        stream.money.add_to_pending(amount_to_send);
         outgoing_amount += amount_to_send;
         frames.push(Frame::StreamMoney(StreamMoneyFrame {
-          stream_id: BigUint::from(stream.id()),
+          stream_id: BigUint::from(stream.id),
           shares: BigUint::from(amount_to_send),
         }));
+      }
+
+      // Send data
+      // TODO don't send too much data
+      let max_data: usize = 1000000000;
+      if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
+        frames.push(Frame::StreamData(StreamDataFrame {
+          stream_id: BigUint::from(stream.id),
+          data,
+          offset: BigUint::from(offset),
+        }))
+
       }
     }
 
@@ -433,7 +486,7 @@ impl ConnectionInternal for Connection {
     Ok(())
   }
 
-  fn try_handle_incoming(&mut self) -> Result<(), ()> {
+  fn try_handle_incoming(&self) -> Result<(), ()> {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
     loop {

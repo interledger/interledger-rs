@@ -554,14 +554,14 @@ impl SerializableFrame for StreamMoneyBlockedFrame {
 pub struct StreamDataFrame {
   pub stream_id: BigUint,
   pub offset: BigUint,
-  pub data: Vec<u8>,
+  pub data: Bytes,
 }
 
 impl SerializableFrame for StreamDataFrame {
   fn read_contents(reader: &mut impl ReadOerExt) -> Result<Self, ParseError> {
     let stream_id = reader.read_var_uint()?;
     let offset = reader.read_var_uint()?;
-    let data = reader.read_var_octet_string()?;
+    let data = Bytes::from(reader.read_var_octet_string()?);
 
     Ok(StreamDataFrame {
       stream_id,
@@ -681,7 +681,7 @@ mod serialization {
         Frame::StreamData(StreamDataFrame {
           stream_id: BigUint::from(34 as u64),
           offset: BigUint::from(9000 as u64),
-          data: String::from("hello").as_bytes().to_vec(),
+          data: Bytes::from(String::from("hello").as_bytes().to_vec()),
         }),
         Frame::StreamMaxData(StreamMaxDataFrame {
           stream_id: BigUint::from(35 as u64),

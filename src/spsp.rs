@@ -67,11 +67,11 @@ where
   S: Plugin + 'static,
 {
   connect_async(plugin, server)
-    .and_then(move |mut conn: Connection| {
+    .and_then(move |conn: Connection| {
       let stream = conn.create_stream();
-      stream.clone().send(source_amount)
+      stream.money.clone().send(source_amount)
         .and_then(move |_| {
-          Ok(stream.total_delivered())
+          Ok(stream.money.total_delivered())
         })
     })
 }
