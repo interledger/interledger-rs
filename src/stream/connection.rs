@@ -109,6 +109,8 @@ impl Connection {
       }
     let stream_packet = stream_packet.unwrap();
 
+    debug!("Prepare {} had stream packet: {:?}", request_id, stream_packet);
+
     // Handle new streams
     for frame in stream_packet.frames.iter() {
       match frame {
@@ -183,9 +185,10 @@ impl Connection {
     let is_new = !self.streams.read().unwrap().contains_key(&stream_id);
     let stream = DataMoneyStream::new(stream_id, self.clone());
     if is_new {
+      debug!("Got new stream {}", stream_id);
       self.streams.write().unwrap().insert(stream_id, stream);
+      self.new_streams.lock().unwrap().push_back(stream_id);
     }
-    debug!("Got new stream {}", stream_id);
   }
 
   fn handle_incoming_data(&self, stream_packet: &StreamPacket) -> Result<(), ()> {
@@ -197,6 +200,7 @@ impl Connection {
         // TODO make sure the offset number isn't too big
         let data = frame.data.clone();
         let offset = frame.offset.to_usize().unwrap();
+        debug!("Stream {} got {} bytes of incoming data", stream.id, data.len());
         stream.data.push_incoming_data(data, offset)?;
       }
     }
@@ -262,7 +266,11 @@ impl Connection {
   fn handle_reject(&self, request_id: u32, reject: IlpReject) -> Result<(), ()> {
     debug!("Request {} was rejected with code: {}", request_id, reject.code);
 
-    let (_original_amount, mut original_packet) = self.pending_outgoing_packets.lock().unwrap().remove(&request_id).unwrap();
+    let entry = self.pending_outgoing_packets.lock().unwrap().remove(&request_id);
+    if entry.is_none() {
+      return Ok(());
+    }
+    let (_original_amount, mut original_packet) = entry.unwrap();
 
     let response = {
       let decrypted = StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(reject.data)).ok();
@@ -423,26 +431,32 @@ impl ConnectionInternal for Connection {
 
     // TODO don't send more than max packet amount
     for stream in streams.values() {
+      trace!("Checking if stream {} has money or data to send", stream.id);
       let amount_to_send = stream.money.send_max() - stream.money.pending() - stream.money.total_sent();
       if amount_to_send > 0 {
+        trace!("Stream {} sending {}", stream.id, amount_to_send);
         stream.money.add_to_pending(amount_to_send);
         outgoing_amount += amount_to_send;
         frames.push(Frame::StreamMoney(StreamMoneyFrame {
           stream_id: BigUint::from(stream.id),
           shares: BigUint::from(amount_to_send),
         }));
+      } else {
+        debug!("Stream {} does not have any money to send", stream.id);
       }
 
       // Send data
       // TODO don't send too much data
       let max_data: usize = 1000000000;
       if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
+        trace!("Stream {} has {} bytes to send (offset: {})", stream.id, data.len(), offset);
         frames.push(Frame::StreamData(StreamDataFrame {
           stream_id: BigUint::from(stream.id),
           data,
           offset: BigUint::from(offset),
         }))
-
+      } else {
+        trace!("Stream {} does not have any data to send", stream.id);
       }
     }
 

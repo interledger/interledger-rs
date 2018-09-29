@@ -27,13 +27,18 @@ fn main() {
 
       connect_async(plugin, "http://localhost:3000")
         .and_then(|connection| {
-          let stream = connection.create_stream();
+          println!("Creating new stream and sending money");
+          let mut stream = connection.create_stream();
           stream.money.clone().send(100)
             .and_then(move |_| {
-              stream.data.clone().write(b"hey there")
+              println!("Sent money");
+              let bytes = b"hey there";
+              stream.data.write(&bytes[..])
                 .map_err(|err| {
                   println!("Error writing {}", err);
-                })
+                })?;
+              println!("Sent data");
+              Ok(())
             })
         })
     })

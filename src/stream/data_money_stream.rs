@@ -131,6 +131,7 @@ impl Sink for MoneyStream {
     if self.sent.load(Ordering::SeqCst) >= self.send_max.load(Ordering::SeqCst) {
       Ok(Async::Ready(()))
     } else {
+      trace!("No more money available for now");
       Ok(Async::NotReady)
     }
   }
@@ -203,6 +204,10 @@ struct OutgoingData {
 
 impl Read for DataStream {
   fn read(&mut self, buf: &mut [u8]) -> Result<usize, IoError> {
+    if buf.len() == 0 {
+      warn!("Asked to read into zero-length buffer");
+    }
+
     self.connection.try_handle_incoming()
       .map_err(|_| {
         IoError::new(ErrorKind::Other, "Error trying to handle incoming packets on Connection")
@@ -238,6 +243,7 @@ impl Read for DataStream {
         Err(IoError::new(ErrorKind::WouldBlock, "No more data now but there might be more in the future"))
       }
     } else {
+      warn!("Unable to get lock on incoming");
       Err(IoError::new(ErrorKind::WouldBlock, "Unable to get lock on incoming"))
     }
   }
@@ -249,14 +255,15 @@ impl Write for DataStream {
     // TODO limit buffer size
     if let Ok(mut outgoing) = self.outgoing.try_lock() {
       outgoing.buffer.push_back(Bytes::from(buf));
-      self.connection.try_send()
-        .map_err(|_| {
-          IoError::new(ErrorKind::Other, "Error trying to send through Connection")
-        })?;
-      Ok(buf.len())
     } else {
-      Err(IoError::new(ErrorKind::WouldBlock, "Unable to get lock on outgoing"))
+      return Err(IoError::new(ErrorKind::WouldBlock, "Unable to get lock on outgoing"))
     }
+
+    self
+      .connection
+      .try_send()
+      .map_err(|_| IoError::new(ErrorKind::Other, "Error trying to send through Connection"))?;
+    Ok(buf.len())
   }
 
   fn flush(&mut self) -> Result<(), IoError> {
@@ -303,7 +310,14 @@ impl DataStreamInternal for DataStream {
   }
 
   fn get_outgoing_data(&self, max_size: usize) -> Option<(Bytes, usize)> {
-    let mut outgoing = self.outgoing.lock().unwrap();
+    let mut outgoing = {
+      if let Ok(lock) = self.outgoing.try_lock() {
+        lock
+      } else {
+      warn!("Unable to get lock on outgoing to get outgoing data");
+      return None;
+      }
+    };
 
     // TODO make sure we're not copying data here
     let outgoing_offset = outgoing.offset;
