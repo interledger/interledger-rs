@@ -1,18 +1,18 @@
+use super::crypto;
+use super::packet::*;
+use super::{plugin_to_channels, Connection};
 use base64;
 use bytes::{Bytes, BytesMut};
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::Future;
 use futures::{Async, Poll, Sink, Stream};
 use ildcp;
-use ilp::{IlpPacket, IlpReject, PacketType};
+use ilp::{IlpPacket, IlpPrepare, IlpReject, PacketType};
 use plugin::{IlpRequest, Plugin};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio;
-use super::{Connection, plugin_to_channels};
-use super::crypto;
-use super::packet::*;
 
 #[derive(Clone)]
 pub struct ConnectionGenerator {
@@ -64,7 +64,8 @@ impl StreamListener {
     ildcp::get_config(plugin)
       .map_err(|(_err, _plugin)| {
         error!("Error getting ILDCP config info");
-      }).and_then(move |(config, plugin)| {
+      })
+      .and_then(move |(config, plugin)| {
         let (outgoing_sender, incoming_receiver) = plugin_to_channels(plugin);
 
         let listener = StreamListener {
@@ -86,6 +87,131 @@ impl StreamListener {
         Ok((listener, generator))
       })
   }
+
+  fn handle_new_connection(
+    &mut self,
+    connection_id: &str,
+    shared_secret: Bytes,
+    request_id: u32,
+    prepare: IlpPrepare,
+  ) -> Result<Option<Connection>, ()> {
+    // Check that the connection is legitimate by decrypting the packet
+    // Also make sure they sent us their address
+    let destination_account = {
+      if let Ok(stream_packet) =
+        StreamPacket::from_encrypted(shared_secret.clone(), BytesMut::from(&prepare.data[..]))
+      {
+        let frame = stream_packet.frames.iter().find(|frame| {
+          if let Frame::ConnectionNewAddress(_) = frame {
+            true
+          } else {
+            false
+          }
+        });
+        if let Some(Frame::ConnectionNewAddress(address_frame)) = frame {
+          address_frame.source_account.to_string()
+        } else {
+          warn!(
+            "Got new Connection frame that did not have the sender's address {:?}",
+            stream_packet
+          );
+          let response_packet = StreamPacket {
+            sequence: stream_packet.sequence,
+            ilp_packet_type: PacketType::IlpReject,
+            prepare_amount: 0,
+            frames: vec![],
+          };
+          let data = response_packet.to_encrypted(shared_secret.clone()).unwrap();
+          self
+            .outgoing_sender
+            .unbounded_send((
+              request_id,
+              IlpPacket::Reject(IlpReject::new("F99", "", "", data)),
+            ))
+            .map_err(|_| {
+              error!("Error sending reject");
+            })?;
+          return Ok(None);
+        }
+      } else {
+        warn!(
+          "Got Prepare with stream packet that we cannot parse: {:?}",
+          prepare
+        );
+        self
+          .outgoing_sender
+          .unbounded_send((
+            request_id,
+            IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new())),
+          ))
+          .map_err(|_| {
+            error!("Error sending reject");
+          })?;
+        return Ok(None);
+      }
+    };
+
+    debug!("Got new connection with ID: {}", connection_id);
+
+    // Set up streams to forward to/from the connection
+    let (incoming_tx, incoming_rx) = unbounded::<IlpRequest>();
+    self
+      .connections
+      .write()
+      .unwrap()
+      .insert(connection_id.to_string(), incoming_tx.clone());
+    let (outgoing_tx, outgoing_rx) = unbounded::<IlpRequest>();
+
+    let connection_id = Arc::new(connection_id.to_string());
+    let pending_requests = Arc::clone(&self.pending_requests);
+    let connection_id_clone = Arc::clone(&connection_id);
+    let outgoing_rx = outgoing_rx.inspect(move |(request_id, packet)| {
+      let request_id = request_id.clone();
+      let connection_id = Arc::clone(&connection_id_clone);
+      if let IlpPacket::Prepare(_prepare) = packet {
+        // TODO avoid storing the connection_id over and over
+        pending_requests
+          .lock()
+          .unwrap()
+          .insert(request_id, connection_id);
+      }
+    });
+    let forward_outgoing = self
+      .outgoing_sender
+      .clone()
+      .sink_map_err(|err| {
+        error!(
+          "Error forwarding packets from connection to outgoing sink {:?}",
+          err
+        );
+      })
+      .send_all(outgoing_rx)
+      .then(|_| Ok(()));
+    tokio::spawn(forward_outgoing);
+
+    let conn = Connection::new(
+      outgoing_tx,
+      incoming_rx,
+      shared_secret.clone(),
+      self.source_account.to_string(),
+      destination_account,
+      true,
+      Arc::clone(&self.next_request_id),
+    );
+
+    incoming_tx
+      .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
+      .map_err(|err| {
+        error!(
+          "Error sending request {} to connection {}: {:?}",
+          request_id,
+          connection_id.clone(),
+          err
+        );
+      })?;
+
+    return Ok(Some(conn));
+  }
 }
 
 impl Stream for StreamListener {
@@ -106,44 +232,57 @@ impl Stream for StreamListener {
       // Also check if we got a new incoming Connection
       match packet {
         IlpPacket::Fulfill(fulfill) => {
-          let connection_id = self
-            .pending_requests
-            .lock()
-            .unwrap()
-            .get(&request_id)
-            .unwrap()
-            .to_string();
-          let connections = self.connections.read().unwrap();
-          let incoming_tx = connections.get(&connection_id).unwrap();
-          trace!(
-            "Sending Fulfill for request {} to connection {}",
-            request_id, connection_id
-          );
-          incoming_tx
-            .unbounded_send((request_id, IlpPacket::Fulfill(fulfill)))
-            .unwrap();
-          continue;
+          // Look up which Connection the original Prepare came from and forward the response accordingly
+          let pending_requests = self.pending_requests.lock().unwrap();
+          if let Some(connection_id) = pending_requests.get(&request_id) {
+            let connection_id = connection_id.to_string();
+            let connections = self.connections.read().unwrap();
+            let incoming_tx = connections.get(&connection_id).unwrap();
+            trace!(
+              "Sending Fulfill for request {} to connection {}",
+              request_id,
+              connection_id
+            );
+            incoming_tx
+              .unbounded_send((request_id, IlpPacket::Fulfill(fulfill)))
+              .map_err(|err| {
+                error!(
+                  "Error sending Fulfill to connection: {} {:?}",
+                  connection_id, err
+                );
+              })?;
+            continue;
+          } else {
+            continue;
+          }
         }
         IlpPacket::Reject(reject) => {
-          let connection_id = self
-            .pending_requests
-            .lock()
-            .unwrap()
-            .get(&request_id)
-            .unwrap()
-            .to_string();
-          let connections = self.connections.read().unwrap();
-          let incoming_tx = connections.get(&connection_id).unwrap();
-          trace!(
-            "Sending Reject for request {} to connection {}",
-            request_id, connection_id
-          );
-          incoming_tx
-            .unbounded_send((request_id, IlpPacket::Reject(reject)))
-            .unwrap();
-          continue;
+          // Look up which Connection the original Prepare came from and forward the response accordingly
+          let pending_requests = self.pending_requests.lock().unwrap();
+          if let Some(connection_id) = pending_requests.get(&request_id) {
+            let connection_id = connection_id.to_string();
+            let connections = self.connections.read().unwrap();
+            let incoming_tx = connections.get(&connection_id).unwrap();
+            trace!(
+              "Sending Reject for request {} to connection {}",
+              request_id,
+              connection_id
+            );
+            incoming_tx
+              .unbounded_send((request_id, IlpPacket::Reject(reject)))
+              .map_err(|err| {
+                error!(
+                  "Error sending Reject to connection: {} {:?}",
+                  connection_id, err
+                );
+              })?;
+            continue;
+          } else {
+            continue;
+          }
         }
         IlpPacket::Prepare(prepare) => {
+          // Handle new Connections or figure out which existing Connection to forward the Prepare to
           let local_address = prepare
             .destination
             .clone()
@@ -156,7 +295,8 @@ impl Stream for StreamListener {
               .unbounded_send((
                 request_id,
                 IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new())),
-              )).map_err(|_| {
+              ))
+              .map_err(|_| {
                 error!("Error sending reject");
               })?;
             continue;
@@ -175,7 +315,20 @@ impl Stream for StreamListener {
 
           // If this is for an existing connection, just forward it along
           let is_new_connection = !self.connections.read().unwrap().contains_key(connection_id);
-          if !is_new_connection {
+          if is_new_connection {
+            let shared_secret = crypto::generate_shared_secret_from_token(
+              self.server_secret.clone(),
+              Bytes::from(connection_id),
+            );
+
+            if let Ok(Some(connection)) =
+              self.handle_new_connection(connection_id, shared_secret, request_id, prepare)
+            {
+              return Ok(Async::Ready(Some(connection)));
+            } else {
+              continue;
+            }
+          } else {
             trace!(
               "Sending Prepare {} to connection {}",
               request_id,
@@ -188,125 +341,6 @@ impl Stream for StreamListener {
               .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
               .unwrap();
             continue;
-          } else {
-            // Check that the connection is legitimate by decrypting the packet
-            let shared_secret = crypto::generate_shared_secret_from_token(
-              self.server_secret.clone(),
-              Bytes::from(connection_id),
-            );
-
-            // Make sure they sent us their address
-            let destination_account = {
-              if let Ok(stream_packet) = StreamPacket::from_encrypted(
-                shared_secret.clone(),
-                BytesMut::from(&prepare.data[..]),
-              ) {
-                let frame = stream_packet.frames.iter().find(|frame| {
-                  if let Frame::ConnectionNewAddress(_) = frame {
-                    true
-                  } else {
-                    false
-                  }
-                });
-                if let Some(Frame::ConnectionNewAddress(address_frame)) = frame {
-                  address_frame.source_account.to_string()
-                } else {
-                  warn!(
-                    "Got new Connection frame that did not have the sender's address {:?}",
-                    stream_packet
-                  );
-                  let response_packet = StreamPacket {
-                    sequence: stream_packet.sequence,
-                    ilp_packet_type: PacketType::IlpReject,
-                    prepare_amount: 0,
-                    frames: vec![],
-                  };
-                  let data = response_packet.to_encrypted(shared_secret.clone()).unwrap();
-                  self
-                    .outgoing_sender
-                    .unbounded_send((
-                      request_id,
-                      IlpPacket::Reject(IlpReject::new("F99", "", "", data)),
-                    )).map_err(|_| {
-                      error!("Error sending reject");
-                    })?;
-                  continue;
-                }
-              } else {
-                warn!(
-                  "Got Prepare with stream packet that we cannot parse: {:?}",
-                  prepare
-                );
-                self
-                  .outgoing_sender
-                  .unbounded_send((
-                    request_id,
-                    IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new())),
-                  )).map_err(|_| {
-                    error!("Error sending reject");
-                  })?;
-                continue;
-              }
-            };
-
-            debug!("Got new connection with ID: {}", connection_id);
-
-            let (incoming_tx, incoming_rx) = unbounded::<IlpRequest>();
-            self
-              .connections
-              .write()
-              .unwrap()
-              .insert(connection_id.to_string(), incoming_tx.clone());
-
-            let (outgoing_tx, outgoing_rx) = unbounded::<IlpRequest>();
-            let connection_id = Arc::new(connection_id.to_string());
-            let pending_requests = Arc::clone(&self.pending_requests);
-            let connection_id_clone = Arc::clone(&connection_id);
-            let outgoing_rx = outgoing_rx.inspect(move |(request_id, packet)| {
-              let request_id = request_id.clone();
-              let connection_id = Arc::clone(&connection_id_clone);
-              if let IlpPacket::Prepare(_prepare) = packet {
-                // TODO avoid storing the connection_id over and over
-                pending_requests
-                  .lock()
-                  .unwrap()
-                  .insert(request_id, connection_id);
-              }
-            });
-            let forward_outgoing = self
-              .outgoing_sender
-              .clone()
-              .sink_map_err(|err| {
-                error!(
-                  "Error forwarding packets from connection to outgoing sink {:?}",
-                  err
-                );
-              }).send_all(outgoing_rx)
-              .then(|_| Ok(()));
-            tokio::spawn(forward_outgoing);
-
-            let conn = Connection::new(
-              outgoing_tx,
-              incoming_rx,
-              shared_secret.clone(),
-              self.source_account.to_string(),
-              destination_account,
-              true,
-              Arc::clone(&self.next_request_id),
-            );
-
-            incoming_tx
-              .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
-              .map_err(|err| {
-                error!(
-                  "Error sending request {} to connection {}: {:?}",
-                  request_id,
-                  connection_id.clone(),
-                  err
-                );
-              })?;
-
-            return Ok(Async::Ready(Some(conn)));
           }
         }
         _ => {
