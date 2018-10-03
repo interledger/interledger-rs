@@ -7,7 +7,7 @@ mod data_money_stream;
 
 pub use self::client::connect_async;
 pub use self::connection::Connection;
-pub use self::listener::{ConnectionGenerator, StreamListener};
+pub use self::listener::{ConnectionGenerator, StreamListener, PrepareToSharedSecretGenerator};
 pub use self::data_money_stream::MoneyStream;
 use self::packet::*;
 

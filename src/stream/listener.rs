@@ -48,7 +48,7 @@ impl ConnectionGenerator {
  * it MAY return an Err with an IlpReject packet that will be sent back to the sender
  */
 pub type PrepareToSharedSecretGenerator =
-  Box<dyn Fn(&IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
+  Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
 
 pub struct StreamListener {
   outgoing_sender: UnboundedSender<IlpRequest>,
@@ -78,14 +78,9 @@ impl StreamListener {
       .and_then(move |(config, plugin)| {
         let (outgoing_sender, incoming_receiver) = plugin_to_channels(plugin);
 
-        let source_account = config.client_address.clone();
         let server_secret_clone = server_secret.clone();
-        let prepare_handler: Box<dyn Fn(&IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync> =
-          Box::new(move |prepare| {
-            let local_address = prepare
-              .destination
-              .clone()
-              .split_off(source_account.len() + 1);
+        let prepare_handler: Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync> =
+          Box::new(move |local_address, prepare| {
             let local_address_parts: Vec<&str> = local_address.split(".").collect();
             if local_address_parts.len() == 0 {
               warn!("Got Prepare with no Connection ID: {}", prepare.destination);
@@ -324,8 +319,12 @@ impl Stream for StreamListener {
           // Handle new Connections or figure out which existing Connection to forward the Prepare to
 
           // First, generate the shared_secret
+          let local_address = prepare
+            .destination
+            .clone()
+            .split_off(self.source_account.len() + 1);
           let (connection_id, shared_secret) = {
-            match (self.prepare_handler)(&prepare) {
+            match (self.prepare_handler)(&local_address, &prepare) {
               Ok((connection_id, shared_secret)) => (connection_id, shared_secret),
               Err(reject) => {
                 trace!("Rejecting request {} (unable to generate shared secret or alternate prepare handler rejected the packet)", request_id);

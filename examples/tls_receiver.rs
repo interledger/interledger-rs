@@ -9,11 +9,9 @@ extern crate tokio;
 extern crate webpki;
 
 use ilp::plugin::btp::{connect_async, ClientPlugin};
-use ilp::tls::connect_async as connect_tls;
-use rustls::{NoClientAuth, ServerConfig};
+use ilp::tls::listen_for_tls_connections;
 use std::fs;
 use std::io::BufReader;
-use std::sync::Arc;
 use tokio::prelude::*;
 
 fn main() {
@@ -23,7 +21,6 @@ fn main() {
     .and_then(move |plugin: ClientPlugin| {
       println!("Conected receiver");
 
-      let mut config = ServerConfig::new(Arc::new(NoClientAuth {}));
       let cert_file = fs::File::open("cert.pem").expect("Cannot open cert file");
       let mut cert_reader = BufReader::new(cert_file);
       let cert = rustls::internal::pemfile::certs(&mut cert_reader).unwrap();
@@ -37,14 +34,14 @@ fn main() {
 
       println!("loaded key");
 
-      config.set_single_cert(cert, rsa_keys[0].clone()).unwrap();
-
-      let tls_session = rustls::ServerSession::new(&Arc::new(config));
-
-      connect_tls(plugin, tls_session, "private.moneyd.local.alice").and_then(|(shared_secret, _plugin)| {
-        println!("Shared secret {:x?}", &shared_secret[..]);
-        Ok(())
-      })
+      listen_for_tls_connections(plugin, cert, rsa_keys[0].clone())
+        .and_then(|listener| {
+        listener.for_each(|conn| {
+          println!("Got incoming connection");
+          Ok(())
+        })
+        .then(|_| Ok(()))
+        })
     }).then(|_| Ok(()));
 
   tokio::runtime::run(future);
