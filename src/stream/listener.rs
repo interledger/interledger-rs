@@ -48,7 +48,7 @@ impl ConnectionGenerator {
  * it MAY return an Err with an IlpReject packet that will be sent back to the sender
  */
 pub type PrepareToSharedSecretGenerator =
-  Box<dyn Fn(&IlpPrepare) -> Result<(String, Bytes), IlpReject>>;
+  Box<dyn Fn(&IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
 
 pub struct StreamListener {
   outgoing_sender: UnboundedSender<IlpRequest>,
@@ -59,7 +59,7 @@ pub struct StreamListener {
   pending_requests: Arc<Mutex<HashMap<u32, Arc<String>>>>,
   // closed_connections: Arc<Mutex<HashSet<String>>>,
   next_request_id: Arc<AtomicUsize>,
-  prepare_handler: PrepareToSharedSecretGenerator,
+  prepare_handler: Arc<PrepareToSharedSecretGenerator>,
 }
 
 impl StreamListener {
@@ -67,7 +67,7 @@ impl StreamListener {
   pub fn bind<'a, S>(
     plugin: S,
     server_secret: Bytes,
-  ) -> impl Future<Item = (StreamListener, ConnectionGenerator), Error = ()> + 'a
+  ) -> impl Future<Item = (StreamListener, ConnectionGenerator), Error = ()> + 'a + Send + Sync
   where
     S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
   {
@@ -80,7 +80,7 @@ impl StreamListener {
 
         let source_account = config.client_address.clone();
         let server_secret_clone = server_secret.clone();
-        let prepare_handler: Box<dyn Fn(&IlpPrepare) -> Result<(String, Bytes), IlpReject>> =
+        let prepare_handler: Box<dyn Fn(&IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync> =
           Box::new(move |prepare| {
             let local_address = prepare
               .destination
@@ -107,7 +107,7 @@ impl StreamListener {
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
           // closed_connections: Arc::new(Mutex::new(HashSet::new())),
           next_request_id: Arc::new(AtomicUsize::new(1)),
-          prepare_handler,
+          prepare_handler: Arc::new(prepare_handler),
         };
 
         let generator = ConnectionGenerator {
@@ -142,7 +142,7 @@ impl StreamListener {
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
           // closed_connections: Arc::new(Mutex::new(HashSet::new())),
           next_request_id: Arc::new(AtomicUsize::new(1)),
-          prepare_handler,
+          prepare_handler: Arc::new(prepare_handler),
         };
         Ok(listener)
       })
