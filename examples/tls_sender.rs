@@ -9,6 +9,7 @@ extern crate tokio;
 extern crate webpki;
 
 use ilp::plugin::btp::{connect_async, ClientPlugin};
+use ilp::stream::{Connection, DataMoneyStream};
 use ilp::tls::connect_async as connect_tls;
 use std::sync::Arc;
 use tokio::prelude::*;
@@ -18,12 +19,16 @@ fn main() {
 
   let future =
     connect_async("ws://alice:alice@localhost:7768").and_then(move |plugin: ClientPlugin| {
-      connect_tls(plugin, "private.moneyd.local.bob").and_then(
-        |(shared_secret, _plugin)| {
-          println!("Shared secret {:x?}", &shared_secret[..]);
-          Ok(())
-        },
+      println!("Connected plugin");
+      connect_tls(
+        plugin,
+        "cHXxnYouU7vLVMAbtL1xVql18kRTYAHeaMbnO2DvhO4#private.moneyd.local.bob",
       )
+      .and_then(|conn| {
+        println!("Connected to receiver over TLS+STREAM");
+        let mut stream = conn.create_stream();
+        stream.money.send(100).then(|_| Ok(()))
+      })
     });
 
   tokio::runtime::run(future);
