@@ -9,7 +9,7 @@ extern crate env_logger;
 extern crate tokio_io;
 
 use tokio::prelude::*;
-use ilp::plugin::btp::{connect_to_moneyd, connect_async};
+use ilp::plugin::btp::connect_async;
 use ilp::stream::Connection;
 use ilp::spsp::listen_with_random_secret;
 use futures::{Stream, Future};
@@ -35,7 +35,8 @@ fn main() {
             });
             tokio::spawn(handle_money);
 
-            poll_fn(move || {
+            // TODO fix inconsistent data receiving
+            let handle_data = poll_fn(move || {
               let mut data: [u8; 100] = [0; 100];
               try_ready!(stream.data.poll_read(&mut data[..])
                 .map_err(|err| {
@@ -43,7 +44,10 @@ fn main() {
                 }));
               println!("Got incoming data: {}", String::from_utf8(Vec::from(&data[..])).unwrap());
               Ok(Async::Ready(()))
-            })
+            });
+            tokio::spawn(handle_data);
+
+            Ok(())
           });
 
           tokio::spawn(handle_connection);
