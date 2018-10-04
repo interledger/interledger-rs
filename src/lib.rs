@@ -28,6 +28,7 @@ extern crate reqwest;
 extern crate base64;
 extern crate rustls;
 extern crate hyper;
+extern crate webpki;
 
 pub mod ilp;
 pub mod oer;

@@ -143,6 +143,10 @@ impl StreamListener {
       })
   }
 
+  pub fn source_account(&self) -> String {
+    self.source_account.to_string()
+  }
+
   fn handle_new_connection(
     &mut self,
     connection_id: &str,

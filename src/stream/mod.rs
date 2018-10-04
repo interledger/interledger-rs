@@ -20,7 +20,7 @@ use tokio;
 
 pub type StreamRequest = (u32, IlpPacket, Option<StreamPacket>);
 
-fn plugin_to_channels<S>(plugin: S) -> (UnboundedSender<S::Item>, UnboundedReceiver<S::Item>)
+pub fn plugin_to_channels<S>(plugin: S) -> (UnboundedSender<S::Item>, UnboundedReceiver<S::Item>)
 where
   S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
 {

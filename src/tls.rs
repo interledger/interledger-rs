@@ -1,41 +1,111 @@
 use base64;
 use bytes::Bytes;
 use chrono::{Duration, Utc};
+use futures::future::ok;
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use ilp::{IlpPacket, IlpPrepare, IlpReject};
 use oer::{ReadOerExt, WriteOerExt};
 use plugin::{IlpRequest, Plugin};
+use ring::digest::{digest, SHA256};
 use ring::rand::{SecureRandom, SystemRandom};
-use rustls::{Certificate, NoClientAuth, PrivateKey, ServerConfig, ServerSession, Session};
+use rustls::{
+  Certificate, ClientConfig, ClientSession, NoClientAuth, PrivateKey, ServerConfig, ServerSession,
+  Session,
+};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex, RwLock};
-use stream::{PrepareToSharedSecretGenerator, StreamListener};
+use stream::{
+  connect_async as connect_stream, Connection, PrepareToSharedSecretGenerator, StreamListener,
+};
+use webpki;
 
 static TLS_KEY_EXPORT_LABEL: &'static str = "EXPERIMENTAL interledger stream tls";
 
+pub struct HashVerification {
+  expected_hash: Bytes,
+}
+
+impl rustls::ServerCertVerifier for HashVerification {
+  fn verify_server_cert(
+    &self,
+    _roots: &rustls::RootCertStore,
+    _presented_certs: &[rustls::Certificate],
+    _dns_name: webpki::DNSNameRef,
+    _ocsp: &[u8],
+  ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+    let hash = digest(&SHA256, &_presented_certs[0].0);
+    if Bytes::from(hash.as_ref()) == self.expected_hash {
+      Ok(rustls::ServerCertVerified::assertion())
+    } else {
+      error!(
+        "Server sent certificate that did not match expected fingerprint. Got: {}, expected: {}",
+        base64::encode_config(hash.as_ref(), base64::URL_SAFE_NO_PAD),
+        base64::encode_config(&self.expected_hash[..], base64::URL_SAFE_NO_PAD)
+      );
+      Err(rustls::TLSError::WebPKIError(
+        webpki::Error::CertNotValidForName,
+      ))
+    }
+  }
+}
+
 pub fn connect_async<P, S>(
   plugin: P,
-  tls_session: S,
-  destination_account: &str,
-) -> impl Future<Item = (Bytes, P), Error = ()>
+  destination: &str,
+) -> impl Future<Item = Connection, Error = ()>
 where
   P: Plugin,
   S: Session,
 {
-  let token = generate_token();
-  let token_64 = base64::encode_config(&token[..], base64::URL_SAFE_NO_PAD);
-  let destination_account = format!("{}.{}", destination_account, token_64);
+  ok(()).and_then(|_| {
+    let destination_parts: Vec<&str> = destination.split("#").collect();
+    if destination_parts.len() != 2 {
+      error!(
+        "Expected destination in the form <Hash of TLS Certificate>#<ILP Address>, got: {}",
+        destination
+      );
+      return Err(());
+    }
+    let expected_hash = {
+      match base64::decode_config(destination_parts[0], base64::URL_SAFE_NO_PAD) {
+        Ok(hash_bytes) => Bytes::from(hash_bytes),
+        Err(error) => {
+          error!("Error decoding fingerprint as base64url: {:?}", error);
+          return Err(());
+        }
+      }
+    };
 
-  ConnectTls {
-    plugin: Some(plugin),
-    destination_account,
-    tls_session,
-    buffered_outgoing: None,
-    pending_request: None,
-    // TODO need a better way of keeping track of outgoing request IDs for a plugin
-    next_request_id: 1,
-  }
+    let mut config = ClientConfig::new();
+    config
+      .dangerous()
+      .set_certificate_verifier(Arc::new(HashVerification { expected_hash }));
+    let dns_name = webpki::DNSNameRef::try_from_ascii_str("").unwrap();
+    let tls_session = ClientSession::new(&Arc::new(config), dns_name);
+
+    let destination_account = destination_parts[1];
+    let token = generate_token();
+    let token_64 = base64::encode_config(&token[..], base64::URL_SAFE_NO_PAD);
+    let destination_account = format!("{}.{}", destination_account, token_64);
+
+    Ok(
+      ConnectTls {
+        plugin: Some(plugin),
+        destination_account,
+        tls_session,
+        buffered_outgoing: None,
+        pending_request: None,
+        next_request_id: 1,
+      }
+      .map(|(shared_secret, plugin)| {
+        connect_stream(plugin, destination_account, shared_secret)
+      })
+    )
+  })
+  .and_then(|conn: Connection| {
+    Ok(conn)
+  })
 }
 
 pub struct ConnectTls<P: Stream + Sink, S: Session> {
