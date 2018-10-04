@@ -1,7 +1,7 @@
 use base64;
 use bytes::Bytes;
 use chrono::{Duration, Utc};
-use futures::future::ok;
+use futures::future::err;
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use ilp::{IlpPacket, IlpPrepare, IlpReject};
 use oer::{ReadOerExt, WriteOerExt};
@@ -58,21 +58,20 @@ where
   P: Plugin,
   S: Session,
 {
-  ok(()).and_then(|_| {
     let destination_parts: Vec<&str> = destination.split("#").collect();
     if destination_parts.len() != 2 {
       error!(
         "Expected destination in the form <Hash of TLS Certificate>#<ILP Address>, got: {}",
         destination
       );
-      return Err(());
+      return err(());
     }
     let expected_hash = {
       match base64::decode_config(destination_parts[0], base64::URL_SAFE_NO_PAD) {
         Ok(hash_bytes) => Bytes::from(hash_bytes),
         Err(error) => {
           error!("Error decoding fingerprint as base64url: {:?}", error);
-          return Err(());
+          return err(());
         }
       }
     };
@@ -89,7 +88,6 @@ where
     let token_64 = base64::encode_config(&token[..], base64::URL_SAFE_NO_PAD);
     let destination_account = format!("{}.{}", destination_account, token_64);
 
-    Ok(
       ConnectTls {
         plugin: Some(plugin),
         destination_account,
@@ -98,14 +96,9 @@ where
         pending_request: None,
         next_request_id: 1,
       }
-      .map(|(shared_secret, plugin)| {
+      .and_then(|(shared_secret, plugin)| {
         connect_stream(plugin, destination_account, shared_secret)
       })
-    )
-  })
-  .and_then(|conn: Connection| {
-    Ok(conn)
-  })
 }
 
 pub struct ConnectTls<P: Stream + Sink, S: Session> {
