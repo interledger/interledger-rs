@@ -1,7 +1,7 @@
 use base64;
 use bytes::Bytes;
 use chrono::{Duration, Utc};
-use futures::future::err;
+use futures::future::{err, ok};
 use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 use ilp::{IlpPacket, IlpPrepare, IlpReject};
 use oer::{ReadOerExt, WriteOerExt};
@@ -50,55 +50,74 @@ impl rustls::ServerCertVerifier for HashVerification {
   }
 }
 
-pub fn connect_async<P, S>(
-  plugin: P,
-  destination: &str,
-) -> impl Future<Item = Connection, Error = ()>
+pub fn connect_async<P>(plugin: P, destination: &str) -> impl Future<Item = Connection, Error = ()>
 where
-  P: Plugin,
-  S: Session,
+  P: Plugin + 'static,
 {
-    let destination_parts: Vec<&str> = destination.split("#").collect();
-    if destination_parts.len() != 2 {
-      error!(
-        "Expected destination in the form <Hash of TLS Certificate>#<ILP Address>, got: {}",
-        destination
-      );
-      return err(());
-    }
-    let expected_hash = {
-      match base64::decode_config(destination_parts[0], base64::URL_SAFE_NO_PAD) {
-        Ok(hash_bytes) => Bytes::from(hash_bytes),
-        Err(error) => {
-          error!("Error decoding fingerprint as base64url: {:?}", error);
-          return err(());
+  let destination = destination.to_owned();
+
+  ok(())
+    .and_then(move |_| {
+      let destination_parts: Vec<&str> = destination.split("#").collect();
+      if destination_parts.len() != 2 {
+        error!(
+          "Expected destination in the form <Hash of TLS Certificate>#<ILP Address>, got: {}",
+          destination
+        );
+        return err(());
+      }
+      let expected_hash = {
+        match base64::decode_config(destination_parts[0], base64::URL_SAFE_NO_PAD) {
+          Ok(hash_bytes) => {
+            if hash_bytes.len() == 32 {
+              Bytes::from(hash_bytes)
+            } else {
+              error!(
+                "Certificate fingerprint must be 32 bytes, got: {}",
+                hash_bytes.len()
+              );
+              return err(());
+            }
+          }
+          Err(error) => {
+            error!("Error decoding fingerprint as base64url: {:?}", error);
+            return err(());
+          }
         }
-      }
-    };
+      };
+      debug!(
+        "Trying to connect to server with TLS fingerprint: {} at: {}",
+        base64::encode_config(&expected_hash[..], base64::URL_SAFE_NO_PAD),
+        destination_parts[1]
+      );
 
-    let mut config = ClientConfig::new();
-    config
-      .dangerous()
-      .set_certificate_verifier(Arc::new(HashVerification { expected_hash }));
-    let dns_name = webpki::DNSNameRef::try_from_ascii_str("").unwrap();
-    let tls_session = ClientSession::new(&Arc::new(config), dns_name);
+      let mut config = ClientConfig::new();
+      config
+        .dangerous()
+        .set_certificate_verifier(Arc::new(HashVerification { expected_hash }));
+      let dns_name = webpki::DNSNameRef::try_from_ascii_str("localhost").unwrap();
+      let tls_session = ClientSession::new(&Arc::new(config), dns_name);
 
-    let destination_account = destination_parts[1];
-    let token = generate_token();
-    let token_64 = base64::encode_config(&token[..], base64::URL_SAFE_NO_PAD);
-    let destination_account = format!("{}.{}", destination_account, token_64);
+      let destination_account = destination_parts[1];
+      let token = generate_token();
+      let token_64 = base64::encode_config(&token[..], base64::URL_SAFE_NO_PAD);
+      let destination_account = format!("{}.{}", destination_account, token_64);
 
-      ConnectTls {
-        plugin: Some(plugin),
-        destination_account,
-        tls_session,
-        buffered_outgoing: None,
-        pending_request: None,
-        next_request_id: 1,
-      }
-      .and_then(|(shared_secret, plugin)| {
-        connect_stream(plugin, destination_account, shared_secret)
-      })
+      ok(
+        ConnectTls {
+          plugin: Some(plugin),
+          destination_account: destination_account.clone(),
+          tls_session,
+          buffered_outgoing: None,
+          pending_request: None,
+          next_request_id: 1,
+        }
+        .and_then(|(shared_secret, plugin)| {
+          connect_stream(plugin, destination_account, shared_secret)
+        }),
+      )
+    })
+    .and_then(|connection| connection)
 }
 
 pub struct ConnectTls<P: Stream + Sink, S: Session> {
@@ -278,6 +297,9 @@ pub fn listen_for_tls_connections<S>(
 where
   S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
 {
+  let hash = digest(&SHA256, &cert[0].0);
+  let fingerprint = base64::encode_config(hash.as_ref(), base64::URL_SAFE_NO_PAD);
+
   let shared_secrets: Arc<RwLock<HashMap<String, Bytes>>> = Arc::new(RwLock::new(HashMap::new()));
   // TODO remove old sessions after timeout
   // TODO remove sessions if there is an error in the handshake
@@ -369,7 +391,17 @@ where
     Err(IlpReject::new("F99", "", "", Bytes::from(data)))
   });
 
-  StreamListener::bind_with_custom_prepare_handler(plugin, prepare_handler)
+  StreamListener::bind_with_custom_prepare_handler(plugin, prepare_handler).and_then(
+    move |listener| {
+      debug!(
+        "Listening on: {}#{}",
+        fingerprint,
+        listener.source_account()
+      );
+
+      Ok(listener)
+    },
+  )
 }
 
 fn random_condition() -> Bytes {

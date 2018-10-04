@@ -8,7 +8,7 @@ mod data_money_stream;
 pub use self::client::connect_async;
 pub use self::connection::Connection;
 pub use self::listener::{ConnectionGenerator, StreamListener, PrepareToSharedSecretGenerator};
-pub use self::data_money_stream::MoneyStream;
+pub use self::data_money_stream::{DataMoneyStream, MoneyStream, DataStream};
 use self::packet::*;
 
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
