@@ -61,35 +61,39 @@ impl IldcpResponse {
 // On error only returns the plugin if it can continue to be used
 pub fn get_config(
   plugin: impl Plugin,
-) -> impl Future<Item = (IldcpResponse, impl Plugin), Error = ((), Option<impl Plugin>)> {
+) -> impl Future<Item = (IldcpResponse, impl Plugin), Error = Error> {
   let prepare = IldcpRequest::new().to_prepare();
   // TODO make sure this doesn't conflict with other packets
   let original_request_id = 0;
   plugin
     .send((original_request_id, IlpPacket::Prepare(prepare)))
-    .map_err(move |err| {
-      error!("Error sending ILDCP request {:?}", err);
-      // TODO do we need to return the plugin here?
-      ((), None)
-    }).and_then(|plugin| {
+    .map_err(move |_| Error("Error sending ILDCP request".to_string()))
+    .and_then(|plugin| {
       plugin
         .into_future()
+        .map_err(|(_, _plugin)| Error("Error listening for ILDCP response".to_string()))
         .and_then(|(next, plugin)| {
           if let Some((_request_id, IlpPacket::Fulfill(fulfill))) = next {
-            if let Ok(response) = IldcpResponse::from_fulfill(fulfill) {
-              debug!("Got ILDCP response: {:?}", response);
-              Ok((response, plugin))
-            } else {
-              error!("Unable to parse ILDCP response from fulfill");
-              Err(((), plugin))
+            match IldcpResponse::from_fulfill(fulfill) {
+              Ok(response) => {
+                debug!("Got ILDCP response: {:?}", response);
+                Ok((response, plugin))
+              }
+              Err(err) => Err(Error(format!(
+                "Unable to parse ILDCP response from fulfill: {:?}",
+                err
+              ))),
             }
           } else {
-            error!(
+            Err(Error(format!(
               "Expected Fulfill packet in response to ILDCP request, got: {:?}",
               next
-            );
-            Err(((), plugin))
+            )))
           }
-        }).map_err(|(err, plugin)| (err, Some(plugin)))
+        })
     })
 }
+
+#[derive(Fail, Debug)]
+#[fail(display = "Error getting ILDCP info: {}", _0)]
+pub struct Error(String);

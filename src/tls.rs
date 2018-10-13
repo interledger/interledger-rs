@@ -114,6 +114,9 @@ where
         }
         .and_then(|(shared_secret, plugin)| {
           connect_stream(plugin, destination_account, shared_secret)
+            .map_err(|err| {
+              error!("{:?}", err);
+            })
         }),
       )
     })
@@ -401,7 +404,9 @@ where
 
       Ok(listener)
     },
-  )
+  ).map_err(|err| {
+    error!("{:?}", err);
+  })
 }
 
 fn random_condition() -> Bytes {

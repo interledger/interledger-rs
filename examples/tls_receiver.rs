@@ -39,8 +39,8 @@ fn main() {
 
       listen_for_tls_connections(plugin, cert, rsa_keys[0].clone())
         .and_then(|listener| {
-          listener.for_each(|conn| {
-            println!("Got incoming connection");
+          listener.for_each(|(id, conn)| {
+            println!("Got incoming connection {}", id);
           let handle_connection = conn.for_each(|mut stream| {
             println!("Got incoming stream");
             let handle_money = stream.money.clone().for_each(|amount| {

@@ -51,3 +51,9 @@ where
 
   (outgoing_sender, incoming_receiver)
 }
+
+#[derive(Fail, Debug)]
+pub enum Error {
+  #[fail(display = "Error connecting: {}", _0)]
+  ConnectionError(String),
+}

@@ -5,20 +5,21 @@ use plugin::{IlpRequest, Plugin};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use super::{Connection, plugin_to_channels};
+use super::Error;
 
 pub fn connect_async<S, T, U>(
   plugin: S,
   destination_account: T,
   shared_secret: U,
-) -> impl Future<Item = Connection, Error = ()>
+) -> impl Future<Item = Connection, Error = Error>
 where
   S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
   String: From<T>,
   Bytes: From<U>,
 {
   ildcp::get_config(plugin)
-    .map_err(|(_err, _plugin)| {
-      error!("Error getting ILDCP config info");
+    .map_err(|err| {
+      Error::ConnectionError(format!("Error connecting: {}", err))
     }).and_then(move |(config, plugin)| {
       let client_address: String = config.client_address;
 
