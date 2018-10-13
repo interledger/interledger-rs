@@ -29,6 +29,9 @@ extern crate base64;
 extern crate rustls;
 extern crate hyper;
 extern crate webpki;
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 
 pub mod ilp;
 pub mod oer;

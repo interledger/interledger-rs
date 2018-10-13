@@ -24,8 +24,11 @@ fn main() {
     println!("Conected receiver");
 
     listen_with_random_secret(plugin, 3000)
+      .map_err(|err| {
+        println!("Error listening {:?}", err);
+      })
       .and_then(|listener| {
-        listener.for_each(|conn: Connection| {
+        listener.for_each(|(id, conn)| {
           println!("Got incoming connection");
           let handle_connection = conn.for_each(|mut stream| {
             println!("Got incoming stream");

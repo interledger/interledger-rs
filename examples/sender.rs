@@ -26,6 +26,9 @@ fn main() {
       //   })
 
       connect_async(plugin, "http://localhost:3000")
+        .map_err(|err| {
+          println!("Error connecting to SPSP server {:?}", err);
+        })
         .and_then(|connection| {
           println!("Creating new stream and sending money");
           let mut stream = connection.create_stream();

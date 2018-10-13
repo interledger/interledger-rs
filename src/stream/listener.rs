@@ -1,6 +1,7 @@
 use super::crypto;
 use super::packet::*;
 use super::{plugin_to_channels, Connection};
+use super::Error;
 use base64;
 use bytes::{Bytes, BytesMut};
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
@@ -67,13 +68,13 @@ impl StreamListener {
   pub fn bind<'a, S>(
     plugin: S,
     server_secret: Bytes,
-  ) -> impl Future<Item = (StreamListener, ConnectionGenerator), Error = ()> + 'a + Send + Sync
+  ) -> impl Future<Item = (StreamListener, ConnectionGenerator), Error = Error> + 'a + Send + Sync
   where
     S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
   {
     ildcp::get_config(plugin)
-      .map_err(|(_err, _plugin)| {
-        error!("Error getting ILDCP config info");
+      .map_err(|err| {
+        Error::ConnectionError(format!("Error connecting: {}", err))
       })
       .and_then(move |(config, plugin)| {
         let (outgoing_sender, incoming_receiver) = plugin_to_channels(plugin);
@@ -117,14 +118,14 @@ impl StreamListener {
   pub fn bind_with_custom_prepare_handler<'a, S>(
     plugin: S,
     prepare_handler: PrepareToSharedSecretGenerator,
-  ) -> impl Future<Item = StreamListener, Error = ()> + 'a
+  ) -> impl Future<Item = StreamListener, Error = Error> + 'a
   where
     S: Plugin<Item = IlpRequest, Error = (), SinkItem = IlpRequest, SinkError = ()> + 'static,
   {
 
     ildcp::get_config(plugin)
-      .map_err(|(_err, _plugin)| {
-        error!("Error getting ILDCP config info");
+      .map_err(|err| {
+        Error::ConnectionError(format!("Error connecting: {}", err))
       })
       .and_then(move |(config, plugin)| {
         let (outgoing_sender, incoming_receiver) = plugin_to_channels(plugin);
@@ -303,7 +304,7 @@ impl StreamListener {
 }
 
 impl Stream for StreamListener {
-  type Item = Connection;
+  type Item = (String, Connection);
   type Error = ();
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -362,7 +363,7 @@ impl Stream for StreamListener {
             if let Ok(Some(connection)) =
               self.handle_new_connection(&connection_id, shared_secret, request_id, prepare)
             {
-              return Ok(Async::Ready(Some(connection)));
+              return Ok(Async::Ready(Some((connection_id.to_string(), connection))));
             } else {
               continue;
             }
