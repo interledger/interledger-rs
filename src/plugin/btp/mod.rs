@@ -12,18 +12,18 @@ pub use self::packet::{
 pub use self::packet_stream::BtpPacketStream;
 pub use self::request_id_checker::BtpRequestIdCheckerStream;
 pub use errors::ParseError;
-pub use self::client::{ClientPlugin, connect_async};
+pub use self::client::{ClientPlugin, connect_async, PluginBtpError};
 
 use futures::Future;
 use base64;
 use ring::rand::{SecureRandom, SystemRandom};
 
-pub fn connect_to_moneyd() -> impl Future<Item = ClientPlugin, Error = ()> {
-  let url = format!("ws://{}:{}@localhost:7768", random_token(), random_token());
+pub fn connect_to_moneyd() -> impl Future<Item = ClientPlugin, Error = PluginBtpError> {
+  let url = format!("btp+ws://{}:{}@localhost:7768", random_token(), random_token());
   connect_async(&url)
 }
 
-fn random_token() -> String {
+pub fn random_token() -> String {
   let mut bytes: [u8; 32] = [0; 32];
   SystemRandom::new().fill(&mut bytes).unwrap();
   base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD)

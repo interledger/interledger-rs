@@ -1,10 +1,13 @@
 use super::super::Plugin;
+use super::{
+  BtpMessage, BtpPacket, BtpPacketStream, BtpRequestIdCheckerStream, ContentType, IlpPacketStream,
+  ProtocolData,
+};
 use futures::{Future, Poll, Sink, StartSend, Stream};
 use ilp::{IlpFulfillmentChecker, IlpPacket};
 use tokio_tcp::TcpStream;
 use tokio_tungstenite::{connect_async as connect_websocket, MaybeTlsStream, WebSocketStream};
 use url::Url;
-use super::{BtpPacketStream, BtpRequestIdCheckerStream, IlpPacketStream, BtpPacket, BtpMessage, ProtocolData, ContentType};
 
 pub type BtpStream = BtpPacketStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 pub type IlpRequest = (u32, IlpPacket);
@@ -39,7 +42,7 @@ impl Sink for ClientPlugin {
 
 pub fn connect_async(
   server: &str,
-) -> impl Future<Item = ClientPlugin, Error = ()> + 'static + Send {
+) -> impl Future<Item = ClientPlugin, Error = PluginBtpError> + 'static + Send {
   connect_btp_stream(server).and_then(|stream| {
     let with_id_checker = BtpRequestIdCheckerStream::new(stream);
     let with_ilp_parsing = IlpPacketStream::new(with_id_checker);
@@ -52,8 +55,9 @@ pub fn connect_async(
 
 pub fn connect_btp_stream(
   server: &str,
-) -> impl Future<Item = BtpStream, Error = ()> + 'static + Send {
-  let server = Url::parse(server).unwrap();
+) -> impl Future<Item = BtpStream, Error = PluginBtpError> + 'static + Send {
+  let server = server.replace("btp+", "");
+  let server = Url::parse(&server).unwrap();
   let mut server_without_auth = server.clone();
   server_without_auth.set_username("").unwrap();
   server_without_auth.set_password(None).unwrap();
@@ -80,22 +84,25 @@ pub fn connect_btp_stream(
   });
 
   debug!("Connecting WebSocket: {}", &server_without_auth);
-  connect_websocket(server.clone())
-    .map_err(|err| {
-      error!("Error connecting to websocket: {:?}", err);
-    }).and_then(|(ws, _handshake)| Ok(BtpPacketStream::new(ws)))
+  connect_websocket(server)
+    .map_err(|err| PluginBtpError(format!("Error connecting to websocket: {:?}", err)))
+    .and_then(|(ws, _handshake)| Ok(BtpPacketStream::new(ws)))
     .and_then(move |plugin| {
       plugin
         .send(auth_packet)
-        .map_err(|err| {
-          error!("Error sending auth packet: {:?}", err);
-        }).and_then(move |plugin| {
+        .map_err(|err| PluginBtpError(format!("Error sending auth packet: {:?}", err)))
+        .and_then(move |plugin| {
           plugin
             .into_future()
             .and_then(move |(_auth_response, plugin)| {
               info!("Connected to server: {}", server_without_auth);
               Ok(plugin)
-            }).map_err(|(err, _plugin)| error!("Error getting auth response: {:?}", err))
+            })
+            .map_err(|(err, _plugin)| PluginBtpError(format!("Error getting auth response: {:?}", err)))
         })
     })
 }
+
+#[derive(Fail, Debug)]
+#[fail(display = "Error connecting to BTP server: {}", _0)]
+pub struct PluginBtpError(String);

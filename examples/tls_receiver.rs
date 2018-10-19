@@ -21,6 +21,9 @@ fn main() {
   env_logger::init();
 
   let future = connect_async("ws://bob:bob@localhost:7768")
+    .map_err(|err| {
+      println!("{}", err);
+    })
     .and_then(move |plugin: ClientPlugin| {
       println!("Conected receiver");
 

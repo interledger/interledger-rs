@@ -15,8 +15,11 @@ use tokio::prelude::*;
 fn main() {
   env_logger::init();
 
-  let future =
-    connect_async("ws://alice:alice@localhost:7768").and_then(move |plugin: ClientPlugin| {
+  let future = connect_async("ws://alice:alice@localhost:7768")
+    .map_err(|err| {
+      println!("{}", err);
+    })
+    .and_then(move |plugin: ClientPlugin| {
       println!("Connected plugin");
       connect_tls(
         plugin,

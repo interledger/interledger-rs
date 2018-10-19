@@ -15,6 +15,9 @@ fn main() {
   env_logger::init();
 
   let future = connect_to_moneyd()
+    .map_err(|err| {
+      println!("{}", err);
+    })
     .and_then(move |plugin| {
       println!("Conected sender");
 

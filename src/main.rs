@@ -9,6 +9,7 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 
 pub fn main() {
+  let moneyd_url = format!("btp+ws://{}:{}@localhost:7768", ilp::plugin::btp::random_token(), ilp::plugin::btp::random_token());
   let mut app = App::new("ilp")
     .about("Blazing fast Interledger CLI written in Rust")
     .subcommand(
@@ -17,13 +18,16 @@ pub fn main() {
         .subcommands(vec![
           SubCommand::with_name("server")
             .about("Run an SPSP Server that automatically accepts incoming money")
-            .arg(
+            .args(&[
               Arg::with_name("port")
                 .long("port")
                 .short("p")
                 .takes_value(true)
                 .default_value("3000"),
-            ),
+              Arg::with_name("btp_server")
+                .long("btp_server")
+                .default_value(&moneyd_url),
+            ]),
           SubCommand::with_name("pay")
             .about("Send an SPSP payment")
             .args(&[
@@ -37,6 +41,9 @@ pub fn main() {
                 .short("a")
                 .takes_value(true)
                 .required(true),
+              Arg::with_name("btp_server")
+                .long("btp_server")
+                .default_value(&moneyd_url),
             ]),
         ]),
     );
@@ -44,13 +51,15 @@ pub fn main() {
   match app.clone().get_matches().subcommand() {
     ("spsp", Some(matches)) => match matches.subcommand() {
       ("server", Some(matches)) => {
+        let btp_server = value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
         let port = value_t!(matches, "port", u16).expect("Invalid port");
-        run_spsp_server(port);
+        run_spsp_server(btp_server, port);
       }
       ("pay", Some(matches)) => {
+        let btp_server = value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
         let receiver = value_t!(matches, "receiver", String).expect("Receiver is required");
         let amount = value_t!(matches, "amount", u64).expect("Invalid amount");
-        send_spsp_payment(receiver, amount);
+        send_spsp_payment(btp_server, receiver, amount);
       }
       _ => app.print_help().unwrap(),
     },
@@ -58,8 +67,8 @@ pub fn main() {
   }
 }
 
-fn send_spsp_payment(receiver: String, amount: u64) {
-  let run = ilp::plugin::btp::connect_to_moneyd()
+fn send_spsp_payment(btp_server: String, receiver: String, amount: u64) {
+  let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
       println!("Error connecting to BTP server: {:?}", err);
     })
@@ -79,8 +88,8 @@ fn send_spsp_payment(receiver: String, amount: u64) {
   tokio::run(run);
 }
 
-fn run_spsp_server(port: u16) {
-  let run = ilp::plugin::btp::connect_to_moneyd()
+fn run_spsp_server(btp_server: String, port: u16) {
+  let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
       println!("Error connecting to BTP server: {:?}", err);
     })
