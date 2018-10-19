@@ -11,7 +11,6 @@ use ilp::plugin::btp::connect_to_moneyd;
 // use ilp::spsp::pay;
 use ilp::spsp::connect_async;
 
-
 fn main() {
   env_logger::init();
 
@@ -39,8 +38,13 @@ fn main() {
               stream.data.write(&bytes[..])
                 .map_err(|err| {
                   println!("Error writing {}", err);
-                })?;
+                }).unwrap();
               println!("Sent data");
+              println!("Closing stream");
+              stream.close()
+            })
+            .and_then(|_| {
+              println!("Closed stream");
               Ok(())
             })
         })

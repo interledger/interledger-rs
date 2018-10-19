@@ -10,7 +10,6 @@ extern crate tokio_io;
 
 use tokio::prelude::*;
 use ilp::plugin::btp::connect_async;
-use ilp::stream::Connection;
 use ilp::spsp::listen_with_random_secret;
 use futures::{Stream, Future};
 use tokio_io::AsyncRead;
@@ -29,11 +28,16 @@ fn main() {
       })
       .and_then(|listener| {
         listener.for_each(|(id, conn)| {
-          println!("Got incoming connection");
+          println!("Got incoming connection {}", id);
           let handle_connection = conn.for_each(|mut stream| {
-            println!("Got incoming stream");
+            let stream_id = stream.id;
+            println!("Got incoming stream {}", &stream_id);
             let handle_money = stream.money.clone().for_each(|amount| {
               println!("Got incoming money {}", amount);
+              Ok(())
+            })
+            .and_then(move |_| {
+              println!("Money stream {} closed", stream_id);
               Ok(())
             });
             tokio::spawn(handle_money);
@@ -49,7 +53,6 @@ fn main() {
               Ok(Async::Ready(()))
             });
             tokio::spawn(handle_data);
-
             Ok(())
           });
 

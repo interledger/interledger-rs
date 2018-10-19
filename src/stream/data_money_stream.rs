@@ -1,5 +1,5 @@
 use super::connection::{Connection, ConnectionInternal};
-use futures::{Async, Poll, Sink, Stream, StartSend, AsyncSink};
+use futures::{Async, Poll, Sink, Stream, StartSend, AsyncSink, Future};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio_io::{AsyncWrite, AsyncRead};
@@ -8,7 +8,7 @@ use std::collections::{VecDeque, HashMap};
 use bytes::{Bytes, BytesMut, BufMut};
 
 #[derive(PartialEq)]
-enum StreamState {
+pub enum StreamState {
   Open,
   Closing,
   Closed,
@@ -24,7 +24,25 @@ pub struct DataMoneyStream {
 }
 
 impl DataMoneyStream {
-  pub fn close(&mut self) -> Result<Async<()>, ()> {
+  pub fn close(&self) -> impl Future<Item = (), Error = ()> {
+    CloseFuture {
+      state: Arc::clone(&self.state),
+      connection: Arc::clone(&self.connection),
+    }
+  }
+}
+
+// TODO do we need a custom type just to implement this future?
+pub struct CloseFuture {
+  state: Arc<RwLock<StreamState>>,
+  connection: Arc<Connection>,
+}
+
+impl Future for CloseFuture {
+  type Item = ();
+  type Error = ();
+
+  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
     if *self.state.read().unwrap() == StreamState::Closed {
       Ok(Async::Ready(()))
     } else {
@@ -37,15 +55,19 @@ impl DataMoneyStream {
 
 pub trait DataMoneyStreamInternal {
   fn new(id: u64, connection: Connection) -> DataMoneyStream;
+  fn is_closing(&self) -> bool;
+  fn set_closed(&self);
 }
 
 impl DataMoneyStreamInternal for DataMoneyStream {
   fn new(id: u64, connection: Connection) -> DataMoneyStream {
+    let state = Arc::new(RwLock::new(StreamState::Open));
     let connection = Arc::new(connection);
     DataMoneyStream {
       id,
       money: MoneyStream {
         connection: Arc::clone(&connection),
+        state: Arc::clone(&state),
         send_max: Arc::new(AtomicUsize::new(0)),
         pending: Arc::new(AtomicUsize::new(0)),
         sent: Arc::new(AtomicUsize::new(0)),
@@ -55,6 +77,7 @@ impl DataMoneyStreamInternal for DataMoneyStream {
       },
       data: DataStream {
         connection: Arc::clone(&connection),
+        state: Arc::clone(&state),
         incoming: Arc::new(Mutex::new(IncomingData {
           offset: 0,
           buffer: HashMap::new(),
@@ -64,15 +87,24 @@ impl DataMoneyStreamInternal for DataMoneyStream {
           buffer: VecDeque::new(),
         }))
       },
-      state: Arc::new(RwLock::new(StreamState::Open)),
+      state: Arc::clone(&state),
       connection: Arc::clone(&connection),
     }
+  }
+
+  fn is_closing(&self) -> bool {
+    *self.state.read().unwrap() == StreamState::Closing
+  }
+
+  fn set_closed(&self) {
+    *self.state.write().unwrap() = StreamState::Closed;
   }
 }
 
 #[derive(Clone)]
 pub struct MoneyStream {
   connection: Arc<Connection>,
+  state: Arc<RwLock<StreamState>>,
   send_max: Arc<AtomicUsize>,
   pending: Arc<AtomicUsize>,
   sent: Arc<AtomicUsize>,
@@ -108,6 +140,9 @@ impl Stream for MoneyStream {
     if amount_received > 0 {
       self.last_reported_received.store(total_received, Ordering::SeqCst);
       Ok(Async::Ready(Some(amount_received as u64)))
+    } else if *self.state.read().unwrap() != StreamState::Open {
+      debug!("Money stream ended");
+      Ok(Async::Ready(None))
     } else {
       Ok(Async::NotReady)
     }
@@ -119,6 +154,10 @@ impl Sink for MoneyStream {
   type SinkError = ();
 
   fn start_send(&mut self, amount: u64) -> StartSend<Self::SinkItem, Self::SinkError> {
+    if *self.state.read().unwrap() != StreamState::Open {
+      debug!("Cannot send money through stream because it is already closed or closing");
+      return Err(());
+    }
     self.send_max.fetch_add(amount as usize, Ordering::SeqCst);
     self.connection.try_send()?;
     Ok(AsyncSink::Ready)
@@ -177,15 +216,12 @@ impl MoneyStreamInternal for MoneyStream {
   fn add_delivered(&self, amount: u64) {
     self.delivered.fetch_add(amount as usize, Ordering::SeqCst);
   }
-
-  // pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
-  //   self.conn.close_stream(self.id)
-  // }
 }
 
 #[derive(Clone)]
 pub struct DataStream {
   connection: Arc<Connection>,
+  state: Arc<RwLock<StreamState>>,
   incoming: Arc<Mutex<IncomingData>>,
   outgoing: Arc<Mutex<OutgoingData>>,
 }
@@ -236,9 +272,8 @@ impl Read for DataStream {
           incoming.offset += from_buf.len();
           Ok(from_buf.len())
         }
-      // TODO properly handle stream closing
-      // } else if self.stream.state == StreamState::Closed {
-      //   Ok(0 as usize)
+      } else if *self.state.read().unwrap() != StreamState::Open {
+        Ok(0)
       } else {
         Err(IoError::new(ErrorKind::WouldBlock, "No more data now but there might be more in the future"))
       }
@@ -252,6 +287,11 @@ impl AsyncRead for DataStream {}
 
 impl Write for DataStream {
   fn write(&mut self, buf: &[u8]) -> Result<usize, IoError> {
+    if *self.state.read().unwrap() != StreamState::Open {
+      debug!("Cannot write to stream because it is already closed or closing");
+      return Err(IoError::new(ErrorKind::ConnectionReset, "Stream is already closed"));
+    }
+
     // TODO limit buffer size
     if let Ok(mut outgoing) = self.outgoing.try_lock() {
       outgoing.buffer.push_back(Bytes::from(buf));
@@ -291,8 +331,17 @@ impl Write for DataStream {
 }
 impl AsyncWrite for DataStream {
   fn shutdown(&mut self) -> Result<Async<()>, IoError> {
-    // TODO implement closing
-    Ok(Async::Ready(()))
+    match self.state.try_write() {
+      Ok(mut state) => {
+        if *state == StreamState::Closed {
+          Ok(Async::Ready(()))
+        } else {
+          *state = StreamState::Closing;
+          Err(IoError::new(ErrorKind::WouldBlock, "Stream is closing"))
+        }
+      },
+      Err(_err) => Err(IoError::new(ErrorKind::WouldBlock, "Unable to get lock on state"))
+    }
   }
 }
 

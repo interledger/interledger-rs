@@ -39,13 +39,13 @@ where
 
   // Forward packets from plugin to Connection
   let handle_packets = incoming_sender
-    .sink_map_err(|_| ())
+    .sink_map_err(|err| {
+      error!("Error forwarding packet from plugin to Connection: {:?}", err.into_inner());
+    })
     .send_all(stream)
-    .and_then(|_| {
+    .then(|_| {
       debug!("Finished forwarding packets from plugin to Connection");
       Ok(())
-    }).map_err(|err| {
-      error!("Error handling incoming packet: {:?}", err);
     });
   tokio::spawn(handle_packets);
 

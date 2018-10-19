@@ -9,9 +9,7 @@ extern crate tokio;
 extern crate webpki;
 
 use ilp::plugin::btp::{connect_async, ClientPlugin};
-use ilp::stream::{Connection, DataMoneyStream};
 use ilp::tls::connect_async as connect_tls;
-use std::sync::Arc;
 use tokio::prelude::*;
 
 fn main() {
@@ -26,7 +24,7 @@ fn main() {
       )
       .and_then(|conn| {
         println!("Connected to receiver over TLS+STREAM");
-        let mut stream = conn.create_stream();
+        let stream = conn.create_stream();
         stream.money.send(100).then(|_| Ok(()))
       })
     });
