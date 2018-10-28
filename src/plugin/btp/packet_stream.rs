@@ -34,7 +34,6 @@ where
     if let Some(serialized) = try_ready!(poll_result) {
       let serialized_vec: Vec<u8> = serialized.into();
       if let Ok(packet) = deserialize_packet(&serialized_vec) {
-        trace!("Parsed BTP packet: {:?}", packet);
         Ok(Async::Ready(Some(packet)))
       } else {
         warn!("Ignoring unknown BTP packet {:x?}", &serialized_vec);
@@ -57,7 +56,6 @@ where
   type SinkError = ();
 
   fn start_send(&mut self, item: BtpPacket) -> StartSend<Self::SinkItem, Self::SinkError> {
-    trace!("Sending BTP packet: {:?}", item);
     let serialized = item.to_bytes().unwrap();
     self
       .inner

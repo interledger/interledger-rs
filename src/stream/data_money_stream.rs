@@ -43,6 +43,8 @@ impl Future for CloseFuture {
   type Error = ();
 
   fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    self.connection.try_handle_incoming()?;
+
     if *self.state.read().unwrap() == StreamState::Closed {
       Ok(Async::Ready(()))
     } else {
@@ -57,6 +59,7 @@ pub trait DataMoneyStreamInternal {
   fn new(id: u64, connection: Connection) -> DataMoneyStream;
   fn is_closing(&self) -> bool;
   fn set_closed(&self);
+  fn set_closing(&self);
 }
 
 impl DataMoneyStreamInternal for DataMoneyStream {
@@ -94,6 +97,10 @@ impl DataMoneyStreamInternal for DataMoneyStream {
 
   fn is_closing(&self) -> bool {
     *self.state.read().unwrap() == StreamState::Closing
+  }
+
+  fn set_closing(&self) {
+    *self.state.write().unwrap() = StreamState::Closing;
   }
 
   fn set_closed(&self) {
@@ -240,7 +247,7 @@ struct OutgoingData {
 
 impl Read for DataStream {
   fn read(&mut self, buf: &mut [u8]) -> Result<usize, IoError> {
-    if buf.len() == 0 {
+    if buf.is_empty() {
       warn!("Asked to read into zero-length buffer");
     }
 
@@ -259,7 +266,7 @@ impl Read for DataStream {
           incoming.offset += to_copy.len();
 
           // Put the rest back in the queue
-          if from_buf.len() > 0 {
+          if !from_buf.is_empty() {
             let incoming_offset = incoming.offset;
             incoming.buffer.insert(incoming_offset, from_buf);
           }
@@ -273,6 +280,7 @@ impl Read for DataStream {
           Ok(from_buf.len())
         }
       } else if *self.state.read().unwrap() != StreamState::Open {
+        debug!("Data stream ended");
         Ok(0)
       } else {
         Err(IoError::new(ErrorKind::WouldBlock, "No more data now but there might be more in the future"))
@@ -319,7 +327,7 @@ impl Write for DataStream {
       })?;
 
     if let Ok(outgoing) = self.outgoing.try_lock() {
-      if outgoing.buffer.len() == 0 {
+      if outgoing.buffer.is_empty() {
         Ok(())
       } else {
         Err(IoError::new(ErrorKind::WouldBlock, "Not finished sending yet"))
@@ -378,7 +386,7 @@ impl DataStreamInternal for DataStream {
         chunks.push(chunk.split_to(max_size - size));
         size = max_size;
 
-        if chunk.len() > 0 {
+        if !chunk.is_empty() {
           outgoing.buffer.push_front(chunk);
         }
       } else {
@@ -387,7 +395,7 @@ impl DataStreamInternal for DataStream {
       }
     }
 
-    if chunks.len() > 0 {
+    if !chunks.is_empty() {
       // TODO zero copy
       let mut data = BytesMut::with_capacity(size);
       for chunk in chunks.iter() {

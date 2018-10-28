@@ -10,7 +10,7 @@ use futures::{Async, Poll, Sink, Stream};
 use ildcp;
 use ilp::{IlpPacket, IlpPrepare, IlpReject, PacketType};
 use plugin::{IlpRequest, Plugin};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio;
@@ -58,7 +58,7 @@ pub struct StreamListener {
   // TODO do these need to be wrapped in Mutexes?
   connections: Arc<RwLock<HashMap<String, UnboundedSender<IlpRequest>>>>,
   pending_requests: Arc<Mutex<HashMap<u32, Arc<String>>>>,
-  // closed_connections: Arc<Mutex<HashSet<String>>>,
+  closed_connections: Arc<Mutex<HashSet<String>>>,
   next_request_id: Arc<AtomicUsize>,
   prepare_handler: Arc<PrepareToSharedSecretGenerator>,
 }
@@ -101,7 +101,7 @@ impl StreamListener {
           source_account: config.client_address.clone(),
           connections: Arc::new(RwLock::new(HashMap::new())),
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
-          // closed_connections: Arc::new(Mutex::new(HashSet::new())),
+          closed_connections: Arc::new(Mutex::new(HashSet::new())),
           next_request_id: Arc::new(AtomicUsize::new(1)),
           prepare_handler: Arc::new(prepare_handler),
         };
@@ -136,7 +136,7 @@ impl StreamListener {
           source_account: config.client_address.clone(),
           connections: Arc::new(RwLock::new(HashMap::new())),
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
-          // closed_connections: Arc::new(Mutex::new(HashSet::new())),
+          closed_connections: Arc::new(Mutex::new(HashSet::new())),
           next_request_id: Arc::new(AtomicUsize::new(1)),
           prepare_handler: Arc::new(prepare_handler),
         };
@@ -301,6 +301,12 @@ impl StreamListener {
       );
     }
   }
+
+  // fn check_for_closed_connections(&self) {
+  //   for (id, conn) in self.connections.write().unwrap().iter() {
+
+  //   }
+  // }
 }
 
 impl Stream for StreamListener {
@@ -309,6 +315,8 @@ impl Stream for StreamListener {
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     loop {
+      // self.check_for_closed_connections();
+
       trace!("Polling plugin for more incoming packets");
       let next = try_ready!(self.incoming_receiver.poll());
       if next.is_none() {
@@ -316,6 +324,7 @@ impl Stream for StreamListener {
         return Ok(Async::Ready(None));
       }
       let (request_id, packet) = next.unwrap();
+      trace!("Handling packet with request ID {}", request_id);
 
       // Forward requests to the right Connection
       // Also check if we got a new incoming Connection
@@ -345,14 +354,14 @@ impl Stream for StreamListener {
           };
 
           // TODO check if the connection was already closed
-          // if self.closed_connections.contains(connection_id){
-          //   warn!("Got Prepare for closed connection {}", prepare.destination);
-          //   self.outgoing_sender.unbounded_send((request_id, IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new()))))
-          //     .map_err(|_| {
-          //       error!("Error sending reject");
-          //     })?;
-          //   return Ok(Async::NotReady);
-          // }
+          if self.closed_connections.lock().unwrap().contains(&connection_id){
+            warn!("Got Prepare for closed connection {}", prepare.destination);
+            self.outgoing_sender.unbounded_send((request_id, IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new()))))
+              .map_err(|_| {
+                error!("Error sending reject");
+              })?;
+            return Ok(Async::NotReady);
+          }
 
           let is_new_connection = !self
             .connections

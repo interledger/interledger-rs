@@ -1,19 +1,16 @@
 extern crate ilp;
 extern crate tokio;
 extern crate bytes;
-#[macro_use]
 extern crate futures;
 extern crate ring;
 extern crate chrono;
 extern crate env_logger;
 extern crate tokio_io;
 
-use tokio::prelude::*;
 use ilp::plugin::btp::connect_async;
 use ilp::spsp::listen_with_random_secret;
 use futures::{Stream, Future};
-use tokio_io::AsyncRead;
-use futures::future::poll_fn;
+use tokio_io::io::read_to_end;
 
 fn main() {
   env_logger::init();
@@ -32,7 +29,7 @@ fn main() {
       .and_then(|listener| {
         listener.for_each(|(id, conn)| {
           println!("Got incoming connection {}", id);
-          let handle_connection = conn.for_each(|mut stream| {
+          let handle_connection = conn.for_each(|stream| {
             let stream_id = stream.id;
             println!("Got incoming stream {}", &stream_id);
             let handle_money = stream.money.clone().for_each(|amount| {
@@ -46,16 +43,20 @@ fn main() {
             tokio::spawn(handle_money);
 
             // TODO fix inconsistent data receiving
-            let handle_data = poll_fn(move || {
-              let mut data: [u8; 100] = [0; 100];
-              try_ready!(stream.data.poll_read(&mut data[..])
-                .map_err(|err| {
-                  println!("Error polling stream for data {:?}", err);
-                }));
-              println!("Got incoming data: {}", String::from_utf8(Vec::from(&data[..])).unwrap());
-              Ok(Async::Ready(()))
-            });
+            let data: Vec<u8> = Vec::new();
+            let handle_data = read_to_end(stream.data, data)
+              .map_err(|err| {
+                println!("Error reading data: {}", err);
+              })
+              .and_then(|(_stream, data)| {
+                println!("Got incoming data: {}", String::from_utf8(Vec::from(&data[..])).unwrap());
+                Ok(())
+              });
             tokio::spawn(handle_data);
+            Ok(())
+          })
+          .then(|_| {
+            println!("Connection was closed");
             Ok(())
           });
 

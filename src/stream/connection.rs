@@ -9,7 +9,7 @@ use super::StreamPacket;
 use bytes::{Bytes, BytesMut};
 use chrono::{Duration, Utc};
 use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use futures::{Async, Poll, Stream};
+use futures::{Async, Poll, Stream, Future};
 use hex;
 use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
 use num_bigint::BigUint;
@@ -18,6 +18,30 @@ use plugin::IlpRequest;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+
+pub struct CloseFuture {
+  conn: Connection,
+}
+
+impl Future for CloseFuture {
+  type Item = ();
+  type Error = ();
+
+  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    trace!("Polling to see whether connection was closed");
+    self.conn.try_handle_incoming()?;
+
+    let state = self.conn.state.read().unwrap();
+    if *state == ConnectionState::Closed {
+      trace!("Connection was closed, resolving close future");
+      Ok(Async::Ready(()))
+    } else {
+      self.conn.try_send()?;
+      trace!("Connection wasn't closed yet, returning NotReady");
+      Ok(Async::NotReady)
+    }
+  }
+}
 
 #[derive(Clone)]
 pub struct Connection {
@@ -42,9 +66,10 @@ pub struct Connection {
 #[derive(PartialEq, Debug)]
 enum ConnectionState {
   Opening,
-  // Open,
-  // Closed,
-  // Closing,
+  Open,
+  Closing,
+  CloseSent,
+  Closed,
 }
 
 impl Connection {
@@ -57,9 +82,10 @@ impl Connection {
     is_server: bool,
     next_request_id: Arc<AtomicUsize>,
   ) -> Self {
-    let next_stream_id = match is_server {
-      true => 2,
-      false => 1,
+    let next_stream_id = if is_server {
+      2
+    } else {
+      1
     };
 
     let conn = Connection {
@@ -84,6 +110,9 @@ impl Connection {
       conn.send_handshake();
     }
 
+    // TODO wait for handshake reply before setting state to open
+    *conn.state.write().unwrap() = ConnectionState::Open;
+
     conn
   }
 
@@ -93,6 +122,19 @@ impl Connection {
     self.streams.write().unwrap().insert(id, stream.clone());
     debug!("Created stream {}", id);
     stream
+  }
+
+  pub fn close(&self) -> CloseFuture {
+    debug!("Closing connection");
+    *self.state.write().unwrap() = ConnectionState::Closing;
+    // TODO make sure we don't send stream close frames for every stream
+    for stream in self.streams.read().unwrap().values() {
+      stream.set_closing();
+    }
+
+    CloseFuture {
+      conn: self.clone()
+    }
   }
 
   fn handle_incoming_prepare(&self, request_id: u32, prepare: IlpPrepare) -> Result<(), ()> {
@@ -172,6 +214,8 @@ impl Connection {
     self.handle_incoming_data(&stream_packet).unwrap();
 
     self.handle_stream_closes(&stream_packet);
+
+    self.handle_connection_close(&stream_packet);
 
     // Fulfill or reject Preapre
     if is_fulfillable {
@@ -258,6 +302,18 @@ impl Connection {
     }
   }
 
+  fn handle_connection_close(&self, stream_packet: &StreamPacket) {
+    for frame in stream_packet.frames.iter() {
+      if let Frame::ConnectionClose(frame) = frame {
+        debug!("Remote closed connection with code: {:?}: {}", frame.code, frame.message);
+        *self.state.write().unwrap() = ConnectionState::Closing;
+        for stream in self.streams.read().unwrap().values() {
+          stream.set_closed();
+        }
+      }
+    }
+  }
+
   fn handle_fulfill(&self, request_id: u32, fulfill: IlpFulfill) -> Result<(), ()> {
     debug!(
       "Request {} was fulfilled with fulfillment: {}",
@@ -321,6 +377,10 @@ impl Connection {
 
     // TODO handle response frames
 
+    if let Some(packet) = response {
+      self.handle_connection_close(&packet);
+    }
+
     Ok(())
   }
 
@@ -378,6 +438,8 @@ impl Connection {
 
     if let Some(packet) = response.as_ref() {
       self.handle_incoming_data(&packet)?;
+
+      self.handle_connection_close(&packet);
     }
 
     // Only resend frames if they didn't get to the receiver
@@ -396,18 +458,19 @@ impl Connection {
 
   fn send_handshake(&self) {
     let sequence = self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64;
-    self.send_unfulfillable_prepare(StreamPacket {
+    let packet = StreamPacket {
       sequence,
       ilp_packet_type: PacketType::IlpPrepare,
       prepare_amount: 0,
       frames: vec![Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
         source_account: self.source_account.to_string(),
       })],
-    });
+    };
+    self.send_unfulfillable_prepare(&packet);
   }
 
   // TODO wait for response
-  fn send_unfulfillable_prepare(&self, stream_packet: StreamPacket) -> () {
+  fn send_unfulfillable_prepare(&self, stream_packet: &StreamPacket) -> () {
     let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
     let prepare = IlpPacket::Prepare(IlpPrepare::new(
       // TODO do we need to clone this?
@@ -421,30 +484,6 @@ impl Connection {
     ));
     self.outgoing.unbounded_send((request_id, prepare)).unwrap();
   }
-
-  // pub fn close(&mut self) -> impl Future<Item = (), Error = ()> {
-  //   {
-  //     let mut state = self.state.write().unwrap();
-  //     *state = ConnectionState::Closing;
-  //   }
-
-  //   let stream_packet = StreamPacket {
-  //     sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
-  //     ilp_packet_type: PacketType::IlpPrepare,
-  //     prepare_amount: 0,
-  //     frames: vec![Frame::ConnectionClose(ConnectionCloseFrame {
-  //       code: ErrorCode::NoError,
-  //       message: String::new(),
-  //     })],
-  //   };
-
-  //   let state = Arc::clone(&self.state);
-  //   self.send_packet(0, stream_packet).and_then(move |_| {
-  //     let mut state = state.write().unwrap();
-  //     *state = ConnectionState::Closed;
-  //     Ok(())
-  //   })
-  // }
 }
 
 impl Stream for Connection {
@@ -464,6 +503,9 @@ impl Stream for Connection {
           new_streams.push_back(stream_id);
           Ok(Async::NotReady)
         }
+      } else if *self.state.read().unwrap() == ConnectionState::Closed {
+        trace!("Connection was closed, no more incoming streams");
+        Ok(Async::Ready(None))
       } else {
         Ok(Async::NotReady)
       }
@@ -483,6 +525,11 @@ pub trait ConnectionInternal {
 
 impl ConnectionInternal for Connection {
   fn try_send(&self) -> Result<(), ()> {
+    if *self.state.read().unwrap() == ConnectionState::Closed {
+      trace!("Connection was closed, not sending any more packets");
+      return Ok(());
+    }
+
     trace!("Checking if we should send an outgoing packet");
 
     let mut outgoing_amount: u64 = 0;
@@ -509,7 +556,7 @@ impl ConnectionInternal for Connection {
 
         // Send data
         // TODO don't send too much data
-        let max_data: usize = 1000000000;
+        let max_data: usize = 1_000_000_000;
         if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
           trace!(
             "Stream {} has {} bytes to send (offset: {})",
@@ -545,13 +592,23 @@ impl ConnectionInternal for Connection {
       return Ok(());
     }
 
-    if frames.len() == 0 {
+    let closing = { *self.state.read().unwrap() == ConnectionState::Closing };
+    if closing {
+      trace!("Sending connection close frame");
+      frames.push(Frame::ConnectionClose(ConnectionCloseFrame {
+        code: ErrorCode::NoError,
+        message: String::new(),
+      }));
+      *self.state.write().unwrap() = ConnectionState::CloseSent;
+    }
+
+    if frames.is_empty() {
       trace!("Not sending packet, no frames need to be sent");
       return Ok(());
     }
 
     // Note we need to remove them after we've given up the read lock on self.streams
-    if closed_streams.len() > 0 {
+    if !closed_streams.is_empty() {
       let mut streams = self.streams.write().unwrap();
       for stream_id in closed_streams.iter() {
         debug!("Removed stream {}", stream_id);
@@ -604,6 +661,11 @@ impl ConnectionInternal for Connection {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
     loop {
+      if *self.state.read().unwrap() == ConnectionState::Closed {
+        trace!("Connection was closed, not handling any more incoming packets");
+        return Ok(());
+      }
+
       trace!("Polling for incoming requests");
       let next = {
         if let Ok(mut incoming) = self.incoming.try_lock() {
