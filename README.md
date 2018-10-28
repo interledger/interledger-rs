@@ -19,12 +19,6 @@
 - [ ] WASM using wasm-pack
 - [ ] Python
 
-### TLS
-
-- [x] Test out creating STREAM connections using rustls
-- [ ] TLS server that listens for multiple connections (Stream<Connection>)
-- [ ] DNS for looking up ILP address?
-
 ### Plugin
 
 - [ ] Request ID handling - should the plugin track the next outgoing ID?
