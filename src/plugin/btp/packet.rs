@@ -222,7 +222,7 @@ impl Serializable<BtpError> for BtpError {
     let mut code: [u8; 3] = [0; 3];
     // TODO check that the code is only 3 chars
     self.code.as_bytes().read_exact(&mut code)?;
-    contents.write(&code)?;
+    contents.write_all(&code)?;
     contents.write_var_octet_string(self.name.as_bytes())?;
     contents.write_var_octet_string(self.triggered_at.format(GENERALIZED_TIME_FORMAT).to_string().as_bytes())?;
     contents.write_var_octet_string(self.data.as_bytes())?;

@@ -39,7 +39,7 @@ where
             // TODO do this without removing / reinserting each time
             self.packets.insert(request_id, (condition, expires_at));
             Ok(Async::NotReady)
-          } else if &expires_at < &Utc::now() {
+          } else if expires_at < Utc::now() {
             warn!("Got invalid Fulfill with request id {} (expired at: {})", request_id, expires_at.to_rfc3339());
             // TODO do this without removing / reinserting each time
             self.packets.insert(request_id, (condition, expires_at));
@@ -78,7 +78,7 @@ where
     if let (request_id, IlpPacket::Prepare(prepare)) = &item {
       self
         .packets
-        .insert(*request_id, (prepare.execution_condition.to_vec(), prepare.expires_at.clone()));
+        .insert(*request_id, (prepare.execution_condition.to_vec(), prepare.expires_at));
     }
 
     self.inner.start_send(item)

@@ -58,7 +58,7 @@ where
 
   ok(())
     .and_then(move |_| {
-      let destination_parts: Vec<&str> = destination.split("#").collect();
+      let destination_parts: Vec<&str> = destination.split('#').collect();
       if destination_parts.len() != 2 {
         error!(
           "Expected destination in the form <Hash of TLS Certificate>#<ILP Address>, got: {}",
@@ -113,7 +113,7 @@ where
           next_request_id: 1,
         }
         .and_then(|(shared_secret, plugin)| {
-          connect_stream(plugin, destination_account, shared_secret)
+          connect_stream(plugin, destination_account, shared_secret.clone())
             .map_err(|err| {
               error!("{:?}", err);
             })
@@ -175,7 +175,7 @@ where
               prepare.data.len(),
               request_id
             );
-            if prepare.data.len() > 0 {
+            if !prepare.data.is_empty() {
               let mut prepare_reader = Cursor::new(prepare.data);
               let data = prepare_reader.read_var_octet_string().map_err(|err| {
                 error!(
@@ -196,7 +196,7 @@ where
               reject.data.len(),
               request_id
             );
-            if reject.data.len() > 0 {
+            if !reject.data.is_empty() {
               let mut reject_reader = Cursor::new(reject.data);
               let data = reject_reader.read_var_octet_string().map_err(|err| {
                 error!(
@@ -228,7 +228,7 @@ where
         error!("Error writing TLS packets from session {:?}", err);
       })?;
     }
-    if to_send.len() > 0 {
+    if !to_send.is_empty() {
       let mut data: Vec<u8> = Vec::new();
       data.write_var_octet_string(&to_send).unwrap();
 
@@ -314,13 +314,13 @@ where
       "Handling prepare for Connection {}: {:?}",
       local_address, prepare
     );
-    let local_address_parts: Vec<&str> = local_address.split(".").collect();
-    if local_address_parts.len() == 0 {
+    let local_address_parts: Vec<&str> = local_address.split('.').collect();
+    if local_address_parts.is_empty() {
       warn!("Got Prepare with no Connection ID: {}", prepare.destination);
       return Err(IlpReject::new("F02", "", "", Bytes::new()));
     }
     let connection_id = local_address_parts[0];
-    if prepare.data.len() == 0 {
+    if prepare.data.is_empty() {
       warn!("Got Prepare with no data");
       return Err(IlpReject::new("F02", "", "", Bytes::new()));
     }
@@ -339,7 +339,7 @@ where
           .set_single_cert(cert.clone(), private_key.clone())
           .or_else(|err| {
             error!("Error setting certificate: {:?}", err);
-            return Err(IlpReject::new("F00", "", "", Bytes::new()));
+            Err(IlpReject::new("F00", "", "", Bytes::new()))
           })
           .unwrap();
         let session = rustls::ServerSession::new(&Arc::new(config));

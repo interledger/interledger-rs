@@ -120,7 +120,7 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         let mut reader = Cursor::new(contents);
         let amount = reader.read_u64::<BigEndian>()?;
         let mut expires_at_buf = [0; 17];
-        reader.read(&mut expires_at_buf)?;
+        reader.read_exact(&mut expires_at_buf)?;
         let expires_at_str = String::from_utf8(expires_at_buf.to_vec())?;
         let expires_at = Utc.datetime_from_str(&expires_at_str, INTERLEDGER_TIMESTAMP_FORMAT)?.with_timezone(&Utc);
         let mut execution_condition: [u8; 32] = [0; 32];
@@ -142,13 +142,13 @@ impl Serializable<IlpPrepare> for IlpPrepare {
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
         bytes.write_u64::<BigEndian>(self.amount)?;
-        bytes.write(
+        bytes.write_all(
             self.expires_at
                 .format(INTERLEDGER_TIMESTAMP_FORMAT)
                 .to_string()
                 .as_bytes()
         )?;
-        bytes.write(&self.execution_condition)?;
+        bytes.write_all(&self.execution_condition)?;
         bytes.write_var_octet_string(&self.destination.to_string().into_bytes())?;
         bytes.write_var_octet_string(&self.data)?;
         serialize_envelope(PacketType::IlpPrepare, &bytes)
@@ -186,14 +186,14 @@ impl Serializable<IlpFulfill> for IlpFulfill {
 
         let mut reader = Cursor::new(contents);
         let mut fulfillment = [0; 32];
-        reader.read(&mut fulfillment)?;
+        reader.read_exact(&mut fulfillment)?;
         let data = reader.read_var_octet_string()?;
         Ok(IlpFulfill::new(&fulfillment[..], data))
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
-        bytes.write(&self.fulfillment[0..32])?;
+        bytes.write_all(&self.fulfillment[0..32])?;
         bytes.write_var_octet_string(&self.data[..])?;
         serialize_envelope(PacketType::IlpFulfill, &bytes)
     }
@@ -235,7 +235,7 @@ impl Serializable<IlpReject> for IlpReject {
 
         let mut reader = Cursor::new(contents);
         let mut code_bytes = [0; 3];
-        reader.read(&mut code_bytes)?;
+        reader.read_exact(&mut code_bytes)?;
         // TODO: make sure code is valid
         let code = String::from_utf8(code_bytes.to_vec())
             .map_err(|_| ParseError::InvalidPacket(String::from("code is not utf8")))?;
@@ -258,8 +258,8 @@ impl Serializable<IlpReject> for IlpReject {
     fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
         let mut bytes: Vec<u8> = Vec::new();
         let mut code = [0; 3];
-        self.code.as_bytes().read(&mut code)?;
-        bytes.write(&code)?;
+        self.code.as_bytes().read_exact(&mut code)?;
+        bytes.write_all(&code)?;
         bytes.write_var_octet_string(&self.triggered_by.as_bytes())?;
         bytes.write_var_octet_string(&self.message.as_bytes())?;
         bytes.write_var_octet_string(&self.data[..])?;

@@ -25,7 +25,7 @@ where
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     if let Some(packet) = try_ready!(self.inner.poll()) {
       if let BtpPacket::Message(packet) = &packet {
-        if packet.protocol_data.len() > 0 && packet.protocol_data[0].protocol_name == "ilp" {
+        if !packet.protocol_data.is_empty() && packet.protocol_data[0].protocol_name == "ilp" {
           if let Ok(parsed_ilp_packet) = IlpPacket::from_bytes(&packet.protocol_data[0].data) {
             trace!(
               "Parsed ILP packet: {} {:?}",
@@ -49,7 +49,7 @@ where
           Ok(Async::NotReady)
         }
       } else if let BtpPacket::Response(packet) = &packet {
-        if packet.protocol_data.len() > 0 && packet.protocol_data[0].protocol_name == "ilp" {
+        if !packet.protocol_data.is_empty() && packet.protocol_data[0].protocol_name == "ilp" {
           if let Ok(parsed_ilp_packet) = IlpPacket::from_bytes(&packet.protocol_data[0].data) {
             trace!(
               "Parsed ILP packet: {} {:?}",

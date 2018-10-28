@@ -20,7 +20,7 @@ pub struct StreamPacket {
 }
 
 impl StreamPacket {
-  pub fn from_encrypted(shared_secret: Bytes, ciphertext: BytesMut) -> Result<Self, ParseError> {
+  pub fn from_encrypted(shared_secret: &[u8], ciphertext: BytesMut) -> Result<Self, ParseError> {
     // TODO handle decryption failure
     let decrypted = decrypt(shared_secret, ciphertext)
       .map_err(|_err| {
@@ -49,19 +49,19 @@ impl StreamPacket {
     let sequence = reader
       .read_var_uint()?
       .to_u64()
-      .ok_or(ParseError::InvalidPacket(String::from(
+      .ok_or_else(|| ParseError::InvalidPacket(String::from(
         "Packet sequence is greater than max u64",
       )))?;
     let prepare_amount = reader
       .read_var_uint()?
       .to_u64()
-      .ok_or(ParseError::InvalidPacket(String::from(
+      .ok_or_else(|| ParseError::InvalidPacket(String::from(
         "Prepare amount is greater than max u64",
       )))?;
     let num_frames = reader
       .read_var_uint()?
       .to_u64()
-      .ok_or(ParseError::InvalidPacket(String::from(
+      .ok_or_else(|| ParseError::InvalidPacket(String::from(
         "Num frames is greater than max u64",
       )))?;
 
@@ -131,7 +131,7 @@ impl StreamPacket {
     })
   }
 
-  pub fn to_encrypted(&self, shared_secret: Bytes) -> Result<Bytes, ParseError> {
+  pub fn to_encrypted(&self, shared_secret: &[u8]) -> Result<Bytes, ParseError> {
     let bytes = self.to_bytes_unencrypted()?;
     let ciphertext = encrypt(shared_secret, BytesMut::from(bytes)).to_vec();
     Ok(Bytes::from(ciphertext))

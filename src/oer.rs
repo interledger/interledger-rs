@@ -22,7 +22,7 @@ pub trait ReadOerExt: Read + ReadBytesExt + Debug {
             // TODO check for canonical length
             self.read_uint::<BigEndian>(length_prefix_length as usize)? as u64
         } else {
-            length as u64
+            u64::from(length)
         };
 
         // TODO handle if the length is too long
@@ -137,11 +137,11 @@ mod writer_ext {
     #[test]
     fn it_writes_var_octet_strings() {
         let mut empty = vec![];
-        empty.write_var_octet_string(&vec![]).unwrap();
+        empty.write_var_octet_string(&[]).unwrap();
         assert_eq!(empty, vec![0]);
 
         let mut one = vec![];
-        one.write_var_octet_string(&vec![0xb0]).unwrap();
+        one.write_var_octet_string(&[0xb0]).unwrap();
         assert_eq!(one, vec![0x01, 0xb0]);
 
         let mut larger = vec![];

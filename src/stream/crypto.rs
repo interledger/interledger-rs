@@ -6,9 +6,9 @@ const NONCE_LENGTH: usize = 12;
 const AUTH_TAG_LENGTH: usize = 16;
 
 lazy_static! {
-  static ref ENCRYPTION_KEY_STRING: &'static [u8] = "ilp_stream_encryption".as_bytes();
-  static ref FULFILLMENT_GENERATION_STRING: &'static [u8] = "ilp_stream_fulfillment".as_bytes();
-  static ref SHARED_SECRET_GENERATION_STRING: &'static [u8] = "ilp_stream_shared_secret".as_bytes();
+  static ref ENCRYPTION_KEY_STRING: &'static [u8] = b"ilp_stream_encryption";
+  static ref FULFILLMENT_GENERATION_STRING: &'static [u8] = b"ilp_stream_fulfillment";
+  static ref SHARED_SECRET_GENERATION_STRING: &'static [u8] = b"ilp_stream_shared_secret";
 }
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
@@ -17,19 +17,19 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
   Bytes::from(output.as_ref())
 }
 
-pub fn generate_fulfillment(shared_secret: Bytes, data: Bytes) -> Bytes {
+pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> Bytes {
   let key = hmac_sha256(&shared_secret[..], &FULFILLMENT_GENERATION_STRING);
   hmac_sha256(&key[..], &data[..])
 }
 
-pub fn fulfillment_to_condition(fulfillment: Bytes) -> Bytes {
+pub fn fulfillment_to_condition(fulfillment: &[u8]) -> Bytes {
   let output = digest::digest(&digest::SHA256, &fulfillment[..]);
   Bytes::from(output.as_ref())
 }
 
-pub fn generate_condition(shared_secret: Bytes, data: Bytes) -> Bytes {
-  let fulfillment = generate_fulfillment(shared_secret, data);
-  fulfillment_to_condition(fulfillment)
+pub fn generate_condition(shared_secret: &[u8], data: &[u8]) -> Bytes {
+  let fulfillment = generate_fulfillment(&shared_secret, &data);
+  fulfillment_to_condition(&fulfillment)
 }
 
 pub fn random_condition() -> Bytes {
@@ -44,24 +44,24 @@ pub fn generate_token() -> Bytes {
   Bytes::from(&token[..])
 }
 
-pub fn generate_shared_secret_from_token(server_secret: Bytes, token: Bytes) -> Bytes {
+pub fn generate_shared_secret_from_token(server_secret: &[u8], token: &[u8]) -> Bytes {
   let key = hmac_sha256(&server_secret[..], &SHARED_SECRET_GENERATION_STRING);
   hmac_sha256(&key[..], &token[..])
 }
 
-pub fn encrypt(shared_secret: Bytes, plaintext: BytesMut) -> BytesMut {
+pub fn encrypt(shared_secret: &[u8], plaintext: BytesMut) -> BytesMut {
   // Generate a random nonce or IV
   let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
   SystemRandom::new().fill(&mut nonce[..]).unwrap();
 
-  encrypt_with_nonce(shared_secret, plaintext, Bytes::from(&nonce[..]))
+  encrypt_with_nonce(shared_secret, plaintext, &nonce[..])
 }
 
-fn encrypt_with_nonce(shared_secret: Bytes, mut plaintext: BytesMut, nonce: Bytes) -> BytesMut {
+fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8]) -> BytesMut {
   let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
   let key = aead::SealingKey::new(&aead::AES_256_GCM, &key).unwrap();
 
-  let additional_data: &[u8] = &vec![];
+  let additional_data: &[u8] = &[];
 
   // seal_in_place expects the data to have enough room (in length, not just capacity) to append the auth tag
   let auth_tag_place_holder: [u8; AUTH_TAG_LENGTH] = [0; AUTH_TAG_LENGTH];
@@ -91,13 +91,13 @@ fn encrypt_with_nonce(shared_secret: Bytes, mut plaintext: BytesMut, nonce: Byte
 }
 
 
-pub fn decrypt(shared_secret: Bytes, mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
-  let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
+pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
+  let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
   let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key).unwrap();
 
   let nonce = ciphertext.split_to(NONCE_LENGTH);
   let auth_tag = ciphertext.split_to(AUTH_TAG_LENGTH);
-  let additional_data: &[u8] = &vec![];
+  let additional_data: &[u8] = &[];
 
   // Ring expects the tag to come after the data
   ciphertext.unsplit(auth_tag);
@@ -122,7 +122,7 @@ mod fulfillment_and_condition {
 
   #[test]
   fn it_generates_the_same_fulfillment_as_javascript() {
-    let fulfillment = generate_fulfillment(Bytes::from(&SHARED_SECRET[..]), Bytes::from(&DATA[..]));
+    let fulfillment = generate_fulfillment(&Bytes::from(&SHARED_SECRET[..]), &Bytes::from(&DATA[..]));
     assert_eq!(fulfillment.to_vec(), *FULFILLMENT);
   }
 }
@@ -140,20 +140,20 @@ mod encrypt_decrypt_test {
 
   #[test]
   fn it_encrypts_to_same_as_javascript() {
-    let encrypted = encrypt_with_nonce(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&PLAINTEXT[..]), Bytes::from(&NONCE[..]));
+    let encrypted = encrypt_with_nonce(&SHARED_SECRET[..], BytesMut::from(&PLAINTEXT[..]), &NONCE[..]);
     assert_eq!(encrypted.to_vec(), *CIPHERTEXT);
   }
 
   #[test]
   fn it_decrypts_javascript_ciphertext() {
-    let decrypted = decrypt(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&CIPHERTEXT[..]));
+    let decrypted = decrypt(&SHARED_SECRET[..], BytesMut::from(&CIPHERTEXT[..]));
     assert_eq!(decrypted.unwrap().to_vec(), *PLAINTEXT);
   }
 
   #[test]
   fn it_losslessly_encrypts_and_decrypts() {
-    let ciphertext = encrypt(Bytes::from(&SHARED_SECRET[..]), BytesMut::from(&PLAINTEXT[..]));
-    let decrypted = decrypt(Bytes::from(&SHARED_SECRET[..]), ciphertext);
+    let ciphertext = encrypt(&SHARED_SECRET[..], BytesMut::from(&PLAINTEXT[..]));
+    let decrypted = decrypt(&SHARED_SECRET[..], ciphertext);
     assert_eq!(decrypted.unwrap().to_vec(), *PLAINTEXT);
   }
 }

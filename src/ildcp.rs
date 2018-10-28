@@ -18,7 +18,7 @@ lazy_static! {
   ]);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct IldcpRequest {}
 
 impl IldcpRequest {
@@ -45,7 +45,7 @@ pub struct IldcpResponse {
 }
 
 impl IldcpResponse {
-  pub fn from_fulfill(fulfill: IlpFulfill) -> Result<Self, ParseError> {
+  pub fn from_fulfill(fulfill: &IlpFulfill) -> Result<Self, ParseError> {
     let mut reader = Cursor::new(&fulfill.data[..]);
     let client_address = String::from_utf8(reader.read_var_octet_string()?)?;
     let asset_scale = reader.read_u8()?;
@@ -74,7 +74,7 @@ pub fn get_config(
         .map_err(|(_, _plugin)| Error("Error listening for ILDCP response".to_string()))
         .and_then(|(next, plugin)| {
           if let Some((_request_id, IlpPacket::Fulfill(fulfill))) = next {
-            match IldcpResponse::from_fulfill(fulfill) {
+            match IldcpResponse::from_fulfill(&fulfill) {
               Ok(response) => {
                 debug!("Got ILDCP response: {:?}", response);
                 Ok((response, plugin))

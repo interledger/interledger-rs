@@ -26,15 +26,15 @@ impl ConnectionGenerator {
     let token_bytes = crypto::generate_token();
     let token = base64::encode(&token_bytes);
     let token = {
-      if connection_tag.len() > 0 {
+      if !connection_tag.is_empty() {
         token + "~" + connection_tag
       } else {
         token
       }
     };
     let shared_secret = crypto::generate_shared_secret_from_token(
-      self.server_secret.clone(),
-      Bytes::from(token.clone()),
+      &self.server_secret,
+      &token.as_bytes(),
     );
     let destination_account = format!("{}.{}", self.source_account, token);
     (destination_account, shared_secret)
@@ -63,6 +63,8 @@ pub struct StreamListener {
   prepare_handler: Arc<PrepareToSharedSecretGenerator>,
 }
 
+type PrepareHandler = Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
+
 impl StreamListener {
   // TODO does this need to be static?
   pub fn bind<'a, S>(
@@ -80,17 +82,17 @@ impl StreamListener {
         let (outgoing_sender, incoming_receiver) = plugin_to_channels(plugin);
 
         let server_secret_clone = server_secret.clone();
-        let prepare_handler: Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync> =
+        let prepare_handler: PrepareHandler =
           Box::new(move |local_address, prepare| {
-            let local_address_parts: Vec<&str> = local_address.split(".").collect();
-            if local_address_parts.len() == 0 {
+            let local_address_parts: Vec<&str> = local_address.split('.').collect();
+            if local_address_parts.is_empty() {
               warn!("Got Prepare with no Connection ID: {}", prepare.destination);
               return Err(IlpReject::new("F02", "", "", Bytes::new()));
             }
             let connection_id = local_address_parts[0];
             let shared_secret = crypto::generate_shared_secret_from_token(
-              server_secret_clone.clone(),
-              Bytes::from(connection_id),
+              &server_secret_clone,
+              &connection_id.as_bytes(),
             );
             Ok((connection_id.to_string(), shared_secret))
           });
@@ -151,7 +153,7 @@ impl StreamListener {
   fn handle_new_connection(
     &mut self,
     connection_id: &str,
-    shared_secret: Bytes,
+    shared_secret: &[u8],
     request_id: u32,
     prepare: IlpPrepare,
   ) -> Result<Option<Connection>, ()> {
@@ -159,7 +161,7 @@ impl StreamListener {
     // Also make sure they sent us their address
     let destination_account = {
       if let Ok(stream_packet) =
-        StreamPacket::from_encrypted(shared_secret.clone(), BytesMut::from(&prepare.data[..]))
+        StreamPacket::from_encrypted(&shared_secret, BytesMut::from(&prepare.data[..]))
       {
         let frame = stream_packet.frames.iter().find(|frame| {
           if let Frame::ConnectionNewAddress(_) = frame {
@@ -181,7 +183,7 @@ impl StreamListener {
             prepare_amount: 0,
             frames: vec![],
           };
-          let data = response_packet.to_encrypted(shared_secret.clone()).unwrap();
+          let data = response_packet.to_encrypted(&shared_secret).unwrap();
           self
             .outgoing_sender
             .unbounded_send((
@@ -226,14 +228,13 @@ impl StreamListener {
     let pending_requests = Arc::clone(&self.pending_requests);
     let connection_id_clone = Arc::clone(&connection_id);
     let outgoing_rx = outgoing_rx.inspect(move |(request_id, packet)| {
-      let request_id = request_id.clone();
       let connection_id = Arc::clone(&connection_id_clone);
       if let IlpPacket::Prepare(_prepare) = packet {
         // TODO avoid storing the connection_id over and over
         pending_requests
           .lock()
           .unwrap()
-          .insert(request_id, connection_id);
+          .insert(*request_id, connection_id);
       }
     });
     let forward_outgoing = self
@@ -252,7 +253,7 @@ impl StreamListener {
     let conn = Connection::new(
       outgoing_tx,
       incoming_rx,
-      shared_secret.clone(),
+      Bytes::from(shared_secret),
       self.source_account.to_string(),
       destination_account,
       true,
@@ -270,7 +271,7 @@ impl StreamListener {
         );
       })?;
 
-    return Ok(Some(conn));
+    Ok(Some(conn))
   }
 
   fn handle_response(&mut self, request_id: u32, response: IlpPacket) {
@@ -370,7 +371,7 @@ impl Stream for StreamListener {
             .contains_key(&connection_id);
           if is_new_connection {
             if let Ok(Some(connection)) =
-              self.handle_new_connection(&connection_id, shared_secret, request_id, prepare)
+              self.handle_new_connection(&connection_id, &shared_secret, request_id, prepare)
             {
               return Ok(Async::Ready(Some((connection_id.to_string(), connection))));
             } else {

@@ -73,8 +73,8 @@ where
   S: Plugin + 'static,
 {
   query(server)
-    .and_then(|spsp| connect_stream(plugin, spsp.destination_account, spsp.shared_secret)
-      .map_err(|err: StreamError| Error::StreamError(err)))
+    .and_then(|spsp| connect_stream(plugin, spsp.destination_account, spsp.shared_secret.clone())
+      .map_err(Error::StreamError))
 }
 
 pub fn pay<S>(plugin: S, server: &str, source_amount: u64) -> impl Future<Item = u64, Error = Error>
@@ -84,7 +84,7 @@ where
   connect_async(plugin, server)
     .and_then(move |conn: Connection| {
       let stream = conn.create_stream();
-      stream.money.clone().send(source_amount.clone())
+      stream.money.clone().send(source_amount)
         .map_err(move |_| {
           Error::SendMoneyError(source_amount)
         })

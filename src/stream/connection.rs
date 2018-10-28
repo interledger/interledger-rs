@@ -142,13 +142,13 @@ impl Connection {
 
     let response_frames: Vec<Frame> = Vec::new();
 
-    let fulfillment = generate_fulfillment(self.shared_secret.clone(), prepare.data.clone());
-    let condition = fulfillment_to_condition(fulfillment.clone());
+    let fulfillment = generate_fulfillment(&self.shared_secret, &prepare.data);
+    let condition = fulfillment_to_condition(&fulfillment);
     let is_fulfillable = condition == prepare.execution_condition;
 
     // TODO avoid copying data
     let stream_packet =
-      StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(prepare.data));
+      StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(prepare.data));
     if stream_packet.is_err() {
       warn!(
         "Got Prepare with data that we cannot parse. Rejecting request {}",
@@ -226,7 +226,7 @@ impl Connection {
         frames: response_frames,
       };
       let encrypted_response = response_packet
-        .to_encrypted(self.shared_secret.clone())
+        .to_encrypted(&self.shared_secret)
         .unwrap();
       let fulfill = IlpPacket::Fulfill(IlpFulfill::new(fulfillment.clone(), encrypted_response));
       debug!(
@@ -244,7 +244,7 @@ impl Connection {
         frames: response_frames,
       };
       let encrypted_response = response_packet
-        .to_encrypted(self.shared_secret.clone())
+        .to_encrypted(&self.shared_secret)
         .unwrap();
       let reject = IlpPacket::Reject(IlpReject::new("F99", "", "", encrypted_response));
       debug!(
@@ -330,7 +330,7 @@ impl Connection {
 
     let response = {
       let decrypted =
-        StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(fulfill.data)).ok();
+        StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(fulfill.data)).ok();
       if let Some(packet) = decrypted {
         if packet.sequence != original_packet.sequence {
           warn!("Got Fulfill with stream packet whose sequence does not match the original request. Request ID: {}, sequence: {}, fulfill packet: {:?}", request_id, original_packet.sequence, packet);
@@ -355,19 +355,16 @@ impl Connection {
     };
 
     for frame in original_packet.frames.iter() {
-      match frame {
-        Frame::StreamMoney(frame) => {
-          let stream_id = frame.stream_id.to_u64().unwrap();
-          let streams = self.streams.read().unwrap();
-          let stream = streams.get(&stream_id).unwrap();
+      if let Frame::StreamMoney(frame) = frame {
+        let stream_id = frame.stream_id.to_u64().unwrap();
+        let streams = self.streams.read().unwrap();
+        let stream = streams.get(&stream_id).unwrap();
 
-          let shares = frame.shares.to_u64().unwrap();
-          stream.money.pending_to_sent(shares);
+        let shares = frame.shares.to_u64().unwrap();
+        stream.money.pending_to_sent(shares);
 
-          let amount_delivered: u64 = total_delivered * shares / original_amount;
-          stream.money.add_delivered(amount_delivered);
-        }
-        _ => {}
+        let amount_delivered: u64 = total_delivered * shares / original_amount;
+        stream.money.add_delivered(amount_delivered);
       }
     }
 
@@ -402,7 +399,7 @@ impl Connection {
 
     let response = {
       let decrypted =
-        StreamPacket::from_encrypted(self.shared_secret.clone(), BytesMut::from(reject.data)).ok();
+        StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(reject.data)).ok();
       if let Some(packet) = decrypted {
         if packet.sequence != original_packet.sequence {
           warn!("Got Reject with stream packet whose sequence does not match the original request. Request ID: {}, sequence: {}, packet: {:?}", request_id, original_packet.sequence, packet);
@@ -423,15 +420,12 @@ impl Connection {
 
     // Release pending money
     for frame in original_packet.frames.iter() {
-      match frame {
-        Frame::StreamMoney(frame) => {
-          let stream_id = frame.stream_id.to_u64().unwrap();
-          let stream = streams.get(&stream_id).unwrap();
+      if let Frame::StreamMoney(frame) = frame {
+        let stream_id = frame.stream_id.to_u64().unwrap();
+        let stream = streams.get(&stream_id).unwrap();
 
-          let shares = frame.shares.to_u64().unwrap();
-          stream.money.subtract_from_pending(shares);
-        }
-        _ => {}
+        let shares = frame.shares.to_u64().unwrap();
+        stream.money.subtract_from_pending(shares);
       }
     }
     // TODO handle response frames
@@ -445,9 +439,11 @@ impl Connection {
     // Only resend frames if they didn't get to the receiver
     if response.is_none() {
       let mut frames_to_resend = self.frames_to_resend.lock().unwrap();
-      while original_packet.frames.len() > 0 {
+      while !original_packet.frames.is_empty() {
         match original_packet.frames.pop().unwrap() {
           Frame::StreamData(frame) => frames_to_resend.push(Frame::StreamData(frame)),
+          Frame::StreamClose(frame) => frames_to_resend.push(Frame::StreamClose(frame)),
+          Frame::ConnectionClose(frame) => frames_to_resend.push(Frame::ConnectionClose(frame)),
           _ => {}
         }
       }
@@ -479,7 +475,7 @@ impl Connection {
       random_condition(),
       Utc::now() + Duration::seconds(30),
       stream_packet
-        .to_encrypted(self.shared_secret.clone())
+        .to_encrypted(&self.shared_secret)
         .unwrap(),
     ));
     self.outgoing.unbounded_send((request_id, prepare)).unwrap();
@@ -624,9 +620,9 @@ impl ConnectionInternal for Connection {
     };
 
     let encrypted = stream_packet
-      .to_encrypted(self.shared_secret.clone())
+      .to_encrypted(&self.shared_secret)
       .unwrap();
-    let condition = generate_condition(self.shared_secret.clone(), encrypted.clone());
+    let condition = generate_condition(&self.shared_secret, &encrypted);
     let prepare = IlpPrepare::new(
       self.destination_account.to_string(),
       outgoing_amount,
