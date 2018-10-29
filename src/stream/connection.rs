@@ -10,6 +10,8 @@ use bytes::{Bytes, BytesMut};
 use chrono::{Duration, Utc};
 use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::{Async, Poll, Stream, Future};
+use futures::task;
+use futures::task::Task;
 use hex;
 use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
 use num_bigint::BigUint;
@@ -31,8 +33,7 @@ impl Future for CloseFuture {
     trace!("Polling to see whether connection was closed");
     self.conn.try_handle_incoming()?;
 
-    let state = self.conn.state.read().unwrap();
-    if *state == ConnectionState::Closed {
+    if self.conn.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
       trace!("Connection was closed, resolving close future");
       Ok(Async::Ready(()))
     } else {
@@ -45,7 +46,9 @@ impl Future for CloseFuture {
 
 #[derive(Clone)]
 pub struct Connection {
-  state: Arc<RwLock<ConnectionState>>,
+  // TODO is it okay for this to be an AtomicUsize instead of a RwLock around the enum?
+  // it ran into deadlocks with the RwLock
+  state: Arc<AtomicUsize>,
   // TODO should this be a bounded sender? Don't want too many outgoing packets in the queue
   outgoing: UnboundedSender<IlpRequest>,
   incoming: Arc<Mutex<UnboundedReceiver<IlpRequest>>>,
@@ -60,10 +63,13 @@ pub struct Connection {
   pending_outgoing_packets: Arc<Mutex<HashMap<u32, (u64, StreamPacket)>>>,
   new_streams: Arc<Mutex<VecDeque<u64>>>,
   frames_to_resend: Arc<Mutex<Vec<Frame>>>,
+  // This is used to wake the task polling for incoming streams
+  recv_task: Arc<Mutex<Option<Task>>>,
   // TODO add connection-level stats
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
+#[repr(usize)]
 enum ConnectionState {
   Opening,
   Open,
@@ -89,7 +95,7 @@ impl Connection {
     };
 
     let conn = Connection {
-      state: Arc::new(RwLock::new(ConnectionState::Opening)),
+      state: Arc::new(AtomicUsize::new(ConnectionState::Opening as usize)),
       outgoing,
       incoming: Arc::new(Mutex::new(incoming)),
       shared_secret,
@@ -103,6 +109,7 @@ impl Connection {
       pending_outgoing_packets: Arc::new(Mutex::new(HashMap::new())),
       new_streams: Arc::new(Mutex::new(VecDeque::new())),
       frames_to_resend: Arc::new(Mutex::new(Vec::new())),
+      recv_task: Arc::new(Mutex::new(None)),
     };
 
     // TODO figure out a better way to send the initial packet - get the exchange rate and wait for response
@@ -111,7 +118,7 @@ impl Connection {
     }
 
     // TODO wait for handshake reply before setting state to open
-    *conn.state.write().unwrap() = ConnectionState::Open;
+    conn.state.store(ConnectionState::Open as usize, Ordering::SeqCst);
 
     conn
   }
@@ -126,7 +133,7 @@ impl Connection {
 
   pub fn close(&self) -> CloseFuture {
     debug!("Closing connection");
-    *self.state.write().unwrap() = ConnectionState::Closing;
+    self.state.store(ConnectionState::Closing as usize, Ordering::SeqCst);
     // TODO make sure we don't send stream close frames for every stream
     for stream in self.streams.read().unwrap().values() {
       stream.set_closing();
@@ -207,6 +214,7 @@ impl Connection {
           let amount: u64 = frame.shares.to_u64().unwrap() * prepare.amount / total_money_shares;
           debug!("Stream {} received {}", stream_id, amount);
           stream.money.add_received(amount);
+          stream.money.try_wake_polling();
         }
       }
     }
@@ -284,6 +292,7 @@ impl Connection {
           data.len()
         );
         stream.data.push_incoming_data(data, offset)?;
+        stream.data.try_wake_polling();
       }
     }
     Ok(())
@@ -306,12 +315,20 @@ impl Connection {
     for frame in stream_packet.frames.iter() {
       if let Frame::ConnectionClose(frame) = frame {
         debug!("Remote closed connection with code: {:?}: {}", frame.code, frame.message);
-        *self.state.write().unwrap() = ConnectionState::Closing;
-        for stream in self.streams.read().unwrap().values() {
-          stream.set_closed();
-        }
+        self.close_now();
       }
     }
+  }
+
+  fn close_now(&self) {
+    self.state.store(ConnectionState::Closed as usize, Ordering::SeqCst);
+
+    for stream in self.streams.read().unwrap().values() {
+      stream.set_closed();
+    }
+
+    // Wake up the task polling for incoming streams so it ends
+    self.try_wake_polling();
   }
 
   fn handle_fulfill(&self, request_id: u32, fulfill: IlpFulfill) -> Result<(), ()> {
@@ -374,8 +391,14 @@ impl Connection {
 
     // TODO handle response frames
 
+    // Close the connection if they sent a close frame or we sent one and they ACKed it
     if let Some(packet) = response {
       self.handle_connection_close(&packet);
+    }
+    let we_sent_close_frame = original_packet.frames.iter().any(|frame| if let Frame::ConnectionClose(_) = frame { true } else { false });
+    if we_sent_close_frame {
+      debug!("ConnectionClose frame was ACKed, closing connection now");
+      self.close_now();
     }
 
     Ok(())
@@ -480,6 +503,13 @@ impl Connection {
     ));
     self.outgoing.unbounded_send((request_id, prepare)).unwrap();
   }
+
+  fn try_wake_polling(&self) {
+    if let Some(task) = self.recv_task.lock().unwrap().take() {
+      debug!("Notifying incoming stream poller that it should wake up");
+      task.notify();
+    }
+  }
 }
 
 impl Stream for Connection {
@@ -490,6 +520,10 @@ impl Stream for Connection {
     trace!("Polling for new incoming streams");
     self.try_handle_incoming()?;
 
+    // Store the current task so that it can be woken up if the
+    // MoneyStream or DataStream poll for incoming packets and the connection is closed
+    *self.recv_task.lock().unwrap() = Some(task::current());
+
     if let Ok(mut new_streams) = self.new_streams.try_lock() {
       if let Some(stream_id) = new_streams.pop_front() {
         if let Ok(streams) = self.streams.read() {
@@ -499,7 +533,7 @@ impl Stream for Connection {
           new_streams.push_back(stream_id);
           Ok(Async::NotReady)
         }
-      } else if *self.state.read().unwrap() == ConnectionState::Closed {
+      } else if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
         trace!("Connection was closed, no more incoming streams");
         Ok(Async::Ready(None))
       } else {
@@ -521,7 +555,7 @@ pub trait ConnectionInternal {
 
 impl ConnectionInternal for Connection {
   fn try_send(&self) -> Result<(), ()> {
-    if *self.state.read().unwrap() == ConnectionState::Closed {
+    if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
       trace!("Connection was closed, not sending any more packets");
       return Ok(());
     }
@@ -588,14 +622,13 @@ impl ConnectionInternal for Connection {
       return Ok(());
     }
 
-    let closing = { *self.state.read().unwrap() == ConnectionState::Closing };
-    if closing {
+    if self.state.load(Ordering::SeqCst) == ConnectionState::Closing as usize {
       trace!("Sending connection close frame");
       frames.push(Frame::ConnectionClose(ConnectionCloseFrame {
         code: ErrorCode::NoError,
         message: String::new(),
       }));
-      *self.state.write().unwrap() = ConnectionState::CloseSent;
+      self.state.store(ConnectionState::CloseSent as usize, Ordering::SeqCst);
     }
 
     if frames.is_empty() {
@@ -657,7 +690,7 @@ impl ConnectionInternal for Connection {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
     loop {
-      if *self.state.read().unwrap() == ConnectionState::Closed {
+      if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
         trace!("Connection was closed, not handling any more incoming packets");
         return Ok(());
       }

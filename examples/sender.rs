@@ -43,11 +43,11 @@ fn main() {
                   println!("Error writing {}", err);
                 }).unwrap();
               println!("Sent data");
-              println!("Closing stream");
-              stream.close()
+              println!("Closing connection");
+              connection.close()
             })
             .and_then(|_| {
-              println!("Closed stream");
+              println!("Closed connection");
               Ok(())
             })
         })

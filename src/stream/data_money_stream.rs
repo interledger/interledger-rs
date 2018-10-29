@@ -1,5 +1,7 @@
 use super::connection::{Connection, ConnectionInternal};
 use futures::{Async, Poll, Sink, Stream, StartSend, AsyncSink, Future};
+use futures::task;
+use futures::task::Task;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio_io::{AsyncWrite, AsyncRead};
@@ -77,6 +79,7 @@ impl DataMoneyStreamInternal for DataMoneyStream {
         delivered: Arc::new(AtomicUsize::new(0)),
         received: Arc::new(AtomicUsize::new(0)),
         last_reported_received: Arc::new(AtomicUsize::new(0)),
+        recv_task: Arc::new(Mutex::new(None)),
       },
       data: DataStream {
         connection: Arc::clone(&connection),
@@ -88,7 +91,8 @@ impl DataMoneyStreamInternal for DataMoneyStream {
         outgoing: Arc::new(Mutex::new(OutgoingData {
           offset: 0,
           buffer: VecDeque::new(),
-        }))
+        })),
+        recv_task: Arc::new(Mutex::new(None)),
       },
       state: Arc::clone(&state),
       connection: Arc::clone(&connection),
@@ -101,10 +105,18 @@ impl DataMoneyStreamInternal for DataMoneyStream {
 
   fn set_closing(&self) {
     *self.state.write().unwrap() = StreamState::Closing;
+
+    // Wake up both streams so they end
+    self.money.try_wake_polling();
+    self.data.try_wake_polling();
   }
 
   fn set_closed(&self) {
     *self.state.write().unwrap() = StreamState::Closed;
+
+    // Wake up both streams so they end
+    self.money.try_wake_polling();
+    self.data.try_wake_polling();
   }
 }
 
@@ -118,6 +130,7 @@ pub struct MoneyStream {
   delivered: Arc<AtomicUsize>,
   received: Arc<AtomicUsize>,
   last_reported_received: Arc<AtomicUsize>,
+  recv_task: Arc<Mutex<Option<Task>>>,
 }
 
 impl MoneyStream {
@@ -140,6 +153,10 @@ impl Stream for MoneyStream {
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     self.connection.try_handle_incoming()?;
+
+    // Store the current task so that it can be woken up if the
+    // DataStream happens to poll for incoming packets and gets data for us
+    *self.recv_task.lock().unwrap() = Some(task::current());
 
     let total_received = self.received.load(Ordering::SeqCst);
     let last_reported_received = self.last_reported_received.load(Ordering::SeqCst);
@@ -192,6 +209,7 @@ pub trait MoneyStreamInternal {
   fn send_max(&self) -> u64;
   fn add_received(&self, amount: u64);
   fn add_delivered(&self, amount: u64);
+  fn try_wake_polling(&self);
 }
 
 impl MoneyStreamInternal for MoneyStream {
@@ -223,6 +241,13 @@ impl MoneyStreamInternal for MoneyStream {
   fn add_delivered(&self, amount: u64) {
     self.delivered.fetch_add(amount as usize, Ordering::SeqCst);
   }
+
+  fn try_wake_polling(&self) {
+    if let Some(task) = self.recv_task.lock().unwrap().take() {
+      debug!("Notifying MoneyStream poller that it should wake up");
+      task.notify();
+    }
+  }
 }
 
 #[derive(Clone)]
@@ -231,6 +256,7 @@ pub struct DataStream {
   state: Arc<RwLock<StreamState>>,
   incoming: Arc<Mutex<IncomingData>>,
   outgoing: Arc<Mutex<OutgoingData>>,
+  recv_task: Arc<Mutex<Option<Task>>>,
 }
 
 struct IncomingData {
@@ -256,10 +282,15 @@ impl Read for DataStream {
         IoError::new(ErrorKind::Other, "Error trying to handle incoming packets on Connection")
       })?;
 
+    // Store the current task so that it can be woken up if the
+    // MoneyStream happens to poll for incoming packets and gets data for us
+    *self.recv_task.lock().unwrap() = Some(task::current());
+
     if let Ok(mut incoming) = self.incoming.try_lock() {
       // let mut incoming = incoming.deref_mut();
       let incoming_offset = incoming.offset;
       if let Some(mut from_buf) = incoming.buffer.remove(&incoming_offset) {
+        trace!("DataStream has incoming data");
         if from_buf.len() >= buf.len() {
           let to_copy = from_buf.split_to(buf.len());
           buf.copy_from_slice(&to_copy[..]);
@@ -272,11 +303,13 @@ impl Read for DataStream {
           }
 
           incoming.offset += to_copy.len();
+          trace!("Reading {} bytes of data", to_copy.len());
           Ok(to_copy.len())
         } else {
           let (mut buf_slice, _rest) = buf.split_at_mut(from_buf.len());
           buf_slice.copy_from_slice(&from_buf[..]);
           incoming.offset += from_buf.len();
+          trace!("Reading {} bytes of data", from_buf.len());
           Ok(from_buf.len())
         }
       } else if *self.state.read().unwrap() != StreamState::Open {
@@ -357,6 +390,7 @@ pub trait DataStreamInternal {
   // TODO error if the buffer is too full
   fn push_incoming_data(&self, data: Bytes, offset: usize) -> Result<(), ()>;
   fn get_outgoing_data(&self, max_size: usize) -> Option<(Bytes, usize)>;
+  fn try_wake_polling(&self);
 }
 
 impl DataStreamInternal for DataStream {
@@ -406,6 +440,13 @@ impl DataStreamInternal for DataStream {
       Some((data.freeze(), outgoing_offset))
     } else {
       None
+    }
+  }
+
+  fn try_wake_polling(&self) {
+    if let Some(task) = self.recv_task.lock().unwrap().take() {
+      debug!("Notifying the DataStream poller that it should wake up");
+      task.notify();
     }
   }
 }
