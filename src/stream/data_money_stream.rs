@@ -1,4 +1,4 @@
-use super::connection::{Connection, ConnectionInternal};
+use super::connection::Connection;
 use futures::{Async, Poll, Sink, Stream, StartSend, AsyncSink, Future};
 use futures::task;
 use futures::task::Task;
@@ -32,40 +32,8 @@ impl DataMoneyStream {
       connection: Arc::clone(&self.connection),
     }
   }
-}
 
-// TODO do we need a custom type just to implement this future?
-pub struct CloseFuture {
-  state: Arc<RwLock<StreamState>>,
-  connection: Arc<Connection>,
-}
-
-impl Future for CloseFuture {
-  type Item = ();
-  type Error = ();
-
-  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-    self.connection.try_handle_incoming()?;
-
-    if *self.state.read().unwrap() == StreamState::Closed {
-      Ok(Async::Ready(()))
-    } else {
-      *self.state.write().unwrap() = StreamState::Closing;
-      self.connection.try_send()?;
-      Ok(Async::NotReady)
-    }
-  }
-}
-
-pub trait DataMoneyStreamInternal {
-  fn new(id: u64, connection: Connection) -> DataMoneyStream;
-  fn is_closing(&self) -> bool;
-  fn set_closed(&self);
-  fn set_closing(&self);
-}
-
-impl DataMoneyStreamInternal for DataMoneyStream {
-  fn new(id: u64, connection: Connection) -> DataMoneyStream {
+  pub(super) fn new(id: u64, connection: Connection) -> DataMoneyStream {
     let state = Arc::new(RwLock::new(StreamState::Open));
     let connection = Arc::new(connection);
     DataMoneyStream {
@@ -99,11 +67,11 @@ impl DataMoneyStreamInternal for DataMoneyStream {
     }
   }
 
-  fn is_closing(&self) -> bool {
+  pub(super) fn is_closing(&self) -> bool {
     *self.state.read().unwrap() == StreamState::Closing
   }
 
-  fn set_closing(&self) {
+  pub(super) fn set_closing(&self) {
     *self.state.write().unwrap() = StreamState::Closing;
 
     // Wake up both streams so they end
@@ -111,12 +79,35 @@ impl DataMoneyStreamInternal for DataMoneyStream {
     self.data.try_wake_polling();
   }
 
-  fn set_closed(&self) {
+  pub(super) fn set_closed(&self) {
     *self.state.write().unwrap() = StreamState::Closed;
 
     // Wake up both streams so they end
     self.money.try_wake_polling();
     self.data.try_wake_polling();
+  }
+}
+
+// TODO do we need a custom type just to implement this future?
+pub struct CloseFuture {
+  state: Arc<RwLock<StreamState>>,
+  connection: Arc<Connection>,
+}
+
+impl Future for CloseFuture {
+  type Item = ();
+  type Error = ();
+
+  fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    self.connection.try_handle_incoming()?;
+
+    if *self.state.read().unwrap() == StreamState::Closed {
+      Ok(Async::Ready(()))
+    } else {
+      *self.state.write().unwrap() = StreamState::Closing;
+      self.connection.try_send()?;
+      Ok(Async::NotReady)
+    }
   }
 }
 
@@ -144,6 +135,42 @@ impl MoneyStream {
 
   pub fn total_received(&self) -> u64 {
     self.received.load(Ordering::SeqCst) as u64
+  }
+
+  pub(super) fn pending(&self) -> u64 {
+    self.pending.load(Ordering::SeqCst) as u64
+  }
+
+  pub(super) fn add_to_pending(&self, amount: u64) {
+    self.pending.fetch_add(amount as usize, Ordering::SeqCst);
+  }
+
+  pub(super) fn subtract_from_pending(&self, amount: u64) {
+    self.pending.fetch_sub(amount as usize, Ordering::SeqCst);
+  }
+
+  pub(super) fn pending_to_sent(&self, amount: u64) {
+    self.pending.fetch_sub(amount as usize, Ordering::SeqCst);
+    self.sent.fetch_add(amount as usize, Ordering::SeqCst);
+  }
+
+  pub(super) fn send_max(&self) -> u64 {
+    self.send_max.load(Ordering::SeqCst) as u64
+  }
+
+  pub(super) fn add_received(&self, amount: u64) {
+    self.received.fetch_add(amount as usize, Ordering::SeqCst);
+  }
+
+  pub(super) fn add_delivered(&self, amount: u64) {
+    self.delivered.fetch_add(amount as usize, Ordering::SeqCst);
+  }
+
+  pub(super) fn try_wake_polling(&self) {
+    if let Some(task) = self.recv_task.lock().unwrap().take() {
+      debug!("Notifying MoneyStream poller that it should wake up");
+      task.notify();
+    }
   }
 }
 
@@ -200,56 +227,6 @@ impl Sink for MoneyStream {
   }
 }
 
-// Used by the Connection
-pub trait MoneyStreamInternal {
-  fn pending(&self) -> u64;
-  fn add_to_pending(&self, amount: u64);
-  fn subtract_from_pending(&self, amount: u64);
-  fn pending_to_sent(&self, amount: u64);
-  fn send_max(&self) -> u64;
-  fn add_received(&self, amount: u64);
-  fn add_delivered(&self, amount: u64);
-  fn try_wake_polling(&self);
-}
-
-impl MoneyStreamInternal for MoneyStream {
-  fn pending(&self) -> u64 {
-    self.pending.load(Ordering::SeqCst) as u64
-  }
-
-  fn add_to_pending(&self, amount: u64) {
-    self.pending.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  fn subtract_from_pending(&self, amount: u64) {
-    self.pending.fetch_sub(amount as usize, Ordering::SeqCst);
-  }
-
-  fn pending_to_sent(&self, amount: u64) {
-    self.pending.fetch_sub(amount as usize, Ordering::SeqCst);
-    self.sent.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  fn send_max(&self) -> u64 {
-    self.send_max.load(Ordering::SeqCst) as u64
-  }
-
-  fn add_received(&self, amount: u64) {
-    self.received.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  fn add_delivered(&self, amount: u64) {
-    self.delivered.fetch_add(amount as usize, Ordering::SeqCst);
-  }
-
-  fn try_wake_polling(&self) {
-    if let Some(task) = self.recv_task.lock().unwrap().take() {
-      debug!("Notifying MoneyStream poller that it should wake up");
-      task.notify();
-    }
-  }
-}
-
 #[derive(Clone)]
 pub struct DataStream {
   connection: Arc<Connection>,
@@ -269,6 +246,65 @@ struct IncomingData {
 struct OutgoingData {
   offset: usize,
   buffer: VecDeque<Bytes>,
+}
+
+impl DataStream {
+  pub(super) fn push_incoming_data(&self, data: Bytes, offset: usize) -> Result<(), ()> {
+    // TODO error if the buffer is too full
+    // TODO don't block
+    self.incoming.lock().unwrap().buffer.insert(offset, data);
+    Ok(())
+  }
+
+  pub(super) fn get_outgoing_data(&self, max_size: usize) -> Option<(Bytes, usize)> {
+    let mut outgoing = {
+      if let Ok(lock) = self.outgoing.try_lock() {
+        lock
+      } else {
+      warn!("Unable to get lock on outgoing to get outgoing data");
+      return None;
+      }
+    };
+
+    // TODO make sure we're not copying data here
+    let outgoing_offset = outgoing.offset;
+    let mut chunks: Vec<Bytes> = Vec::new();
+    let mut size: usize = 0;
+    while size < max_size && !outgoing.buffer.is_empty() {
+      let mut chunk = outgoing.buffer.pop_front().unwrap();
+      if chunk.len() >= max_size - size {
+        chunks.push(chunk.split_to(max_size - size));
+        size = max_size;
+
+        if !chunk.is_empty() {
+          outgoing.buffer.push_front(chunk);
+        }
+      } else {
+        size += chunk.len();
+        chunks.push(chunk);
+      }
+    }
+
+    if !chunks.is_empty() {
+      // TODO zero copy
+      let mut data = BytesMut::with_capacity(size);
+      for chunk in chunks.iter() {
+        data.put(chunk);
+      }
+
+      outgoing.offset += size;
+      Some((data.freeze(), outgoing_offset))
+    } else {
+      None
+    }
+  }
+
+  pub(super) fn try_wake_polling(&self) {
+    if let Some(task) = self.recv_task.lock().unwrap().take() {
+      debug!("Notifying the DataStream poller that it should wake up");
+      task.notify();
+    }
+  }
 }
 
 impl Read for DataStream {
@@ -382,71 +418,6 @@ impl AsyncWrite for DataStream {
         }
       },
       Err(_err) => Err(IoError::new(ErrorKind::WouldBlock, "Unable to get lock on state"))
-    }
-  }
-}
-
-pub trait DataStreamInternal {
-  // TODO error if the buffer is too full
-  fn push_incoming_data(&self, data: Bytes, offset: usize) -> Result<(), ()>;
-  fn get_outgoing_data(&self, max_size: usize) -> Option<(Bytes, usize)>;
-  fn try_wake_polling(&self);
-}
-
-impl DataStreamInternal for DataStream {
-  fn push_incoming_data(&self, data: Bytes, offset: usize) -> Result<(), ()> {
-    // TODO don't block
-    self.incoming.lock().unwrap().buffer.insert(offset, data);
-    Ok(())
-  }
-
-  fn get_outgoing_data(&self, max_size: usize) -> Option<(Bytes, usize)> {
-    let mut outgoing = {
-      if let Ok(lock) = self.outgoing.try_lock() {
-        lock
-      } else {
-      warn!("Unable to get lock on outgoing to get outgoing data");
-      return None;
-      }
-    };
-
-    // TODO make sure we're not copying data here
-    let outgoing_offset = outgoing.offset;
-    let mut chunks: Vec<Bytes> = Vec::new();
-    let mut size: usize = 0;
-    while size < max_size && !outgoing.buffer.is_empty() {
-      let mut chunk = outgoing.buffer.pop_front().unwrap();
-      if chunk.len() >= max_size - size {
-        chunks.push(chunk.split_to(max_size - size));
-        size = max_size;
-
-        if !chunk.is_empty() {
-          outgoing.buffer.push_front(chunk);
-        }
-      } else {
-        size += chunk.len();
-        chunks.push(chunk);
-      }
-    }
-
-    if !chunks.is_empty() {
-      // TODO zero copy
-      let mut data = BytesMut::with_capacity(size);
-      for chunk in chunks.iter() {
-        data.put(chunk);
-      }
-
-      outgoing.offset += size;
-      Some((data.freeze(), outgoing_offset))
-    } else {
-      None
-    }
-  }
-
-  fn try_wake_polling(&self) {
-    if let Some(task) = self.recv_task.lock().unwrap().take() {
-      debug!("Notifying the DataStream poller that it should wake up");
-      task.notify();
     }
   }
 }

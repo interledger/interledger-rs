@@ -1,9 +1,7 @@
 use super::crypto::{
   fulfillment_to_condition, generate_condition, generate_fulfillment, random_condition,
 };
-use super::data_money_stream::{
-  DataMoneyStream, DataMoneyStreamInternal, DataStreamInternal, MoneyStreamInternal,
-};
+use super::data_money_stream::DataMoneyStream;
 use super::packet::*;
 use super::StreamPacket;
 use bytes::{Bytes, BytesMut};
@@ -141,6 +139,181 @@ impl Connection {
 
     CloseFuture {
       conn: self.clone()
+    }
+  }
+
+  pub(super) fn try_send(&self) -> Result<(), ()> {
+    if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
+      trace!("Connection was closed, not sending any more packets");
+      return Ok(());
+    }
+
+    trace!("Checking if we should send an outgoing packet");
+
+    let mut outgoing_amount: u64 = 0;
+    let mut frames: Vec<Frame> = Vec::new();
+    let mut closed_streams: Vec<u64> = Vec::new();
+
+    if let Ok(streams) = self.streams.read() {
+      // TODO don't send more than max packet amount
+      for stream in streams.values() {
+        trace!("Checking if stream {} has money or data to send", stream.id);
+        let amount_to_send =
+          stream.money.send_max() - stream.money.pending() - stream.money.total_sent();
+        if amount_to_send > 0 {
+          trace!("Stream {} sending {}", stream.id, amount_to_send);
+          stream.money.add_to_pending(amount_to_send);
+          outgoing_amount += amount_to_send;
+          frames.push(Frame::StreamMoney(StreamMoneyFrame {
+            stream_id: BigUint::from(stream.id),
+            shares: BigUint::from(amount_to_send),
+          }));
+        } else {
+          trace!("Stream {} does not have any money to send", stream.id);
+        }
+
+        // Send data
+        // TODO don't send too much data
+        let max_data: usize = 1_000_000_000;
+        if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
+          trace!(
+            "Stream {} has {} bytes to send (offset: {})",
+            stream.id,
+            data.len(),
+            offset
+          );
+          frames.push(Frame::StreamData(StreamDataFrame {
+            stream_id: BigUint::from(stream.id),
+            data,
+            offset: BigUint::from(offset),
+          }))
+        } else {
+          trace!("Stream {} does not have any data to send", stream.id);
+        }
+
+        // Inform other side about closing streams
+        if stream.is_closing() {
+          trace!("Sending stream close frame for stream {}", stream.id);
+          frames.push(Frame::StreamClose(StreamCloseFrame {
+            stream_id: BigUint::from(stream.id),
+            code: ErrorCode::NoError,
+            message: String::new(),
+          }));
+          closed_streams.push(stream.id);
+          stream.set_closed();
+          // TODO don't block
+          self.closed_streams.write().unwrap().insert(stream.id);
+        }
+      }
+    } else {
+      debug!("Unable to get read lock on streams while trying to send");
+      return Ok(());
+    }
+
+    if self.state.load(Ordering::SeqCst) == ConnectionState::Closing as usize {
+      trace!("Sending connection close frame");
+      frames.push(Frame::ConnectionClose(ConnectionCloseFrame {
+        code: ErrorCode::NoError,
+        message: String::new(),
+      }));
+      self.state.store(ConnectionState::CloseSent as usize, Ordering::SeqCst);
+    }
+
+    if frames.is_empty() {
+      trace!("Not sending packet, no frames need to be sent");
+      return Ok(());
+    }
+
+    // Note we need to remove them after we've given up the read lock on self.streams
+    if !closed_streams.is_empty() {
+      let mut streams = self.streams.write().unwrap();
+      for stream_id in closed_streams.iter() {
+        debug!("Removed stream {}", stream_id);
+        streams.remove(&stream_id);
+      }
+    }
+
+    let stream_packet = StreamPacket {
+      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
+      ilp_packet_type: PacketType::IlpPrepare,
+      prepare_amount: 0, // TODO set min amount
+      frames,
+    };
+
+    let encrypted = stream_packet
+      .to_encrypted(&self.shared_secret)
+      .unwrap();
+    let condition = generate_condition(&self.shared_secret, &encrypted);
+    let prepare = IlpPrepare::new(
+      self.destination_account.to_string(),
+      outgoing_amount,
+      condition,
+      // TODO use less predictable timeout
+      Utc::now() + Duration::seconds(30),
+      encrypted,
+    );
+    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
+    let request = (request_id, IlpPacket::Prepare(prepare));
+    debug!(
+      "Sending outgoing request {} with stream packet: {:?}",
+      request_id, stream_packet
+    );
+
+    self
+      .pending_outgoing_packets
+      .lock()
+      .map_err(|err| {
+        error!("Cannot acquire lock on pending_outgoing_packets: {:?}", err);
+      })?
+      .insert(request_id, (outgoing_amount, stream_packet.clone()));
+
+    self.outgoing.unbounded_send(request).map_err(|err| {
+      error!("Error sending outgoing packet: {:?}", err);
+    })?;
+
+    Ok(())
+  }
+
+  pub(super) fn try_handle_incoming(&self) -> Result<(), ()> {
+    // Handle incoming requests until there are no more
+    // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
+    loop {
+      if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
+        trace!("Connection was closed, not handling any more incoming packets");
+        return Ok(());
+      }
+
+      trace!("Polling for incoming requests");
+      let next = {
+        if let Ok(mut incoming) = self.incoming.try_lock() {
+          incoming.poll()
+        } else {
+          debug!("Unable to acquire lock on incoming stream");
+          return Ok(());
+        }
+      };
+
+      match next {
+        Ok(Async::Ready(Some((request_id, packet)))) => match packet {
+          IlpPacket::Prepare(prepare) => self.handle_incoming_prepare(request_id, prepare)?,
+          IlpPacket::Fulfill(fulfill) => self.handle_fulfill(request_id, fulfill)?,
+          IlpPacket::Reject(reject) => self.handle_reject(request_id, reject)?,
+          _ => {}
+        },
+        Ok(Async::Ready(None)) => {
+          error!("Incoming stream closed");
+          // TODO should this error?
+          return Ok(());
+        }
+        Ok(Async::NotReady) => {
+          trace!("No more incoming requests for now");
+          return Ok(());
+        }
+        Err(err) => {
+          error!("Error polling incoming request stream: {:?}", err);
+          return Err(());
+        }
+      };
     }
   }
 
@@ -543,189 +716,6 @@ impl Stream for Connection {
       debug!("Unable to acquire lock on new_streams");
       // TODO should we return an error here?
       Ok(Async::NotReady)
-    }
-  }
-}
-
-// Only used by other modules in this crate
-pub trait ConnectionInternal {
-  fn try_send(&self) -> Result<(), ()>;
-  fn try_handle_incoming(&self) -> Result<(), ()>;
-}
-
-impl ConnectionInternal for Connection {
-  fn try_send(&self) -> Result<(), ()> {
-    if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
-      trace!("Connection was closed, not sending any more packets");
-      return Ok(());
-    }
-
-    trace!("Checking if we should send an outgoing packet");
-
-    let mut outgoing_amount: u64 = 0;
-    let mut frames: Vec<Frame> = Vec::new();
-    let mut closed_streams: Vec<u64> = Vec::new();
-
-    if let Ok(streams) = self.streams.read() {
-      // TODO don't send more than max packet amount
-      for stream in streams.values() {
-        trace!("Checking if stream {} has money or data to send", stream.id);
-        let amount_to_send =
-          stream.money.send_max() - stream.money.pending() - stream.money.total_sent();
-        if amount_to_send > 0 {
-          trace!("Stream {} sending {}", stream.id, amount_to_send);
-          stream.money.add_to_pending(amount_to_send);
-          outgoing_amount += amount_to_send;
-          frames.push(Frame::StreamMoney(StreamMoneyFrame {
-            stream_id: BigUint::from(stream.id),
-            shares: BigUint::from(amount_to_send),
-          }));
-        } else {
-          trace!("Stream {} does not have any money to send", stream.id);
-        }
-
-        // Send data
-        // TODO don't send too much data
-        let max_data: usize = 1_000_000_000;
-        if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
-          trace!(
-            "Stream {} has {} bytes to send (offset: {})",
-            stream.id,
-            data.len(),
-            offset
-          );
-          frames.push(Frame::StreamData(StreamDataFrame {
-            stream_id: BigUint::from(stream.id),
-            data,
-            offset: BigUint::from(offset),
-          }))
-        } else {
-          trace!("Stream {} does not have any data to send", stream.id);
-        }
-
-        // Inform other side about closing streams
-        if stream.is_closing() {
-          trace!("Sending stream close frame for stream {}", stream.id);
-          frames.push(Frame::StreamClose(StreamCloseFrame {
-            stream_id: BigUint::from(stream.id),
-            code: ErrorCode::NoError,
-            message: String::new(),
-          }));
-          closed_streams.push(stream.id);
-          stream.set_closed();
-          // TODO don't block
-          self.closed_streams.write().unwrap().insert(stream.id);
-        }
-      }
-    } else {
-      debug!("Unable to get read lock on streams while trying to send");
-      return Ok(());
-    }
-
-    if self.state.load(Ordering::SeqCst) == ConnectionState::Closing as usize {
-      trace!("Sending connection close frame");
-      frames.push(Frame::ConnectionClose(ConnectionCloseFrame {
-        code: ErrorCode::NoError,
-        message: String::new(),
-      }));
-      self.state.store(ConnectionState::CloseSent as usize, Ordering::SeqCst);
-    }
-
-    if frames.is_empty() {
-      trace!("Not sending packet, no frames need to be sent");
-      return Ok(());
-    }
-
-    // Note we need to remove them after we've given up the read lock on self.streams
-    if !closed_streams.is_empty() {
-      let mut streams = self.streams.write().unwrap();
-      for stream_id in closed_streams.iter() {
-        debug!("Removed stream {}", stream_id);
-        streams.remove(&stream_id);
-      }
-    }
-
-    let stream_packet = StreamPacket {
-      sequence: self.next_packet_sequence.fetch_add(1, Ordering::SeqCst) as u64,
-      ilp_packet_type: PacketType::IlpPrepare,
-      prepare_amount: 0, // TODO set min amount
-      frames,
-    };
-
-    let encrypted = stream_packet
-      .to_encrypted(&self.shared_secret)
-      .unwrap();
-    let condition = generate_condition(&self.shared_secret, &encrypted);
-    let prepare = IlpPrepare::new(
-      self.destination_account.to_string(),
-      outgoing_amount,
-      condition,
-      // TODO use less predictable timeout
-      Utc::now() + Duration::seconds(30),
-      encrypted,
-    );
-    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
-    let request = (request_id, IlpPacket::Prepare(prepare));
-    debug!(
-      "Sending outgoing request {} with stream packet: {:?}",
-      request_id, stream_packet
-    );
-
-    self
-      .pending_outgoing_packets
-      .lock()
-      .map_err(|err| {
-        error!("Cannot acquire lock on pending_outgoing_packets: {:?}", err);
-      })?
-      .insert(request_id, (outgoing_amount, stream_packet.clone()));
-
-    self.outgoing.unbounded_send(request).map_err(|err| {
-      error!("Error sending outgoing packet: {:?}", err);
-    })?;
-
-    Ok(())
-  }
-
-  fn try_handle_incoming(&self) -> Result<(), ()> {
-    // Handle incoming requests until there are no more
-    // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
-    loop {
-      if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
-        trace!("Connection was closed, not handling any more incoming packets");
-        return Ok(());
-      }
-
-      trace!("Polling for incoming requests");
-      let next = {
-        if let Ok(mut incoming) = self.incoming.try_lock() {
-          incoming.poll()
-        } else {
-          debug!("Unable to acquire lock on incoming stream");
-          return Ok(());
-        }
-      };
-
-      match next {
-        Ok(Async::Ready(Some((request_id, packet)))) => match packet {
-          IlpPacket::Prepare(prepare) => self.handle_incoming_prepare(request_id, prepare)?,
-          IlpPacket::Fulfill(fulfill) => self.handle_fulfill(request_id, fulfill)?,
-          IlpPacket::Reject(reject) => self.handle_reject(request_id, reject)?,
-          _ => {}
-        },
-        Ok(Async::Ready(None)) => {
-          error!("Incoming stream closed");
-          // TODO should this error?
-          return Ok(());
-        }
-        Ok(Async::NotReady) => {
-          trace!("No more incoming requests for now");
-          return Ok(());
-        }
-        Err(err) => {
-          error!("Error polling incoming request stream: {:?}", err);
-          return Err(());
-        }
-      };
     }
   }
 }
