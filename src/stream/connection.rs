@@ -142,8 +142,12 @@ impl Connection {
     }
   }
 
+  pub(super) fn is_closed(&self) -> bool {
+    self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize
+  }
+
   pub(super) fn try_send(&self) -> Result<(), ()> {
-    if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
+    if self.is_closed() {
       trace!("Connection was closed, not sending any more packets");
       return Ok(());
     }
@@ -278,7 +282,7 @@ impl Connection {
     // Handle incoming requests until there are no more
     // Note: looping until we get Async::NotReady tells Tokio to wake us up when there are more incoming requests
     loop {
-      if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
+      if self.is_closed() {
         trace!("Connection was closed, not handling any more incoming packets");
         return Ok(());
       }
@@ -494,11 +498,14 @@ impl Connection {
   }
 
   fn close_now(&self) {
+    debug!("Closing connection now");
     self.state.store(ConnectionState::Closed as usize, Ordering::SeqCst);
 
     for stream in self.streams.read().unwrap().values() {
       stream.set_closed();
     }
+
+    self.incoming.lock().unwrap().close();
 
     // Wake up the task polling for incoming streams so it ends
     self.try_wake_polling();
@@ -706,7 +713,7 @@ impl Stream for Connection {
           new_streams.push_back(stream_id);
           Ok(Async::NotReady)
         }
-      } else if self.state.load(Ordering::SeqCst) == ConnectionState::Closed as usize {
+      } else if self.is_closed() {
         trace!("Connection was closed, no more incoming streams");
         Ok(Async::Ready(None))
       } else {

@@ -51,12 +51,14 @@ impl ConnectionGenerator {
 pub type PrepareToSharedSecretGenerator =
   Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
 
+type ConnectionMap = HashMap<String, (UnboundedSender<IlpRequest>, Connection)>;
+
 pub struct StreamListener {
   outgoing_sender: UnboundedSender<IlpRequest>,
   incoming_receiver: UnboundedReceiver<IlpRequest>,
   source_account: String,
   // TODO do these need to be wrapped in Mutexes?
-  connections: Arc<RwLock<HashMap<String, UnboundedSender<IlpRequest>>>>,
+  connections: Arc<RwLock<ConnectionMap>>,
   pending_requests: Arc<Mutex<HashMap<u32, Arc<String>>>>,
   closed_connections: Arc<Mutex<HashSet<String>>>,
   next_request_id: Arc<AtomicUsize>,
@@ -217,11 +219,6 @@ impl StreamListener {
 
     // Set up streams to forward to/from the connection
     let (incoming_tx, incoming_rx) = unbounded::<IlpRequest>();
-    self
-      .connections
-      .write()
-      .unwrap()
-      .insert(connection_id.to_string(), incoming_tx.clone());
     let (outgoing_tx, outgoing_rx) = unbounded::<IlpRequest>();
 
     let connection_id = Arc::new(connection_id.to_string());
@@ -271,6 +268,12 @@ impl StreamListener {
         );
       })?;
 
+    self
+      .connections
+      .write()
+      .unwrap()
+      .insert(connection_id.to_string(), (incoming_tx.clone(), conn.clone()));
+
     Ok(Some(conn))
   }
 
@@ -279,7 +282,7 @@ impl StreamListener {
     if let Some(connection_id) = pending_requests.get(&request_id) {
       let connection_id = connection_id.to_string();
       let connections = self.connections.read().unwrap();
-      let incoming_tx = connections.get(&connection_id).unwrap();
+      let (incoming_tx, _conn) = connections.get(&connection_id).unwrap();
       trace!(
         "Sending response for request {} to connection {}",
         request_id,
@@ -303,11 +306,27 @@ impl StreamListener {
     }
   }
 
-  // fn check_for_closed_connections(&self) {
-  //   for (id, conn) in self.connections.write().unwrap().iter() {
+  fn check_for_closed_connections(&self) {
+    let mut connections_to_remove: Vec<String> = Vec::new();
+    for (id, (_sender, conn)) in self.connections.read().unwrap().iter() {
+      if conn.is_closed() {
+        connections_to_remove.push(id.to_string());
+      }
+    }
 
-  //   }
-  // }
+    if !connections_to_remove.is_empty() {
+      let mut connections = self.connections.write().unwrap();
+      let mut closed_connections = self.closed_connections.lock().unwrap();
+      for id in connections_to_remove.iter() {
+        debug!("Connection {} was closed, removing entry", id);
+        let entry = connections.remove(id.as_str());
+        if let Some((mut sender, _conn)) = entry {
+          sender.close().unwrap();
+        }
+        closed_connections.insert(id.to_string());
+      }
+    }
+  }
 }
 
 impl Stream for StreamListener {
@@ -316,9 +335,11 @@ impl Stream for StreamListener {
 
   fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
     loop {
-      // self.check_for_closed_connections();
-
       trace!("Polling plugin for more incoming packets");
+
+      // TODO timeout connections so they close even if we don't get another packet
+      self.check_for_closed_connections();
+
       let next = try_ready!(self.incoming_receiver.poll());
       if next.is_none() {
         debug!("Incoming stream closed");
@@ -385,7 +406,7 @@ impl Stream for StreamListener {
             );
             // Send the packet to the Connection
             let connections = self.connections.read().unwrap();
-            let channel = connections.get(&connection_id).unwrap();
+            let (channel, _conn) = connections.get(&connection_id).unwrap();
             channel
               .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
               .unwrap();
