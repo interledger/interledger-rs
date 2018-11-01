@@ -1,9 +1,8 @@
 use bytes::Bytes;
-use futures::{Future, Sink};
+use futures::{Future, Sink, Stream};
 use hyper::service::service_fn;
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::{Body, Request, Response, Server, StatusCode, Client};
 use plugin::Plugin;
-use reqwest::async::Client;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json;
 use std::sync::Arc;
@@ -54,17 +53,27 @@ mod serde_base64 {
 }
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
-  Client::new()
-    .get(server)
+  let req = Request::get(server)
     .header("Accept", "application/spsp4+json")
-    .send()
+    .body(Body::empty())
+    .unwrap();
+  let client = Client::new();
+  client
+    .request(req)
     .map_err(|err| {
       Error::HttpError(format!("{:?}", err))
-    }).and_then(|mut res| {
-      debug!("Got SPSP response {:?}", res);
-      res.json::<SpspResponse>().map_err(|err| {
-        Error::InvalidResponseError(format!("{:?}", err))
-      })
+    }).and_then(|res| {
+      res.into_body().concat2()
+        .map_err(|err| {
+          Error::HttpError(format!("{:?}", err))
+        })
+    }).and_then(|body| {
+      let response: SpspResponse = serde_json::from_slice(&body)
+        .map_err(|err| {
+          Error::InvalidResponseError(format!("{:?}", err))
+        })?;
+      debug!("Got SPSP response {:?}", response);
+      Ok(response)
     })
 }
 

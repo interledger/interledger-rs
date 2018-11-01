@@ -23,7 +23,6 @@ extern crate num_traits;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
-extern crate reqwest;
 extern crate base64;
 extern crate hyper;
 extern crate failure;
