@@ -17,6 +17,7 @@ use futures::{Sink, Stream};
 use ilp::IlpPacket;
 use plugin::{IlpRequest, Plugin};
 use tokio;
+use stream_cancel::Valved;
 
 pub type StreamRequest = (u32, IlpPacket, Option<StreamPacket>);
 
@@ -28,12 +29,20 @@ where
   let (outgoing_sender, outgoing_receiver) = unbounded::<IlpRequest>();
   let (incoming_sender, incoming_receiver) = unbounded::<IlpRequest>();
 
+  // Stop reading from the plugin when the connection closes
+  let (exit, stream) = Valved::new(stream);
+
   // Forward packets from Connection to plugin
   let receiver = outgoing_receiver.map_err(|err| {
     error!("Broken connection worker chan {:?}", err);
   });
   let forward_to_plugin = sink.send_all(receiver).map(|_| ()).map_err(|err| {
     error!("Error forwarding request to plugin: {:?}", err);
+  })
+  .then(move |_| {
+    trace!("Finished forwarding packets from Connection to plugin");
+    drop(exit);
+    Ok(())
   });
   tokio::spawn(forward_to_plugin);
 
@@ -44,7 +53,7 @@ where
     })
     .send_all(stream)
     .then(|_| {
-      debug!("Finished forwarding packets from plugin to Connection");
+      trace!("Finished forwarding packets from plugin to Connection");
       Ok(())
     });
   tokio::spawn(handle_packets);

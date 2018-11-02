@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio;
+use stream_cancel::{Valved, Trigger};
 
 #[derive(Clone)]
 pub struct ConnectionGenerator {
@@ -51,7 +52,7 @@ impl ConnectionGenerator {
 pub type PrepareToSharedSecretGenerator =
   Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
 
-type ConnectionMap = HashMap<String, (UnboundedSender<IlpRequest>, Connection)>;
+type ConnectionMap = HashMap<String, (UnboundedSender<IlpRequest>, Trigger, Connection)>;
 
 pub struct StreamListener {
   outgoing_sender: UnboundedSender<IlpRequest>,
@@ -234,6 +235,10 @@ impl StreamListener {
           .insert(*request_id, connection_id);
       }
     });
+
+    // Stop forwarding when the trigger is dropped (when the connection closes)
+    let (trigger, outgoing_rx) = Valved::new(outgoing_rx);
+
     let forward_outgoing = self
       .outgoing_sender
       .clone()
@@ -272,7 +277,7 @@ impl StreamListener {
       .connections
       .write()
       .unwrap()
-      .insert(connection_id.to_string(), (incoming_tx.clone(), conn.clone()));
+      .insert(connection_id.to_string(), (incoming_tx.clone(), trigger, conn.clone()));
 
     Ok(Some(conn))
   }
@@ -282,7 +287,7 @@ impl StreamListener {
     if let Some(connection_id) = pending_requests.get(&request_id) {
       let connection_id = connection_id.to_string();
       let connections = self.connections.read().unwrap();
-      let (incoming_tx, _conn) = connections.get(&connection_id).unwrap();
+      let (incoming_tx, _trigger, _conn) = connections.get(&connection_id).unwrap();
       trace!(
         "Sending response for request {} to connection {}",
         request_id,
@@ -308,7 +313,7 @@ impl StreamListener {
 
   fn check_for_closed_connections(&self) {
     let mut connections_to_remove: Vec<String> = Vec::new();
-    for (id, (_sender, conn)) in self.connections.read().unwrap().iter() {
+    for (id, (_sender, _trigger, conn)) in self.connections.read().unwrap().iter() {
       if conn.is_closed() {
         connections_to_remove.push(id.to_string());
       }
@@ -320,8 +325,9 @@ impl StreamListener {
       for id in connections_to_remove.iter() {
         debug!("Connection {} was closed, removing entry", id);
         let entry = connections.remove(id.as_str());
-        if let Some((mut sender, _conn)) = entry {
+        if let Some((mut sender, trigger, _conn)) = entry {
           sender.close().unwrap();
+          drop(trigger);
         }
         closed_connections.insert(id.to_string());
       }
@@ -406,7 +412,7 @@ impl Stream for StreamListener {
             );
             // Send the packet to the Connection
             let connections = self.connections.read().unwrap();
-            let (channel, _conn) = connections.get(&connection_id).unwrap();
+            let (channel, _trigger, _conn) = connections.get(&connection_id).unwrap();
             channel
               .unbounded_send((request_id, IlpPacket::Prepare(prepare)))
               .unwrap();

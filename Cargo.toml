@@ -26,6 +26,7 @@ ring = "0.13.2"
 serde = "1.0.80"
 serde_derive = "1.0.80"
 serde_json = "1.0.32"
+stream-cancel = "0.4.3"
 tokio = "0.1.11"
 tokio-io = "0.1.10"
 tokio-tungstenite = { git = "https://github.com/emschwartz/tokio-tungstenite" }
