@@ -23,10 +23,12 @@ pub fn main() {
                 .long("port")
                 .short("p")
                 .takes_value(true)
-                .default_value("3000"),
+                .default_value("3000")
+                .help("Port that the server should listen on"),
               Arg::with_name("btp_server")
                 .long("btp_server")
-                .default_value(&moneyd_url),
+                .default_value(&moneyd_url)
+                .help("URI of a moneyd or BTP Server to listen on"),
             ]),
           SubCommand::with_name("pay")
             .about("Send an SPSP payment")
@@ -35,15 +37,18 @@ pub fn main() {
                 .long("receiver")
                 .short("r")
                 .takes_value(true)
-                .required(true),
+                .required(true)
+                .help("Payment Pointer of the receiver"),
               Arg::with_name("amount")
                 .long("amount")
                 .short("a")
                 .takes_value(true)
-                .required(true),
+                .required(true)
+                .help("Amount to send, denominated in the BTP Server's units"),
               Arg::with_name("btp_server")
                 .long("btp_server")
-                .default_value(&moneyd_url),
+                .default_value(&moneyd_url)
+                .help("URI of a moneyd or BTP Server to pay from"),
             ]),
         ]),
     );
