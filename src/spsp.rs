@@ -21,6 +21,8 @@ pub enum Error {
   SendMoneyError(u64),
   #[fail(display = "Error listening: {}", _0)]
   ListenError(String),
+  #[fail(display = "Invalid Payment Pointer: {}", _0)]
+  InvalidPaymentPointerError(String),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -53,10 +55,13 @@ mod serde_base64 {
 }
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
-  let req = Request::get(server)
+  let server = payment_pointer_to_url(server);
+
+  let req = Request::get(&server)
     .header("Accept", "application/spsp4+json")
     .body(Body::empty())
     .unwrap();
+
   let client = Client::new();
   client
     .request(req)
@@ -138,6 +143,7 @@ where
 
           Response::builder()
             .header("Content-Type", "application/spsp4+json")
+            .header("Access-Control-Allow-Origin", "*")
             .status(StatusCode::OK)
             .body(body)
         })
@@ -172,4 +178,22 @@ fn random_secret() -> Bytes {
   let mut secret: [u8; 32] = [0; 32];
   SystemRandom::new().fill(&mut secret).unwrap();
   Bytes::from(&secret[..])
+}
+
+pub fn payment_pointer_to_url (payment_pointer: &str) -> String {
+  let mut url: String = if payment_pointer.starts_with('$') {
+    let mut url = "https://".to_string();
+    url.push_str(&payment_pointer[1..]);
+    url
+  } else {
+    payment_pointer.to_string()
+  };
+
+  let num_slashes = url.matches('/').count();
+  if num_slashes == 0 {
+    url.push_str("/.well-known/pay");
+  } else if num_slashes == 1 && url.ends_with('/') {
+    url.push_str(".well-known/pay");
+  }
+  url
 }
