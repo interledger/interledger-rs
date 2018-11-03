@@ -105,11 +105,16 @@ fn run_spsp_server(btp_server: &str, port: u16) {
         })
         .and_then(move |listener| {
           let handle_connections = listener.for_each(|(id, connection)| {
-            let conn_id = Arc::new(id);
+            // TODO should the STREAM or SPSP server automatically remove this?
+            let split: Vec<&str> = id.splitn(2, '~').collect();
+            let conn_id = Arc::new(split[1].to_string());
+
+            // TODO close the connection if it doesn't have a tag?
+
             let handle_streams = connection.for_each(move |stream| {
               let conn_id = Arc::clone(&conn_id);
               let handle_money = stream.money.for_each(move |amount| {
-                println!("Connection {} got incoming money: {}", conn_id, amount);
+                println!("Got incoming money: {} for connection: {}", amount, conn_id);
                 Ok(())
               });
               tokio::spawn(handle_money);

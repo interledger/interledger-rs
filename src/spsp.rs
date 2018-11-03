@@ -2,6 +2,7 @@ use bytes::Bytes;
 use futures::{Future, Sink, Stream};
 use hyper::service::service_fn;
 use hyper::{Body, Request, Response, Server, StatusCode, Client};
+use hyper::header::HeaderName;
 use plugin::Plugin;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json;
@@ -126,13 +127,19 @@ where
       let secret_generator = Arc::new(connection_generator);
       let service = move || {
         let secret_generator = Arc::clone(&secret_generator);
-        service_fn(move |_req: Request<Body>| {
+        service_fn(move |req: Request<Body>| {
+          // Set connection tag to the URL parsed from the request
+          let url = parse_url_from_request(&req);
+          let tag = url.unwrap_or_else(String::new);
+
           let (destination_account, shared_secret) =
-            secret_generator.generate_address_and_secret("");
+            secret_generator.generate_address_and_secret(&tag);
           debug!(
-            "Generated address and shared secret for account {}",
+            "Responding to SPSP query {} with address: {}",
+            tag,
             destination_account
           );
+
           let spsp_response = SpspResponse {
             destination_account: destination_account.to_string(),
             shared_secret: shared_secret.to_vec(),
@@ -196,4 +203,30 @@ pub fn payment_pointer_to_url (payment_pointer: &str) -> String {
     url.push_str(".well-known/pay");
   }
   url
+}
+
+fn parse_url_from_request (req: &Request<Body>) -> Option<String> {
+  let host = {
+    let headers = req.headers();
+    if let Some(header) = headers.get(HeaderName::from_static("forwarded")) {
+      let header = header.to_str().ok()?;
+      if let Some(index) = header.find(" for=") {
+        let host_start = index + 5;
+        (&header[host_start..]).split_whitespace().next().map(|s| s.to_string())
+      } else {
+        None
+      }
+    } else if let Some(host) = headers.get(HeaderName::from_static("x-forwarded-host")) {
+      host.to_str().ok().map(|s| s.to_string())
+    } else if let Some(host) = headers.get(HeaderName::from_static("host")) {
+      host.to_str().ok().map(|s| s.to_string())
+    } else {
+      None
+    }
+  }?;
+
+  let mut url = host;
+  url.push_str(req.uri().path());
+  url.push_str(req.uri().query().unwrap_or(""));
+  Some(url)
 }

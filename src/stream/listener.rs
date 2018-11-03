@@ -16,6 +16,24 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio;
 use stream_cancel::{Valved, Trigger};
 
+lazy_static! {
+  static ref TAG_ENCRYPTION_KEY_STRING: &'static [u8] = b"ilp_stream_tag_encryption_aes";
+}
+
+fn encrypt_tag (server_secret: &[u8], tag: &str) -> String {
+  let key = crypto::hmac_sha256(server_secret, &TAG_ENCRYPTION_KEY_STRING);
+  let encrypted = crypto::encrypt(&key[..], BytesMut::from(tag.as_bytes()));
+  base64::encode_config(&encrypted[..], base64::URL_SAFE_NO_PAD)
+}
+
+fn decrypt_tag (server_secret: &[u8], encrypted: &str) -> String {
+  let key = crypto::hmac_sha256(server_secret, &TAG_ENCRYPTION_KEY_STRING);
+  let decoded = base64::decode_config(encrypted, base64::URL_SAFE_NO_PAD).unwrap_or_else(|_| Vec::new());
+  let decrypted = crypto::decrypt(&key[..], BytesMut::from(&decoded[..])).unwrap_or_else(|_| BytesMut::new());
+  let decrypted_vec = decrypted.freeze().to_vec();
+  String::from_utf8(decrypted_vec).unwrap_or_else(|_| String::new())
+}
+
 #[derive(Clone)]
 pub struct ConnectionGenerator {
   source_account: String,
@@ -25,19 +43,21 @@ pub struct ConnectionGenerator {
 impl ConnectionGenerator {
   pub fn generate_address_and_secret(&self, connection_tag: &str) -> (String, Bytes) {
     let token_bytes = crypto::generate_token();
-    let token = base64::encode(&token_bytes);
-    let token = {
-      if !connection_tag.is_empty() {
-        token + "~" + connection_tag
-      } else {
-        token
-      }
-    };
+    let token = base64::encode_config(&token_bytes, base64::URL_SAFE_NO_PAD);
+
+    // TODO include the connection_tag in the shared secret
+    // so removing it would cause the packets to be rejected
     let shared_secret = crypto::generate_shared_secret_from_token(
       &self.server_secret,
       &token.as_bytes(),
     );
-    let destination_account = format!("{}.{}", self.source_account, token);
+    let destination_account = if connection_tag.is_empty() {
+      format!("{}.{}", self.source_account, token)
+    } else {
+      let encrypted_tag = encrypt_tag(&self.server_secret, connection_tag);
+      // TODO don't use the ~ so it's harder to identify which part is which from the outside
+      format!("{}.{}~{}", self.source_account, token, encrypted_tag)
+    };
     (destination_account, shared_secret)
   }
 }
@@ -93,11 +113,22 @@ impl StreamListener {
               return Err(IlpReject::new("F02", "", "", Bytes::new()));
             }
             let connection_id = local_address_parts[0];
+
+            let split: Vec<&str> = connection_id.splitn(2, '~').collect();
+            let token = split[0];
             let shared_secret = crypto::generate_shared_secret_from_token(
               &server_secret_clone,
-              &connection_id.as_bytes(),
+              &token.as_bytes(),
             );
-            Ok((connection_id.to_string(), shared_secret))
+            if split.len() == 1 {
+              Ok((connection_id.to_string(), shared_secret))
+            } else {
+              let encrypted_tag = split[1];
+              let decrypted = decrypt_tag(&server_secret_clone[..], &encrypted_tag);
+              // TODO don't mash these two together, just return them separately
+              let connection_id = format!("{}~{}", token, decrypted);
+              Ok((connection_id, shared_secret))
+            }
           });
 
         let listener = StreamListener {
