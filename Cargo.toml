@@ -29,7 +29,7 @@ serde_json = "1.0.32"
 stream-cancel = "0.4.3"
 tokio = "0.1.11"
 tokio-io = "0.1.10"
-tokio-tungstenite = { git = "https://github.com/emschwartz/tokio-tungstenite" }
+tokio-tungstenite = "0.6.0"
 tokio-tcp = "0.1.2"
-tungstenite = { git = "https://github.com/emschwartz/tungstenite-rs" }
+tungstenite = "0.6.1"
 url = "1.7.1"
