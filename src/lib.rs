@@ -29,6 +29,7 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 extern crate stream_cancel;
+extern crate reqwest;
 
 pub mod ilp;
 pub mod oer;

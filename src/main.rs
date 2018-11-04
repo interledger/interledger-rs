@@ -3,9 +3,9 @@ extern crate ilp;
 extern crate clap;
 extern crate futures;
 extern crate tokio;
-extern crate hyper;
 #[macro_use]
 extern crate serde_json;
+extern crate reqwest;
 
 use clap::{App, Arg, SubCommand};
 use futures::{Future, Stream};
@@ -103,6 +103,10 @@ fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64) {
 
 fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<String>) {
   let notification_endpoint = Arc::new(notification_endpoint);
+
+  // TODO make sure that the client keeps the connections alive
+  let client = Arc::new(reqwest::async::Client::new());
+
   let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
       println!("Error connecting to BTP server: {:?}", err);
@@ -116,27 +120,28 @@ fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<St
           let handle_connections = listener.for_each(move |(id, connection)| {
             // TODO should the STREAM or SPSP server automatically remove this?
             let split: Vec<&str> = id.splitn(2, '~').collect();
+
+            let client = Arc::clone(&client);
+            // TODO close the connection if it doesn't have a tag?
             let conn_id = Arc::new(split[1].to_string());
 
             let notification_endpoint = Arc::clone(&notification_endpoint);
-            // TODO close the connection if it doesn't have a tag?
             let handle_streams = connection.for_each(move |stream| {
-              let conn_id = Arc::clone(&conn_id);
               let notification_endpoint = Arc::clone(&notification_endpoint);
+              let client = Arc::clone(&client);
+              let conn_id = Arc::clone(&conn_id);
 
               let handle_money = stream.money.for_each(move |amount| {
                 if let Some(ref url) = *notification_endpoint {
+                  let conn_id = Arc::clone(&conn_id);
                   let body = json!({
                     "receiver": *conn_id,
                     "amount": amount,
                   }).to_string();
-                  let req = hyper::Request::post(url)
+                  let send_notification = client.post(url)
                     .header("Content-Type", "application/json")
-                    .body(hyper::Body::from(body))
-                    .unwrap();
-                  let conn_id = Arc::clone(&conn_id);
-                  let send_notification = hyper::Client::new()
-                    .request(req)
+                    .body(body)
+                    .send()
                     .map_err(move |err| {
                       println!("Error sending notification (got incoming money: {} for receiver: {}): {:?}", amount, conn_id, err);
                     })
