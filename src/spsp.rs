@@ -187,7 +187,7 @@ fn random_secret() -> Bytes {
   Bytes::from(&secret[..])
 }
 
-pub fn payment_pointer_to_url (payment_pointer: &str) -> String {
+fn payment_pointer_to_url (payment_pointer: &str) -> String {
   let mut url: String = if payment_pointer.starts_with('$') {
     let mut url = "https://".to_string();
     url.push_str(&payment_pointer[1..]);

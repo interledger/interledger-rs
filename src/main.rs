@@ -3,6 +3,9 @@ extern crate ilp;
 extern crate clap;
 extern crate futures;
 extern crate tokio;
+extern crate hyper;
+#[macro_use]
+extern crate serde_json;
 
 use clap::{App, Arg, SubCommand};
 use futures::{Future, Stream};
@@ -29,6 +32,10 @@ pub fn main() {
                 .long("btp_server")
                 .default_value(&moneyd_url)
                 .help("URI of a moneyd or BTP Server to listen on"),
+              Arg::with_name("notification_endpoint")
+                .long("notification_endpoint")
+                .takes_value(true)
+                .help("URL where notifications of incoming money will be sent (via HTTP POST)"),
             ]),
           SubCommand::with_name("pay")
             .about("Send an SPSP payment")
@@ -58,7 +65,8 @@ pub fn main() {
       ("server", Some(matches)) => {
         let btp_server = value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
         let port = value_t!(matches, "port", u16).expect("Invalid port");
-        run_spsp_server(&btp_server, port);
+        let notification_endpoint = value_t!(matches, "notification_endpoint", String).ok();
+        run_spsp_server(&btp_server, port, notification_endpoint);
       }
       ("pay", Some(matches)) => {
         let btp_server = value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
@@ -93,7 +101,8 @@ fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64) {
   tokio::run(run);
 }
 
-fn run_spsp_server(btp_server: &str, port: u16) {
+fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<String>) {
+  let notification_endpoint = Arc::new(notification_endpoint);
   let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
       println!("Error connecting to BTP server: {:?}", err);
@@ -104,17 +113,41 @@ fn run_spsp_server(btp_server: &str, port: u16) {
           println!("Error listening: {}", err);
         })
         .and_then(move |listener| {
-          let handle_connections = listener.for_each(|(id, connection)| {
+          let handle_connections = listener.for_each(move |(id, connection)| {
             // TODO should the STREAM or SPSP server automatically remove this?
             let split: Vec<&str> = id.splitn(2, '~').collect();
             let conn_id = Arc::new(split[1].to_string());
 
+            let notification_endpoint = Arc::clone(&notification_endpoint);
             // TODO close the connection if it doesn't have a tag?
-
             let handle_streams = connection.for_each(move |stream| {
               let conn_id = Arc::clone(&conn_id);
+              let notification_endpoint = Arc::clone(&notification_endpoint);
+
               let handle_money = stream.money.for_each(move |amount| {
-                println!("Got incoming money: {} for connection: {}", amount, conn_id);
+                if let Some(ref url) = *notification_endpoint {
+                  let body = json!({
+                    "receiver": *conn_id,
+                    "amount": amount,
+                  }).to_string();
+                  let req = hyper::Request::post(url)
+                    .header("Content-Type", "application/json")
+                    .body(hyper::Body::from(body))
+                    .unwrap();
+                  let conn_id = Arc::clone(&conn_id);
+                  let send_notification = hyper::Client::new()
+                    .request(req)
+                    .map_err(move |err| {
+                      println!("Error sending notification (got incoming money: {} for receiver: {}): {:?}", amount, conn_id, err);
+                    })
+                    .and_then(|_| {
+                      Ok(())
+                    });
+                  tokio::spawn(send_notification);
+                } else {
+                  println!("Got incoming money: {} for connection: {}", amount, conn_id);
+                }
+
                 Ok(())
               });
               tokio::spawn(handle_money);
