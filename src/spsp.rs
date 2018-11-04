@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::{Future, Sink, Stream};
+use futures::{Future, Sink};
 use reqwest::async::Client;
 use hyper::service::service_fn;
 use hyper::{Body, Request, Response, Server, StatusCode};
