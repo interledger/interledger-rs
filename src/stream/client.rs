@@ -2,8 +2,6 @@ use bytes::Bytes;
 use futures::Future;
 use ildcp;
 use plugin::{IlpRequest, Plugin};
-use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
 use super::{Connection, plugin_to_channels};
 use super::Error;
 
@@ -31,7 +29,6 @@ where
         client_address,
         String::from(destination_account),
         false,
-        Arc::new(AtomicUsize::new(1)),
       );
 
       Ok(conn)

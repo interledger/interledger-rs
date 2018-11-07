@@ -1,6 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
+use byteorder::{ByteOrder, BigEndian};
 
 const NONCE_LENGTH: usize = 12;
 const AUTH_TAG_LENGTH: usize = 16;
@@ -36,6 +37,12 @@ pub fn random_condition() -> Bytes {
   let mut condition_slice: [u8; 32] = [0; 32];
   SystemRandom::new().fill(&mut condition_slice).unwrap();
   Bytes::from(&condition_slice[..])
+}
+
+pub fn random_u32() -> u32 {
+  let mut int: [u8; 4] = [0; 4];
+  SystemRandom::new().fill(&mut int[..]).unwrap();
+  BigEndian::read_u32(&int[..])
 }
 
 pub fn generate_token() -> Bytes {

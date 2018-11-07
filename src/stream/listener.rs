@@ -11,7 +11,6 @@ use ildcp;
 use ilp::{IlpPacket, IlpPrepare, IlpReject, PacketType};
 use plugin::{IlpRequest, Plugin};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio;
 use stream_cancel::{Valved, Trigger};
@@ -82,7 +81,6 @@ pub struct StreamListener {
   connections: Arc<RwLock<ConnectionMap>>,
   pending_requests: Arc<Mutex<HashMap<u32, Arc<String>>>>,
   closed_connections: Arc<Mutex<HashSet<String>>>,
-  next_request_id: Arc<AtomicUsize>,
   prepare_handler: Arc<PrepareToSharedSecretGenerator>,
 }
 
@@ -138,7 +136,6 @@ impl StreamListener {
           connections: Arc::new(RwLock::new(HashMap::new())),
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
           closed_connections: Arc::new(Mutex::new(HashSet::new())),
-          next_request_id: Arc::new(AtomicUsize::new(1)),
           prepare_handler: Arc::new(prepare_handler),
         };
 
@@ -173,7 +170,6 @@ impl StreamListener {
           connections: Arc::new(RwLock::new(HashMap::new())),
           pending_requests: Arc::new(Mutex::new(HashMap::new())),
           closed_connections: Arc::new(Mutex::new(HashSet::new())),
-          next_request_id: Arc::new(AtomicUsize::new(1)),
           prepare_handler: Arc::new(prepare_handler),
         };
         Ok(listener)
@@ -290,7 +286,6 @@ impl StreamListener {
       self.source_account.to_string(),
       destination_account,
       true,
-      Arc::clone(&self.next_request_id),
     );
 
     incoming_tx

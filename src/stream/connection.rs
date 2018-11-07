@@ -1,5 +1,5 @@
 use super::crypto::{
-  fulfillment_to_condition, generate_condition, generate_fulfillment, random_condition,
+  fulfillment_to_condition, generate_condition, generate_fulfillment, random_condition, random_u32,
 };
 use super::data_money_stream::DataMoneyStream;
 use super::packet::*;
@@ -55,7 +55,6 @@ pub struct Connection {
   destination_account: Arc<String>,
   next_stream_id: Arc<AtomicUsize>,
   next_packet_sequence: Arc<AtomicUsize>,
-  next_request_id: Arc<AtomicUsize>,
   streams: Arc<RwLock<HashMap<u64, DataMoneyStream>>>,
   closed_streams: Arc<RwLock<HashSet<u64>>>,
   pending_outgoing_packets: Arc<Mutex<HashMap<u32, (u64, StreamPacket)>>>,
@@ -84,7 +83,6 @@ impl Connection {
     source_account: String,
     destination_account: String,
     is_server: bool,
-    next_request_id: Arc<AtomicUsize>,
   ) -> Self {
     let next_stream_id = if is_server {
       2
@@ -101,7 +99,6 @@ impl Connection {
       destination_account: Arc::new(destination_account),
       next_stream_id: Arc::new(AtomicUsize::new(next_stream_id)),
       next_packet_sequence: Arc::new(AtomicUsize::new(1)),
-      next_request_id,
       streams: Arc::new(RwLock::new(HashMap::new())),
       closed_streams: Arc::new(RwLock::new(HashSet::new())),
       pending_outgoing_packets: Arc::new(Mutex::new(HashMap::new())),
@@ -256,7 +253,7 @@ impl Connection {
       Utc::now() + Duration::seconds(30),
       encrypted,
     );
-    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
+    let request_id = random_u32();
     let request = (request_id, IlpPacket::Prepare(prepare));
     debug!(
       "Sending outgoing request {} with stream packet: {:?}",
@@ -670,7 +667,7 @@ impl Connection {
 
   // TODO wait for response
   fn send_unfulfillable_prepare(&self, stream_packet: &StreamPacket) -> () {
-    let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst) as u32;
+    let request_id = random_u32();
     let prepare = IlpPacket::Prepare(IlpPrepare::new(
       // TODO do we need to clone this?
       self.destination_account.to_string(),
