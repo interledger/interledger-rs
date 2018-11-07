@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::cmp::min;
+use std::ops::{Add, Div, AddAssign};
 
 pub struct CloseFuture {
   conn: Connection,
@@ -58,7 +59,7 @@ pub struct Connection {
   next_packet_sequence: Arc<AtomicUsize>,
   streams: Arc<RwLock<HashMap<u64, DataMoneyStream>>>,
   closed_streams: Arc<RwLock<HashSet<u64>>>,
-  pending_outgoing_packets: Arc<Mutex<HashMap<u32, (u64, StreamPacket)>>>,
+  pending_outgoing_packets: Arc<Mutex<HashMap<u32, OutgoingPacketRecord>>>,
   new_streams: Arc<Mutex<VecDeque<u64>>>,
   frames_to_resend: Arc<Mutex<Vec<Frame>>>,
   // This is used to wake the task polling for incoming streams
@@ -67,8 +68,44 @@ pub struct Connection {
   congestion_state: Arc<RwLock<CongestionState>>,
 }
 
+struct OutgoingPacketRecord {
+  time_sent: i64,
+  original_amount: u64,
+  original_packet: StreamPacket,
+}
+
 struct CongestionState {
   max_packet_amount: Option<u64>,
+  round_trip_time: MovingAverage<i64>,
+}
+
+struct MovingAverage<T> {
+  numerator: T,
+  denominator: T,
+}
+
+impl<T> MovingAverage<T>
+where T: Add<T> + Div<T> + AddAssign<T> + From<u8> + Copy + PartialEq
+{
+  pub fn new() -> Self {
+    MovingAverage {
+      numerator: T::from(0u8),
+      denominator: T::from(0u8),
+    }
+  }
+
+  pub fn add_item(&mut self, item: T) {
+    self.numerator += item;
+    self.denominator += T::from(1u8);
+  }
+
+  pub fn average(&self) -> <T as Div>::Output {
+    if self.denominator == T::from(0u8) {
+      T::from(0u8) / T::from(1u8)
+    } else {
+      self.numerator / self.denominator
+    }
+  }
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -113,6 +150,7 @@ impl Connection {
       recv_task: Arc::new(Mutex::new(None)),
       congestion_state: Arc::new(RwLock::new(CongestionState {
         max_packet_amount: None,
+        round_trip_time: MovingAverage::new(),
       }))
     };
 
@@ -281,7 +319,11 @@ impl Connection {
       .map_err(|err| {
         error!("Cannot acquire lock on pending_outgoing_packets: {:?}", err);
       })?
-      .insert(request_id, (outgoing_amount, stream_packet.clone()));
+      .insert(request_id, OutgoingPacketRecord {
+        time_sent: Utc::now().timestamp_millis(),
+        original_amount: outgoing_amount,
+        original_packet: stream_packet.clone(),
+      });
 
     self.outgoing.unbounded_send(request).map_err(|err| {
       error!("Error sending outgoing packet: {:?}", err);
@@ -530,7 +572,7 @@ impl Connection {
       hex::encode(&fulfill.fulfillment[..])
     );
 
-    let (original_amount, original_packet) = self
+    let OutgoingPacketRecord { original_amount, original_packet, time_sent } = self
       .pending_outgoing_packets
       .lock()
       .unwrap()
@@ -555,6 +597,14 @@ impl Connection {
         None
       }
     };
+
+    // Update RTT
+    {
+      let mut congestion_state = self.congestion_state.write().unwrap();
+      let rtt = Utc::now().timestamp_millis() - time_sent;
+      congestion_state.round_trip_time.add_item(rtt);
+      debug!("Round trip time was: {}ms (average is: {}ms)", rtt, congestion_state.round_trip_time.average());
+    }
 
     let total_delivered = {
       match response.as_ref() {
@@ -610,7 +660,7 @@ impl Connection {
     if entry.is_none() {
       return Ok(());
     }
-    let (original_amount, mut original_packet) = entry.unwrap();
+    let OutgoingPacketRecord { original_amount, mut original_packet, time_sent } = entry.unwrap();
 
     // Handle F08 errors, which communicate the maximum packet amount
     if let Some(err_details) = parse_f08_error(&reject) {
@@ -653,6 +703,14 @@ impl Connection {
         None
       }
     };
+
+    // Update RTT if the packet made it to the receiver
+    if response.is_some() {
+      let mut congestion_state = self.congestion_state.write().unwrap();
+      let rtt = Utc::now().timestamp_millis() - time_sent;
+      congestion_state.round_trip_time.add_item(rtt);
+      debug!("Round trip time was: {}ms (average is: {}ms)", rtt, congestion_state.round_trip_time.average());
+    }
 
     let streams = self.streams.read().unwrap();
 
@@ -782,7 +840,6 @@ mod tests {
     (conn, incoming_tx, outgoing_rx)
   }
 
-  #[cfg(test)]
   mod max_packet_amount {
     use super::*;
     use ilp::packet::create_f08_error;

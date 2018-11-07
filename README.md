@@ -13,6 +13,7 @@
 - [ ] Window + congestion avoidance
 - [ ] Respect flow control
 - [ ] ERROR HANDLING
+- [ ] Enforce minimum exchange rate (optional)
 
 ### Language bindings
 - [ ] Node using Neon
