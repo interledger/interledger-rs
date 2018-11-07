@@ -8,8 +8,8 @@
 - [x] Handle incoming money
 - [x] Check stream packet responses correspond to the right requests
 - [x] Sending data
-- [ ] Stream and connection closing
-- [ ] Determining exchange rate, max packet amount
+- [x] Stream and connection closing
+- [x] Max packet amount
 - [ ] Window + congestion avoidance
 - [ ] Respect flow control
 - [ ] ERROR HANDLING

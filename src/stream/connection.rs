@@ -11,13 +11,14 @@ use futures::{Async, Poll, Stream, Future};
 use futures::task;
 use futures::task::Task;
 use hex;
-use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
+use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType, parse_f08_error};
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use plugin::IlpRequest;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::cmp::min;
 
 pub struct CloseFuture {
   conn: Connection,
@@ -63,6 +64,11 @@ pub struct Connection {
   // This is used to wake the task polling for incoming streams
   recv_task: Arc<Mutex<Option<Task>>>,
   // TODO add connection-level stats
+  congestion_state: Arc<RwLock<CongestionState>>,
+}
+
+struct CongestionState {
+  max_packet_amount: Option<u64>,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -105,6 +111,9 @@ impl Connection {
       new_streams: Arc::new(Mutex::new(VecDeque::new())),
       frames_to_resend: Arc::new(Mutex::new(Vec::new())),
       recv_task: Arc::new(Mutex::new(None)),
+      congestion_state: Arc::new(RwLock::new(CongestionState {
+        max_packet_amount: None,
+      }))
     };
 
     // TODO figure out a better way to send the initial packet - get the exchange rate and wait for response
@@ -155,12 +164,18 @@ impl Connection {
     let mut frames: Vec<Frame> = Vec::new();
     let mut closed_streams: Vec<u64> = Vec::new();
 
+    let max_packet_amount = {
+      let congestion_state = self.congestion_state.read().unwrap();
+      congestion_state.max_packet_amount.unwrap_or(u64::max_value())
+    };
+
     if let Ok(streams) = self.streams.read() {
-      // TODO don't send more than max packet amount
       for stream in streams.values() {
+        // Send money
         trace!("Checking if stream {} has money or data to send", stream.id);
-        let amount_to_send =
+        let stream_amount =
           stream.money.send_max() - stream.money.pending() - stream.money.total_sent();
+        let amount_to_send = min(stream_amount, max_packet_amount - outgoing_amount);
         if amount_to_send > 0 {
           trace!("Stream {} sending {}", stream.id, amount_to_send);
           stream.money.add_to_pending(amount_to_send);
@@ -170,7 +185,7 @@ impl Connection {
             shares: BigUint::from(amount_to_send),
           }));
         } else {
-          trace!("Stream {} does not have any money to send", stream.id);
+          trace!("Stream {} does not have any money to send or sending more would exceed the max packet amount", stream.id);
         }
 
         // Send data
@@ -595,21 +610,44 @@ impl Connection {
     if entry.is_none() {
       return Ok(());
     }
-    let (_original_amount, mut original_packet) = entry.unwrap();
+    let (original_amount, mut original_packet) = entry.unwrap();
 
-    let response = {
-      let decrypted =
-        StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(reject.data)).ok();
-      if let Some(packet) = decrypted {
-        if packet.sequence != original_packet.sequence {
-          warn!("Got Reject with stream packet whose sequence does not match the original request. Request ID: {}, sequence: {}, packet: {:?}", request_id, original_packet.sequence, packet);
-          None
-        } else if packet.ilp_packet_type != PacketType::IlpReject {
-          warn!("Got Reject with stream packet that should have been on a differen type of ILP packet. Request ID: {}, packet: {:?}", request_id, packet);
-          None
+    // Handle F08 errors, which communicate the maximum packet amount
+    if let Some(err_details) = parse_f08_error(&reject) {
+      let max_packet_amount: u64 = original_amount * err_details.max_amount / err_details.amount_received;
+      let mut congestion_state = self.congestion_state.write().unwrap();
+      if let Some(previous) = congestion_state.max_packet_amount {
+        if max_packet_amount < previous {
+          debug!("Found new path Maximum Packet Amount: {} (previous was: {})", max_packet_amount, previous);
         } else {
-          trace!("Got Reject with stream packet: {:?}", packet);
-          Some(packet)
+          warn!("Got F08 error that doesn't make sense. It suggests the Max Packet Amount should be: {} when it was already: {}", max_packet_amount, previous);
+        }
+      } else {
+        debug!("Found path Maximum Packet Amount: {}", max_packet_amount);
+      }
+      congestion_state.max_packet_amount = Some(max_packet_amount);
+    }
+
+    // Parse STREAM response packet from F99 errors
+    let response = {
+      if &reject.code == "F99" && !reject.data.is_empty() {
+        match StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(reject.data)) {
+          Ok(packet) => {
+            if packet.sequence != original_packet.sequence {
+              warn!("Got Reject with stream packet whose sequence does not match the original request. Request ID: {}, sequence: {}, packet: {:?}", request_id, original_packet.sequence, packet);
+              None
+            } else if packet.ilp_packet_type != PacketType::IlpReject {
+              warn!("Got Reject with stream packet that should have been on a differen type of ILP packet. Request ID: {}, packet: {:?}", request_id, packet);
+              None
+            } else {
+              trace!("Got Reject with stream packet: {:?}", packet);
+              Some(packet)
+            }
+          },
+          Err(err) => {
+            warn!("Got encrypted response packet that we could not decrypt: {:?}", err);
+            None
+          }
         }
       } else {
         None
@@ -720,6 +758,94 @@ impl Stream for Connection {
       debug!("Unable to acquire lock on new_streams");
       // TODO should we return an error here?
       Ok(Async::NotReady)
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use futures::sync::mpsc::unbounded;
+
+  fn test_conn() -> (Connection, UnboundedSender<IlpRequest>, UnboundedReceiver<IlpRequest>) {
+    let (incoming_tx, incoming_rx) = unbounded::<IlpRequest>();
+    let (outgoing_tx, outgoing_rx) = unbounded::<IlpRequest>();
+    let conn = Connection::new(
+      outgoing_tx,
+      incoming_rx,
+      Bytes::from(&[0u8; 32][..]),
+      String::from("example.alice"),
+      String::from("example.bob"),
+      // Set as server so it doesn't bother sending the handshake
+      true,
+    );
+    (conn, incoming_tx, outgoing_rx)
+  }
+
+  #[cfg(test)]
+  mod max_packet_amount {
+    use super::*;
+    use ilp::packet::create_f08_error;
+    use futures::Sink;
+    use futures::future::ok;
+    use tokio::runtime::current_thread::block_on_all;
+
+    #[test]
+    fn discovery() {
+      let (conn, incoming, outgoing) = test_conn();
+      let mut stream = conn.create_stream();
+
+      // Send money
+      stream.money.start_send(100).unwrap();
+      let (request, outgoing) = outgoing.into_future().wait().unwrap();
+      let (request_id, _prepare) = request.unwrap();
+
+      // Respond with F08
+      let error = (request_id, IlpPacket::Reject(create_f08_error(100, 50)));
+      incoming.unbounded_send(error).unwrap();
+      block_on_all(ok(()).and_then(|_| {
+        conn.try_handle_incoming()
+      })).unwrap();
+      conn.try_send().unwrap();
+
+      // Check that next packet is smaller
+      let (request, _outgoing) = outgoing.into_future().wait().unwrap();
+      let (_request_id, prepare) = request.unwrap();
+
+      if let IlpPacket::Prepare(prepare) = prepare {
+        assert_eq!(prepare.amount, 50);
+      } else {
+        assert!(false);
+      }
+    }
+
+    #[test]
+    fn discovery_with_exchange_rate() {
+      let (conn, incoming, outgoing) = test_conn();
+      let mut stream = conn.create_stream();
+
+      // Send money
+      stream.money.start_send(1000).unwrap();
+      let (request, outgoing) = outgoing.into_future().wait().unwrap();
+      let (request_id, _prepare) = request.unwrap();
+
+      // Respond with F08
+      let error = (request_id, IlpPacket::Reject(create_f08_error(542, 107)));
+      incoming.unbounded_send(error).unwrap();
+      block_on_all(ok(()).and_then(|_| {
+        conn.try_handle_incoming()
+      })).unwrap();
+      conn.try_send().unwrap();
+
+      // Check that next packet is smaller
+      let (request, _outgoing) = outgoing.into_future().wait().unwrap();
+      let (_request_id, prepare) = request.unwrap();
+
+      if let IlpPacket::Prepare(prepare) = prepare {
+        assert_eq!(prepare.amount, 197);
+      } else {
+        assert!(false);
+      }
     }
   }
 }

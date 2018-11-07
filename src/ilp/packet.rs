@@ -267,6 +267,38 @@ impl Serializable<IlpReject> for IlpReject {
     }
 }
 
+pub struct MaxPacketAmountDetails {
+    pub amount_received: u64,
+    pub max_amount: u64,
+}
+
+pub fn parse_f08_error(reject: &IlpReject) -> Option<MaxPacketAmountDetails> {
+    if reject.code == "F08" && reject.data.len() >= 16 {
+        let mut cursor = Cursor::new(&reject.data[..]);
+        let amount_received = cursor.read_u64::<BigEndian>().ok()?;
+        let max_amount = cursor.read_u64::<BigEndian>().ok()?;
+        Some(MaxPacketAmountDetails {
+            amount_received,
+            max_amount,
+        })
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn create_f08_error(amount_received: u64, max_amount: u64) -> IlpReject {
+    let mut data: Vec<u8> = Vec::new();
+    data.write_u64::<BigEndian>(amount_received).unwrap();
+    data.write_u64::<BigEndian>(max_amount).unwrap();
+    IlpReject {
+        code: String::from("F08"),
+        message: String::new(),
+        triggered_by: String::new(),
+        data: Bytes::from(&data[..]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
