@@ -1,8 +1,8 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use bytes::{Buf, BufMut, Bytes, IntoBuf};
+use num_bigint::BigUint;
 use std::fmt::Debug;
 use std::io::{self, Read, Result, Write};
-use num_bigint::BigUint;
-use bytes::{Buf, BufMut, Bytes, IntoBuf};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -105,7 +105,8 @@ impl<B: Buf + Sized> BufOerExt for B {}
 pub trait MutBufOerExt: BufMut + Sized {
     #[inline]
     fn put_var_octet_string<B>(&mut self, buf: B)
-    where B: IntoBuf
+    where
+        B: IntoBuf,
     {
         let buf = buf.into_buf();
         let length = buf.remaining();
@@ -165,10 +166,16 @@ mod reader_ext {
     #[test]
     fn it_reads_var_octet_strings() {
         let nothing = vec![0];
-        assert_eq!(Cursor::new(nothing).read_var_octet_string().unwrap().len(), 0);
+        assert_eq!(
+            Cursor::new(nothing).read_var_octet_string().unwrap().len(),
+            0
+        );
 
         let two_bytes = vec![0x01, 0xb0];
-        assert_eq!(Cursor::new(two_bytes).read_var_octet_string().unwrap(), &[0xb0]);
+        assert_eq!(
+            Cursor::new(two_bytes).read_var_octet_string().unwrap(),
+            &[0xb0]
+        );
 
         let mut larger = vec![0x82, 0x01, 0x00];
         let mut larger_string: Vec<u8> = Vec::with_capacity(256 as usize);
@@ -176,6 +183,9 @@ mod reader_ext {
             larger_string.push(0xb0);
         }
         larger.extend(&larger_string);
-        assert_eq!(Cursor::new(larger).read_var_octet_string().unwrap(), &larger_string[..]);
+        assert_eq!(
+            Cursor::new(larger).read_var_octet_string().unwrap(),
+            &larger_string[..]
+        );
     }
 }

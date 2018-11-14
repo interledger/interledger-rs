@@ -21,20 +21,20 @@ extern crate log;
 extern crate num_traits;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
-extern crate serde;
 extern crate base64;
-extern crate hyper;
 extern crate failure;
+extern crate hyper;
+extern crate serde;
+extern crate serde_json;
 #[macro_use]
 extern crate failure_derive;
-extern crate stream_cancel;
 extern crate reqwest;
+extern crate stream_cancel;
 
+pub mod errors;
+pub mod ildcp;
 pub mod ilp;
 pub mod oer;
 pub mod plugin;
-pub mod stream;
-pub mod ildcp;
-pub mod errors;
 pub mod spsp;
+pub mod stream;

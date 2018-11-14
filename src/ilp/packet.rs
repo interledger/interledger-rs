@@ -1,12 +1,12 @@
+use super::errors::ParseError;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
-use chrono::{DateTime, Utc, TimeZone};
-use super::errors::ParseError;
-use oer::{ReadOerExt, MutBufOerExt};
+use bytes::Bytes;
+use chrono::{DateTime, TimeZone, Utc};
+use oer::{MutBufOerExt, ReadOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
-use bytes::Bytes;
 
 // TODO zero-copy (de)serialization
 
@@ -24,7 +24,7 @@ pub enum PacketType {
     IlpPrepare = 12,
     IlpFulfill = 13,
     IlpReject = 14,
-    Unknown
+    Unknown,
 }
 impl From<u8> for PacketType {
     fn from(type_int: u8) -> Self {
@@ -64,7 +64,10 @@ impl Serializable<IlpPacket> for IlpPacket {
             PacketType::IlpPrepare => Ok(IlpPacket::Prepare(IlpPrepare::from_bytes(bytes)?)),
             PacketType::IlpFulfill => Ok(IlpPacket::Fulfill(IlpFulfill::from_bytes(bytes)?)),
             PacketType::IlpReject => Ok(IlpPacket::Reject(IlpReject::from_bytes(bytes)?)),
-            _ => Err(ParseError::InvalidPacket(format!("Unknown packet type: {}", bytes[0])))
+            _ => Err(ParseError::InvalidPacket(format!(
+                "Unknown packet type: {}",
+                bytes[0]
+            ))),
         }
     }
 
@@ -74,7 +77,6 @@ impl Serializable<IlpPacket> for IlpPacket {
             IlpPacket::Fulfill(fulfill) => fulfill.to_bytes(),
             IlpPacket::Reject(reject) => reject.to_bytes(),
         }
-
     }
 }
 
@@ -89,7 +91,13 @@ pub struct IlpPrepare {
 }
 
 impl IlpPrepare {
-    pub fn new<A, B, C, D>(destination: A, amount: u64, execution_condition: B, expires_at: C, data: D) -> Self
+    pub fn new<A, B, C, D>(
+        destination: A,
+        amount: u64,
+        execution_condition: B,
+        expires_at: C,
+        data: D,
+    ) -> Self
     where
         String: From<A>,
         Bytes: From<B>,
@@ -101,7 +109,7 @@ impl IlpPrepare {
             destination: String::from(destination),
             execution_condition: Bytes::from(execution_condition),
             expires_at: DateTime::from(expires_at),
-            data: Bytes::from(data)
+            data: Bytes::from(data),
         }
     }
 }
@@ -110,9 +118,9 @@ impl Serializable<IlpPrepare> for IlpPrepare {
     fn from_bytes(bytes: &[u8]) -> Result<IlpPrepare, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpPrepare {
-            return Err(ParseError::WrongType(
-                String::from("attempted to deserialize other packet type as IlpPrepare")
-            ));
+            return Err(ParseError::WrongType(String::from(
+                "attempted to deserialize other packet type as IlpPrepare",
+            )));
         }
 
         let mut reader = Cursor::new(contents);
@@ -120,7 +128,9 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         let mut expires_at_buf = [0; 17];
         reader.read_exact(&mut expires_at_buf)?;
         let expires_at_str = String::from_utf8(expires_at_buf.to_vec())?;
-        let expires_at = Utc.datetime_from_str(&expires_at_str, INTERLEDGER_TIMESTAMP_FORMAT)?.with_timezone(&Utc);
+        let expires_at = Utc
+            .datetime_from_str(&expires_at_str, INTERLEDGER_TIMESTAMP_FORMAT)?
+            .with_timezone(&Utc);
         let mut execution_condition: [u8; 32] = [0; 32];
         reader.read_exact(&mut execution_condition)?;
         let destination_bytes = reader.read_var_octet_string()?;
@@ -145,7 +155,7 @@ impl Serializable<IlpPrepare> for IlpPrepare {
             self.expires_at
                 .format(INTERLEDGER_TIMESTAMP_FORMAT)
                 .to_string()
-                .as_bytes()
+                .as_bytes(),
         );
         buf.put(&self.execution_condition);
         buf.put_var_octet_string(&self.destination.to_string().into_bytes());
@@ -178,9 +188,9 @@ impl Serializable<IlpFulfill> for IlpFulfill {
     fn from_bytes(bytes: &[u8]) -> Result<IlpFulfill, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpFulfill {
-            return Err(ParseError::WrongType(
-                String::from("attempted to deserialize other packet type as IlpFulfill"),
-            ));
+            return Err(ParseError::WrongType(String::from(
+                "attempted to deserialize other packet type as IlpFulfill",
+            )));
         }
 
         let mut reader = Cursor::new(contents);
@@ -213,23 +223,23 @@ impl IlpReject {
         String: From<M>,
         String: From<T>,
         Bytes: From<D>,
-        {
-            IlpReject {
-                code: String::from(code),
-                message: String::from(message),
-                triggered_by: String::from(triggered_by),
-                data: Bytes::from(data),
-            }
+    {
+        IlpReject {
+            code: String::from(code),
+            message: String::from(message),
+            triggered_by: String::from(triggered_by),
+            data: Bytes::from(data),
         }
+    }
 }
 
 impl Serializable<IlpReject> for IlpReject {
     fn from_bytes(bytes: &[u8]) -> Result<IlpReject, ParseError> {
         let (packet_type, contents) = deserialize_envelope(bytes)?;
         if packet_type != PacketType::IlpReject {
-            return Err(ParseError::WrongType(
-                String::from("attempted to deserialize other packet type as IlpReject"),
-            ));
+            return Err(ParseError::WrongType(String::from(
+                "attempted to deserialize other packet type as IlpReject",
+            )));
         }
 
         let mut reader = Cursor::new(contents);
@@ -246,12 +256,7 @@ impl Serializable<IlpReject> for IlpReject {
             .map_err(|_| ParseError::InvalidPacket(String::from("message is not utf8")))?;
         let data = Bytes::from(reader.read_var_octet_string()?.to_vec());
 
-        Ok(IlpReject::new(
-            code,
-            message,
-            triggered_by,
-            data,
-        ))
+        Ok(IlpReject::new(code, message, triggered_by, data))
     }
 
     fn to_bytes(&self) -> Vec<u8> {
