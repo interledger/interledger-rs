@@ -4,6 +4,7 @@ mod crypto;
 mod listener;
 mod packet;
 mod data_money_stream;
+mod congestion;
 
 pub use self::client::connect_async;
 pub use self::connection::Connection;
