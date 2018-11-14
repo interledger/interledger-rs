@@ -34,7 +34,7 @@ fn main() {
         .and_then(|connection| {
           println!("Creating new stream and sending money");
           let mut stream = connection.create_stream();
-          stream.money.clone().send(100)
+          stream.money.clone().send(1000)
             .and_then(move |_| {
               println!("Sent money");
               let bytes = b"hey there";

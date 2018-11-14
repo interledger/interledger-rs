@@ -37,6 +37,7 @@ impl Future for CloseFuture {
       trace!("Connection was closed, resolving close future");
       Ok(Async::Ready(()))
     } else {
+      self.conn.try_send()?;
       trace!("Connection wasn't closed yet, returning NotReady");
       Ok(Async::NotReady)
     }

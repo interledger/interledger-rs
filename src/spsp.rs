@@ -95,7 +95,15 @@ where
           Error::SendMoneyError(source_amount)
         })
         .and_then(move |_| {
-          Ok(stream.money.total_delivered())
+          let total_delivered = stream.money.total_delivered();
+          conn.close()
+            .or_else(|_err| {
+              // We don't care if there was an issue closing the connection
+              Ok(())
+            })
+            .and_then(move |_| {
+              Ok(total_delivered)
+            })
         })
     })
 }

@@ -6,12 +6,15 @@ extern crate tokio;
 #[macro_use]
 extern crate serde_json;
 extern crate reqwest;
+extern crate env_logger;
 
 use clap::{App, Arg, SubCommand};
 use futures::{Future, Stream};
 use std::sync::Arc;
 
 pub fn main() {
+  env_logger::init();
+
   let moneyd_url = format!("btp+ws://{}:{}@localhost:7768", ilp::plugin::btp::random_token(), ilp::plugin::btp::random_token());
   let mut app = App::new("ilp")
     .about("Blazing fast Interledger CLI written in Rust")
