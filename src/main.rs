@@ -87,6 +87,7 @@ fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64) {
   let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
       println!("Error connecting to BTP server: {:?}", err);
+      println!("(Hint: is moneyd running?)");
     })
     .and_then(move |plugin| {
       ilp::spsp::pay(plugin, &receiver, amount)
@@ -113,6 +114,7 @@ fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<St
   let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
       println!("Error connecting to BTP server: {:?}", err);
+      println!("(Hint: is moneyd running?)");
     })
     .and_then(move |plugin| {
       ilp::spsp::listen_with_random_secret(plugin, port)
