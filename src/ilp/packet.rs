@@ -1,7 +1,6 @@
 use super::errors::ParseError;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
-use bytes::Bytes;
 use chrono::{DateTime, TimeZone, Utc};
 use oer::{MutBufOerExt, ReadOerExt};
 use std::io::prelude::*;
@@ -149,7 +148,6 @@ impl Serializable<IlpPrepare> for IlpPrepare {
 
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-
         buf.put_u64_be(self.amount);
         buf.put(
             self.expires_at
