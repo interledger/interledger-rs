@@ -139,7 +139,7 @@ impl Serializable<IlpPrepare> for IlpPrepare {
 
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        
+
         buf.put_u64_be(self.amount);
         buf.put(
             self.expires_at
@@ -370,7 +370,7 @@ mod tests {
 
         #[test]
         fn to_bytes() {
-            assert_eq!(FULFILL_1.to_bytes().unwrap(), *FULFILL_1_SERIALIZED);
+            assert_eq!(FULFILL_1.to_bytes(), *FULFILL_1_SERIALIZED);
         }
     }
 
@@ -399,7 +399,7 @@ mod tests {
 
         #[test]
         fn to_bytes() {
-            assert_eq!(REJECT_1.to_bytes().unwrap(), *REJECT_1_SERIALIZED);
+            assert_eq!(REJECT_1.to_bytes(), *REJECT_1_SERIALIZED);
         }
     }
 }
