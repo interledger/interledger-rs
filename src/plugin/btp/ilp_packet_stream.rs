@@ -104,7 +104,7 @@ where
           protocol_data: vec![ProtocolData {
             protocol_name: String::from("ilp"),
             content_type: ContentType::ApplicationOctetStream,
-            data: packet.to_bytes().unwrap(),
+            data: packet.to_bytes(),
           }],
         })
       }
@@ -119,7 +119,7 @@ where
           protocol_data: vec![ProtocolData {
             protocol_name: String::from("ilp"),
             content_type: ContentType::ApplicationOctetStream,
-            data: packet.to_bytes().unwrap(),
+            data: packet.to_bytes(),
           }],
         })
       }

@@ -453,10 +453,6 @@ impl Stream for StreamListener {
           self.handle_response(request_id, IlpPacket::Reject(reject));
           continue;
         }
-        _ => {
-          debug!("Ignoring unknown ILP packet");
-          continue;
-        }
       }
     }
   }

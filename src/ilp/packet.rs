@@ -1,7 +1,8 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ReadBytesExt};
+use bytes::BufMut;
 use chrono::{DateTime, Utc, TimeZone};
 use super::errors::ParseError;
-use oer::{ReadOerExt, WriteOerExt};
+use oer::{ReadOerExt, MutBufOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
@@ -14,8 +15,7 @@ static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
 
 pub trait Serializable<T> {
     fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
-
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
+    fn to_bytes(&self) -> Vec<u8>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,7 +24,7 @@ pub enum PacketType {
     IlpPrepare = 12,
     IlpFulfill = 13,
     IlpReject = 14,
-    Unknown,
+    Unknown
 }
 impl From<u8> for PacketType {
     fn from(type_int: u8) -> Self {
@@ -37,12 +37,12 @@ impl From<u8> for PacketType {
     }
 }
 
-fn serialize_envelope(packet_type: PacketType, contents: &[u8]) -> Result<Vec<u8>, ParseError> {
+fn serialize_envelope(packet_type: PacketType, contents: &[u8]) -> Vec<u8> {
     // TODO do this mutably so we don't need to copy the data
-    let mut packet = Vec::new();
-    packet.write_u8(packet_type as u8)?;
-    packet.write_var_octet_string(contents)?;
-    Ok(packet)
+    let mut buf = Vec::new();
+    buf.put_u8(packet_type as u8);
+    buf.put_var_octet_string(contents);
+    buf
 }
 
 fn deserialize_envelope(bytes: &[u8]) -> Result<(PacketType, Vec<u8>), ParseError> {
@@ -56,7 +56,6 @@ pub enum IlpPacket {
     Prepare(IlpPrepare),
     Fulfill(IlpFulfill),
     Reject(IlpReject),
-    Unknown
 }
 
 impl Serializable<IlpPacket> for IlpPacket {
@@ -69,12 +68,11 @@ impl Serializable<IlpPacket> for IlpPacket {
         }
     }
 
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+    fn to_bytes(&self) -> Vec<u8> {
         match self {
-            IlpPacket::Prepare(packet) => Ok(packet.to_bytes()?),
-            IlpPacket::Fulfill(packet) => Ok(packet.to_bytes()?),
-            IlpPacket::Reject(packet) => Ok(packet.to_bytes()?),
-            IlpPacket::Unknown => Err(ParseError::InvalidPacket(String::from("Cannot serialize unknown packet type"))),
+            IlpPacket::Prepare(prepare) => prepare.to_bytes(),
+            IlpPacket::Fulfill(fulfill) => fulfill.to_bytes(),
+            IlpPacket::Reject(reject) => reject.to_bytes(),
         }
 
     }
@@ -139,19 +137,20 @@ impl Serializable<IlpPrepare> for IlpPrepare {
         })
     }
 
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-        let mut bytes: Vec<u8> = Vec::new();
-        bytes.write_u64::<BigEndian>(self.amount)?;
-        bytes.write_all(
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        
+        buf.put_u64_be(self.amount);
+        buf.put(
             self.expires_at
                 .format(INTERLEDGER_TIMESTAMP_FORMAT)
                 .to_string()
                 .as_bytes()
-        )?;
-        bytes.write_all(&self.execution_condition)?;
-        bytes.write_var_octet_string(&self.destination.to_string().into_bytes())?;
-        bytes.write_var_octet_string(&self.data)?;
-        serialize_envelope(PacketType::IlpPrepare, &bytes)
+        );
+        buf.put(&self.execution_condition);
+        buf.put_var_octet_string(&self.destination.to_string().into_bytes());
+        buf.put_var_octet_string(&self.data);
+        serialize_envelope(PacketType::IlpPrepare, &buf)
     }
 }
 
@@ -191,11 +190,11 @@ impl Serializable<IlpFulfill> for IlpFulfill {
         Ok(IlpFulfill::new(&fulfillment[..], data))
     }
 
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-        let mut bytes: Vec<u8> = Vec::new();
-        bytes.write_all(&self.fulfillment[0..32])?;
-        bytes.write_var_octet_string(&self.data[..])?;
-        serialize_envelope(PacketType::IlpFulfill, &bytes)
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.put(&self.fulfillment[0..32]);
+        buf.put_var_octet_string(&self.data[..]);
+        serialize_envelope(PacketType::IlpFulfill, &buf)
     }
 }
 
@@ -255,15 +254,13 @@ impl Serializable<IlpReject> for IlpReject {
         ))
     }
 
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-        let mut bytes: Vec<u8> = Vec::new();
-        let mut code = [0; 3];
-        self.code.as_bytes().read_exact(&mut code)?;
-        bytes.write_all(&code)?;
-        bytes.write_var_octet_string(&self.triggered_by.as_bytes())?;
-        bytes.write_var_octet_string(&self.message.as_bytes())?;
-        bytes.write_var_octet_string(&self.data[..])?;
-        serialize_envelope(PacketType::IlpReject, &bytes)
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.put(self.code.as_bytes());
+        buf.put_var_octet_string(self.triggered_by.as_bytes());
+        buf.put_var_octet_string(self.message.as_bytes());
+        buf.put_var_octet_string(&self.data[..]);
+        serialize_envelope(PacketType::IlpReject, &buf)
     }
 }
 
@@ -289,8 +286,8 @@ pub fn parse_f08_error(reject: &IlpReject) -> Option<MaxPacketAmountDetails> {
 #[cfg(test)]
 pub(crate) fn create_f08_error(amount_received: u64, max_amount: u64) -> IlpReject {
     let mut data: Vec<u8> = Vec::new();
-    data.write_u64::<BigEndian>(amount_received).unwrap();
-    data.write_u64::<BigEndian>(max_amount).unwrap();
+    data.put_u64_be(amount_received);
+    data.put_u64_be(max_amount);
     IlpReject {
         code: String::from("F08"),
         message: String::new(),
@@ -341,7 +338,7 @@ mod tests {
 
         #[test]
         fn to_bytes() {
-            assert_eq!(PREPARE_1.to_bytes().unwrap(), *PREPARE_1_SERIALIZED);
+            assert_eq!(PREPARE_1.to_bytes(), *PREPARE_1_SERIALIZED);
         }
     }
 
