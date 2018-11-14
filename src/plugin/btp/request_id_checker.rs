@@ -46,10 +46,6 @@ where
             Ok(Async::NotReady)
           }
         },
-        _ => {
-          debug!("Ignoring unexpected BTP packet type {:?}", packet);
-          Ok(Async::NotReady)
-        }
       }
     } else {
       trace!("Stream ended");

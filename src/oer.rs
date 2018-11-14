@@ -123,8 +123,8 @@ pub trait MutBufOerExt: BufMut + Sized {
 
     #[inline]
     // Write a u64 as an OER VarUInt
-    fn put_var_uint(&mut self, uint: BigUint) {
-        self.put_var_octet_string(&uint.to_bytes_be());
+    fn put_var_uint(&mut self, uint: &BigUint) {
+        self.put_var_octet_string(uint.to_bytes_be());
     }
 }
 

@@ -56,7 +56,7 @@ where
   type SinkError = ();
 
   fn start_send(&mut self, item: BtpPacket) -> StartSend<Self::SinkItem, Self::SinkError> {
-    let serialized = item.to_bytes().unwrap();
+    let serialized = item.to_bytes();
     self
       .inner
       .start_send(serialized.into())

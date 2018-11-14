@@ -1,7 +1,8 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ReadBytesExt};
+use bytes::BufMut;
 use chrono::{DateTime, Utc, TimeZone};
 use errors::ParseError;
-use oer::{ReadOerExt, WriteOerExt};
+use oer::{ReadOerExt, MutBufOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
@@ -13,7 +14,7 @@ static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
 pub trait Serializable<T> {
     fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
 
-    fn to_bytes(&self) -> Result<Vec<u8>, ParseError>;
+    fn to_bytes(&self) -> Vec<u8>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -40,7 +41,6 @@ pub enum BtpPacket {
   Message(BtpMessage),
   Response(BtpResponse),
   Error(BtpError),
-  Unknown,
 }
 
 impl Serializable<BtpPacket> for BtpPacket {
@@ -53,12 +53,11 @@ impl Serializable<BtpPacket> for BtpPacket {
     }
   }
 
-  fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
+  fn to_bytes(&self) -> Vec<u8> {
     match self {
-      BtpPacket::Message(packet) => Ok(packet.to_bytes()?),
-      BtpPacket::Response(packet) => Ok(packet.to_bytes()?),
-      BtpPacket::Error(packet) => Ok(packet.to_bytes()?),
-      BtpPacket::Unknown => Err(ParseError::InvalidPacket(String::from("Cannot serialize unknown packet type")))
+      BtpPacket::Message(packet) => packet.to_bytes(),
+      BtpPacket::Response(packet) => packet.to_bytes(),
+      BtpPacket::Error(packet) => packet.to_bytes(),
     }
   }
 }
@@ -107,18 +106,19 @@ where
   Ok(protocol_data)
 }
 
-fn write_protocol_data(
-  writer: &mut Vec<u8>,
+fn put_protocol_data<T>(
+  buf: &mut T,
   protocol_data: &[ProtocolData],
-) -> Result<(), ParseError> {
+)
+where T: BufMut
+{
   let length = BigUint::from(protocol_data.len());
-  writer.write_var_uint(&length)?;
+  buf.put_var_uint(&length);
   for entry in protocol_data {
-    writer.write_var_octet_string(entry.protocol_name.as_bytes())?;
-    writer.write_u8(entry.content_type.clone() as u8)?;
-    writer.write_var_octet_string(&entry.data)?;
+    buf.put_var_octet_string(entry.protocol_name.as_bytes());
+    buf.put_u8(entry.content_type.clone() as u8);
+    buf.put_var_octet_string(&entry.data);
   }
-  Ok(())
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -139,14 +139,15 @@ impl Serializable<BtpMessage> for BtpMessage {
     Ok(BtpMessage{ request_id, protocol_data })
   }
 
-  fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-    let mut writer = Vec::new();
-    writer.write_u8(PacketType::Message as u8)?;
-    writer.write_u32::<BigEndian>(self.request_id)?;
+  fn to_bytes(&self) -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.put_u8(PacketType::Message as u8);
+    buf.put_u32_be(self.request_id);
+    // TODO make sure this isn't copying the contents
     let mut contents = Vec::new();
-    write_protocol_data(&mut contents, &self.protocol_data)?;
-    writer.write_var_octet_string(&contents)?;
-    Ok(writer)
+    put_protocol_data(&mut contents, &self.protocol_data);
+    buf.put_var_octet_string(&contents);
+    buf
   }
 }
 
@@ -168,14 +169,14 @@ impl Serializable<BtpResponse> for BtpResponse {
     Ok(BtpResponse{ request_id, protocol_data })
   }
 
-  fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-    let mut writer = Vec::new();
-    writer.write_u8(PacketType::Response as u8)?;
-    writer.write_u32::<BigEndian>(self.request_id)?;
+  fn to_bytes(&self) -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.put_u8(PacketType::Response as u8);
+    buf.put_u32_be(self.request_id);
     let mut contents = Vec::new();
-    write_protocol_data(&mut contents, &self.protocol_data)?;
-    writer.write_var_octet_string(&contents)?;
-    Ok(writer)
+    put_protocol_data(&mut contents, &self.protocol_data);
+    buf.put_var_octet_string(&contents);
+    buf
   }
 }
 
@@ -192,8 +193,8 @@ impl Serializable<BtpError> for BtpError {
   fn from_bytes(bytes: &[u8]) -> Result<BtpError, ParseError> {
     let mut reader = Cursor::new(bytes);
     let packet_type = reader.read_u8()?;
-    if PacketType::from(packet_type) != PacketType::Response {
-      return Err(ParseError::InvalidPacket(format!("Cannot parse Response from packet of type {}, expected type {}", packet_type, PacketType::Response as u8)));
+    if PacketType::from(packet_type) != PacketType::Error {
+      return Err(ParseError::InvalidPacket(format!("Cannot parse Error from packet of type {}, expected type {}", packet_type, PacketType::Error as u8)));
     }
     let request_id = reader.read_u32::<BigEndian>()?;
     let mut contents = Cursor::new(reader.read_var_octet_string()?);
@@ -214,32 +215,29 @@ impl Serializable<BtpError> for BtpError {
     })
   }
 
-  fn to_bytes(&self) -> Result<Vec<u8>, ParseError> {
-    let mut writer = Vec::new();
-    writer.write_u8(PacketType::Error as u8)?;
-    writer.write_u32::<BigEndian>(self.request_id)?;
+  fn to_bytes(&self) -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.put_u8(PacketType::Error as u8);
+    buf.put_u32_be(self.request_id);
     let mut contents = Vec::new();
-    let mut code: [u8; 3] = [0; 3];
     // TODO check that the code is only 3 chars
-    self.code.as_bytes().read_exact(&mut code)?;
-    contents.write_all(&code)?;
-    contents.write_var_octet_string(self.name.as_bytes())?;
-    contents.write_var_octet_string(self.triggered_at.format(GENERALIZED_TIME_FORMAT).to_string().as_bytes())?;
-    contents.write_var_octet_string(self.data.as_bytes())?;
-    write_protocol_data(&mut contents, &self.protocol_data)?;
-    writer.write_var_octet_string(&contents)?;
-    Ok(writer)
+    contents.put(self.code.as_bytes());
+    contents.put_var_octet_string(self.name.as_bytes());
+    contents.put_var_octet_string(self.triggered_at.format(GENERALIZED_TIME_FORMAT).to_string().as_bytes());
+    contents.put_var_octet_string(self.data.as_bytes());
+    put_protocol_data(&mut contents, &self.protocol_data);
+    buf.put_var_octet_string(&contents);
+    buf
   }
 }
 
 pub fn deserialize_packet(bytes: &[u8]) -> Result<BtpPacket, ParseError> {
-  let packet = match PacketType::from(bytes[0]) {
-    PacketType::Message => BtpPacket::Message(BtpMessage::from_bytes(bytes)?),
-    PacketType::Response => BtpPacket::Response(BtpResponse::from_bytes(bytes)?),
-    PacketType::Error => BtpPacket::Error(BtpError::from_bytes(bytes)?),
-    _ => BtpPacket::Unknown
-  };
-  Ok(packet)
+  match PacketType::from(bytes[0]) {
+    PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
+    PacketType::Response => Ok(BtpPacket::Response(BtpResponse::from_bytes(bytes)?)),
+    PacketType::Error => Ok(BtpPacket::Error(BtpError::from_bytes(bytes)?)),
+    PacketType::Unknown => Err(ParseError::InvalidPacket("Unable to read BTP packet from bytes".to_string())),
+  }
 }
 
 #[cfg(test)]
@@ -276,7 +274,7 @@ mod tests {
 
     #[test]
     fn to_bytes() {
-      assert_eq!(MESSAGE_1.to_bytes().unwrap(), *MESSAGE_1_SERIALIZED);
+      assert_eq!(MESSAGE_1.to_bytes(), *MESSAGE_1_SERIALIZED);
     }
   }
 
@@ -306,7 +304,7 @@ mod tests {
 
     #[test]
     fn to_bytes() {
-      assert_eq!(RESPONSE_1.to_bytes().unwrap(), *RESPONSE_1_SERIALIZED);
+      assert_eq!(RESPONSE_1.to_bytes(), *RESPONSE_1_SERIALIZED);
     }
   }
 
@@ -336,7 +334,7 @@ mod tests {
 
     #[test]
     fn to_bytes() {
-      assert_eq!(ERROR_1.to_bytes().unwrap(), *ERROR_1_SERIALIZED);
+      assert_eq!(ERROR_1.to_bytes(), *ERROR_1_SERIALIZED);
     }
   }
 }
