@@ -322,7 +322,6 @@ impl Connection {
             IlpPacket::Prepare(prepare) => self.handle_incoming_prepare(request_id, prepare)?,
             IlpPacket::Fulfill(fulfill) => self.handle_fulfill(request_id, fulfill)?,
             IlpPacket::Reject(reject) => self.handle_reject(request_id, reject)?,
-            _ => {}
           }
           self.try_send()?
         },
