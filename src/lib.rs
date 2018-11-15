@@ -28,6 +28,7 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate failure_derive;
+extern crate parking_lot;
 extern crate reqwest;
 extern crate stream_cancel;
 
