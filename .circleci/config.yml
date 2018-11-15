@@ -8,31 +8,20 @@ jobs:
       - restore_cache:
           key: project-cache
       - run:
-          name: Update toolchains
-          command: |
-            rustup install stable
-            rustup install nightly
-      - run:
           name: Check formatting
           command: |
             rustup component add rustfmt-preview
             rustfmt --version
             cargo fmt --all -- --check
       - run:
-          name: Nightly Build
+          name: Build
           command: |
-            rustup run nightly rustc --version --verbose
-            rustup run nightly cargo --version --verbose
-            rustup run nightly cargo build
-      - run:
-          name: Stable Build
-          command: |
-            rustup run stable rustc --version --verbose
-            rustup run stable cargo --version --verbose
-            rustup run stable cargo build
+            rustc --version --verbose
+            cargo --version --verbose
+            cargo build
       - run:
           name: Test
-          command: rustup run stable cargo test
+          command: cargo test
       - save_cache:
           key: project-cache
           paths:
