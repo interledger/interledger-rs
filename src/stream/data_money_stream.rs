@@ -3,10 +3,11 @@ use bytes::{BufMut, Bytes, BytesMut};
 use futures::task;
 use futures::task::Task;
 use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend, Stream};
+use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, VecDeque};
 use std::io::{Error as IoError, ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 use tokio_io::{AsyncRead, AsyncWrite};
 
 #[derive(PartialEq)]
@@ -68,11 +69,11 @@ impl DataMoneyStream {
     }
 
     pub(super) fn is_closing(&self) -> bool {
-        *self.state.read().unwrap() == StreamState::Closing
+        *self.state.read() == StreamState::Closing
     }
 
     pub(super) fn set_closing(&self) {
-        *self.state.write().unwrap() = StreamState::Closing;
+        *self.state.write() = StreamState::Closing;
 
         // Wake up both streams so they end
         self.money.try_wake_polling();
@@ -80,7 +81,7 @@ impl DataMoneyStream {
     }
 
     pub(super) fn set_closed(&self) {
-        *self.state.write().unwrap() = StreamState::Closed;
+        *self.state.write() = StreamState::Closed;
 
         // Wake up both streams so they end
         self.money.try_wake_polling();
@@ -101,10 +102,10 @@ impl Future for CloseFuture {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         self.connection.try_handle_incoming()?;
 
-        if *self.state.read().unwrap() == StreamState::Closed {
+        if *self.state.read() == StreamState::Closed {
             Ok(Async::Ready(()))
         } else {
-            *self.state.write().unwrap() = StreamState::Closing;
+            *self.state.write() = StreamState::Closing;
             self.connection.try_send()?;
             Ok(Async::NotReady)
         }
@@ -167,7 +168,7 @@ impl MoneyStream {
     }
 
     pub(super) fn try_wake_polling(&self) {
-        if let Some(task) = self.recv_task.lock().unwrap().take() {
+        if let Some(task) = (*self.recv_task.lock()).take() {
             debug!("Notifying MoneyStream poller that it should wake up");
             task.notify();
         }
@@ -183,7 +184,7 @@ impl Stream for MoneyStream {
 
         // Store the current task so that it can be woken up if the
         // DataStream happens to poll for incoming packets and gets data for us
-        *self.recv_task.lock().unwrap() = Some(task::current());
+        *self.recv_task.lock() = Some(task::current());
 
         let total_received = self.received.load(Ordering::SeqCst);
         let last_reported_received = self.last_reported_received.load(Ordering::SeqCst);
@@ -192,7 +193,7 @@ impl Stream for MoneyStream {
             self.last_reported_received
                 .store(total_received, Ordering::SeqCst);
             Ok(Async::Ready(Some(amount_received as u64)))
-        } else if *self.state.read().unwrap() != StreamState::Open {
+        } else if *self.state.read() != StreamState::Open {
             debug!("Money stream ended");
             Ok(Async::Ready(None))
         } else {
@@ -206,7 +207,7 @@ impl Sink for MoneyStream {
     type SinkError = ();
 
     fn start_send(&mut self, amount: u64) -> StartSend<Self::SinkItem, Self::SinkError> {
-        if *self.state.read().unwrap() != StreamState::Open {
+        if *self.state.read() != StreamState::Open {
             debug!("Cannot send money through stream because it is already closed or closing");
             return Err(());
         }
@@ -253,20 +254,12 @@ impl DataStream {
     pub(super) fn push_incoming_data(&self, data: Bytes, offset: usize) -> Result<(), ()> {
         // TODO error if the buffer is too full
         // TODO don't block
-        self.incoming.lock().unwrap().buffer.insert(offset, data);
+        self.incoming.lock().buffer.insert(offset, data);
         Ok(())
     }
 
     pub(super) fn get_outgoing_data(&self, max_size: usize) -> Option<(Bytes, usize)> {
-        let mut outgoing = {
-            if let Ok(lock) = self.outgoing.try_lock() {
-                lock
-            } else {
-                warn!("Unable to get lock on outgoing to get outgoing data");
-                return None;
-            }
-        };
-
+        let mut outgoing = self.outgoing.lock();
         // TODO make sure we're not copying data here
         let outgoing_offset = outgoing.offset;
         let mut chunks: Vec<Bytes> = Vec::new();
@@ -301,7 +294,7 @@ impl DataStream {
     }
 
     pub(super) fn try_wake_polling(&self) {
-        if let Some(task) = self.recv_task.lock().unwrap().take() {
+        if let Some(task) = (*self.recv_task.lock()).take() {
             debug!("Notifying the DataStream poller that it should wake up");
             task.notify();
         }
@@ -323,48 +316,40 @@ impl Read for DataStream {
 
         // Store the current task so that it can be woken up if the
         // MoneyStream happens to poll for incoming packets and gets data for us
-        *self.recv_task.lock().unwrap() = Some(task::current());
+        *self.recv_task.lock() = Some(task::current());
 
-        if let Ok(mut incoming) = self.incoming.try_lock() {
-            // let mut incoming = incoming.deref_mut();
-            let incoming_offset = incoming.offset;
-            if let Some(mut from_buf) = incoming.buffer.remove(&incoming_offset) {
-                trace!("DataStream has incoming data");
-                if from_buf.len() >= buf.len() {
-                    let to_copy = from_buf.split_to(buf.len());
-                    buf.copy_from_slice(&to_copy[..]);
-                    incoming.offset += to_copy.len();
+        let mut incoming = self.incoming.lock();
+        let incoming_offset = incoming.offset;
+        if let Some(mut from_buf) = incoming.buffer.remove(&incoming_offset) {
+            trace!("DataStream has incoming data");
+            if from_buf.len() >= buf.len() {
+                let to_copy = from_buf.split_to(buf.len());
+                buf.copy_from_slice(&to_copy[..]);
+                incoming.offset += to_copy.len();
 
-                    // Put the rest back in the queue
-                    if !from_buf.is_empty() {
-                        let incoming_offset = incoming.offset;
-                        incoming.buffer.insert(incoming_offset, from_buf);
-                    }
-
-                    incoming.offset += to_copy.len();
-                    trace!("Reading {} bytes of data", to_copy.len());
-                    Ok(to_copy.len())
-                } else {
-                    let (mut buf_slice, _rest) = buf.split_at_mut(from_buf.len());
-                    buf_slice.copy_from_slice(&from_buf[..]);
-                    incoming.offset += from_buf.len();
-                    trace!("Reading {} bytes of data", from_buf.len());
-                    Ok(from_buf.len())
+                // Put the rest back in the queue
+                if !from_buf.is_empty() {
+                    let incoming_offset = incoming.offset;
+                    incoming.buffer.insert(incoming_offset, from_buf);
                 }
-            } else if *self.state.read().unwrap() != StreamState::Open {
-                debug!("Data stream ended");
-                Ok(0)
+
+                incoming.offset += to_copy.len();
+                trace!("Reading {} bytes of data", to_copy.len());
+                Ok(to_copy.len())
             } else {
-                Err(IoError::new(
-                    ErrorKind::WouldBlock,
-                    "No more data now but there might be more in the future",
-                ))
+                let (mut buf_slice, _rest) = buf.split_at_mut(from_buf.len());
+                buf_slice.copy_from_slice(&from_buf[..]);
+                incoming.offset += from_buf.len();
+                trace!("Reading {} bytes of data", from_buf.len());
+                Ok(from_buf.len())
             }
+        } else if *self.state.read() != StreamState::Open {
+            debug!("Data stream ended");
+            Ok(0)
         } else {
-            warn!("Unable to get lock on incoming");
             Err(IoError::new(
                 ErrorKind::WouldBlock,
-                "Unable to get lock on incoming",
+                "No more data now but there might be more in the future",
             ))
         }
     }
@@ -373,7 +358,7 @@ impl AsyncRead for DataStream {}
 
 impl Write for DataStream {
     fn write(&mut self, buf: &[u8]) -> Result<usize, IoError> {
-        if *self.state.read().unwrap() != StreamState::Open {
+        if *self.state.read() != StreamState::Open {
             debug!("Cannot write to stream because it is already closed or closing");
             return Err(IoError::new(
                 ErrorKind::ConnectionReset,
@@ -382,14 +367,8 @@ impl Write for DataStream {
         }
 
         // TODO limit buffer size
-        if let Ok(mut outgoing) = self.outgoing.try_lock() {
-            outgoing.buffer.push_back(Bytes::from(buf));
-        } else {
-            return Err(IoError::new(
-                ErrorKind::WouldBlock,
-                "Unable to get lock on outgoing",
-            ));
-        }
+        let mut outgoing = self.outgoing.lock();
+        outgoing.buffer.push_back(Bytes::from(buf));
 
         self.connection.try_send().map_err(|_| {
             IoError::new(ErrorKind::Other, "Error trying to send through Connection")
@@ -410,38 +389,25 @@ impl Write for DataStream {
             IoError::new(ErrorKind::Other, "Error trying to send through Connection")
         })?;
 
-        if let Ok(outgoing) = self.outgoing.try_lock() {
-            if outgoing.buffer.is_empty() {
-                Ok(())
-            } else {
-                Err(IoError::new(
-                    ErrorKind::WouldBlock,
-                    "Not finished sending yet",
-                ))
-            }
+        let outgoing = self.outgoing.lock();
+        if outgoing.buffer.is_empty() {
+            Ok(())
         } else {
             Err(IoError::new(
                 ErrorKind::WouldBlock,
-                "Unable to get lock on outgoing",
+                "Not finished sending yet",
             ))
         }
     }
 }
 impl AsyncWrite for DataStream {
     fn shutdown(&mut self) -> Result<Async<()>, IoError> {
-        match self.state.try_write() {
-            Ok(mut state) => {
-                if *state == StreamState::Closed {
-                    Ok(Async::Ready(()))
-                } else {
-                    *state = StreamState::Closing;
-                    Err(IoError::new(ErrorKind::WouldBlock, "Stream is closing"))
-                }
-            }
-            Err(_err) => Err(IoError::new(
-                ErrorKind::WouldBlock,
-                "Unable to get lock on state",
-            )),
+        let mut state = self.state.write();
+        if *state == StreamState::Closed {
+            Ok(Async::Ready(()))
+        } else {
+            *state = StreamState::Closing;
+            Err(IoError::new(ErrorKind::WouldBlock, "Stream is closing"))
         }
     }
 }

@@ -16,11 +16,12 @@ use hex;
 use ilp::{parse_f08_error, IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
+use parking_lot::{Mutex, RwLock};
 use plugin::IlpRequest;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 pub struct CloseFuture {
     conn: Connection,
@@ -128,7 +129,7 @@ impl Connection {
     pub fn create_stream(&self) -> DataMoneyStream {
         let id = self.next_stream_id.fetch_add(2, Ordering::SeqCst) as u64;
         let stream = DataMoneyStream::new(id, self.clone());
-        self.streams.write().unwrap().insert(id, stream.clone());
+        (*self.streams.write()).insert(id, stream.clone());
         debug!("Created stream {}", id);
         stream
     }
@@ -138,7 +139,7 @@ impl Connection {
         self.state
             .store(ConnectionState::Closing as usize, Ordering::SeqCst);
         // TODO make sure we don't send stream close frames for every stream
-        for stream in self.streams.read().unwrap().values() {
+        for stream in (*self.streams.read()).values() {
             stream.set_closing();
         }
 
@@ -164,68 +165,61 @@ impl Connection {
             let mut frames: Vec<Frame> = Vec::new();
             let mut closed_streams: Vec<u64> = Vec::new();
 
-            let mut congestion_controller = self.congestion_controller.lock().map_err(|err| {
-                error!("Unable to acquire lock on congestion controller: {:?}", err);
-            })?;
+            let mut congestion_controller = self.congestion_controller.lock();
             let max_packet_amount = congestion_controller.get_max_amount();
 
-            if let Ok(streams) = self.streams.read() {
-                for stream in streams.values() {
-                    // Send money
-                    if max_packet_amount > 0 {
-                        trace!("Checking if stream {} has money or data to send", stream.id);
-                        let stream_amount = stream.money.send_max()
-                            - stream.money.pending()
-                            - stream.money.total_sent();
-                        let amount_to_send =
-                            min(stream_amount, max_packet_amount - outgoing_amount);
-                        if amount_to_send > 0 {
-                            trace!("Stream {} sending {}", stream.id, amount_to_send);
-                            stream.money.add_to_pending(amount_to_send);
-                            outgoing_amount += amount_to_send;
-                            frames.push(Frame::StreamMoney(StreamMoneyFrame {
-                                stream_id: BigUint::from(stream.id),
-                                shares: BigUint::from(amount_to_send),
-                            }));
-                        }
-                    }
-
-                    // Send data
-                    // TODO don't send too much data
-                    let max_data: usize = 1_000_000_000;
-                    if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
-                        trace!(
-                            "Stream {} has {} bytes to send (offset: {})",
-                            stream.id,
-                            data.len(),
-                            offset
-                        );
-                        frames.push(Frame::StreamData(StreamDataFrame {
+            let streams = self.streams.read();
+            for stream in streams.values() {
+                // Send money
+                if max_packet_amount > 0 {
+                    trace!("Checking if stream {} has money or data to send", stream.id);
+                    let stream_amount = stream.money.send_max()
+                        - stream.money.pending()
+                        - stream.money.total_sent();
+                    let amount_to_send = min(stream_amount, max_packet_amount - outgoing_amount);
+                    if amount_to_send > 0 {
+                        trace!("Stream {} sending {}", stream.id, amount_to_send);
+                        stream.money.add_to_pending(amount_to_send);
+                        outgoing_amount += amount_to_send;
+                        frames.push(Frame::StreamMoney(StreamMoneyFrame {
                             stream_id: BigUint::from(stream.id),
-                            data,
-                            offset: BigUint::from(offset),
-                        }))
-                    } else {
-                        trace!("Stream {} does not have any data to send", stream.id);
-                    }
-
-                    // Inform other side about closing streams
-                    if stream.is_closing() {
-                        trace!("Sending stream close frame for stream {}", stream.id);
-                        frames.push(Frame::StreamClose(StreamCloseFrame {
-                            stream_id: BigUint::from(stream.id),
-                            code: ErrorCode::NoError,
-                            message: String::new(),
+                            shares: BigUint::from(amount_to_send),
                         }));
-                        closed_streams.push(stream.id);
-                        stream.set_closed();
-                        // TODO don't block
-                        self.closed_streams.write().unwrap().insert(stream.id);
                     }
                 }
-            } else {
-                debug!("Unable to get read lock on streams while trying to send");
-                return Ok(());
+
+                // Send data
+                // TODO don't send too much data
+                let max_data: usize = 1_000_000_000;
+                if let Some((data, offset)) = stream.data.get_outgoing_data(max_data) {
+                    trace!(
+                        "Stream {} has {} bytes to send (offset: {})",
+                        stream.id,
+                        data.len(),
+                        offset
+                    );
+                    frames.push(Frame::StreamData(StreamDataFrame {
+                        stream_id: BigUint::from(stream.id),
+                        data,
+                        offset: BigUint::from(offset),
+                    }))
+                } else {
+                    trace!("Stream {} does not have any data to send", stream.id);
+                }
+
+                // Inform other side about closing streams
+                if stream.is_closing() {
+                    trace!("Sending stream close frame for stream {}", stream.id);
+                    frames.push(Frame::StreamClose(StreamCloseFrame {
+                        stream_id: BigUint::from(stream.id),
+                        code: ErrorCode::NoError,
+                        message: String::new(),
+                    }));
+                    closed_streams.push(stream.id);
+                    stream.set_closed();
+                    // TODO don't block
+                    (*self.closed_streams.write()).insert(stream.id);
+                }
             }
 
             if self.state.load(Ordering::SeqCst) == ConnectionState::Closing as usize {
@@ -245,7 +239,7 @@ impl Connection {
 
             // Note we need to remove them after we've given up the read lock on self.streams
             if !closed_streams.is_empty() {
-                let mut streams = self.streams.write().unwrap();
+                let mut streams = self.streams.write();
                 for stream_id in closed_streams.iter() {
                     debug!("Removed stream {}", stream_id);
                     streams.remove(&stream_id);
@@ -278,17 +272,13 @@ impl Connection {
 
             congestion_controller.prepare(request_id, outgoing_amount);
 
-            self.pending_outgoing_packets
-                .lock()
-                .map_err(|err| {
-                    error!("Cannot acquire lock on pending_outgoing_packets: {:?}", err);
-                })?.insert(
-                    request_id,
-                    OutgoingPacketRecord {
-                        original_amount: outgoing_amount,
-                        original_packet: stream_packet.clone(),
-                    },
-                );
+            (*self.pending_outgoing_packets.lock()).insert(
+                request_id,
+                OutgoingPacketRecord {
+                    original_amount: outgoing_amount,
+                    original_packet: stream_packet.clone(),
+                },
+            );
 
             self.outgoing.unbounded_send(request).map_err(|err| {
                 error!("Error sending outgoing packet: {:?}", err);
@@ -306,14 +296,7 @@ impl Connection {
             }
 
             trace!("Polling for incoming requests");
-            let next = {
-                if let Ok(mut incoming) = self.incoming.try_lock() {
-                    incoming.poll()
-                } else {
-                    debug!("Unable to acquire lock on incoming stream");
-                    return Ok(());
-                }
-            };
+            let next = (*self.incoming.lock()).poll();
 
             match next {
                 Ok(Async::Ready(Some((request_id, packet)))) => {
@@ -406,7 +389,7 @@ impl Connection {
                     // TODO only add money to incoming if sending the fulfill is successful
                     // TODO make sure all other checks pass first
                     let stream_id = frame.stream_id.to_u64().unwrap();
-                    let streams = self.streams.read().unwrap();
+                    let streams = self.streams.read();
                     let stream = streams.get(&stream_id).unwrap();
                     let amount: u64 =
                         frame.shares.to_u64().unwrap() * prepare.amount / total_money_shares;
@@ -462,13 +445,13 @@ impl Connection {
 
     fn handle_new_stream(&self, stream_id: u64) {
         // TODO make sure they don't open streams with our number (even or odd, depending on whether we're the client or server)
-        let is_new = !self.streams.read().unwrap().contains_key(&stream_id);
-        let already_closed = self.closed_streams.read().unwrap().contains(&stream_id);
+        let is_new = !(*self.streams.read()).contains_key(&stream_id);
+        let already_closed = (*self.closed_streams.read()).contains(&stream_id);
         if is_new && !already_closed {
             debug!("Got new stream {}", stream_id);
             let stream = DataMoneyStream::new(stream_id, self.clone());
-            self.streams.write().unwrap().insert(stream_id, stream);
-            self.new_streams.lock().unwrap().push_back(stream_id);
+            (*self.streams.write()).insert(stream_id, stream);
+            (*self.new_streams.lock()).push_back(stream_id);
         }
     }
 
@@ -476,7 +459,7 @@ impl Connection {
         for frame in stream_packet.frames.iter() {
             if let Frame::StreamData(frame) = frame {
                 let stream_id = frame.stream_id.to_u64().unwrap();
-                let streams = self.streams.read().unwrap();
+                let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
                 // TODO make sure the offset number isn't too big
                 let data = frame.data.clone();
@@ -498,7 +481,7 @@ impl Connection {
             if let Frame::StreamClose(frame) = frame {
                 let stream_id = frame.stream_id.to_u64().unwrap();
                 debug!("Remote closed stream {}", stream_id);
-                let streams = self.streams.read().unwrap();
+                let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
                 // TODO finish sending the money and data first
                 stream.set_closed();
@@ -523,11 +506,11 @@ impl Connection {
         self.state
             .store(ConnectionState::Closed as usize, Ordering::SeqCst);
 
-        for stream in self.streams.read().unwrap().values() {
+        for stream in (*self.streams.read()).values() {
             stream.set_closed();
         }
 
-        self.incoming.lock().unwrap().close();
+        (*self.incoming.lock()).close();
 
         // Wake up the task polling for incoming streams so it ends
         self.try_wake_polling();
@@ -543,10 +526,7 @@ impl Connection {
         let OutgoingPacketRecord {
             original_amount,
             original_packet,
-        } = self
-            .pending_outgoing_packets
-            .lock()
-            .unwrap()
+        } = (*self.pending_outgoing_packets.lock())
             .remove(&request_id)
             .unwrap();
 
@@ -570,10 +550,7 @@ impl Connection {
             }
         };
 
-        self.congestion_controller
-            .lock()
-            .unwrap()
-            .fulfill(request_id);
+        (*self.congestion_controller.lock()).fulfill(request_id);
 
         let total_delivered = {
             match response.as_ref() {
@@ -585,7 +562,7 @@ impl Connection {
         for frame in original_packet.frames.iter() {
             if let Frame::StreamMoney(frame) = frame {
                 let stream_id = frame.stream_id.to_u64().unwrap();
-                let streams = self.streams.read().unwrap();
+                let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
 
                 let shares = frame.shares.to_u64().unwrap();
@@ -627,11 +604,7 @@ impl Connection {
             request_id, reject.code
         );
 
-        let entry = self
-            .pending_outgoing_packets
-            .lock()
-            .unwrap()
-            .remove(&request_id);
+        let entry = (*self.pending_outgoing_packets.lock()).remove(&request_id);
         if entry.is_none() {
             return Ok(());
         }
@@ -645,10 +618,7 @@ impl Connection {
             let max_packet_amount: u64 =
                 original_amount * err_details.max_amount / err_details.amount_received;
             debug!("Found path Maximum Packet Amount: {}", max_packet_amount);
-            self.congestion_controller
-                .lock()
-                .unwrap()
-                .set_max_packet_amount(max_packet_amount);
+            (*self.congestion_controller.lock()).set_max_packet_amount(max_packet_amount);
         }
 
         // Parse STREAM response packet from F99 errors
@@ -681,12 +651,9 @@ impl Connection {
             }
         };
 
-        self.congestion_controller
-            .lock()
-            .unwrap()
-            .reject(request_id, &reject.code);
+        (*self.congestion_controller.lock()).reject(request_id, &reject.code);
 
-        let streams = self.streams.read().unwrap();
+        let streams = self.streams.read();
 
         // Release pending money
         for frame in original_packet.frames.iter() {
@@ -708,7 +675,7 @@ impl Connection {
 
         // Only resend frames if they didn't get to the receiver
         if response.is_none() {
-            let mut frames_to_resend = self.frames_to_resend.lock().unwrap();
+            let mut frames_to_resend = self.frames_to_resend.lock();
             while !original_packet.frames.is_empty() {
                 match original_packet.frames.pop().unwrap() {
                     Frame::StreamData(frame) => frames_to_resend.push(Frame::StreamData(frame)),
@@ -752,7 +719,7 @@ impl Connection {
     }
 
     fn try_wake_polling(&self) {
-        if let Some(task) = self.recv_task.lock().unwrap().take() {
+        if let Some(task) = (*self.recv_task.lock()).take() {
             debug!("Notifying incoming stream poller that it should wake up");
             task.notify();
         }
@@ -769,26 +736,16 @@ impl Stream for Connection {
 
         // Store the current task so that it can be woken up if the
         // MoneyStream or DataStream poll for incoming packets and the connection is closed
-        *self.recv_task.lock().unwrap() = Some(task::current());
+        *self.recv_task.lock() = Some(task::current());
 
-        if let Ok(mut new_streams) = self.new_streams.try_lock() {
-            if let Some(stream_id) = new_streams.pop_front() {
-                if let Ok(streams) = self.streams.read() {
-                    Ok(Async::Ready(Some(streams.get(&stream_id).unwrap().clone())))
-                } else {
-                    debug!("Unable to acquire lock on streams while polling for new streams");
-                    new_streams.push_back(stream_id);
-                    Ok(Async::NotReady)
-                }
-            } else if self.is_closed() {
-                trace!("Connection was closed, no more incoming streams");
-                Ok(Async::Ready(None))
-            } else {
-                Ok(Async::NotReady)
-            }
+        let mut new_streams = self.new_streams.lock();
+        if let Some(stream_id) = new_streams.pop_front() {
+            let streams = self.streams.read();
+            Ok(Async::Ready(Some(streams.get(&stream_id).unwrap().clone())))
+        } else if self.is_closed() {
+            trace!("Connection was closed, no more incoming streams");
+            Ok(Async::Ready(None))
         } else {
-            debug!("Unable to acquire lock on new_streams");
-            // TODO should we return an error here?
             Ok(Async::NotReady)
         }
     }
