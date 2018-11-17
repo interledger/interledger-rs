@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ilprs.svg" width="700">
+</p>
+
 # ilp.rs
 > Interledger implementation in Rust :money_with_wings:
 
