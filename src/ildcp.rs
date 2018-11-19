@@ -1,12 +1,14 @@
-use byteorder::ReadBytesExt;
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::Bytes;
 use chrono::{Duration, Utc};
 use errors::ParseError;
 use futures::Future;
 use ilp::{IlpFulfill, IlpPacket, IlpPrepare};
-use oer::ReadOerExt;
+use oer::{ReadOerExt, WriteOerExt};
 use plugin::Plugin;
 use std::io::Cursor;
+use std::time::Duration as DurationStd;
+use tokio::prelude::FutureExt;
 
 static ILDCP_DESTINATION: &'static str = "peer.config";
 lazy_static! {
@@ -45,6 +47,14 @@ pub struct IldcpResponse {
 }
 
 impl IldcpResponse {
+    pub fn new(client_address: &str, asset_scale: u8, asset_code: &str) -> Self {
+        IldcpResponse {
+            client_address: client_address.to_string(),
+            asset_scale,
+            asset_code: asset_code.to_string(),
+        }
+    }
+
     pub fn from_fulfill(fulfill: &IlpFulfill) -> Result<Self, ParseError> {
         let mut reader = Cursor::new(&fulfill.data[..]);
         let client_address = String::from_utf8(reader.read_var_octet_string()?)?;
@@ -55,6 +65,14 @@ impl IldcpResponse {
             asset_scale,
             asset_code,
         })
+    }
+
+    pub fn to_fulfill(&self) -> Result<IlpFulfill, ParseError> {
+        let mut writer = Vec::new();
+        writer.write_var_octet_string(self.client_address.as_bytes())?;
+        writer.write_u8(self.asset_scale)?;
+        writer.write_var_octet_string(self.asset_code.as_bytes())?;
+        Ok(IlpFulfill::new(&[0u8; 32][..], writer))
     }
 }
 
@@ -71,7 +89,13 @@ pub fn get_config(
         .and_then(|plugin| {
             plugin
                 .into_future()
-                .map_err(|(_, _plugin)| Error("Error listening for ILDCP response".to_string()))
+                .map_err(|(err, _plugin)| {
+                    Error(format!(
+                        "Got error while waiting for ILDCP response: {:?}",
+                        err
+                    ))
+                }).timeout(DurationStd::from_millis(31))
+                .map_err(|_| Error("Timed out waiting for ILDCP response".to_string()))
                 .and_then(|(next, plugin)| {
                     if let Some((_request_id, IlpPacket::Fulfill(fulfill))) = next {
                         match IldcpResponse::from_fulfill(&fulfill) {
