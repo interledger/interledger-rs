@@ -652,7 +652,6 @@ impl Connection {
 
         (*self.congestion_controller.lock()).reject(request_id, &reject.code);
 
-
         // Release pending money
         for frame in original_packet.frames.iter() {
             if let Frame::StreamMoney(frame) = frame {
