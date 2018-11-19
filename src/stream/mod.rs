@@ -71,3 +71,74 @@ pub enum Error {
     #[fail(display = "Error connecting: {}", _0)]
     ConnectionError(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::mock::create_mock_plugins;
+    use env_logger;
+    use tokio::runtime::current_thread::Runtime;
+    use tokio_io::io::{read_to_end, write_all};
+
+    #[test]
+    fn send_money_and_data() {
+        env_logger::init();
+        let (plugin_a, plugin_b) = create_mock_plugins();
+
+        let run = StreamListener::bind(plugin_a, crypto::random_condition())
+            .map_err(|err| panic!(err))
+            .and_then(|(listener, conn_generator)| {
+                let listen = listener.for_each(|(_conn_id, conn)| {
+                    let handle_streams = conn.for_each(|stream| {
+                        let handle_money = stream.money.clone().collect().and_then(|amounts| {
+                            assert_eq!(amounts, vec![100, 500]);
+                            Ok(())
+                        });
+                        tokio::spawn(handle_money);
+
+                        let data: Vec<u8> = Vec::new();
+                        let handle_data = read_to_end(stream.data, data)
+                            .map_err(|err| panic!(err))
+                            .and_then(|(_, data)| {
+                                assert_eq!(data, b"here is some test data");
+                                Ok(())
+                            });
+                        tokio::spawn(handle_data);
+
+                        Ok(())
+                    });
+                    tokio::spawn(handle_streams);
+                    Ok(())
+                });
+                tokio::spawn(listen);
+
+                let (destination_account, shared_secret) =
+                    conn_generator.generate_address_and_secret("test");
+                connect_async(plugin_b, destination_account, shared_secret)
+                    .map_err(|err| panic!(err))
+                    .and_then(|conn| {
+                        let stream = conn.create_stream();
+
+                        stream
+                            .money
+                            .clone()
+                            .send(100)
+                            .map_err(|err| panic!(err))
+                            .and_then(|_| {
+                                stream
+                                    .money
+                                    .clone()
+                                    .send(500)
+                                    .map_err(|err| panic!(err))
+                                    .and_then(|_| {
+                                        write_all(stream.data, b"here is some test data")
+                                            .map_err(|err| panic!(err))
+                                            .map(|_| ())
+                                    })
+                            }).and_then(move |_| conn.close())
+                    })
+            });
+        let mut runtime = Runtime::new().unwrap();
+        runtime.block_on(run).unwrap();
+    }
+}

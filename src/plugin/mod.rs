@@ -2,6 +2,8 @@ use futures::{Sink, Stream};
 use ilp::IlpPacket;
 
 pub mod btp;
+#[cfg(test)]
+pub mod mock;
 
 pub type IlpRequest = (u32, IlpPacket);
 pub type PluginStream = Stream<Item = IlpRequest, Error = ()>;
