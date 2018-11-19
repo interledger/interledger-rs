@@ -168,8 +168,7 @@ impl Connection {
             let mut congestion_controller = self.congestion_controller.lock();
             let max_packet_amount = congestion_controller.get_max_amount();
 
-            let streams = self.streams.read();
-            for stream in streams.values() {
+            for stream in (*self.streams.read()).values() {
                 // Send money
                 if max_packet_amount > 0 {
                     trace!("Checking if stream {} has money or data to send", stream.id);
@@ -653,12 +652,12 @@ impl Connection {
 
         (*self.congestion_controller.lock()).reject(request_id, &reject.code);
 
-        let streams = self.streams.read();
 
         // Release pending money
         for frame in original_packet.frames.iter() {
             if let Frame::StreamMoney(frame) = frame {
                 let stream_id = frame.stream_id.to_u64().unwrap();
+                let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
 
                 let shares = frame.shares.to_u64().unwrap();

@@ -51,12 +51,14 @@ impl CongestionController {
     }
 
     pub fn prepare(&mut self, id: u32, amount: u64) {
-        self.amount_in_flight += amount;
-        self.packets.insert(id, amount);
-        debug!(
-            "Prepare packet of {}, amount in flight is now: {}",
-            amount, self.amount_in_flight
-        );
+        if amount > 0 {
+            self.amount_in_flight += amount;
+            self.packets.insert(id, amount);
+            debug!(
+                "Prepare packet of {}, amount in flight is now: {}",
+                amount, self.amount_in_flight
+            );
+        }
     }
 
     pub fn fulfill(&mut self, id: u32) {
