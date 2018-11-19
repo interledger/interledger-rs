@@ -367,8 +367,7 @@ impl Write for DataStream {
         }
 
         // TODO limit buffer size
-        let mut outgoing = self.outgoing.lock();
-        outgoing.buffer.push_back(Bytes::from(buf));
+        self.outgoing.lock().buffer.push_back(Bytes::from(buf));
 
         self.connection.try_send().map_err(|_| {
             IoError::new(ErrorKind::Other, "Error trying to send through Connection")
