@@ -3,26 +3,34 @@ jobs:
   build:
     docker:
       - image: circleci/rust
+        environment:
+          CARGO_HOME: /home/circleci/.cargo
     steps:
       - checkout
       - restore_cache:
-          key: project-cache
+         keys:
+          - project-v2-{{ checksum "Cargo.toml" }}
+          - project-v2-
       - run:
-          name: Check formatting
-          command: |
-            rustup component add rustfmt-preview
-            rustfmt --version
-            cargo fmt --all -- --check
+          name: Install Cargo Make
+          command: cargo install --debug cargo-make || true
       - run:
           name: Build
-          command: |
-            rustc --version --verbose
-            cargo --version --verbose
-            cargo build
+          command: cargo make build
       - run:
-          name: Test
-          command: cargo test
+          name: Check Formatting
+          command: cargo make check-format
+      - run:
+          name: Run Tests
+          command: cargo make test
+      - run:
+          name: Audit Dependencies
+          command: cargo make audit
+      - run:
+          name: Upload Code Coverage
+          command: cargo make codecov-flow
       - save_cache:
-          key: project-cache
+          key: project-v2-{{ checksum "Cargo.toml" }}
           paths:
-            - "./target"
+            - ./target
+            - /home/circleci/.cargo
