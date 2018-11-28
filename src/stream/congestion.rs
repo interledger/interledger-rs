@@ -70,13 +70,23 @@ impl CongestionController {
             // Once we start getting errors, switch to Additive Increase,
             // Multiplicative Decrease (AIMD) congestion avoidance
             if self.state == CongestionState::SlowStart {
-                self.max_in_flight *= 2;
+                // Double the max in flight but don't exceed the u64 max value
+                if u64::max_value() / 2 >= self.max_in_flight {
+                    self.max_in_flight *= 2;
+                } else {
+                    self.max_in_flight = u64::max_value();
+                }
                 debug!(
                     "Fulfilled packet of {}, doubling max in flight to: {}",
                     amount, self.max_in_flight
                 );
             } else {
-                self.max_in_flight += self.increase_amount;
+                // Add to the max in flight but don't exeed the u64 max value
+                if u64::max_value() - self.increase_amount >= self.max_in_flight {
+                    self.max_in_flight += self.increase_amount;
+                } else {
+                    self.max_in_flight = u64::max_value();
+                }
                 debug!(
                     "Fulfilled packet of {}, increasing max in flight to: {}",
                     amount, self.max_in_flight
@@ -126,6 +136,24 @@ mod tests {
             controller.prepare(3, amount);
             controller.fulfill(3);
             assert_eq!(controller.get_max_amount(), 8000);
+        }
+
+        #[test]
+        fn doesnt_overflow_u64() {
+            let mut controller = CongestionController {
+                state: CongestionState::SlowStart,
+                increase_amount: 1000,
+                decrease_factor: 2.0,
+                max_packet_amount: None,
+                amount_in_flight: 0,
+                max_in_flight: u64::max_value() - 1,
+                packets: HashMap::new(),
+            };
+
+            let amount = controller.get_max_amount();
+            controller.prepare(1, amount);
+            controller.fulfill(1);
+            assert_eq!(controller.get_max_amount(), u64::max_value());
         }
     }
 
@@ -201,6 +229,24 @@ mod tests {
             controller.prepare(2, amount);
             controller.fulfill(2);
             assert_eq!(controller.get_max_amount(), 100);
+        }
+
+        #[test]
+        fn doesnt_overflow_u64() {
+            let mut controller = CongestionController {
+                state: CongestionState::AvoidCongestion,
+                increase_amount: 1000,
+                decrease_factor: 2.0,
+                max_packet_amount: None,
+                amount_in_flight: 0,
+                max_in_flight: u64::max_value() - 1,
+                packets: HashMap::new(),
+            };
+
+            let amount = controller.get_max_amount();
+            controller.prepare(1, amount);
+            controller.fulfill(1);
+            assert_eq!(controller.get_max_amount(), u64::max_value());
         }
     }
 
