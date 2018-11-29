@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="ilprs.svg" width="700">
+  <img src="ilprs.svg" width="700" alt="Interledger.rs">
 </p>
 
 ---
