@@ -2,10 +2,11 @@
   <img src="ilprs.svg" width="700">
 </p>
 
-# ilp.rs
+---
 > Interledger implementation in Rust :money_with_wings:
 
 [![CircleCI](https://circleci.com/gh/emschwartz/ilp-rs.svg?style=shield)](https://circleci.com/gh/emschwartz/ilp-rs)
+[![codecov](https://codecov.io/gh/emschwartz/ilp-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/emschwartz/ilp-rs)
 
 ## Installation
 - Install Rust (using [`rustup`](https://rustup.rs/) is recommended)
