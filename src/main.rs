@@ -7,10 +7,12 @@ extern crate tokio;
 extern crate serde_json;
 extern crate env_logger;
 extern crate reqwest;
+extern crate chrono;
 
 use clap::{App, Arg, SubCommand};
 use futures::{Future, Stream};
 use std::sync::Arc;
+use chrono::Utc;
 
 pub fn main() {
     env_logger::init();
@@ -43,6 +45,9 @@ pub fn main() {
                 .long("notification_endpoint")
                 .takes_value(true)
                 .help("URL where notifications of incoming money will be sent (via HTTP POST)"),
+              Arg::with_name("quiet")
+                .long("quiet")
+                .help("Suppress log output"),
             ]),
           SubCommand::with_name("pay")
             .about("Send an SPSP payment")
@@ -63,6 +68,9 @@ pub fn main() {
                 .long("btp_server")
                 .default_value(&moneyd_url)
                 .help("URI of a moneyd or BTP Server to pay from"),
+              Arg::with_name("quiet")
+                .long("quiet")
+                .help("Suppress log output"),
             ]),
         ]),
         );
@@ -74,14 +82,16 @@ pub fn main() {
                     value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
                 let port = value_t!(matches, "port", u16).expect("Invalid port");
                 let notification_endpoint = value_t!(matches, "notification_endpoint", String).ok();
-                run_spsp_server(&btp_server, port, notification_endpoint);
+                let quiet = matches.is_present("quiet");
+                run_spsp_server(&btp_server, port, notification_endpoint, quiet);
             }
             ("pay", Some(matches)) => {
                 let btp_server =
                     value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
                 let receiver = value_t!(matches, "receiver", String).expect("Receiver is required");
                 let amount = value_t!(matches, "amount", u64).expect("Invalid amount");
-                send_spsp_payment(&btp_server, receiver, amount);
+                let quiet = matches.is_present("quiet");
+                send_spsp_payment(&btp_server, receiver, amount, quiet);
             }
             _ => app.print_help().unwrap(),
         },
@@ -89,27 +99,29 @@ pub fn main() {
     }
 }
 
-fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64) {
+fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64, quiet: bool) {
     let run = ilp::plugin::btp::connect_async(&btp_server)
         .map_err(|err| {
-            println!("Error connecting to BTP server: {:?}", err);
-            println!("(Hint: is moneyd running?)");
+          eprintln!("Error connecting to BTP server: {:?}", err);
+          eprintln!("(Hint: is moneyd running?)");
         }).and_then(move |plugin| {
             ilp::spsp::pay(plugin, &receiver, amount)
                 .map_err(|err| {
-                    println!("Error sending SPSP payment: {:?}", err);
+                    eprintln!("Error sending SPSP payment: {:?}", err);
                 }).and_then(move |delivered| {
-                    println!(
-                        "Sent: {}, delivered: {} (in the receiver's units)",
-                        amount, delivered
-                    );
+                    if !quiet {
+                      println!(
+                          "Sent: {}, delivered: {} (in the receiver's units)",
+                          amount, delivered
+                      );
+                    }
                     Ok(())
                 })
         });
     tokio::run(run);
 }
 
-fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<String>) {
+fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<String>, quiet: bool) {
     let notification_endpoint = Arc::new(notification_endpoint);
 
     // TODO make sure that the client keeps the connections alive
@@ -117,13 +129,13 @@ fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<St
 
     let run = ilp::plugin::btp::connect_async(&btp_server)
     .map_err(|err| {
-      println!("Error connecting to BTP server: {:?}", err);
-      println!("(Hint: is moneyd running?)");
+      eprintln!("Error connecting to BTP server: {:?}", err);
+      eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |plugin| {
       ilp::spsp::listen_with_random_secret(plugin, port)
         .map_err(|err| {
-          println!("Error listening: {}", err);
+          eprintln!("Error listening: {}", err);
         })
         .and_then(move |listener| {
           let handle_connections = listener.for_each(move |(id, connection)| {
@@ -152,14 +164,14 @@ fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<St
                     .body(body)
                     .send()
                     .map_err(move |err| {
-                      println!("Error sending notification (got incoming money: {} for receiver: {}): {:?}", amount, conn_id, err);
+                      eprintln!("Error sending notification (got incoming money: {} for receiver: {}): {:?}", amount, conn_id, err);
                     })
                     .and_then(|_| {
                       Ok(())
                     });
                   tokio::spawn(send_notification);
-                } else {
-                  println!("Got incoming money: {} for connection: {}", amount, conn_id);
+                } else if !quiet {
+                  println!("{}: Received: {} for connection: {}", Utc::now().to_rfc3339(), amount, conn_id);
                 }
 
                 Ok(())
@@ -171,7 +183,9 @@ fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<St
             Ok(())
           });
           tokio::spawn(handle_connections);
-          println!("Listening for SPSP connections on port: {}", port);
+          if !quiet {
+            println!("Listening for SPSP connections on port: {}", port);
+          }
           Ok(())
         })
     });
