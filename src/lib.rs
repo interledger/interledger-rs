@@ -33,6 +33,8 @@ extern crate env_logger;
 extern crate parking_lot;
 extern crate reqwest;
 extern crate stream_cancel;
+#[cfg(feature="metrics_csv")]
+extern crate csv;
 
 pub mod errors;
 pub mod ildcp;

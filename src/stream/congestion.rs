@@ -1,5 +1,11 @@
 use std::cmp::{max, min};
 use std::collections::HashMap;
+#[cfg(feature="metrics_csv")]
+use csv;
+#[cfg(feature="metrics_csv")]
+use std::io;
+#[cfg(feature="metrics_csv")]
+use chrono::Utc;
 
 pub struct CongestionController {
     state: CongestionState,
@@ -10,6 +16,8 @@ pub struct CongestionController {
     max_in_flight: u64,
     // id: amount
     packets: HashMap<u32, u64>,
+    #[cfg(feature="metrics_csv")]
+    csv_writer: csv::Writer<io::Stdout>,
 }
 
 #[derive(PartialEq)]
@@ -20,6 +28,11 @@ enum CongestionState {
 
 impl CongestionController {
     pub fn new(start_amount: u64, increase_amount: u64, decrease_factor: f64) -> Self {
+        #[cfg(feature="metrics_csv")]
+        let mut csv_writer = csv::Writer::from_writer(io::stdout());
+        #[cfg(feature="metrics_csv")]
+        csv_writer.write_record(&["time", "max_amount_in_flight", "amount_fulfilled"]).unwrap();
+
         CongestionController {
             state: CongestionState::SlowStart,
             increase_amount,
@@ -28,6 +41,8 @@ impl CongestionController {
             amount_in_flight: 0,
             max_in_flight: start_amount,
             packets: HashMap::new(),
+            #[cfg(feature="metrics_csv")]
+            csv_writer,
         }
     }
 
@@ -92,6 +107,9 @@ impl CongestionController {
                     amount, self.max_in_flight
                 );
             }
+
+            #[cfg(feature="metrics_csv")]
+            self.log_stats(amount);
         }
     }
 
@@ -106,12 +124,22 @@ impl CongestionController {
                     1,
                 );
                 debug!("Rejected packet with T04 error. Amount in flight was: {}, decreasing max in flight to: {}", self.amount_in_flight + amount, self.max_in_flight);
+
+                #[cfg(feature="metrics_csv")]
+                self.log_stats(0);
             }
         }
+    }
+
+    #[cfg(feature="metrics_csv")]
+    fn log_stats(&mut self, amount_sent: u64) {
+        self.csv_writer.write_record(&[format!("{}", Utc::now().timestamp_millis()), format!("{}", self.max_in_flight), format!("{}", amount_sent)]).unwrap();
+        self.csv_writer.flush().unwrap();
     }
 }
 
 #[cfg(test)]
+#[cfg_attr(not(feature="metrics_csv"), test)]
 mod tests {
     use super::*;
 
