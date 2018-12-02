@@ -5,14 +5,14 @@ extern crate futures;
 extern crate tokio;
 #[macro_use]
 extern crate serde_json;
+extern crate chrono;
 extern crate env_logger;
 extern crate reqwest;
-extern crate chrono;
 
+use chrono::Utc;
 use clap::{App, Arg, SubCommand};
 use futures::{Future, Stream};
 use std::sync::Arc;
-use chrono::Utc;
 
 pub fn main() {
     env_logger::init();
@@ -102,18 +102,18 @@ pub fn main() {
 fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64, quiet: bool) {
     let run = ilp::plugin::btp::connect_async(&btp_server)
         .map_err(|err| {
-          eprintln!("Error connecting to BTP server: {:?}", err);
-          eprintln!("(Hint: is moneyd running?)");
+            eprintln!("Error connecting to BTP server: {:?}", err);
+            eprintln!("(Hint: is moneyd running?)");
         }).and_then(move |plugin| {
             ilp::spsp::pay(plugin, &receiver, amount)
                 .map_err(|err| {
                     eprintln!("Error sending SPSP payment: {:?}", err);
                 }).and_then(move |delivered| {
                     if !quiet {
-                      println!(
-                          "Sent: {}, delivered: {} (in the receiver's units)",
-                          amount, delivered
-                      );
+                        println!(
+                            "Sent: {}, delivered: {} (in the receiver's units)",
+                            amount, delivered
+                        );
                     }
                     Ok(())
                 })
@@ -121,7 +121,12 @@ fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64, quiet: boo
     tokio::run(run);
 }
 
-fn run_spsp_server(btp_server: &str, port: u16, notification_endpoint: Option<String>, quiet: bool) {
+fn run_spsp_server(
+    btp_server: &str,
+    port: u16,
+    notification_endpoint: Option<String>,
+    quiet: bool,
+) {
     let notification_endpoint = Arc::new(notification_endpoint);
 
     // TODO make sure that the client keeps the connections alive
