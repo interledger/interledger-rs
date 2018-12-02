@@ -146,7 +146,6 @@ impl CongestionController {
 }
 
 #[cfg(test)]
-#[cfg_attr(not(feature = "metrics_csv"), test)]
 mod tests {
     use super::*;
 
@@ -183,6 +182,8 @@ mod tests {
                 amount_in_flight: 0,
                 max_in_flight: u64::max_value() - 1,
                 packets: HashMap::new(),
+                #[cfg(feature = "metrics_csv")]
+                csv_writer: csv::Writer::from_writer(io::stdout()),
             };
 
             let amount = controller.get_max_amount();
@@ -276,6 +277,8 @@ mod tests {
                 amount_in_flight: 0,
                 max_in_flight: u64::max_value() - 1,
                 packets: HashMap::new(),
+                #[cfg(feature = "metrics_csv")]
+                csv_writer: csv::Writer::from_writer(io::stdout()),
             };
 
             let amount = controller.get_max_amount();

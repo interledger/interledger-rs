@@ -1,0 +1,9 @@
+[tasks.build-test-check]
+description = "Run the same steps that run on CI (I would recommend setting this up as a pre-push hook)"
+dependencies = [
+  "build",
+  "check-format",
+  "test",
+  "audit",
+]
+
