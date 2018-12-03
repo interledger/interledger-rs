@@ -4,6 +4,7 @@ mod connection;
 mod crypto;
 mod data_money_stream;
 mod listener;
+pub mod oneshot;
 mod packet;
 
 pub use self::client::connect_async;
@@ -72,6 +73,8 @@ where
 pub enum Error {
     #[fail(display = "Error connecting: {}", _0)]
     ConnectionError(String),
+    #[fail(display = "Error polling: {}", _0)]
+    PollError(String),
 }
 
 #[cfg(test)]

@@ -43,6 +43,17 @@ pub struct ConnectionGenerator {
 }
 
 impl ConnectionGenerator {
+    pub fn new<S, B>(source_account: S, server_secret: B) -> Self
+    where
+        String: From<S>,
+        Bytes: From<B>,
+    {
+        ConnectionGenerator {
+            source_account: String::from(source_account),
+            server_secret: Bytes::from(server_secret),
+        }
+    }
+
     pub fn generate_address_and_secret(&self, connection_tag: &str) -> (String, Bytes) {
         let token_bytes = crypto::generate_token();
         let token = base64::encode_config(&token_bytes, base64::URL_SAFE_NO_PAD);
