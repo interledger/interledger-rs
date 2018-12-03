@@ -12,7 +12,7 @@
 ## Installation
 - Install Rust (using [`rustup`](https://rustup.rs/) is recommended)
 - Install [`moneyd`](https://github.com/interledgerjs/moneyd)
-- `cargo install ilp`
+- `cargo install interledger`
 
 ## Usage
 

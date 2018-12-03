@@ -2,14 +2,14 @@ extern crate bytes;
 extern crate chrono;
 extern crate env_logger;
 extern crate futures;
-extern crate ilp;
+extern crate interledger;
 extern crate ring;
 extern crate tokio;
 
-use ilp::plugin::btp::connect_to_moneyd;
+use interledger::plugin::btp::connect_to_moneyd;
 use tokio::prelude::*;
 // use ilp::spsp::pay;
-use ilp::spsp::connect_async;
+use interledger::spsp::connect_async;
 
 fn main() {
     env_logger::init();

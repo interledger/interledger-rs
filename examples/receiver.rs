@@ -2,14 +2,14 @@ extern crate bytes;
 extern crate chrono;
 extern crate env_logger;
 extern crate futures;
-extern crate ilp;
+extern crate interledger;
 extern crate ring;
 extern crate tokio;
 extern crate tokio_io;
 
 use futures::{Future, Stream};
-use ilp::plugin::btp::connect_async;
-use ilp::spsp::listen_with_random_secret;
+use interledger::plugin::btp::connect_async;
+use interledger::spsp::listen_with_random_secret;
 use tokio_io::io::read_to_end;
 
 fn main() {
