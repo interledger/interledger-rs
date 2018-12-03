@@ -40,3 +40,7 @@ tokio-tungstenite = "0.6.0"
 tokio-tcp = "0.1.2"
 tungstenite = "0.6.1"
 url = "1.7.2"
+
+[badges]
+circle-ci = { repository = "emschwartz/interledger-rs" }
+codecov = { repository = "emschwartz/interledger-rs" }
