@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="ilprs.svg" width="700" alt="Interledger.rs">
+  <img src="interledger-rs.svg" width="700" alt="Interledger.rs">
 </p>
 
 ---
 > Interledger implementation in Rust :money_with_wings:
 
-[![crates.io](https://img.shields.io/crates/v/ilp.svg)](https://crates.io/crates/ilp)
-[![CircleCI](https://circleci.com/gh/emschwartz/ilp-rs.svg?style=shield)](https://circleci.com/gh/emschwartz/ilp-rs)
-[![codecov](https://codecov.io/gh/emschwartz/ilp-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/emschwartz/ilp-rs)
+[![crates.io](https://img.shields.io/crates/v/interledger.svg)](https://crates.io/crates/interledger)
+[![CircleCI](https://circleci.com/gh/emschwartz/interledger-rs.svg?style=shield)](https://circleci.com/gh/emschwartz/interledger-rs)
+[![codecov](https://codecov.io/gh/emschwartz/interledger-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/emschwartz/interledger-rs)
 
 ## Installation
 - Install Rust (using [`rustup`](https://rustup.rs/) is recommended)
