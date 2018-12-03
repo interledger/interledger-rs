@@ -3,18 +3,21 @@ use crate::ildcp::IldcpResponse;
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::{Poll, Sink, StartSend, Stream};
 
+pub const SENDER_ADDRESS: &str = "example.pluginA";
+pub const RECEIVER_ADDRESS: &str = "example.pluginB";
+
 pub fn create_mock_plugins() -> (MockPlugin, MockPlugin) {
     let (a_tx, a_rx) = unbounded();
     let (b_tx, b_rx) = unbounded();
 
     let a = MockPlugin {
-        address: String::from("example.pluginA"),
+        address: String::from(SENDER_ADDRESS),
         outgoing: a_tx.clone(),
         incoming: b_rx,
         incoming_sender: b_tx.clone(),
     };
     let b = MockPlugin {
-        address: String::from("example.pluginB"),
+        address: String::from(RECEIVER_ADDRESS),
         outgoing: b_tx,
         incoming: a_rx,
         incoming_sender: a_tx,
