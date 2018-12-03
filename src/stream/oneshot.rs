@@ -1,5 +1,5 @@
 use super::congestion::CongestionController;
-use super::crypto::{generate_condition, generate_fulfillment, random_u32};
+use super::crypto::{generate_condition, generate_fulfillment, random_condition, random_u32};
 use super::packet::*;
 use super::Error;
 use bytes::{Bytes, BytesMut};
@@ -62,6 +62,7 @@ enum SendMoneyFutureState {
     NeedIldcp,
     SentIldcpRequest,
     SendMoney,
+    Closing,
 }
 
 impl<S> SendMoneyFuture<S>
@@ -118,6 +119,34 @@ where
         );
         // TODO don't copy prepare packet
         self.pending_prepares.insert(request_id, prepare.clone());
+        self.congestion_controller.prepare(request_id, amount);
+        self.try_send_outgoing((request_id, IlpPacket::Prepare(prepare)))?;
+        Ok(())
+    }
+
+    fn try_send_connection_close(&mut self) -> Result<(), Error> {
+        let stream_packet = StreamPacket {
+            ilp_packet_type: IlpPacketType::IlpPrepare,
+            prepare_amount: 0,
+            sequence: self.next_sequence(),
+            frames: vec![Frame::ConnectionClose(ConnectionCloseFrame {
+                code: ErrorCode::NoError,
+                message: String::new(),
+            })],
+        };
+        // Create the ILP Prepare packet
+        let data = stream_packet.to_encrypted(&self.shared_secret).unwrap();
+        let prepare = IlpPrepare::new(
+            self.destination_account.to_string(),
+            0,
+            random_condition(),
+            Utc::now() + Duration::seconds(30),
+            data,
+        );
+
+        // Send it!
+        let request_id = random_u32();
+        debug!("Closing connection");
         self.try_send_outgoing((request_id, IlpPacket::Prepare(prepare)))?;
         Ok(())
     }
@@ -329,15 +358,24 @@ where
         self.handle_incoming()?;
 
         // Check if we're still waiting on the ILDCP response
-        if self.state != SendMoneyFutureState::SendMoney {
+        if self.state == SendMoneyFutureState::SentIldcpRequest {
             return Ok(Async::NotReady);
         }
 
-        if self.source_amount == 0 && self.pending_prepares.is_empty() {
-            Ok(Async::Ready((
-                self.amount_delivered,
-                self.plugin.take().unwrap(),
-            )))
+        if self.source_amount == 0
+            && self.pending_prepares.is_empty()
+            && self.outgoing_request.is_none()
+        {
+            if self.state == SendMoneyFutureState::SendMoney {
+                self.try_send_connection_close()?;
+                self.state = SendMoneyFutureState::Closing;
+                Ok(Async::NotReady)
+            } else {
+                Ok(Async::Ready((
+                    self.amount_delivered,
+                    self.plugin.take().unwrap(),
+                )))
+            }
         } else {
             self.try_send_money()?;
             Ok(Async::NotReady)
@@ -367,14 +405,18 @@ mod tests {
             let run = StreamListener::bind(receiver, server_secret.clone())
                 .and_then(|(listener, conn_generator)| {
                     let handle_connections = listener.for_each(|(_id, conn)| {
-                        let handle_streams = conn.for_each(|stream| {
-                            let handle_money = stream.money.for_each(|amount| {
-                                debug!("Got money: {}", amount);
+                        let handle_streams = conn
+                            .for_each(|stream| {
+                                let handle_money = stream.money.for_each(|amount| {
+                                    debug!("Got money: {}", amount);
+                                    Ok(())
+                                });
+                                tokio::spawn(handle_money);
+                                Ok(())
+                            }).and_then(|_| {
+                                debug!("Connection closed");
                                 Ok(())
                             });
-                            tokio::spawn(handle_money);
-                            Ok(())
-                        });
                         tokio::spawn(handle_streams);
                         Ok(())
                     });
