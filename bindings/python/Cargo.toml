@@ -1,11 +1,11 @@
 [package]
-name = "ilpy"
+name = "ilp"
 version = "0.1.0"
 authors = ["Eli Krenzke <eli.krenzke@gmail.com>"]
 license = "Apache-2.0"
 
 [lib]
-name = "ilpy"
+name = "spsp"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -11,7 +11,7 @@ For development purposes, create a virtual environment (`virtualenv <DIR>`) and 
 
 **Usage Example**
 ```
->>> from ilpy import pay
+>>> from spsp import pay
 >>> pay("http://localhost:3000",100)
 100
 ```
