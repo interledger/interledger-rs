@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::{Future, Sink};
+use futures::Future;
 use hyper::header::HeaderName;
 use hyper::service::service_fn;
 use hyper::{Body, Request, Response, Server, StatusCode};
@@ -8,6 +8,7 @@ use reqwest::async::Client;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json;
 use std::sync::Arc;
+use stream::oneshot::send_money;
 use stream::{connect_async as connect_stream, Connection, Error as StreamError, StreamListener};
 use tokio;
 
@@ -85,22 +86,14 @@ pub fn pay<S>(plugin: S, server: &str, source_amount: u64) -> impl Future<Item =
 where
     S: Plugin + 'static,
 {
-    connect_async(plugin, server).and_then(move |conn: Connection| {
-        let stream = conn.create_stream();
-        stream
-            .money
-            .clone()
-            .send(source_amount)
-            .map_err(move |_| Error::SendMoneyError(source_amount))
-            .and_then(move |_| {
-                let total_delivered = stream.money.total_delivered();
-                conn.close()
-                    .or_else(|_err| {
-                        // We don't care if there was an issue closing the connection
-                        Ok(())
-                    })
-                    .and_then(move |_| Ok(total_delivered))
-            })
+    query(server).and_then(move |spsp| {
+        send_money(
+            plugin,
+            spsp.destination_account,
+            spsp.shared_secret,
+            source_amount,
+        ).map(|(amount_delivered, _plugin)| amount_delivered)
+        .map_err(move |_| Error::SendMoneyError(source_amount))
     })
 }
 

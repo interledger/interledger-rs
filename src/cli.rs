@@ -143,6 +143,7 @@ fn run_spsp_server(
             let client = Arc::clone(&client);
             // TODO close the connection if it doesn't have a tag?
             let conn_id = Arc::new(split[1].to_string());
+            let conn_id_clone = Arc::clone(&conn_id);
 
             let notification_endpoint = Arc::clone(&notification_endpoint);
             let handle_streams = connection.for_each(move |stream| {
@@ -175,6 +176,12 @@ fn run_spsp_server(
                 Ok(())
               });
               tokio::spawn(handle_money);
+              Ok(())
+            })
+            .and_then(move |_| {
+              if !quiet {
+                println!("{}: Connection closed: {}", Utc::now().to_rfc3339(), conn_id_clone);
+              }
               Ok(())
             });
             tokio::spawn(handle_streams);
