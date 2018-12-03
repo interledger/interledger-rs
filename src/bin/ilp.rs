@@ -1,4 +1,4 @@
-extern crate ilp;
+extern crate interledger;
 #[macro_use]
 extern crate clap;
 extern crate futures;
@@ -12,6 +12,7 @@ extern crate reqwest;
 use chrono::Utc;
 use clap::{App, Arg, SubCommand};
 use futures::{Future, Stream};
+use interledger::{plugin::btp, spsp};
 use std::sync::Arc;
 
 pub fn main() {
@@ -19,8 +20,8 @@ pub fn main() {
 
     let moneyd_url = format!(
         "btp+ws://{}:{}@localhost:7768",
-        ilp::plugin::btp::random_token(),
-        ilp::plugin::btp::random_token()
+        btp::random_token(),
+        btp::random_token()
     );
     let mut app = App::new("ilp")
         .about("Blazing fast Interledger CLI written in Rust")
@@ -100,12 +101,12 @@ pub fn main() {
 }
 
 fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64, quiet: bool) {
-    let run = ilp::plugin::btp::connect_async(&btp_server)
+    let run = btp::connect_async(&btp_server)
         .map_err(|err| {
             eprintln!("Error connecting to BTP server: {:?}", err);
             eprintln!("(Hint: is moneyd running?)");
         }).and_then(move |plugin| {
-            ilp::spsp::pay(plugin, &receiver, amount)
+            spsp::pay(plugin, &receiver, amount)
                 .map_err(|err| {
                     eprintln!("Error sending SPSP payment: {:?}", err);
                 }).and_then(move |delivered| {
@@ -132,13 +133,13 @@ fn run_spsp_server(
     // TODO make sure that the client keeps the connections alive
     let client = Arc::new(reqwest::async::Client::new());
 
-    let run = ilp::plugin::btp::connect_async(&btp_server)
+    let run = btp::connect_async(&btp_server)
     .map_err(|err| {
       eprintln!("Error connecting to BTP server: {:?}", err);
       eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |plugin| {
-      ilp::spsp::listen_with_random_secret(plugin, port)
+      spsp::listen_with_random_secret(plugin, port)
         .map_err(|err| {
           eprintln!("Error listening: {}", err);
         })

@@ -1,7 +1,7 @@
 {
-  "name": "node",
+  "name": "interledger-rs",
   "version": "0.1.0",
-  "description": "Node.js bindings to ilp.rs, the Rust implementation of Interledger",
+  "description": "Node.js bindings to interledger.rs, the Rust implementation of Interledger",
   "main": "lib/index.js",
   "author": "Evan Schwartz <evan.mark.schwartz@gmail.com>",
   "license": "Apache-2.0",

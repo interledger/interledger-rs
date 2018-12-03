@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate neon;
-extern crate ilp;
+extern crate interledger;
 extern crate futures;
 extern crate tokio;
 

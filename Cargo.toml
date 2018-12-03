@@ -1,5 +1,5 @@
 [package]
-name = "ilp"
+name = "interledger"
 version = "0.2.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger client library"
