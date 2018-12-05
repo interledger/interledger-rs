@@ -2,13 +2,12 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::Bytes;
 use chrono::{Duration, Utc};
 use errors::ParseError;
-use futures::Future;
-use ilp::{IlpFulfill, IlpPacket, IlpPrepare};
+use futures::{Async, AsyncSink, Future, Poll};
+use ilp::{IlpFulfill, IlpPacket, IlpPrepare, IlpReject};
 use oer::{ReadOerExt, WriteOerExt};
-use plugin::Plugin;
+use plugin::{IlpRequest, Plugin};
+use rand::random;
 use std::io::Cursor;
-use std::time::Duration as DurationStd;
-use tokio::prelude::FutureExt;
 
 static ILDCP_DESTINATION: &'static str = "peer.config";
 lazy_static! {
@@ -80,43 +79,125 @@ impl IldcpResponse {
 pub fn get_config(
     plugin: impl Plugin,
 ) -> impl Future<Item = (IldcpResponse, impl Plugin), Error = Error> {
-    let prepare = IldcpRequest::new().to_prepare();
-    // TODO make sure this doesn't conflict with other packets
-    let original_request_id = 0;
-    plugin
-        .send((original_request_id, IlpPacket::Prepare(prepare)))
-        .map_err(move |_| Error("Error sending ILDCP request".to_string()))
-        .and_then(|plugin| {
-            plugin
-                .into_future()
-                .map_err(|(err, _plugin)| {
-                    Error(format!(
-                        "Got error while waiting for ILDCP response: {:?}",
-                        err
-                    ))
-                })
-                .timeout(DurationStd::from_millis(31))
-                .map_err(|_| Error("Timed out waiting for ILDCP response".to_string()))
-                .and_then(|(next, plugin)| {
-                    if let Some((_request_id, IlpPacket::Fulfill(fulfill))) = next {
-                        match IldcpResponse::from_fulfill(&fulfill) {
-                            Ok(response) => {
-                                debug!("Got ILDCP response: {:?}", response);
-                                Ok((response, plugin))
+    GetConfigFuture {
+        plugin: Some(plugin),
+        outgoing_request: None,
+        sent_config_request: false,
+        config_request_id: random(),
+    }
+}
+
+// TODO timeout request in case we don't get a response back (we should because the packet will expire)
+struct GetConfigFuture<P> {
+    plugin: Option<P>,
+    outgoing_request: Option<IlpRequest>,
+    sent_config_request: bool,
+    config_request_id: u32,
+}
+
+impl<P> GetConfigFuture<P>
+where
+    P: Plugin,
+{
+    fn try_send_outgoing(&mut self, request: IlpRequest) -> Poll<(), Error> {
+        if let Some(ref mut plugin) = self.plugin {
+            match plugin.start_send(request) {
+                Ok(AsyncSink::NotReady(request)) => {
+                    self.outgoing_request = Some(request);
+                    Ok(Async::NotReady)
+                }
+                Ok(AsyncSink::Ready) => Ok(Async::Ready(())),
+                Err(_) => Err(Error("Error sending request to plugin".to_string())),
+            }
+        } else {
+            panic!("Polled after finish");
+        }
+    }
+}
+
+impl<P> Future for GetConfigFuture<P>
+where
+    P: Plugin,
+{
+    type Item = (IldcpResponse, P);
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            // Try sending outgoing packet
+            if let Some(request) = self.outgoing_request.take() {
+                try_ready!(self.try_send_outgoing(request));
+            }
+
+            // Send the config request
+            if !self.sent_config_request {
+                self.sent_config_request = true;
+                let request_id = self.config_request_id;
+                try_ready!(self.try_send_outgoing((
+                    request_id,
+                    IlpPacket::Prepare(IldcpRequest::new().to_prepare())
+                )));
+            }
+
+            // Poll for the response, rejecting other packets with a T00 error
+            let next = if let Some(ref mut plugin) = self.plugin {
+                plugin.poll()
+            } else {
+                return Err(Error("Future polled after finish".to_string()));
+            };
+            match next {
+                Ok(Async::Ready(Some((request_id, packet)))) => {
+                    if request_id == self.config_request_id {
+                        if let IlpPacket::Fulfill(ref fulfill) = packet {
+                            match IldcpResponse::from_fulfill(&fulfill) {
+                                Ok(response) => {
+                                    return Ok(Async::Ready((
+                                        response,
+                                        self.plugin.take().unwrap(),
+                                    )));
+                                }
+                                Err(err) => {
+                                    return Err(Error(format!(
+                                        "Unable to parse ILDCP response: {:?}",
+                                        err
+                                    )));
+                                }
                             }
-                            Err(err) => Err(Error(format!(
-                                "Unable to parse ILDCP response from fulfill: {:?}",
-                                err
-                            ))),
+                        } else {
+                            return Err(Error("Config request was rejected".to_string()));
                         }
                     } else {
-                        Err(Error(format!(
-                            "Expected Fulfill packet in response to ILDCP request, got: {:?}",
-                            next
-                        )))
+                        if let IlpPacket::Prepare(_) = packet {
+                            debug!("Rejecting incoming prepare packet while waiting for ILDCP response");
+                            try_ready!(self.try_send_outgoing((
+                                request_id,
+                                IlpPacket::Reject(IlpReject::new("T00", "", "", Bytes::new()))
+                            )));
+                        } else {
+                            warn!(
+                                "Ignoring response packet while waiting for ILDCP response: {:?}",
+                                packet
+                            );
+                        }
+                        continue;
                     }
-                })
-        })
+                }
+                Ok(Async::Ready(None)) => {
+                    return Err(Error(
+                        "Plugin closed before ILDCP response was received".to_string(),
+                    ));
+                }
+                Ok(Async::NotReady) => {
+                    return Ok(Async::NotReady);
+                }
+                Err(_err) => {
+                    return Err(Error(
+                        "Error polling plugin for incoming requests".to_string(),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 #[derive(Fail, Debug)]
