@@ -1,7 +1,6 @@
 use super::congestion::CongestionController;
 use super::crypto::{
     fulfillment_to_condition, generate_condition, generate_fulfillment, random_condition,
-    random_u32,
 };
 use super::data_money_stream::DataMoneyStream;
 use super::packet::*;
@@ -18,6 +17,7 @@ use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use parking_lot::{Mutex, RwLock};
 use plugin::IlpRequest;
+use rand::random;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -262,7 +262,7 @@ impl Connection {
                 Utc::now() + Duration::seconds(30),
                 encrypted,
             );
-            let request_id = random_u32();
+            let request_id = random();
             let request = (request_id, IlpPacket::Prepare(prepare));
             debug!(
                 "Sending outgoing request {} with stream packet: {:?}",
@@ -705,7 +705,7 @@ impl Connection {
 
     // TODO wait for response
     fn send_unfulfillable_prepare(&self, stream_packet: &StreamPacket) -> () {
-        let request_id = random_u32();
+        let request_id = random();
         let prepare = IlpPacket::Prepare(IlpPrepare::new(
             // TODO do we need to clone this?
             self.destination_account.to_string(),

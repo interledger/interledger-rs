@@ -1,4 +1,3 @@
-use byteorder::{BigEndian, ByteOrder};
 use bytes::{Bytes, BytesMut};
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
@@ -39,14 +38,6 @@ pub fn random_condition() -> Bytes {
         .fill(&mut condition_slice)
         .expect("Failed to securely generate random condition!");
     Bytes::from(&condition_slice[..])
-}
-
-pub fn random_u32() -> u32 {
-    let mut int: [u8; 4] = [0; 4];
-    SystemRandom::new()
-        .fill(&mut int[..])
-        .expect("Failed to securely generate a random number!");
-    BigEndian::read_u32(&int[..])
 }
 
 pub fn generate_token() -> Bytes {
