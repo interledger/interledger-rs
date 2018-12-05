@@ -38,6 +38,7 @@ extern crate reqwest;
 extern crate stream_cancel;
 #[macro_use]
 extern crate clap;
+extern crate rand;
 
 pub mod cli;
 pub mod errors;
