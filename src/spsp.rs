@@ -92,7 +92,8 @@ where
             spsp.destination_account,
             spsp.shared_secret,
             source_amount,
-        ).map(|(amount_delivered, _plugin)| amount_delivered)
+        )
+        .map(|(amount_delivered, _plugin)| amount_delivered)
         .map_err(move |_| Error::SendMoneyError(source_amount))
     })
 }

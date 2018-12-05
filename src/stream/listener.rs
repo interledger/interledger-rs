@@ -99,6 +99,33 @@ pub struct StreamListener {
 type PrepareHandler =
     Box<dyn Fn(&str, &IlpPrepare) -> Result<(String, Bytes), IlpReject> + Send + Sync>;
 
+pub(super) fn derive_shared_secret(
+    server_secret: Bytes,
+    local_address: &str,
+    prepare: &IlpPrepare,
+) -> Result<(String, Bytes), IlpReject> {
+    let local_address_parts: Vec<&str> = local_address.split('.').collect();
+    if local_address_parts.is_empty() {
+        warn!("Got Prepare with no Connection ID: {}", prepare.destination);
+        return Err(IlpReject::new("F02", "", "", Bytes::new()));
+    }
+    let connection_id = local_address_parts[0];
+
+    let split: Vec<&str> = connection_id.splitn(2, '~').collect();
+    let token = split[0];
+    let shared_secret =
+        crypto::generate_shared_secret_from_token(&server_secret, &token.as_bytes());
+    if split.len() == 1 {
+        Ok((connection_id.to_string(), shared_secret))
+    } else {
+        let encrypted_tag = split[1];
+        let decrypted = decrypt_tag(&server_secret[..], &encrypted_tag);
+        // TODO don't mash these two together, just return them separately
+        let connection_id = format!("{}~{}", token, decrypted);
+        Ok((connection_id, shared_secret))
+    }
+}
+
 impl StreamListener {
     // TODO does this need to be static?
     pub fn bind<'a, S>(
@@ -115,28 +142,7 @@ impl StreamListener {
 
                 let server_secret_clone = server_secret.clone();
                 let prepare_handler: PrepareHandler = Box::new(move |local_address, prepare| {
-                    let local_address_parts: Vec<&str> = local_address.split('.').collect();
-                    if local_address_parts.is_empty() {
-                        warn!("Got Prepare with no Connection ID: {}", prepare.destination);
-                        return Err(IlpReject::new("F02", "", "", Bytes::new()));
-                    }
-                    let connection_id = local_address_parts[0];
-
-                    let split: Vec<&str> = connection_id.splitn(2, '~').collect();
-                    let token = split[0];
-                    let shared_secret = crypto::generate_shared_secret_from_token(
-                        &server_secret_clone,
-                        &token.as_bytes(),
-                    );
-                    if split.len() == 1 {
-                        Ok((connection_id.to_string(), shared_secret))
-                    } else {
-                        let encrypted_tag = split[1];
-                        let decrypted = decrypt_tag(&server_secret_clone[..], &encrypted_tag);
-                        // TODO don't mash these two together, just return them separately
-                        let connection_id = format!("{}~{}", token, decrypted);
-                        Ok((connection_id, shared_secret))
-                    }
+                    derive_shared_secret(server_secret_clone.clone(), &local_address, &prepare)
                 });
 
                 let listener = StreamListener {

@@ -1,17 +1,21 @@
 use super::congestion::CongestionController;
-use super::crypto::{generate_condition, generate_fulfillment, random_condition, random_u32};
+use super::crypto::{
+    fulfillment_to_condition, generate_condition, generate_fulfillment, random_condition,
+};
+use super::listener::derive_shared_secret;
 use super::packet::*;
 use super::Error;
-use bytes::{Bytes, BytesMut};
-use chrono::{Duration, Utc};
-use crate::ildcp::{IldcpRequest, IldcpResponse};
+use crate::ildcp::{get_config, IldcpRequest, IldcpResponse};
 use crate::ilp::{
     parse_f08_error, IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType as IlpPacketType,
 };
 use crate::plugin::{IlpRequest, Plugin};
-use futures::{Async, AsyncSink, Future, Poll};
+use bytes::{Bytes, BytesMut};
+use chrono::{Duration, Utc};
+use futures::{Async, AsyncSink, Future, Poll, Stream};
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
+use rand::random;
 use std::cmp::min;
 use std::collections::HashMap;
 
@@ -101,7 +105,7 @@ where
         };
 
         // Create the ILP Prepare packet
-        let data = stream_packet.to_encrypted(&self.shared_secret).unwrap();
+        let data = stream_packet.to_encrypted(&self.shared_secret);
         let execution_condition = generate_condition(&self.shared_secret, &data);
         let prepare = IlpPrepare::new(
             self.destination_account.to_string(),
@@ -112,7 +116,7 @@ where
         );
 
         // Send it!
-        let request_id = random_u32();
+        let request_id = random();
         debug!(
             "Sending request {} with amount: {} and encrypted STREAM packet: {:?}",
             request_id, amount, stream_packet
@@ -135,7 +139,7 @@ where
             })],
         };
         // Create the ILP Prepare packet
-        let data = stream_packet.to_encrypted(&self.shared_secret).unwrap();
+        let data = stream_packet.to_encrypted(&self.shared_secret);
         let prepare = IlpPrepare::new(
             self.destination_account.to_string(),
             0,
@@ -145,7 +149,7 @@ where
         );
 
         // Send it!
-        let request_id = random_u32();
+        let request_id = random();
         debug!("Closing connection");
         self.try_send_outgoing((request_id, IlpPacket::Prepare(prepare)))?;
         Ok(())
@@ -217,7 +221,7 @@ where
                     sequence: request_packet.sequence,
                     frames: Vec::new(),
                 };
-                let data = packet.to_encrypted(&self.shared_secret).unwrap();
+                let data = packet.to_encrypted(&self.shared_secret);
                 let fulfillment = generate_fulfillment(&self.shared_secret, &data);
                 self.try_send_outgoing((
                     id,
@@ -245,7 +249,7 @@ where
                     sequence: request_packet.sequence,
                     frames,
                 };
-                let data = packet.to_encrypted(&self.shared_secret).unwrap();
+                let data = packet.to_encrypted(&self.shared_secret);
                 self.try_send_outgoing((
                     id,
                     IlpPacket::Reject(IlpReject::new("F99", String::new(), source_account, data)),
@@ -346,7 +350,7 @@ where
         if self.state == SendMoneyFutureState::NeedIldcp {
             let ildcp_request = IlpPacket::Prepare(IldcpRequest::new().to_prepare());
             self.state = SendMoneyFutureState::SentIldcpRequest;
-            try_ready!(self.try_send_outgoing((random_u32(), ildcp_request)))
+            try_ready!(self.try_send_outgoing((random(), ildcp_request)))
         }
 
         // Try sending the buffered request
@@ -383,22 +387,137 @@ where
     }
 }
 
+pub fn receive_money(
+    server_secret: Bytes,
+    ildcp_response: &IldcpResponse,
+    prepare: &IlpPrepare,
+) -> Result<IlpFulfill, IlpReject> {
+    // Generate shared secret
+    if prepare.destination.len() < ildcp_response.client_address.len() + 1 {
+        debug!("Got Prepare packet with no token attached to the destination address");
+        return Err(IlpReject::new(
+            "F02",
+            "",
+            ildcp_response.client_address.as_str(),
+            Bytes::new(),
+        ));
+    }
+    let local_address = prepare
+        .destination
+        .clone()
+        .split_off(ildcp_response.client_address.len() + 1);
+    let (_conn_id, shared_secret) = derive_shared_secret(server_secret, &local_address, &prepare)?;
+
+    // Generate fulfillment
+    let fulfillment = generate_fulfillment(&shared_secret[..], &prepare.data);
+    let condition = fulfillment_to_condition(&fulfillment);
+    let is_fulfillable = condition == prepare.execution_condition;
+
+    // Parse STREAM packet
+    // TODO avoid copying data
+    let stream_packet =
+        StreamPacket::from_encrypted(&shared_secret, BytesMut::from(prepare.data.clone()))
+            .map_err(|_| {
+                debug!("Unable to parse data, rejecting Prepare packet");
+                IlpReject::new(
+                    "F02",
+                    "",
+                    ildcp_response.client_address.as_str(),
+                    Bytes::new(),
+                )
+            })?;
+
+    let mut response_frames: Vec<Frame> = Vec::new();
+
+    // Handle STREAM frames
+    // TODO reject if they send data?
+    for frame in stream_packet.frames {
+        // Tell the sender the stream can handle lots of money
+        if let Frame::StreamMoney(frame) = frame {
+            response_frames.push(Frame::StreamMaxMoney(StreamMaxMoneyFrame {
+                stream_id: frame.stream_id,
+                // TODO will returning zero here cause problems?
+                total_received: BigUint::zero(),
+                receive_max: BigUint::from(u64::max_value()),
+            }));
+        }
+    }
+
+    // Return Fulfill or Reject Packet
+    if is_fulfillable {
+        let response_packet = StreamPacket {
+            sequence: stream_packet.sequence,
+            ilp_packet_type: IlpPacketType::IlpFulfill,
+            prepare_amount: prepare.amount,
+            frames: response_frames,
+        };
+        let encrypted_response = response_packet.to_encrypted(&shared_secret);
+        let fulfill = IlpFulfill::new(fulfillment.clone(), encrypted_response);
+        debug!(
+            "Fulfilling prepare with fulfillment: {} and encrypted stream packet: {:?}",
+            hex::encode(&fulfillment[..]),
+            response_packet
+        );
+        Ok(fulfill)
+    } else {
+        let response_packet = StreamPacket {
+            sequence: stream_packet.sequence,
+            ilp_packet_type: IlpPacketType::IlpReject,
+            prepare_amount: prepare.amount,
+            frames: response_frames,
+        };
+        let encrypted_response = response_packet.to_encrypted(&shared_secret);
+        let reject = IlpReject::new("F99", "", "", encrypted_response);
+        debug!(
+            "Rejecting Prepare and including encrypted stream packet {:?}",
+            response_packet
+        );
+        Err(reject)
+    }
+}
+
+// TODO should this call a function to report the incoming money, or will that be implemented on the connector level?
+pub fn receive_money_statelessly<S>(
+    server_secret: Bytes,
+    plugin: S,
+) -> impl Future<Item = (), Error = ()>
+where
+    S: Plugin,
+{
+    get_config(plugin)
+        .map_err(|err| error!("{}", err))
+        .and_then(move |(ildcp_response, plugin_b)| {
+            let (sink, stream) = plugin_b.split();
+            stream
+                .filter_map(move |(request_id, packet)| {
+                    if let IlpPacket::Prepare(prepare) = packet {
+                        match receive_money(server_secret.clone(), &ildcp_response, &prepare) {
+                            Ok(fulfill) => Some((request_id, IlpPacket::Fulfill(fulfill))),
+                            Err(reject) => Some((request_id, IlpPacket::Reject(reject))),
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .forward(sink)
+                .then(|_| Ok(()))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::mock::create_mock_plugins;
+    use crate::plugin::mock::{create_mock_plugins, RECEIVER_ADDRESS};
+    use crate::stream::crypto::random_condition;
+    use crate::stream::listener::ConnectionGenerator;
+    use tokio::runtime::current_thread::Runtime;
 
     mod send_money {
         use super::*;
-        use crate::stream::crypto::random_condition;
         use crate::stream::StreamListener;
-        use env_logger;
-        use futures::Stream;
-        use tokio::runtime::current_thread::Runtime;
 
         #[test]
         fn send_to_normal_listener() {
-            env_logger::init();
             let (sender, receiver) = create_mock_plugins();
             let mut runtime = Runtime::new().unwrap();
             let server_secret = random_condition();
@@ -413,7 +532,8 @@ mod tests {
                                 });
                                 tokio::spawn(handle_money);
                                 Ok(())
-                            }).and_then(|_| {
+                            })
+                            .and_then(|_| {
                                 debug!("Connection closed");
                                 Ok(())
                             });
@@ -430,9 +550,67 @@ mod tests {
                             Ok(())
                         },
                     )
-                }).map_err(|err| panic!(err));
+                })
+                .map_err(|err| panic!(err));
 
             runtime.block_on(run).unwrap();
+        }
+
+        #[test]
+        fn send_to_oneshot_receiver() {
+            let (plugin_a, plugin_b) = create_mock_plugins();
+            let server_secret = random_condition();
+
+            let conn_generator = ConnectionGenerator::new(RECEIVER_ADDRESS, server_secret.clone());
+
+            let mut runtime = Runtime::new().unwrap();
+            runtime.spawn(receive_money_statelessly(server_secret.clone(), plugin_b));
+
+            let (destination_account, shared_secret) =
+                conn_generator.generate_address_and_secret("test");
+            let (amount_delivered, _plugin) = runtime
+                .block_on(send_money(
+                    plugin_a,
+                    destination_account,
+                    shared_secret,
+                    3000,
+                ))
+                .unwrap();
+            assert_eq!(amount_delivered, 3000);
+        }
+    }
+
+    mod receive_money {
+        use super::*;
+        use crate::stream::connect_async;
+        use futures::Sink;
+
+        #[test]
+        fn receive_from_normal_sender() {
+            let (plugin_a, plugin_b) = create_mock_plugins();
+            let server_secret = random_condition();
+
+            let conn_generator = ConnectionGenerator::new(RECEIVER_ADDRESS, server_secret.clone());
+
+            let mut runtime = Runtime::new().unwrap();
+            runtime.spawn(receive_money_statelessly(server_secret.clone(), plugin_b));
+
+            let (destination_account, shared_secret) =
+                conn_generator.generate_address_and_secret("test");
+            let send =
+                connect_async(plugin_a, destination_account, shared_secret).and_then(|conn| {
+                    let stream = conn.create_stream();
+                    stream
+                        .money
+                        .send(1000)
+                        .and_then(|money_stream| money_stream.send(2000))
+                        .and_then(|money_stream| {
+                            assert_eq!(money_stream.total_sent(), 3000);
+                            Ok(())
+                        })
+                        .map_err(|err| panic!(err))
+                });
+            runtime.block_on(send).unwrap();
         }
     }
 }
