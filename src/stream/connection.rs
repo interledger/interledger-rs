@@ -252,7 +252,7 @@ impl Connection {
                 frames,
             };
 
-            let encrypted = stream_packet.to_encrypted(&self.shared_secret).unwrap();
+            let encrypted = stream_packet.to_encrypted(&self.shared_secret);
             let condition = generate_condition(&self.shared_secret, &encrypted);
             let prepare = IlpPrepare::new(
                 self.destination_account.to_string(),
@@ -346,7 +346,8 @@ impl Connection {
                 .unbounded_send((
                     request_id,
                     IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new())),
-                )).map_err(|err| {
+                ))
+                .map_err(|err| {
                     error!("Error sending Reject {} {:?}", request_id, err);
                 })?;
             return Ok(());
@@ -399,7 +400,7 @@ impl Connection {
             }
         }
 
-        self.handle_incoming_data(&stream_packet).unwrap();
+        self.handle_incoming_data(&stream_packet)?;
 
         self.handle_stream_closes(&stream_packet);
 
@@ -413,7 +414,7 @@ impl Connection {
                 prepare_amount: prepare.amount,
                 frames: response_frames,
             };
-            let encrypted_response = response_packet.to_encrypted(&self.shared_secret).unwrap();
+            let encrypted_response = response_packet.to_encrypted(&self.shared_secret);
             let fulfill =
                 IlpPacket::Fulfill(IlpFulfill::new(fulfillment.clone(), encrypted_response));
             debug!(
@@ -430,7 +431,7 @@ impl Connection {
                 prepare_amount: prepare.amount,
                 frames: response_frames,
             };
-            let encrypted_response = response_packet.to_encrypted(&self.shared_secret).unwrap();
+            let encrypted_response = response_packet.to_encrypted(&self.shared_secret);
             let reject = IlpPacket::Reject(IlpReject::new("F99", "", "", encrypted_response));
             debug!(
                 "Rejecting request {} and including encrypted stream packet {:?}",
@@ -711,7 +712,7 @@ impl Connection {
             0,
             random_condition(),
             Utc::now() + Duration::seconds(30),
-            stream_packet.to_encrypted(&self.shared_secret).unwrap(),
+            stream_packet.to_encrypted(&self.shared_secret),
         ));
         self.outgoing.unbounded_send((request_id, prepare)).unwrap();
     }

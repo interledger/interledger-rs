@@ -265,7 +265,7 @@ impl DataStream {
         let mut chunks: Vec<Bytes> = Vec::new();
         let mut size: usize = 0;
         while size < max_size && !outgoing.buffer.is_empty() {
-            let mut chunk = outgoing.buffer.pop_front().unwrap();
+            let mut chunk = outgoing.buffer.pop_front()?;
             if chunk.len() >= max_size - size {
                 chunks.push(chunk.split_to(max_size - size));
                 size = max_size;

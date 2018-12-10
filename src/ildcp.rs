@@ -94,7 +94,8 @@ pub fn get_config(
                         "Got error while waiting for ILDCP response: {:?}",
                         err
                     ))
-                }).timeout(DurationStd::from_millis(31))
+                })
+                .timeout(DurationStd::from_millis(31))
                 .map_err(|_| Error("Timed out waiting for ILDCP response".to_string()))
                 .and_then(|(next, plugin)| {
                     if let Some((_request_id, IlpPacket::Fulfill(fulfill))) = next {

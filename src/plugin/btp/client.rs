@@ -97,7 +97,8 @@ pub fn connect_btp_stream(
                         .and_then(move |(_auth_response, plugin)| {
                             info!("Connected to server: {}", server_without_auth);
                             Ok(plugin)
-                        }).map_err(|(err, _plugin)| {
+                        })
+                        .map_err(|(err, _plugin)| {
                             PluginBtpError(format!("Error getting auth response: {:?}", err))
                         })
                 })

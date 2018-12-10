@@ -98,7 +98,8 @@ where
                     .or_else(|_err| {
                         // We don't care if there was an issue closing the connection
                         Ok(())
-                    }).and_then(move |_| Ok(total_delivered))
+                    })
+                    .and_then(move |_| Ok(total_delivered))
             })
     })
 }

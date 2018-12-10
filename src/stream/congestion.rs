@@ -140,7 +140,8 @@ impl CongestionController {
                 format!("{}", Utc::now().timestamp_millis()),
                 format!("{}", self.max_in_flight),
                 format!("{}", amount_sent),
-            ]).unwrap();
+            ])
+            .unwrap();
         self.csv_writer.flush().unwrap();
     }
 }

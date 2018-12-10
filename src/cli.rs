@@ -95,11 +95,13 @@ fn send_spsp_payment(btp_server: &str, receiver: String, amount: u64, quiet: boo
         .map_err(|err| {
             eprintln!("Error connecting to BTP server: {:?}", err);
             eprintln!("(Hint: is moneyd running?)");
-        }).and_then(move |plugin| {
+        })
+        .and_then(move |plugin| {
             spsp::pay(plugin, &receiver, amount)
                 .map_err(|err| {
                     eprintln!("Error sending SPSP payment: {:?}", err);
-                }).and_then(move |delivered| {
+                })
+                .and_then(move |delivered| {
                     if !quiet {
                         println!(
                             "Sent: {}, delivered: {} (in the receiver's units)",

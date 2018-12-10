@@ -42,7 +42,8 @@ where
         .map(|_| ())
         .map_err(|err| {
             error!("Error forwarding request to plugin: {:?}", err);
-        }).then(move |_| {
+        })
+        .then(move |_| {
             trace!("Finished forwarding packets from Connection to plugin");
             drop(exit);
             Ok(())
@@ -56,7 +57,8 @@ where
                 "Error forwarding packet from plugin to Connection: {:?}",
                 err.into_inner()
             );
-        }).send_all(stream)
+        })
+        .send_all(stream)
         .then(|_| {
             trace!("Finished forwarding packets from plugin to Connection");
             Ok(())
@@ -135,7 +137,8 @@ mod tests {
                                             .map_err(|err| panic!(err))
                                             .map(|_| ())
                                     })
-                            }).and_then(move |_| conn.close())
+                            })
+                            .and_then(move |_| conn.close())
                     })
             });
         let mut runtime = Runtime::new().unwrap();
