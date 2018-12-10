@@ -137,7 +137,8 @@ where
             .map(move |result| match result {
                 AsyncSink::Ready => AsyncSink::Ready,
                 AsyncSink::NotReady(_) => AsyncSink::NotReady(item_clone),
-            }).map_err(|err| {
+            })
+            .map_err(|err| {
                 error!("Error sending packet {:?}", err);
             })
     }

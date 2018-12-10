@@ -18,13 +18,15 @@ fn main() {
     let future = connect_async("ws://bob:bob@localhost:7768")
         .map_err(|err| {
             println!("{}", err);
-        }).and_then(move |plugin| {
-            println!("Conected receiver");
+        })
+        .and_then(move |plugin| {
+            println!("Connected receiver");
 
             listen_with_random_secret(plugin, 3000)
                 .map_err(|err| {
                     println!("Error listening {:?}", err);
-                }).and_then(|listener| {
+                })
+                .and_then(|listener| {
                     listener
                         .for_each(|(id, conn)| {
                             println!("Got incoming connection {}", id);
@@ -38,7 +40,8 @@ fn main() {
                                         .for_each(|amount| {
                                             println!("Got incoming money {}", amount);
                                             Ok(())
-                                        }).and_then(move |_| {
+                                        })
+                                        .and_then(move |_| {
                                             println!("Money stream {} closed", stream_id);
                                             Ok(())
                                         });
@@ -49,7 +52,8 @@ fn main() {
                                     let handle_data = read_to_end(stream.data, data)
                                         .map_err(|err| {
                                             println!("Error reading data: {}", err);
-                                        }).and_then(|(_stream, data)| {
+                                        })
+                                        .and_then(|(_stream, data)| {
                                             println!(
                                                 "Got incoming data: {}",
                                                 String::from_utf8(Vec::from(&data[..])).unwrap()
@@ -58,16 +62,19 @@ fn main() {
                                         });
                                     tokio::spawn(handle_data);
                                     Ok(())
-                                }).then(|_| {
+                                })
+                                .then(|_| {
                                     println!("Connection was closed");
                                     Ok(())
                                 });
 
                             tokio::spawn(handle_connection);
                             Ok(())
-                        }).map_err(|err| {
+                        })
+                        .map_err(|err| {
                             println!("Error in listener {:?}", err);
-                        }).map(|_| ())
+                        })
+                        .map(|_| ())
                 })
         });
 

@@ -1,11 +1,11 @@
 use super::crypto::{decrypt, encrypt};
-use byteorder::{ReadBytesExt, WriteBytesExt};
-use bytes::{Bytes, BytesMut};
+use byteorder::ReadBytesExt;
+use bytes::{BufMut, Bytes, BytesMut};
 use errors::ParseError;
 use ilp::PacketType as IlpPacketType;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
-use oer::{ReadOerExt, WriteOerExt};
+use oer::{MutBufOerExt, ReadOerExt};
 use std::io::Cursor;
 
 // TODO zero copy
@@ -122,85 +122,85 @@ impl StreamPacket {
         })
     }
 
-    pub fn to_encrypted(&self, shared_secret: &[u8]) -> Result<Bytes, ParseError> {
-        let bytes = self.to_bytes_unencrypted()?;
+    pub fn to_encrypted(&self, shared_secret: &[u8]) -> Bytes {
+        let bytes = self.to_bytes_unencrypted();
         let ciphertext = encrypt(shared_secret, BytesMut::from(bytes)).to_vec();
-        Ok(Bytes::from(ciphertext))
+        Bytes::from(ciphertext)
     }
 
-    fn to_bytes_unencrypted(&self) -> Result<Vec<u8>, ParseError> {
-        let mut writer = Vec::new();
+    fn to_bytes_unencrypted(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
 
-        writer.write_u8(STREAM_VERSION)?;
-        writer.write_u8(self.ilp_packet_type.clone() as u8)?;
-        writer.write_var_uint(&BigUint::from(self.sequence))?;
-        writer.write_var_uint(&BigUint::from(self.prepare_amount))?;
-        writer.write_var_uint(&BigUint::from(self.frames.len()))?;
+        buf.put_u8(STREAM_VERSION);
+        buf.put_u8(self.ilp_packet_type.clone() as u8);
+        buf.put_var_uint(&BigUint::from(self.sequence));
+        buf.put_var_uint(&BigUint::from(self.prepare_amount));
+        buf.put_var_uint(&BigUint::from(self.frames.len()));
 
         for frame in &self.frames {
             let mut contents = Vec::new();
             match frame {
                 Frame::ConnectionClose(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionClose as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionClose as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::ConnectionNewAddress(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionNewAddress as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionNewAddress as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::ConnectionAssetDetails(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionAssetDetails as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionAssetDetails as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::ConnectionMaxData(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionMaxData as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionMaxData as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::ConnectionDataBlocked(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionDataBlocked as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionDataBlocked as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::ConnectionMaxStreamId(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionMaxStreamId as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionMaxStreamId as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::ConnectionStreamIdBlocked(ref frame) => {
-                    writer.write_u8(FrameType::ConnectionStreamIdBlocked as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::ConnectionStreamIdBlocked as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamClose(ref frame) => {
-                    writer.write_u8(FrameType::StreamClose as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamClose as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamMoney(ref frame) => {
-                    writer.write_u8(FrameType::StreamMoney as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamMoney as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamMaxMoney(ref frame) => {
-                    writer.write_u8(FrameType::StreamMaxMoney as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamMaxMoney as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamMoneyBlocked(ref frame) => {
-                    writer.write_u8(FrameType::StreamMoneyBlocked as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamMoneyBlocked as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamData(ref frame) => {
-                    writer.write_u8(FrameType::StreamData as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamData as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamMaxData(ref frame) => {
-                    writer.write_u8(FrameType::StreamMaxData as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamMaxData as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::StreamDataBlocked(ref frame) => {
-                    writer.write_u8(FrameType::StreamDataBlocked as u8)?;
-                    frame.write_contents(&mut contents)?;
+                    buf.put_u8(FrameType::StreamDataBlocked as u8);
+                    frame.put_contents(&mut contents);
                 }
                 Frame::Unknown => continue,
             }
-            writer.write_var_octet_string(&contents)?;
+            buf.put_var_octet_string(&contents);
         }
-        Ok(writer)
+        buf
     }
 }
 
@@ -296,7 +296,7 @@ impl From<u8> for ErrorCode {
 }
 
 pub trait SerializableFrame: Sized {
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError>;
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> ();
 
     fn read_contents(reader: &mut impl ReadOerExt) -> Result<Self, ParseError>;
 }
@@ -315,10 +315,9 @@ impl SerializableFrame for ConnectionCloseFrame {
         Ok(ConnectionCloseFrame { code, message })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_u8(self.code.clone() as u8)?;
-        writer.write_var_octet_string(self.message.as_bytes())?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_u8(self.code.clone() as u8);
+        buf.put_var_octet_string(self.message.as_bytes());
     }
 }
 
@@ -334,9 +333,8 @@ impl SerializableFrame for ConnectionNewAddressFrame {
         Ok(ConnectionNewAddressFrame { source_account })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_octet_string(self.source_account.as_bytes())?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_octet_string(self.source_account.as_bytes());
     }
 }
 
@@ -357,10 +355,9 @@ impl SerializableFrame for ConnectionAssetDetailsFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_octet_string(self.source_asset_code.as_bytes())?;
-        writer.write_u8(self.source_asset_scale)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_octet_string(self.source_asset_code.as_bytes());
+        buf.put_u8(self.source_asset_scale);
     }
 }
 
@@ -376,9 +373,8 @@ impl SerializableFrame for ConnectionMaxDataFrame {
         Ok(ConnectionMaxDataFrame { max_offset })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.max_offset)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.max_offset);
     }
 }
 
@@ -394,9 +390,8 @@ impl SerializableFrame for ConnectionDataBlockedFrame {
         Ok(ConnectionDataBlockedFrame { max_offset })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.max_offset)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.max_offset);
     }
 }
 
@@ -412,9 +407,8 @@ impl SerializableFrame for ConnectionMaxStreamIdFrame {
         Ok(ConnectionMaxStreamIdFrame { max_stream_id })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.max_stream_id)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.max_stream_id);
     }
 }
 
@@ -430,9 +424,8 @@ impl SerializableFrame for ConnectionStreamIdBlockedFrame {
         Ok(ConnectionStreamIdBlockedFrame { max_stream_id })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.max_stream_id)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.max_stream_id);
     }
 }
 
@@ -456,11 +449,10 @@ impl SerializableFrame for StreamCloseFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_u8(self.code.clone() as u8)?;
-        writer.write_var_octet_string(self.message.as_bytes())?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_u8(self.code.clone() as u8);
+        buf.put_var_octet_string(self.message.as_bytes());
     }
 }
 
@@ -478,10 +470,9 @@ impl SerializableFrame for StreamMoneyFrame {
         Ok(StreamMoneyFrame { stream_id, shares })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_var_uint(&self.shares)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(&self.shares);
     }
 }
 
@@ -505,11 +496,10 @@ impl SerializableFrame for StreamMaxMoneyFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_var_uint(&self.receive_max)?;
-        writer.write_var_uint(&self.total_received)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(&self.receive_max);
+        buf.put_var_uint(&self.total_received);
     }
 }
 
@@ -533,11 +523,10 @@ impl SerializableFrame for StreamMoneyBlockedFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_var_uint(&self.send_max)?;
-        writer.write_var_uint(&self.total_sent)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(&self.send_max);
+        buf.put_var_uint(&self.total_sent);
     }
 }
 
@@ -561,11 +550,10 @@ impl SerializableFrame for StreamDataFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_var_uint(&self.offset)?;
-        writer.write_var_octet_string(&self.data)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(&self.offset);
+        buf.put_var_octet_string(&self.data);
     }
 }
 
@@ -586,10 +574,9 @@ impl SerializableFrame for StreamMaxDataFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_var_uint(&self.max_offset)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(&self.max_offset);
     }
 }
 
@@ -610,10 +597,9 @@ impl SerializableFrame for StreamDataBlockedFrame {
         })
     }
 
-    fn write_contents(&self, writer: &mut impl WriteOerExt) -> Result<(), ParseError> {
-        writer.write_var_uint(&self.stream_id)?;
-        writer.write_var_uint(&self.max_offset)?;
-        Ok(())
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
+        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(&self.max_offset);
     }
 }
 
@@ -696,7 +682,7 @@ mod serialization {
 
     #[test]
     fn it_serializes_to_same_as_javascript() {
-        assert_eq!(PACKET.to_bytes_unencrypted().unwrap(), *SERIALIZED);
+        assert_eq!(PACKET.to_bytes_unencrypted(), *SERIALIZED);
     }
 
     #[test]

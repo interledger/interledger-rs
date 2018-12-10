@@ -66,7 +66,8 @@ where
                     debug!("BTP packet sink was not ready to send {:?}", item);
                     AsyncSink::NotReady(item)
                 }
-            }).map_err(|err| {
+            })
+            .map_err(|err| {
                 error!("Error sending BTP packet: {}", err);
             })
     }

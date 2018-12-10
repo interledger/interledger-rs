@@ -209,12 +209,13 @@ impl StreamListener {
                         prepare_amount: 0,
                         frames: vec![],
                     };
-                    let data = response_packet.to_encrypted(&shared_secret).unwrap();
+                    let data = response_packet.to_encrypted(&shared_secret);
                     self.outgoing_sender
                         .unbounded_send((
                             request_id,
                             IlpPacket::Reject(IlpReject::new("F99", "", "", data)),
-                        )).map_err(|_| {
+                        ))
+                        .map_err(|_| {
                             error!("Error sending reject");
                         })?;
                     return Ok(None);
@@ -228,7 +229,8 @@ impl StreamListener {
                     .unbounded_send((
                         request_id,
                         IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new())),
-                    )).map_err(|_| {
+                    ))
+                    .map_err(|_| {
                         error!("Error sending reject");
                     })?;
                 return Ok(None);
@@ -263,7 +265,8 @@ impl StreamListener {
                     "Error forwarding packets from connection to outgoing sink {:?}",
                     err
                 );
-            }).send_all(outgoing_rx)
+            })
+            .send_all(outgoing_rx)
             .then(|_| Ok(()));
         tokio::spawn(forward_outgoing);
 
@@ -314,7 +317,8 @@ impl StreamListener {
                         connection_id, err
                     );
                     Ok(())
-                }).unwrap();
+                })
+                .unwrap();
         } else {
             warn!(
                 "Ignoring response packet that did not correspond to outgoing request: {} {:?}",
@@ -399,7 +403,8 @@ impl Stream for StreamListener {
                             .unbounded_send((
                                 request_id,
                                 IlpPacket::Reject(IlpReject::new("F02", "", "", Bytes::new())),
-                            )).map_err(|_| {
+                            ))
+                            .map_err(|_| {
                                 error!("Error sending reject");
                             })?;
                         return Ok(Async::NotReady);

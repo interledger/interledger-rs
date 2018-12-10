@@ -35,19 +35,25 @@ pub fn generate_condition(shared_secret: &[u8], data: &[u8]) -> Bytes {
 
 pub fn random_condition() -> Bytes {
     let mut condition_slice: [u8; 32] = [0; 32];
-    SystemRandom::new().fill(&mut condition_slice).unwrap();
+    SystemRandom::new()
+        .fill(&mut condition_slice)
+        .expect("Failed to securely generate random condition!");
     Bytes::from(&condition_slice[..])
 }
 
 pub fn random_u32() -> u32 {
     let mut int: [u8; 4] = [0; 4];
-    SystemRandom::new().fill(&mut int[..]).unwrap();
+    SystemRandom::new()
+        .fill(&mut int[..])
+        .expect("Failed to securely generate a random number!");
     BigEndian::read_u32(&int[..])
 }
 
 pub fn generate_token() -> Bytes {
     let mut token: [u8; 18] = [0; 18];
-    SystemRandom::new().fill(&mut token).unwrap();
+    SystemRandom::new()
+        .fill(&mut token)
+        .expect("Failed to securely generate a random token!");
     Bytes::from(&token[..])
 }
 
@@ -59,14 +65,17 @@ pub fn generate_shared_secret_from_token(server_secret: &[u8], token: &[u8]) -> 
 pub fn encrypt(shared_secret: &[u8], plaintext: BytesMut) -> BytesMut {
     // Generate a random nonce or IV
     let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
-    SystemRandom::new().fill(&mut nonce[..]).unwrap();
+    SystemRandom::new()
+        .fill(&mut nonce[..])
+        .expect("Failed to securely generate a random nonce!");
 
     encrypt_with_nonce(shared_secret, plaintext, &nonce[..])
 }
 
 fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8]) -> BytesMut {
     let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
-    let key = aead::SealingKey::new(&aead::AES_256_GCM, &key).unwrap();
+    let key = aead::SealingKey::new(&aead::AES_256_GCM, &key)
+        .expect("Failed to create a new sealing key for encrypting data!");
 
     let additional_data: &[u8] = &[];
 
@@ -80,7 +89,8 @@ fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8
         additional_data,
         plaintext.as_mut(),
         AUTH_TAG_LENGTH,
-    ).unwrap_or_else(|err| {
+    )
+    .unwrap_or_else(|err| {
         error!("Error encrypting {:?}", err);
         panic!(err);
     });
@@ -99,7 +109,8 @@ fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8
 
 pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
     let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
-    let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key).unwrap();
+    let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key)
+        .expect("Failed to create a new opening key for decrypting data!");
 
     let nonce = ciphertext.split_to(NONCE_LENGTH);
     let auth_tag = ciphertext.split_to(AUTH_TAG_LENGTH);
@@ -111,7 +122,8 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
     let length = aead::open_in_place(&key, &nonce[..], additional_data, 0, ciphertext.as_mut())
         .map_err(|err| {
             error!("Error decrypting {:?}", err);
-        })?.len();
+        })?
+        .len();
     ciphertext.truncate(length);
     Ok(ciphertext)
 }

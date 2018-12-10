@@ -17,7 +17,8 @@ fn main() {
     let future = connect_to_moneyd()
         .map_err(|err| {
             println!("{}", err);
-        }).and_then(move |plugin| {
+        })
+        .and_then(move |plugin| {
             println!("Conected sender");
 
             // pay(plugin, "http://localhost:3000", 100)
@@ -29,7 +30,8 @@ fn main() {
             connect_async(plugin, "http://localhost:3000")
                 .map_err(|err| {
                     println!("Error connecting to SPSP server {:?}", err);
-                }).and_then(|connection| {
+                })
+                .and_then(|connection| {
                     println!("Creating new stream and sending money");
                     let mut stream = connection.create_stream();
                     stream
@@ -44,16 +46,19 @@ fn main() {
                                 .write(&bytes[..])
                                 .map_err(|err| {
                                     println!("Error writing {}", err);
-                                }).unwrap();
+                                })
+                                .unwrap();
                             println!("Sent data");
                             println!("Closing connection");
                             connection.close()
-                        }).and_then(|_| {
+                        })
+                        .and_then(|_| {
                             println!("Closed connection");
                             Ok(())
                         })
                 })
-        }).then(|_| Ok(()));
+        })
+        .then(|_| Ok(()));
 
     tokio::runtime::run(future);
 }
