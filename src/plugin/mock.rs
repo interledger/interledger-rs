@@ -25,11 +25,12 @@ pub fn create_mock_plugins() -> (MockPlugin, MockPlugin) {
     (a, b)
 }
 
+#[derive(Debug)]
 pub struct MockPlugin {
-    address: String,
-    outgoing: UnboundedSender<IlpRequest>,
-    incoming: UnboundedReceiver<IlpRequest>,
-    incoming_sender: UnboundedSender<IlpRequest>,
+    pub address: String,
+    pub outgoing: UnboundedSender<IlpRequest>,
+    pub incoming: UnboundedReceiver<IlpRequest>,
+    pub incoming_sender: UnboundedSender<IlpRequest>,
 }
 
 impl Stream for MockPlugin {
