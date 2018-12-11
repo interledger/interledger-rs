@@ -26,6 +26,6 @@ Make sure you're running `moneyd` first! (`moneyd local` can be used for testing
 
 ### Sending an SPSP Payment
 
-`ilp spsp pay --receiver http://localhost:3000/bob --amount 1000`
+`ilp spsp pay --receiver http://localhost:3000/spsp/bob --amount 1000`
 
 (You can see the full options by running `ilp spsp pay --help`)

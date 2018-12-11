@@ -18,12 +18,9 @@ extern crate tungstenite;
 extern crate url;
 #[macro_use]
 extern crate log;
-extern crate num_traits;
-#[macro_use]
-extern crate serde_derive;
 extern crate base64;
 extern crate failure;
-extern crate hyper;
+extern crate num_traits;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -39,6 +36,8 @@ extern crate stream_cancel;
 #[macro_use]
 extern crate clap;
 extern crate rand;
+#[macro_use]
+extern crate tower_web;
 
 pub mod cli;
 pub mod errors;

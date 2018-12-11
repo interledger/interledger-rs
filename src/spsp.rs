@@ -1,16 +1,18 @@
 use bytes::Bytes;
 use futures::Future;
-use hyper::header::HeaderName;
-use hyper::service::service_fn;
-use hyper::{Body, Request, Response, Server, StatusCode};
 use plugin::Plugin;
 use reqwest::async::Client;
 use ring::rand::{SecureRandom, SystemRandom};
-use serde_json;
-use std::sync::Arc;
 use stream::oneshot::send_money;
-use stream::{connect_async as connect_stream, Connection, Error as StreamError, StreamListener};
+use stream::{
+    connect_async as connect_stream, Connection, ConnectionGenerator, Error as StreamError,
+    StreamListener,
+};
 use tokio;
+use tokio::net::TcpListener;
+use tower_web::extract::{Context, Extract, Immediate};
+use tower_web::util::BufStream;
+use tower_web::ServiceBuilder;
 
 #[derive(Fail, Debug)]
 pub enum Error {
@@ -28,7 +30,9 @@ pub enum Error {
     InvalidPaymentPointerError(String),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Response)]
+#[web(header(name = "content-type", value = "application/spsp4+json"))]
+#[web(header(name = "access-control-allow-origin", value = "*"))]
 pub struct SpspResponse {
     destination_account: String,
     #[serde(with = "serde_base64")]
@@ -98,6 +102,73 @@ where
     })
 }
 
+pub struct OriginalUrl(String);
+
+impl<B: BufStream> Extract<B> for OriginalUrl {
+    type Future = Immediate<Self>;
+
+    fn extract(ctx: &Context) -> Self::Future {
+        let headers = ctx.request().headers();
+        let host = headers
+            .get("forwarded")
+            .and_then(|header| {
+                let header = header.to_str().ok()?;
+                if let Some(index) = header.find(" for=") {
+                    let host_start = index + 5;
+                    (&header[host_start..]).split_whitespace().next()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                headers
+                    .get("x-forwarded-host")
+                    .and_then(|header| header.to_str().ok())
+            })
+            .or_else(|| headers.get("host").and_then(|header| header.to_str().ok()))
+            .unwrap_or("");
+
+        let mut url = host.to_string();
+        url.push_str(ctx.request().uri().path());
+        url.push_str(ctx.request().uri().query().unwrap_or(""));
+        Immediate::ok(OriginalUrl(url))
+    }
+}
+
+pub struct SpspResponder {
+    connection_generator: ConnectionGenerator,
+}
+
+impl_web! {
+    impl SpspResponder {
+        fn get_spsp(&self, url: &str) -> Result<SpspResponse, ()> {
+            let (destination_account, shared_secret) = self.connection_generator.generate_address_and_secret(url);
+                    debug!(
+                        "Responding to SPSP query {} with address: {}",
+                        url, destination_account
+                    );
+            Ok(SpspResponse {
+                destination_account,
+                shared_secret: shared_secret.to_vec(),
+            })
+        }
+
+        #[get("/.well-known/pay")]
+        #[content_type("json")]
+        fn get_well_known(&self, original_url: OriginalUrl) -> Result<SpspResponse, ()> {
+            self.get_spsp(&original_url.0)
+        }
+
+        #[get("/spsp/:user")]
+        #[content_type("json")]
+        fn get_spsp_user(&self, original_url: OriginalUrl) -> Result<SpspResponse, ()> {
+            self.get_spsp(&original_url.0)
+        }
+
+        // TODO should we also allow http://domain.example/user ?
+    }
+}
+
 pub fn listen<S>(
     plugin: S,
     server_secret: Bytes,
@@ -108,49 +179,18 @@ where
     S: Plugin + 'static,
 {
     StreamListener::bind::<'static>(plugin, server_secret)
-        .map_err(|err: StreamError| Error::StreamError(err))
+        .map_err(Error::StreamError)
         .and_then(move |(listener, connection_generator)| {
             let addr = ([127, 0, 0, 1], port).into();
+            let tcp_listener =
+                TcpListener::bind(&addr).map_err(|err| Error::ListenError(format!("{:?}", err)))?;
 
-            let secret_generator = Arc::new(connection_generator);
-            let service = move || {
-                let secret_generator = Arc::clone(&secret_generator);
-                service_fn(move |req: Request<Body>| {
-                    // Set connection tag to the URL parsed from the request
-                    let url = parse_url_from_request(&req);
-                    let tag = url.unwrap_or_else(String::new);
-
-                    let (destination_account, shared_secret) =
-                        secret_generator.generate_address_and_secret(&tag);
-                    debug!(
-                        "Responding to SPSP query {} with address: {}",
-                        tag, destination_account
-                    );
-
-                    let spsp_response = SpspResponse {
-                        destination_account: destination_account.to_string(),
-                        shared_secret: shared_secret.to_vec(),
-                    };
-
-                    // TODO convert the serde error into Hyper to remove unwrap
-                    let body = Body::from(serde_json::to_string(&spsp_response).unwrap());
-
-                    Response::builder()
-                        .header("Content-Type", "application/spsp4+json")
-                        .header("Access-Control-Allow-Origin", "*")
-                        .status(StatusCode::OK)
-                        .body(body)
+            let server = ServiceBuilder::new()
+                .resource(SpspResponder {
+                    connection_generator,
                 })
-            };
-
-            // TODO give the user a way to turn it off
-            let run_server = Server::try_bind(&addr)
-                .map_err(|err| Error::ListenError(format!("{:?}", err)))?
-                .serve(service)
-                .map_err(|err| {
-                    error!("Server error: {:?}", err);
-                });
-            tokio::spawn(run_server);
+                .serve(tcp_listener.incoming());
+            tokio::spawn(server);
 
             Ok(listener)
         })
@@ -192,31 +232,27 @@ fn payment_pointer_to_url(payment_pointer: &str) -> String {
     url
 }
 
-fn parse_url_from_request(req: &Request<Body>) -> Option<String> {
-    let host = {
-        let headers = req.headers();
-        if let Some(header) = headers.get(HeaderName::from_static("forwarded")) {
-            let header = header.to_str().ok()?;
-            if let Some(index) = header.find(" for=") {
-                let host_start = index + 5;
-                (&header[host_start..])
-                    .split_whitespace()
-                    .next()
-                    .map(|s| s.to_string())
-            } else {
-                None
-            }
-        } else if let Some(host) = headers.get(HeaderName::from_static("x-forwarded-host")) {
-            host.to_str().ok().map(|s| s.to_string())
-        } else if let Some(host) = headers.get(HeaderName::from_static("host")) {
-            host.to_str().ok().map(|s| s.to_string())
-        } else {
-            None
-        }
-    }?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let mut url = host;
-    url.push_str(req.uri().path());
-    url.push_str(req.uri().query().unwrap_or(""));
-    Some(url)
+    #[test]
+    fn get_details_well_known_endpoint() {
+        let server = SpspResponder {
+            connection_generator: ConnectionGenerator::new("example.server", &[0; 32][..]),
+        };
+        server
+            .get_well_known(OriginalUrl("domain.example/.well-known/pay".to_string()))
+            .unwrap();
+    }
+
+    #[test]
+    fn get_details_spsp_user() {
+        let server = SpspResponder {
+            connection_generator: ConnectionGenerator::new("example.server", &[0; 32][..]),
+        };
+        server
+            .get_well_known(OriginalUrl("domain.example/spsp/bob".to_string()))
+            .unwrap();
+    }
 }

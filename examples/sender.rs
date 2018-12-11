@@ -27,7 +27,7 @@ fn main() {
             //     Ok(())
             //   })
 
-            connect_async(plugin, "http://localhost:3000")
+            connect_async(plugin, "http://localhost:3000/spsp/bob")
                 .map_err(|err| {
                     println!("Error connecting to SPSP server {:?}", err);
                 })

@@ -5,8 +5,8 @@ extern crate futures;
 extern crate tokio;
 
 use neon::prelude::*;
-use ilp::plugin::btp::connect_to_moneyd;
-use ilp::spsp::{pay as spsp_pay};
+use interledger::plugin::btp::connect_to_moneyd;
+use interledger::spsp::{pay as spsp_pay};
 use futures::Future;
 use tokio::runtime::Runtime;
 
