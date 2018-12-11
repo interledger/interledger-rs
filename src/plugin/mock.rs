@@ -1,3 +1,4 @@
+// kcov-ignore-start
 use super::{IlpPacket, IlpRequest, Plugin};
 use crate::ildcp::IldcpResponse;
 use futures::sync::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
@@ -69,3 +70,4 @@ impl Sink for MockPlugin {
 }
 
 impl Plugin for MockPlugin {}
+// kcov-ignore-end

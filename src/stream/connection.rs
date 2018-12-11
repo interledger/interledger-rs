@@ -704,7 +704,7 @@ impl Connection {
     }
 
     // TODO wait for response
-    fn send_unfulfillable_prepare(&self, stream_packet: &StreamPacket) -> () {
+    fn send_unfulfillable_prepare(&self, stream_packet: &StreamPacket) {
         let request_id = random();
         let prepare = IlpPacket::Prepare(IlpPrepare::new(
             // TODO do we need to clone this?
