@@ -38,7 +38,7 @@ impl IldcpRequest {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IldcpResponse {
     pub client_address: String,
     pub asset_scale: u8,
@@ -203,3 +203,183 @@ where
 #[derive(Fail, Debug)]
 #[fail(display = "Error getting ILDCP info: {}", _0)]
 pub struct Error(String);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod get_config {
+        use super::*;
+        use crate::plugin::mock::{create_mock_plugins, SENDER_ADDRESS};
+        use futures::{task, task::Task};
+        use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
+
+        #[test]
+        fn gets_ildcp_details() {
+            let (sender, _receiver) = create_mock_plugins();
+            let (response, _plugin) = get_config(sender).wait().unwrap();
+            assert_eq!(
+                response,
+                IldcpResponse {
+                    client_address: SENDER_ADDRESS.to_string(),
+                    asset_code: "XYZ".to_string(),
+                    asset_scale: 9
+                }
+            )
+        }
+
+        #[test]
+        fn rejects_other_packets() {
+            let (sender, receiver) = create_mock_plugins();
+            sender
+                .incoming_sender
+                .unbounded_send((
+                    0,
+                    IlpPacket::Prepare(IlpPrepare::new(
+                        SENDER_ADDRESS,
+                        100,
+                        &[0; 32][..],
+                        Utc::now() + Duration::seconds(30),
+                        Bytes::new(),
+                    )),
+                ))
+                .unwrap();
+            let (ildcp_response, _plugin) = get_config(sender).wait().unwrap();
+            assert_eq!(
+                ildcp_response,
+                IldcpResponse {
+                    client_address: SENDER_ADDRESS.to_string(),
+                    asset_code: "XYZ".to_string(),
+                    asset_scale: 9
+                }
+            );
+            let (response, _plugin) = receiver.into_future().wait().expect("Receiver got error");
+            assert_eq!(
+                response.unwrap(),
+                (
+                    0,
+                    IlpPacket::Reject(IlpReject::new("T00", "", "", Bytes::new(),))
+                )
+            );
+        }
+
+        #[test]
+        fn plugin_closed() {
+            struct FakePlugin {};
+            impl Sink for FakePlugin {
+                type SinkItem = IlpRequest;
+                type SinkError = ();
+
+                fn start_send(
+                    &mut self,
+                    _item: Self::SinkItem,
+                ) -> StartSend<Self::SinkItem, Self::SinkError> {
+                    Ok(AsyncSink::Ready)
+                }
+
+                fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+                    Ok(Async::Ready(()))
+                }
+            }
+            impl Stream for FakePlugin {
+                type Item = IlpRequest;
+                type Error = ();
+
+                fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+                    // Ends right away
+                    Ok(Async::Ready(None))
+                }
+            }
+            impl Plugin for FakePlugin {};
+
+            let plugin = FakePlugin {};
+            let result = get_config(plugin).wait();
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn plugin_poll_error() {
+            struct FakePlugin {};
+            impl Sink for FakePlugin {
+                type SinkItem = IlpRequest;
+                type SinkError = ();
+
+                fn start_send(
+                    &mut self,
+                    _item: Self::SinkItem,
+                ) -> StartSend<Self::SinkItem, Self::SinkError> {
+                    Ok(AsyncSink::Ready)
+                }
+
+                fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+                    Ok(Async::Ready(()))
+                }
+            }
+            impl Stream for FakePlugin {
+                type Item = IlpRequest;
+                type Error = ();
+
+                fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+                    Err(())
+                }
+            }
+            impl Plugin for FakePlugin {};
+
+            let plugin = FakePlugin {};
+            let result = get_config(plugin).wait();
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn config_request_rejected() {
+            struct FakePlugin {
+                request_id: Option<u32>,
+                poll_task: Option<Task>,
+            };
+            impl Sink for FakePlugin {
+                type SinkItem = IlpRequest;
+                type SinkError = ();
+
+                fn start_send(
+                    &mut self,
+                    item: Self::SinkItem,
+                ) -> StartSend<Self::SinkItem, Self::SinkError> {
+                    self.request_id = Some(item.0);
+                    if let Some(task) = self.poll_task.take() {
+                        task.notify();
+                    }
+                    Ok(AsyncSink::Ready)
+                }
+
+                fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+                    Ok(Async::Ready(()))
+                }
+            }
+            impl Stream for FakePlugin {
+                type Item = IlpRequest;
+                type Error = ();
+
+                fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+                    if let Some(request_id) = self.request_id.take() {
+                        Ok(Async::Ready(Some((
+                            request_id,
+                            IlpPacket::Reject(IlpReject::new("F00", "", "", Bytes::new())),
+                        ))))
+                    } else {
+                        self.poll_task = Some(task::current());
+                        Ok(Async::NotReady)
+                    }
+                }
+            }
+            impl Plugin for FakePlugin {};
+
+            let plugin = FakePlugin {
+                request_id: None,
+                poll_task: None,
+            };
+            let result = get_config(plugin).wait();
+            assert!(result.is_err());
+        }
+    }
+
+}
