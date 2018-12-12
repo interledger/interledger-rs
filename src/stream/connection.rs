@@ -171,7 +171,6 @@ impl Connection {
             for stream in (*self.streams.read()).values() {
                 // Send money
                 if max_packet_amount > 0 {
-                    trace!("Checking if stream {} has money or data to send", stream.id);
                     let stream_amount = stream.money.send_max()
                         - stream.money.pending()
                         - stream.money.total_sent();
@@ -184,6 +183,8 @@ impl Connection {
                             stream_id: BigUint::from(stream.id),
                             shares: BigUint::from(amount_to_send),
                         }));
+                    } else {
+                        trace!("Stream {} does not have any money to send", stream.id);
                     }
                 }
 
@@ -309,7 +310,7 @@ impl Connection {
                     self.try_send()?
                 }
                 Ok(Async::Ready(None)) => {
-                    error!("Incoming stream closed");
+                    debug!("Incoming stream closed");
                     // TODO should this error?
                     return Ok(());
                 }

@@ -507,7 +507,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::mock::{create_mock_plugins, RECEIVER_ADDRESS};
+    use crate::plugin::mock::{create_mock_plugins, RECEIVER_ADDRESS, SENDER_ADDRESS};
     use crate::stream::crypto::random_condition;
     use crate::stream::listener::ConnectionGenerator;
     use tokio::runtime::current_thread::Runtime;
@@ -515,6 +515,10 @@ mod tests {
     mod send_money {
         use super::*;
         use crate::stream::StreamListener;
+        use futures::sync::mpsc::unbounded;
+        use futures::Sink;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
 
         #[test]
         fn send_to_normal_listener() {
@@ -577,6 +581,66 @@ mod tests {
                 ))
                 .unwrap();
             assert_eq!(amount_delivered, 3000);
+        }
+
+        #[test]
+        fn sender_rejects_incoming_packets() {
+            let mut runtime = Runtime::new().unwrap();
+
+            let (plugin_a, mut plugin_b) = create_mock_plugins();
+
+            // Send an unexpected Prepare packet to the sender
+            plugin_a
+                .incoming_sender
+                .clone()
+                .unbounded_send((
+                    0,
+                    IlpPacket::Prepare(IlpPrepare::new(
+                        SENDER_ADDRESS,
+                        100,
+                        &[0; 32][..],
+                        Utc::now() + Duration::seconds(30),
+                        Vec::new(),
+                    )),
+                ))
+                .unwrap();
+            let server_secret = random_condition();
+
+            // Spy on the requests the sender sends to make sure they reject the packet above
+            let rejected_packet = Arc::new(AtomicBool::new(false));
+            let rejected_packet_clone = rejected_packet.clone();
+            let (tx, rx) = unbounded();
+            let original_incoming = plugin_b.incoming;
+            plugin_b.incoming = rx;
+            let spy = tx
+                .sink_map_err(|_| ())
+                .send_all(original_incoming.map(move |(request_id, packet)| {
+                    if request_id == 0 {
+                        if let IlpPacket::Reject(_) = packet {
+                            rejected_packet_clone.swap(true, Ordering::SeqCst);
+                        }
+                    }
+                    (request_id, packet)
+                }))
+                .then(|_| Ok(()));
+            runtime.spawn(spy);
+
+            let conn_generator = ConnectionGenerator::new(RECEIVER_ADDRESS, server_secret.clone());
+
+            runtime.spawn(receive_money_statelessly(server_secret.clone(), plugin_b));
+
+            let (destination_account, shared_secret) =
+                conn_generator.generate_address_and_secret("test");
+            let (amount_delivered, _plugin) = runtime
+                .block_on(send_money(
+                    plugin_a,
+                    destination_account,
+                    shared_secret,
+                    3000,
+                ))
+                .unwrap();
+            assert_eq!(amount_delivered, 3000);
+            assert_eq!(rejected_packet.load(Ordering::SeqCst), true);
         }
     }
 
