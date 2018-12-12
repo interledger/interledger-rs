@@ -223,7 +223,6 @@ impl Sink for MoneyStream {
         if self.sent.load(Ordering::SeqCst) >= self.send_max.load(Ordering::SeqCst) {
             Ok(Async::Ready(()))
         } else {
-            trace!("No more money available for now");
             Ok(Async::NotReady)
         }
     }
