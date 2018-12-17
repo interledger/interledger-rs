@@ -13,8 +13,6 @@ use crate::plugin::{IlpRequest, Plugin};
 use bytes::{Bytes, BytesMut};
 use chrono::{Duration, Utc};
 use futures::{Async, AsyncSink, Future, Poll, Stream};
-use num_bigint::BigUint;
-use num_traits::{One, Zero};
 use rand::random;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -86,8 +84,8 @@ where
 
         // Load up the STREAM packet
         let mut frames = vec![Frame::StreamMoney(StreamMoneyFrame {
-            stream_id: BigUint::one(),
-            shares: BigUint::one(),
+            stream_id: 1,
+            shares: 1,
         })];
         if self.should_send_source_account {
             if let Some(ref source_account) = self.source_account {
@@ -238,8 +236,8 @@ where
                     {
                         frames.push(Frame::StreamMaxMoney(StreamMaxMoneyFrame {
                             stream_id,
-                            receive_max: BigUint::zero(),
-                            total_received: BigUint::zero(),
+                            receive_max: 0,
+                            total_received: 0,
                         }));
                     }
                 }
@@ -437,8 +435,8 @@ pub fn receive_money(
             response_frames.push(Frame::StreamMaxMoney(StreamMaxMoneyFrame {
                 stream_id: frame.stream_id,
                 // TODO will returning zero here cause problems?
-                total_received: BigUint::zero(),
-                receive_max: BigUint::from(u64::max_value()),
+                total_received: 0,
+                receive_max: u64::max_value(),
             }));
         }
     }

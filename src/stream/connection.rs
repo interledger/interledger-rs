@@ -13,8 +13,6 @@ use futures::task::Task;
 use futures::{Async, Future, Poll, Stream};
 use hex;
 use ilp::{parse_f08_error, IlpFulfill, IlpPacket, IlpPrepare, IlpReject, PacketType};
-use num_bigint::BigUint;
-use num_traits::ToPrimitive;
 use parking_lot::{Mutex, RwLock};
 use plugin::IlpRequest;
 use rand::random;
@@ -180,8 +178,8 @@ impl Connection {
                         stream.money.add_to_pending(amount_to_send);
                         outgoing_amount += amount_to_send;
                         frames.push(Frame::StreamMoney(StreamMoneyFrame {
-                            stream_id: BigUint::from(stream.id),
-                            shares: BigUint::from(amount_to_send),
+                            stream_id: stream.id as u64,
+                            shares: amount_to_send as u64,
                         }));
                     } else {
                         trace!("Stream {} does not have any money to send", stream.id);
@@ -199,9 +197,9 @@ impl Connection {
                         offset
                     );
                     frames.push(Frame::StreamData(StreamDataFrame {
-                        stream_id: BigUint::from(stream.id),
+                        stream_id: stream.id as u64,
                         data,
-                        offset: BigUint::from(offset),
+                        offset: offset as u64,
                     }))
                 } else {
                     trace!("Stream {} does not have any data to send", stream.id);
@@ -211,7 +209,7 @@ impl Connection {
                 if stream.is_closing() {
                     trace!("Sending stream close frame for stream {}", stream.id);
                     frames.push(Frame::StreamClose(StreamCloseFrame {
-                        stream_id: BigUint::from(stream.id),
+                        stream_id: stream.id as u64,
                         code: ErrorCode::NoError,
                         message: String::new(),
                     }));
@@ -364,10 +362,10 @@ impl Connection {
         for frame in stream_packet.frames.iter() {
             match frame {
                 Frame::StreamMoney(frame) => {
-                    self.handle_new_stream(frame.stream_id.to_u64().unwrap());
+                    self.handle_new_stream(frame.stream_id);
                 }
                 Frame::StreamData(frame) => {
-                    self.handle_new_stream(frame.stream_id.to_u64().unwrap());
+                    self.handle_new_stream(frame.stream_id);
                 }
                 // TODO handle other frames that open streams
                 _ => {}
@@ -377,7 +375,7 @@ impl Connection {
         // Count up the total number of money "shares" in the packet
         let total_money_shares: u64 = stream_packet.frames.iter().fold(0, |sum, frame| {
             if let Frame::StreamMoney(frame) = frame {
-                sum + frame.shares.to_u64().unwrap()
+                sum + frame.shares
             } else {
                 sum
             }
@@ -389,11 +387,10 @@ impl Connection {
                 if let Frame::StreamMoney(frame) = frame {
                     // TODO only add money to incoming if sending the fulfill is successful
                     // TODO make sure all other checks pass first
-                    let stream_id = frame.stream_id.to_u64().unwrap();
+                    let stream_id = frame.stream_id;
                     let streams = self.streams.read();
                     let stream = streams.get(&stream_id).unwrap();
-                    let amount: u64 =
-                        frame.shares.to_u64().unwrap() * prepare.amount / total_money_shares;
+                    let amount: u64 = frame.shares * prepare.amount / total_money_shares;
                     debug!("Stream {} received {}", stream_id, amount);
                     stream.money.add_received(amount);
                     stream.money.try_wake_polling();
@@ -459,18 +456,18 @@ impl Connection {
     fn handle_incoming_data(&self, stream_packet: &StreamPacket) -> Result<(), ()> {
         for frame in stream_packet.frames.iter() {
             if let Frame::StreamData(frame) = frame {
-                let stream_id = frame.stream_id.to_u64().unwrap();
+                let stream_id = frame.stream_id;
                 let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
                 // TODO make sure the offset number isn't too big
                 let data = frame.data.clone();
-                let offset = frame.offset.to_usize().unwrap();
+                let offset = frame.offset;
                 debug!(
                     "Stream {} got {} bytes of incoming data",
                     stream.id,
                     data.len()
                 );
-                stream.data.push_incoming_data(data, offset)?;
+                stream.data.push_incoming_data(data, offset as usize)?;
                 stream.data.try_wake_polling();
             }
         }
@@ -480,7 +477,7 @@ impl Connection {
     fn handle_stream_closes(&self, stream_packet: &StreamPacket) {
         for frame in stream_packet.frames.iter() {
             if let Frame::StreamClose(frame) = frame {
-                let stream_id = frame.stream_id.to_u64().unwrap();
+                let stream_id = frame.stream_id;
                 debug!("Remote closed stream {}", stream_id);
                 let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
@@ -562,11 +559,11 @@ impl Connection {
 
         for frame in original_packet.frames.iter() {
             if let Frame::StreamMoney(frame) = frame {
-                let stream_id = frame.stream_id.to_u64().unwrap();
+                let stream_id = frame.stream_id;
                 let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
 
-                let shares = frame.shares.to_u64().unwrap();
+                let shares = frame.shares;
                 stream.money.pending_to_sent(shares);
 
                 let amount_delivered: u64 = total_delivered * shares / original_amount;
@@ -657,11 +654,11 @@ impl Connection {
         // Release pending money
         for frame in original_packet.frames.iter() {
             if let Frame::StreamMoney(frame) = frame {
-                let stream_id = frame.stream_id.to_u64().unwrap();
+                let stream_id = frame.stream_id;
                 let streams = self.streams.read();
                 let stream = streams.get(&stream_id).unwrap();
 
-                let shares = frame.shares.to_u64().unwrap();
+                let shares = frame.shares;
                 stream.money.subtract_from_pending(shares);
             }
         }

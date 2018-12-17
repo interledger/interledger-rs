@@ -2,11 +2,9 @@ use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use chrono::{DateTime, TimeZone, Utc};
 use errors::ParseError;
-use num_bigint::BigUint;
 use oer::{MutBufOerExt, ReadOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;
-use std::ops::Add;
 use std::str;
 
 static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
@@ -94,9 +92,9 @@ where
     let mut protocol_data = Vec::new();
 
     let num_entries = reader.read_var_uint()?;
-    let mut i = BigUint::from(0 as u32);
+    let mut i = 0;
     while i < num_entries {
-        i = i.add(BigUint::from(1 as u8));
+        i = i + 1;
         let protocol_name = String::from_utf8(reader.read_var_octet_string()?)?;
         let content_type = ContentType::from(reader.read_u8()?);
         let data = reader.read_var_octet_string()?;
@@ -113,7 +111,7 @@ fn put_protocol_data<T>(buf: &mut T, protocol_data: &[ProtocolData])
 where
     T: BufMut,
 {
-    let length = BigUint::from(protocol_data.len());
+    let length = protocol_data.len() as u64;
     buf.put_var_uint(&length);
     for entry in protocol_data {
         buf.put_var_octet_string(entry.protocol_name.as_bytes());

@@ -3,7 +3,6 @@ use byteorder::ReadBytesExt;
 use bytes::{BufMut, Bytes, BytesMut};
 use errors::ParseError;
 use ilp::PacketType as IlpPacketType;
-use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use oer::{MutBufOerExt, ReadOerExt};
 use std::io::Cursor;
@@ -133,9 +132,9 @@ impl StreamPacket {
 
         buf.put_u8(STREAM_VERSION);
         buf.put_u8(self.ilp_packet_type.clone() as u8);
-        buf.put_var_uint(&BigUint::from(self.sequence));
-        buf.put_var_uint(&BigUint::from(self.prepare_amount));
-        buf.put_var_uint(&BigUint::from(self.frames.len()));
+        buf.put_var_uint(&self.sequence);
+        buf.put_var_uint(&self.prepare_amount);
+        buf.put_var_uint(&(self.frames.len() as u64));
 
         for frame in &self.frames {
             let mut contents = Vec::new();
@@ -363,7 +362,7 @@ impl SerializableFrame for ConnectionAssetDetailsFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionMaxDataFrame {
-    pub max_offset: BigUint,
+    pub max_offset: u64,
 }
 
 impl SerializableFrame for ConnectionMaxDataFrame {
@@ -380,7 +379,7 @@ impl SerializableFrame for ConnectionMaxDataFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionDataBlockedFrame {
-    pub max_offset: BigUint,
+    pub max_offset: u64,
 }
 
 impl SerializableFrame for ConnectionDataBlockedFrame {
@@ -397,7 +396,7 @@ impl SerializableFrame for ConnectionDataBlockedFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionMaxStreamIdFrame {
-    pub max_stream_id: BigUint,
+    pub max_stream_id: u64,
 }
 
 impl SerializableFrame for ConnectionMaxStreamIdFrame {
@@ -414,7 +413,7 @@ impl SerializableFrame for ConnectionMaxStreamIdFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionStreamIdBlockedFrame {
-    pub max_stream_id: BigUint,
+    pub max_stream_id: u64,
 }
 
 impl SerializableFrame for ConnectionStreamIdBlockedFrame {
@@ -431,7 +430,7 @@ impl SerializableFrame for ConnectionStreamIdBlockedFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamCloseFrame {
-    pub stream_id: BigUint,
+    pub stream_id: u64,
     pub code: ErrorCode,
     pub message: String,
 }
@@ -458,8 +457,8 @@ impl SerializableFrame for StreamCloseFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMoneyFrame {
-    pub stream_id: BigUint,
-    pub shares: BigUint,
+    pub stream_id: u64,
+    pub shares: u64,
 }
 
 impl SerializableFrame for StreamMoneyFrame {
@@ -478,9 +477,9 @@ impl SerializableFrame for StreamMoneyFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMaxMoneyFrame {
-    pub stream_id: BigUint,
-    pub receive_max: BigUint,
-    pub total_received: BigUint,
+    pub stream_id: u64,
+    pub receive_max: u64,
+    pub total_received: u64,
 }
 
 impl SerializableFrame for StreamMaxMoneyFrame {
@@ -505,9 +504,9 @@ impl SerializableFrame for StreamMaxMoneyFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMoneyBlockedFrame {
-    pub stream_id: BigUint,
-    pub send_max: BigUint,
-    pub total_sent: BigUint,
+    pub stream_id: u64,
+    pub send_max: u64,
+    pub total_sent: u64,
 }
 
 impl SerializableFrame for StreamMoneyBlockedFrame {
@@ -532,8 +531,8 @@ impl SerializableFrame for StreamMoneyBlockedFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamDataFrame {
-    pub stream_id: BigUint,
-    pub offset: BigUint,
+    pub stream_id: u64,
+    pub offset: u64,
     pub data: Bytes,
 }
 
@@ -559,8 +558,8 @@ impl SerializableFrame for StreamDataFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMaxDataFrame {
-    pub stream_id: BigUint,
-    pub max_offset: BigUint,
+    pub stream_id: u64,
+    pub max_offset: u64,
 }
 
 impl SerializableFrame for StreamMaxDataFrame {
@@ -582,8 +581,8 @@ impl SerializableFrame for StreamMaxDataFrame {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamDataBlockedFrame {
-    pub stream_id: BigUint,
-    pub max_offset: BigUint,
+    pub stream_id: u64,
+    pub max_offset: u64,
 }
 
 impl SerializableFrame for StreamDataBlockedFrame {
@@ -621,52 +620,52 @@ mod serialization {
                     source_account: String::from("example.blah")
                 }),
                 Frame::ConnectionMaxData(ConnectionMaxDataFrame {
-                    max_offset: BigUint::from(1000 as u64)
+                    max_offset: 1000 as u64
                 }),
                 Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame {
-                    max_offset: BigUint::from(2000 as u64)
+                    max_offset: 2000 as u64
                 }),
                 Frame::ConnectionMaxStreamId(ConnectionMaxStreamIdFrame {
-                    max_stream_id: BigUint::from(3000 as u64)
+                    max_stream_id: 3000 as u64
                 }),
                 Frame::ConnectionStreamIdBlocked(ConnectionStreamIdBlockedFrame {
-                    max_stream_id: BigUint::from(4000 as u64)
+                    max_stream_id: 4000 as u64
                 }),
                 Frame::ConnectionAssetDetails(ConnectionAssetDetailsFrame {
                     source_asset_code: String::from("XYZ"),
                     source_asset_scale: 9
                 }),
                 Frame::StreamClose(StreamCloseFrame {
-                    stream_id: BigUint::from(76 as u64),
+                    stream_id: 76 as u64,
                     code: ErrorCode::InternalError,
                     message: String::from("blah")
                 }),
                 Frame::StreamMoney(StreamMoneyFrame {
-                    stream_id: BigUint::from(88 as u64),
-                    shares: BigUint::from(99 as u64)
+                    stream_id: 88 as u64,
+                    shares: 99 as u64
                 }),
                 Frame::StreamMaxMoney(StreamMaxMoneyFrame {
-                    stream_id: BigUint::from(11 as u64),
-                    receive_max: BigUint::from(987 as u64),
-                    total_received: BigUint::from(500 as u64)
+                    stream_id: 11 as u64,
+                    receive_max: 987 as u64,
+                    total_received: 500 as u64
                 }),
                 Frame::StreamMoneyBlocked(StreamMoneyBlockedFrame {
-                    stream_id: BigUint::from(66 as u64),
-                    send_max: BigUint::from(20000 as u64),
-                    total_sent: BigUint::from(6000 as u64)
+                    stream_id: 66 as u64,
+                    send_max: 20000 as u64,
+                    total_sent: 6000 as u64
                 }),
                 Frame::StreamData(StreamDataFrame {
-                    stream_id: BigUint::from(34 as u64),
-                    offset: BigUint::from(9000 as u64),
+                    stream_id: 34 as u64,
+                    offset: 9000 as u64,
                     data: Bytes::from(String::from("hello").as_bytes().to_vec()),
                 }),
                 Frame::StreamMaxData(StreamMaxDataFrame {
-                    stream_id: BigUint::from(35 as u64),
-                    max_offset: BigUint::from(8766 as u64)
+                    stream_id: 35 as u64,
+                    max_offset: 8766 as u64
                 }),
                 Frame::StreamDataBlocked(StreamDataBlockedFrame {
-                    stream_id: BigUint::from(888 as u64),
-                    max_offset: BigUint::from(44444 as u64)
+                    stream_id: 888 as u64,
+                    max_offset: 44444 as u64
                 }),
             ]
         };
