@@ -3,7 +3,6 @@ use byteorder::ReadBytesExt;
 use bytes::{BufMut, Bytes, BytesMut};
 use errors::ParseError;
 use ilp::PacketType as IlpPacketType;
-use num_traits::cast::ToPrimitive;
 use oer::{MutBufOerExt, ReadOerExt};
 use std::io::Cursor;
 
@@ -43,13 +42,13 @@ impl StreamPacket {
                 ilp_packet_type_int
             )));
         }
-        let sequence = reader.read_var_uint()?.to_u64().ok_or_else(|| {
+        let sequence = reader.read_var_uint().map_err(|_| {
             ParseError::InvalidPacket(String::from("Packet sequence is greater than max u64"))
         })?;
-        let prepare_amount = reader.read_var_uint()?.to_u64().ok_or_else(|| {
+        let prepare_amount = reader.read_var_uint().map_err(|_| {
             ParseError::InvalidPacket(String::from("Prepare amount is greater than max u64"))
         })?;
-        let num_frames = reader.read_var_uint()?.to_u64().ok_or_else(|| {
+        let num_frames = reader.read_var_uint().map_err(|_| {
             ParseError::InvalidPacket(String::from("Num frames is greater than max u64"))
         })?;
 
