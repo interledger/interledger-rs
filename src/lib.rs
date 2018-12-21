@@ -5,7 +5,6 @@ extern crate chrono;
 extern crate hex;
 #[macro_use]
 extern crate lazy_static;
-extern crate num_bigint;
 #[macro_use]
 extern crate futures;
 extern crate bytes;
@@ -20,7 +19,6 @@ extern crate url;
 extern crate log;
 extern crate base64;
 extern crate failure;
-extern crate num_traits;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
