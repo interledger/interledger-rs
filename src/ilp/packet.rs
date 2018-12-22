@@ -1,8 +1,8 @@
-use super::errors::ParseError;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use bytes::Bytes;
 use chrono::{DateTime, TimeZone, Utc};
+use errors::ParseError;
 use oer::{MutBufOerExt, ReadOerExt};
 use std::io::prelude::*;
 use std::io::Cursor;

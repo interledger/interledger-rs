@@ -112,7 +112,7 @@ where
     T: BufMut,
 {
     let length = protocol_data.len() as u64;
-    buf.put_var_uint(&length);
+    buf.put_var_uint(length);
     for entry in protocol_data {
         buf.put_var_octet_string(entry.protocol_name.as_bytes());
         buf.put_u8(entry.content_type.clone() as u8);

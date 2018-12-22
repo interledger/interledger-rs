@@ -6,6 +6,7 @@ mod data_money_stream;
 mod listener;
 pub mod oneshot;
 mod packet;
+mod utils;
 
 pub use self::client::connect_async;
 pub use self::connection::Connection;
@@ -75,6 +76,8 @@ pub enum Error {
     ConnectionError(String),
     #[fail(display = "Error polling: {}", _0)]
     PollError(String),
+    #[fail(display = "Overflow occurred: {}", _0)]
+    OverflowError(String),
 }
 
 #[cfg(test)]

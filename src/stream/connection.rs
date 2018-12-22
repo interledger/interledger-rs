@@ -4,6 +4,7 @@ use super::crypto::{
 };
 use super::data_money_stream::DataMoneyStream;
 use super::packet::*;
+use super::utils::muldiv;
 use super::StreamPacket;
 use bytes::{Bytes, BytesMut};
 use chrono::{Duration, Utc};
@@ -178,8 +179,8 @@ impl Connection {
                         stream.money.add_to_pending(amount_to_send);
                         outgoing_amount += amount_to_send;
                         frames.push(Frame::StreamMoney(StreamMoneyFrame {
-                            stream_id: stream.id as u64,
-                            shares: amount_to_send as u64,
+                            stream_id: stream.id,
+                            shares: amount_to_send,
                         }));
                     } else {
                         trace!("Stream {} does not have any money to send", stream.id);
@@ -197,7 +198,7 @@ impl Connection {
                         offset
                     );
                     frames.push(Frame::StreamData(StreamDataFrame {
-                        stream_id: stream.id as u64,
+                        stream_id: stream.id,
                         data,
                         offset: offset as u64,
                     }))
@@ -209,7 +210,7 @@ impl Connection {
                 if stream.is_closing() {
                     trace!("Sending stream close frame for stream {}", stream.id);
                     frames.push(Frame::StreamClose(StreamCloseFrame {
-                        stream_id: stream.id as u64,
+                        stream_id: stream.id,
                         code: ErrorCode::NoError,
                         message: String::new(),
                     }));
@@ -375,7 +376,8 @@ impl Connection {
         // Count up the total number of money "shares" in the packet
         let total_money_shares: u64 = stream_packet.frames.iter().fold(0, |sum, frame| {
             if let Frame::StreamMoney(frame) = frame {
-                sum + frame.shares
+                // FIXME add error handling
+                sum.checked_add(frame.shares).unwrap()
             } else {
                 sum
             }
@@ -390,7 +392,7 @@ impl Connection {
                     let stream_id = frame.stream_id;
                     let streams = self.streams.read();
                     let stream = streams.get(&stream_id).unwrap();
-                    let amount: u64 = frame.shares * prepare.amount / total_money_shares;
+                    let amount: u64 = muldiv(frame.shares, prepare.amount, total_money_shares)?;
                     debug!("Stream {} received {}", stream_id, amount);
                     stream.money.add_received(amount);
                     stream.money.try_wake_polling();
@@ -565,8 +567,7 @@ impl Connection {
 
                 let shares = frame.shares;
                 stream.money.pending_to_sent(shares);
-
-                let amount_delivered: u64 = total_delivered * shares / original_amount;
+                let amount_delivered: u64 = muldiv(total_delivered, shares, original_amount)?;
                 stream.money.add_delivered(amount_delivered);
             }
         }
@@ -831,4 +832,5 @@ mod tests {
             }
         }
     }
+
 }

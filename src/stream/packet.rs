@@ -131,9 +131,9 @@ impl StreamPacket {
 
         buf.put_u8(STREAM_VERSION);
         buf.put_u8(self.ilp_packet_type.clone() as u8);
-        buf.put_var_uint(&self.sequence);
-        buf.put_var_uint(&self.prepare_amount);
-        buf.put_var_uint(&(self.frames.len() as u64));
+        buf.put_var_uint(self.sequence);
+        buf.put_var_uint(self.prepare_amount);
+        buf.put_var_uint(self.frames.len() as u64);
 
         for frame in &self.frames {
             let mut contents = Vec::new();
@@ -372,7 +372,7 @@ impl SerializableFrame for ConnectionMaxDataFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.max_offset);
+        buf.put_var_uint(self.max_offset);
     }
 }
 
@@ -389,7 +389,7 @@ impl SerializableFrame for ConnectionDataBlockedFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.max_offset);
+        buf.put_var_uint(self.max_offset);
     }
 }
 
@@ -406,7 +406,7 @@ impl SerializableFrame for ConnectionMaxStreamIdFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.max_stream_id);
+        buf.put_var_uint(self.max_stream_id);
     }
 }
 
@@ -423,7 +423,7 @@ impl SerializableFrame for ConnectionStreamIdBlockedFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.max_stream_id);
+        buf.put_var_uint(self.max_stream_id);
     }
 }
 
@@ -448,7 +448,7 @@ impl SerializableFrame for StreamCloseFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
+        buf.put_var_uint(self.stream_id);
         buf.put_u8(self.code.clone() as u8);
         buf.put_var_octet_string(self.message.as_bytes());
     }
@@ -469,8 +469,8 @@ impl SerializableFrame for StreamMoneyFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
-        buf.put_var_uint(&self.shares);
+        buf.put_var_uint(self.stream_id);
+        buf.put_var_uint(self.shares);
     }
 }
 
@@ -495,9 +495,9 @@ impl SerializableFrame for StreamMaxMoneyFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
-        buf.put_var_uint(&self.receive_max);
-        buf.put_var_uint(&self.total_received);
+        buf.put_var_uint(self.stream_id);
+        buf.put_var_uint(self.receive_max);
+        buf.put_var_uint(self.total_received);
     }
 }
 
@@ -522,9 +522,9 @@ impl SerializableFrame for StreamMoneyBlockedFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
-        buf.put_var_uint(&self.send_max);
-        buf.put_var_uint(&self.total_sent);
+        buf.put_var_uint(self.stream_id);
+        buf.put_var_uint(self.send_max);
+        buf.put_var_uint(self.total_sent);
     }
 }
 
@@ -549,8 +549,8 @@ impl SerializableFrame for StreamDataFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
-        buf.put_var_uint(&self.offset);
+        buf.put_var_uint(self.stream_id);
+        buf.put_var_uint(self.offset);
         buf.put_var_octet_string(&self.data);
     }
 }
@@ -573,8 +573,8 @@ impl SerializableFrame for StreamMaxDataFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
-        buf.put_var_uint(&self.max_offset);
+        buf.put_var_uint(self.stream_id);
+        buf.put_var_uint(self.max_offset);
     }
 }
 
@@ -596,8 +596,8 @@ impl SerializableFrame for StreamDataBlockedFrame {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> () {
-        buf.put_var_uint(&self.stream_id);
-        buf.put_var_uint(&self.max_offset);
+        buf.put_var_uint(self.stream_id);
+        buf.put_var_uint(self.max_offset);
     }
 }
 
