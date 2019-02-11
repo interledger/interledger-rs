@@ -3,7 +3,7 @@
 mod error;
 mod errors;
 #[cfg(test)]
-pub mod fixtures;
+mod fixtures;
 pub mod oer;
 mod packet;
 
