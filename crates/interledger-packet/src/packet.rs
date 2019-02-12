@@ -75,6 +75,24 @@ impl From<Packet> for BytesMut {
     }
 }
 
+impl From<Prepare> for Packet {
+    fn from(prepare: Prepare) -> Self {
+        Packet::Prepare(prepare)
+    }
+}
+
+impl From<Fulfill> for Packet {
+    fn from(fulfill: Fulfill) -> Self {
+        Packet::Fulfill(fulfill)
+    }
+}
+
+impl From<Reject> for Packet {
+    fn from(reject: Reject) -> Self {
+        Packet::Reject(reject)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Prepare {
     buffer: BytesMut,
