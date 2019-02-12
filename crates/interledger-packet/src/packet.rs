@@ -29,7 +29,7 @@ pub enum PacketType {
 
 impl PacketType {
     #[inline]
-    pub fn new(byte: u8) -> Result<Self, ParseError> {
+    pub fn try_from(byte: u8) -> Result<Self, ParseError> {
         match byte {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
@@ -50,11 +50,11 @@ pub enum Packet {
 }
 
 impl Packet {
-    pub fn new(buffer: BytesMut) -> Result<Self, ParseError> {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         match buffer.first() {
-            Some(&12) => Ok(Packet::Prepare(Prepare::new(buffer)?)),
-            Some(&13) => Ok(Packet::Fulfill(Fulfill::new(buffer)?)),
-            Some(&14) => Ok(Packet::Reject(Reject::new(buffer)?)),
+            Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
+            Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
+            Some(&14) => Ok(Packet::Reject(Reject::try_from(buffer)?)),
             _ => {
                 Err(ParseError::InvalidPacket(format!(
                     "Unknown packet type: {:?}",
@@ -95,7 +95,7 @@ pub struct PrepareBuilder<'a> {
 
 impl Prepare {
     // TODO change this to `TryFrom` when it is stabilized
-    pub fn new(buffer: BytesMut) -> Result<Self, ParseError> {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         let (content_offset, mut content) =
             deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
@@ -235,7 +235,7 @@ pub struct FulfillBuilder<'a> {
 }
 
 impl Fulfill {
-    pub fn new(buffer: BytesMut) -> Result<Self, ParseError> {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         let (content_offset, mut content) =
             deserialize_envelope(PacketType::Fulfill, &buffer)?;
 
@@ -304,7 +304,7 @@ pub struct RejectBuilder<'a> {
 }
 
 impl Reject {
-    pub fn new(buffer: BytesMut) -> Result<Self, ParseError> {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         let (content_offset, mut content) =
             deserialize_envelope(PacketType::Reject, &buffer)?;
         let content_len = content.len();
@@ -444,11 +444,11 @@ mod test_packet_type {
     use super::*;
 
     #[test]
-    fn test_new() {
-        assert_eq!(PacketType::new(12).unwrap(), PacketType::Prepare);
-        assert_eq!(PacketType::new(13).unwrap(), PacketType::Fulfill);
-        assert_eq!(PacketType::new(14).unwrap(), PacketType::Reject);
-        assert!(PacketType::new(15).is_err());
+    fn test_try_from() {
+        assert_eq!(PacketType::try_from(12).unwrap(), PacketType::Prepare);
+        assert_eq!(PacketType::try_from(13).unwrap(), PacketType::Fulfill);
+        assert_eq!(PacketType::try_from(14).unwrap(), PacketType::Reject);
+        assert!(PacketType::try_from(15).is_err());
     }
 }
 
@@ -459,24 +459,24 @@ mod test_packet {
     use super::*;
 
     #[test]
-    fn test_new() {
+    fn test_try_from() {
         assert_eq!(
-            Packet::new(BytesMut::from(*PREPARE_BYTES)).unwrap(),
+            Packet::try_from(BytesMut::from(*PREPARE_BYTES)).unwrap(),
             Packet::Prepare(PREPARE.clone()),
         );
         assert_eq!(
-            Packet::new(BytesMut::from(*FULFILL_BYTES)).unwrap(),
+            Packet::try_from(BytesMut::from(*FULFILL_BYTES)).unwrap(),
             Packet::Fulfill(FULFILL.clone()),
         );
         assert_eq!(
-            Packet::new(BytesMut::from(*REJECT_BYTES)).unwrap(),
+            Packet::try_from(BytesMut::from(*REJECT_BYTES)).unwrap(),
             Packet::Reject(REJECT.clone()),
         );
 
         // Empty buffer:
-        assert!(Packet::new(BytesMut::from(vec![])).is_err());
+        assert!(Packet::try_from(BytesMut::from(vec![])).is_err());
         // Unknown packet type:
-        assert!(Packet::new(BytesMut::from(vec![0x99])).is_err());
+        assert!(Packet::try_from(BytesMut::from(vec![0x99])).is_err());
     }
 
     #[test]
@@ -502,21 +502,21 @@ mod test_prepare {
     use super::*;
 
     #[test]
-    fn test_new() {
+    fn test_try_from() {
         assert_eq!(
-            Prepare::new(BytesMut::from(*PREPARE_BYTES)).unwrap(),
+            Prepare::try_from(BytesMut::from(*PREPARE_BYTES)).unwrap(),
             *PREPARE
         );
 
         // Incorrect packet type on an otherwise well-formed Prepare.
-        assert!(Prepare::new({
+        assert!(Prepare::try_from({
             let mut with_wrong_type = BytesMut::from(*PREPARE_BYTES);
             with_wrong_type[0] = PacketType::Fulfill as u8;
             with_wrong_type
         }).is_err());
 
         // A packet with junk data appened to the end.
-        let with_junk_data = Prepare::new({
+        let with_junk_data = Prepare::try_from({
             let mut buffer = BytesMut::from(*PREPARE_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
@@ -590,14 +590,14 @@ mod test_fulfill {
     use super::*;
 
     #[test]
-    fn test_new() {
+    fn test_try_from() {
         assert_eq!(
-            Fulfill::new(BytesMut::from(*FULFILL_BYTES)).unwrap(),
+            Fulfill::try_from(BytesMut::from(*FULFILL_BYTES)).unwrap(),
             *FULFILL
         );
 
         // A packet with junk data appened to the end.
-        let with_junk_data = Fulfill::new({
+        let with_junk_data = Fulfill::try_from({
             let mut buffer = BytesMut::from(*FULFILL_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
@@ -615,7 +615,7 @@ mod test_fulfill {
             buffer.put_var_octet_string(fixtures::DATA);
             buffer
         };
-        assert!(Fulfill::new(with_data_in_junk).is_err());
+        assert!(Fulfill::try_from(with_data_in_junk).is_err());
     }
 
     #[test]
@@ -643,14 +643,14 @@ mod test_reject {
     use super::*;
 
     #[test]
-    fn test_new() {
+    fn test_try_from() {
         assert_eq!(
-            Reject::new(BytesMut::from(*REJECT_BYTES)).unwrap(),
+            Reject::try_from(BytesMut::from(*REJECT_BYTES)).unwrap(),
             *REJECT,
         );
 
         // A packet with junk data appened to the end.
-        let with_junk_data = Reject::new({
+        let with_junk_data = Reject::try_from({
             let mut buffer = BytesMut::from(*REJECT_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
