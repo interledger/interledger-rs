@@ -1,0 +1,18 @@
+[package]
+name = "interledger-http"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan@ripple.com>"]
+description = "Interledger packet serialization/deserialization"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+bytes = "0.4.11"
+futures = "0.1.25"
+http = "0.1.15"
+hyper = "0.12.24"
+interledger-packet = { path = "../interledger-packet" }
+interledger-service = { path = "../interledger-service" }
+log = "0.4.6"
+reqwest = "0.9.9"
+tower-service = "0.2.0"
