@@ -9,3 +9,4 @@ extern crate log;
 extern crate reqwest;
 
 pub mod server;
+pub mod store;

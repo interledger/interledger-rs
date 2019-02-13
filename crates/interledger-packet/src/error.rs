@@ -68,7 +68,10 @@ mod test_error_code {
     fn test_class() {
         assert_eq!(ErrorCode::F00_BAD_REQUEST.class(), ErrorClass::Final);
         assert_eq!(ErrorCode::T00_INTERNAL_ERROR.class(), ErrorClass::Temporary);
-        assert_eq!(ErrorCode::R00_TRANSFER_TIMED_OUT.class(), ErrorClass::Relative);
+        assert_eq!(
+            ErrorCode::R00_TRANSFER_TIMED_OUT.class(),
+            ErrorClass::Relative
+        );
         assert_eq!(ErrorCode::new(*b"???").class(), ErrorClass::Unknown);
     }
 }

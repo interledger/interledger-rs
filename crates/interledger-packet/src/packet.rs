@@ -1,5 +1,5 @@
-use std::io::Cursor;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::str;
 use std::time::SystemTime;
 
@@ -7,8 +7,8 @@ use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
-use super::{ErrorCode, ParseError};
 use super::oer::{self, BufOerExt, MutBufOerExt};
+use super::{ErrorCode, ParseError};
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -55,12 +55,10 @@ impl Packet {
             Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
             Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
             Some(&14) => Ok(Packet::Reject(Reject::try_from(buffer)?)),
-            _ => {
-                Err(ParseError::InvalidPacket(format!(
-                    "Unknown packet type: {:?}",
-                    buffer.first(),
-                )))
-            },
+            _ => Err(ParseError::InvalidPacket(format!(
+                "Unknown packet type: {:?}",
+                buffer.first(),
+            ))),
         }
     }
 }
@@ -114,16 +112,15 @@ pub struct PrepareBuilder<'a> {
 impl Prepare {
     // TODO change this to `TryFrom` when it is stabilized
     pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
-        let (content_offset, mut content) =
-            deserialize_envelope(PacketType::Prepare, &buffer)?;
+        let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
 
         let mut expires_at = [0x00; 17];
         content.read_exact(&mut expires_at)?;
         let expires_at = str::from_utf8(&expires_at[..])?;
-        let expires_at: DateTime<Utc> = Utc
-            .datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
+        let expires_at: DateTime<Utc> =
+            Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
         let expires_at = SystemTime::from(expires_at);
 
         // Skip execution condition.
@@ -167,10 +164,11 @@ impl Prepare {
         self.expires_at = expires_at;
         let offset = self.content_offset + AMOUNT_LEN;
         write!(
-            &mut self.buffer[offset..], "{}",
-            DateTime::<Utc>::from(expires_at)
-                .format(INTERLEDGER_TIMESTAMP_FORMAT),
-        ).unwrap();
+            &mut self.buffer[offset..],
+            "{}",
+            DateTime::<Utc>::from(expires_at).format(INTERLEDGER_TIMESTAMP_FORMAT),
+        )
+        .unwrap();
     }
 
     /// The returned value always has a length of 32.
@@ -183,11 +181,8 @@ impl Prepare {
 
     #[inline]
     pub fn destination(&self) -> &[u8] {
-        let offset = self.content_offset
-            + AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
-        (&self.buffer[offset..])
-            .peek_var_octet_string()
-            .unwrap()
+        let offset = self.content_offset + AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
+        (&self.buffer[offset..]).peek_var_octet_string().unwrap()
     }
 
     #[inline]
@@ -220,10 +215,11 @@ impl<'a> PrepareBuilder<'a> {
 
         let mut writer = buffer.writer();
         write!(
-            writer, "{}",
-            DateTime::<Utc>::from(self.expires_at)
-                .format(INTERLEDGER_TIMESTAMP_FORMAT),
-        ).unwrap();
+            writer,
+            "{}",
+            DateTime::<Utc>::from(self.expires_at).format(INTERLEDGER_TIMESTAMP_FORMAT),
+        )
+        .unwrap();
         let mut buffer = writer.into_inner();
 
         buffer.put_slice(&self.execution_condition[..]);
@@ -254,8 +250,7 @@ pub struct FulfillBuilder<'a> {
 
 impl Fulfill {
     pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
-        let (content_offset, mut content) =
-            deserialize_envelope(PacketType::Fulfill, &buffer)?;
+        let (content_offset, mut content) = deserialize_envelope(PacketType::Fulfill, &buffer)?;
 
         content.skip(FULFILLMENT_LEN)?;
         content.skip_var_octet_string()?;
@@ -275,7 +270,9 @@ impl Fulfill {
 
     pub fn data(&self) -> &[u8] {
         let data_offset = self.content_offset + FULFILLMENT_LEN;
-        (&self.buffer[data_offset..]).peek_var_octet_string().unwrap()
+        (&self.buffer[data_offset..])
+            .peek_var_octet_string()
+            .unwrap()
     }
 }
 
@@ -323,8 +320,7 @@ pub struct RejectBuilder<'a> {
 
 impl Reject {
     pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
-        let (content_offset, mut content) =
-            deserialize_envelope(PacketType::Reject, &buffer)?;
+        let (content_offset, mut content) = deserialize_envelope(PacketType::Reject, &buffer)?;
         let content_len = content.len();
 
         let mut code = [0; 3];
@@ -355,15 +351,21 @@ impl Reject {
     }
 
     pub fn triggered_by(&self) -> &[u8] {
-        (&self.buffer[self.triggered_by_offset..]).peek_var_octet_string().unwrap()
+        (&self.buffer[self.triggered_by_offset..])
+            .peek_var_octet_string()
+            .unwrap()
     }
 
     pub fn message(&self) -> &[u8] {
-        (&self.buffer[self.message_offset..]).peek_var_octet_string().unwrap()
+        (&self.buffer[self.message_offset..])
+            .peek_var_octet_string()
+            .unwrap()
     }
 
     pub fn data(&self) -> &[u8] {
-        (&self.buffer[self.data_offset..]).peek_var_octet_string().unwrap()
+        (&self.buffer[self.data_offset..])
+            .peek_var_octet_string()
+            .unwrap()
     }
 }
 
@@ -398,9 +400,10 @@ impl<'a> RejectBuilder<'a> {
     }
 }
 
-fn deserialize_envelope(packet_type: PacketType, mut reader: &[u8])
-    -> Result<(usize, &[u8]), ParseError>
-{
+fn deserialize_envelope(
+    packet_type: PacketType,
+    mut reader: &[u8],
+) -> Result<(usize, &[u8]), ParseError> {
     let got_type = reader.read_u8()?;
     if got_type == packet_type as u8 {
         let content_offset = 1 + {
@@ -429,7 +432,10 @@ pub struct MaxPacketAmountDetails {
 impl MaxPacketAmountDetails {
     #[inline]
     pub fn new(amount_received: u64, max_amount: u64) -> Self {
-        MaxPacketAmountDetails { amount_received, max_amount }
+        MaxPacketAmountDetails {
+            amount_received,
+            max_amount,
+        }
     }
 
     pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, std::io::Error> {
@@ -472,9 +478,9 @@ mod test_packet_type {
 
 #[cfg(test)]
 mod test_packet {
+    use super::*;
     use crate::fixtures::{FULFILL, PREPARE, REJECT};
     use crate::fixtures::{FULFILL_BYTES, PREPARE_BYTES, REJECT_BYTES};
-    use super::*;
 
     #[test]
     fn test_try_from() {
@@ -516,8 +522,8 @@ mod test_packet {
 
 #[cfg(test)]
 mod test_prepare {
-    use crate::fixtures::{self, PREPARE, PREPARE_BUILDER, PREPARE_BYTES};
     use super::*;
+    use crate::fixtures::{self, PREPARE, PREPARE_BUILDER, PREPARE_BYTES};
 
     #[test]
     fn test_try_from() {
@@ -531,27 +537,29 @@ mod test_prepare {
             let mut with_wrong_type = BytesMut::from(*PREPARE_BYTES);
             with_wrong_type[0] = PacketType::Fulfill as u8;
             with_wrong_type
-        }).is_err());
+        })
+        .is_err());
 
         // A packet with junk data appened to the end.
         let with_junk_data = Prepare::try_from({
             let mut buffer = BytesMut::from(*PREPARE_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(with_junk_data.amount(), PREPARE.amount());
         assert_eq!(with_junk_data.expires_at(), *fixtures::EXPIRES_AT);
-        assert_eq!(with_junk_data.execution_condition(), fixtures::EXECUTION_CONDITION);
+        assert_eq!(
+            with_junk_data.execution_condition(),
+            fixtures::EXECUTION_CONDITION
+        );
         assert_eq!(with_junk_data.destination(), PREPARE.destination());
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
 
     #[test]
     fn test_into_bytes_mut() {
-        assert_eq!(
-            BytesMut::from(PREPARE.clone()),
-            *PREPARE_BYTES,
-        );
+        assert_eq!(BytesMut::from(PREPARE.clone()), *PREPARE_BYTES,);
     }
 
     #[test]
@@ -565,7 +573,8 @@ mod test_prepare {
         let mut prepare = PrepareBuilder {
             amount: 9999,
             ..*PREPARE_BUILDER
-        }.build();
+        }
+        .build();
         prepare.set_amount(target_amount);
         assert_eq!(prepare.amount(), target_amount);
         assert_eq!(BytesMut::from(prepare), *PREPARE_BYTES);
@@ -582,7 +591,8 @@ mod test_prepare {
         let mut prepare = PrepareBuilder {
             expires_at: SystemTime::now(),
             ..*PREPARE_BUILDER
-        }.build();
+        }
+        .build();
         prepare.set_expires_at(target_expiry);
         assert_eq!(prepare.expires_at(), target_expiry);
         assert_eq!(BytesMut::from(prepare), *PREPARE_BYTES);
@@ -590,10 +600,7 @@ mod test_prepare {
 
     #[test]
     fn test_execution_condition() {
-        assert_eq!(
-            PREPARE.execution_condition(),
-            fixtures::EXECUTION_CONDITION,
-        );
+        assert_eq!(PREPARE.execution_condition(), fixtures::EXECUTION_CONDITION,);
     }
 
     #[test]
@@ -604,8 +611,8 @@ mod test_prepare {
 
 #[cfg(test)]
 mod test_fulfill {
-    use crate::fixtures::{self, FULFILL, FULFILL_BYTES};
     use super::*;
+    use crate::fixtures::{self, FULFILL, FULFILL_BYTES};
 
     #[test]
     fn test_try_from() {
@@ -619,7 +626,8 @@ mod test_fulfill {
             let mut buffer = BytesMut::from(*FULFILL_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(with_junk_data.fulfillment(), fixtures::FULFILLMENT);
         assert_eq!(with_junk_data.data(), fixtures::DATA);
 
@@ -638,10 +646,7 @@ mod test_fulfill {
 
     #[test]
     fn test_into_bytes_mut() {
-        assert_eq!(
-            BytesMut::from(FULFILL.clone()),
-            *FULFILL_BYTES,
-        );
+        assert_eq!(BytesMut::from(FULFILL.clone()), *FULFILL_BYTES,);
     }
 
     #[test]
@@ -657,8 +662,8 @@ mod test_fulfill {
 
 #[cfg(test)]
 mod test_reject {
-    use crate::fixtures::{self, REJECT, REJECT_BUILDER, REJECT_BYTES};
     use super::*;
+    use crate::fixtures::{self, REJECT, REJECT_BUILDER, REJECT_BYTES};
 
     #[test]
     fn test_try_from() {
@@ -672,7 +677,8 @@ mod test_reject {
             let mut buffer = BytesMut::from(*REJECT_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
         assert_eq!(with_junk_data.triggered_by(), REJECT_BUILDER.triggered_by);
@@ -681,10 +687,7 @@ mod test_reject {
 
     #[test]
     fn test_into_bytes_mut() {
-        assert_eq!(
-            BytesMut::from(REJECT.clone()),
-            *REJECT_BYTES,
-        );
+        assert_eq!(BytesMut::from(REJECT.clone()), *REJECT_BYTES,);
     }
 
     #[test]
@@ -724,10 +727,7 @@ mod test_max_packet_amount_details {
 
     #[test]
     fn test_from_bytes() {
-        assert_eq!(
-            MaxPacketAmountDetails::from_bytes(&BYTES).unwrap(),
-            DETAILS,
-        );
+        assert_eq!(MaxPacketAmountDetails::from_bytes(&BYTES).unwrap(), DETAILS,);
         assert_eq!(
             MaxPacketAmountDetails::from_bytes(&[][..])
                 .unwrap_err()

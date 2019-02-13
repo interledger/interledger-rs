@@ -2,12 +2,12 @@
 
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
 
-use interledger_packet as ilp;
 use ilp::{ErrorCode, Fulfill, Prepare, Reject};
 use ilp::{FulfillBuilder, PrepareBuilder, RejectBuilder};
+use interledger_packet as ilp;
 
 lazy_static! {
     static ref PREPARE: PrepareBuilder<'static> = PrepareBuilder {
@@ -26,7 +26,6 @@ lazy_static! {
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\
         ",
     };
-
     static ref FULFILL: FulfillBuilder<'static> = FulfillBuilder {
         fulfillment: b"\
             \x11\x7b\x43\x4f\x1a\x54\xe9\x04\x4f\x4f\x54\x92\x3b\x2c\xff\x9e\
@@ -37,7 +36,6 @@ lazy_static! {
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\
         ",
     };
-
     static ref REJECT: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
@@ -99,7 +97,7 @@ fn benchmark_deserialize(c: &mut Criterion) {
     });
 }
 
-criterion_group!{
+criterion_group! {
     name = benches;
     config = Criterion::default()
         .sample_size(1000);

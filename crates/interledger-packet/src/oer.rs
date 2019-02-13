@@ -144,7 +144,8 @@ mod test_predict {
             assert_eq!(
                 predict_var_octet_string(i),
                 buffer.len(),
-                "string_length={:?}", i,
+                "string_length={:?}",
+                i,
             );
         }
     }
@@ -199,17 +200,11 @@ mod test_buf_oer_ext {
             (SIZE_5678_VARSTR.clone(), &[0; 5678][..]),
         ];
         for (buffer, varstr) in tests {
-            assert_eq!(
-                (&buffer[..]).peek_var_octet_string().unwrap(),
-                *varstr,
-            );
+            assert_eq!((&buffer[..]).peek_var_octet_string().unwrap(), *varstr,);
         }
 
         assert_eq!(
-            (&[][..])
-                .peek_var_octet_string()
-                .unwrap_err()
-                .kind(),
+            (&[][..]).peek_var_octet_string().unwrap_err().kind(),
             ErrorKind::UnexpectedEof,
         );
         assert_eq!(
@@ -224,12 +219,7 @@ mod test_buf_oer_ext {
     #[test]
     fn test_skip() {
         let mut empty = &[][..];
-        assert_eq!(
-            empty.skip(1)
-                .unwrap_err()
-                .kind(),
-            ErrorKind::UnexpectedEof,
-        );
+        assert_eq!(empty.skip(1).unwrap_err().kind(), ErrorKind::UnexpectedEof,);
 
         let mut reader = &[0x01, 0x02, 0x03][..];
         assert!(reader.skip(2).is_ok());
@@ -252,11 +242,8 @@ mod test_buf_oer_ext {
         }
 
         assert_eq!(
-            (&[][..])
-                .skip_var_octet_string()
-                .unwrap_err()
-                .kind(),
-                ErrorKind::UnexpectedEof,
+            (&[][..]).skip_var_octet_string().unwrap_err().kind(),
+            ErrorKind::UnexpectedEof,
         );
         assert_eq!(
             (&LENGTH_TOO_HIGH_VARSTR.clone()[..])
@@ -276,9 +263,21 @@ mod test_buf_oer_ext {
             (vec![0x03, 0x01, 0x02, 0x03], 0x010203, 4),
             (vec![0x04, 0x01, 0x02, 0x03, 0x04], 0x01020304, 5),
             (vec![0x05, 0x01, 0x02, 0x03, 0x04, 0x05], 0x0102030405, 6),
-            (vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06], 0x010203040506, 7),
-            (vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07], 0x01020304050607, 8),
-            (vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08], 0x0102030405060708, 9),
+            (
+                vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                0x010203040506,
+                7,
+            ),
+            (
+                vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+                0x01020304050607,
+                8,
+            ),
+            (
+                vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+                0x0102030405060708,
+                9,
+            ),
         ];
 
         for (buffer, value, offset) in tests {
@@ -298,10 +297,7 @@ mod test_buf_oer_ext {
 
         for (buffer, error_kind) in tests {
             assert_eq!(
-                (&buffer[..])
-                    .read_var_uint()
-                    .unwrap_err()
-                    .kind(),
+                (&buffer[..]).read_var_uint().unwrap_err().kind(),
                 *error_kind,
             );
         }
@@ -345,9 +341,21 @@ mod buf_mut_oer_ext {
             (vec![0x03, 0x01, 0x02, 0x03], 0x010203, 4),
             (vec![0x04, 0x01, 0x02, 0x03, 0x04], 0x01020304, 5),
             (vec![0x05, 0x01, 0x02, 0x03, 0x04, 0x05], 0x0102030405, 6),
-            (vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06], 0x010203040506, 7),
-            (vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07], 0x01020304050607, 8),
-            (vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08], 0x0102030405060708, 9),
+            (
+                vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                0x010203040506,
+                7,
+            ),
+            (
+                vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+                0x01020304050607,
+                8,
+            ),
+            (
+                vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+                0x0102030405060708,
+                9,
+            ),
         ];
 
         for (buffer, value, _offset) in tests {
