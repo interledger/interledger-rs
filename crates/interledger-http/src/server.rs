@@ -15,7 +15,7 @@ pub struct HttpServerService<S, T> {
 
 impl<S, T> HttpServerService<S, T>
 where
-    S: Service + 'static,
+    S: Service + Clone + 'static,
     T: HttpStore,
 {
     pub fn new(handler: S, store: T) -> Self {
@@ -74,7 +74,7 @@ where
 
 impl<S, T> HttpService for HttpServerService<S, T>
 where
-    S: Service + 'static,
+    S: Service + Clone + 'static,
     T: HttpStore + 'static,
 {
     type ReqBody = Body;
@@ -99,7 +99,7 @@ fn parse_prepare_from_request(
                 debug!("Copying bytes from incoming HTTP request into Prepare packet");
                 BytesMut::from(bytes)
             });
-            Prepare::new(bytes)
+            Prepare::try_from(bytes)
                 .map_err(|_err| Response::builder().status(400).body(Body::empty()).unwrap())
         })
 }
