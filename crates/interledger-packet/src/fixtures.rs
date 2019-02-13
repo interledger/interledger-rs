@@ -5,12 +5,11 @@ use std::time::SystemTime;
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 
-use super::{Fulfill, FulfillBuilder, Prepare, PrepareBuilder, Reject, RejectBuilder};
 use super::ErrorCode;
+use super::{Fulfill, FulfillBuilder, Prepare, PrepareBuilder, Reject, RejectBuilder};
 
 lazy_static! {
     pub static ref PREPARE: Prepare = PREPARE_BUILDER.build();
-
     pub static ref PREPARE_BUILDER: PrepareBuilder<'static> = PrepareBuilder {
         amount: 107,
         destination: b"example.alice",
@@ -18,7 +17,6 @@ lazy_static! {
         execution_condition: &EXECUTION_CONDITION,
         data: &DATA,
     };
-
     pub static ref PREPARE_BYTES: &'static [u8] = b"\
         \x0c\x82\x01\x4b\x00\x00\x00\x00\x00\x00\x00\x6b\x32\x30\x31\x38\x30\x36\
         \x30\x37\x32\x30\x34\x38\x34\x32\x34\x38\x33\x11\x7b\x43\x4f\x1a\x54\xe9\
@@ -40,7 +38,6 @@ lazy_static! {
         \x4b\xe9\x02\x19\x70\x9d\x0c\x26\xd3\xb5\xf4\xad\x87\x9d\x84\x94\xbb\x3a\
         \xeb\xfe\x61\x2e\xc5\x40\x41\xe4\xa3\x80\xf0\
     ";
-
     pub static ref EXPIRES_AT: SystemTime =
         DateTime::parse_from_rfc3339("2018-06-07T20:48:42.483Z")
             .unwrap()
@@ -55,12 +52,10 @@ pub static EXECUTION_CONDITION: [u8; 32] = *b"\
 
 lazy_static! {
     pub static ref FULFILL: Fulfill = FULFILL_BUILDER.build();
-
     pub static ref FULFILL_BUILDER: FulfillBuilder<'static> = FulfillBuilder {
         fulfillment: &FULFILLMENT,
         data: &DATA,
     };
-
     pub static ref FULFILL_BYTES: &'static [u8] = b"\
         \x0d\x82\x01\x24\x11\x7b\x43\x4f\x1a\x54\xe9\x04\x4f\x4f\x54\x92\x3b\x2c\
         \xff\x9e\x4a\x6d\x42\x0a\xe2\x81\xd5\x02\x5d\x7b\xb0\x40\xc4\xb4\xc0\x4a\
@@ -89,14 +84,12 @@ pub static FULFILLMENT: [u8; 32] = *b"\
 
 lazy_static! {
     pub static ref REJECT: Reject = REJECT_BUILDER.build();
-
     pub static ref REJECT_BUILDER: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
         triggered_by: b"example.connector",
         data: &DATA,
     };
-
     pub static ref REJECT_BYTES: &'static [u8] = b"\
         \x0e\x82\x01\x24\x46\x39\x39\x11\x65\x78\x61\x6d\x70\x6c\x65\x2e\x63\x6f\
         \x6e\x6e\x65\x63\x74\x6f\x72\x0a\x53\x6f\x6d\x65\x20\x65\x72\x72\x6f\x72\
