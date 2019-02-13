@@ -11,5 +11,6 @@ bytes = "0.4.11"
 futures = "0.1.25"
 hashbrown = "0.1.8"
 interledger-http = { path = "../interledger-http" }
+interledger-router = { path = "../interledger-router" }
 interledger-service = { path = "../interledger-service" }
 parking_lot = "0.7.1"
