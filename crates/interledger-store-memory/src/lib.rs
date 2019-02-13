@@ -22,6 +22,7 @@ pub struct Account {
     http_outgoing_authorization: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct InMemoryStore {
     accounts: Arc<RwLock<HashMap<u64, Account>>>,
 }
@@ -38,7 +39,7 @@ impl HttpStore for InMemoryStore {
     fn get_account_from_authorization(
         &self,
         auth_header: &str,
-    ) -> Box<Future<Item = AccountId, Error = ()>> {
+    ) -> Box<Future<Item = AccountId, Error = ()> + Send> {
         Box::new(result(
             (*self.accounts.read())
                 .iter()
@@ -58,7 +59,7 @@ impl HttpStore for InMemoryStore {
     fn get_http_details_for_account<'a>(
         &self,
         account_id: AccountId,
-    ) -> Box<Future<Item = HttpDetails, Error = ()>> {
+    ) -> Box<Future<Item = HttpDetails, Error = ()> + Send> {
         Box::new(result(
             (*self.accounts.read())
                 .get(&account_id)
