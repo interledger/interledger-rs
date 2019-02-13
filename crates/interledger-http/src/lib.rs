@@ -8,6 +8,10 @@ extern crate interledger_service;
 extern crate log;
 extern crate reqwest;
 
-pub mod client;
-pub mod server;
-pub mod store;
+mod client;
+mod server;
+mod store;
+
+pub use self::client::HttpClientService;
+pub use self::server::HttpServerService;
+pub use self::store::{HttpDetails, HttpStore};

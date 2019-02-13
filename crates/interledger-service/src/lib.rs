@@ -12,24 +12,8 @@ pub struct Request {
     pub prepare: Prepare,
 }
 
-pub trait RequestTrait {
-    fn maybe_from(&self) -> Option<AccountId>;
-    fn maybe_to(&self) -> Option<AccountId>;
-    fn prepare(&self) -> Prepare;
-}
-
-pub trait RequestWithTo: RequestTrait {
-    fn to(&self) -> AccountId;
-}
-
-pub trait RequestWithFrom: RequestTrait {
-    fn from(&self) -> AccountId;
-}
-
-pub trait RequestWithBoth: RequestWithFrom + RequestWithTo {}
-
 // TODO should services be cloneable by default? it helps with lifetime issues
-pub trait Service: Clone {
+pub trait Service {
     type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
 
     fn poll_ready(&mut self) -> Poll<(), ()> {

@@ -138,7 +138,7 @@ fn parse_packet_from_response(
     .and_then(|body: Chunk| {
         // TODO can we get the body as a BytesMut so we don't need to copy?
         let body = BytesMut::from(body.to_vec());
-        match Packet::new(body) {
+        match Packet::try_from(body) {
             Ok(Packet::Fulfill(fulfill)) => Ok(fulfill),
             Ok(Packet::Reject(reject)) => Err(reject),
             _ => Err(RejectBuilder {
