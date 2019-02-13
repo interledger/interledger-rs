@@ -2,7 +2,7 @@
 name = "interledger-http"
 version = "0.1.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
-description = "Interledger packet serialization/deserialization"
+description = "HTTP client and server services for Interledger.rs"
 license = "Apache-2.0"
 edition = "2018"
 

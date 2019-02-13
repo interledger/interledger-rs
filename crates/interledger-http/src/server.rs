@@ -6,7 +6,7 @@ use futures::{
 };
 use hyper::{body::Body, service::Service as HttpService, Error, Request, Response};
 use interledger_packet::{Fulfill, Prepare, Reject};
-use interledger_service::{Request as IlpRequest, Service};
+use interledger_service::{AccountId, Request as IlpRequest, Service};
 
 pub struct HttpServerService<S, T> {
     handler: S,
@@ -29,7 +29,7 @@ where
     fn check_authorization(
         &self,
         request: &Request<Body>,
-    ) -> impl Future<Item = u64, Error = Response<Body>> {
+    ) -> impl Future<Item = AccountId, Error = Response<Body>> {
         let authorization: Option<&str> = request
             .headers()
             .get("authorization")
