@@ -1,0 +1,15 @@
+[package]
+name = "interledger-store-memory"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan@ripple.com>"]
+description = "In-memory data store for Interledger.rs"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+bytes = "0.4.11"
+futures = "0.1.25"
+hashbrown = "0.1.8"
+interledger-http = { path = "../interledger-http" }
+interledger-service = { path = "../interledger-service" }
+parking_lot = "0.7.1"

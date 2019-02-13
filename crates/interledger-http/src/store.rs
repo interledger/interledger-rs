@@ -1,17 +1,18 @@
 use futures::Future;
+use interledger_service::AccountId;
 
-pub struct HttpDetails<'a> {
-    pub url: &'a str,
-    pub auth_header: &'a str,
+pub struct HttpDetails {
+    pub url: String,
+    pub auth_header: String,
 }
 
 pub trait HttpStore {
     fn get_account_from_authorization(
         &self,
         auth_header: &str,
-    ) -> Box<Future<Item = u64, Error = ()>>;
-    fn get_http_details_for_account<'a>(
+    ) -> Box<Future<Item = AccountId, Error = ()>>;
+    fn get_http_details_for_account(
         &self,
-        account: u64,
-    ) -> Box<Future<Item = HttpDetails<'a>, Error = ()> + 'a>;
+        account: AccountId,
+    ) -> Box<Future<Item = HttpDetails, Error = ()>>;
 }

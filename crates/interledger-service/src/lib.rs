@@ -1,12 +1,14 @@
 extern crate futures;
 extern crate interledger_packet;
 
-use futures::{Future, Poll};
+use futures::{Async, Future, Poll};
 use interledger_packet::{Fulfill, Prepare, Reject};
 
+pub type AccountId = u64;
+
 pub struct Request {
-    pub from: Option<u64>,
-    pub to: Option<u64>,
+    pub from: Option<AccountId>,
+    pub to: Option<AccountId>,
     pub prepare: Prepare,
 }
 
@@ -14,7 +16,10 @@ pub struct Request {
 pub trait Service: Clone {
     type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
 
-    fn poll_ready(&mut self) -> Poll<(), ()>;
+    fn poll_ready(&mut self) -> Poll<(), ()> {
+        Ok(Async::Ready(()))
+    }
+
     fn call(&mut self, request: Request) -> Self::Future;
 }
 
