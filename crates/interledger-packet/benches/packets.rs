@@ -74,7 +74,7 @@ fn benchmark_deserialize(c: &mut Criterion) {
     let prepare_bytes = BytesMut::from(PREPARE.build());
     c.bench_function("Prepare (deserialize)", move |b| {
         b.iter(|| {
-            let parsed = Prepare::new(prepare_bytes.clone()).unwrap();
+            let parsed = Prepare::try_from(prepare_bytes.clone()).unwrap();
             assert_eq!(parsed.amount(), PREPARE.amount);
             assert_eq!(parsed.destination(), PREPARE.destination);
         });
@@ -83,7 +83,7 @@ fn benchmark_deserialize(c: &mut Criterion) {
     let fulfill_bytes = BytesMut::from(FULFILL.build());
     c.bench_function("Fulfill (deserialize)", move |b| {
         b.iter(|| {
-            let parsed = Fulfill::new(fulfill_bytes.clone()).unwrap();
+            let parsed = Fulfill::try_from(fulfill_bytes.clone()).unwrap();
             assert_eq!(parsed.fulfillment(), FULFILL.fulfillment);
         });
     });
@@ -91,7 +91,7 @@ fn benchmark_deserialize(c: &mut Criterion) {
     let reject_bytes = BytesMut::from(REJECT.build());
     c.bench_function("Reject (deserialize)", move |b| {
         b.iter(|| {
-            let parsed = Reject::new(reject_bytes.clone()).unwrap();
+            let parsed = Reject::try_from(reject_bytes.clone()).unwrap();
             assert_eq!(parsed.code(), REJECT.code);
         });
     });
