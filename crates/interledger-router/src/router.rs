@@ -1,19 +1,19 @@
 use super::store::RouterStore;
 use bytes::Bytes;
 use futures::{
-    future::{ok, result, Either},
+    future::{ok, result},
     Future,
 };
 use interledger_packet::{ErrorCode, RejectBuilder};
-use interledger_service::{BoxedIlpFuture, Request, Service};
-use parking_lot::{Mutex, RwLock};
+use interledger_service::{AccountId, BoxedIlpFuture, Request, Service};
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 static PEER_PREFIX: &'static [u8] = b"peer.";
 
 #[derive(Clone)]
 pub struct Router<S> {
-    routes: Arc<RwLock<Vec<Route>>>,
+    routes: Arc<Vec<Route>>,
     store: S,
 }
 
@@ -21,39 +21,42 @@ impl<S> Router<S>
 where
     S: RouterStore,
 {
-    pub fn new(store: S) -> Self {
+    pub fn new<'a, R, T>(routes: R, store: S) -> Self
+    where
+        R: IntoIterator<Item = (&'a [u8], Box<T>)>,
+        T: Service + Send + 'static,
+    {
+        let routes = routes
+            .into_iter()
+            .map(|(prefix, service)| Route::new(prefix, service))
+            .collect();
         Router {
-            routes: Arc::new(RwLock::new(Vec::new())),
+            routes: Arc::new(routes),
             store,
         }
     }
 
-    pub fn add_route<T, U>(&mut self, prefix: T, service: U) -> &mut Self
-    where
-        Bytes: From<T>,
-        U: Service + Send + 'static,
-    {
-        let route = Route::new(prefix, service);
-        self.routes.write().push(route);
-        self
-    }
-
-    fn get_next_hop_prefix(
-        &self,
-        request: Request,
-    ) -> impl Future<Item = (Bytes, Request), Error = ()> + 'static {
+    fn get_next_hop_prefix(&self, request: Request) -> Result<(Request, Option<&[u8]>), ()> {
         if request.to.is_some() || request.prepare.destination().starts_with(PEER_PREFIX) {
-            Either::A(ok((Bytes::from(request.prepare.destination()), request)))
+            Ok((request, None))
         } else {
-            Either::B(
-                self.store
-                    .get_next_hop(request.prepare.destination())
-                    .and_then(|(account_id, prefix)| {
-                        let mut request = request;
-                        request.to = Some(account_id);
-                        Ok((prefix, request))
-                    }),
-            )
+            let destination = request.prepare.destination();
+            let mut next_hop: Option<(AccountId, &[u8])> = None;
+            let mut max_prefix_len = 0;
+            for route in self.store.get_routing_table().iter() {
+                if destination.starts_with(route.0) && route.0.len() > max_prefix_len {
+                    next_hop = Some(route.1);
+                    max_prefix_len = route.0.len();
+                }
+            }
+
+            if let Some((account_id, prefix)) = next_hop {
+                let mut request = request;
+                request.to = Some(account_id);
+                Ok((request, Some(prefix)))
+            } else {
+                Err(())
+            }
         }
     }
 }
@@ -67,22 +70,25 @@ where
     fn call(&mut self, request: Request) -> Self::Future {
         let routes = self.routes.clone();
         Box::new(
-            self.get_next_hop_prefix(request)
-                .map_err(|_| {
-                    RejectBuilder {
-                        code: ErrorCode::F02_UNREACHABLE,
-                        message: &[],
-                        triggered_by: &[],
-                        data: &[],
-                    }
-                    .build()
-                })
-                .and_then(move |(prefix, request)| {
-                    result(
+            result(
+                self.get_next_hop_prefix(request)
+                    .map_err(|_| {
+                        RejectBuilder {
+                            code: ErrorCode::F02_UNREACHABLE,
+                            message: &[],
+                            triggered_by: &[],
+                            data: &[],
+                        }
+                        .build()
+                    })
+                    .and_then(move |(request, prefix)| {
                         routes
-                            .read()
                             .iter()
-                            .find(|route| route.matches(&prefix[..]))
+                            .find(|route| {
+                                route.matches(
+                                    prefix.or(Some(request.prepare.destination())).unwrap(),
+                                )
+                            })
                             .cloned()
                             .ok_or_else(|| {
                                 RejectBuilder {
@@ -92,10 +98,11 @@ where
                                     data: &[],
                                 }
                                 .build()
-                            }),
-                    )
-                    .and_then(|mut route| route.call(request))
-                }),
+                            })
+                            .map(|route| (route, request))
+                    }),
+            )
+            .and_then(|(mut route, request)| route.call(request)),
         )
     }
 }
@@ -107,7 +114,7 @@ struct Route {
 }
 
 impl Route {
-    fn new<P, S>(prefix: P, service: S) -> Self
+    fn new<P, S>(prefix: P, service: Box<S>) -> Self
     where
         Bytes: From<P>,
         S: Service + Send + 'static,
