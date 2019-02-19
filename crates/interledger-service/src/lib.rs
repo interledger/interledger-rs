@@ -12,7 +12,6 @@ pub struct Request {
     pub prepare: Prepare,
 }
 
-// TODO should services be cloneable by default? it helps with lifetime issues
 pub trait Service {
     type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
 
