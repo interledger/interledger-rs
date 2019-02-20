@@ -6,23 +6,20 @@ use futures::{
 };
 use hyper::{body::Body, service::Service as HttpService, Error, Request, Response};
 use interledger_packet::{Fulfill, Prepare, Reject};
-use interledger_service::{AccountId, Request as IlpRequest, Service};
+use interledger_service::*;
 
 pub struct HttpServerService<S, T> {
-    handler: S,
+    next: S,
     store: T,
 }
 
 impl<S, T> HttpServerService<S, T>
 where
-    S: Service + Clone + 'static,
+    S: IncomingService + Clone + 'static,
     T: HttpStore,
 {
-    pub fn new(handler: S, store: T) -> Self {
-        HttpServerService {
-            handler: handler,
-            store,
-        }
+    pub fn new(next: S, store: T) -> Self {
+        HttpServerService { next: next, store }
     }
 
     // TODO support certificate-based authentication
@@ -48,21 +45,20 @@ where
         }
     }
 
-    fn handle_request(
+    fn handle_http_request(
         &mut self,
         request: Request<Body>,
     ) -> impl Future<Item = Response<Body>, Error = Error> {
-        let mut handler = self.handler.clone();
+        let mut next = self.next.clone();
         self.check_authorization(&request)
             .and_then(|from_account| {
                 parse_prepare_from_request(request).and_then(move |prepare| {
                     // Call the inner ILP service
-                    let request = IlpRequest {
-                        from: Some(from_account),
-                        to: None,
+                    next.handle_request(IncomingRequest {
+                        from: from_account,
                         prepare,
-                    };
-                    handler.call(request).then(ilp_response_to_http_response)
+                    })
+                    .then(ilp_response_to_http_response)
                 })
             })
             .then(|result| match result {
@@ -74,7 +70,7 @@ where
 
 impl<S, T> HttpService for HttpServerService<S, T>
 where
-    S: Service + Clone + 'static,
+    S: IncomingService + Clone + 'static,
     T: HttpStore + 'static,
 {
     type ReqBody = Body;
@@ -83,7 +79,7 @@ where
     type Future = Box<Future<Item = Response<Self::ResBody>, Error = Self::Error> + 'static>;
 
     fn call(&mut self, request: Request<Self::ReqBody>) -> Self::Future {
-        Box::new(self.handle_request(request))
+        Box::new(self.handle_http_request(request))
     }
 }
 
