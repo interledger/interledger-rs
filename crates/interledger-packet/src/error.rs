@@ -36,6 +36,7 @@ impl ErrorCode {
     pub const F06_UNEXPECTED_PAYMENT: Self = ErrorCode(*b"F06");
     pub const F07_CANNOT_RECEIVE: Self = ErrorCode(*b"F07");
     pub const F08_AMOUNT_TOO_LARGE: Self = ErrorCode(*b"F08");
+    pub const F09_INVALID_PEER_RESPONSE: Self = ErrorCode(*b"F09");
     pub const F99_APPLICATION_ERROR: Self = ErrorCode(*b"F99");
 
     // Temporary errors:

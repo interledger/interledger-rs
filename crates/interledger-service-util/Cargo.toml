@@ -1,0 +1,14 @@
+[package]
+name = "interledger-service-util"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan@ripple.com>"]
+description = "Small, commonly used Interledger services that don't really fit anywhere else"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+futures = "0.1.25"
+interledger-packet = { path = "../interledger-packet" }
+interledger-service = { path = "../interledger-service" }
+ring = "0.14.6"
+tokio = "0.1.15"
