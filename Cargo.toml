@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+  "./crates/interledger-btp",
   "./crates/interledger-http",
   "./crates/interledger-packet",
   "./crates/interledger-router",
