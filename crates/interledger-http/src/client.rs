@@ -2,7 +2,7 @@ use super::store::{HttpDetails, HttpStore};
 use bytes::BytesMut;
 use futures::{future::result, Future, Stream};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
-use interledger_service::{AccountId, BoxedIlpFuture, Request, Service};
+use interledger_service::*;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
@@ -37,24 +37,19 @@ where
             store: Arc::new(store),
         }
     }
+}
 
-    fn get_http_details(
-        &self,
-        account: Option<AccountId>,
-    ) -> impl Future<Item = HttpDetails, Error = Reject> {
-        let store = self.store.clone();
-        result(account.ok_or_else(|| {
-            RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &[],
-                triggered_by: &[],
-                data: &[],
-            }
-            .build()
-        }))
-        .and_then(move |to_account| {
-            store
-                .get_http_details_for_account(to_account)
+impl<T> OutgoingService for HttpClientService<T>
+where
+    T: HttpStore,
+{
+    type Future = BoxedIlpFuture;
+
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
+        let client = self.client.clone();
+        Box::new(
+            self.store
+                .get_http_details_for_account(request.to)
                 .map_err(|_err| {
                     RejectBuilder {
                         code: ErrorCode::F02_UNREACHABLE,
@@ -64,20 +59,6 @@ where
                     }
                     .build()
                 })
-        })
-    }
-}
-
-impl<T> Service for HttpClientService<T>
-where
-    T: HttpStore,
-{
-    type Future = BoxedIlpFuture;
-
-    fn call(&mut self, request: Request) -> Self::Future {
-        let client = self.client.clone();
-        Box::new(
-            self.get_http_details(request.to)
                 .and_then(move |HttpDetails { url, auth_header }| {
                     client
                         .post(&url)

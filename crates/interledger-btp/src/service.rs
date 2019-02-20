@@ -9,7 +9,7 @@ use futures::{
 };
 use hashbrown::HashMap;
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
-use interledger_service::{AccountId, BoxedIlpFuture, Request, Service};
+use interledger_service::*;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::io::{Error as IoError, ErrorKind};
@@ -29,7 +29,7 @@ pub fn connect_client<S, T, W>(
     accounts: Vec<AccountId>,
 ) -> impl Future<Item = BtpService<S>, Error = ()>
 where
-    S: Service + Clone + Send + Sync + 'static,
+    S: IncomingService + Clone + Send + Sync + 'static,
     // TODO do these need to be cloneable?
     T: BtpStore + 'static,
 {
@@ -92,9 +92,8 @@ where
           match parse_ilp_packet(message) {
             Ok((request_id, Packet::Prepare(prepare))) => Either::A(
               next
-                .call(Request {
-                  from: Some(account_id),
-                  to: None,
+                .handle_request(IncomingRequest {
+                  from: account_id,
                   prepare,
                 })
                 .then(move |result| {
@@ -142,6 +141,7 @@ where
   })
 }
 
+#[derive(Clone)]
 pub struct BtpService<S> {
     connections: Arc<RwLock<HashMap<AccountId, UnboundedSender<Message>>>>,
     pending_requests: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
@@ -149,23 +149,21 @@ pub struct BtpService<S> {
     next: S,
 }
 
-impl<S> Service for BtpService<S>
+impl<S> OutgoingService for BtpService<S>
 where
-    S: Service + Clone + Send + Sync + 'static,
+    S: OutgoingService + Clone + Send + Sync + 'static,
     // T: BtpStore + Clone + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
-    fn call(&mut self, request: Request) -> Self::Future {
-        if request.to.is_some() && (*self.connections.read()).contains_key(&request.to.unwrap()) {
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
+        if let Some(connection) = (*self.connections.read()).get(&request.to) {
             let request_id = random::<u32>();
 
-            let send_result = (*self.connections.read())
-                .get(&request.to.unwrap())
-                .unwrap()
-                .unbounded_send(Message::from(BytesMut::from(request.prepare).to_vec()));
-
-            if send_result.is_ok() {
+            if connection
+                .unbounded_send(Message::from(BytesMut::from(request.prepare).to_vec()))
+                .is_ok()
+            {
                 let (sender, receiver) = oneshot::channel();
                 (*self.pending_requests.lock()).insert(request_id, sender);
                 Box::new(
@@ -195,8 +193,20 @@ where
                 Box::new(err(reject))
             }
         } else {
-            Box::new(self.next.call(request))
+            Box::new(self.next.send_request(request))
         }
+    }
+}
+
+// Passthrough implementation so this can be chained with other services like an HTTP Server
+impl<S> IncomingService for BtpService<S>
+where
+    S: IncomingService,
+{
+    type Future = BoxedIlpFuture;
+
+    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
+        Box::new(self.next.handle_request(request))
     }
 }
 

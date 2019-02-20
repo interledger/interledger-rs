@@ -1,25 +1,42 @@
 extern crate futures;
 extern crate interledger_packet;
 
-use futures::{Async, Future, Poll};
+use futures::{Future, Poll};
 use interledger_packet::{Fulfill, Prepare, Reject};
 
 pub type AccountId = u64;
 
-pub struct Request {
-    pub from: Option<AccountId>,
-    pub to: Option<AccountId>,
+pub struct IncomingRequest {
+    pub from: AccountId,
     pub prepare: Prepare,
 }
 
-pub trait Service {
+pub struct OutgoingRequest {
+    pub from: AccountId,
+    pub to: AccountId,
+    pub prepare: Prepare,
+}
+
+impl IncomingRequest {
+    pub fn set_to(self, to: AccountId) -> OutgoingRequest {
+        OutgoingRequest {
+            from: self.from,
+            prepare: self.prepare,
+            to,
+        }
+    }
+}
+
+pub trait IncomingService {
     type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
 
-    fn poll_ready(&mut self) -> Poll<(), ()> {
-        Ok(Async::Ready(()))
-    }
+    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future;
+}
 
-    fn call(&mut self, request: Request) -> Self::Future;
+pub trait OutgoingService {
+    type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
+
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future;
 }
 
 pub type BoxedIlpFuture = Box<Future<Item = Fulfill, Error = Reject> + Send + 'static>;
