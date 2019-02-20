@@ -6,5 +6,6 @@ members = [
   "./crates/interledger-packet",
   "./crates/interledger-router",
   "./crates/interledger-service",
+  "./crates/interledger-service-util",
   "./crates/interledger-store-memory",
 ]
