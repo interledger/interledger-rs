@@ -1,7 +1,7 @@
 extern crate futures;
 extern crate interledger_packet;
 
-use futures::{Future, Poll};
+use futures::Future;
 use interledger_packet::{Fulfill, Prepare, Reject};
 
 pub type AccountId = u64;
@@ -18,7 +18,7 @@ pub struct OutgoingRequest {
 }
 
 impl IncomingRequest {
-    pub fn set_to(self, to: AccountId) -> OutgoingRequest {
+    pub fn into_outgoing(self, to: AccountId) -> OutgoingRequest {
         OutgoingRequest {
             from: self.from,
             prepare: self.prepare,

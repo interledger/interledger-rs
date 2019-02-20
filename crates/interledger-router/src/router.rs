@@ -38,7 +38,7 @@ where
         }
 
         if let Some(account_id) = next_hop {
-            let request = request.set_to(account_id);
+            let request = request.into_outgoing(account_id);
             Box::new(self.next.send_request(request))
         } else {
             Box::new(err(RejectBuilder {
