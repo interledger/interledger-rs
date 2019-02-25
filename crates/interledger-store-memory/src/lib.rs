@@ -1,12 +1,14 @@
 use bytes::Bytes;
 use futures::{future::result, Future};
 use hashbrown::HashMap;
+use interledger_btp::BtpStore;
 use interledger_http::{HttpDetails, HttpStore};
 use interledger_ildcp::{AccountDetails, IldcpStore};
 use interledger_router::RouterStore;
 use interledger_service::AccountId;
 use interledger_service_util::MaxPacketAmountStore;
 use std::sync::Arc;
+use url::Url;
 
 pub struct Account {
   ilp_address: Bytes,
@@ -16,6 +18,8 @@ pub struct Account {
   http_endpoint: Option<String>,
   http_incoming_authorization: Option<String>,
   http_outgoing_authorization: Option<String>,
+  btp_url: Option<Url>,
+  btp_incoming_authorization: Option<String>,
   max_packet_amount: u64,
 }
 
@@ -131,5 +135,39 @@ impl MaxPacketAmountStore for InMemoryStore {
         .map(|account| account.max_packet_amount)
         .ok_or(()),
     ))
+  }
+}
+
+impl BtpStore for InMemoryStore {
+  fn get_account_from_token(
+    &self,
+    token: &str,
+  ) -> Box<Future<Item = AccountId, Error = ()> + Send> {
+    Box::new(result(
+      self
+        .accounts
+        .iter()
+        .find(|(_account_id, account)| {
+          if let Some(auth) = &account.btp_incoming_authorization {
+            token == auth.as_str()
+          } else {
+            false
+          }
+        })
+        .map(|(account_id, _account)| *account_id)
+        .ok_or(()),
+    ))
+  }
+
+  fn get_btp_url(&self, account: &AccountId) -> Box<Future<Item = Url, Error = ()> + Send> {
+    Box::new(result(self.accounts.get(account).ok_or(()).and_then(
+      |account| {
+        if let Some(ref url) = account.btp_url {
+          Ok(url.clone())
+        } else {
+          Err(())
+        }
+      },
+    )))
   }
 }
