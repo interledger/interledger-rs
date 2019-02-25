@@ -5,6 +5,7 @@ use interledger_http::{HttpDetails, HttpStore};
 use interledger_ildcp::{AccountDetails, IldcpStore};
 use interledger_router::RouterStore;
 use interledger_service::AccountId;
+use interledger_service_util::MaxPacketAmountStore;
 use std::sync::Arc;
 
 pub struct Account {
@@ -15,6 +16,7 @@ pub struct Account {
   http_endpoint: Option<String>,
   http_incoming_authorization: Option<String>,
   http_outgoing_authorization: Option<String>,
+  max_packet_amount: u64,
 }
 
 #[derive(Clone)]
@@ -112,6 +114,21 @@ impl IldcpStore for InMemoryStore {
           asset_code: account.asset_code.clone(),
           asset_scale: account.asset_scale,
         })
+        .ok_or(()),
+    ))
+  }
+}
+
+impl MaxPacketAmountStore for InMemoryStore {
+  fn get_max_packet_amount(
+    &self,
+    account_id: AccountId,
+  ) -> Box<Future<Item = u64, Error = ()> + Send> {
+    Box::new(result(
+      self
+        .accounts
+        .get(&account_id)
+        .map(|account| account.max_packet_amount)
         .ok_or(()),
     ))
   }

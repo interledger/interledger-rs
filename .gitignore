@@ -2,6 +2,7 @@ target/
 **/*.rs.bk
 Cargo.lock
 .vscode
+*.code-workspace
 *.csv*
 *.ods*
 *.xls*
