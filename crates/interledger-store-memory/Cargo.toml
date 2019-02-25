@@ -14,4 +14,5 @@ interledger-http = { path = "../interledger-http" }
 interledger-ildcp = { path = "../interledger-ildcp" }
 interledger-router = { path = "../interledger-router" }
 interledger-service = { path = "../interledger-service" }
+interledger-service-util = { path = "../interledger-service-util" }
 parking_lot = "0.7.1"
