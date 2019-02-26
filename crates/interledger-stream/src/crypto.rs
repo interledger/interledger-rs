@@ -9,44 +9,48 @@ static ENCRYPTION_KEY_STRING: &[u8] = b"ilp_stream_encryption";
 static FULFILLMENT_GENERATION_STRING: &[u8] = b"ilp_stream_fulfillment";
 static SHARED_SECRET_GENERATION_STRING: &[u8] = b"ilp_stream_shared_secret";
 
-pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     let key = hmac::SigningKey::new(&digest::SHA256, key);
     let output = hmac::sign(&key, message);
-    Bytes::from(output.as_ref())
+    let mut to_return: [u8; 32] = [0; 32];
+    to_return.copy_from_slice(output.as_ref());
+    to_return
 }
 
-pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> Bytes {
+pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> [u8; 32] {
     let key = hmac_sha256(&shared_secret[..], &FULFILLMENT_GENERATION_STRING);
     hmac_sha256(&key[..], &data[..])
 }
 
-pub fn fulfillment_to_condition(fulfillment: &[u8]) -> Bytes {
+pub fn fulfillment_to_condition(fulfillment: &[u8]) -> [u8; 32] {
     let output = digest::digest(&digest::SHA256, &fulfillment[..]);
-    Bytes::from(output.as_ref())
+    let mut to_return: [u8; 32] = [0; 32];
+    to_return.copy_from_slice(output.as_ref());
+    to_return
 }
 
-pub fn generate_condition(shared_secret: &[u8], data: &[u8]) -> Bytes {
+pub fn generate_condition(shared_secret: &[u8], data: &[u8]) -> [u8; 32] {
     let fulfillment = generate_fulfillment(&shared_secret, &data);
     fulfillment_to_condition(&fulfillment)
 }
 
-pub fn random_condition() -> Bytes {
+pub fn random_condition() -> [u8; 32] {
     let mut condition_slice: [u8; 32] = [0; 32];
     SystemRandom::new()
         .fill(&mut condition_slice)
         .expect("Failed to securely generate random condition!");
-    Bytes::from(&condition_slice[..])
+    condition_slice
 }
 
-pub fn generate_token() -> Bytes {
+pub fn generate_token() -> [u8; 18] {
     let mut token: [u8; 18] = [0; 18];
     SystemRandom::new()
         .fill(&mut token)
         .expect("Failed to securely generate a random token!");
-    Bytes::from(&token[..])
+    token
 }
 
-pub fn generate_shared_secret_from_token(server_secret: &[u8], token: &[u8]) -> Bytes {
+pub fn generate_shared_secret_from_token(server_secret: &[u8], token: &[u8]) -> [u8; 32] {
     let key = hmac_sha256(&server_secret[..], &SHARED_SECRET_GENERATION_STRING);
     hmac_sha256(&key[..], &token[..])
 }
