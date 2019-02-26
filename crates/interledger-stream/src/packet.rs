@@ -379,18 +379,18 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionNewAddressFrame<'a> {
-    pub source_account: &'a str,
+    pub source_account: &'a [u8],
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
-        let source_account = str::from_utf8(reader.read_var_octet_string()?)?;
+        let source_account = reader.read_var_octet_string()?;
 
         Ok(ConnectionNewAddressFrame { source_account })
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
-        buf.put_var_octet_string(self.source_account.as_bytes());
+        buf.put_var_octet_string(self.source_account);
     }
 }
 
@@ -663,7 +663,6 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
 #[cfg(test)]
 mod serialization {
     use super::*;
-    use env_logger;
 
     lazy_static! {
         static ref PACKET: StreamPacket = StreamPacketBuilder {
@@ -676,7 +675,7 @@ mod serialization {
                     message: "oop"
                 }),
                 Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: "example.blah"
+                    source_account: b"example.blah"
                 }),
                 Frame::ConnectionMaxData(ConnectionMaxDataFrame { max_offset: 1000 }),
                 Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame { max_offset: 2000 }),
@@ -762,7 +761,7 @@ mod serialization {
         assert_eq!(
             iter.next().unwrap(),
             Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                source_account: "example.blah"
+                source_account: b"example.blah"
             })
         );
         assert_eq!(iter.count(), 12);
