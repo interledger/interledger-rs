@@ -32,6 +32,7 @@ fn predict_var_uint_size(value: u64) -> usize {
 
 pub trait BufOerExt<'a> {
     fn peek_var_octet_string(&self) -> Result<&'a [u8]>;
+    fn read_var_octet_string(&mut self) -> Result<&'a [u8]>;
     fn skip(&mut self, discard_bytes: usize) -> Result<()>;
     fn skip_var_octet_string(&mut self) -> Result<()>;
     fn read_var_octet_string_length(&mut self) -> Result<usize>;
@@ -39,7 +40,7 @@ pub trait BufOerExt<'a> {
 }
 
 impl<'a> BufOerExt<'a> for &'a [u8] {
-    /// Decodes variable-length octet string buffer.
+    /// Decodes variable-length octet string buffer without moving the cursor.
     #[inline]
     fn peek_var_octet_string(&self) -> Result<&'a [u8]> {
         let mut peek = &self[..];
@@ -49,6 +50,19 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
             Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
         } else {
             Ok(&self[offset..(offset + actual_length)])
+        }
+    }
+
+    /// Decodes variable-length octet string.
+    #[inline]
+    fn read_var_octet_string(&mut self) -> Result<&'a [u8]> {
+        let actual_length = self.read_var_octet_string_length()?;
+        if self.len() < actual_length {
+            Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
+        } else {
+            let to_return = &self[..actual_length];
+            *self = &self[actual_length..];
+            Ok(to_return)
         }
     }
 

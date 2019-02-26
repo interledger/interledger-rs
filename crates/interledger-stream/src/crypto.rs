@@ -5,11 +5,9 @@ use ring::{aead, digest, hmac};
 const NONCE_LENGTH: usize = 12;
 const AUTH_TAG_LENGTH: usize = 16;
 
-lazy_static! {
-    static ref ENCRYPTION_KEY_STRING: &'static [u8] = b"ilp_stream_encryption";
-    static ref FULFILLMENT_GENERATION_STRING: &'static [u8] = b"ilp_stream_fulfillment";
-    static ref SHARED_SECRET_GENERATION_STRING: &'static [u8] = b"ilp_stream_shared_secret";
-}
+static ENCRYPTION_KEY_STRING: &[u8] = b"ilp_stream_encryption";
+static FULFILLMENT_GENERATION_STRING: &[u8] = b"ilp_stream_fulfillment";
+static SHARED_SECRET_GENERATION_STRING: &[u8] = b"ilp_stream_shared_secret";
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> Bytes {
     let key = hmac::SigningKey::new(&digest::SHA256, key);
@@ -60,15 +58,19 @@ pub fn encrypt(shared_secret: &[u8], plaintext: BytesMut) -> BytesMut {
         .fill(&mut nonce[..])
         .expect("Failed to securely generate a random nonce!");
 
-    encrypt_with_nonce(shared_secret, plaintext, &nonce[..])
+    encrypt_with_nonce(shared_secret, plaintext, nonce)
 }
 
-fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8]) -> BytesMut {
+fn encrypt_with_nonce(
+    shared_secret: &[u8],
+    mut plaintext: BytesMut,
+    nonce: [u8; NONCE_LENGTH],
+) -> BytesMut {
     let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
     let key = aead::SealingKey::new(&aead::AES_256_GCM, &key)
         .expect("Failed to create a new sealing key for encrypting data!");
 
-    let additional_data: &[u8] = &[];
+    let additional_data = aead::Aad::from(&[]);
 
     // seal_in_place expects the data to have enough room (in length, not just capacity) to append the auth tag
     let auth_tag_place_holder: [u8; AUTH_TAG_LENGTH] = [0; AUTH_TAG_LENGTH];
@@ -76,7 +78,7 @@ fn encrypt_with_nonce(shared_secret: &[u8], mut plaintext: BytesMut, nonce: &[u8
 
     aead::seal_in_place(
         &key,
-        &nonce[..],
+        aead::Nonce::assume_unique_for_key(nonce),
         additional_data,
         plaintext.as_mut(),
         AUTH_TAG_LENGTH,
@@ -103,18 +105,26 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
     let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key)
         .expect("Failed to create a new opening key for decrypting data!");
 
-    let nonce = ciphertext.split_to(NONCE_LENGTH);
+    let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
+    nonce.copy_from_slice(&ciphertext.split_to(NONCE_LENGTH));
+
     let auth_tag = ciphertext.split_to(AUTH_TAG_LENGTH);
     let additional_data: &[u8] = &[];
 
     // Ring expects the tag to come after the data
     ciphertext.unsplit(auth_tag);
 
-    let length = aead::open_in_place(&key, &nonce[..], additional_data, 0, ciphertext.as_mut())
-        .map_err(|err| {
-            error!("Error decrypting {:?}", err);
-        })?
-        .len();
+    let length = aead::open_in_place(
+        &key,
+        aead::Nonce::assume_unique_for_key(nonce),
+        aead::Aad::from(additional_data),
+        0,
+        ciphertext.as_mut(),
+    )
+    .map_err(|err| {
+        error!("Error decrypting {:?}", err);
+    })?
+    .len();
     ciphertext.truncate(length);
     Ok(ciphertext)
 }
@@ -150,39 +160,34 @@ mod fulfillment_and_condition {
 mod encrypt_decrypt_test {
     use super::*;
 
-    lazy_static! {
-        static ref SHARED_SECRET: Vec<u8> = vec![
-            126, 219, 117, 93, 118, 248, 249, 211, 20, 211, 65, 110, 237, 80, 253, 179, 81, 146,
-            229, 67, 231, 49, 92, 127, 254, 230, 144, 102, 103, 166, 150, 36
-        ];
-        static ref PLAINTEXT: Vec<u8> = vec![99, 0, 12, 255, 77, 31];
-        static ref CIPHERTEXT: Vec<u8> = vec![
-            119, 248, 213, 234, 63, 200, 224, 140, 212, 222, 105, 159, 246, 203, 66, 155, 151, 172,
-            68, 24, 76, 232, 90, 10, 237, 146, 189, 73, 248, 196, 177, 108, 115, 223
-        ];
-        static ref NONCE: Vec<u8> = vec![119, 248, 213, 234, 63, 200, 224, 140, 212, 222, 105, 159];
-    }
+    static SHARED_SECRET: &[u8] = &[
+        126, 219, 117, 93, 118, 248, 249, 211, 20, 211, 65, 110, 237, 80, 253, 179, 81, 146, 229,
+        67, 231, 49, 92, 127, 254, 230, 144, 102, 103, 166, 150, 36,
+    ];
+    static PLAINTEXT: &[u8] = &[99, 0, 12, 255, 77, 31];
+    static CIPHERTEXT: &[u8] = &[
+        119, 248, 213, 234, 63, 200, 224, 140, 212, 222, 105, 159, 246, 203, 66, 155, 151, 172, 68,
+        24, 76, 232, 90, 10, 237, 146, 189, 73, 248, 196, 177, 108, 115, 223,
+    ];
+    static NONCE: [u8; NONCE_LENGTH] = [119, 248, 213, 234, 63, 200, 224, 140, 212, 222, 105, 159];
 
     #[test]
     fn it_encrypts_to_same_as_javascript() {
-        let encrypted = encrypt_with_nonce(
-            &SHARED_SECRET[..],
-            BytesMut::from(&PLAINTEXT[..]),
-            &NONCE[..],
-        );
-        assert_eq!(encrypted.to_vec(), *CIPHERTEXT);
+        let encrypted =
+            encrypt_with_nonce(&SHARED_SECRET[..], BytesMut::from(&PLAINTEXT[..]), NONCE);
+        assert_eq!(&encrypted[..], CIPHERTEXT);
     }
 
     #[test]
     fn it_decrypts_javascript_ciphertext() {
-        let decrypted = decrypt(&SHARED_SECRET[..], BytesMut::from(&CIPHERTEXT[..]));
-        assert_eq!(decrypted.unwrap().to_vec(), *PLAINTEXT);
+        let decrypted = decrypt(SHARED_SECRET, BytesMut::from(CIPHERTEXT));
+        assert_eq!(&decrypted.unwrap()[..], PLAINTEXT);
     }
 
     #[test]
     fn it_losslessly_encrypts_and_decrypts() {
-        let ciphertext = encrypt(&SHARED_SECRET[..], BytesMut::from(&PLAINTEXT[..]));
-        let decrypted = decrypt(&SHARED_SECRET[..], ciphertext);
-        assert_eq!(decrypted.unwrap().to_vec(), *PLAINTEXT);
+        let ciphertext = encrypt(SHARED_SECRET, BytesMut::from(PLAINTEXT));
+        let decrypted = decrypt(SHARED_SECRET, ciphertext);
+        assert_eq!(&decrypted.unwrap()[..], PLAINTEXT);
     }
 }

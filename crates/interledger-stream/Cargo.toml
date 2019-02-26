@@ -1,0 +1,27 @@
+[package]
+name = "interledger-stream"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan@ripple.com>"]
+description = "Client and server implementations of the STREAM transport protocol"
+license = "Apache-2.0"
+edition = "2018"
+
+# Optional feature to log connection statistics using a CSV file
+[features]
+metrics_csv = ["csv"]
+
+[dependencies]
+bytes = "0.4.11"
+byteorder = "1.2.7"
+chrono = "0.4.6"
+csv = { version = "1.0.5", optional = true }
+futures = "0.1.25"
+hashbrown = "0.1.8"
+interledger-packet = { path = "../interledger-packet" }
+interledger-service = { path = "../interledger-service" }
+lazy_static = "1.2.0"
+log = "0.4.6"
+ring = "0.14.6"
+
+[dev-dependencies]
+env_logger = "0.6.0"
