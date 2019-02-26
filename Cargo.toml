@@ -9,4 +9,5 @@ members = [
   "./crates/interledger-service",
   "./crates/interledger-service-util",
   "./crates/interledger-store-memory",
+  "./crates/interledger-stream",
 ]
