@@ -15,6 +15,16 @@ where
             from: account_id,
             prepare,
         })
-        .map_err(|_| ())
-        .and_then(|fulfill| IldcpResponse::try_from(fulfill.into_data().freeze()).map_err(|_| ()))
+        .map_err(|err| error!("Error getting ILDCP info: {:?}", err))
+        .and_then(|fulfill| {
+            let response =
+                IldcpResponse::try_from(fulfill.into_data().freeze()).map_err(|err| {
+                    error!(
+                        "Unable to parse ILDCP response from fulfill packet: {:?}",
+                        err
+                    );
+                })?;
+            trace!("Got ILDCP response: {:?}", response);
+            Ok(response)
+        })
 }
