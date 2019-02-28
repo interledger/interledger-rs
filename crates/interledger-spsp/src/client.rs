@@ -72,7 +72,12 @@ pub fn pay<S>(
 where
     S: IncomingService + Clone,
 {
+    trace!("Querying receiver: {}", receiver);
     query(receiver).and_then(move |spsp| {
+        debug!(
+            "Sending SPSP payment to address: {}",
+            spsp.destination_account
+        );
         send_money(
             service,
             from_account,
@@ -80,8 +85,17 @@ where
             &spsp.shared_secret,
             source_amount,
         )
-        .map(|(amount_delivered, _plugin)| amount_delivered)
-        .map_err(move |_| Error::SendMoneyError(source_amount))
+        .map(move |(amount_delivered, _plugin)| {
+            debug!(
+                "Sent SPSP payment of {} and delivered {} of the receiver's units",
+                source_amount, amount_delivered
+            );
+            amount_delivered
+        })
+        .map_err(move |err| {
+            error!("Error sending payment: {:?}", err);
+            Error::SendMoneyError(source_amount)
+        })
     })
 }
 

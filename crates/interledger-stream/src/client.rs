@@ -24,7 +24,7 @@ where
     let destination_account = Bytes::from(destination_account);
     let shared_secret = Bytes::from(shared_secret);
     get_ildcp_info(&mut service.clone(), from_account)
-        .map_err(|_err| Error::ConnectionError("Unable to get ILDCP info".to_string()))
+        .map_err(|err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
         .and_then(move |account_details| SendMoneyFuture {
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),

@@ -1,16 +1,15 @@
-extern crate futures;
-extern crate interledger_packet;
-
 use futures::Future;
 use interledger_packet::{Fulfill, Prepare, Reject};
 
 pub type AccountId = u64;
 
+#[derive(Debug, Clone)]
 pub struct IncomingRequest {
     pub from: AccountId,
     pub prepare: Prepare,
 }
 
+#[derive(Debug, Clone)]
 pub struct OutgoingRequest {
     pub from: AccountId,
     pub to: AccountId,
