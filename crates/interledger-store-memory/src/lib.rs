@@ -7,20 +7,21 @@ use interledger_ildcp::{AccountDetails, IldcpStore};
 use interledger_router::RouterStore;
 use interledger_service::AccountId;
 use interledger_service_util::MaxPacketAmountStore;
+use std::iter::{FromIterator, IntoIterator};
 use std::sync::Arc;
 use url::Url;
 
 pub struct Account {
-    ilp_address: Bytes,
-    additional_routes: Vec<Bytes>,
-    asset_code: String,
-    asset_scale: u8,
-    http_endpoint: Option<String>,
-    http_incoming_authorization: Option<String>,
-    http_outgoing_authorization: Option<String>,
-    btp_url: Option<Url>,
-    btp_incoming_authorization: Option<String>,
-    max_packet_amount: u64,
+    pub ilp_address: Bytes,
+    pub additional_routes: Vec<Bytes>,
+    pub asset_code: String,
+    pub asset_scale: u8,
+    pub http_endpoint: Option<String>,
+    pub http_incoming_authorization: Option<String>,
+    pub http_outgoing_authorization: Option<String>,
+    pub btp_url: Option<Url>,
+    pub btp_incoming_authorization: Option<String>,
+    pub max_packet_amount: u64,
 }
 
 #[derive(Clone)]
@@ -30,8 +31,8 @@ pub struct InMemoryStore {
 }
 
 impl InMemoryStore {
-    pub fn new(accounts: HashMap<u64, Account>) -> Self {
-        let accounts = Arc::new(accounts);
+    pub fn new(accounts: impl IntoIterator<Item = (u64, Account)>) -> Self {
+        let accounts = Arc::new(HashMap::from_iter(accounts.into_iter()));
         let mut routing_table = Vec::with_capacity(
             accounts
                 .values()
@@ -53,6 +54,7 @@ impl InMemoryStore {
 }
 
 impl HttpStore for InMemoryStore {
+    // TODO this should use a hashmap internally
     fn get_account_from_authorization(
         &self,
         auth_header: &str,
