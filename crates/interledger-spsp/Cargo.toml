@@ -1,0 +1,22 @@
+[package]
+name = "interledger-spsp"
+version = "0.1.0"
+authors = ["Evan Schwartz <evan@ripple.com>"]
+description = "Client and server implementations of the Simple Payment Setup Protocol (SPSP)"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+base64 = "0.10.1"
+failure = "0.1.5"
+futures = "0.1.25"
+hyper = "0.12.24"
+interledger-ildcp = { path = "../interledger-ildcp" }
+interledger-packet = { path = "../interledger-packet" }
+interledger-service = { path = "../interledger-service" }
+interledger-stream = { path = "../interledger-stream" }
+log = "0.4.6"
+reqwest = "0.9.10"
+serde = "1.0.88"
+serde_derive = "1.0.88"
+serde_json = "1.0.38"
