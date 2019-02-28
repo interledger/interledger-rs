@@ -2,6 +2,7 @@ use super::store::RouterStore;
 use futures::future::err;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
+use std::str;
 
 #[derive(Clone)]
 pub struct Router<S, T> {
@@ -31,7 +32,10 @@ where
         let mut next_hop: Option<AccountId> = None;
         let mut max_prefix_len = 0;
         for route in self.store.get_routing_table().iter() {
-            if destination.starts_with(&route.0[..]) && route.0.len() > max_prefix_len {
+            // Check if the route prefix matches or is empty (meaning it's a catch-all address)
+            if (route.0.is_empty() || destination.starts_with(&route.0[..]))
+                && route.0.len() >= max_prefix_len
+            {
                 next_hop = Some(route.1);
                 max_prefix_len = route.0.len();
             }
@@ -41,6 +45,7 @@ where
             let request = request.into_outgoing(account_id);
             Box::new(self.next.send_request(request))
         } else {
+            debug!("No route found for request: {:?}", request);
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],

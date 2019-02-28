@@ -11,4 +11,5 @@ bytes = "0.4.11"
 futures = "0.1.25"
 interledger-packet = { path = "../interledger-packet" }
 interledger-service = { path = "../interledger-service" }
+log = "0.4.6"
 parking_lot = "0.7.1"
