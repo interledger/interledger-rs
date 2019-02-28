@@ -255,17 +255,6 @@ impl Serializable<BtpError> for BtpError {
     }
 }
 
-pub fn deserialize_packet(bytes: &[u8]) -> Result<BtpPacket, ParseError> {
-    match PacketType::from(bytes[0]) {
-        PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
-        PacketType::Response => Ok(BtpPacket::Response(BtpResponse::from_bytes(bytes)?)),
-        PacketType::Error => Ok(BtpPacket::Error(BtpError::from_bytes(bytes)?)),
-        PacketType::Unknown => Err(ParseError::InvalidPacket(
-            "Unable to read BTP packet from bytes".to_string(),
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
