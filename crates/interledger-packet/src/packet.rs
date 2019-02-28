@@ -1,10 +1,12 @@
+use hex;
+use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
 use std::time::SystemTime;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
@@ -91,7 +93,7 @@ impl From<Reject> for Packet {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Prepare {
     buffer: BytesMut,
     content_offset: usize,
@@ -194,13 +196,20 @@ impl Prepare {
 
     #[inline]
     pub fn into_data(mut self) -> BytesMut {
-        self.buffer.split_off(self.data_offset)
+        oer::extract_var_octet_string(self.buffer.split_off(self.data_offset)).unwrap()
     }
 }
 
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
+    }
+}
+
+impl fmt::Debug for Prepare {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Prepare {{ destination: \"{}\", amount: {}, expires_at: {:?}, execution_condition: {}, data_length: {} }}", str::from_utf8(self.destination()).map_err(|_| fmt::Error)?, self.amount(), DateTime::<Utc>::from(self.expires_at()).to_rfc3339(), hex::encode(self.execution_condition()), self.data().len());
+        Ok(())
     }
 }
 
@@ -241,7 +250,7 @@ impl<'a> PrepareBuilder<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Fulfill {
     buffer: BytesMut,
     content_offset: usize,
@@ -284,13 +293,26 @@ impl Fulfill {
 
     #[inline]
     pub fn into_data(mut self) -> BytesMut {
-        self.buffer.split_off(self.content_offset + FULFILLMENT_LEN)
+        let data_offset = self.content_offset + FULFILLMENT_LEN;
+        oer::extract_var_octet_string(self.buffer.split_off(data_offset)).unwrap()
     }
 }
 
 impl From<Fulfill> for BytesMut {
     fn from(fulfill: Fulfill) -> Self {
         fulfill.buffer
+    }
+}
+
+impl fmt::Debug for Fulfill {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Fulfill {{ fulfillment: \"{}\", data_length: {} }}",
+            hex::encode(self.fulfillment()),
+            self.data().len()
+        );
+        Ok(())
     }
 }
 
@@ -313,7 +335,7 @@ impl<'a> FulfillBuilder<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Reject {
     buffer: BytesMut,
     code: ErrorCode,
@@ -384,13 +406,27 @@ impl Reject {
     }
 
     pub fn into_data(mut self) -> BytesMut {
-        self.buffer.split_off(self.data_offset)
+        oer::extract_var_octet_string(self.buffer.split_off(self.data_offset)).unwrap()
     }
 }
 
 impl From<Reject> for BytesMut {
     fn from(reject: Reject) -> Self {
         reject.buffer
+    }
+}
+
+impl fmt::Debug for Reject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Reject {{ code: \"{}\", message: \"{}\", triggered_by: \"{}\", data_length: {} }}",
+            self.code(),
+            str::from_utf8(self.message()).map_err(|_| fmt::Error)?,
+            str::from_utf8(self.triggered_by()).map_err(|_| fmt::Error)?,
+            self.data().len()
+        );
+        Ok(())
     }
 }
 

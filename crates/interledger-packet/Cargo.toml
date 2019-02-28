@@ -10,6 +10,7 @@ edition = "2018"
 byteorder = "1.2.7"
 bytes = "0.4.11"
 chrono = "0.4.6"
+hex = "0.3.2"
 quick-error = "1.2.2"
 
 [dev-dependencies]
