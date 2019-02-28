@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{Buf, BufMut, IntoBuf};
+use bytes::{Buf, BufMut, BytesMut, IntoBuf};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -28,6 +28,14 @@ fn predict_var_uint_size(value: u64) -> usize {
         }
     }
     unreachable!()
+}
+
+pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
+    let buffer_lenth = buffer.len();
+    let mut reader = &buffer[..];
+    let content_length = reader.read_var_octet_string_length()?;
+    let content_offset = buffer_lenth - reader.len();
+    Ok(buffer.split_off(content_offset).split_to(content_length))
 }
 
 pub trait BufOerExt<'a> {
