@@ -1,16 +1,19 @@
+use base64;
 use bytes::Bytes;
 use futures::Future;
 use interledger_btp::{connect_client, parse_btp_url};
+use interledger_http::HttpClientService;
 use interledger_router::Router;
 use interledger_service_util::RejecterService;
 use interledger_spsp::pay;
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use std::u64;
 use tokio;
+use url::Url;
 
 const ACCOUNT_ID: u64 = 0;
 
-pub fn send_spsp_payment(btp_server: &str, receiver: &str, amount: u64, quiet: bool) {
+pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quiet: bool) {
     let receiver = receiver.to_string();
     let account: Account = AccountBuilder {
         id: 0,
@@ -48,6 +51,57 @@ pub fn send_spsp_payment(btp_server: &str, receiver: &str, amount: u64, quiet: b
                     }
                     Ok(())
                 })
+        });
+    tokio::run(run);
+}
+
+pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, quiet: bool) {
+    let receiver = receiver.to_string();
+    let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
+    let auth_header = if !url.username().is_empty() {
+        Some(format!(
+            "Basic {}",
+            base64::encode(&format!(
+                "{}:{}",
+                url.username(),
+                url.password().unwrap_or("")
+            ))
+        ))
+    } else if let Some(password) = url.password() {
+        Some(format!("Bearer {}", password))
+    } else {
+        None
+    };
+    let account: Account = AccountBuilder {
+        id: 0,
+        ilp_address: Bytes::new(),
+        // Send everything to this account
+        additional_routes: vec![Bytes::from(&b""[..])],
+        asset_code: String::new(),
+        asset_scale: 0,
+        http_endpoint: Some(url),
+        http_incoming_authorization: None,
+        http_outgoing_authorization: auth_header,
+        btp_url: None,
+        btp_incoming_authorization: None,
+        max_packet_amount: u64::max_value(),
+    }
+    .build();
+    let store = InMemoryStore::from_accounts(vec![account.clone()]);
+    let service = HttpClientService::new(store.clone());
+    let router = Router::new(service, store);
+    let run = pay(router, account, &receiver, amount)
+        .map_err(|err| {
+            eprintln!("Error sending SPSP payment: {:?}", err);
+        })
+        .and_then(move |delivered| {
+            if !quiet {
+                println!(
+                    "Sent: {}, delivered: {} (in the receiver's units)",
+                    amount, delivered
+                );
+            }
+            Ok(())
         });
     tokio::run(run);
 }
