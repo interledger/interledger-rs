@@ -4,7 +4,7 @@ use interledger_service::*;
 
 pub fn get_ildcp_info<S, A>(
     service: &mut S,
-    account: &A,
+    account: A,
 ) -> impl Future<Item = IldcpResponse, Error = ()>
 where
     S: IncomingService<A>,
@@ -13,7 +13,7 @@ where
     let prepare = IldcpRequest {}.to_prepare();
     service
         .handle_request(IncomingRequest {
-            from: account.clone(),
+            from: account,
             prepare,
         })
         .map_err(|err| error!("Error getting ILDCP info: {:?}", err))

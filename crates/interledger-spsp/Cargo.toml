@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 base64 = "0.10.1"
+bytes = "0.4.11"
 failure = "0.1.5"
 futures = "0.1.25"
 hyper = "0.12.24"

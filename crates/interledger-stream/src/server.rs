@@ -9,8 +9,10 @@ use interledger_packet::{
     ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject, RejectBuilder,
 };
 use interledger_service::*;
+use parking_lot::RwLock;
 use std::marker::PhantomData;
 use std::str;
+use std::sync::Arc;
 
 lazy_static! {
     static ref TAG_ENCRYPTION_KEY_STRING: &'static [u8] = b"ilp_stream_tag_encryption_aes";
@@ -61,9 +63,10 @@ impl ConnectionGenerator {
     }
 }
 
+#[derive(Clone)]
 pub struct StreamReceiverService<S: IncomingService<A>, A: Account> {
     server_secret: Bytes,
-    ildcp_response: IldcpResponse,
+    ildcp_response: Arc<RwLock<Option<IldcpResponse>>>,
     next: S,
     account_type: PhantomData<A>,
 }
@@ -76,10 +79,24 @@ where
     pub fn new(server_secret: &[u8; 32], ildcp_response: IldcpResponse, next: S) -> Self {
         StreamReceiverService {
             server_secret: Bytes::from(&server_secret[..]),
-            ildcp_response,
+            ildcp_response: Arc::new(RwLock::new(Some(ildcp_response))),
             next,
             account_type: PhantomData,
         }
+    }
+
+    /// For creating a receiver service before the ILDCP details have been received
+    pub fn without_ildcp(server_secret: &[u8; 32], next: S) -> Self {
+        StreamReceiverService {
+            server_secret: Bytes::from(&server_secret[..]),
+            ildcp_response: Arc::new(RwLock::new(None)),
+            next,
+            account_type: PhantomData,
+        }
+    }
+
+    pub fn set_ildcp(&self, ildcp_response: IldcpResponse) {
+        self.ildcp_response.write().replace(ildcp_response);
     }
 }
 
@@ -92,12 +109,23 @@ where
     type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
-        // TODO only handle the request if it's a STREAM packet meant for us
-        Box::new(result(receive_money(
-            &self.server_secret[..],
-            &self.ildcp_response,
-            request.prepare,
-        )))
+        if let Some(ref ildcp_response) = *self.ildcp_response.read() {
+            if request
+                .prepare
+                .destination()
+                .starts_with(ildcp_response.client_address())
+            {
+                return Box::new(result(receive_money(
+                    &self.server_secret[..],
+                    ildcp_response,
+                    request.prepare,
+                )));
+            }
+        } else {
+            warn!("Got incoming Prepare packet before the StreamReceiverService was ready (before it had the ILDCP info)");
+        }
+        // TODO if it's not ready yet should we respond with an error instead?
+        Box::new(self.next.handle_request(request))
     }
 }
 
