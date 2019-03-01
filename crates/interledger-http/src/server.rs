@@ -1,4 +1,4 @@
-use super::store::HttpStore;
+use super::HttpStore;
 use bytes::BytesMut;
 use futures::{
     future::{err, Either},
@@ -15,7 +15,7 @@ pub struct HttpServerService<S, T> {
 
 impl<S, T> HttpServerService<S, T>
 where
-    S: IncomingService + Clone + 'static,
+    S: IncomingService<T::Account> + Clone + 'static,
     T: HttpStore,
 {
     pub fn new(next: S, store: T) -> Self {
@@ -26,7 +26,7 @@ where
     fn check_authorization(
         &self,
         request: &Request<Body>,
-    ) -> impl Future<Item = AccountId, Error = Response<Body>> {
+    ) -> impl Future<Item = T::Account, Error = Response<Body>> {
         let authorization: Option<&str> = request
             .headers()
             .get("authorization")
@@ -70,7 +70,7 @@ where
 
 impl<S, T> HttpService for HttpServerService<S, T>
 where
-    S: IncomingService + Clone + 'static,
+    S: IncomingService<T::Account> + Clone + 'static,
     T: HttpStore + 'static,
 {
     type ReqBody = Body;

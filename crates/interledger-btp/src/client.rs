@@ -1,6 +1,6 @@
 use super::packet::*;
 use super::service::{ilp_packet_to_ws_message, parse_ilp_packet, BtpService, IlpResultChannel};
-use super::BtpStore;
+use super::BtpAccount;
 use futures::{
     future::{join_all, ok, Either},
     sync::mpsc::unbounded,
@@ -28,23 +28,23 @@ pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
     Url::parse(uri)
 }
 
-pub fn connect_client<S, T>(
+// TODO does A need to be static?
+pub fn connect_client<S, T, A: 'static>(
     next: S,
     store: T,
-    accounts: impl IntoIterator<Item = AccountId>,
-) -> impl Future<Item = BtpService<S>, Error = ()>
+    accounts: &[<T::Account as Account>::AccountId],
+) -> impl Future<Item = BtpService<S, A>, Error = ()>
 where
-    S: IncomingService + Clone + Send + Sync + 'static,
+    S: IncomingService<T::Account> + Clone + Send + Sync + 'static,
+    T: AccountStore<Account = A>,
+    A: BtpAccount,
     // TODO do these need to be cloneable?
-    T: BtpStore + 'static,
 {
     let pending_requests: Arc<Mutex<HashMap<u32, IlpResultChannel>>> =
         Arc::new(Mutex::new(HashMap::new()));
-    join_all(accounts.into_iter().map(move |account_id| {
-    store
-      .get_btp_url(&account_id)
-      .and_then(|url| {
-          debug!("Connecting to {}", url);
+    store.get_accounts(accounts).and_then(|accounts| {
+        join_all(accounts.into_iter().map(move |account| {
+        let url = account.get_btp_url().expect("Accounts must have BTP URLs").clone();
         connect_async(url.clone()).map_err(|_err| ())
         .and_then(move |(connection, _)| {
             debug!("Connected to {}, sending auth packet", url);
@@ -72,13 +72,14 @@ where
 
           connection.send(auth_packet).map_err(move |_| error!("Error sending auth packet on connection: {}", url))
         })
-      })
-      .and_then(move |connection| Ok((account_id, connection)))
-  }))
+      .and_then(move |connection| Ok((account, connection)))
+      }))
+    })
   .map_err(|_err| ())
   .and_then(|connections| {
     let connections =
-      HashMap::from_iter(connections.into_iter().map(|(account_id, connection)| {
+      HashMap::from_iter(connections.into_iter().map(|(account, connection)| {
+          let account_id = account.id();
         let (tx, rx) = unbounded();
         let (sink, stream) = connection.split();
 
@@ -100,7 +101,7 @@ where
             Ok((request_id, Packet::Prepare(prepare))) => Either::A(
               next
                 .handle_request(IncomingRequest {
-                  from: account_id,
+                  from: account.clone(),
                   prepare,
                 })
                 .then(move |result| {

@@ -9,6 +9,7 @@ use interledger_packet::{
     ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject, RejectBuilder,
 };
 use interledger_service::*;
+use std::marker::PhantomData;
 use std::str;
 
 lazy_static! {
@@ -60,33 +61,37 @@ impl ConnectionGenerator {
     }
 }
 
-pub struct StreamReceiverService<S: IncomingService> {
+pub struct StreamReceiverService<S: IncomingService<A>, A: Account> {
     server_secret: Bytes,
     ildcp_response: IldcpResponse,
     next: S,
+    account_type: PhantomData<A>,
 }
 
-impl<S> StreamReceiverService<S>
+impl<S, A> StreamReceiverService<S, A>
 where
-    S: IncomingService,
+    S: IncomingService<A>,
+    A: Account,
 {
     pub fn new(server_secret: &[u8; 32], ildcp_response: IldcpResponse, next: S) -> Self {
         StreamReceiverService {
             server_secret: Bytes::from(&server_secret[..]),
             ildcp_response,
             next,
+            account_type: PhantomData,
         }
     }
 }
 
 // TODO should this be an OutgoingService instead so the balance logic is applied before this is called?
-impl<S> IncomingService for StreamReceiverService<S>
+impl<S, A> IncomingService<A> for StreamReceiverService<S, A>
 where
-    S: IncomingService,
+    S: IncomingService<A>,
+    A: Account,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         // TODO only handle the request if it's a STREAM packet meant for us
         Box::new(result(receive_money(
             &self.server_secret[..],

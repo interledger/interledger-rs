@@ -11,24 +11,27 @@ use std::cell::Cell;
 use std::cmp::min;
 use std::time::{Duration, SystemTime};
 
-pub fn send_money<S>(
+pub fn send_money<S, A>(
     service: S,
-    from_account: AccountId,
+    from_account: &A,
     destination_account: &[u8],
     shared_secret: &[u8],
     source_amount: u64,
 ) -> impl Future<Item = (u64, S), Error = Error>
 where
-    S: IncomingService + Clone,
+    S: IncomingService<A> + Clone,
+    A: Account,
 {
     let destination_account = Bytes::from(destination_account);
     let shared_secret = Bytes::from(shared_secret);
-    get_ildcp_info(&mut service.clone(), from_account)
-        .map_err(|err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
+    let from_account = from_account.clone();
+    // TODO can/should we avoid cloning the account?
+    get_ildcp_info(&mut service.clone(), &from_account)
+        .map_err(|_err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
         .and_then(move |account_details| SendMoneyFuture {
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),
-            from_account,
+            from_account: from_account,
             source_account: Bytes::from(account_details.client_address()),
             destination_account,
             shared_secret,
@@ -41,10 +44,10 @@ where
         })
 }
 
-struct SendMoneyFuture<S: IncomingService> {
+struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     state: SendMoneyFutureState,
     next: Option<S>,
-    from_account: AccountId,
+    from_account: A,
     source_account: Bytes,
     destination_account: Bytes,
     shared_secret: Bytes,
@@ -69,9 +72,10 @@ enum SendMoneyFutureState {
     Closed,
 }
 
-impl<S> SendMoneyFuture<S>
+impl<S, A> SendMoneyFuture<S, A>
 where
-    S: IncomingService,
+    S: IncomingService<A>,
+    A: Account,
 {
     fn try_send_money(&mut self) -> Result<(), Error> {
         // Fire off requests until the congestion controller tells us to stop or we've sent the total amount
@@ -127,7 +131,7 @@ where
             self.congestion_controller.prepare(amount);
             if let Some(ref mut next) = self.next {
                 let send_request = next.handle_request(IncomingRequest {
-                    from: self.from_account,
+                    from: self.from_account.clone(),
                     prepare,
                 });
                 self.pending_requests.get_mut().push(PendingRequest {
@@ -170,7 +174,7 @@ where
         debug!("Closing connection");
         if let Some(ref mut next) = self.next {
             let send_request = next.handle_request(IncomingRequest {
-                from: self.from_account,
+                from: self.from_account.clone(),
                 prepare,
             });
             self.pending_requests.get_mut().push(PendingRequest {
@@ -252,9 +256,10 @@ where
     }
 }
 
-impl<S> Future for SendMoneyFuture<S>
+impl<S, A> Future for SendMoneyFuture<S, A>
 where
-    S: IncomingService,
+    S: IncomingService<A>,
+    A: Account,
 {
     type Item = (u64, S);
     type Error = Error;

@@ -2,9 +2,9 @@ extern crate interledger;
 #[macro_use]
 extern crate clap;
 
+use base64;
 use clap::{App, Arg, SubCommand};
 use interledger::send_spsp_payment;
-use base64;
 use ring::rand::{SecureRandom, SystemRandom};
 
 fn random_token() -> String {

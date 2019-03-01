@@ -1,46 +1,30 @@
 use super::packet::*;
-use super::store::IldcpStore;
-use futures::Future;
+use super::IldcpAccount;
+use futures::future::ok;
 use interledger_packet::*;
 use interledger_service::*;
 
-pub struct IldcpService<S, T> {
+pub struct IldcpService<S> {
     next: S,
-    store: T,
 }
 
-impl<S, T> IncomingService for IldcpService<S, T>
+impl<S, A> IncomingService<A> for IldcpService<S>
 where
-    S: IncomingService,
-    T: IldcpStore,
+    S: IncomingService<A>,
+    A: IldcpAccount,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if is_ildcp_request(&request.prepare) {
-            Box::new(
-                self.store
-                    .get_account_details(request.from)
-                    .map_err(|_| {
-                        RejectBuilder {
-                            code: ErrorCode::F02_UNREACHABLE,
-                            message: b"Account details not found",
-                            triggered_by: &[],
-                            data: &[],
-                        }
-                        .build()
-                    })
-                    .and_then(|account_details| {
-                        let response = IldcpResponseBuilder {
-                            client_address: &account_details.client_address[..],
-                            asset_code: account_details.asset_code.as_str(),
-                            asset_scale: account_details.asset_scale,
-                        }
-                        .build();
-                        let fulfill = Fulfill::from(response);
-                        Ok(fulfill)
-                    }),
-            )
+            let builder = IldcpResponseBuilder {
+                client_address: &request.from.client_address(),
+                asset_code: &request.from.asset_code(),
+                asset_scale: request.from.asset_scale(),
+            };
+            let response = builder.build();
+            let fulfill = Fulfill::from(response);
+            Box::new(ok(fulfill))
         } else {
             Box::new(self.next.handle_request(request))
         }

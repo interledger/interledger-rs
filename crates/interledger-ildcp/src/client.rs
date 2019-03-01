@@ -2,17 +2,18 @@ use super::packet::*;
 use futures::Future;
 use interledger_service::*;
 
-pub fn get_ildcp_info<S>(
+pub fn get_ildcp_info<S, A>(
     service: &mut S,
-    account_id: AccountId,
+    account: &A,
 ) -> impl Future<Item = IldcpResponse, Error = ()>
 where
-    S: IncomingService,
+    S: IncomingService<A>,
+    A: Account,
 {
     let prepare = IldcpRequest {}.to_prepare();
     service
         .handle_request(IncomingRequest {
-            from: account_id,
+            from: account.clone(),
             prepare,
         })
         .map_err(|err| error!("Error getting ILDCP info: {:?}", err))

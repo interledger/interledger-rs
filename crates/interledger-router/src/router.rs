@@ -1,8 +1,7 @@
-use super::store::RouterStore;
+use super::RouterStore;
 use futures::future::err;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
-use std::str;
 
 #[derive(Clone)]
 pub struct Router<S, T> {
@@ -12,7 +11,7 @@ pub struct Router<S, T> {
 
 impl<S, T> Router<S, T>
 where
-    S: OutgoingService,
+    S: OutgoingService<T::Account>,
     T: RouterStore,
 {
     pub fn new(next: S, store: T) -> Self {
@@ -20,29 +19,29 @@ where
     }
 }
 
-impl<S, T> IncomingService for Router<S, T>
+impl<S, T> IncomingService<T::Account> for Router<S, T>
 where
-    S: OutgoingService,
+    S: OutgoingService<T::Account>,
     T: RouterStore,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest<T::Account>) -> Self::Future {
         let destination = request.prepare.destination();
-        let mut next_hop: Option<AccountId> = None;
+        let mut next_hop: Option<&T::Account> = None;
         let mut max_prefix_len = 0;
-        for route in self.store.get_routing_table().iter() {
+        for route in self.store.routing_table() {
             // Check if the route prefix matches or is empty (meaning it's a catch-all address)
             if (route.0.is_empty() || destination.starts_with(&route.0[..]))
                 && route.0.len() >= max_prefix_len
             {
-                next_hop = Some(route.1);
+                next_hop = Some(&route.1);
                 max_prefix_len = route.0.len();
             }
         }
 
-        if let Some(account_id) = next_hop {
-            let request = request.into_outgoing(account_id);
+        if let Some(account) = next_hop {
+            let request = request.into_outgoing(account.clone());
             Box::new(self.next.send_request(request))
         } else {
             debug!("No route found for request: {:?}", request);

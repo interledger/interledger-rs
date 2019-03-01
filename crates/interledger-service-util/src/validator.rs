@@ -9,13 +9,14 @@ pub struct ValidatorService<S> {
     next: S,
 }
 
-impl<S> IncomingService for ValidatorService<S>
+impl<S, A> IncomingService<A> for ValidatorService<S>
 where
-    S: IncomingService,
+    S: IncomingService<A>,
+    A: Account,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if request.prepare.expires_at() <= SystemTime::now() {
             Box::new(self.next.handle_request(request))
         } else {
@@ -31,13 +32,14 @@ where
     }
 }
 
-impl<S> OutgoingService for ValidatorService<S>
+impl<S, A> OutgoingService<A> for ValidatorService<S>
 where
-    S: OutgoingService,
+    S: OutgoingService<A>,
+    A: Account,
 {
     type Future = BoxedIlpFuture;
 
-    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition());
 

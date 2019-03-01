@@ -1,6 +1,9 @@
-use super::store::{HttpDetails, HttpStore};
+use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{future::result, Future, Stream};
+use futures::{
+    future::{err, result},
+    Future, Stream,
+};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use reqwest::{
@@ -39,45 +42,49 @@ where
     }
 }
 
-impl<T> OutgoingService for HttpClientService<T>
+impl<T, A> OutgoingService<A> for HttpClientService<T>
 where
     T: HttpStore,
+    A: HttpAccount,
 {
     type Future = BoxedIlpFuture;
 
-    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
-        let client = self.client.clone();
-        Box::new(
-            self.store
-                .get_http_details_for_account(request.to)
-                .map_err(|_err| {
-                    RejectBuilder {
-                        code: ErrorCode::F02_UNREACHABLE,
-                        message: &[],
-                        triggered_by: &[],
-                        data: &[],
-                    }
-                    .build()
-                })
-                .and_then(move |HttpDetails { url, auth_header }| {
-                    client
-                        .post(&url)
-                        .header("authorization", auth_header)
-                        .body(BytesMut::from(request.prepare).freeze())
-                        .send()
-                        .map_err(|err| {
-                            error!("Error sending HTTP request: {:?}", err);
-                            RejectBuilder {
-                                code: ErrorCode::T01_PEER_UNREACHABLE,
-                                message: &[],
-                                triggered_by: &[],
-                                data: &[],
-                            }
-                            .build()
-                        })
-                })
-                .and_then(parse_packet_from_response),
-        )
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        if let Some(url) = request.to.get_http_url() {
+            Box::new(
+                self.client
+                    .post(url.clone())
+                    .header(
+                        "authorization",
+                        request.to.get_http_auth_header().unwrap_or(""),
+                    )
+                    .body(BytesMut::from(request.prepare).freeze())
+                    .send()
+                    .map_err(|err| {
+                        error!("Error sending HTTP request: {:?}", err);
+                        RejectBuilder {
+                            code: ErrorCode::T01_PEER_UNREACHABLE,
+                            message: &[],
+                            triggered_by: &[],
+                            data: &[],
+                        }
+                        .build()
+                    })
+                    .and_then(parse_packet_from_response),
+            )
+        } else {
+            error!(
+                "Cannot send outgoing HTTP request to account with no HTTP details: {:?}",
+                request.to
+            );
+            Box::new(err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &[],
+                triggered_by: &[],
+                data: &[],
+            }
+            .build()))
+        }
     }
 }
 
