@@ -14,3 +14,4 @@ mod server;
 
 pub use client::send_money;
 pub use error::Error;
+pub use server::{ConnectionGenerator, StreamReceiverService};

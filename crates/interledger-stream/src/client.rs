@@ -26,7 +26,7 @@ where
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
-    get_ildcp_info(&mut service.clone(), &from_account)
+    get_ildcp_info(&mut service.clone(), from_account.clone())
         .map_err(|_err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
         .and_then(move |account_details| SendMoneyFuture {
             state: SendMoneyFutureState::SendMoney,

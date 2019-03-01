@@ -25,6 +25,7 @@ interledger-packet = { path = "../interledger-packet" }
 interledger-service = { path = "../interledger-service" }
 lazy_static = "1.2.0"
 log = "0.4.6"
+parking_lot = "0.7.1"
 ring = "0.14.6"
 
 [dev-dependencies]

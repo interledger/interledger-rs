@@ -5,6 +5,55 @@ extern crate serde_derive;
 #[macro_use]
 extern crate failure;
 
-mod client;
+use interledger_stream::Error as StreamError;
 
-pub use client::{pay, query, SpspResponse};
+mod client;
+mod server;
+
+pub use client::{pay, query};
+pub use server::spsp_responder;
+
+#[derive(Fail, Debug)]
+pub enum Error {
+    #[fail(display = "Unable to query SPSP server: {:?}", _0)]
+    HttpError(String),
+    #[fail(display = "Got invalid SPSP response from server: {:?}", _0)]
+    InvalidResponseError(String),
+    #[fail(display = "STREAM error: {}", _0)]
+    StreamError(StreamError),
+    #[fail(display = "Error sending money: {}", _0)]
+    SendMoneyError(u64),
+    #[fail(display = "Error listening: {}", _0)]
+    ListenError(String),
+    #[fail(display = "Invalid Payment Pointer: {}", _0)]
+    InvalidPaymentPointerError(String),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SpspResponse {
+    destination_account: String,
+    #[serde(with = "serde_base64")]
+    shared_secret: Vec<u8>,
+}
+
+// From https://github.com/serde-rs/json/issues/360#issuecomment-330095360
+mod serde_base64 {
+    use base64;
+    use serde::{de, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&base64::encode(bytes))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = <&str>::deserialize(deserializer)?;
+        // TODO also accept non-URL safe
+        base64::decode(s).map_err(de::Error::custom)
+    }
+}
