@@ -1,5 +1,5 @@
 use futures::Future;
-use interledger_service::{AccountId, IncomingService};
+use interledger_service::{Account, IncomingService};
 use interledger_stream::{send_money, Error as StreamError};
 use reqwest::r#async::Client;
 
@@ -63,14 +63,15 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
         })
 }
 
-pub fn pay<S>(
+pub fn pay<S, A>(
     service: S,
-    from_account: AccountId,
+    from_account: A,
     receiver: &str,
     source_amount: u64,
 ) -> impl Future<Item = u64, Error = Error>
 where
-    S: IncomingService + Clone,
+    S: IncomingService<A> + Clone,
+    A: Account,
 {
     trace!("Querying receiver: {}", receiver);
     query(receiver).and_then(move |spsp| {
@@ -80,7 +81,7 @@ where
         );
         send_money(
             service,
-            from_account,
+            &from_account,
             spsp.destination_account.as_bytes(),
             &spsp.shared_secret,
             source_amount,

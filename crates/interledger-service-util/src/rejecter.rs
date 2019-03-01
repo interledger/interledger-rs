@@ -22,10 +22,13 @@ impl RejecterService {
     }
 }
 
-impl IncomingService for RejecterService {
+impl<A> IncomingService<A> for RejecterService
+where
+    A: Account,
+{
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         debug!("Automatically rejecting request: {:?}", request);
         Box::new(err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,
@@ -37,10 +40,13 @@ impl IncomingService for RejecterService {
     }
 }
 
-impl OutgoingService for RejecterService {
+impl<A> OutgoingService<A> for RejecterService
+where
+    A: Account,
+{
     type Future = BoxedIlpFuture;
 
-    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         debug!("Automatically rejecting request: {:?}", request);
         Box::new(err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,

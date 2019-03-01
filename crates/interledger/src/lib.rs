@@ -4,7 +4,7 @@ use interledger_btp::{connect_client, parse_btp_url};
 use interledger_router::Router;
 use interledger_service_util::RejecterService;
 use interledger_spsp::pay;
-use interledger_store_memory::{Account, InMemoryStore};
+use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use std::u64;
 use tokio;
 
@@ -12,30 +12,30 @@ const ACCOUNT_ID: u64 = 0;
 
 pub fn send_spsp_payment(btp_server: &str, receiver: &str, amount: u64, quiet: bool) {
     let receiver = receiver.to_string();
-    let store = InMemoryStore::new(vec![(
-        ACCOUNT_ID,
-        Account {
-            ilp_address: Bytes::new(),
-            // Send everything to this account
-            additional_routes: vec![Bytes::from("".as_bytes())],
-            asset_code: String::new(),
-            asset_scale: 0,
-            http_endpoint: None,
-            http_incoming_authorization: None,
-            http_outgoing_authorization: None,
-            btp_url: Some(parse_btp_url(btp_server).unwrap()),
-            btp_incoming_authorization: None,
-            max_packet_amount: u64::max_value(),
-        },
-    )]);
-    let run = connect_client(RejecterService::default(), store.clone(), vec![ACCOUNT_ID])
+    let account: Account = AccountBuilder {
+        id: 0,
+        ilp_address: Bytes::new(),
+        // Send everything to this account
+        additional_routes: vec![Bytes::from(&b""[..])],
+        asset_code: String::new(),
+        asset_scale: 0,
+        http_endpoint: None,
+        http_incoming_authorization: None,
+        http_outgoing_authorization: None,
+        btp_url: Some(parse_btp_url(btp_server).unwrap()),
+        btp_incoming_authorization: None,
+        max_packet_amount: u64::max_value(),
+    }
+    .build();
+    let store = InMemoryStore::from_accounts(vec![account.clone()]);
+    let run = connect_client(RejecterService::default(), store.clone(), &[ACCOUNT_ID])
         .map_err(|err| {
             eprintln!("Error connecting to BTP server: {:?}", err);
             eprintln!("(Hint: is moneyd running?)");
         })
         .and_then(move |service| {
             let router = Router::new(service, store);
-            pay(router, ACCOUNT_ID, &receiver, amount)
+            pay(router, account, &receiver, amount)
                 .map_err(|err| {
                     eprintln!("Error sending SPSP payment: {:?}", err);
                 })

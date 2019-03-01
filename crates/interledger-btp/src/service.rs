@@ -1,12 +1,6 @@
 use super::packet::*;
-use super::BtpStore;
 use bytes::BytesMut;
-use futures::{
-    future::{err, join_all, ok, Either},
-    sync::mpsc::{unbounded, UnboundedSender},
-    sync::oneshot,
-    Future, Sink, Stream,
-};
+use futures::{future::err, sync::mpsc::UnboundedSender, sync::oneshot, Future, Stream};
 use hashbrown::HashMap;
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
@@ -19,22 +13,23 @@ use tungstenite::Message;
 pub(crate) type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 
 #[derive(Clone)]
-pub struct BtpService<S> {
-    pub(crate) connections: Arc<RwLock<HashMap<AccountId, UnboundedSender<Message>>>>,
+pub struct BtpService<S, A: Account> {
+    pub(crate) connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
     pub(crate) pending_requests: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
     // store: T,
     pub(crate) next: S,
 }
 
-impl<S> OutgoingService for BtpService<S>
+impl<S, A> OutgoingService<A> for BtpService<S, A>
 where
-    S: OutgoingService + Clone + Send + Sync + 'static,
+    S: OutgoingService<A> + Clone + Send + Sync + 'static,
     // T: BtpStore + Clone + Send + Sync + 'static,
+    A: Account,
 {
     type Future = BoxedIlpFuture;
 
-    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
-        if let Some(connection) = (*self.connections.read()).get(&request.to) {
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        if let Some(connection) = (*self.connections.read()).get(&request.to.id()) {
             let request_id = random::<u32>();
 
             match connection.unbounded_send(ilp_packet_to_ws_message(
@@ -76,7 +71,7 @@ where
         } else {
             debug!(
                 "No open connection for account: {}, forwarding request to the next service",
-                request.to
+                request.to.id()
             );
             Box::new(self.next.send_request(request))
         }

@@ -208,8 +208,7 @@ impl From<Prepare> for BytesMut {
 
 impl fmt::Debug for Prepare {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Prepare {{ destination: \"{}\", amount: {}, expires_at: {:?}, execution_condition: {}, data_length: {} }}", str::from_utf8(self.destination()).map_err(|_| fmt::Error)?, self.amount(), DateTime::<Utc>::from(self.expires_at()).to_rfc3339(), hex::encode(self.execution_condition()), self.data().len());
-        Ok(())
+        write!(f, "Prepare {{ destination: \"{}\", amount: {}, expires_at: {:?}, execution_condition: {}, data_length: {} }}", str::from_utf8(self.destination()).map_err(|_| fmt::Error)?, self.amount(), DateTime::<Utc>::from(self.expires_at()).to_rfc3339(), hex::encode(self.execution_condition()), self.data().len())
     }
 }
 
@@ -311,8 +310,7 @@ impl fmt::Debug for Fulfill {
             "Fulfill {{ fulfillment: \"{}\", data_length: {} }}",
             hex::encode(self.fulfillment()),
             self.data().len()
-        );
-        Ok(())
+        )
     }
 }
 
@@ -425,8 +423,7 @@ impl fmt::Debug for Reject {
             str::from_utf8(self.message()).map_err(|_| fmt::Error)?,
             str::from_utf8(self.triggered_by()).map_err(|_| fmt::Error)?,
             self.data().len()
-        );
-        Ok(())
+        )
     }
 }
 

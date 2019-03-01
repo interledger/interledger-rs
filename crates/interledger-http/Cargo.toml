@@ -15,3 +15,4 @@ interledger-packet = { path = "../interledger-packet" }
 interledger-service = { path = "../interledger-service" }
 log = "0.4.6"
 reqwest = "0.9.9"
+url = "1.7.2"
