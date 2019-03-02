@@ -5,7 +5,7 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     PacketType as IlpPacketType, ParseError,
 };
-use std::str;
+use std::{fmt, str};
 
 const STREAM_VERSION: u8 = 1;
 
@@ -102,7 +102,7 @@ impl<'a> StreamPacketBuilder<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct StreamPacket {
     pub(crate) buffer_unencrypted: BytesMut,
     sequence: u64,
@@ -178,6 +178,19 @@ impl StreamPacket {
         FrameIterator {
             buffer: &self.buffer_unencrypted[self.frames_offset..],
         }
+    }
+}
+
+impl fmt::Debug for StreamPacket {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "StreamPacket {{ sequence: {}, ilp_packet_type: {:?}, prepare_amount: {}, frames: {:?} }}",
+            self.sequence,
+            self.ilp_packet_type,
+            self.prepare_amount,
+            self.frames()
+        )
     }
 }
 
@@ -259,7 +272,23 @@ impl<'a> Iterator for FrameIterator<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+impl<'a> fmt::Debug for FrameIterator<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[ ")?;
+        let mut iter = FrameIterator {
+            buffer: &self.buffer[..],
+        };
+        if let Some(next) = iter.next() {
+            write!(f, "{:?}", next)?;
+        }
+        for frame in iter {
+            write!(f, ", {:?}", frame)?;
+        }
+        write!(f, " ]")
+    }
+}
+
+#[derive(PartialEq, Clone)]
 pub enum Frame<'a> {
     ConnectionClose(ConnectionCloseFrame<'a>),
     ConnectionNewAddress(ConnectionNewAddressFrame<'a>),
@@ -276,6 +305,28 @@ pub enum Frame<'a> {
     StreamMaxData(StreamMaxDataFrame),
     StreamDataBlocked(StreamDataBlockedFrame),
     Unknown,
+}
+
+impl<'a> fmt::Debug for Frame<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Frame::ConnectionClose(frame) => write!(f, "{:?}", frame),
+            Frame::ConnectionNewAddress(frame) => write!(f, "{:?}", frame),
+            Frame::ConnectionAssetDetails(frame) => write!(f, "{:?}", frame),
+            Frame::ConnectionMaxData(frame) => write!(f, "{:?}", frame),
+            Frame::ConnectionDataBlocked(frame) => write!(f, "{:?}", frame),
+            Frame::ConnectionMaxStreamId(frame) => write!(f, "{:?}", frame),
+            Frame::ConnectionStreamIdBlocked(frame) => write!(f, "{:?}", frame),
+            Frame::StreamClose(frame) => write!(f, "{:?}", frame),
+            Frame::StreamMoney(frame) => write!(f, "{:?}", frame),
+            Frame::StreamMaxMoney(frame) => write!(f, "{:?}", frame),
+            Frame::StreamMoneyBlocked(frame) => write!(f, "{:?}", frame),
+            Frame::StreamData(frame) => write!(f, "{:?}", frame),
+            Frame::StreamMaxData(frame) => write!(f, "{:?}", frame),
+            Frame::StreamDataBlocked(frame) => write!(f, "{:?}", frame),
+            Frame::Unknown => write!(f, "UnknownFrame"),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -377,7 +428,7 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct ConnectionNewAddressFrame<'a> {
     pub source_account: &'a [u8],
 }
@@ -391,6 +442,16 @@ impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame<'a> {
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
         buf.put_var_octet_string(self.source_account);
+    }
+}
+
+impl<'a> fmt::Debug for ConnectionNewAddressFrame<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "ConnectionNewAddressFrame {{ source_account: {} }}",
+            str::from_utf8(self.source_account).map_err(|_| fmt::Error)?
+        )
     }
 }
 
