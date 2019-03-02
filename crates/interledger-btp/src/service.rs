@@ -1,7 +1,7 @@
 use super::packet::*;
 use bytes::BytesMut;
 use futures::{
-    future::{err, ok, result, Either},
+    future::{err, ok, Either},
     sync::mpsc::{unbounded, UnboundedSender},
     sync::oneshot,
     Future, Sink, Stream,
@@ -12,7 +12,7 @@ use interledger_service::*;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::io::{Error as IoError, ErrorKind};
-use std::iter::{FromIterator, IntoIterator};
+use std::iter::IntoIterator;
 use std::sync::Arc;
 use tokio;
 use tokio_tcp::TcpStream;
@@ -58,8 +58,10 @@ where
                     WebSocketError::from(IoError::from(ErrorKind::ConnectionAborted))
                 }),
             )
-            .map(|_| ())
-            .map_err(|_| ());
+            .then(|_| {
+                debug!("Finished forwarding to WebSocket stream");
+                Ok(())
+            });
         tokio::spawn(forward_to_connection);
 
         // Set up a listener to handle incoming packets from the WebSocket connection

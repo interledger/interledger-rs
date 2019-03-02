@@ -222,7 +222,7 @@ where
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
                 // TODO check that the sequence matches our outgoing packet
-                self.amount_delivered += amount;
+                self.amount_delivered += packet.prepare_amount();
             }
         } else {
             warn!(
