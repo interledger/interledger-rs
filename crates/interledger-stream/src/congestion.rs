@@ -141,6 +141,7 @@ impl CongestionController {
         }
     }
 
+    #[cfg(test)]
     fn set_max_packet_amount(&mut self, max_packet_amount: u64) {
         self.max_packet_amount = Some(max_packet_amount)
     }

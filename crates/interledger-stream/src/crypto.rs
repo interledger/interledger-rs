@@ -1,4 +1,4 @@
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
 
@@ -136,6 +136,7 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
 #[cfg(test)]
 mod fulfillment_and_condition {
     use super::*;
+    use bytes::Bytes;
 
     lazy_static! {
         static ref SHARED_SECRET: Vec<u8> = vec![

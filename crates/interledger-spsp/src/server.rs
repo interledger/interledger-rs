@@ -1,9 +1,6 @@
 use super::SpspResponse;
-use futures::future::{ok, result, FutureResult, IntoFuture};
-use hyper::{
-    service::{service_fn, Service as HttpService},
-    Body, Error, Request, Response,
-};
+use futures::future::{ok, FutureResult, IntoFuture};
+use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
 use std::fmt;

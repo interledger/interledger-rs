@@ -1,22 +1,12 @@
 use super::packet::*;
 use super::service::BtpService;
 use super::BtpAccount;
-use futures::{
-    future::{join_all, ok, Either},
-    sync::mpsc::unbounded,
-    Future, Sink, Stream,
-};
-use hashbrown::HashMap;
-use interledger_packet::Packet;
+use futures::{future::join_all, Future, Sink};
 use interledger_service::*;
-use parking_lot::{Mutex, RwLock};
 use rand::random;
-use std::io::{Error as IoError, ErrorKind};
-use std::iter::{FromIterator, IntoIterator};
-use std::sync::Arc;
-use tokio;
+use std::iter::IntoIterator;
 use tokio_tungstenite::connect_async;
-use tungstenite::{error::Error as WebSocketError, Message};
+use tungstenite::Message;
 use url::{ParseError, Url};
 
 pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
