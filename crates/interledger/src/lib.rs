@@ -6,7 +6,7 @@ use interledger_btp::{connect_client, parse_btp_url};
 use interledger_http::HttpClientService;
 use interledger_ildcp::get_ildcp_info;
 use interledger_router::Router;
-use interledger_service_util::RejecterService;
+use interledger_service_util::{RejecterService, ValidatorService};
 use interledger_spsp::{pay, spsp_responder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_stream::StreamReceiverService;
@@ -33,6 +33,7 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
     let receiver = receiver.to_string();
     let account: Account = AccountBuilder {
         id: 0,
+        // TODO make sure the ilp_address is added when the ILDCP info comes back
         ilp_address: Bytes::new(),
         // Send everything to this account
         additional_routes: vec![Bytes::from(&b""[..])],
@@ -41,7 +42,7 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         http_endpoint: None,
         http_incoming_authorization: None,
         http_outgoing_authorization: None,
-        btp_url: Some(parse_btp_url(btp_server).unwrap()),
+        btp_uri: Some(parse_btp_url(btp_server).unwrap()),
         btp_incoming_authorization: None,
         max_packet_amount: u64::max_value(),
     }
@@ -51,7 +52,7 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         RejecterService::default(),
         RejecterService::default(),
         store.clone(),
-        &[ACCOUNT_ID],
+        vec![ACCOUNT_ID],
     )
     .map_err(|err| {
         eprintln!("Error connecting to BTP server: {:?}", err);
@@ -103,13 +104,13 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
         http_endpoint: Some(url),
         http_incoming_authorization: None,
         http_outgoing_authorization: auth_header,
-        btp_url: None,
+        btp_uri: None,
         btp_incoming_authorization: None,
         max_packet_amount: u64::max_value(),
     }
     .build();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let service = HttpClientService::new(store.clone());
+    let service = ValidatorService::outgoing(HttpClientService::new(store.clone()));
     let router = Router::new(service, store);
     let run = pay(router, account, &receiver, amount)
         .map_err(|err| {
@@ -140,7 +141,7 @@ pub fn run_spsp_server_btp(btp_server: &str, port: u16, _quiet: bool) {
         http_endpoint: None,
         http_incoming_authorization: None,
         http_outgoing_authorization: None,
-        btp_url: Some(parse_btp_url(btp_server).unwrap()),
+        btp_uri: Some(parse_btp_url(btp_server).unwrap()),
         btp_incoming_authorization: None,
         max_packet_amount: u64::max_value(),
     }
@@ -150,16 +151,17 @@ pub fn run_spsp_server_btp(btp_server: &str, port: u16, _quiet: bool) {
     let stream_server = StreamReceiverService::without_ildcp(&secret, RejecterService::default());
 
     let run = connect_client(
-        stream_server.clone(),
+        ValidatorService::incoming(stream_server.clone()),
         RejecterService::default(),
         store.clone(),
-        &[ACCOUNT_ID],
+        vec![ACCOUNT_ID],
     )
     .map_err(|err| {
         eprintln!("Error connecting to BTP server: {:?}", err);
         eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |btp_service| {
+        let btp_service = ValidatorService::outgoing(btp_service);
         let mut router = Router::new(btp_service, store);
         get_ildcp_info(&mut router, account.clone()).and_then(move |info| {
             let client_address = Bytes::from(info.client_address());

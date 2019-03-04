@@ -6,7 +6,7 @@ use std::hash::Hash;
 use std::iter::IntoIterator;
 
 pub trait Account: Clone + Send + Sized + Debug {
-    type AccountId: Eq + Hash + Debug + Display;
+    type AccountId: Eq + Hash + Debug + Display + Send + Sync + Copy;
 
     fn id(&self) -> Self::AccountId;
 }
@@ -54,13 +54,8 @@ pub type BoxedIlpFuture = Box<Future<Item = Fulfill, Error = Reject> + Send + 's
 pub trait AccountStore {
     type Account: Account;
 
-    fn get_account(
-        &self,
-        account_id: <<Self as AccountStore>::Account as Account>::AccountId,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
-
     fn get_accounts(
         &self,
-        account_ids: &[<<Self as AccountStore>::Account as Account>::AccountId],
+        account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
     ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
