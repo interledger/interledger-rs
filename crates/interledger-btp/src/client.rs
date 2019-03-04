@@ -23,7 +23,7 @@ pub fn connect_client<S, T, U, A: 'static>(
     incoming_handler: S,
     next_outgoing: T,
     store: U,
-    accounts: &[<U::Account as Account>::AccountId],
+    accounts: Vec<<U::Account as Account>::AccountId>,
 ) -> impl Future<Item = BtpService<S, T, A>, Error = ()>
 where
     S: IncomingService<U::Account> + Clone + Send + Sync + 'static,
@@ -37,7 +37,7 @@ where
         .and_then(|accounts| {
             join_all(accounts.into_iter().map(move |account| {
                 let url = account
-                    .get_btp_url()
+                    .get_btp_uri()
                     .expect("Accounts must have BTP URLs")
                     .clone();
                 connect_async(url.clone())

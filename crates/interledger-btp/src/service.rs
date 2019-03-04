@@ -11,9 +11,12 @@ use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
-use std::io::{Error as IoError, ErrorKind};
-use std::iter::IntoIterator;
-use std::sync::Arc;
+use std::{
+    io::{Error as IoError, ErrorKind},
+    iter::IntoIterator,
+    sync::Arc,
+};
+use stream_cancel::Valved;
 use tokio;
 use tokio_tcp::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -52,6 +55,7 @@ where
         // Set up a channel to forward outgoing packets to the WebSocket connection
         let (tx, rx) = unbounded();
         let (sink, stream) = connection.split();
+        let (close_connection, stream) = Valved::new(stream);
         let forward_to_connection = sink
             .send_all(
                 rx.map_err(|_err| {
@@ -60,6 +64,7 @@ where
             )
             .then(|_| {
                 debug!("Finished forwarding to WebSocket stream");
+                drop(close_connection);
                 Ok(())
             });
         tokio::spawn(forward_to_connection);

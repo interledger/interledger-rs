@@ -2,14 +2,42 @@ use futures::{future::err, Future};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use ring::digest::{digest, SHA256};
-use std::time::SystemTime;
+use std::{marker::PhantomData, time::SystemTime};
 use tokio::prelude::FutureExt;
 
-pub struct ValidatorService<S> {
+#[derive(Clone)]
+pub struct ValidatorService<S, A> {
     next: S,
+    account_type: PhantomData<A>,
 }
 
-impl<S, A> IncomingService<A> for ValidatorService<S>
+impl<S, A> ValidatorService<S, A>
+where
+    S: IncomingService<A>,
+    A: Account,
+{
+    pub fn incoming(next: S) -> Self {
+        ValidatorService {
+            next,
+            account_type: PhantomData,
+        }
+    }
+}
+
+impl<S, A> ValidatorService<S, A>
+where
+    S: OutgoingService<A>,
+    A: Account,
+{
+    pub fn outgoing(next: S) -> Self {
+        ValidatorService {
+            next,
+            account_type: PhantomData,
+        }
+    }
+}
+
+impl<S, A> IncomingService<A> for ValidatorService<S, A>
 where
     S: IncomingService<A>,
     A: Account,
@@ -32,7 +60,7 @@ where
     }
 }
 
-impl<S, A> OutgoingService<A> for ValidatorService<S>
+impl<S, A> OutgoingService<A> for ValidatorService<S, A>
 where
     S: OutgoingService<A>,
     A: Account,

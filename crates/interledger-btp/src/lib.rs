@@ -20,7 +20,7 @@ pub use self::client::{connect_client, parse_btp_url};
 pub use self::service::BtpService;
 
 pub trait BtpAccount: Account {
-    fn get_btp_url(&self) -> Option<&Url>;
+    fn get_btp_uri(&self) -> Option<&Url>;
 }
 
 pub trait BtpStore {
