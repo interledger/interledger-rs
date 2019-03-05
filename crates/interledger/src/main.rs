@@ -73,7 +73,7 @@ pub fn main() {
                     value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
                 let port = value_t!(matches, "port", u16).expect("Invalid port");
                 let quiet = matches.is_present("quiet");
-                run_spsp_server_btp(&btp_server, port, quiet);
+                run_spsp_server_btp(&btp_server, ([127, 0, 0, 1], port).into(), quiet);
             }
             ("pay", Some(matches)) => {
                 let receiver = value_t!(matches, "receiver", String).expect("Receiver is required");

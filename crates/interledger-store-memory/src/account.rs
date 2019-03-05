@@ -7,23 +7,101 @@ use interledger_service_util::MaxPacketAmountAccount;
 use std::{fmt, str, sync::Arc};
 use url::Url;
 
+#[derive(Default)]
 pub struct AccountBuilder {
-    pub id: u64,
-    pub ilp_address: Bytes,
-    pub additional_routes: Vec<Bytes>,
-    pub asset_code: String,
-    pub asset_scale: u8,
-    pub http_endpoint: Option<Url>,
-    pub http_incoming_authorization: Option<String>,
-    pub http_outgoing_authorization: Option<String>,
-    pub btp_uri: Option<Url>,
-    pub btp_incoming_token: Option<String>,
-    pub btp_incoming_username: Option<String>,
-    pub max_packet_amount: u64,
+    details: AccountDetails,
 }
 
 impl AccountBuilder {
+    pub fn new() -> Self {
+        AccountBuilder {
+            details: AccountDetails::default(),
+        }
+    }
+
     pub fn build(self) -> Account {
+        self.details.build()
+    }
+
+    pub fn id(mut self, id: u64) -> Self {
+        self.details.id = id;
+        self
+    }
+
+    pub fn ilp_address(mut self, ilp_address: &[u8]) -> Self {
+        self.details.ilp_address = Bytes::from(ilp_address);
+        self
+    }
+
+    pub fn additional_routes(mut self, routes: &[&[u8]]) -> Self {
+        self.details.additional_routes = routes.iter().map(|route| Bytes::from(*route)).collect();
+        self
+    }
+
+    pub fn asset_code(mut self, asset_code: String) -> Self {
+        self.details.asset_code = asset_code;
+        self
+    }
+
+    pub fn asset_scale(mut self, asset_scale: u8) -> Self {
+        self.details.asset_scale = asset_scale;
+        self
+    }
+
+    pub fn http_endpoint(mut self, http_endpoint: Url) -> Self {
+        self.details.http_endpoint = Some(http_endpoint);
+        self
+    }
+
+    pub fn http_incoming_authorization(mut self, auth_header: String) -> Self {
+        self.details.http_incoming_authorization = Some(auth_header);
+        self
+    }
+
+    pub fn http_outgoing_authorization(mut self, auth_header: String) -> Self {
+        self.details.http_outgoing_authorization = Some(auth_header);
+        self
+    }
+
+    pub fn btp_uri(mut self, uri: Url) -> Self {
+        self.details.btp_uri = Some(uri);
+        self
+    }
+
+    pub fn btp_incoming_token(mut self, auth_token: String) -> Self {
+        self.details.btp_incoming_token = Some(auth_token);
+        self
+    }
+
+    pub fn btp_incoming_username(mut self, username: String) -> Self {
+        self.details.btp_incoming_username = Some(username);
+        self
+    }
+
+    pub fn max_packet_amount(mut self, amount: u64) -> Self {
+        self.details.max_packet_amount = amount;
+        self
+    }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct AccountDetails {
+    pub(crate) id: u64,
+    pub(crate) ilp_address: Bytes,
+    pub(crate) additional_routes: Vec<Bytes>,
+    pub(crate) asset_code: String,
+    pub(crate) asset_scale: u8,
+    pub(crate) http_endpoint: Option<Url>,
+    pub(crate) http_incoming_authorization: Option<String>,
+    pub(crate) http_outgoing_authorization: Option<String>,
+    pub(crate) btp_uri: Option<Url>,
+    pub(crate) btp_incoming_token: Option<String>,
+    pub(crate) btp_incoming_username: Option<String>,
+    pub(crate) max_packet_amount: u64,
+}
+
+impl AccountDetails {
+    pub(crate) fn build(self) -> Account {
         Account {
             inner: Arc::new(self),
         }
@@ -33,7 +111,7 @@ impl AccountBuilder {
 // TODO should debugging print all the details or only the id and maybe ilp_address?
 #[derive(Clone)]
 pub struct Account {
-    pub(crate) inner: Arc<AccountBuilder>,
+    pub(crate) inner: Arc<AccountDetails>,
 }
 
 impl fmt::Debug for Account {
