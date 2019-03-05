@@ -14,9 +14,11 @@ mod client;
 mod errors;
 mod oer;
 mod packet;
+mod server;
 mod service;
 
 pub use self::client::{connect_client, parse_btp_url};
+pub use self::server::create_server;
 pub use self::service::BtpService;
 
 pub trait BtpAccount: Account {
@@ -26,8 +28,9 @@ pub trait BtpAccount: Account {
 pub trait BtpStore {
     type Account: BtpAccount;
 
-    fn get_account_from_token(
+    fn get_account_from_auth(
         &self,
         token: &str,
+        username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 }

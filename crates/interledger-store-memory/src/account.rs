@@ -17,7 +17,8 @@ pub struct AccountBuilder {
     pub http_incoming_authorization: Option<String>,
     pub http_outgoing_authorization: Option<String>,
     pub btp_uri: Option<Url>,
-    pub btp_incoming_authorization: Option<String>,
+    pub btp_incoming_token: Option<String>,
+    pub btp_incoming_username: Option<String>,
     pub max_packet_amount: u64,
 }
 

@@ -1,7 +1,7 @@
 use super::{Account, AccountBuilder};
 use bytes::Bytes;
 use futures::{
-    future::{err, ok, result},
+    future::{err, ok},
     Future,
 };
 use hashbrown::HashMap;
@@ -19,6 +19,8 @@ use std::{
 pub struct InMemoryStore {
     accounts: Arc<HashMap<u64, Account>>,
     routing_table: Arc<Vec<(Bytes, u64)>>,
+    btp_auth: Arc<HashMap<(String, Option<String>), u64>>,
+    http_auth: Arc<HashMap<String, u64>>,
 }
 
 impl InMemoryStore {
@@ -42,9 +44,36 @@ impl InMemoryStore {
                 )
             })
             .collect();
+        let btp_auth = Arc::new(HashMap::from_iter(accounts.iter().filter_map(
+            |(account_id, account)| {
+                if let Some(ref token) = account.inner.btp_incoming_token {
+                    Some((
+                        (
+                            token.to_string(),
+                            account.inner.btp_incoming_username.clone(),
+                        ),
+                        *account_id,
+                    ))
+                } else {
+                    None
+                }
+            },
+        )));
+        let http_auth = Arc::new(HashMap::from_iter(accounts.iter().filter_map(
+            |(account_id, account)| {
+                if let Some(ref auth) = account.inner.http_incoming_authorization {
+                    Some((auth.to_string(), *account_id))
+                } else {
+                    None
+                }
+            },
+        )));
+
         InMemoryStore {
             accounts,
             routing_table: Arc::new(routing_table),
+            btp_auth,
+            http_auth,
         }
     }
 }
@@ -76,20 +105,11 @@ impl HttpStore for InMemoryStore {
         &self,
         auth_header: &str,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        Box::new(result(
-            self.accounts
-                .iter()
-                .find(|(_account_id, account)| {
-                    if let Some(ref header) = account.inner.http_incoming_authorization {
-                        if header == auth_header {
-                            return true;
-                        }
-                    }
-                    false
-                })
-                .ok_or(())
-                .map(|(_account_id, account)| account.clone()),
-        ))
+        if let Some(account_id) = self.http_auth.get(auth_header) {
+            Box::new(ok(self.accounts[account_id].clone()))
+        } else {
+            Box::new(err(()))
+        }
     }
 }
 
@@ -102,22 +122,18 @@ impl RouterStore for InMemoryStore {
 impl BtpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_token(
+    fn get_account_from_auth(
         &self,
         token: &str,
+        username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
-        Box::new(result(
-            self.accounts
-                .iter()
-                .find(|(_account_id, account)| {
-                    if let Some(auth) = &account.inner.btp_incoming_authorization {
-                        token == auth.as_str()
-                    } else {
-                        false
-                    }
-                })
-                .map(|(_account_id, account)| account.clone())
-                .ok_or(()),
-        ))
+        if let Some(account_id) = self
+            .btp_auth
+            .get(&(token.to_string(), username.map(|s| s.to_string())))
+        {
+            Box::new(ok(self.accounts[account_id].clone()))
+        } else {
+            Box::new(err(()))
+        }
     }
 }

@@ -43,7 +43,8 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         http_incoming_authorization: None,
         http_outgoing_authorization: None,
         btp_uri: Some(parse_btp_url(btp_server).unwrap()),
-        btp_incoming_authorization: None,
+        btp_incoming_token: None,
+        btp_incoming_username: None,
         max_packet_amount: u64::max_value(),
     }
     .build();
@@ -105,7 +106,8 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
         http_incoming_authorization: None,
         http_outgoing_authorization: auth_header,
         btp_uri: None,
-        btp_incoming_authorization: None,
+        btp_incoming_token: None,
+        btp_incoming_username: None,
         max_packet_amount: u64::max_value(),
     }
     .build();
@@ -142,7 +144,8 @@ pub fn run_spsp_server_btp(btp_server: &str, port: u16, _quiet: bool) {
         http_incoming_authorization: None,
         http_outgoing_authorization: None,
         btp_uri: Some(parse_btp_url(btp_server).unwrap()),
-        btp_incoming_authorization: None,
+        btp_incoming_token: None,
+        btp_incoming_username: None,
         max_packet_amount: u64::max_value(),
     }
     .build();
