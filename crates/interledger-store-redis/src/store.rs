@@ -239,9 +239,11 @@ impl ExchangeRateStore for RedisStore {
 impl BtpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_token(
+    fn get_account_from_auth(
         &self,
         token: &str,
+        // TODO actually store the username
+        _username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let mut pipe = redis::pipe();

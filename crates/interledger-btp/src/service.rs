@@ -17,7 +17,7 @@ use std::{
     sync::Arc,
 };
 use stream_cancel::Valved;
-use tokio;
+use tokio_executor::spawn;
 use tokio_tcp::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::{error::Error as WebSocketError, Message};
@@ -67,7 +67,7 @@ where
                 drop(close_connection);
                 Ok(())
             });
-        tokio::spawn(forward_to_connection);
+        spawn(forward_to_connection);
 
         // Set up a listener to handle incoming packets from the WebSocket connection
         // TODO do we need all this cloning?
@@ -120,7 +120,7 @@ where
             debug!("WebSocket stream ended");
             result
         });
-        tokio::spawn(handle_incoming);
+        spawn(handle_incoming);
 
         // Save the sender side of the channel so we have a way to forward outgoing requests to the WebSocket
         self.connections.write().insert(account_id, tx);
