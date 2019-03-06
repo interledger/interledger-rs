@@ -8,6 +8,7 @@ use hyper::{body::Body, service::Service as HttpService, Error, Request, Respons
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
 
+#[derive(Clone)]
 pub struct HttpServerService<S, T> {
     next: S,
     store: T,
@@ -70,13 +71,13 @@ where
 
 impl<S, T> HttpService for HttpServerService<S, T>
 where
-    S: IncomingService<T::Account> + Clone + 'static,
+    S: IncomingService<T::Account> + Clone + Send + 'static,
     T: HttpStore + 'static,
 {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = Error;
-    type Future = Box<Future<Item = Response<Self::ResBody>, Error = Self::Error> + 'static>;
+    type Future = Box<Future<Item = Response<Self::ResBody>, Error = Self::Error> + Send + 'static>;
 
     fn call(&mut self, request: Request<Self::ReqBody>) -> Self::Future {
         Box::new(self.handle_http_request(request))

@@ -20,12 +20,24 @@ Make sure you're running `moneyd` first! (`moneyd local` can be used for testing
 
 ### Running an SPSP Server
 
-`ilp spsp server --port 3000`
+#### Using BTP
+
+`interledger spsp server --port 3000`
 
 (You can see the full options by running `ilp spsp server --help`)
 
+#### Using ILP-Over-HTTP
+
+`interledger spsp server --use_ilp_over_http --ilp_address=private.local --incoming_auth_token=somesecrettoken`
+
 ### Sending an SPSP Payment
 
-`ilp spsp pay --receiver http://localhost:3000/spsp/bob --amount 1000`
+#### Using BTP
+
+`interledger spsp pay --receiver=http://localhost:3000/spsp --amount=1000`
 
 (You can see the full options by running `ilp spsp pay --help`)
+
+#### Using ILP-Over-HTTP
+
+`interledger spsp pay --receiver=http://localhost:3000/spsp --amount=1000 --http_server=http://localhost:3000/ilp`

@@ -3,7 +3,7 @@ use futures::future::{ok, FutureResult, IntoFuture};
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
-use std::fmt;
+use std::{fmt, str};
 
 fn extract_original_url(request: &Request<Body>) -> String {
     let headers = request.headers();
@@ -37,21 +37,6 @@ pub fn spsp_responder(ilp_address: &[u8], server_secret: &[u8]) -> SpspResponder
     SpspResponder {
         connection_generator,
     }
-
-    // service_fn(move |request: Request<Body>| {
-    //     let original_url = extract_original_url(&request);
-    //     let (destination_account, shared_secret) =
-    //         generator.generate_address_and_secret(original_url.as_bytes());
-    //     let response = SpspResponse {
-    //         destination_account: String::from_utf8(destination_account.to_vec()).unwrap(),
-    //         shared_secret: shared_secret.to_vec(),
-    //     };
-
-    //     Ok(Response::builder()
-    //         .status(200)
-    //         .body(Body::from(serde_json::to_string(&response).unwrap()))
-    //         .unwrap())
-    // })
 }
 
 #[derive(Clone)]
@@ -70,6 +55,11 @@ impl HttpService for SpspResponder {
         let (destination_account, shared_secret) = self
             .connection_generator
             .generate_address_and_secret(original_url.as_bytes());
+        debug!(
+            "Responding to SPSP query with destination_account: {} (original URL: {})",
+            str::from_utf8(&destination_account).unwrap_or("<not utf8>"),
+            original_url
+        );
         let response = SpspResponse {
             destination_account: String::from_utf8(destination_account.to_vec()).unwrap(),
             shared_secret: shared_secret.to_vec(),

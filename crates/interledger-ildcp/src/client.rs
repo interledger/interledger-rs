@@ -25,7 +25,7 @@ where
                         err
                     );
                 })?;
-            trace!("Got ILDCP response: {:?}", response);
+            debug!("Got ILDCP response: {:?}", response);
             Ok(response)
         })
 }

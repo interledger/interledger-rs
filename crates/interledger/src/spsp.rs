@@ -1,10 +1,14 @@
 use base64;
 use bytes::Bytes;
-use futures::Future;
-use hyper::Server;
+use futures::{future::ok, Future};
+use hyper::{
+    header::{HeaderValue, ACCEPT},
+    service::{service_fn, Service},
+    Body, Error, Method, Request, Response, Server,
+};
 use interledger_btp::{connect_client, parse_btp_url};
-use interledger_http::HttpClientService;
-use interledger_ildcp::get_ildcp_info;
+use interledger_http::{HttpClientService, HttpServerService};
+use interledger_ildcp::{get_ildcp_info, IldcpResponse, IldcpService};
 use interledger_router::Router;
 use interledger_service_util::{RejecterService, ValidatorService};
 use interledger_spsp::{pay, spsp_responder};
@@ -115,7 +119,7 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
 }
 
 // TODO allow server secret to be specified
-pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, _quiet: bool) {
+pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
     let account: Account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
         .btp_uri(parse_btp_url(btp_server).unwrap())
@@ -142,10 +146,58 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, _quiet: bool) 
 
             stream_server.set_ildcp(info);
 
+            if !quiet {
+                println!("Listening on: {}", address);
+            }
             Server::bind(&address)
                 .serve(move || spsp_responder(&client_address[..], &secret[..]))
                 .map_err(|e| eprintln!("Server error: {:?}", e))
         })
     });
     tokio::run(run);
+}
+
+pub fn run_spsp_server_http(ildcp_info: IldcpResponse, address: SocketAddr, quiet: bool) {
+    let account: Account = AccountBuilder::new().build();
+    let secret = random_secret();
+    let store = InMemoryStore::from_accounts(vec![account.clone()]);
+    let spsp_responder = spsp_responder(&ildcp_info.client_address(), &secret[..]);
+    let incoming_handler =
+        StreamReceiverService::new(&secret, ildcp_info, RejecterService::default());
+    let incoming_handler = IldcpService::new(incoming_handler);
+    let http_service = HttpServerService::new(incoming_handler, store);
+
+    if !quiet {
+        println!("Listening on: {}", address);
+    }
+    let server = Server::bind(&address)
+        .serve(move || {
+            let mut spsp_responder = spsp_responder.clone();
+            let mut http_service = http_service.clone();
+            service_fn(
+                move |req: Request<Body>| -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
+                    match (req.method(), req.uri().path(), req.headers().get(ACCEPT)) {
+                        (&Method::GET, "/spsp", _) => Box::new(spsp_responder.call(req)),
+                        (&Method::GET, "/.well-known/pay", _) => Box::new(spsp_responder.call(req)),
+                        (&Method::POST, "/ilp", _) => Box::new(http_service.call(req)),
+                        (&Method::GET, _, Some(accept_header)) => {
+                            if accept_header == HeaderValue::from_static("application/spsp4+json") {
+                                Box::new(spsp_responder.call(req))
+                            } else {
+                        Box::new(ok(Response::builder()
+                            .status(404)
+                            .body(Body::empty())
+                            .unwrap()))
+                            }
+                        },
+                        _ => Box::new(ok(Response::builder()
+                            .status(404)
+                            .body(Body::empty())
+                            .unwrap())),
+                    }
+                },
+            )
+        })
+        .map_err(|err| eprintln!("Server error: {:?}", err));
+    tokio::run(server);
 }

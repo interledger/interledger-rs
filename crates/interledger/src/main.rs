@@ -2,8 +2,10 @@ extern crate interledger;
 #[macro_use]
 extern crate clap;
 
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg, ArgGroup, SubCommand};
 use interledger::*;
+use interledger_ildcp::IldcpResponseBuilder;
+
 pub fn main() {
     env_logger::init();
 
@@ -31,10 +33,18 @@ pub fn main() {
                                 .long("btp_server")
                                 .default_value(&moneyd_uri)
                                 .help("URI of a moneyd or BTP Server to listen on"),
+                            Arg::with_name("ilp_over_http")
+                                .long("use_ilp_over_http")
+                                .help("Accept ILP packets sent over HTTP instead of connecting to a BTP server"),
+                            Arg::with_name("ilp_address")
+                                .long("ilp_address")
+                                .takes_value(true)
+                                .help("(Required ilp_over_http) The server's ILP address"),
                             Arg::with_name("quiet")
                                 .long("quiet")
                                 .help("Suppress log output"),
-                        ]),
+                        ])
+                        .group(ArgGroup::with_name("http_options").requires_all(&["ilp_over_http", "ilp_address"])),
                     SubCommand::with_name("pay")
                         .about("Send an SPSP payment")
                         .args(&[
@@ -69,11 +79,21 @@ pub fn main() {
     match app.clone().get_matches().subcommand() {
         ("spsp", Some(matches)) => match matches.subcommand() {
             ("server", Some(matches)) => {
-                let btp_server =
-                    value_t!(matches, "btp_server", String).expect("BTP Server URL is required");
                 let port = value_t!(matches, "port", u16).expect("Invalid port");
                 let quiet = matches.is_present("quiet");
-                run_spsp_server_btp(&btp_server, ([127, 0, 0, 1], port).into(), quiet);
+                if matches.is_present("ilp_over_http") {
+                    let ildcp_info = IldcpResponseBuilder {
+                        client_address: &[],
+                        asset_code: "",
+                        asset_scale: 0,
+                    }
+                    .build();
+                    run_spsp_server_http(ildcp_info, ([127, 0, 0, 1], port).into(), quiet);
+                } else {
+                    let btp_server = value_t!(matches, "btp_server", String)
+                        .expect("BTP Server URL is required");
+                    run_spsp_server_btp(&btp_server, ([127, 0, 0, 1], port).into(), quiet);
+                }
             }
             ("pay", Some(matches)) => {
                 let receiver = value_t!(matches, "receiver", String).expect("Receiver is required");
