@@ -1,6 +1,6 @@
 [package]
 name = "interledger"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger client library"
 license = "Apache-2.0"
@@ -22,15 +22,15 @@ clap = "2.32.0"
 env_logger = "0.6.0"
 futures = "0.1.25"
 hyper = "0.12.24"
-interledger-btp = { path = "../interledger-btp" }
-interledger-http = { path = "../interledger-http" }
-interledger-ildcp = { path = "../interledger-ildcp" }
-interledger-router = { path = "../interledger-router" }
-interledger-service = { path = "../interledger-service" }
-interledger-service-util = { path = "../interledger-service-util" }
-interledger-spsp = { path = "../interledger-spsp" }
-interledger-stream = { path = "../interledger-stream" }
-interledger-store-memory = { path = "../interledger-store-memory" }
+interledger-btp = { path = "../interledger-btp", version = "0.1.0" }
+interledger-http = { path = "../interledger-http", version = "0.1.0" }
+interledger-ildcp = { path = "../interledger-ildcp", version = "0.1.0" }
+interledger-router = { path = "../interledger-router", version = "0.1.0" }
+interledger-service = { path = "../interledger-service", version = "0.1.0" }
+interledger-service-util = { path = "../interledger-service-util", version = "0.1.0" }
+interledger-spsp = { path = "../interledger-spsp", version = "0.1.0" }
+interledger-stream = { path = "../interledger-stream", version = "0.1.0" }
+interledger-store-memory = { path = "../interledger-store-memory", version = "0.1.0" }
 tokio = "0.1.15"
 url = "1.7.2"
 
