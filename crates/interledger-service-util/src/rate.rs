@@ -2,8 +2,6 @@ use futures::{future::err, Future};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-use std::marker::PhantomData;
-use std::sync::Arc;
 
 pub trait BalanceStore: AccountStore {
     fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = u64, Error = ()> + Send>;

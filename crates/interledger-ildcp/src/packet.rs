@@ -1,11 +1,13 @@
 use byteorder::ReadBytesExt;
 use bytes::{BufMut, Bytes, BytesMut};
-use chrono::{Duration, Utc};
 use interledger_packet::{
     oer::{predict_var_octet_string, BufOerExt, MutBufOerExt},
     Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
-use std::{ops::Add, time::SystemTime};
+use std::{
+    ops::Add,
+    time::{Duration, SystemTime},
+};
 
 static ILDCP_DESTINATION: &'static [u8] = b"peer.config";
 static PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
@@ -16,7 +18,7 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
 const ASSET_SCALE_LEN: usize = 1;
 
 lazy_static! {
-    static ref PEER_PROTOCOL_EXPIRY_DURATION: Duration = Duration::seconds(60);
+    static ref PEER_PROTOCOL_EXPIRY_DURATION: Duration = Duration::from_secs(60);
 }
 
 pub fn is_ildcp_request(prepare: &Prepare) -> bool {
@@ -37,7 +39,7 @@ impl IldcpRequest {
             destination: ILDCP_DESTINATION,
             amount: 0,
             execution_condition: &PEER_PROTOCOL_CONDITION,
-            expires_at: SystemTime::from(Utc::now().add(*PEER_PROTOCOL_EXPIRY_DURATION)),
+            expires_at: SystemTime::now() + *PEER_PROTOCOL_EXPIRY_DURATION,
             data: &[],
         }
         .build()

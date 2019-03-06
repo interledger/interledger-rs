@@ -1,11 +1,10 @@
-use chrono::{DateTime, Duration, Utc};
 use futures::{future::err, Future};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
-use std::time::Duration as StdDuration;
+use std::time::{Duration, SystemTime};
 use tokio::prelude::FutureExt;
 
 #[derive(Clone)]
@@ -48,15 +47,17 @@ where
     type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
-        let expires_at = DateTime::from(request.prepare.expires_at());
-        if expires_at >= Utc::now() {
+        if request.prepare.expires_at() >= SystemTime::now() {
             Box::new(self.next.handle_request(request))
         } else {
             error!(
-                "Incoming packet expired {}ms ago at {} (time now: {})",
-                (Utc::now() - expires_at).num_milliseconds(),
-                expires_at.to_rfc3339(),
-                Utc::now().to_rfc3339()
+                "Incoming packet expired {}ms ago at {:?} (time now: {:?})",
+                SystemTime::now()
+                    .duration_since(request.prepare.expires_at())
+                    .unwrap_or_else(|_| Duration::from_secs(0))
+                    .as_millis(),
+                request.prepare.expires_at(),
+                SystemTime::now()
             );
             let result = Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
@@ -81,12 +82,15 @@ where
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition());
 
-        let time_left = DateTime::from(request.prepare.expires_at()) - Utc::now();
-        if time_left > Duration::seconds(0) {
+        if let Ok(time_left) = request
+            .prepare
+            .expires_at()
+            .duration_since(SystemTime::now())
+        {
             Box::new(
                 self.next
                     .send_request(request)
-                    .timeout(time_left.to_std().unwrap_or(StdDuration::from_secs(30)))
+                    .timeout(time_left)
                     .map_err(move |err| {
                         // If the error was caused by the timer, into_inner will return None
                         if let Some(reject) = err.into_inner() {
@@ -94,7 +98,7 @@ where
                         } else {
                             error!(
                                 "Outgoing request timed out after {}ms",
-                                time_left.num_milliseconds()
+                                time_left.as_millis()
                             );
                             RejectBuilder {
                                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
@@ -124,7 +128,10 @@ where
         } else {
             error!(
                 "Outgoing packet expired {}ms ago",
-                time_left.num_milliseconds()
+                SystemTime::now()
+                    .duration_since(request.prepare.expires_at())
+                    .unwrap_or_default()
+                    .as_millis(),
             );
             // Already expired
             Box::new(err(RejectBuilder {
@@ -139,7 +146,7 @@ where
 }
 
 #[cfg(test)]
-mod incoming_tests {
+mod incoming {
     use super::*;
     use interledger_packet::*;
     use interledger_test_helpers::*;
@@ -161,7 +168,7 @@ mod incoming_tests {
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
-                    expires_at: SystemTime::from(Utc::now() + Duration::seconds(30)),
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
                     execution_condition: &[
                         102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142,
                         32, 8, 151, 20, 133, 110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
@@ -192,7 +199,7 @@ mod incoming_tests {
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
-                    expires_at: SystemTime::from(Utc::now() - Duration::seconds(30)),
+                    expires_at: SystemTime::now() - Duration::from_secs(30),
                     execution_condition: &[
                         102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142,
                         32, 8, 151, 20, 133, 110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
@@ -213,7 +220,7 @@ mod incoming_tests {
 }
 
 #[cfg(test)]
-mod outgoing_tests {
+mod outgoing {
     use super::*;
     use interledger_packet::*;
     use interledger_test_helpers::*;
@@ -236,7 +243,7 @@ mod outgoing_tests {
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
-                    expires_at: SystemTime::from(Utc::now() + Duration::seconds(30)),
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
                     execution_condition: &[
                         102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142,
                         32, 8, 151, 20, 133, 110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
@@ -268,7 +275,7 @@ mod outgoing_tests {
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
-                    expires_at: SystemTime::from(Utc::now() + Duration::seconds(30)),
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
                     execution_condition: &[
                         102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142,
                         32, 8, 151, 20, 133, 110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
