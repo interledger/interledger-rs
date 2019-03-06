@@ -1,9 +1,8 @@
-use futures::{Future, IntoFuture};
+use futures::Future;
 use interledger_packet::{Fulfill, Prepare, Reject};
 use std::cmp::Eq;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::iter::IntoIterator;
 
 pub trait Account: Clone + Send + Sized + Debug {
     type AccountId: Eq + Hash + Debug + Display + Send + Sync + Copy;

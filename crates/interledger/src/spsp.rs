@@ -15,8 +15,7 @@ use interledger_spsp::{pay, spsp_responder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_stream::StreamReceiverService;
 use ring::rand::{SecureRandom, SystemRandom};
-use std::net::SocketAddr;
-use std::u64;
+use std::{net::SocketAddr, str, u64};
 use tokio;
 use url::Url;
 
@@ -52,6 +51,7 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |service| {
+        let service = ValidatorService::outgoing(service);
         let router = Router::new(service, store);
         pay(router, account, &receiver, amount)
             .map_err(|err| {
@@ -100,9 +100,10 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
             .build()
     };
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let service = ValidatorService::outgoing(HttpClientService::new(store.clone()));
-    let router = Router::new(service, store);
-    let run = pay(router, account, &receiver, amount)
+    let service = HttpClientService::new(store.clone());
+    let service = ValidatorService::outgoing(service);
+    let service = Router::new(service, store);
+    let run = pay(service, account, &receiver, amount)
         .map_err(|err| {
             eprintln!("Error sending SPSP payment: {:?}", err);
         })
@@ -157,14 +158,28 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
     tokio::run(run);
 }
 
-pub fn run_spsp_server_http(ildcp_info: IldcpResponse, address: SocketAddr, quiet: bool) {
-    let account: Account = AccountBuilder::new().build();
+pub fn run_spsp_server_http(
+    ildcp_info: IldcpResponse,
+    address: SocketAddr,
+    auth_token: String,
+    quiet: bool,
+) {
+    if !quiet {
+        println!(
+            "Creating SPSP server. ILP Address: {}",
+            str::from_utf8(ildcp_info.client_address()).expect("ILP address is not valid UTF8")
+        )
+    }
+    let account: Account = AccountBuilder::new()
+        .http_incoming_authorization(format!("Bearer {}", auth_token))
+        .build();
     let secret = random_secret();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let spsp_responder = spsp_responder(&ildcp_info.client_address(), &secret[..]);
     let incoming_handler =
         StreamReceiverService::new(&secret, ildcp_info, RejecterService::default());
     let incoming_handler = IldcpService::new(incoming_handler);
+    let incoming_handler = ValidatorService::incoming(incoming_handler);
     let http_service = HttpServerService::new(incoming_handler, store);
 
     if !quiet {

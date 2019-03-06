@@ -39,12 +39,16 @@ pub fn main() {
                             Arg::with_name("ilp_address")
                                 .long("ilp_address")
                                 .takes_value(true)
-                                .help("(Required ilp_over_http) The server's ILP address"),
+                                .help("The server's ILP address (Required for ilp_over_http)"),
+                            Arg::with_name("incoming_auth_token")
+                                .long("incoming_auth_token")
+                                .takes_value(true)
+                                .help("Token that must be used to authenticate incoming requests (Required for ilp_over_http)"),
                             Arg::with_name("quiet")
                                 .long("quiet")
                                 .help("Suppress log output"),
                         ])
-                        .group(ArgGroup::with_name("http_options").requires_all(&["ilp_over_http", "ilp_address"])),
+                        .group(ArgGroup::with_name("http_options").requires_all(&["ilp_over_http", "ilp_address", "incoming_auth_token"])),
                     SubCommand::with_name("pay")
                         .about("Send an SPSP payment")
                         .args(&[
@@ -82,13 +86,22 @@ pub fn main() {
                 let port = value_t!(matches, "port", u16).expect("Invalid port");
                 let quiet = matches.is_present("quiet");
                 if matches.is_present("ilp_over_http") {
+                    let client_address =
+                        value_t!(matches, "ilp_address", String).expect("ilp_address is required");
+                    let auth_token = value_t!(matches, "incoming_auth_token", String)
+                        .expect("incoming_auth_token is required");
                     let ildcp_info = IldcpResponseBuilder {
-                        client_address: &[],
+                        client_address: &client_address.as_bytes(),
                         asset_code: "",
                         asset_scale: 0,
                     }
                     .build();
-                    run_spsp_server_http(ildcp_info, ([127, 0, 0, 1], port).into(), quiet);
+                    run_spsp_server_http(
+                        ildcp_info,
+                        ([127, 0, 0, 1], port).into(),
+                        auth_token,
+                        quiet,
+                    );
                 } else {
                     let btp_server = value_t!(matches, "btp_server", String)
                         .expect("BTP Server URL is required");

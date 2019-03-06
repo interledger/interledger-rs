@@ -39,7 +39,7 @@ where
                 asset_scale: request.from.asset_scale(),
             };
             debug!(
-                "Responding to query for ILDCP info by account: {}",
+                "Responding to query for ILDCP info by account: {:?}",
                 str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
             );
             let response = builder.build();

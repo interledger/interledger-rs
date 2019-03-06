@@ -4,7 +4,9 @@ use futures::{
     future::{err, Either},
     Future, Stream,
 };
-use hyper::{body::Body, service::Service as HttpService, Error, Request, Response};
+use hyper::{
+    body::Body, header::AUTHORIZATION, service::Service as HttpService, Error, Request, Response,
+};
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
 
@@ -28,15 +30,19 @@ where
         &self,
         request: &Request<Body>,
     ) -> impl Future<Item = T::Account, Error = Response<Body>> {
-        let authorization: Option<&str> = request
+        let authorization: Option<String> = request
             .headers()
-            .get("authorization")
-            .and_then(|auth| auth.to_str().ok());
-        if authorization.is_some() {
+            .get(AUTHORIZATION)
+            .and_then(|auth| auth.to_str().ok())
+            .map(|auth| auth.to_string());
+        if let Some(authorization) = authorization {
             Either::A(
                 self.store
-                    .get_account_from_authorization(authorization.unwrap())
-                    .map_err(|_err| Response::builder().status(401).body(Body::empty()).unwrap()),
+                    .get_account_from_authorization(&authorization)
+                    .map_err(move |_err| {
+                        error!("Authorization not found in the DB: {}", authorization);
+                        Response::builder().status(401).body(Body::empty()).unwrap()
+                    }),
             )
         } else {
             Either::B(err(Response::builder()

@@ -8,10 +8,15 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.4.11"
+chrono = "0.4.6"
 futures = "0.1.25"
+hex = "0.3.2"
 interledger-packet = { path = "../interledger-packet" }
 interledger-service = { path = "../interledger-service" }
 interledger-ildcp = { path = "../interledger-ildcp" }
 log = "0.4.6"
 ring = "0.14.6"
 tokio = "0.1.15"
+
+[dev-dependencies]
+interledger-test-helpers = { path = "../interledger-test-helpers" }
