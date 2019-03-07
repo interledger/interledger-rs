@@ -1,7 +1,9 @@
 use super::RouterStore;
+use bytes::Bytes;
 use futures::{future::err, Future};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
+use std::str;
 
 #[derive(Clone)]
 pub struct Router<S, T> {
@@ -27,16 +29,34 @@ where
     type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, request: IncomingRequest<T::Account>) -> Self::Future {
-        let destination = request.prepare.destination();
+        let destination = Bytes::from(request.prepare.destination());
         let mut next_hop: Option<<T::Account as Account>::AccountId> = None;
-        let mut max_prefix_len = 0;
-        for route in self.store.routing_table() {
-            // Check if the route prefix matches or is empty (meaning it's a catch-all address)
-            if (route.0.is_empty() || destination.starts_with(&route.0[..]))
-                && route.0.len() >= max_prefix_len
-            {
-                next_hop = Some(route.1);
-                max_prefix_len = route.0.len();
+        let routing_table = self.store.routing_table();
+
+        // Check if we have a direct path for that account or if we need to scan through the routing table
+        if let Some(account_id) = routing_table.get(&destination) {
+            debug!(
+                "Found direct route for address: \"{}\". Account: {}",
+                str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
+                account_id
+            );
+            next_hop = Some(*account_id);
+        } else {
+            let mut max_prefix_len = 0;
+            for route in self.store.routing_table() {
+                // Check if the route prefix matches or is empty (meaning it's a catch-all address)
+                if (route.0.is_empty() || destination.starts_with(&route.0[..]))
+                    && route.0.len() >= max_prefix_len
+                {
+                    next_hop = Some(route.1);
+                    max_prefix_len = route.0.len();
+                    debug!(
+                        "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
+                        str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
+                        str::from_utf8(&route.0[..]).unwrap_or("<not utf8>"),
+                        route.1,
+                    );
+                }
             }
         }
 

@@ -16,7 +16,7 @@ pub fn main() {
     );
     let mut app = App::new("interledger")
         .about("Blazing fast Interledger CLI written in Rust")
-        .subcommand(
+        .subcommands(vec![
             SubCommand::with_name("spsp")
                 .about("Client and Server for the Simple Payment Setup Protocol (SPSP)")
                 .subcommands(vec![
@@ -78,7 +78,27 @@ pub fn main() {
                                 .help("Suppress log output"),
                         ]),
                 ]),
-        );
+                SubCommand::with_name("moneyd")
+                    .about("Run a local connector")
+                    .subcommand(SubCommand::with_name("local")
+                        .about("Run locally without connecting to a remote connector")
+                        .args(&[
+                            Arg::with_name("port")
+                                .long("port")
+                                .default_value("7768")
+                                .help("Port to listen for BTP connections on"),
+                            Arg::with_name("ilp_address")
+                                .long("ilp_address")
+                                .default_value("private.local"),
+                            Arg::with_name("asset_code")
+                                .long("asset_code")
+                                .default_value("XYZ"),
+                            Arg::with_name("asset_scale")
+                                .long("asset_scale")
+                                .default_value("9"),
+                        ])
+                    ),
+        ]);
 
     match app.clone().get_matches().subcommand() {
         ("spsp", Some(matches)) => match matches.subcommand() {
@@ -121,6 +141,25 @@ pub fn main() {
                 } else {
                     panic!("Must specify either btp_server or http_server");
                 }
+            }
+            _ => app.print_help().unwrap(),
+        },
+        ("moneyd", Some(matches)) => match matches.subcommand() {
+            ("local", Some(matches)) => {
+                let btp_port = value_t!(matches, "port", u16).expect("btp_port is required");
+                let ilp_address =
+                    value_t!(matches, "ilp_address", String).expect("ilp_address is required");
+                let asset_code =
+                    value_t!(matches, "asset_code", String).expect("asset_code is required");
+                let asset_scale =
+                    value_t!(matches, "asset_scale", u8).expect("asset_scale is required");
+                let ildcp_info = IldcpResponseBuilder {
+                    client_address: ilp_address.as_str().as_bytes(),
+                    asset_code: &asset_code,
+                    asset_scale,
+                }
+                .build();
+                run_moneyd_local(([127, 0, 0, 1], btp_port).into(), ildcp_info);
             }
             _ => app.print_help().unwrap(),
         },

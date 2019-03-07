@@ -42,7 +42,7 @@ pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
             let store = RedisStore {
                 connection,
                 exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                routes: Arc::new(RwLock::new(Vec::new())),
+                routes: Arc::new(RwLock::new(HashMap::new())),
             };
 
             // Start polling for rate updates
@@ -68,7 +68,7 @@ pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
 pub struct RedisStore {
     connection: SharedConnection,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
-    routes: Arc<RwLock<Vec<(Bytes, u64)>>>,
+    routes: Arc<RwLock<HashMap<Bytes, u64>>>,
 }
 
 impl RedisStore {
@@ -125,10 +125,11 @@ impl RedisStore {
             .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
             .and_then(move |(_connection, routes): (_, Vec<(Vec<u8>, u64)>)| {
                 let num_routes = routes.len();
-                let routes = routes
-                    .into_iter()
-                    .map(|(prefix, account_id)| (Bytes::from(prefix), account_id))
-                    .collect();
+                let routes = HashMap::from_iter(
+                    routes
+                        .into_iter()
+                        .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
+                );
                 (*routing_table.write()) = routes;
                 debug!("Updated routing table with {} routes", num_routes);
                 Ok(())
@@ -279,7 +280,7 @@ impl HttpStore for RedisStore {
 }
 
 impl RouterStore for RedisStore {
-    fn routing_table(&self) -> Vec<(Bytes, u64)> {
-        (*self.routes.read()).to_vec()
+    fn routing_table(&self) -> HashMap<Bytes, u64> {
+        (*self.routes.read()).clone()
     }
 }

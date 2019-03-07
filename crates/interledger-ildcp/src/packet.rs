@@ -52,7 +52,7 @@ impl From<IldcpRequest> for Prepare {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct IldcpResponse {
     buffer: Bytes,
     asset_scale: u8,

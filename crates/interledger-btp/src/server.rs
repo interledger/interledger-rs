@@ -1,7 +1,13 @@
-use super::{packet::*, BtpAccount, BtpService, BtpStore};
+use super::{
+    packet::*, BtpAccount, BtpOpenSignupAccount, BtpOpenSignupStore, BtpService, BtpStore,
+};
+use base64;
+use bytes::{BufMut, Bytes, BytesMut};
 use futures::{future::result, Future, Sink, Stream};
+use interledger_ildcp::IldcpResponse;
 use interledger_service::*;
-use std::net::SocketAddr;
+use ring::digest::{digest, SHA256};
+use std::{net::SocketAddr, str};
 use tokio_executor::spawn;
 use tokio_tcp::TcpListener;
 use tokio_tungstenite::{accept_async_with_config, stream::Stream as MaybeTlsStream};
@@ -56,41 +62,153 @@ where
     })
 }
 
-fn validate_auth<U, C, A>(store: U, connection: C) -> impl Future<Item = (A, C), Error = ()>
+pub fn create_open_signup_server<S, T, U, A>(
+    address: SocketAddr,
+    ildcp_info: IldcpResponse,
+    store: U,
+    incoming_handler: S,
+    next_outgoing: T,
+) -> impl Future<Item = (), Error = ()>
 where
-    U: BtpStore<Account = A> + 'static,
-    C: Stream<Item = Message> + Sink<SinkItem = Message>,
+    S: IncomingService<A> + Clone + Send + Sync + 'static,
+    T: OutgoingService<A> + Clone + Send + Sync + 'static,
+    U: BtpStore<Account = A> + BtpOpenSignupStore<Account = A> + Clone + Send + Sync + 'static,
     A: BtpAccount + 'static,
 {
-    connection
-        .into_future()
-        .map_err(|_err| ())
-        .and_then(move |(message, connection)| {
-            // The first packet sent on the connection MUST be the auth packet
-            result(parse_auth(message).ok_or(())).and_then(move |auth| {
-                store
-                    .get_account_from_auth(&auth.token, auth.username.as_ref().map(|s| &**s))
-                    .and_then(move |account| {
-                        let auth_response = Message::Binary(
-                            BtpResponse {
-                                request_id: auth.request_id,
-                                protocol_data: Vec::new(),
-                            }
-                            .to_bytes(),
-                        );
-                        connection
-                            .send(auth_response)
-                            .map_err(|_err| error!("Error sending auth response"))
-                            .and_then(|connection| Ok((account, connection)))
-                    })
+    result(TcpListener::bind(&address).map_err(|err| {
+        error!("Error binding to address {:?} {:?}", address, err);
+    }))
+    .and_then(|socket| {
+        let service = BtpService::new(incoming_handler, next_outgoing);
+
+        let service_clone = service.clone();
+        socket
+            .incoming()
+            .map_err(|err| error!("Error handling incoming connection: {:?}", err))
+            .for_each(move |stream| {
+                let service_clone = service_clone.clone();
+                let store = store.clone();
+                let ildcp_info = ildcp_info.clone();
+                accept_async_with_config(
+                    MaybeTlsStream::Plain(stream),
+                    Some(WebSocketConfig {
+                        max_send_queue: None,
+                        max_message_size: Some(MAX_MESSAGE_SIZE),
+                        max_frame_size: None,
+                    }),
+                )
+                .map_err(|err| error!("Error accepting incoming WebSocket connection: {:?}", err))
+                .and_then(move |connection| get_or_create_account(store, ildcp_info, connection))
+                .and_then(move |(account, connection)| {
+                    debug!("Added connection for account: {:?}", account);
+                    service_clone.add_connection(account, connection);
+                    Ok(())
+                })
             })
-        })
+    })
 }
 
 struct Auth {
     request_id: u32,
     username: Option<String>,
     token: String,
+}
+
+fn validate_auth<U, C, A>(store: U, connection: C) -> impl Future<Item = (A, C), Error = ()>
+where
+    U: BtpStore<Account = A> + 'static,
+    C: Stream<Item = Message> + Sink<SinkItem = Message>,
+    A: BtpAccount + 'static,
+{
+    get_auth(connection).and_then(move |(auth, connection)| {
+        store
+            .get_account_from_auth(&auth.token, auth.username.as_ref().map(|s| &**s))
+            .and_then(move |account| {
+                let auth_response = Message::Binary(
+                    BtpResponse {
+                        request_id: auth.request_id,
+                        protocol_data: Vec::new(),
+                    }
+                    .to_bytes(),
+                );
+                connection
+                    .send(auth_response)
+                    .map_err(|_err| error!("Error sending auth response"))
+                    .and_then(|connection| Ok((account, connection)))
+            })
+    })
+}
+
+fn get_or_create_account<A, C, U>(
+    store: U,
+    ildcp_info: IldcpResponse,
+    connection: C,
+) -> impl Future<Item = (A, C), Error = ()>
+where
+    U: BtpStore<Account = A> + BtpOpenSignupStore<Account = A> + 'static,
+    C: Stream<Item = Message> + Sink<SinkItem = Message>,
+    A: BtpAccount + 'static,
+{
+    get_auth(connection).and_then(move |(auth, connection)| {
+        let request_id = auth.request_id;
+        store
+            .get_account_from_auth(&auth.token, auth.username.as_ref().map(|s| &**s))
+            .or_else(move |_| {
+                let local_part: Bytes = if let Some(username) = auth.username {
+                    Bytes::from(username)
+                } else {
+                    Bytes::from(base64::encode_config(
+                        digest(&SHA256, auth.token.as_str().as_bytes()).as_ref(),
+                        base64::URL_SAFE_NO_PAD,
+                    ))
+                };
+                let mut ilp_address = BytesMut::with_capacity(
+                    ildcp_info.client_address().len() + 1 + local_part.len(),
+                );
+                ilp_address.put(ildcp_info.client_address());
+                ilp_address.put(&b"."[..]);
+                ilp_address.put(local_part);
+                store
+                    .create_btp_account(BtpOpenSignupAccount {
+                        auth_token: &auth.token,
+                        username: Some(""),
+                        ilp_address: &ilp_address[..],
+                        asset_code: str::from_utf8(ildcp_info.asset_code())
+                            .expect("Asset code provided is not valid utf8"),
+                        asset_scale: ildcp_info.asset_scale(),
+                    })
+                    .and_then(|account| {
+                        debug!("Created new account: {:?}", account);
+                        Ok(account)
+                    })
+            })
+            .and_then(move |account| {
+                let auth_response = Message::Binary(
+                    BtpResponse {
+                        request_id,
+                        protocol_data: Vec::new(),
+                    }
+                    .to_bytes(),
+                );
+                connection
+                    .send(auth_response)
+                    .map_err(|_err| error!("Error sending auth response"))
+                    .and_then(|connection| Ok((account, connection)))
+            })
+    })
+}
+
+fn get_auth<C>(connection: C) -> impl Future<Item = (Auth, C), Error = ()>
+where
+    C: Stream<Item = Message> + Sink<SinkItem = Message>,
+{
+    connection
+        .into_future()
+        .map_err(|_err| ())
+        .and_then(move |(message, connection)| {
+            // The first packet sent on the connection MUST be the auth packet
+            result(parse_auth(message).map(|auth| (auth, connection)).ok_or(()))
+        })
 }
 
 fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {

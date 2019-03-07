@@ -73,8 +73,8 @@ impl AccountBuilder {
         self
     }
 
-    pub fn btp_incoming_username(mut self, username: String) -> Self {
-        self.details.btp_incoming_username = Some(username);
+    pub fn btp_incoming_username(mut self, username: Option<String>) -> Self {
+        self.details.btp_incoming_username = username;
         self
     }
 

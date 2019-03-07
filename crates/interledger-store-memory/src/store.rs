@@ -5,22 +5,27 @@ use futures::{
     Future,
 };
 use hashbrown::HashMap;
-use interledger_btp::BtpStore;
+use interledger_btp::{BtpOpenSignupAccount, BtpOpenSignupStore, BtpStore};
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
+use parking_lot::{Mutex, RwLock};
+use std::cmp::max;
 use std::{
-    iter::{once, FromIterator, IntoIterator},
+    iter::{empty, once, FromIterator, IntoIterator},
     str,
     sync::Arc,
 };
 
+type BtpTokenAndUsername = (String, Option<String>);
+
 #[derive(Clone)]
 pub struct InMemoryStore {
-    accounts: Arc<HashMap<u64, Account>>,
-    routing_table: Arc<Vec<(Bytes, u64)>>,
-    btp_auth: Arc<HashMap<(String, Option<String>), u64>>,
-    http_auth: Arc<HashMap<String, u64>>,
+    accounts: Arc<RwLock<HashMap<u64, Account>>>,
+    routing_table: Arc<RwLock<HashMap<Bytes, u64>>>,
+    btp_auth: Arc<RwLock<HashMap<BtpTokenAndUsername, u64>>>,
+    http_auth: Arc<RwLock<HashMap<String, u64>>>,
+    next_account_id: Arc<Mutex<u64>>,
 }
 
 impl InMemoryStore {
@@ -28,13 +33,21 @@ impl InMemoryStore {
         InMemoryStore::from_accounts(accounts.into_iter().map(|builder| builder.build()))
     }
 
+    pub fn default() -> Self {
+        InMemoryStore::from_accounts(empty())
+    }
+
     pub fn from_accounts(accounts: impl IntoIterator<Item = Account>) -> Self {
-        let accounts = Arc::new(HashMap::from_iter(
-            accounts.into_iter().map(|account| (account.id(), account)),
-        ));
-        let routing_table: Vec<(Bytes, u64)> = accounts
-            .iter()
-            .flat_map(|(account_id, account)| {
+        let mut next_account_id: u64 = 0;
+
+        let accounts = HashMap::from_iter(accounts.into_iter().map(|account| {
+            next_account_id = max(account.id(), next_account_id);
+            (account.id(), account)
+        }));
+        next_account_id += 1;
+
+        let routing_table: HashMap<Bytes, u64> =
+            HashMap::from_iter(accounts.iter().flat_map(|(account_id, account)| {
                 once((account.inner.ilp_address.clone(), *account_id)).chain(
                     account
                         .inner
@@ -42,38 +55,35 @@ impl InMemoryStore {
                         .iter()
                         .map(move |route| (route.clone(), *account_id)),
                 )
-            })
-            .collect();
-        let btp_auth = Arc::new(HashMap::from_iter(accounts.iter().filter_map(
-            |(account_id, account)| {
-                if let Some(ref token) = account.inner.btp_incoming_token {
-                    Some((
-                        (
-                            token.to_string(),
-                            account.inner.btp_incoming_username.clone(),
-                        ),
-                        *account_id,
-                    ))
-                } else {
-                    None
-                }
-            },
-        )));
-        let http_auth = Arc::new(HashMap::from_iter(accounts.iter().filter_map(
-            |(account_id, account)| {
-                if let Some(ref auth) = account.inner.http_incoming_authorization {
-                    Some((auth.to_string(), *account_id))
-                } else {
-                    None
-                }
-            },
-        )));
+            }));
+
+        let btp_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
+            if let Some(ref token) = account.inner.btp_incoming_token {
+                Some((
+                    (
+                        token.to_string(),
+                        account.inner.btp_incoming_username.clone(),
+                    ),
+                    *account_id,
+                ))
+            } else {
+                None
+            }
+        }));
+        let http_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
+            if let Some(ref auth) = account.inner.http_incoming_authorization {
+                Some((auth.to_string(), *account_id))
+            } else {
+                None
+            }
+        }));
 
         InMemoryStore {
-            accounts,
-            routing_table: Arc::new(routing_table),
-            btp_auth,
-            http_auth,
+            accounts: Arc::new(RwLock::new(accounts)),
+            routing_table: Arc::new(RwLock::new(routing_table)),
+            btp_auth: Arc::new(RwLock::new(btp_auth)),
+            http_auth: Arc::new(RwLock::new(http_auth)),
+            next_account_id: Arc::new(Mutex::new(next_account_id)),
         }
     }
 }
@@ -87,7 +97,7 @@ impl AccountStore for InMemoryStore {
     ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
         let accounts: Vec<Account> = accounts_ids
             .iter()
-            .filter_map(|account_id| self.accounts.get(account_id).cloned())
+            .filter_map(|account_id| self.accounts.read().get(account_id).cloned())
             .collect();
         if accounts.len() == accounts_ids.len() {
             Box::new(ok(accounts))
@@ -105,8 +115,8 @@ impl HttpStore for InMemoryStore {
         &self,
         auth_header: &str,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        if let Some(account_id) = self.http_auth.get(auth_header) {
-            Box::new(ok(self.accounts[account_id].clone()))
+        if let Some(account_id) = self.http_auth.read().get(auth_header) {
+            Box::new(ok(self.accounts.read()[account_id].clone()))
         } else {
             Box::new(err(()))
         }
@@ -114,8 +124,8 @@ impl HttpStore for InMemoryStore {
 }
 
 impl RouterStore for InMemoryStore {
-    fn routing_table(&self) -> Vec<(Bytes, u64)> {
-        self.routing_table.to_vec()
+    fn routing_table(&self) -> HashMap<Bytes, u64> {
+        self.routing_table.read().clone()
     }
 }
 
@@ -129,11 +139,47 @@ impl BtpStore for InMemoryStore {
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         if let Some(account_id) = self
             .btp_auth
+            .read()
             .get(&(token.to_string(), username.map(|s| s.to_string())))
         {
-            Box::new(ok(self.accounts[account_id].clone()))
+            Box::new(ok(self.accounts.read()[account_id].clone()))
         } else {
             Box::new(err(()))
         }
+    }
+}
+
+impl BtpOpenSignupStore for InMemoryStore {
+    type Account = Account;
+
+    fn create_btp_account<'a>(
+        &self,
+        account: BtpOpenSignupAccount<'a>,
+    ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+        let account_id = {
+            let next_id: u64 = *self.next_account_id.lock();
+            *self.next_account_id.lock() += 1;
+            next_id
+        };
+        let account = AccountBuilder::new()
+            .id(account_id)
+            .ilp_address(account.ilp_address)
+            .btp_incoming_token(account.auth_token.to_string())
+            .btp_incoming_username(account.username.map(String::from))
+            .asset_code(account.asset_code.to_string())
+            .asset_scale(account.asset_scale)
+            .build();
+
+        (*self.accounts.write()).insert(account_id, account.clone());
+        (*self.routing_table.write()).insert(account.inner.ilp_address.clone(), account_id);
+        (*self.btp_auth.write()).insert(
+            (
+                account.inner.btp_incoming_token.clone().unwrap(),
+                account.inner.btp_incoming_username.clone(),
+            ),
+            account_id,
+        );
+
+        Box::new(ok(account))
     }
 }

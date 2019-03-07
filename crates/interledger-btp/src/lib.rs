@@ -18,7 +18,7 @@ mod server;
 mod service;
 
 pub use self::client::{connect_client, parse_btp_url};
-pub use self::server::create_server;
+pub use self::server::{create_server, create_open_signup_server};
 pub use self::service::BtpService;
 
 pub trait BtpAccount: Account {
@@ -32,5 +32,22 @@ pub trait BtpStore {
         &self,
         token: &str,
         username: Option<&str>,
+    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+}
+
+pub struct BtpOpenSignupAccount<'a> {
+    pub auth_token: &'a str,
+    pub username: Option<&'a str>,
+    pub ilp_address: &'a [u8],
+    pub asset_code: &'a str,
+    pub asset_scale: u8,
+}
+
+pub trait BtpOpenSignupStore {
+    type Account: BtpAccount;
+
+    fn create_btp_account<'a>(
+        &self,
+        account: BtpOpenSignupAccount<'a>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 }
