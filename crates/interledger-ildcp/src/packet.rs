@@ -5,7 +5,7 @@ use interledger_packet::{
     Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
-    ops::Add,
+    fmt, str,
     time::{Duration, SystemTime},
 };
 
@@ -52,7 +52,7 @@ impl From<IldcpRequest> for Prepare {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct IldcpResponse {
     buffer: Bytes,
     asset_scale: u8,
@@ -105,6 +105,18 @@ impl IldcpResponse {
         (&self.buffer[self.asset_code_offset..])
             .peek_var_octet_string()
             .unwrap()
+    }
+}
+
+impl fmt::Debug for IldcpResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "IldcpResponse {{ client_address: {}, asset_code: {}, asset_scale: {} }}",
+            str::from_utf8(self.client_address()).unwrap_or("<not utf8>"),
+            str::from_utf8(self.asset_code()).unwrap_or("<not utf8>"),
+            self.asset_scale
+        )
     }
 }
 

@@ -247,6 +247,8 @@ where
             reject.code(),
             self.source_amount
         );
+
+        // TODO stop if we get a final error
     }
 
     fn next_sequence(&mut self) -> u64 {

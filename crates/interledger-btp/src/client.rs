@@ -36,12 +36,16 @@ where
         .get_accounts(accounts)
         .and_then(|accounts| {
             join_all(accounts.into_iter().map(move |account| {
-                let url = account
+                let mut url = account
                     .get_btp_uri()
                     .expect("Accounts must have BTP URLs")
                     .clone();
+                if url.scheme().starts_with("btp+") {
+                    url.set_scheme(&url.scheme().replace("btp+", "")).unwrap();
+                }
+                debug!("Connecting to {}", url);
                 connect_async(url.clone())
-                    .map_err(|_err| ())
+                    .map_err(|err| error!("Error connecting to WebSocket server: {:?}", err))
                     .and_then(move |(connection, _)| {
                         debug!("Connected to {}, sending auth packet", url);
                         // Send BTP authentication

@@ -18,8 +18,8 @@ mod server;
 mod service;
 
 pub use self::client::{connect_client, parse_btp_url};
-pub use self::server::{create_server, create_open_signup_server};
-pub use self::service::BtpService;
+pub use self::server::{create_open_signup_server, create_server};
+pub use self::service::{BtpOutgoingService, BtpService};
 
 pub trait BtpAccount: Account {
     fn get_btp_uri(&self) -> Option<&Url>;

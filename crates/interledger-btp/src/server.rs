@@ -1,5 +1,5 @@
 use super::{
-    packet::*, BtpAccount, BtpOpenSignupAccount, BtpOpenSignupStore, BtpService, BtpStore,
+    packet::*, BtpAccount, BtpOpenSignupAccount, BtpOpenSignupStore, BtpOutgoingService, BtpStore,
 };
 use base64;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -15,14 +15,12 @@ use tungstenite::protocol::{Message, WebSocketConfig};
 
 const MAX_MESSAGE_SIZE: usize = 40000;
 
-pub fn create_server<S, T, U, A>(
+pub fn create_server<T, U, A>(
     address: SocketAddr,
     store: U,
-    incoming_handler: S,
     next_outgoing: T,
-) -> impl Future<Item = BtpService<S, T, A>, Error = ()>
+) -> impl Future<Item = BtpOutgoingService<T, A>, Error = ()>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
     T: OutgoingService<A> + Clone + Send + Sync + 'static,
     U: BtpStore<Account = A> + Clone + Send + Sync + 'static,
     A: BtpAccount + 'static,
@@ -31,7 +29,7 @@ where
         error!("Error binding to address {:?} {:?}", address, err);
     }))
     .and_then(|socket| {
-        let service = BtpService::new(incoming_handler, next_outgoing);
+        let service = BtpOutgoingService::new(next_outgoing);
 
         let service_clone = service.clone();
         let handle_incoming = socket
@@ -62,15 +60,13 @@ where
     })
 }
 
-pub fn create_open_signup_server<S, T, U, A>(
+pub fn create_open_signup_server<T, U, A>(
     address: SocketAddr,
     ildcp_info: IldcpResponse,
     store: U,
-    incoming_handler: S,
     next_outgoing: T,
-) -> impl Future<Item = (), Error = ()>
+) -> impl Future<Item = BtpOutgoingService<T, A>, Error = ()>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
     T: OutgoingService<A> + Clone + Send + Sync + 'static,
     U: BtpStore<Account = A> + BtpOpenSignupStore<Account = A> + Clone + Send + Sync + 'static,
     A: BtpAccount + 'static,
@@ -79,10 +75,10 @@ where
         error!("Error binding to address {:?} {:?}", address, err);
     }))
     .and_then(|socket| {
-        let service = BtpService::new(incoming_handler, next_outgoing);
+        let service = BtpOutgoingService::new(next_outgoing);
 
         let service_clone = service.clone();
-        socket
+        let handle_incoming = socket
             .incoming()
             .map_err(|err| error!("Error handling incoming connection: {:?}", err))
             .for_each(move |stream| {
@@ -104,7 +100,10 @@ where
                     service_clone.add_connection(account, connection);
                     Ok(())
                 })
-            })
+            });
+        spawn(handle_incoming);
+
+        Ok(service)
     })
 }
 
