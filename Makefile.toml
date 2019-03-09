@@ -1,2 +1,2 @@
-[env.development]
-RUSTFLAGS='-C link-dead-code'
+[env]
+RUSTFLAGS = "-C link-dead-code"
