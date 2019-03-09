@@ -25,10 +25,10 @@ jobs:
           command: cargo make test
       - run:
           name: Audit Dependencies
-          command: cargo make audit
+          command: cargo make --no-workspace audit
       - run:
           name: Upload Code Coverage
-          command: cargo make codecov-flow
+          command: cargo make --no-workspace workspace-coverage
       - save_cache:
           key: project-v2-{{ checksum "Cargo.toml" }}
           paths:
