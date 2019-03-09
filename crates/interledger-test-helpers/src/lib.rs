@@ -1,4 +1,6 @@
+use bytes::Bytes;
 use futures::future::{result, FutureResult};
+use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Fulfill, Reject};
 use interledger_service::*;
 use parking_lot::Mutex;
@@ -7,11 +9,28 @@ use std::{marker::PhantomData, sync::Arc};
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct TestAccount {
     id: u64,
+    ilp_address: Bytes,
+    asset_scale: u8,
+    asset_code: String,
 }
 
 impl TestAccount {
-    pub fn new(id: u64) -> Self {
-        TestAccount { id }
+    pub fn new(id: u64, ilp_address: &[u8], asset_code: &str, asset_scale: u8) -> Self {
+        TestAccount {
+            id,
+            ilp_address: Bytes::from(ilp_address),
+            asset_code: asset_code.to_string(),
+            asset_scale,
+        }
+    }
+
+    pub fn default() -> Self {
+        TestAccount {
+            id: 0,
+            ilp_address: Bytes::from("example.account"),
+            asset_code: "XYZ".to_string(),
+            asset_scale: 9,
+        }
     }
 }
 
@@ -20,6 +39,20 @@ impl Account for TestAccount {
 
     fn id(&self) -> u64 {
         self.id
+    }
+}
+
+impl IldcpAccount for TestAccount {
+    fn asset_code(&self) -> String {
+        self.asset_code.clone()
+    }
+
+    fn asset_scale(&self) -> u8 {
+        self.asset_scale
+    }
+
+    fn client_address(&self) -> Bytes {
+        self.ilp_address.clone()
     }
 }
 

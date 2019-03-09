@@ -4,4 +4,6 @@ pub enum Error {
     ConnectionError(String),
     #[fail(display = "Error polling: {}", _0)]
     PollError(String),
+    #[fail(display = "Error polling: {}", _0)]
+    SendMoneyError(String),
 }

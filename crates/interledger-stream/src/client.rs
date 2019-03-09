@@ -5,7 +5,10 @@ use super::packet::*;
 use bytes::Bytes;
 use futures::{Async, Future, Poll};
 use interledger_ildcp::get_ildcp_info;
-use interledger_packet::{Fulfill, PacketType as IlpPacketType, PrepareBuilder, Reject};
+use interledger_packet::{
+    ErrorClass, ErrorCode as IlpErrorCode, Fulfill, PacketType as IlpPacketType, PrepareBuilder,
+    Reject,
+};
 use interledger_service::*;
 use std::cell::Cell;
 use std::cmp::min;
@@ -41,6 +44,7 @@ where
             amount_delivered: 0,
             should_send_source_account: true,
             sequence: 1,
+            error: None,
         })
 }
 
@@ -57,6 +61,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     amount_delivered: u64,
     should_send_source_account: bool,
     sequence: u64,
+    error: Option<Error>,
 }
 
 struct PendingRequest {
@@ -69,6 +74,7 @@ struct PendingRequest {
 enum SendMoneyFutureState {
     SendMoney,
     Closing,
+    // RemoteClosed,
     Closed,
 }
 
@@ -143,7 +149,7 @@ where
                 panic!("Polled after finish");
             }
         }
-        self.poll_pending_requests()?;
+        // self.poll_pending_requests()?;
         Ok(())
     }
 
@@ -185,7 +191,7 @@ where
         } else {
             panic!("Polled after finish");
         }
-        self.poll_pending_requests()?;
+        // self.poll_pending_requests()?;
         Ok(())
     }
 
@@ -207,7 +213,10 @@ where
             .collect();
         self.pending_requests.set(pending_requests);
 
-        if self.pending_requests.get_mut().is_empty() {
+        if let Some(error) = self.error.take() {
+            error!("Send money stopped because of error: {:?}", error);
+            Err(error)
+        } else if self.pending_requests.get_mut().is_empty() {
             Ok(Async::Ready(()))
         } else {
             Ok(Async::NotReady)
@@ -248,7 +257,21 @@ where
             self.source_amount
         );
 
-        // TODO stop if we get a final error
+        match (reject.code().class(), reject.code()) {
+            (ErrorClass::Temporary, _) => {}
+            (_, IlpErrorCode::F08_AMOUNT_TOO_LARGE) => {
+                // Handled by the congestion controller
+            }
+            (_, IlpErrorCode::F99_APPLICATION_ERROR) => {
+                // TODO handle STREAM errors
+            }
+            _ => {
+                self.error = Some(Error::SendMoneyError(format!(
+                    "Packet rejected with code: {}",
+                    reject.code()
+                )));
+            }
+        }
     }
 
     fn next_sequence(&mut self) -> u64 {
@@ -272,8 +295,9 @@ where
 
         if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
             if self.state == SendMoneyFutureState::SendMoney {
-                self.try_send_connection_close()?;
                 self.state = SendMoneyFutureState::Closing;
+                self.try_send_connection_close()?;
+                self.poll_pending_requests()?;
                 Ok(Async::NotReady)
             } else {
                 self.state = SendMoneyFutureState::Closed;
@@ -284,7 +308,40 @@ where
             }
         } else {
             self.try_send_money()?;
+            self.poll_pending_requests()?;
             Ok(Async::NotReady)
         }
+    }
+}
+
+#[cfg(test)]
+mod send_money_tests {
+    use super::*;
+    use interledger_ildcp::IldcpService;
+    use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
+    use interledger_test_helpers::*;
+
+    #[test]
+    fn stops_at_final_errors() {
+        let account = TestAccount::default();
+        let rejecter = TestIncomingService::reject(
+            RejectBuilder {
+                code: IlpErrorCode::F00_BAD_REQUEST,
+                message: &[],
+                data: &[],
+                triggered_by: &[],
+            }
+            .build(),
+        );
+        let result = send_money(
+            IldcpService::new(rejecter.clone()),
+            &account,
+            b"example.destination",
+            &[0; 32][..],
+            100,
+        )
+        .wait();
+        assert!(result.is_err());
+        assert_eq!(rejecter.get_incoming_requests().len(), 1);
     }
 }

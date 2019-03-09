@@ -164,7 +164,7 @@ mod incoming {
         let mut validator = ValidatorService::incoming(test.clone());
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount::new(0),
+                from: TestAccount::default(),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -195,7 +195,7 @@ mod incoming {
         let mut validator = ValidatorService::incoming(test.clone());
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount::new(0),
+                from: TestAccount::default(),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -238,8 +238,8 @@ mod outgoing {
         let mut validator = ValidatorService::outgoing(test.clone());
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount::new(0),
-                to: TestAccount::new(1),
+                from: TestAccount::default(),
+                to: TestAccount::new(1, b"example.destination", "XYZ", 9),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -270,8 +270,8 @@ mod outgoing {
         let mut validator = ValidatorService::outgoing(test.clone());
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount::new(0),
-                to: TestAccount::new(1),
+                from: TestAccount::default(),
+                to: TestAccount::new(1, b"example.destination", "XYZ", 9),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
