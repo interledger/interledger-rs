@@ -12,8 +12,8 @@ pub use self::client::HttpClientService;
 pub use self::server::HttpServerService;
 
 pub trait HttpAccount: Account {
-    fn get_http_url<'a>(&'a self) -> Option<&'a Url>;
-    fn get_http_auth_header<'a>(&'a self) -> Option<&'a str>;
+    fn get_http_url(&self) -> Option<&Url>;
+    fn get_http_auth_header(&self) -> Option<&str>;
 }
 
 // TODO do we need all of these constraints?

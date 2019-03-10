@@ -66,6 +66,8 @@ impl HttpService for SpspResponder {
         };
 
         ok(Response::builder()
+            .header("Content-Type", "application/spsp4+json")
+            .header("Cache-Control", "max-age=60")
             .status(200)
             .body(Body::from(serde_json::to_string(&response).unwrap()))
             .unwrap())
@@ -95,5 +97,35 @@ impl fmt::Display for Never {
 impl StdError for Never {
     fn description(&self) -> &str {
         match *self {}
+    }
+}
+
+#[cfg(test)]
+mod spsp_server_test {
+    use super::*;
+    use futures::Future;
+
+    #[test]
+    fn spsp_response_headers() {
+        let mut responder = spsp_responder(b"example.receiver", &[0; 32]);
+        let response = responder
+            .call(
+                Request::builder()
+                    .method("GET")
+                    .uri("http://example.com")
+                    .header("Accept", "application/spsp4+json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .wait()
+            .unwrap();
+        assert_eq!(
+            response.headers().get("Content-Type").unwrap(),
+            "application/spsp4+json"
+        );
+        assert_eq!(
+            response.headers().get("Cache-Control").unwrap(),
+            "max-age=60"
+        );
     }
 }
