@@ -31,5 +31,10 @@ tungstenite = "0.6.1"
 url = "1.7.2"
 
 [dev-dependencies]
+env_logger = "0.6.1"
 hex = "0.3.2"
+interledger-service-util = { path = "../interledger-service-util" }
+interledger-store-memory = { path = "../interledger-store-memory" }
+interledger-test-helpers = { path = "../interledger-test-helpers" }
 lazy_static = "1.2.0"
+tokio = "0.1.16"

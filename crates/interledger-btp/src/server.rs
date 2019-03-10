@@ -28,8 +28,12 @@ where
     result(TcpListener::bind(&address).map_err(|err| {
         error!("Error binding to address {:?} {:?}", address, err);
     }))
-    .and_then(|socket| {
+    .and_then(move |socket| {
+        debug!("Listening on {}", address);
         let service = BtpOutgoingService::new(next_outgoing);
+
+        // Keep the connections open until the socket closes
+        let keep_connections_open = service.close_all_connections.clone();
 
         let service_clone = service.clone();
         let handle_incoming = socket
@@ -53,6 +57,12 @@ where
                     service_clone.add_connection(account, connection);
                     Ok(())
                 })
+            })
+            .then(move |result| {
+                debug!("Finished reading connections from TcpListener");
+                // Now we can close the connections
+                let _ = keep_connections_open;
+                result
             });
         spawn(handle_incoming);
 
@@ -120,8 +130,10 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
+        let token = auth.token.clone();
         store
             .get_account_from_auth(&auth.token, auth.username.as_ref().map(|s| &**s))
+            .map_err(move |_| warn!("Got unauthorized connection with token: {}", token))
             .and_then(move |account| {
                 let auth_response = Message::Binary(
                     BtpResponse {
@@ -217,9 +229,12 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
             let mut username: Option<String> = None;
             let mut token: Option<String> = None;
             for protocol_data in message.protocol_data.iter() {
-                match protocol_data.protocol_name.as_ref() {
-                    "auth_token" => token = String::from_utf8(protocol_data.data.clone()).ok(),
-                    "auth_username" => {
+                match (
+                    protocol_data.protocol_name.as_ref(),
+                    !protocol_data.data.is_empty(),
+                ) {
+                    ("auth_token", _) => token = String::from_utf8(protocol_data.data.clone()).ok(),
+                    ("auth_username", true) => {
                         username = String::from_utf8(protocol_data.data.clone()).ok()
                     }
                     _ => {}

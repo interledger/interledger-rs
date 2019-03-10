@@ -17,7 +17,7 @@ use std::{
     marker::PhantomData,
     sync::Arc,
 };
-use stream_cancel::Valved;
+use stream_cancel::{Trigger, Valve, Valved};
 use tokio_executor::spawn;
 use tokio_tcp::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -28,7 +28,6 @@ type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
-#[derive(Clone)]
 pub struct BtpOutgoingService<T, A: Account> {
     // TODO support multiple connections per account
     connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
@@ -36,6 +35,45 @@ pub struct BtpOutgoingService<T, A: Account> {
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
     incoming_sender: UnboundedSender<(A, u32, Prepare)>,
     next_outgoing: T,
+    // This uses the stream_cancel library to ensure that when the last instance
+    // of this service is dropped, all of the websocket connections will be closed.
+    // This does not happen automatically because the futures spawned to handle incoming
+    // packets also have references to the connections, so they won't be dropped without
+    // this more explicit trigger.
+    pub(crate) close_all_connections: Arc<Trigger>,
+    stream_valve: Arc<Valve>,
+}
+
+impl<T, A> Clone for BtpOutgoingService<T, A>
+where
+    A: Account,
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        BtpOutgoingService {
+            connections: self.connections.clone(),
+            pending_incoming: self.pending_incoming.clone(),
+            pending_outgoing: self.pending_outgoing.clone(),
+            incoming_sender: self.incoming_sender.clone(),
+            next_outgoing: self.next_outgoing.clone(),
+            stream_valve: self.stream_valve.clone(),
+            close_all_connections: self.close_all_connections.clone(),
+        }
+    }
+}
+
+impl<T, A> Drop for BtpOutgoingService<T, A>
+where
+    A: Account,
+{
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.close_all_connections) == 1 {
+            debug!(
+                "Dropping last BTP Service reference, about to close {} connections",
+                self.connections.read().len()
+            );
+        }
+    }
 }
 
 impl<T, A> BtpOutgoingService<T, A>
@@ -45,12 +83,15 @@ where
 {
     pub fn new(next_outgoing: T) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
+        let (close_all_connections, stream_valve) = Valve::new();
         BtpOutgoingService {
             connections: Arc::new(RwLock::new(HashMap::new())),
             pending_outgoing: Arc::new(Mutex::new(HashMap::new())),
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
             incoming_sender,
             next_outgoing,
+            close_all_connections: Arc::new(close_all_connections),
+            stream_valve: Arc::new(stream_valve),
         }
     }
 
@@ -61,6 +102,7 @@ where
         let (tx, rx) = unbounded();
         let (sink, stream) = connection.split();
         let (close_connection, stream) = Valved::new(stream);
+        let stream = self.stream_valve.wrap(stream);
         let forward_to_connection = sink
             .send_all(
                 rx.map_err(|_err| {
@@ -77,7 +119,7 @@ where
         // TODO do we need all this cloning?
         let pending_requests = self.pending_outgoing.clone();
         let incoming_sender = self.incoming_sender.clone();
-        let handle_incoming = stream.map_err(|_err| ()).for_each(move |message| {
+        let handle_incoming = stream.map_err(move |err| error!("Error reading from WebSocket stream for account {}: {:?}", account_id, err)).for_each(move |message| {
           // Handle the packets based on whether they are an incoming request or a response to something we sent
           match parse_ilp_packet(message) {
             Ok((request_id, Packet::Prepare(prepare))) => {
@@ -192,6 +234,10 @@ where
         if let Some(connection) = (*self.connections.read()).get(&request.to.id()) {
             let request_id = random::<u32>();
 
+            // Clone the trigger so that the connections stay open until we've
+            // gotten the response to our outgoing request
+            let keep_connections_open = self.close_all_connections.clone();
+
             match connection.unbounded_send(ilp_packet_to_ws_message(
                 request_id,
                 Packet::Prepare(request.prepare),
@@ -201,7 +247,15 @@ where
                     (*self.pending_outgoing.lock()).insert(request_id, sender);
                     Box::new(
                         receiver
-                            .map_err(|_| {
+                            .then(move |result| {
+                                // Drop the trigger here since we've gotten the response
+                                // and don't need to keep the connections open if this was the
+                                // last thing we were waiting for
+                                let _ = keep_connections_open;
+                                result
+                            })
+                            .map_err(|err| {
+                                debug!("Sending request failed: {:?}", err);
                                 RejectBuilder {
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: &[],
@@ -252,12 +306,15 @@ where
 {
     pub(crate) fn new(incoming_handler: S, next_outgoing: T) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
+        let (close_all_connections, stream_valve) = Valve::new();
         BtpOutgoingService {
             connections: Arc::new(RwLock::new(HashMap::new())),
             pending_outgoing: Arc::new(Mutex::new(HashMap::new())),
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
             incoming_sender,
             next_outgoing,
+            close_all_connections: Arc::new(close_all_connections),
+            stream_valve: Arc::new(stream_valve),
         }
         .handle_incoming(incoming_handler)
     }

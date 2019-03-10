@@ -34,6 +34,7 @@ where
 {
     store
         .get_accounts(accounts)
+        .map_err(|_| error!("Could not find all accounts in db"))
         .and_then(|accounts| {
             join_all(accounts.into_iter().map(move |account| {
                 let mut url = account
@@ -80,7 +81,6 @@ where
                     .and_then(move |connection| Ok((account, connection)))
             }))
         })
-        .map_err(|_err| ())
         .and_then(|connections| {
             let service = BtpService::new(incoming_handler, next_outgoing);
             for (account, connection) in connections.into_iter() {
