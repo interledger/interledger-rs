@@ -112,7 +112,7 @@ impl fmt::Debug for IldcpResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "IldcpResponse {{ client_address: {}, asset_code: {}, asset_scale: {} }}",
+            "IldcpResponse {{ client_address: \"{}\", asset_code: \"{}\", asset_scale: {} }}",
             str::from_utf8(self.client_address()).unwrap_or("<not utf8>"),
             str::from_utf8(self.asset_code()).unwrap_or("<not utf8>"),
             self.asset_scale

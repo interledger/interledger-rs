@@ -183,3 +183,24 @@ impl BtpOpenSignupStore for InMemoryStore {
         Box::new(ok(account))
     }
 }
+
+#[cfg(test)]
+mod in_memory_store {
+    use super::*;
+
+    #[test]
+    fn query_by_btp() {
+        let account = AccountBuilder::new()
+            .btp_incoming_token("test_token".to_string())
+            .build();
+        let store = InMemoryStore::from_accounts(vec![account]);
+        store
+            .get_account_from_auth("test_token", None)
+            .wait()
+            .unwrap();
+        assert!(store
+            .get_account_from_auth("bad_token", None)
+            .wait()
+            .is_err());
+    }
+}

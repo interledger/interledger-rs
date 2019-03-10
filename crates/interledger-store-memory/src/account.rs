@@ -118,7 +118,7 @@ impl fmt::Debug for Account {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Account {{ id: {}, ilp_address: {} }}",
+            "Account {{ id: {}, ilp_address: \"{}\" }}",
             self.inner.id,
             str::from_utf8(&self.inner.ilp_address[..]).map_err(|_| fmt::Error)?,
         )
