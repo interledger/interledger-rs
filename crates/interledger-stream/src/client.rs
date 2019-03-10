@@ -83,8 +83,9 @@ where
     S: IncomingService<A>,
     A: Account,
 {
-    fn try_send_money(&mut self) -> Result<(), Error> {
+    fn try_send_money(&mut self) -> Result<bool, Error> {
         // Fire off requests until the congestion controller tells us to stop or we've sent the total amount
+        let mut sent_packets = false;
         loop {
             // Determine the amount to send
             let amount = min(
@@ -145,12 +146,12 @@ where
                     amount,
                     future: Box::new(send_request),
                 });
+                sent_packets = true;
             } else {
                 panic!("Polled after finish");
             }
         }
-        // self.poll_pending_requests()?;
-        Ok(())
+        Ok(sent_packets)
     }
 
     fn try_send_connection_close(&mut self) -> Result<(), Error> {
@@ -191,7 +192,6 @@ where
         } else {
             panic!("Polled after finish");
         }
-        // self.poll_pending_requests()?;
         Ok(())
     }
 
@@ -290,26 +290,28 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        // Try polling the pending requests
-        self.poll_pending_requests()?;
-
-        if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
-            if self.state == SendMoneyFutureState::SendMoney {
-                self.state = SendMoneyFutureState::Closing;
-                self.try_send_connection_close()?;
-                self.poll_pending_requests()?;
-                Ok(Async::NotReady)
-            } else {
-                self.state = SendMoneyFutureState::Closed;
-                Ok(Async::Ready((
-                    self.amount_delivered,
-                    self.next.take().unwrap(),
-                )))
-            }
-        } else {
-            self.try_send_money()?;
+        // TODO maybe don't have loops here and in try_send_money
+        loop {
             self.poll_pending_requests()?;
-            Ok(Async::NotReady)
+
+            if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
+                if self.state == SendMoneyFutureState::SendMoney {
+                    self.state = SendMoneyFutureState::Closing;
+                    self.try_send_connection_close()?;
+                } else {
+                    self.state = SendMoneyFutureState::Closed;
+                    debug!(
+                        "Send money future finished. Delivered: {}",
+                        self.amount_delivered
+                    );
+                    return Ok(Async::Ready((
+                        self.amount_delivered,
+                        self.next.take().unwrap(),
+                    )));
+                }
+            } else if !self.try_send_money()? {
+                return Ok(Async::NotReady);
+            }
         }
     }
 }

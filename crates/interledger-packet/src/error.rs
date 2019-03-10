@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct ErrorCode([u8; 3]);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,6 +70,12 @@ impl fmt::Display for ErrorCode {
     }
 }
 
+impl fmt::Debug for ErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", str::from_utf8(&self.0[..]).unwrap())
+    }
+}
+
 #[cfg(test)]
 mod test_error_code {
     use super::*;
@@ -83,5 +89,17 @@ mod test_error_code {
             ErrorClass::Relative
         );
         assert_eq!(ErrorCode::new(*b"???").class(), ErrorClass::Unknown);
+    }
+
+    #[test]
+    fn test_printing() {
+        assert_eq!(
+            format!("{}", ErrorCode::F00_BAD_REQUEST),
+            String::from("F00")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F00_BAD_REQUEST),
+            String::from("F00")
+        );
     }
 }

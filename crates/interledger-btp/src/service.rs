@@ -255,9 +255,7 @@ where
         BtpOutgoingService {
             connections: Arc::new(RwLock::new(HashMap::new())),
             pending_outgoing: Arc::new(Mutex::new(HashMap::new())),
-            // pending_incoming is only needed when the service is created as a BtpOutgoingService
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
-            // incoming_handler,
             incoming_sender,
             next_outgoing,
         }
