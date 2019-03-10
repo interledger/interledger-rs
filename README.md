@@ -8,15 +8,17 @@
 [![crates.io](https://img.shields.io/crates/v/interledger.svg)](https://crates.io/crates/interledger)
 [![CircleCI](https://circleci.com/gh/emschwartz/interledger-rs.svg?style=shield)](https://circleci.com/gh/emschwartz/interledger-rs)
 [![codecov](https://codecov.io/gh/emschwartz/interledger-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/emschwartz/interledger-rs)
+[![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 
 ## Installation
 - Install Rust (using [`rustup`](https://rustup.rs/) is recommended)
-- Install [`moneyd`](https://github.com/interledgerjs/moneyd)
 - `cargo install interledger`
 
 ## Usage
 
-Make sure you're running `moneyd` first! (`moneyd local` can be used for testing purposes)
+### Run moneyd
+
+`interledger moneyd local`
 
 ### Running an SPSP Server
 

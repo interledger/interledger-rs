@@ -28,6 +28,9 @@ type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
+/// A container for BTP/WebSocket connections that implements OutgoingService
+/// for sending outgoing ILP Prepare packets over one of the connected BTP connections.
+#[derive(Clone)]
 pub struct BtpOutgoingService<T, A: Account> {
     // TODO support multiple connections per account
     connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
@@ -42,24 +45,6 @@ pub struct BtpOutgoingService<T, A: Account> {
     // this more explicit trigger.
     pub(crate) close_all_connections: Arc<Trigger>,
     stream_valve: Arc<Valve>,
-}
-
-impl<T, A> Clone for BtpOutgoingService<T, A>
-where
-    A: Account,
-    T: Clone,
-{
-    fn clone(&self) -> Self {
-        BtpOutgoingService {
-            connections: self.connections.clone(),
-            pending_incoming: self.pending_incoming.clone(),
-            pending_outgoing: self.pending_outgoing.clone(),
-            incoming_sender: self.incoming_sender.clone(),
-            next_outgoing: self.next_outgoing.clone(),
-            stream_valve: self.stream_valve.clone(),
-            close_all_connections: self.close_all_connections.clone(),
-        }
-    }
 }
 
 impl<T, A> Drop for BtpOutgoingService<T, A>
@@ -95,6 +80,10 @@ where
         }
     }
 
+    /// Set up a WebSocket connection so that outgoing Prepare packets can be sent to it,
+    /// incoming Prepare packets are buffered in a channel (until an IncomingService is added
+    /// via the handle_incoming method), and ILP Fulfill and Reject packets will be
+    /// sent back to the Future that sent the outgoing request originally.
     pub(crate) fn add_connection(&self, account: A, connection: WsStream) {
         let account_id = account.id();
 
@@ -169,6 +158,8 @@ where
         self.connections.write().insert(account_id, tx);
     }
 
+    /// Convert this BtpOutgoingService into a bidirectional BtpService by adding a handler for incoming requests.
+    /// This will automatically pull all incoming Prepare packets from the channel buffer and call the IncomingService with them.
     pub fn handle_incoming<S>(self, incoming_handler: S) -> BtpService<S, T, A>
     where
         S: IncomingService<A> + Clone + Send + 'static,
@@ -230,6 +221,10 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// Send an outgoing request to one of the open connections.
+    ///
+    /// If there is no open connection for the Account specified in `request.to`, the
+    /// request will be passed through to the `next_outgoing` handler.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         if let Some(connection) = (*self.connections.read()).get(&request.to.id()) {
             let request_id = random::<u32>();
@@ -331,6 +326,10 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// Send an outgoing request to one of the open connections.
+    ///
+    /// If there is no open connection for the Account specified in `request.to`, the
+    /// request will be passed through to the `next_outgoing` handler.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         self.outgoing.send_request(request)
     }

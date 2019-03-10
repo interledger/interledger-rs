@@ -5,6 +5,8 @@ use interledger_packet::*;
 use interledger_service::*;
 use std::{marker::PhantomData, str};
 
+/// A simple service that intercepts incoming ILDCP requests
+/// and responds using the information in the Account struct.
 #[derive(Clone)]
 pub struct IldcpService<S, A> {
     next: S,

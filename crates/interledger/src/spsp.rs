@@ -21,18 +21,21 @@ use url::Url;
 
 const ACCOUNT_ID: u64 = 0;
 
+#[doc(hidden)]
 pub fn random_token() -> String {
     let mut bytes: [u8; 18] = [0; 18];
     SystemRandom::new().fill(&mut bytes).unwrap();
     base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD)
 }
 
+#[doc(hidden)]
 pub fn random_secret() -> [u8; 32] {
     let mut bytes: [u8; 32] = [0; 32];
     SystemRandom::new().fill(&mut bytes).unwrap();
     bytes
 }
 
+#[doc(hidden)]
 pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quiet: bool) {
     let receiver = receiver.to_string();
     let account = AccountBuilder::new()
@@ -70,6 +73,7 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
     tokio::run(run);
 }
 
+#[doc(hidden)]
 pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, quiet: bool) {
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
@@ -120,6 +124,7 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
 }
 
 // TODO allow server secret to be specified
+#[doc(hidden)]
 pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
     let account: Account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
@@ -158,6 +163,7 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
     tokio::run(run);
 }
 
+#[doc(hidden)]
 pub fn run_spsp_server_http(
     ildcp_info: IldcpResponse,
     address: SocketAddr,

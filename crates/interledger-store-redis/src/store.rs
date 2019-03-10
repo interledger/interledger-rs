@@ -64,6 +64,12 @@ pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
         })
 }
 
+/// A Store that uses Redis as its underlying database.
+///
+/// This store leverages atomic Redis transactions to do operations such as balance updates.
+///
+/// Currently the RedisStore polls the database for the routing table and rate updates, but
+/// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
     connection: SharedConnection,

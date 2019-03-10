@@ -7,6 +7,11 @@ use std::cmp::{max, min};
 #[cfg(feature = "metrics_csv")]
 use std::io;
 
+/// A basic congestion controller that implements an
+/// Additive Increase, Multiplicative Decrease (AIMD) algorithm.
+///
+/// Future implementations of this will use more advanced congestion
+/// control algorithms.
 pub struct CongestionController {
     state: CongestionState,
     increase_amount: u64,

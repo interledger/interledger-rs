@@ -2,6 +2,7 @@ use super::packet::*;
 use futures::Future;
 use interledger_service::*;
 
+/// Get the ILP address and asset details for a given account.
 pub fn get_ildcp_info<S, A>(
     service: &mut S,
     account: A,

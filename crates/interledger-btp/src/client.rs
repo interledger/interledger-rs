@@ -18,7 +18,7 @@ pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
     Url::parse(uri)
 }
 
-// TODO does A need to be static?
+/// Create a BtpService wrapping BTP connections to the accounts specified.
 pub fn connect_client<S, T, U, A: 'static>(
     incoming_handler: S,
     next_outgoing: T,

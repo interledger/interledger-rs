@@ -14,6 +14,9 @@ use std::cell::Cell;
 use std::cmp::min;
 use std::time::{Duration, SystemTime};
 
+/// Send a given amount of money using the STREAM transport protocol.
+///
+/// This returns the amount delivered, as reported by the receiver and in the receiver's asset's units.
 pub fn send_money<S, A>(
     service: S,
     from_account: &A,

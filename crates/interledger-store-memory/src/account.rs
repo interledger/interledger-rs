@@ -7,6 +7,7 @@ use interledger_service_util::MaxPacketAmountAccount;
 use std::{fmt, str, sync::Arc};
 use url::Url;
 
+/// A helper to create Accounts.
 #[derive(Default)]
 pub struct AccountBuilder {
     details: AccountDetails,
@@ -108,6 +109,7 @@ impl AccountDetails {
     }
 }
 
+/// The Account type loaded from the InMemoryStore.
 // TODO should debugging print all the details or only the id and maybe ilp_address?
 #[derive(Clone)]
 pub struct Account {

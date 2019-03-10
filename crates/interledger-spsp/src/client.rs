@@ -19,6 +19,9 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
         })
 }
 
+/// Query the details of the given Payment Pointer and send a payment using the STREAM protocol.
+///
+/// This returns the amount delivered, as reported by the receiver and in the receiver's asset's units.
 pub fn pay<S, A>(
     service: S,
     from_account: A,

@@ -1,3 +1,10 @@
+//! # interledger-spsp
+//!
+//! Client and server implementations of the [Simple Payment Setup Protocol (SPSP)](https://github.com/interledger/rfcs/blob/master/0009-simple-payment-setup-protocol/0009-simple-payment-setup-protocol.md).
+//!
+//! This uses a simple HTTPS request to establish a shared key between the sender and receiver that is used to
+//! authenticate ILP packets sent between them. SPSP uses the STREAM transport protocol for sending money and data over ILP.
+
 #[macro_use]
 extern crate log;
 #[macro_use]

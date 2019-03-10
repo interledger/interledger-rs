@@ -49,6 +49,7 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// Send an OutgoingRequest to a peer that implements the ILP-Over-HTTP.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         if let Some(url) = request.to.get_http_url() {
             Box::new(

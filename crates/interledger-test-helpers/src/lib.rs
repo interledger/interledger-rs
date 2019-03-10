@@ -1,3 +1,7 @@
+//! # interledger-test-helpers
+//!
+//! Helper structs and functions for use when testing other Interledger services.
+
 use bytes::Bytes;
 use futures::future::{result, FutureResult};
 use interledger_ildcp::IldcpAccount;

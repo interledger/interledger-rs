@@ -18,6 +18,11 @@ lazy_static! {
     static ref TAG_ENCRYPTION_KEY_STRING: &'static [u8] = b"ilp_stream_tag_encryption_aes";
 }
 
+/// A STREAM connection generator that creates `destination_account` and `shared_secret` values
+/// based on a single root secret.
+///
+/// This can be reused across multiple STREAM connections so that a single receiver can
+/// accept incoming packets for multiple connections.
 #[derive(Clone)]
 pub struct ConnectionGenerator {
     source_account: Bytes,
@@ -32,6 +37,9 @@ impl ConnectionGenerator {
         }
     }
 
+    /// Create a `destination_account` and `shared_secret` based on the root secret.
+    ///
+    /// If a `connection_tag` is included, it will be encrypted and included in the ILP address.
     pub fn generate_address_and_secret(&self, connection_tag: &[u8]) -> (Bytes, [u8; 32]) {
         let token_bytes = generate_token();
         let token = base64::encode_config(&token_bytes, base64::URL_SAFE_NO_PAD);
@@ -63,6 +71,12 @@ impl ConnectionGenerator {
     }
 }
 
+/// An IncomingService that fulfills incoming STREAM packets.
+///
+/// Note this does **not** maintain STREAM state, but instead fulfills
+/// all incoming packets to collect the money.
+///
+/// This does not currently support handling data sent via STREAM.
 #[derive(Clone)]
 pub struct StreamReceiverService<S: IncomingService<A>, A: Account> {
     server_secret: Bytes,
@@ -108,6 +122,7 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    // TODO check if the request is actually for us and pass it on to the next handler if not
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if let Some(ref ildcp_response) = *self.ildcp_response.read() {
             if request

@@ -1,3 +1,5 @@
+//! # interledger-packet
+//!
 //! Interledger packet serialization/deserialization.
 
 mod error;

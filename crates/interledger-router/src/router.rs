@@ -5,6 +5,13 @@ use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use std::str;
 
+/// The router implements the IncomingService trait and uses the routing table
+/// to determine the `to` (or "next hop") Account for the given request.
+///
+/// Note that the router does **not**:
+///   - apply exchange rates or fees to the Prepare packet
+///   - adjust account balances
+///   - reduce the Prepare packet's expiry
 #[derive(Clone)]
 pub struct Router<S, T> {
     next: S,

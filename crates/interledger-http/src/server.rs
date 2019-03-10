@@ -10,6 +10,8 @@ use hyper::{
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
 
+/// A Hyper::Service that parses incoming ILP-Over-HTTP requests, validates the authorization,
+/// and passes the request to an IncomingService handler.
 #[derive(Clone)]
 pub struct HttpServerService<S, T> {
     next: S,

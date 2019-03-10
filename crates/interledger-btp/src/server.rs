@@ -15,6 +15,13 @@ use tungstenite::protocol::{Message, WebSocketConfig};
 
 const MAX_MESSAGE_SIZE: usize = 40000;
 
+/// Returns a BtpOutgoingService that wraps all BTP/WebSocket connections that come
+/// in on the given address. Calling `handle_incoming` with an `IncomingService` will
+/// turn the returned BtpOutgoingService into a bidirectional handler.
+///
+/// The separation is designed to enable the returned BtpOutgoingService to be passed
+/// to another service like the Router, and _then_ for the Router to be passed as the
+/// IncomingService to the BTP server.
 pub fn create_server<T, U, A>(
     address: SocketAddr,
     store: U,
@@ -70,6 +77,10 @@ where
     })
 }
 
+/// Same as `create_server` but it returns a BTP server that will accept new connections
+/// and create account records on the fly.
+///
+/// **WARNING:** Users of this should be very careful to prevent malicious users from creating huge numbers of accounts.
 pub fn create_open_signup_server<T, U, A>(
     address: SocketAddr,
     ildcp_info: IldcpResponse,

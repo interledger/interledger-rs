@@ -1,3 +1,8 @@
+//! # interledger-stream
+//!
+//! Client and server implementations of the Interledger [STREAM](https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md) transport protocol.
+//!
+//! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
 #[macro_use]
 extern crate log;
 #[macro_use]

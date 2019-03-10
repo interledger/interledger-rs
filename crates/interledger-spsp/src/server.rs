@@ -39,6 +39,8 @@ pub fn spsp_responder(ilp_address: &[u8], server_secret: &[u8]) -> SpspResponder
     }
 }
 
+/// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
+/// details for a STREAM connection.
 #[derive(Clone)]
 pub struct SpspResponder {
     connection_generator: ConnectionGenerator,

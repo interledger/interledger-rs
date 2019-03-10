@@ -1,3 +1,7 @@
+//! # interledger-service-util
+//!
+//! Miscellaneous, small Interledger Services.
+
 #[macro_use]
 extern crate log;
 

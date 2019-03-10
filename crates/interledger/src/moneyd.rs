@@ -8,6 +8,7 @@ use interledger_store_memory::InMemoryStore;
 use std::net::SocketAddr;
 use tokio;
 
+#[doc(hidden)]
 pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
     let ilp_address = Bytes::from(ildcp_info.client_address());
     let store = InMemoryStore::default();

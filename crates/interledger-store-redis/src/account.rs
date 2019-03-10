@@ -8,6 +8,7 @@ use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs
 use std::sync::Arc;
 use url::Url;
 
+/// The Account type for the RedisStore.
 #[derive(Debug)]
 pub struct AccountDetails {
     pub id: u64,
