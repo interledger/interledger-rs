@@ -46,6 +46,7 @@ fn client_server_test() {
         accounts,
     )
     .and_then(move |mut btp_service| {
+        let btp_service_clone = btp_service.clone();
         btp_service
             .send_request(OutgoingRequest {
                 from: account.clone(),
@@ -60,7 +61,10 @@ fn client_server_test() {
                 .build(),
             })
             .map_err(|reject| println!("Packet was rejected: {:?}", reject))
-            .and_then(|_| Ok(()))
+            .and_then(move |_| {
+                btp_service_clone.close();
+                Ok(())
+            })
     });
-    runtime.block_on_all(client).unwrap();
+    runtime.block_on(client).unwrap();
 }

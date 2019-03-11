@@ -54,6 +54,9 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |service| {
+        // TODO seems kind of janky to clone the btp_service just to
+        // close it later. Is there some better way of making sure it closes?
+        let btp_service = service.clone();
         let service = ValidatorService::outgoing(service);
         let router = Router::new(service, store);
         pay(router, account, &receiver, amount)
@@ -67,6 +70,7 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
                         amount, delivered
                     );
                 }
+                btp_service.close();
                 Ok(())
             })
     });

@@ -24,7 +24,6 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::{error::Error as WebSocketError, Message};
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
@@ -38,27 +37,8 @@ pub struct BtpOutgoingService<T, A: Account> {
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
     incoming_sender: UnboundedSender<(A, u32, Prepare)>,
     next_outgoing: T,
-    // This uses the stream_cancel library to ensure that when the last instance
-    // of this service is dropped, all of the websocket connections will be closed.
-    // This does not happen automatically because the futures spawned to handle incoming
-    // packets also have references to the connections, so they won't be dropped without
-    // this more explicit trigger.
-    pub(crate) close_all_connections: Arc<Trigger>,
+    close_all_connections: Arc<Mutex<Option<Trigger>>>,
     stream_valve: Arc<Valve>,
-}
-
-impl<T, A> Drop for BtpOutgoingService<T, A>
-where
-    A: Account,
-{
-    fn drop(&mut self) {
-        if Arc::strong_count(&self.close_all_connections) == 1 {
-            debug!(
-                "Dropping last BTP Service reference, about to close {} connections",
-                self.connections.read().len()
-            );
-        }
-    }
 }
 
 impl<T, A> BtpOutgoingService<T, A>
@@ -75,9 +55,17 @@ where
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
             incoming_sender,
             next_outgoing,
-            close_all_connections: Arc::new(close_all_connections),
+            close_all_connections: Arc::new(Mutex::new(Some(close_all_connections))),
             stream_valve: Arc::new(stream_valve),
         }
+    }
+
+    /// Close all of the open WebSocket connections
+    // TODO is there some more automatic way of knowing when we should close the connections?
+    // The problem is that the WS client can be a server too, so it's not clear when we are done with it
+    pub fn close(&self) {
+        debug!("Closing all WebSocket connections");
+        self.close_all_connections.lock().take();
     }
 
     /// Set up a WebSocket connection so that outgoing Prepare packets can be sent to it,
@@ -140,9 +128,11 @@ where
         });
 
         let connections = self.connections.clone();
+        let keep_connections_open = self.close_all_connections.clone();
         let handle_connection = handle_incoming
             .select(forward_to_connection)
             .then(move |_| {
+                let _ = keep_connections_open;
                 let mut connections = connections.write();
                 connections.remove(&account_id);
                 debug!(
@@ -204,6 +194,10 @@ where
                                 )
                             })
                     })
+            })
+            .then(move |_| {
+                debug!("Finished reading from pending_incoming buffer");
+                Ok(())
             });
         spawn(handle_pending_incoming);
 
@@ -308,7 +302,7 @@ where
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
             incoming_sender,
             next_outgoing,
-            close_all_connections: Arc::new(close_all_connections),
+            close_all_connections: Arc::new(Mutex::new(Some(close_all_connections))),
             stream_valve: Arc::new(stream_valve),
         }
         .handle_incoming(incoming_handler)
@@ -316,6 +310,11 @@ where
 
     pub(crate) fn add_connection(&self, account: A, connection: WsStream) {
         self.outgoing.add_connection(account, connection)
+    }
+
+    /// Close all of the open WebSocket connections
+    pub fn close(&self) {
+        self.outgoing.close();
     }
 }
 

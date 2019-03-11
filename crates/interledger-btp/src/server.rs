@@ -39,9 +39,6 @@ where
         debug!("Listening on {}", address);
         let service = BtpOutgoingService::new(next_outgoing);
 
-        // Keep the connections open until the socket closes
-        let keep_connections_open = service.close_all_connections.clone();
-
         let service_clone = service.clone();
         let handle_incoming = socket
             .incoming()
@@ -67,8 +64,6 @@ where
             })
             .then(move |result| {
                 debug!("Finished reading connections from TcpListener");
-                // Now we can close the connections
-                let _ = keep_connections_open;
                 result
             });
         spawn(handle_incoming);
