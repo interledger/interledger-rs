@@ -7,14 +7,14 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-bytes = "0.4.11"
+bytes = "0.4.12"
 futures = "0.1.25"
 hashbrown = "0.1.8"
-interledger-btp = { path = "../interledger-btp" }
-interledger-http = { path = "../interledger-http" }
-interledger-ildcp = { path = "../interledger-ildcp" }
-interledger-router = { path = "../interledger-router" }
-interledger-service = { path = "../interledger-service" }
-interledger-service-util = { path = "../interledger-service-util" }
+interledger-btp = { path = "../interledger-btp", version = "0.1.0" }
+interledger-http = { path = "../interledger-http", version = "0.1.0" }
+interledger-ildcp = { path = "../interledger-ildcp", version = "0.1.0" }
+interledger-router = { path = "../interledger-router", version = "0.1.0" }
+interledger-service = { path = "../interledger-service", version = "0.1.0" }
+interledger-service-util = { path = "../interledger-service-util", version = "0.1.0" }
 parking_lot = "0.7.1"
 url = "1.7.2"

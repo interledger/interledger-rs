@@ -7,15 +7,15 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-byteorder = "1.2.7"
-bytes = "0.4.11"
+byteorder = "1.3.1"
+bytes = "0.4.12"
 chrono = "0.4.6"
 hex = "0.3.2"
 quick-error = "1.2.2"
 
 [dev-dependencies]
-criterion = "0.2.9"
-lazy_static = "1.2.0"
+criterion = "0.2.10"
+lazy_static = "1.3.0"
 
 [[bench]]
 name = "packets"

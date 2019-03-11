@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 futures = "0.1.25"
-interledger-packet = { path = "../interledger-packet" }
+interledger-packet = { path = "../interledger-packet", version = "0.1.0" }

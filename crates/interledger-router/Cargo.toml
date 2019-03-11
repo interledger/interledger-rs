@@ -7,10 +7,10 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-bytes = "0.4.11"
+bytes = "0.4.12"
 futures = "0.1.25"
 hashbrown = "0.1.8"
-interledger-packet = { path = "../interledger-packet" }
-interledger-service = { path = "../interledger-service" }
+interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
+interledger-service = { path = "../interledger-service", version = "0.1.0" }
 log = "0.4.6"
 parking_lot = "0.7.1"
