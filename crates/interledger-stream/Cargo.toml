@@ -30,6 +30,6 @@ ring = "0.14.6"
 
 [dev-dependencies]
 env_logger = "0.6.1"
-interledger-service-util = { path = "../interledger-service-util" }
-interledger-test-helpers = { path = "../interledger-test-helpers" }
+interledger-service-util = { path = "../interledger-service-util", version = "0.1.0" }
+interledger-test-helpers = { path = "../interledger-test-helpers", version = "0.1.0" }
 tokio = "0.1.16"
