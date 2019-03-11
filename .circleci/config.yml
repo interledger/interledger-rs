@@ -8,27 +8,18 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-         keys:
-          - project-v2-{{ checksum "Cargo.toml" }}
-          - project-v2-
+          keys:
+            - project-v2-{{ checksum "Cargo.toml" }}
+            - project-v2-
       - run:
           name: Install Cargo Make
           command: cargo install --debug cargo-make || true
       - run:
-          name: Build
-          command: cargo make build
-      - run:
-          name: Check Formatting
-          command: cargo make check-format
-      - run:
-          name: Run Tests
-          command: cargo make test
-      - run:
           name: Audit Dependencies
           command: cargo make --no-workspace audit
       - run:
-          name: Upload Code Coverage
-          command: cargo make --no-workspace workspace-coverage
+          name: Run Cargo Make Workspace Flow
+          command: cargo make --no-workspace workspace-ci-flow
       - save_cache:
           key: project-v2-{{ checksum "Cargo.toml" }}
           paths:

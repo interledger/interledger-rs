@@ -6,6 +6,7 @@ use clap::{App, Arg, ArgGroup, SubCommand};
 use interledger::*;
 use interledger_ildcp::IldcpResponseBuilder;
 
+#[allow(clippy::cyclomatic_complexity)]
 pub fn main() {
     env_logger::init();
 
