@@ -24,7 +24,7 @@ where
     T: HttpStore,
 {
     pub fn new(next: S, store: T) -> Self {
-        HttpServerService { next: next, store }
+        HttpServerService { next, store }
     }
 
     // TODO support certificate-based authentication

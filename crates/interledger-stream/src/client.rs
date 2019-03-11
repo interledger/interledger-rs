@@ -37,7 +37,7 @@ where
         .and_then(move |account_details| SendMoneyFuture {
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),
-            from_account: from_account,
+            from_account,
             source_account: Bytes::from(account_details.client_address()),
             destination_account,
             shared_secret,
