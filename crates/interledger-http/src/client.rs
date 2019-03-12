@@ -27,7 +27,7 @@ where
         let mut headers = HeaderMap::with_capacity(2);
         headers.insert(
             HeaderName::from_static("content-type"),
-            HeaderValue::from_static("application/octet-string"),
+            HeaderValue::from_static("application/octet-stream"),
         );
         let client = ClientBuilder::new()
             .default_headers(headers)
