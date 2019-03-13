@@ -139,7 +139,7 @@ pub mod btp_end_to_end {
         fn get_account_from_auth(
             &self,
             token: &str,
-            username: Option<&str>,
+            _username: Option<&str>,
         ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
             Box::new(result(
                 self.accounts
@@ -151,7 +151,7 @@ pub mod btp_end_to_end {
                             false
                         }
                     })
-                    .map(|account| account.clone())
+                    .cloned()
                     .ok_or(()),
             ))
         }
@@ -159,7 +159,6 @@ pub mod btp_end_to_end {
 
     #[test]
     fn client_server_test() {
-        let _ = env_logger::init();
         let mut runtime = Runtime::new().unwrap();
 
         let server_store = TestStore {
