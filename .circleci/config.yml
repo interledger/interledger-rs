@@ -15,11 +15,17 @@ jobs:
           name: Install Cargo Make
           command: cargo install --debug cargo-make || true
       - run:
+          name: Build + Test
+          command: cargo make test
+      - run:
+          name: Check Formatting
+          command: cargo make check-format
+      - run:
           name: Audit Dependencies
           command: cargo make --no-workspace audit
       - run:
-          name: Run Cargo Make Workspace Flow
-          command: cargo make --no-workspace workspace-ci-flow
+          name: Upload Code Coverage
+          command: cargo make --no-workspace workspace-coverage
       - save_cache:
           key: project-v2-{{ checksum "Cargo.toml" }}
           paths:
