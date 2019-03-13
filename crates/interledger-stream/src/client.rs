@@ -322,24 +322,29 @@ where
 #[cfg(test)]
 mod send_money_tests {
     use super::*;
+    use crate::test_helpers::TestAccount;
+    use bytes::Bytes;
     use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
-    use interledger_test_helpers::*;
+    use interledger_service::incoming_service_fn;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
     #[test]
     fn stops_at_final_errors() {
-        let account = TestAccount::default();
-        let rejecter = TestIncomingService::reject(
-            RejectBuilder {
-                code: IlpErrorCode::F00_BAD_REQUEST,
-                message: &[],
-                data: &[],
-                triggered_by: &[],
-            }
-            .build(),
-        );
+        let account = TestAccount {
+            id: 0,
+            asset_code: "XYZ".to_string(),
+            asset_scale: 9,
+            ilp_address: Bytes::from("example.destination"),
+        };
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
         let result = send_money(
-            IldcpService::new(rejecter.clone()),
+            IldcpService::new(incoming_service_fn(move |request| {
+                requests_clone.lock().push(request);
+                RejectBuilder::new(IlpErrorCode::F00_BAD_REQUEST)
+            })),
             &account,
             b"example.destination",
             &[0; 32][..],
@@ -347,6 +352,6 @@ mod send_money_tests {
         )
         .wait();
         assert!(result.is_err());
-        assert_eq!(rejecter.get_incoming_requests().len(), 1);
+        assert_eq!(requests.lock().len(), 1);
     }
 }

@@ -146,25 +146,41 @@ where
 }
 
 #[cfg(test)]
+#[derive(Clone, Debug)]
+struct TestAccount(u64);
+#[cfg(test)]
+impl Account for TestAccount {
+    type AccountId = u64;
+
+    fn id(&self) -> u64 {
+        self.0
+    }
+}
+
+#[cfg(test)]
 mod incoming {
     use super::*;
     use interledger_packet::*;
-    use interledger_test_helpers::*;
-    use std::time::SystemTime;
+    use interledger_service::incoming_service_fn;
+    use std::{
+        sync::{Arc, Mutex},
+        time::SystemTime,
+    };
 
     #[test]
     fn lets_through_valid_incoming_packet() {
-        let test = TestIncomingService::fulfill(
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
+        let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
+            requests_clone.lock().unwrap().push(request);
             FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"test data",
             }
-            .build(),
-        );
-        let mut validator = ValidatorService::incoming(test.clone());
+        }));
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount::default(),
+                from: TestAccount(0),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -179,23 +195,24 @@ mod incoming {
             })
             .wait();
 
-        assert_eq!(test.get_incoming_requests().len(), 1);
+        assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(result.is_ok());
     }
 
     #[test]
     fn rejects_expired_incoming_packet() {
-        let test = TestIncomingService::fulfill(
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
+        let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
+            requests_clone.lock().unwrap().push(request);
             FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"test data",
             }
-            .build(),
-        );
-        let mut validator = ValidatorService::incoming(test.clone());
+        }));
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount::default(),
+                from: TestAccount(0),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -210,7 +227,7 @@ mod incoming {
             })
             .wait();
 
-        assert_eq!(test.get_incoming_requests().len(), 0);
+        assert!(requests.lock().unwrap().is_empty());
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().code(),
@@ -223,23 +240,26 @@ mod incoming {
 mod outgoing {
     use super::*;
     use interledger_packet::*;
-    use interledger_test_helpers::*;
-    use std::time::SystemTime;
+    use std::{
+        sync::{Arc, Mutex},
+        time::SystemTime,
+    };
 
     #[test]
     fn lets_through_valid_outgoing_response() {
-        let test = TestOutgoingService::fulfill(
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
+        let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
+            requests_clone.lock().unwrap().push(request);
             FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"test data",
             }
-            .build(),
-        );
-        let mut validator = ValidatorService::outgoing(test.clone());
+        }));
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount::default(),
-                to: TestAccount::new(1, b"example.destination", "XYZ", 9),
+                from: TestAccount(1),
+                to: TestAccount(2),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -254,24 +274,25 @@ mod outgoing {
             })
             .wait();
 
-        assert_eq!(test.get_outgoing_requests().len(), 1);
+        assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(result.is_ok());
     }
 
     #[test]
     fn returns_reject_instead_of_invalid_fulfillment() {
-        let test = TestOutgoingService::fulfill(
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
+        let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
+            requests_clone.lock().unwrap().push(request);
             FulfillBuilder {
-                fulfillment: &[6; 32],
+                fulfillment: &[1; 32],
                 data: b"test data",
             }
-            .build(),
-        );
-        let mut validator = ValidatorService::outgoing(test.clone());
+        }));
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount::default(),
-                to: TestAccount::new(1, b"example.destination", "XYZ", 9),
+                from: TestAccount(1),
+                to: TestAccount(2),
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -286,7 +307,7 @@ mod outgoing {
             })
             .wait();
 
-        assert_eq!(test.get_outgoing_requests().len(), 1);
+        assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().code(),

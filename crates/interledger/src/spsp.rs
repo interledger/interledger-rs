@@ -9,8 +9,10 @@ use hyper::{
 use interledger_btp::{connect_client, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpResponse, IldcpService};
+use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service_util::{RejecterService, ValidatorService};
+use interledger_service::{incoming_service_fn, outgoing_service_fn};
+use interledger_service_util::ValidatorService;
 use interledger_spsp::{pay, spsp_responder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_stream::StreamReceiverService;
@@ -44,8 +46,8 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         .build();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let run = connect_client(
-        RejecterService::default(),
-        RejecterService::default(),
+        incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+        outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
         store.clone(),
         vec![ACCOUNT_ID],
     )
@@ -136,11 +138,14 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
         .build();
     let secret = random_secret();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let stream_server = StreamReceiverService::without_ildcp(&secret, RejecterService::default());
+    let stream_server = StreamReceiverService::without_ildcp(
+        &secret,
+        incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+    );
 
     let run = connect_client(
         ValidatorService::incoming(stream_server.clone()),
-        RejecterService::default(),
+        outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build()),
         store.clone(),
         vec![ACCOUNT_ID],
     )
@@ -186,8 +191,11 @@ pub fn run_spsp_server_http(
     let secret = random_secret();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let spsp_responder = spsp_responder(&ildcp_info.client_address(), &secret[..]);
-    let incoming_handler =
-        StreamReceiverService::new(&secret, ildcp_info, RejecterService::default());
+    let incoming_handler = StreamReceiverService::new(
+        &secret,
+        ildcp_info,
+        incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+    );
     let incoming_handler = IldcpService::new(incoming_handler);
     let incoming_handler = ValidatorService::incoming(incoming_handler);
     let http_service = HttpServerService::new(incoming_handler, store);
