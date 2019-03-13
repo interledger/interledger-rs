@@ -68,3 +68,157 @@ pub trait BtpOpenSignupStore {
         account: BtpOpenSignupAccount<'a>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 }
+
+#[cfg(test)]
+pub mod btp_end_to_end {
+    use super::*;
+    use futures::future::{err, ok, result};
+    use interledger_packet::{ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
+    use interledger_service::*;
+    use std::{
+        sync::Arc,
+        time::{Duration, SystemTime},
+    };
+    use tokio::runtime::Runtime;
+
+    #[derive(Clone, Debug)]
+    pub struct TestAccount {
+        pub id: u64,
+        pub btp_incoming_token: Option<String>,
+        pub btp_uri: Option<Url>,
+    }
+
+    impl Account for TestAccount {
+        type AccountId = u64;
+
+        fn id(&self) -> u64 {
+            self.id
+        }
+    }
+
+    impl BtpAccount for TestAccount {
+        fn get_btp_uri(&self) -> Option<&Url> {
+            self.btp_uri.as_ref()
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct TestStore {
+        accounts: Arc<Vec<TestAccount>>,
+    }
+
+    impl AccountStore for TestStore {
+        type Account = TestAccount;
+
+        fn get_accounts(
+            &self,
+            account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
+        ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+            let accounts: Vec<TestAccount> = self
+                .accounts
+                .iter()
+                .filter_map(|account| {
+                    if account_ids.contains(&account.id) {
+                        Some(account.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if accounts.len() == account_ids.len() {
+                Box::new(ok(accounts))
+            } else {
+                Box::new(err(()))
+            }
+        }
+    }
+
+    impl BtpStore for TestStore {
+        type Account = TestAccount;
+
+        fn get_account_from_auth(
+            &self,
+            token: &str,
+            username: Option<&str>,
+        ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+            Box::new(result(
+                self.accounts
+                    .iter()
+                    .find(|account| {
+                        if let Some(account_token) = &account.btp_incoming_token {
+                            account_token == token
+                        } else {
+                            false
+                        }
+                    })
+                    .map(|account| account.clone())
+                    .ok_or(()),
+            ))
+        }
+    }
+
+    #[test]
+    fn client_server_test() {
+        let _ = env_logger::init();
+        let mut runtime = Runtime::new().unwrap();
+
+        let server_store = TestStore {
+            accounts: Arc::new(vec![TestAccount {
+                id: 0,
+                btp_incoming_token: Some("test_auth_token".to_string()),
+                btp_uri: None,
+            }]),
+        };
+        let server = create_server(
+            "127.0.0.1:12345".parse().unwrap(),
+            server_store,
+            outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+        )
+        .and_then(|btp_server| {
+            btp_server.handle_incoming(incoming_service_fn(|_| FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"test data",
+            }));
+            Ok(())
+        });
+        runtime.spawn(server);
+
+        let account = TestAccount {
+            id: 0,
+            btp_uri: Some(Url::parse("btp+ws://:test_auth_token@127.0.0.1:12345").unwrap()),
+            btp_incoming_token: None,
+        };
+        let client_store = TestStore {
+            accounts: Arc::new(vec![account.clone()]),
+        };
+        let accounts: Vec<u64> = vec![0];
+        let client = connect_client(
+            incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+            outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+            client_store,
+            accounts,
+        )
+        .and_then(move |mut btp_service| {
+            let btp_service_clone = btp_service.clone();
+            btp_service
+                .send_request(OutgoingRequest {
+                    from: account.clone(),
+                    to: account.clone(),
+                    prepare: PrepareBuilder {
+                        destination: b"example.destination",
+                        amount: 100,
+                        execution_condition: &[0; 32],
+                        expires_at: SystemTime::now() + Duration::from_secs(30),
+                        data: b"test data",
+                    }
+                    .build(),
+                })
+                .map_err(|reject| println!("Packet was rejected: {:?}", reject))
+                .and_then(move |_| {
+                    btp_service_clone.close();
+                    Ok(())
+                })
+        });
+        runtime.block_on(client).unwrap();
+    }
+}
