@@ -343,7 +343,7 @@ mod send_money_tests {
         let result = send_money(
             IldcpService::new(incoming_service_fn(move |request| {
                 requests_clone.lock().push(request);
-                RejectBuilder::new(IlpErrorCode::F00_BAD_REQUEST)
+                Err(RejectBuilder::new(IlpErrorCode::F00_BAD_REQUEST).build())
             })),
             &account,
             b"example.destination",

@@ -171,12 +171,15 @@ mod client_server {
         let server = create_server(
             "127.0.0.1:12345".parse().unwrap(),
             server_store,
-            outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+            outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
         )
         .and_then(|btp_server| {
-            btp_server.handle_incoming(incoming_service_fn(|_| FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
+            btp_server.handle_incoming(incoming_service_fn(|_| {
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
             }));
             Ok(())
         });
@@ -192,8 +195,8 @@ mod client_server {
         };
         let accounts: Vec<u64> = vec![0];
         let client = connect_client(
-            incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
-            outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+            incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+            outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
             client_store,
             accounts,
         )

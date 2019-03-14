@@ -8,10 +8,6 @@ use std::time::SystemTime;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
-use futures::{
-    future::{err, ok, FutureResult},
-    IntoFuture,
-};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
 use super::{ErrorCode, ParseError};
@@ -318,16 +314,6 @@ impl fmt::Debug for Fulfill {
     }
 }
 
-impl IntoFuture for Fulfill {
-    type Future = FutureResult<Fulfill, Reject>;
-    type Item = Fulfill;
-    type Error = Reject;
-
-    fn into_future(self) -> Self::Future {
-        ok(self)
-    }
-}
-
 impl<'a> FulfillBuilder<'a> {
     pub fn build(&self) -> Fulfill {
         let data_size = oer::predict_var_octet_string(self.data.len());
@@ -344,16 +330,6 @@ impl<'a> FulfillBuilder<'a> {
             buffer,
             content_offset,
         }
-    }
-}
-
-impl<'a> IntoFuture for FulfillBuilder<'a> {
-    type Future = FutureResult<Fulfill, Reject>;
-    type Item = Fulfill;
-    type Error = Reject;
-
-    fn into_future(self) -> Self::Future {
-        ok(self.build())
     }
 }
 
@@ -451,16 +427,6 @@ impl fmt::Debug for Reject {
     }
 }
 
-impl IntoFuture for Reject {
-    type Future = FutureResult<Fulfill, Reject>;
-    type Item = Fulfill;
-    type Error = Reject;
-
-    fn into_future(self) -> Self::Future {
-        err(self)
-    }
-}
-
 impl<'a> RejectBuilder<'a> {
     pub fn build(&self) -> Reject {
         let triggered_by_size = oer::predict_var_octet_string(self.triggered_by.len());
@@ -507,16 +473,6 @@ impl<'a> RejectBuilder<'a> {
     pub fn triggered_by(mut self, triggered_by: &'a [u8]) -> Self {
         self.triggered_by = triggered_by;
         self
-    }
-}
-
-impl<'a> IntoFuture for RejectBuilder<'a> {
-    type Future = FutureResult<Fulfill, Reject>;
-    type Item = Fulfill;
-    type Error = Reject;
-
-    fn into_future(self) -> Self::Future {
-        err(self.build())
     }
 }
 

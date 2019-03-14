@@ -85,7 +85,7 @@ mod send_money_to_receiver {
         let server = StreamReceiverService::new(
             &server_secret,
             ildcp_info,
-            incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+            incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
         );
         let server = IldcpService::new(server);
 
