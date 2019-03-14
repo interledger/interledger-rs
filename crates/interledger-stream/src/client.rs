@@ -347,8 +347,9 @@ mod send_money_tests {
                     code: IlpErrorCode::F00_BAD_REQUEST,
                     message: b"just some final error",
                     triggered_by: b"example.connector",
-                    data: &[]
-                }.build())
+                    data: &[],
+                }
+                .build())
             })),
             &account,
             b"example.destination",
