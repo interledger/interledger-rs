@@ -44,8 +44,8 @@ pub mod test_helpers {
     }
 
     impl IldcpAccount for TestAccount {
-        fn asset_code(&self) -> String {
-            self.asset_code.clone()
+        fn asset_code(&self) -> &str {
+            self.asset_code.as_str()
         }
 
         fn asset_scale(&self) -> u8 {
@@ -62,7 +62,6 @@ pub mod test_helpers {
 mod send_money_to_receiver {
     use super::*;
     use bytes::Bytes;
-    use env_logger;
     use futures::Future;
     use interledger_ildcp::{IldcpResponseBuilder, IldcpService};
     use interledger_packet::{ErrorCode, RejectBuilder};
@@ -71,7 +70,6 @@ mod send_money_to_receiver {
 
     #[test]
     fn send_money_test() {
-        env_logger::init();
         let server_secret = [0; 32];
         let destination_address = b"example.receiver";
         let ildcp_info = IldcpResponseBuilder {
