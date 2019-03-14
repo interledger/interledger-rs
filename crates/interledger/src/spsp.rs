@@ -46,8 +46,8 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         .build();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let run = connect_client(
-        incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
-        outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+        incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+        outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
         store.clone(),
         vec![ACCOUNT_ID],
     )
@@ -140,12 +140,12 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let stream_server = StreamReceiverService::without_ildcp(
         &secret,
-        incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+        incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
     );
 
     let run = connect_client(
         ValidatorService::incoming(stream_server.clone()),
-        outgoing_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build()),
+        outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
         store.clone(),
         vec![ACCOUNT_ID],
     )
@@ -194,7 +194,7 @@ pub fn run_spsp_server_http(
     let incoming_handler = StreamReceiverService::new(
         &secret,
         ildcp_info,
-        incoming_service_fn(|_| RejectBuilder::new(ErrorCode::F02_UNREACHABLE)),
+        incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
     );
     let incoming_handler = IldcpService::new(incoming_handler);
     let incoming_handler = ValidatorService::incoming(incoming_handler);

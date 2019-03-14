@@ -173,10 +173,11 @@ mod incoming {
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
             requests_clone.lock().unwrap().push(request);
-            FulfillBuilder {
+            Ok(FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"test data",
             }
+            .build())
         }));
         let result = validator
             .handle_request(IncomingRequest {
@@ -205,10 +206,11 @@ mod incoming {
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
             requests_clone.lock().unwrap().push(request);
-            FulfillBuilder {
+            Ok(FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"test data",
             }
+            .build())
         }));
         let result = validator
             .handle_request(IncomingRequest {
@@ -251,10 +253,11 @@ mod outgoing {
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
             requests_clone.lock().unwrap().push(request);
-            FulfillBuilder {
+            Ok(FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"test data",
             }
+            .build())
         }));
         let result = validator
             .send_request(OutgoingRequest {
@@ -284,10 +287,11 @@ mod outgoing {
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
             requests_clone.lock().unwrap().push(request);
-            FulfillBuilder {
+            Ok(FulfillBuilder {
                 fulfillment: &[1; 32],
                 data: b"test data",
             }
+            .build())
         }));
         let result = validator
             .send_request(OutgoingRequest {
