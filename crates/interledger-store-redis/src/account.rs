@@ -139,8 +139,8 @@ impl IldcpAccount for Account {
         self.inner.ilp_address.clone()
     }
 
-    fn asset_code(&self) -> String {
-        self.inner.asset_code.clone()
+    fn asset_code(&self) -> &str {
+        self.inner.asset_code.as_str()
     }
 
     fn asset_scale(&self) -> u8 {
