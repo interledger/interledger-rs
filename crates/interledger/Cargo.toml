@@ -32,6 +32,7 @@ interledger-service-util = { path = "../interledger-service-util", version = "0.
 interledger-spsp = { path = "../interledger-spsp", version = "0.1.0" }
 interledger-stream = { path = "../interledger-stream", version = "0.1.0" }
 interledger-store-memory = { path = "../interledger-store-memory", version = "0.1.0" }
+parking_lot = "0.7.1"
 tokio = "0.1.16"
 url = "1.7.2"
 

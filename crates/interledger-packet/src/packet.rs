@@ -450,30 +450,6 @@ impl<'a> RejectBuilder<'a> {
             data_offset: buf_size - data_size,
         }
     }
-
-    pub fn new(code: ErrorCode) -> Self {
-        RejectBuilder {
-            code,
-            message: &[],
-            data: &[],
-            triggered_by: &[],
-        }
-    }
-
-    pub fn message(mut self, message: &'a [u8]) -> Self {
-        self.message = message;
-        self
-    }
-
-    pub fn data(mut self, data: &'a [u8]) -> Self {
-        self.data = data;
-        self
-    }
-
-    pub fn triggered_by(mut self, triggered_by: &'a [u8]) -> Self {
-        self.triggered_by = triggered_by;
-        self
-    }
 }
 
 fn deserialize_envelope(

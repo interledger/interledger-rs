@@ -83,7 +83,15 @@ mod send_money_to_receiver {
         let server = StreamReceiverService::new(
             &server_secret,
             ildcp_info,
-            incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+            incoming_service_fn(|_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: b"No other incoming handler",
+                    triggered_by: b"example.receiver",
+                    data: &[],
+                }
+                .build())
+            }),
         );
         let server = IldcpService::new(server);
 

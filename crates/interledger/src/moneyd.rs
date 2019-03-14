@@ -18,9 +18,13 @@ pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
     println!("Listening on: {}", address);
     let ilp_address_clone = ilp_address.clone();
     let rejecter = outgoing_service_fn(move |_| {
-        Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE)
-            .triggered_by(&ilp_address_clone[..])
-            .build())
+        Err(RejectBuilder {
+            code: ErrorCode::F02_UNREACHABLE,
+            message: b"No open connection for account",
+            triggered_by: &ilp_address_clone[..],
+            data: &[],
+        }
+        .build())
     });
     let server = create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
         move |btp_service| {
