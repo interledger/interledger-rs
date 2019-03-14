@@ -12,7 +12,7 @@ bytes = "0.4.12"
 failure = "0.1.5"
 futures = "0.1.25"
 hyper = "0.12.25"
-interledger-ildcp = { path = "../interledger-ildcp", version = "0.1.0" }
+interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.0" }
 interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
 interledger-service = { path = "../interledger-service", version = "0.1.0" }
 interledger-stream = { path = "../interledger-stream", version = "0.1.0" }
