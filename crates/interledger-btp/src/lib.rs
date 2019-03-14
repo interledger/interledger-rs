@@ -171,7 +171,15 @@ mod client_server {
         let server = create_server(
             "127.0.0.1:12345".parse().unwrap(),
             server_store,
-            outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+            outgoing_service_fn(|_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: b"No other outgoing handler",
+                    triggered_by: &[],
+                    data: &[],
+                }
+                .build())
+            }),
         )
         .and_then(|btp_server| {
             btp_server.handle_incoming(incoming_service_fn(|_| {
@@ -195,8 +203,24 @@ mod client_server {
         };
         let accounts: Vec<u64> = vec![0];
         let client = connect_client(
-            incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
-            outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+            incoming_service_fn(|_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &[],
+                    data: &[],
+                    triggered_by: &[],
+                }
+                .build())
+            }),
+            outgoing_service_fn(|_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &[],
+                    data: &[],
+                    triggered_by: &[],
+                }
+                .build())
+            }),
             client_store,
             accounts,
         )

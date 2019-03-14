@@ -8,16 +8,19 @@ use hyper::{
 };
 use interledger_btp::{connect_client, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
-use interledger_ildcp::{get_ildcp_info, IldcpResponse, IldcpService};
+use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{incoming_service_fn, outgoing_service_fn};
+use interledger_service::{
+    incoming_service_fn, outgoing_service_fn, IncomingRequest, OutgoingRequest,
+};
 use interledger_service_util::ValidatorService;
 use interledger_spsp::{pay, spsp_responder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_stream::StreamReceiverService;
+use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
-use std::{net::SocketAddr, str, u64};
+use std::{net::SocketAddr, str, sync::Arc, u64};
 use tokio;
 use url::Url;
 
@@ -46,8 +49,28 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
         .build();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let run = connect_client(
-        incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
-        outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+        incoming_service_fn(|_| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: b"Not expecting incoming prepare packets",
+                triggered_by: &[],
+                data: &[],
+            }
+            .build())
+        }),
+        outgoing_service_fn(|request: OutgoingRequest<Account>| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &format!(
+                    "No route found for address: {}",
+                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                )
+                .as_bytes(),
+                triggered_by: &[],
+                data: &[],
+            }
+            .build())
+        }),
         store.clone(),
         vec![ACCOUNT_ID],
     )
@@ -132,20 +155,48 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
 // TODO allow server secret to be specified
 #[doc(hidden)]
 pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
+    let ilp_address = Arc::new(RwLock::new(Bytes::new()));
     let account: Account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
         .btp_uri(parse_btp_url(btp_server).unwrap())
         .build();
     let secret = random_secret();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
+    let ilp_address_clone = ilp_address.clone();
     let stream_server = StreamReceiverService::without_ildcp(
         &secret,
-        incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+        incoming_service_fn(move |request: IncomingRequest<Account>| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &format!(
+                    "No handler configured for destination: {}",
+                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                )
+                .as_bytes(),
+                triggered_by: &ilp_address_clone.read()[..],
+                data: &[],
+            }
+            .build())
+        }),
     );
 
+    let ilp_address_read_clone = ilp_address.clone();
+    let ilp_address_write_clone = ilp_address.clone();
     let run = connect_client(
         ValidatorService::incoming(stream_server.clone()),
-        outgoing_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+        outgoing_service_fn(move |request: OutgoingRequest<Account>| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &format!(
+                    "No outgoing route for: {}",
+                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                )
+                .as_bytes(),
+                triggered_by: &ilp_address_read_clone.read()[..],
+                data: &[],
+            }
+            .build())
+        }),
         store.clone(),
         vec![ACCOUNT_ID],
     )
@@ -158,6 +209,7 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
         let mut router = Router::new(btp_service, store);
         get_ildcp_info(&mut router, account.clone()).and_then(move |info| {
             let client_address = Bytes::from(info.client_address());
+            *ilp_address_write_clone.write() = client_address.clone();
 
             stream_server.set_ildcp(info);
 
@@ -191,10 +243,23 @@ pub fn run_spsp_server_http(
     let secret = random_secret();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let spsp_responder = spsp_responder(&ildcp_info.client_address(), &secret[..]);
+    let ilp_address = Bytes::from(ildcp_info.client_address());
     let incoming_handler = StreamReceiverService::new(
         &secret,
         ildcp_info,
-        incoming_service_fn(|_| Err(RejectBuilder::new(ErrorCode::F02_UNREACHABLE).build())),
+        incoming_service_fn(move |request: IncomingRequest<Account>| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &format!(
+                    "No handler configured for destination: {}",
+                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                )
+                .as_bytes(),
+                triggered_by: &ilp_address[..],
+                data: &[],
+            }
+            .build())
+        }),
     );
     let incoming_handler = IldcpService::new(incoming_handler);
     let incoming_handler = ValidatorService::incoming(incoming_handler);

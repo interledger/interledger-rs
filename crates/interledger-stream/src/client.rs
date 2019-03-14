@@ -343,7 +343,12 @@ mod send_money_tests {
         let result = send_money(
             IldcpService::new(incoming_service_fn(move |request| {
                 requests_clone.lock().push(request);
-                Err(RejectBuilder::new(IlpErrorCode::F00_BAD_REQUEST).build())
+                Err(RejectBuilder {
+                    code: IlpErrorCode::F00_BAD_REQUEST,
+                    message: b"just some final error",
+                    triggered_by: b"example.connector",
+                    data: &[]
+                }.build())
             })),
             &account,
             b"example.destination",
