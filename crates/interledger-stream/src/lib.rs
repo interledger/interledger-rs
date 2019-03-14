@@ -59,7 +59,7 @@ pub mod test_helpers {
 }
 
 #[cfg(test)]
-pub mod stream_end_to_end_tests {
+mod send_money_to_receiver {
     use super::*;
     use bytes::Bytes;
     use env_logger;

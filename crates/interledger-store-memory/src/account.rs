@@ -15,9 +15,9 @@ pub struct AccountBuilder {
 
 impl AccountBuilder {
     pub fn new() -> Self {
-        AccountBuilder {
-            details: AccountDetails::default(),
-        }
+        let mut details = AccountDetails::default();
+        details.max_packet_amount = u64::max_value();
+        AccountBuilder { details }
     }
 
     pub fn build(self) -> Account {
@@ -171,5 +171,53 @@ impl HttpAccount for Account {
 impl BtpAccount for Account {
     fn get_btp_uri(&self) -> Option<&Url> {
         self.inner.btp_uri.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uses_default_values() {
+        let account = AccountBuilder::new().build();
+        assert_eq!(account.id(), 0);
+        assert_eq!(account.asset_code(), "");
+        assert_eq!(account.asset_scale(), 0);
+        assert_eq!(account.get_btp_uri(), None);
+        assert_eq!(account.get_http_auth_header(), None);
+        assert_eq!(account.max_packet_amount(), u64::max_value());
+        assert_eq!(account.client_address(), Bytes::from(""));
+    }
+
+    #[test]
+    fn returns_properties_correctly() {
+        let account = AccountBuilder::new()
+            .id(1)
+            .ilp_address(b"example.address")
+            .additional_routes(&[b"example.route", b"example.other-route"])
+            .asset_code("XYZ".to_string())
+            .asset_scale(9)
+            .btp_uri(Url::parse("btp+wss://:token@example.com").unwrap())
+            .btp_incoming_token("auth".to_string())
+            .http_endpoint(Url::parse("http://example.com").unwrap())
+            .http_incoming_authorization("Bearer sldkfjlkdsjflj".to_string())
+            .http_outgoing_authorization("Bearer sodgiuoixfugoiudf".to_string())
+            .btp_incoming_token("asdflkjsaldkfjoi".to_string())
+            .max_packet_amount(7777)
+            .build();
+        assert_eq!(account.id(), 1);
+        assert_eq!(account.asset_code(), "XYZ");
+        assert_eq!(account.asset_scale(), 9);
+        assert_eq!(
+            account.get_btp_uri(),
+            Some(&Url::parse("btp+wss://:token@example.com").unwrap())
+        );
+        assert_eq!(
+            account.get_http_auth_header(),
+            Some("Bearer sodgiuoixfugoiudf")
+        );
+        assert_eq!(account.max_packet_amount(), 7777);
+        assert_eq!(account.client_address(), &b"example.address"[..]);
     }
 }

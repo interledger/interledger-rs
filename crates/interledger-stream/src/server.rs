@@ -139,7 +139,6 @@ where
         } else {
             warn!("Got incoming Prepare packet before the StreamReceiverService was ready (before it had the ILDCP info)");
         }
-        // TODO if it's not ready yet should we respond with an error instead?
         Box::new(self.next.handle_request(request))
     }
 }
@@ -165,6 +164,14 @@ fn derive_shared_secret<'a>(
     local_address: &'a [u8],
     prepare: &Prepare,
 ) -> Result<(String, [u8; 32]), Reject> {
+    // Ignore the first ".", since that is the separator between the local address part and the rest of it
+    let local_address = if local_address.starts_with(b".") {
+        &local_address[1..]
+    } else {
+        local_address
+    };
+
+    // Split up the local address parts in case some application has added additional components after the one added by STREAM
     let local_address_parts: Vec<&[u8]> = local_address.split(|c| *c == b'.').collect();
     if local_address_parts.is_empty() {
         warn!(
@@ -300,5 +307,60 @@ fn receive_money(
         }
         .build();
         Err(reject)
+    }
+}
+
+#[cfg(test)]
+mod connection_generator {
+    use super::*;
+    use interledger_packet::PrepareBuilder;
+    use std::time::SystemTime;
+
+    #[test]
+    fn with_connection_tag() {
+        let server_secret = [9; 32];
+        let receiver_address = b"example.receiver";
+        let connection_generator = ConnectionGenerator::new(receiver_address, &server_secret);
+        let (destination_account, _shared_secret) =
+            connection_generator.generate_address_and_secret(b"tag");
+        assert!(destination_account.starts_with(receiver_address));
+        let (conn_tag, _shared_secret) = derive_shared_secret(
+            &server_secret,
+            destination_account.split_at(receiver_address.len()).1,
+            &PrepareBuilder {
+                destination: &destination_account[..],
+                amount: 100,
+                execution_condition: &[0; 32],
+                expires_at: SystemTime::UNIX_EPOCH,
+                data: &[],
+            }
+            .build(),
+        )
+        .unwrap();
+        assert!(conn_tag.ends_with("~tag"));
+    }
+
+    #[test]
+    fn without_connection_tag() {
+        let server_secret = [9; 32];
+        let receiver_address = b"example.receiver";
+        let connection_generator = ConnectionGenerator::new(receiver_address, &server_secret);
+        let (destination_account, _shared_secret) =
+            connection_generator.generate_address_and_secret(b"");
+        assert!(destination_account.starts_with(receiver_address));
+        let (conn_tag, _shared_secret) = derive_shared_secret(
+            &server_secret,
+            destination_account.split_at(receiver_address.len()).1,
+            &PrepareBuilder {
+                destination: &destination_account[..],
+                amount: 100,
+                execution_condition: &[0; 32],
+                expires_at: SystemTime::UNIX_EPOCH,
+                data: &[],
+            }
+            .build(),
+        )
+        .unwrap();
+        assert!(!conn_tag.contains('~'));
     }
 }

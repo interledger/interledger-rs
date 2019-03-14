@@ -113,8 +113,7 @@ impl AccountStore for InMemoryStore {
 impl HttpStore for InMemoryStore {
     type Account = Account;
 
-    // TODO this should use a hashmap internally
-    fn get_account_from_authorization(
+    fn get_account_from_http_auth(
         &self,
         auth_header: &str,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
@@ -135,7 +134,7 @@ impl RouterStore for InMemoryStore {
 impl BtpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_auth(
+    fn get_account_from_btp_token(
         &self,
         token: &str,
         username: Option<&str>,
@@ -188,8 +187,38 @@ impl BtpOpenSignupStore for InMemoryStore {
 }
 
 #[cfg(test)]
-mod in_memory_store {
+mod tests {
     use super::*;
+
+    #[test]
+    fn get_accounts() {
+        let store = InMemoryStore::new(vec![
+            AccountBuilder::new().id(0),
+            AccountBuilder::new().id(1),
+            AccountBuilder::new().id(4),
+        ]);
+        let accounts = store.get_accounts(vec![0, 4]).wait().unwrap();
+        assert_eq!(accounts[0].id(), 0);
+        assert_eq!(accounts[1].id(), 4);
+
+        assert!(store.get_accounts(vec![0, 5]).wait().is_err());
+    }
+
+    #[test]
+    fn query_by_http_auth() {
+        let account = AccountBuilder::new()
+            .http_incoming_authorization("Bearer test_token".to_string())
+            .build();
+        let store = InMemoryStore::from_accounts(vec![account]);
+        store
+            .get_account_from_http_auth("Bearer test_token")
+            .wait()
+            .unwrap();
+        assert!(store
+            .get_account_from_http_auth("Bearer bad_token")
+            .wait()
+            .is_err());
+    }
 
     #[test]
     fn query_by_btp() {
@@ -198,12 +227,48 @@ mod in_memory_store {
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_auth("test_token", None)
+            .get_account_from_btp_token("test_token", None)
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_auth("bad_token", None)
+            .get_account_from_btp_token("bad_token", None)
             .wait()
             .is_err());
+    }
+
+    #[test]
+    fn routing_table() {
+        let store = InMemoryStore::new(vec![
+            AccountBuilder::new()
+                .id(1)
+                .ilp_address(b"example.one")
+                .additional_routes(&[b"example.three"]),
+            AccountBuilder::new().id(2).ilp_address(b"example.two"),
+        ]);
+
+        assert_eq!(
+            store.routing_table(),
+            HashMap::from_iter(vec![
+                (Bytes::from("example.one"), 1),
+                (Bytes::from("example.two"), 2),
+                (Bytes::from("example.three"), 1)
+            ])
+        );
+    }
+
+    #[test]
+    fn open_btp_signup() {
+        let store = InMemoryStore::default();
+        let account = store
+            .create_btp_account(BtpOpenSignupAccount {
+                auth_token: "token",
+                username: None,
+                ilp_address: b"example.account",
+                asset_code: "XYZ",
+                asset_scale: 9,
+            })
+            .wait()
+            .unwrap();
+        assert_eq!(account.id(), 1);
     }
 }

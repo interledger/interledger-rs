@@ -38,7 +38,7 @@ pub trait BtpStore {
     type Account: BtpAccount;
 
     /// Load Account details based on the auth token received via BTP.
-    fn get_account_from_auth(
+    fn get_account_from_btp_token(
         &self,
         token: &str,
         username: Option<&str>,
@@ -70,7 +70,7 @@ pub trait BtpOpenSignupStore {
 }
 
 #[cfg(test)]
-pub mod btp_end_to_end {
+mod client_server {
     use super::*;
     use futures::future::{err, ok, result};
     use interledger_packet::{ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
@@ -136,7 +136,7 @@ pub mod btp_end_to_end {
     impl BtpStore for TestStore {
         type Account = TestAccount;
 
-        fn get_account_from_auth(
+        fn get_account_from_btp_token(
             &self,
             token: &str,
             _username: Option<&str>,
