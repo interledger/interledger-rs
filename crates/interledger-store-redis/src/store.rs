@@ -246,7 +246,7 @@ impl ExchangeRateStore for RedisStore {
 impl BtpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_auth(
+    fn get_account_from_btp_token(
         &self,
         token: &str,
         // TODO actually store the username
@@ -268,7 +268,7 @@ impl BtpStore for RedisStore {
 impl HttpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_authorization(
+    fn get_account_from_http_auth(
         &self,
         auth_header: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {

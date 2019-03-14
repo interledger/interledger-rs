@@ -40,7 +40,7 @@ where
         if let Some(authorization) = authorization {
             Either::A(
                 self.store
-                    .get_account_from_authorization(&authorization)
+                    .get_account_from_http_auth(&authorization)
                     .map_err(move |_err| {
                         error!("Authorization not found in the DB: {}", authorization);
                         Response::builder().status(401).body(Body::empty()).unwrap()

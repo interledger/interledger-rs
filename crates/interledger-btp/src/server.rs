@@ -138,7 +138,7 @@ where
     get_auth(connection).and_then(move |(auth, connection)| {
         let token = auth.token.clone();
         store
-            .get_account_from_auth(&auth.token, auth.username.as_ref().map(|s| &**s))
+            .get_account_from_btp_token(&auth.token, auth.username.as_ref().map(|s| &**s))
             .map_err(move |_| warn!("Got unauthorized connection with token: {}", token))
             .and_then(move |account| {
                 let auth_response = Message::Binary(
@@ -169,7 +169,7 @@ where
     get_auth(connection).and_then(move |(auth, connection)| {
         let request_id = auth.request_id;
         store
-            .get_account_from_auth(&auth.token, auth.username.as_ref().map(|s| &**s))
+            .get_account_from_btp_token(&auth.token, auth.username.as_ref().map(|s| &**s))
             .or_else(move |_| {
                 let local_part: Bytes = if let Some(username) = auth.username {
                     Bytes::from(username)
