@@ -1,6 +1,6 @@
 [package]
 name = "interledger-service-util"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Small, commonly used Interledger services that don't really fit anywhere else"
 license = "Apache-2.0"
@@ -10,9 +10,9 @@ edition = "2018"
 bytes = "0.4.12"
 futures = "0.1.25"
 hex = "0.3.2"
-interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
-interledger-service = { path = "../interledger-service", version = "0.2.0" }
-interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.0" }
+interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
+interledger-service = { path = "../interledger-service", version = "0.2.1" }
+interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 log = "0.4.6"
 ring = "0.14.6"
 tokio = "0.1.16"
