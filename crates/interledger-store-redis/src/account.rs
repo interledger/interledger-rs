@@ -5,8 +5,10 @@ use interledger_ildcp::IldcpAccount;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use url::Url;
+
+const ACCOUNT_DETAILS_FIELDS: usize = 10;
 
 /// The Account type for the RedisStore.
 #[derive(Debug)]
@@ -15,12 +17,12 @@ pub struct AccountDetails {
     pub ilp_address: Bytes,
     pub asset_code: String,
     pub asset_scale: u8,
+    pub max_packet_amount: u64,
     pub http_endpoint: Option<Url>,
     pub http_incoming_authorization: Option<String>,
     pub http_outgoing_authorization: Option<String>,
     pub btp_uri: Option<Url>,
     pub btp_incoming_authorization: Option<String>,
-    pub max_packet_amount: u64,
 }
 
 impl Into<Account> for AccountDetails {
@@ -33,76 +35,106 @@ impl Into<Account> for AccountDetails {
 
 impl ToRedisArgs for AccountDetails {
     fn write_redis_args(&self, out: &mut Vec<Vec<u8>>) {
-        let tuple = (
-            self.id,
-            self.ilp_address.to_vec(),
-            self.asset_code.clone(),
-            self.asset_scale,
-            self.http_endpoint.clone().map(|ref u| u.to_string()),
-            self.http_incoming_authorization.clone(),
-            self.http_outgoing_authorization.clone(),
-            self.btp_uri.clone().map(|ref u| u.to_string()),
-            self.btp_incoming_authorization.clone(),
-            self.max_packet_amount,
-        );
-        tuple.write_redis_args(out);
+        let mut rv = Vec::with_capacity(ACCOUNT_DETAILS_FIELDS * 2);
+
+        "id".write_redis_args(&mut rv);
+        self.id.write_redis_args(&mut rv);
+        if !self.ilp_address.is_empty() {
+            "ilp_address".write_redis_args(&mut rv);
+            rv.push(self.ilp_address.to_vec());
+        }
+        if !self.asset_code.is_empty() {
+            "asset_code".write_redis_args(&mut rv);
+            self.asset_code.write_redis_args(&mut rv);
+        }
+        "asset_scale".write_redis_args(&mut rv);
+        self.asset_scale.write_redis_args(&mut rv);
+        "max_packet_amount".write_redis_args(&mut rv);
+        self.max_packet_amount.write_redis_args(&mut rv);
+
+        // Write optional fields
+        if let Some(http_endpoint) = self.http_endpoint.as_ref() {
+            "http_endpoint".write_redis_args(&mut rv);
+            http_endpoint.as_str().write_redis_args(&mut rv);
+        }
+        if let Some(http_incoming_authorization) = self.http_incoming_authorization.as_ref() {
+            "http_incoming_authorization".write_redis_args(&mut rv);
+            http_incoming_authorization.write_redis_args(&mut rv);
+        }
+        if let Some(http_outgoing_authorization) = self.http_outgoing_authorization.as_ref() {
+            "http_outgoing_authorization".write_redis_args(&mut rv);
+            http_outgoing_authorization.write_redis_args(&mut rv);
+        }
+        if let Some(btp_uri) = self.btp_uri.as_ref() {
+            "btp_uri".write_redis_args(&mut rv);
+            btp_uri.as_str().write_redis_args(&mut rv);
+        }
+        if let Some(btp_incoming_authorization) = self.btp_incoming_authorization.as_ref() {
+            "btp_incoming_authorization".write_redis_args(&mut rv);
+            btp_incoming_authorization.write_redis_args(&mut rv);
+        }
+
+        debug_assert!(rv.len() < ACCOUNT_DETAILS_FIELDS * 2);
+        debug_assert!((rv.len() % 2) == 0);
+
+        ToRedisArgs::make_arg_vec(&rv, out);
     }
 }
 
-type AccountDetailsTuple = (
-    u64,
-    Vec<u8>,
-    String,
-    u8,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    u64,
-);
+fn get_value<V>(key: &str, map: &HashMap<String, Value>) -> Result<V, RedisError>
+where
+    V: FromRedisValue,
+{
+    if let Some(ref value) = map.get(key) {
+        from_redis_value(value)
+    } else {
+        Err(RedisError::from((
+            ErrorKind::TypeError,
+            "Account has no id",
+        )))
+    }
+}
+
+fn get_value_option<V>(key: &str, map: &HashMap<String, Value>) -> Result<Option<V>, RedisError>
+where
+    V: FromRedisValue,
+{
+    if let Some(ref value) = map.get(key) {
+        from_redis_value(value).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>, RedisError> {
+    if let Some(ref value) = map.get(key) {
+        let value: String = from_redis_value(value)?;
+        if let Ok(url) = Url::parse(&value) {
+            Ok(Some(url))
+        } else {
+            Err(RedisError::from((ErrorKind::TypeError, "Invalid URL")))
+        }
+    } else {
+        Ok(None)
+    }
+}
 
 impl FromRedisValue for AccountDetails {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
-        let (
-            id,
-            ilp_address,
-            asset_code,
-            asset_scale,
-            http_endpoint,
-            http_incoming_authorization,
-            http_outgoing_authorization,
-            btp_uri,
-            btp_incoming_authorization,
-            max_packet_amount,
-        ): AccountDetailsTuple = from_redis_value(v)?;
-        let ilp_address = Bytes::from(ilp_address);
-        let http_endpoint = if let Some(s) = http_endpoint {
-            Some(Url::parse(&s).map_err(|_err| {
-                RedisError::from((ErrorKind::TypeError, "Unable to parse http_endpoint as URL"))
-            })?)
-        } else {
-            None
-        };
-        let btp_uri = if let Some(s) = btp_uri {
-            Some(Url::parse(&s).map_err(|_err| {
-                RedisError::from((ErrorKind::TypeError, "Unable to parse btp_uri as URL"))
-            })?)
-        } else {
-            None
-        };
-
+        trace!("Loaded value from Redis: {:?}", v);
+        let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
+        let ilp_address: Vec<u8> = get_value("ilp_address", &hash)?;
         Ok(AccountDetails {
-            id,
-            ilp_address,
-            asset_code,
-            asset_scale,
-            http_endpoint,
-            http_incoming_authorization,
-            http_outgoing_authorization,
-            btp_uri,
-            btp_incoming_authorization,
-            max_packet_amount,
+            id: get_value("id", &hash)?,
+            ilp_address: Bytes::from(ilp_address),
+            asset_code: get_value("asset_code", &hash)?,
+            asset_scale: get_value("asset_scale", &hash)?,
+            http_endpoint: get_url_option("http_endpoint", &hash)?,
+            http_incoming_authorization: get_value_option("http_incoming_authorization", &hash)?,
+            http_outgoing_authorization: get_value_option("http_outgoing_authorization", &hash)?,
+            btp_uri: get_url_option("btp_uri", &hash)?,
+            btp_incoming_authorization: get_value_option("btp_incoming_authorization", &hash)?,
+            max_packet_amount: get_value("max_packet_amount", &hash)?,
         })
     }
 }

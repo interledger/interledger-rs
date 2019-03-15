@@ -4,7 +4,7 @@ use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 
 pub trait BalanceStore: AccountStore {
-    fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = u64, Error = ()> + Send>;
+    fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = i64, Error = ()> + Send>;
     fn update_balances(
         &self,
         from_account: &Self::Account,
@@ -48,51 +48,57 @@ where
         &mut self,
         mut request: OutgoingRequest<<T as AccountStore>::Account>,
     ) -> Box<Future<Item = Fulfill, Error = Reject> + Send> {
-        if let Ok(rates) = self
+        let scale_change = u32::from(request.to.asset_scale() - request.from.asset_scale());
+        let outgoing_amount = if request.from.asset_code() == request.to.asset_code() {
+            debug!("Same currency. Forwarding request.");
+            request.prepare.amount() * 10u64.pow(scale_change)
+        } else if let Ok(rates) = self
             .store
             .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
         {
             // TODO use bignums to make sure none of these numbers overflow
-            let scale_change = u32::from(request.to.asset_scale() - request.from.asset_scale());
-            let outgoing_amount =
-                (rates[1] / rates[0] * request.prepare.amount().pow(scale_change) as f64) as u64;
+            let outgoing_amount = (rates[1] / rates[0]
+                * request.prepare.amount() as f64
+                * 10u64.pow(scale_change) as f64) as u64;
             debug!("Converted incoming amount of {} {} (scale: {}) to outgoing amount of {} {} (scale: {})", request.prepare.amount(), request.from.asset_code(), request.from.asset_scale(), outgoing_amount, request.to.asset_code(), request.to.asset_scale());
-            request.prepare.set_amount(outgoing_amount);
-
-            let mut next = self.next.clone();
-            Box::new(
-                self.store
-                    .update_balances(
-                        &request.from,
-                        request.prepare.amount(),
-                        &request.to,
-                        outgoing_amount,
-                    )
-                    .map_err(|_| {
-                        debug!("Rejecting packet because it would exceed a balance limit");
-                        RejectBuilder {
-                            code: ErrorCode::T04_INSUFFICIENT_LIQUIDITY,
-                            message: &[],
-                            triggered_by: &[],
-                            data: &[],
-                        }
-                        .build()
-                    })
-                    .and_then(move |_| next.send_request(request)),
-            )
+            outgoing_amount
         } else {
             error!(
                 "Error getting exchange rates for assets: {}, {}",
                 request.from.asset_code(),
                 request.to.asset_code()
             );
-            Box::new(err(RejectBuilder {
+            return Box::new(err(RejectBuilder {
                 code: ErrorCode::T00_INTERNAL_ERROR,
                 message: &[],
                 triggered_by: &[],
                 data: &[],
             }
-            .build()))
-        }
+            .build()));
+        };
+
+        request.prepare.set_amount(outgoing_amount);
+
+        let mut next = self.next.clone();
+        Box::new(
+            self.store
+                .update_balances(
+                    &request.from,
+                    request.prepare.amount(),
+                    &request.to,
+                    outgoing_amount,
+                )
+                .map_err(|_| {
+                    debug!("Rejecting packet because it would exceed a balance limit");
+                    RejectBuilder {
+                        code: ErrorCode::T04_INSUFFICIENT_LIQUIDITY,
+                        message: &[],
+                        triggered_by: &[],
+                        data: &[],
+                    }
+                    .build()
+                })
+                .and_then(move |_| next.send_request(request)),
+        )
     }
 }

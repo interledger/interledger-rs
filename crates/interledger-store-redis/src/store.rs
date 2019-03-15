@@ -8,7 +8,9 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use parking_lot::{Mutex, RwLock};
-use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands};
+use redis::{
+    self, cmd, r#async::SharedConnection, Client, FromRedisValue, PipelineCommands, Value,
+};
 use std::{
     iter::FromIterator,
     sync::Arc,
@@ -20,15 +22,16 @@ use tokio_timer::Interval;
 
 const POLL_INTERVAL: u64 = 60; // 1 minute
 
-static ACCOUNT_FROM_BTP_AUTH_SCRIPT: &str = "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'btp_auth', ARGV[1]) .. ':details')";
-static ACCOUNT_FROM_HTTP_AUTH_SCRIPT: &str = "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'http_auth', ARGV[1]) .. ':details')";
+static ACCOUNT_FROM_BTP_AUTH_SCRIPT: &str =
+    "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'btp_auth', ARGV[1]))";
+static ACCOUNT_FROM_HTTP_AUTH_SCRIPT: &str =
+    "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'http_auth', ARGV[1]))";
+static ROUTES_KEY: &str = "routes";
+static RATES_KEY: &str = "rates";
+static BALANCES_KEY: &str = "balances";
 
 fn account_details_key(account_id: u64) -> String {
-    format!("accounts:{}:details", account_id)
-}
-
-fn account_balance_key(account_id: u64) -> String {
-    format!("accounts:{}:balance", account_id)
+    format!("accounts:{}", account_id)
 }
 
 pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
@@ -94,29 +97,31 @@ impl RedisStore {
     pub fn insert_account(&self, account: AccountDetails) -> impl Future<Item = (), Error = ()> {
         let connection = self.connection.clone();
         let mut pipe = redis::pipe();
-        pipe.atomic()
-            .set(account_balance_key(account.id), 0u64)
-            .ignore();
+        pipe.atomic().hset(BALANCES_KEY, account.id, 0u64).ignore();
         // TODO hard fail if the auth already exists
         if let Some(ref auth) = account.btp_incoming_authorization {
             pipe.cmd("HSETNX")
                 .arg("btp_auth")
                 .arg(auth.clone().to_string())
-                .arg(account.id);
+                .arg(account.id)
+                .ignore();
         }
         if let Some(ref auth) = account.http_incoming_authorization {
             pipe.cmd("HSETNX")
                 .arg("http_auth")
                 .arg(auth.clone().to_string())
-                .arg(account.id);
+                .arg(account.id)
+                .ignore();
         }
+        pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
+            .ignore();
         pipe.cmd("HMSET")
             .arg(account_details_key(account.id))
             .arg(account)
             .ignore();
 
         pipe.query_async(connection)
-            .and_then(|(_connection, _): (_, u64)| Ok(()))
+            .and_then(|(_connection, _ret): (_, Value)| Ok(()))
             .map_err(|err| error!("Error inserting account into DB: {:?}", err))
     }
 
@@ -124,7 +129,7 @@ impl RedisStore {
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
         let exchange_rates = self.exchange_rates.clone();
         cmd("HGETALL")
-            .arg("rates")
+            .arg(RATES_KEY)
             .query_async(self.connection.clone())
             .map_err(|err| error!("Error polling for exchange rates: {:?}", err))
             .and_then(move |(_connection, rates): (_, Vec<(String, f64)>)| {
@@ -139,7 +144,7 @@ impl RedisStore {
     fn update_routes(&self) -> impl Future<Item = (), Error = ()> {
         let routing_table = self.routes.clone();
         cmd("HGETALL")
-            .arg("routes")
+            .arg(ROUTES_KEY)
             .query_async(self.connection.clone())
             .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
             .and_then(move |(_connection, routes): (_, Vec<(Vec<u8>, u64)>)| {
@@ -184,16 +189,16 @@ impl AccountStore for RedisStore {
                         account_ids, err
                     )
                 })
-                .and_then(|(_conn, account): (_, Vec<Account>)| Ok(account)),
+                .and_then(|(_conn, accounts): (_, Vec<Account>)| Ok(accounts)),
         )
     }
 }
 
 impl BalanceStore for RedisStore {
-    fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = u64, Error = ()> + Send> {
+    fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = i64, Error = ()> + Send> {
         let account_id = account.id();
         let mut pipe = redis::pipe();
-        pipe.get(account_balance_key(account_id));
+        pipe.hget(BALANCES_KEY, account_id);
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| {
@@ -202,7 +207,7 @@ impl BalanceStore for RedisStore {
                         account_id, err
                     )
                 })
-                .and_then(|(_connection, balance): (_, u64)| Ok(balance)),
+                .and_then(|(_connection, balance): (_, i64)| Ok(balance)),
         )
     }
 
@@ -216,27 +221,35 @@ impl BalanceStore for RedisStore {
         let from_account_id = from_account.id();
         let to_account_id = to_account.id();
 
+        debug!(
+            "Increasing balance of account {} by: {}. Decreasing balance of {} by {}",
+            from_account_id, incoming_amount, to_account_id, outgoing_amount
+        );
+
         // TODO check against balance limit
         let mut pipe = redis::pipe();
         pipe.atomic()
-            .cmd("INCRBY")
-            .arg(account_balance_key(from_account_id))
+            .cmd("HINCRBY")
+            .arg(BALANCES_KEY)
+            .arg(from_account_id)
             .arg(incoming_amount)
-            .cmd("DECRBY")
-            .arg(account_balance_key(to_account_id))
-            .arg(outgoing_amount);
+            .cmd("HINCRBY")
+            .arg(BALANCES_KEY)
+            .arg(to_account_id)
+            // TODO make sure this doesn't overflow
+            .arg(0i64 - outgoing_amount as i64);
 
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
-                    "Error updating balances for accounts. from_account: {}, to_account: {} {:?}",
+                    "Error updating balances for accounts. from_account: {}, to_account: {}: {:?}",
                     from_account_id,
                     to_account_id,
                     err
                 )
                 })
-                .and_then(move |(_connection, balances): (_, Vec<u64>)| {
+                .and_then(move |(_connection, balances): (_, Vec<i64>)| {
                     debug!(
                         "Updated account balances. Account {} has: {}, account {} has: {}",
                         from_account_id, balances[0], to_account_id, balances[1]
@@ -275,14 +288,30 @@ impl BtpStore for RedisStore {
         _username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
+        // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
         let mut pipe = redis::pipe();
         pipe.cmd("EVAL")
             .arg(ACCOUNT_FROM_BTP_AUTH_SCRIPT)
+            .arg(0)
             .arg(token);
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
-                .and_then(|(_connection, account): (_, Account)| Ok(account)),
+                .and_then(|(_connection, bulk): (_, Value)| {
+                    // TODO why does it return a bulk value?
+                    if let Value::Bulk(ref items) = bulk {
+                        if !items.is_empty() {
+                            Account::from_redis_value(&items[0]).map_err(|err| {
+                                error!("Unable to parse Account from response: {:?}", err)
+                            })
+                        } else {
+                            error!("Unable to parse Account from empty response");
+                            Err(())
+                        }
+                    } else {
+                        Err(())
+                    }
+                }),
         )
     }
 }
@@ -298,6 +327,7 @@ impl HttpStore for RedisStore {
         let mut pipe = redis::pipe();
         pipe.cmd("EVAL")
             .arg(ACCOUNT_FROM_HTTP_AUTH_SCRIPT)
+            .arg(0)
             .arg(auth_header);
         Box::new(
             pipe.query_async(self.connection.clone())
