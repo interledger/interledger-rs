@@ -12,7 +12,7 @@ futures = "0.1.25"
 http = "0.1.16"
 hyper = "0.12.25"
 interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
-interledger-service = { path = "../interledger-service", version = "0.1.0" }
+interledger-service = { path = "../interledger-service", version = "0.2.0" }
 log = "0.4.6"
 reqwest = "0.9.11"
 url = "1.7.2"

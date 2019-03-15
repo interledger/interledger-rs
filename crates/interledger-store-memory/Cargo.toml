@@ -14,7 +14,7 @@ interledger-btp = { path = "../interledger-btp", version = "0.1.0" }
 interledger-http = { path = "../interledger-http", version = "0.2.0" }
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.0" }
 interledger-router = { path = "../interledger-router", version = "0.1.0" }
-interledger-service = { path = "../interledger-service", version = "0.1.0" }
+interledger-service = { path = "../interledger-service", version = "0.2.0" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.1.0" }
 parking_lot = "0.7.1"
 url = "1.7.2"
