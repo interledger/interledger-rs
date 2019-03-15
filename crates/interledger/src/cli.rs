@@ -6,7 +6,7 @@ use hyper::{
     service::{service_fn, Service},
     Body, Error, Method, Request, Response, Server,
 };
-use interledger_btp::{connect_client, create_open_signup_server, parse_btp_url};
+use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
@@ -14,9 +14,12 @@ use interledger_router::Router;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, IncomingRequest, OutgoingRequest,
 };
-use interledger_service_util::ValidatorService;
+use interledger_service_util::{
+    ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
+};
 use interledger_spsp::{pay, spsp_responder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
+use interledger_store_redis::connect as connect_redis_store;
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
@@ -326,4 +329,61 @@ pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
         },
     );
     tokio::run(server);
+}
+
+#[doc(hidden)]
+pub fn run_connector_redis(redis_uri: &str, btp_address: SocketAddr, http_address: SocketAddr) {
+    let run = connect_redis_store(redis_uri)
+        .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
+        .and_then(move |store| {
+            let http_outgoing = HttpClientService::new(store.clone());
+            create_server(btp_address, store.clone(), http_outgoing).and_then(move |btp_service| {
+                let outgoing_service = btp_service.clone();
+                let outgoing_service =
+                    ExchangeRateAndBalanceService::new(store.clone(), outgoing_service);
+
+                let incoming_service = Router::new(outgoing_service, store.clone());
+                let incoming_service = IldcpService::new(incoming_service);
+                let incoming_service = MaxPacketAmountService::new(incoming_service);
+                let incoming_service = ValidatorService::incoming(incoming_service);
+
+                // Handle packets sent via BTP
+                btp_service.handle_incoming(incoming_service.clone());
+
+                // Handle packets sent via HTTP
+                let http_service = HttpServerService::new(incoming_service, store.clone());
+                let server = Server::bind(&http_address)
+                    .serve(move || {
+                        let mut http_service = http_service.clone();
+                        // TODO we shouldn't need to wrap this in a service_fn
+                        service_fn(
+                                move |req: Request<Body>| -> Box<
+                                    Future<Item = Response<Body>, Error = Error> + Send,
+                                > { http_service.call(req) },
+                            )
+                    })
+                    .map_err(|err| eprintln!("HTTP server error: {:?}", err));
+                tokio::spawn(server);
+                Ok(())
+            })
+        });
+    tokio::run(run);
+}
+
+#[doc(hidden)]
+pub use interledger_store_redis::AccountDetails as RedisAccountDetails;
+#[doc(hidden)]
+pub fn insert_account_redis(redis_uri: &str, account: RedisAccountDetails) {
+    let run = connect_redis_store(redis_uri)
+        .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
+        .and_then(move |store| {
+            store
+                .insert_account(account)
+                .map_err(|_| eprintln!("Unable to create account"))
+                .and_then(|_| {
+                    println!("Created account");
+                    Ok(())
+                })
+        });
+    tokio::run(run);
 }
