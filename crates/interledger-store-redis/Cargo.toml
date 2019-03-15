@@ -24,6 +24,7 @@ interledger-service-util = { path = "../interledger-service-util", version = "0.
 log = "0.4.6"
 parking_lot = "0.7.1"
 redis = "0.10.0"
-url = "1.7.2"
+stream-cancel = "0.4.4"
 tokio-executor = "0.1.6"
 tokio-timer = "0.2.10"
+url = "1.7.2"

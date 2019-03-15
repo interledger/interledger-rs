@@ -7,13 +7,14 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands};
 use std::{
     iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
 };
+use stream_cancel::{Trigger, Valve};
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 
@@ -39,23 +40,34 @@ pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
                 .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         })
         .and_then(|connection| {
+            let (trigger, valve) = Valve::new();
             let store = RedisStore {
                 connection,
                 exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                 routes: Arc::new(RwLock::new(HashMap::new())),
+                close_connection: Arc::new(Mutex::new(Some(trigger))),
             };
 
             // Start polling for rate updates
-            // TODO turn this off when (all clones of) the store goes out of scope
+            // Note: if this behavior changes, make sure to update the Drop implementation
             let store_clone = store.clone();
-            let poll_rates = Interval::new(Instant::now(), Duration::from_secs(POLL_INTERVAL))
+            let poll_rates = valve
+                .wrap(Interval::new(
+                    Instant::now(),
+                    Duration::from_secs(POLL_INTERVAL),
+                ))
                 .map_err(|err| error!("Interval error: {:?}", err))
                 .for_each(move |_| store_clone.update_rates());
             spawn(poll_rates);
 
             // Poll for routing table updates
+            // Note: if this behavior changes, make sure to update the Drop implementation
             let store_clone = store.clone();
-            let poll_routes = Interval::new(Instant::now(), Duration::from_secs(POLL_INTERVAL))
+            let poll_routes = valve
+                .wrap(Interval::new(
+                    Instant::now(),
+                    Duration::from_secs(POLL_INTERVAL),
+                ))
                 .map_err(|err| error!("Interval error: {:?}", err))
                 .for_each(move |_| store_clone.update_routes());
             spawn(poll_routes);
@@ -75,6 +87,7 @@ pub struct RedisStore {
     connection: SharedConnection,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, u64>>>,
+    close_connection: Arc<Mutex<Option<Trigger>>>,
 }
 
 impl RedisStore {
@@ -140,6 +153,15 @@ impl RedisStore {
                 debug!("Updated routing table with {} routes", num_routes);
                 Ok(())
             })
+    }
+}
+
+impl Drop for RedisStore {
+    fn drop(&mut self) {
+        // two for each of the pollers
+        if Arc::strong_count(&self.close_connection) == 3 {
+            drop(self.close_connection.lock().take())
+        }
     }
 }
 
