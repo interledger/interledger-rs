@@ -6,7 +6,7 @@ use hyper::{
     service::{service_fn, Service},
     Body, Error, Method, Request, Response, Server,
 };
-use interledger_btp::{connect_client, parse_btp_url};
+use interledger_btp::{connect_client, create_open_signup_server, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
@@ -297,5 +297,33 @@ pub fn run_spsp_server_http(
             )
         })
         .map_err(|err| eprintln!("Server error: {:?}", err));
+    tokio::run(server);
+}
+
+#[doc(hidden)]
+pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
+    let ilp_address = Bytes::from(ildcp_info.client_address());
+    let store = InMemoryStore::default();
+    // TODO this needs a reference to the BtpService so it can send outgoing packets
+    println!("Listening on: {}", address);
+    let ilp_address_clone = ilp_address.clone();
+    let rejecter = outgoing_service_fn(move |_| {
+        Err(RejectBuilder {
+            code: ErrorCode::F02_UNREACHABLE,
+            message: b"No open connection for account",
+            triggered_by: &ilp_address_clone[..],
+            data: &[],
+        }
+        .build())
+    });
+    let server = create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
+        move |btp_service| {
+            let service = Router::new(btp_service.clone(), store);
+            let service = IldcpService::new(service);
+            let service = ValidatorService::incoming(service);
+            btp_service.handle_incoming(service);
+            Ok(())
+        },
+    );
     tokio::run(server);
 }

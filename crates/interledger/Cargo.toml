@@ -14,6 +14,16 @@ path = "src/lib.rs"
 name = "interledger"
 path = "src/main.rs"
 
+[features]
+default = ["cli"]
+cli = ["btp", "http", "store-memory", "ildcp", "spsp", "interledger-router", "interledger-service-util"]
+btp = ["interledger-btp"]
+http = ["interledger-http"]
+store-memory = ["interledger-store-memory"]
+ildcp = ["interledger-ildcp"]
+spsp = ["interledger-spsp", "stream"]
+stream = ["interledger-stream", "ildcp"]
+
 [dependencies]
 base64 = "0.10.1"
 ring = "0.14.6"
@@ -22,16 +32,16 @@ clap = "2.32.0"
 env_logger = "0.6.1"
 futures = "0.1.25"
 hyper = "0.12.25"
-interledger-btp = { path = "../interledger-btp", version = "0.2.1" }
-interledger-http = { path = "../interledger-http", version = "0.2.1" }
-interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
+interledger-btp = { path = "../interledger-btp", version = "0.2.1", optional = true }
+interledger-http = { path = "../interledger-http", version = "0.2.1", optional = true }
+interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1", optional = true }
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
-interledger-router = { path = "../interledger-router", version = "0.2.1" }
+interledger-router = { path = "../interledger-router", version = "0.2.1", optional = true }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
-interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
-interledger-spsp = { path = "../interledger-spsp", version = "0.2.1" }
-interledger-stream = { path = "../interledger-stream", version = "0.2.1" }
-interledger-store-memory = { path = "../interledger-store-memory", version = "0.2.1" }
+interledger-service-util = { path = "../interledger-service-util", version = "0.2.1", optional = true }
+interledger-spsp = { path = "../interledger-spsp", version = "0.2.1", optional = true }
+interledger-stream = { path = "../interledger-stream", version = "0.2.1", optional = true }
+interledger-store-memory = { path = "../interledger-store-memory", version = "0.2.1", optional = true }
 parking_lot = "0.7.1"
 tokio = "0.1.16"
 url = "1.7.2"
