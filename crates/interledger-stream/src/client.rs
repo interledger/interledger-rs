@@ -47,6 +47,7 @@ where
             amount_delivered: 0,
             should_send_source_account: true,
             sequence: 1,
+            rejected_packets: 0,
             error: None,
         })
 }
@@ -64,6 +65,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     amount_delivered: u64,
     should_send_source_account: bool,
     sequence: u64,
+    rejected_packets: u64,
     error: Option<Error>,
 }
 
@@ -252,6 +254,7 @@ where
     fn handle_reject(&mut self, sequence: u64, amount: u64, reject: Reject) {
         self.source_amount += amount;
         self.congestion_controller.reject(amount, &reject);
+        self.rejected_packets += 1;
         debug!(
             "Prepare {} with amount {} was rejected with code: {} ({} left to send)",
             sequence,
@@ -304,8 +307,7 @@ where
                 } else {
                     self.state = SendMoneyFutureState::Closed;
                     debug!(
-                        "Send money future finished. Delivered: {}",
-                        self.amount_delivered
+                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.amount_delivered, self.sequence - 1, self.rejected_packets,
                     );
                     return Ok(Async::Ready((
                         self.amount_delivered,
