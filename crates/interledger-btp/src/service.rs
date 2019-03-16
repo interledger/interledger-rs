@@ -168,11 +168,13 @@ where
             .for_each(move |(account, request_id, prepare)| {
                 let account_id = account.id();
                 let connections_clone = connections_clone.clone();
+                let request = IncomingRequest {
+                    from: account,
+                    prepare,
+                };
+                debug!("Handling incoming request: {:?}", &request);
                 incoming_handler_clone
-                    .handle_request(IncomingRequest {
-                        from: account,
-                        prepare,
-                    })
+                    .handle_request(request)
                     .then(move |result| {
                         let packet = match result {
                             Ok(fulfill) => Packet::Fulfill(fulfill),
@@ -226,6 +228,8 @@ where
             // Clone the trigger so that the connections stay open until we've
             // gotten the response to our outgoing request
             let keep_connections_open = self.close_all_connections.clone();
+
+            debug!("Sending outgoing request: {:?}", request);
 
             match connection.unbounded_send(ilp_packet_to_ws_message(
                 request_id,
