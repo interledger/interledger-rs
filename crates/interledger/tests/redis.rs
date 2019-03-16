@@ -106,6 +106,7 @@ fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
 }
 
 #[test]
+#[cfg(feature = "test-redis")]
 fn btp_end_to_end() {
     let _ = env_logger::init();
     let redis_server = RedisServer::new();

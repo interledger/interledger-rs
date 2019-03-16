@@ -402,9 +402,9 @@ pub fn insert_account_redis(
             store
                 .insert_account(account)
                 .map_err(|_| eprintln!("Unable to create account"))
-                .and_then(|_| {
-                    println!("Created account");
-                    Ok(())
-                })
+            // .and_then(|_| {
+            //     println!("Created account");
+            //     Ok(())
+            // })
         })
 }
