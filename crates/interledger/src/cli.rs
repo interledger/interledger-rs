@@ -44,14 +44,19 @@ pub fn random_secret() -> [u8; 32] {
 }
 
 #[doc(hidden)]
-pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quiet: bool) {
+pub fn send_spsp_payment_btp(
+    btp_server: &str,
+    receiver: &str,
+    amount: u64,
+    quiet: bool,
+) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
         .btp_uri(Url::parse(btp_server).unwrap())
         .build();
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let run = connect_client(
+    connect_client(
         incoming_service_fn(|_| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -101,12 +106,16 @@ pub fn send_spsp_payment_btp(btp_server: &str, receiver: &str, amount: u64, quie
                 btp_service.close();
                 Ok(())
             })
-    });
-    tokio::run(run);
+    })
 }
 
 #[doc(hidden)]
-pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, quiet: bool) {
+pub fn send_spsp_payment_http(
+    http_server: &str,
+    receiver: &str,
+    amount: u64,
+    quiet: bool,
+) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
     let auth_header = if !url.username().is_empty() {
@@ -139,7 +148,7 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
     let service = HttpClientService::new(store.clone());
     let service = ValidatorService::outgoing(service);
     let service = Router::new(service, store);
-    let run = pay(service, account, &receiver, amount)
+    pay(service, account, &receiver, amount)
         .map_err(|err| {
             eprintln!("Error sending SPSP payment: {:?}", err);
         })
@@ -151,13 +160,16 @@ pub fn send_spsp_payment_http(http_server: &str, receiver: &str, amount: u64, qu
                 );
             }
             Ok(())
-        });
-    tokio::run(run);
+        })
 }
 
 // TODO allow server secret to be specified
 #[doc(hidden)]
-pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
+pub fn run_spsp_server_btp(
+    btp_server: &str,
+    address: SocketAddr,
+    quiet: bool,
+) -> impl Future<Item = (), Error = ()> {
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
     let account: Account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
@@ -185,7 +197,7 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
 
     let ilp_address_read_clone = ilp_address.clone();
     let ilp_address_write_clone = ilp_address.clone();
-    let run = connect_client(
+    connect_client(
         ValidatorService::incoming(stream_server.clone()),
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
@@ -223,8 +235,7 @@ pub fn run_spsp_server_btp(btp_server: &str, address: SocketAddr, quiet: bool) {
                 .serve(move || spsp_responder(&client_address[..], &secret[..]))
                 .map_err(|e| eprintln!("Server error: {:?}", e))
         })
-    });
-    tokio::run(run);
+    })
 }
 
 #[doc(hidden)]
@@ -233,7 +244,7 @@ pub fn run_spsp_server_http(
     address: SocketAddr,
     auth_token: String,
     quiet: bool,
-) {
+) -> impl Future<Item = (), Error = ()> {
     if !quiet {
         println!(
             "Creating SPSP server. ILP Address: {}",
@@ -271,7 +282,7 @@ pub fn run_spsp_server_http(
     if !quiet {
         println!("Listening on: {}", address);
     }
-    let server = Server::bind(&address)
+    Server::bind(&address)
         .serve(move || {
             let mut spsp_responder = spsp_responder.clone();
             let mut http_service = http_service.clone();
@@ -299,12 +310,14 @@ pub fn run_spsp_server_http(
                 },
             )
         })
-        .map_err(|err| eprintln!("Server error: {:?}", err));
-    tokio::run(server);
+        .map_err(|err| eprintln!("Server error: {:?}", err))
 }
 
 #[doc(hidden)]
-pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
+pub fn run_moneyd_local(
+    address: SocketAddr,
+    ildcp_info: IldcpResponse,
+) -> impl Future<Item = (), Error = ()> {
     let ilp_address = Bytes::from(ildcp_info.client_address());
     let store = InMemoryStore::default();
     // TODO this needs a reference to the BtpService so it can send outgoing packets
@@ -319,7 +332,7 @@ pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
         }
         .build())
     });
-    let server = create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
+    create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
         move |btp_service| {
             let service = Router::new(btp_service.clone(), store);
             let service = IldcpService::new(service);
@@ -327,13 +340,16 @@ pub fn run_moneyd_local(address: SocketAddr, ildcp_info: IldcpResponse) {
             btp_service.handle_incoming(service);
             Ok(())
         },
-    );
-    tokio::run(server);
+    )
 }
 
 #[doc(hidden)]
-pub fn run_connector_redis(redis_uri: &str, btp_address: SocketAddr, http_address: SocketAddr) {
-    let run = connect_redis_store(redis_uri)
+pub fn run_connector_redis(
+    redis_uri: &str,
+    btp_address: SocketAddr,
+    http_address: SocketAddr,
+) -> impl Future<Item = (), Error = ()> {
+    connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             let http_outgoing = HttpClientService::new(store.clone());
@@ -366,15 +382,17 @@ pub fn run_connector_redis(redis_uri: &str, btp_address: SocketAddr, http_addres
                 tokio::spawn(server);
                 Ok(())
             })
-        });
-    tokio::run(run);
+        })
 }
 
 #[doc(hidden)]
 pub use interledger_store_redis::AccountDetails as RedisAccountDetails;
 #[doc(hidden)]
-pub fn insert_account_redis(redis_uri: &str, account: RedisAccountDetails) {
-    let run = connect_redis_store(redis_uri)
+pub fn insert_account_redis(
+    redis_uri: &str,
+    account: RedisAccountDetails,
+) -> impl Future<Item = (), Error = ()> {
+    connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             store
@@ -384,6 +402,5 @@ pub fn insert_account_redis(redis_uri: &str, account: RedisAccountDetails) {
                     println!("Created account");
                     Ok(())
                 })
-        });
-    tokio::run(run);
+        })
 }
