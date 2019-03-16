@@ -43,3 +43,15 @@
 #### Using ILP-Over-HTTP
 
 `interledger spsp pay --receiver=http://localhost:3000/spsp --amount=1000 --http_server=http://localhost:3000/ilp`
+
+## Testing
+
+### Unit Tests
+
+`cargo test`
+
+### Integration Tests
+
+Make sure `redis-server` is installed and available in your `PATH`.
+
+`cargo test --all-features`

@@ -15,6 +15,9 @@ jobs:
           name: Install Cargo Make
           command: cargo install --debug cargo-make || true
       - run:
+          name: Install Redis (for end-to-end test)
+          command: sudo apt-get install redis-server
+      - run:
           name: Build + Test
           command: cargo make test
       - run:
