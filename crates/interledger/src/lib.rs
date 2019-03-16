@@ -2,6 +2,9 @@
 //!
 //! A CLI and library bundle for the Rust implementation of the Interledger Protocol stack.
 
+#[macro_use]
+extern crate log;
+
 /// ILP Packet (De)Serialization
 pub mod packet {
     pub use interledger_packet::*;

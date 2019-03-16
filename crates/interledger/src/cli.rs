@@ -170,6 +170,7 @@ pub fn run_spsp_server_btp(
     address: SocketAddr,
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
+    debug!("Starting SPSP server");
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
     let account: Account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
@@ -344,11 +345,14 @@ pub fn run_moneyd_local(
 }
 
 #[doc(hidden)]
+// TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
+// connector instances to forward packets for that account to us
 pub fn run_connector_redis(
     redis_uri: &str,
     btp_address: SocketAddr,
     http_address: SocketAddr,
 ) -> impl Future<Item = (), Error = ()> {
+    debug!("Starting Redis connector");
     connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
