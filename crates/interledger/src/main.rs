@@ -7,6 +7,7 @@ use bytes::Bytes;
 use clap::{App, Arg, ArgGroup, SubCommand};
 use interledger::cli::*;
 use interledger_ildcp::IldcpResponseBuilder;
+use tokio;
 use url::Url;
 
 #[allow(clippy::cyclomatic_complexity)]
@@ -166,16 +167,20 @@ pub fn main() {
                         asset_scale: 0,
                     }
                     .build();
-                    run_spsp_server_http(
+                    tokio::run(run_spsp_server_http(
                         ildcp_info,
                         ([127, 0, 0, 1], port).into(),
                         auth_token,
                         quiet,
-                    );
+                    ));
                 } else {
                     let btp_server = value_t!(matches, "btp_server", String)
                         .expect("BTP Server URL is required");
-                    run_spsp_server_btp(&btp_server, ([127, 0, 0, 1], port).into(), quiet);
+                    tokio::run(run_spsp_server_btp(
+                        &btp_server,
+                        ([127, 0, 0, 1], port).into(),
+                        quiet,
+                    ));
                 }
             }
             ("pay", Some(matches)) => {
@@ -185,9 +190,14 @@ pub fn main() {
 
                 // Check for http_server first because btp_server has the default value of connecting to moneyd
                 if let Ok(http_server) = value_t!(matches, "http_server", String) {
-                    send_spsp_payment_http(&http_server, &receiver, amount, quiet)
+                    tokio::run(send_spsp_payment_http(
+                        &http_server,
+                        &receiver,
+                        amount,
+                        quiet,
+                    ));
                 } else if let Ok(btp_server) = value_t!(matches, "btp_server", String) {
-                    send_spsp_payment_btp(&btp_server, &receiver, amount, quiet);
+                    tokio::run(send_spsp_payment_btp(&btp_server, &receiver, amount, quiet));
                 } else {
                     panic!("Must specify either btp_server or http_server");
                 }
@@ -209,7 +219,10 @@ pub fn main() {
                     asset_scale,
                 }
                 .build();
-                run_moneyd_local(([127, 0, 0, 1], btp_port).into(), ildcp_info);
+                tokio::run(run_moneyd_local(
+                    ([127, 0, 0, 1], btp_port).into(),
+                    ildcp_info,
+                ));
             }
             _ => app.print_help().unwrap(),
         },
@@ -257,7 +270,7 @@ pub fn main() {
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
                     };
-                    insert_account_redis(&redis_uri, account);
+                    tokio::run(insert_account_redis(&redis_uri, account));
                 }
                 _ => app.print_help().unwrap(),
             },
@@ -266,11 +279,11 @@ pub fn main() {
                     value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
-                run_connector_redis(
+                tokio::run(run_connector_redis(
                     &redis_uri,
                     ([127, 0, 0, 1], btp_port).into(),
                     ([127, 0, 0, 1], http_port).into(),
-                );
+                ));
             }
         },
         _ => app.print_help().unwrap(),
