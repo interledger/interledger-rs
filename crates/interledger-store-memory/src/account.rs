@@ -136,8 +136,8 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-    fn client_address(&self) -> Bytes {
-        self.inner.ilp_address.clone()
+    fn client_address(&self) -> &[u8] {
+        &self.inner.ilp_address[..]
     }
 
     fn asset_code(&self) -> &str {

@@ -52,8 +52,8 @@ pub mod test_helpers {
             self.asset_scale
         }
 
-        fn client_address(&self) -> Bytes {
-            self.ilp_address.clone()
+        fn client_address(&self) -> &[u8] {
+            &self.ilp_address[..]
         }
     }
 }

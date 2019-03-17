@@ -2,6 +2,7 @@ use super::account::*;
 use bytes::Bytes;
 use futures::{future::result, Future, Stream};
 use hashbrown::HashMap;
+use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
@@ -29,6 +30,7 @@ static ACCOUNT_FROM_HTTP_AUTH_SCRIPT: &str =
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
 static BALANCES_KEY: &str = "balances";
+static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
@@ -96,40 +98,6 @@ pub struct RedisStore {
 }
 
 impl RedisStore {
-    pub fn insert_account(&self, account: AccountDetails) -> impl Future<Item = (), Error = ()> {
-        debug!("Inserting account: {:?}", account);
-        let connection = self.connection.clone();
-        let mut pipe = redis::pipe();
-        pipe.atomic().hset(BALANCES_KEY, account.id, 0u64).ignore();
-        // TODO hard fail if the auth already exists
-        if let Some(ref auth) = account.btp_incoming_authorization {
-            pipe.cmd("HSETNX")
-                .arg("btp_auth")
-                .arg(auth.clone().to_string())
-                .arg(account.id)
-                .ignore();
-        }
-        if let Some(ref auth) = account.http_incoming_authorization {
-            pipe.cmd("HSETNX")
-                .arg("http_auth")
-                .arg(auth.clone().to_string())
-                .arg(account.id)
-                .ignore();
-        }
-        pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
-            .ignore();
-        pipe.cmd("HMSET")
-            .arg(account_details_key(account.id))
-            .arg(account)
-            .ignore();
-
-        let store = self.clone();
-        pipe.query_async(connection.unwrap())
-            .and_then(|(_connection, _ret): (_, Value)| Ok(()))
-            .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-            .and_then(move |_| store.update_routes())
-    }
-
     // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
         let exchange_rates = self.exchange_rates.clone();
@@ -164,6 +132,14 @@ impl RedisStore {
                 debug!("Updated routing table with {} routes", num_routes);
                 Ok(())
             })
+    }
+
+    fn get_next_account_id(&self) -> impl Future<Item = u64, Error = ()> {
+        cmd("INCR")
+            .arg(NEXT_ACCOUNT_ID_KEY)
+            .query_async(self.connection.clone().unwrap())
+            .map_err(|err| error!("Error incrementing account ID: {:?}", err))
+            .and_then(|(_conn, next_account_id): (_, u64)| Ok(next_account_id))
     }
 }
 
@@ -348,6 +324,55 @@ impl HttpStore for RedisStore {
 impl RouterStore for RedisStore {
     fn routing_table(&self) -> HashMap<Bytes, u64> {
         self.routes.read().clone()
+    }
+}
+
+impl NodeStore for RedisStore {
+    type Account = Account;
+
+    fn insert_account(
+        &self,
+        account: AccountDetails,
+    ) -> Box<Future<Item = Account, Error = ()> + Send> {
+        debug!("Inserting account: {:?}", account);
+        let store = self.clone();
+        let connection = self.connection.clone();
+
+        Box::new(
+            self.get_next_account_id()
+                .and_then(|id| Account::try_from(id, account))
+                .and_then(move |account| {
+                    let mut pipe = redis::pipe();
+                    pipe.atomic().hset(BALANCES_KEY, account.id, 0u64).ignore();
+                    // TODO hard fail if the auth already exists
+                    if let Some(ref auth) = account.btp_incoming_authorization {
+                        pipe.cmd("HSETNX")
+                            .arg("btp_auth")
+                            .arg(auth.clone().to_string())
+                            .arg(account.id)
+                            .ignore();
+                    }
+                    if let Some(ref auth) = account.http_incoming_authorization {
+                        pipe.cmd("HSETNX")
+                            .arg("http_auth")
+                            .arg(auth.clone().to_string())
+                            .arg(account.id)
+                            .ignore();
+                    }
+                    pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
+                        .ignore();
+                    pipe.cmd("HMSET")
+                        .arg(account_details_key(account.id))
+                        .arg(account.clone())
+                        .ignore();
+
+                    pipe.query_async(connection.unwrap())
+                        .and_then(|(_connection, _ret): (_, Value)| Ok(()))
+                        .map_err(|err| error!("Error inserting account into DB: {:?}", err))
+                        .and_then(move |_| store.update_routes())
+                        .and_then(move |_| Ok(account))
+                }),
+        )
     }
 }
 

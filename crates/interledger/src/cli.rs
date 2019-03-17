@@ -6,6 +6,7 @@ use hyper::{
     service::{service_fn, Service},
     Body, Error, Method, Request, Response, Server,
 };
+use interledger_api::NodeStore;
 use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
@@ -390,11 +391,11 @@ pub fn run_connector_redis(
 }
 
 #[doc(hidden)]
-pub use interledger_store_redis::AccountDetails as RedisAccountDetails;
+pub use interledger_api::AccountDetails;
 #[doc(hidden)]
 pub fn insert_account_redis(
     redis_uri: &str,
-    account: RedisAccountDetails,
+    account: AccountDetails,
 ) -> impl Future<Item = (), Error = ()> {
     connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
@@ -402,9 +403,10 @@ pub fn insert_account_redis(
             store
                 .insert_account(account)
                 .map_err(|_| eprintln!("Unable to create account"))
-            // .and_then(|_| {
-            //     println!("Created account");
-            //     Ok(())
-            // })
+                .and_then(|account| {
+                    // TODO add quiet option
+                    println!("Created account: {:?}", account);
+                    Ok(())
+                })
         })
 }
