@@ -33,6 +33,7 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     marker::PhantomData,
+    str::FromStr,
 };
 
 /// The base trait that Account types from other Services extend.
@@ -42,7 +43,7 @@ use std::{
 /// Store implementations will implement these Account traits for a concrete type that
 /// they will load from the database.
 pub trait Account: Clone + Send + Sized + Debug {
-    type AccountId: Eq + Hash + Debug + Display + Send + Sync + Copy;
+    type AccountId: Eq + Hash + Debug + Display + FromStr + Send + Sync + Copy;
 
     fn id(&self) -> Self::AccountId;
 }

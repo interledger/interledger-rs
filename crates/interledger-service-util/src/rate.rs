@@ -4,7 +4,10 @@ use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 
 pub trait BalanceStore: AccountStore {
-    fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = i64, Error = ()> + Send>;
+    fn get_balance(
+        &self,
+        account_id: <Self::Account as Account>::AccountId,
+    ) -> Box<Future<Item = i64, Error = ()> + Send>;
     fn update_balances(
         &self,
         from_account: &Self::Account,

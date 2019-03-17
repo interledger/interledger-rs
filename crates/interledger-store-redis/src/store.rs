@@ -179,8 +179,10 @@ impl AccountStore for RedisStore {
 }
 
 impl BalanceStore for RedisStore {
-    fn get_balance(&self, account: &Self::Account) -> Box<Future<Item = i64, Error = ()> + Send> {
-        let account_id = account.id();
+    fn get_balance(
+        &self,
+        account_id: <Self::Account as AccountTrait>::AccountId,
+    ) -> Box<Future<Item = i64, Error = ()> + Send> {
         let mut pipe = redis::pipe();
         pipe.hget(BALANCES_KEY, account_id);
         Box::new(
