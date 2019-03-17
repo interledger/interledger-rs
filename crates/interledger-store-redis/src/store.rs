@@ -374,6 +374,21 @@ impl NodeStore for RedisStore {
                 }),
         )
     }
+
+    fn set_rates<R>(&self, rates: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (String, f64)>,
+    {
+        let rates: Vec<(String, f64)> = rates.into_iter().collect();
+        Box::new(
+            cmd("HMSET")
+                .arg(RATES_KEY)
+                .arg(rates)
+                .query_async(self.connection.clone().unwrap())
+                .map_err(|err| error!("Error setting rates: {:?}", err))
+                .and_then(|(_connection, _): (_, Value)| Ok(())),
+        )
+    }
 }
 
 #[cfg(test)]
