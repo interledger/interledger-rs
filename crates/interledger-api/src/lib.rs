@@ -1,3 +1,4 @@
+#![recursion_limit = "128"]
 #[macro_use]
 extern crate tower_web;
 #[macro_use]
@@ -6,8 +7,9 @@ extern crate log;
 use futures::{future::result, Future};
 use http::Response;
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_service::Account as AccountTrait;
+use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::BalanceStore;
+use interledger_spsp::pay;
 use std::str::FromStr;
 
 pub trait NodeAccount: HttpAccount {
@@ -42,8 +44,9 @@ pub struct AccountDetails {
     pub is_admin: bool,
 }
 
-pub struct Node<T> {
+pub struct Node<T, S> {
     store: T,
+    incoming_handler: S,
 }
 
 #[derive(Response)]
@@ -65,14 +68,29 @@ struct BalanceResponse {
     balance: String,
 }
 
+#[derive(Extract)]
+struct SpspPayRequest {
+    receiver: String,
+    source_amount: u64,
+}
+
+#[derive(Response)]
+#[web(status = "200")]
+struct SpspPayResponse {
+    amount_delivered: u64,
+}
+
 impl_web! {
-    impl<T, A> Node<T>
+    impl<T, S, A> Node<T, S>
     where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A>,
-    A: AccountTrait + HttpAccount + NodeAccount + 'static
+    S: IncomingService<A> + Clone + Send + Sync + 'static,
+    A: AccountTrait + HttpAccount + NodeAccount + 'static,
+
     {
-        pub fn new(store: T) -> Self {
+        pub fn new(store: T, incoming_handler: S) -> Self {
             Node {
                 store,
+                incoming_handler,
             }
         }
 
@@ -133,5 +151,25 @@ impl_web! {
                     Response::builder().status(500).body(()).unwrap()
                 }))
         }
+
+        #[post("/pay")]
+        // TODO add a version that lets you specify the destination amount instead
+        fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
+            let service = self.incoming_handler.clone();
+            self.store.get_account_from_http_auth(&authorization)
+                .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
+                .and_then(move |account| {
+                    pay(service, account, &body.receiver, body.source_amount)
+                        .and_then(|amount_delivered| Ok(SpspPayResponse {
+                                amount_delivered,
+                            }))
+                        .map_err(|err| {
+                            error!("Error sending SPSP payment: {:?}", err);
+                            Response::builder().status(500).body(format!("Error sending SPSP payment: {:?}", err)).unwrap()
+                        })
+                })
+        }
+
+        // TODO add quoting via SPSP/STREAM
     }
 }
