@@ -3,10 +3,12 @@ extern crate tower_web;
 #[macro_use]
 extern crate log;
 
-use futures::Future;
+use futures::{future::result, Future};
 use http::Response;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_service::Account as AccountTrait;
+use interledger_service_util::BalanceStore;
+use std::str::FromStr;
 
 pub trait NodeAccount: HttpAccount {
     fn is_admin(&self) -> bool;
@@ -57,9 +59,15 @@ struct Success;
 #[derive(Extract)]
 struct Rates(Vec<(String, f64)>);
 
+#[derive(Response)]
+#[web(status = "200")]
+struct BalanceResponse {
+    balance: String,
+}
+
 impl_web! {
     impl<T, A> Node<T>
-    where T: NodeStore<Account = A> + HttpStore<Account = A>,
+    where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A>,
     A: AccountTrait + HttpAccount + NodeAccount + 'static
     {
         pub fn new(store: T) -> Self {
@@ -77,12 +85,35 @@ impl_web! {
                 } else {
                     Err(())
                 })
-                .and_then(move |_| store.insert_account(body))
+                .map_err(|_| Response::builder().status(401).body(()).unwrap())
+                .and_then(move |_| store.insert_account(body)
                 // TODO make all Accounts (de)serializable with Serde so all the details can be returned here
                 .and_then(|account| Ok(AccountResponse {
                     id: format!("{}", account.id())
                 }))
-                .map_err(|_| Response::builder().status(401).body(()).unwrap())
+                .map_err(|_| Response::builder().status(500).body(()).unwrap()))
+        }
+
+        #[get("/accounts/:id/balance")]
+        fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
+            let store = self.store.clone();
+            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
+            result(parsed_id)
+                .map_err(|_| Response::builder().status(400).body(()).unwrap())
+                .and_then(move |id| {
+                    store.clone().get_account_from_http_auth(&authorization)
+                        .and_then(move |account| if account.is_admin() || account.id() == id {
+                            Ok(())
+                        } else {
+                            Err(())
+                        })
+                        .map_err(|_| Response::builder().status(401).body(()).unwrap())
+                        .and_then(move |_| store.get_balance(id)
+                        .and_then(|balance| Ok(BalanceResponse {
+                            balance: balance.to_string(),
+                        }))
+                        .map_err(|_| Response::builder().status(404).body(()).unwrap()))
+                })
         }
 
         #[post("/rates")]
@@ -94,12 +125,13 @@ impl_web! {
                 } else {
                     Err(())
                 })
-                .and_then(move |_| store.set_rates(body.0))
+                .map_err(|_| Response::builder().status(401).body(()).unwrap())
+                .and_then(move |_| store.set_rates(body.0)
                 .and_then(|_| Ok(Success))
                 .map_err(|err| {
                     error!("Error setting rates: {:?}", err);
                     Response::builder().status(500).body(()).unwrap()
-                })
+                }))
         }
     }
 }
