@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate tower_web;
+#[macro_use]
+extern crate log;
 
 use futures::Future;
 use http::Response;
@@ -17,9 +19,10 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
-    // fn set_rates<'a, R>(&self, rates: R) -> Box<Future<Item = (), Error = ()> + Send>
-    // where
-    //     R: IntoIterator<Item = (&'a str, f64)> + 'a;
+
+    fn set_rates<R>(&self, rates: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (String, f64)>;
 }
 
 /// The Account type for the RedisStore.
@@ -46,6 +49,13 @@ pub struct Node<T> {
 struct AccountResponse {
     id: String,
 }
+
+#[derive(Response)]
+#[web(status = "200")]
+struct Success;
+
+#[derive(Extract)]
+struct Rates(Vec<(String, f64)>);
 
 impl_web! {
     impl<T, A> Node<T>
@@ -75,5 +85,21 @@ impl_web! {
                 .map_err(|_| Response::builder().status(401).body(()).unwrap())
         }
 
+        #[post("/rates")]
+        fn post_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
+            let store = self.store.clone();
+            self.store.get_account_from_http_auth(&authorization)
+                .and_then(|account| if account.is_admin() {
+                    Ok(())
+                } else {
+                    Err(())
+                })
+                .and_then(move |_| store.set_rates(body.0))
+                .and_then(|_| Ok(Success))
+                .map_err(|err| {
+                    error!("Error setting rates: {:?}", err);
+                    Response::builder().status(500).body(()).unwrap()
+                })
+        }
     }
 }
