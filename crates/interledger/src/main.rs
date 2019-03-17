@@ -3,7 +3,6 @@ extern crate interledger;
 extern crate clap;
 
 use base64;
-use bytes::Bytes;
 use clap::{App, Arg, ArgGroup, SubCommand};
 use interledger::cli::*;
 use interledger_ildcp::IldcpResponseBuilder;
@@ -123,9 +122,6 @@ pub fn main() {
                             Arg::with_name("redis_uri")
                                 .long("redis_uri")
                                 .default_value("redis://127.0.0.1:6379"),
-                            Arg::with_name("id")
-                                .long("id")
-                                .takes_value(true),
                             Arg::with_name("ilp_address")
                                 .long("ilp_address")
                                 .takes_value(true),
@@ -246,29 +242,30 @@ pub fn main() {
                             } else {
                                 None
                             };
-                            (Some(url), auth)
+                            (Some(url.to_string()), auth)
                         } else {
                             (None, None)
                         };
                     let redis_uri =
                         value_t!(matches, "redis_uri", String).expect("redis_uri is required");
-                    let account = RedisAccountDetails {
-                        id: value_t!(matches, "id", u64).unwrap(),
-                        ilp_address: Bytes::from(value_t!(matches, "ilp_address", String).unwrap()),
+                    let account = AccountDetails {
+                        ilp_address: value_t!(matches, "ilp_address", String)
+                            .unwrap()
+                            .bytes()
+                            .collect(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),
                         asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
                         btp_incoming_authorization: matches
                             .value_of("btp_incoming_authorization")
                             .map(|s| s.to_string()),
-                        btp_uri: matches
-                            .value_of("btp_uri")
-                            .map(|s| Url::parse(s).expect("Invalid URL")),
+                        btp_uri: matches.value_of("btp_uri").map(|s| s.to_string()),
                         http_incoming_authorization: matches
                             .value_of("http_incoming_token")
                             .map(|s| format!("Bearer {}", s)),
                         http_outgoing_authorization,
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
+                        is_admin: matches.is_present("admin"),
                     };
                     tokio::run(insert_account_redis(&redis_uri, account));
                 }

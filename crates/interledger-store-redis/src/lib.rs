@@ -7,5 +7,5 @@ extern crate log;
 mod account;
 mod store;
 
-pub use account::{Account, AccountDetails};
+pub use account::Account;
 pub use store::{connect, RedisStore};

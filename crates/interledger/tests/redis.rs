@@ -2,7 +2,6 @@ extern crate interledger;
 #[macro_use]
 extern crate log;
 
-use bytes::Bytes;
 use env_logger;
 use futures::Future;
 use interledger::cli;
@@ -120,9 +119,8 @@ fn btp_end_to_end() {
         let create_accounts = delay(50).and_then(move |_| {
             cli::insert_account_redis(
                 &redis_uri_clone,
-                cli::RedisAccountDetails {
-                    id: 1,
-                    ilp_address: Bytes::from("example.one"),
+                cli::AccountDetails {
+                    ilp_address: Vec::from("example.one"),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_authorization: Some("token-one".to_string()),
@@ -131,14 +129,14 @@ fn btp_end_to_end() {
                     http_incoming_authorization: None,
                     http_outgoing_authorization: None,
                     max_packet_amount: u64::max_value(),
+                    is_admin: false,
                 },
             )
             .and_then(move |_| {
                 cli::insert_account_redis(
                     &redis_uri_clone,
-                    cli::RedisAccountDetails {
-                        id: 2,
-                        ilp_address: Bytes::from("example.two"),
+                    cli::AccountDetails {
+                        ilp_address: Vec::from("example.two"),
                         asset_code: "XYZ".to_string(),
                         asset_scale: 9,
                         btp_incoming_authorization: Some("token-two".to_string()),
@@ -147,6 +145,7 @@ fn btp_end_to_end() {
                         http_incoming_authorization: None,
                         http_outgoing_authorization: None,
                         max_packet_amount: u64::max_value(),
+                        is_admin: false,
                     },
                 )
             })
