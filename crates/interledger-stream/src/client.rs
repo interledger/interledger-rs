@@ -10,9 +10,12 @@ use interledger_packet::{
     Reject,
 };
 use interledger_service::*;
-use std::cell::Cell;
-use std::cmp::min;
-use std::time::{Duration, SystemTime};
+use std::{
+    cell::Cell,
+    cmp::min,
+    str,
+    time::{Duration, SystemTime},
+};
 
 /// Send a given amount of money using the STREAM transport protocol.
 ///
@@ -273,8 +276,9 @@ where
             }
             _ => {
                 self.error = Some(Error::SendMoneyError(format!(
-                    "Packet rejected with code: {}",
-                    reject.code()
+                    "Packet was rejected with error: {} {}",
+                    reject.code(),
+                    str::from_utf8(reject.message()).unwrap_or_default(),
                 )));
             }
         }

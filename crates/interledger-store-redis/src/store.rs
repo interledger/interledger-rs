@@ -208,7 +208,7 @@ impl BalanceStore for RedisStore {
         let to_account_id = to_account.id();
 
         debug!(
-            "Increasing balance of account {} by: {}. Decreasing balance of {} by {}",
+            "Increasing balance of account {} by: {}. Decreasing balance of account {} by: {}",
             from_account_id, incoming_amount, to_account_id, outgoing_amount
         );
 
