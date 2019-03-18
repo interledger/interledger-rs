@@ -30,4 +30,5 @@ ring = "0.14.6"
 
 [dev-dependencies]
 env_logger = "0.6.1"
+interledger-router = { path = "../interledger-router", version = "0.2.1" }
 tokio = "0.1.16"

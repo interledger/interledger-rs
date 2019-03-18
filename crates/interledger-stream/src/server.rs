@@ -4,15 +4,13 @@ use base64;
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::future::result;
 use hex;
-use interledger_ildcp::IldcpResponse;
+use interledger_ildcp::IldcpAccount;
 use interledger_packet::{
     ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject, RejectBuilder,
 };
-use interledger_service::*;
-use parking_lot::RwLock;
+use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService};
 use std::marker::PhantomData;
 use std::str;
-use std::sync::Arc;
 
 lazy_static! {
     static ref TAG_ENCRYPTION_KEY_STRING: &'static [u8] = b"ilp_stream_tag_encryption_aes";
@@ -30,10 +28,10 @@ pub struct ConnectionGenerator {
 }
 
 impl ConnectionGenerator {
-    pub fn new(source_account: &[u8], server_secret: &[u8]) -> Self {
+    pub fn new(source_account: Bytes, server_secret: Bytes) -> Self {
         ConnectionGenerator {
-            source_account: Bytes::from(source_account),
-            server_secret: Bytes::from(server_secret),
+            source_account,
+            server_secret,
         }
     }
 
@@ -71,75 +69,56 @@ impl ConnectionGenerator {
     }
 }
 
-/// An IncomingService that fulfills incoming STREAM packets.
+/// An OutgoingService that fulfills incoming STREAM packets.
 ///
 /// Note this does **not** maintain STREAM state, but instead fulfills
 /// all incoming packets to collect the money.
 ///
 /// This does not currently support handling data sent via STREAM.
 #[derive(Clone)]
-pub struct StreamReceiverService<S: IncomingService<A>, A: Account> {
+pub struct StreamReceiverService<S: OutgoingService<A>, A: Account> {
     server_secret: Bytes,
-    ildcp_response: Arc<RwLock<Option<IldcpResponse>>>,
     next: S,
     account_type: PhantomData<A>,
 }
 
 impl<S, A> StreamReceiverService<S, A>
 where
-    S: IncomingService<A>,
+    S: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(server_secret: &[u8; 32], ildcp_response: IldcpResponse, next: S) -> Self {
+    pub fn new(server_secret: Bytes, next: S) -> Self {
         StreamReceiverService {
-            server_secret: Bytes::from(&server_secret[..]),
-            ildcp_response: Arc::new(RwLock::new(Some(ildcp_response))),
+            server_secret,
             next,
             account_type: PhantomData,
         }
-    }
-
-    /// For creating a receiver service before the ILDCP details have been received
-    pub fn without_ildcp(server_secret: &[u8; 32], next: S) -> Self {
-        StreamReceiverService {
-            server_secret: Bytes::from(&server_secret[..]),
-            ildcp_response: Arc::new(RwLock::new(None)),
-            next,
-            account_type: PhantomData,
-        }
-    }
-
-    pub fn set_ildcp(&self, ildcp_response: IldcpResponse) {
-        self.ildcp_response.write().replace(ildcp_response);
     }
 }
 
 // TODO should this be an OutgoingService instead so the balance logic is applied before this is called?
-impl<S, A> IncomingService<A> for StreamReceiverService<S, A>
+impl<S, A> OutgoingService<A> for StreamReceiverService<S, A>
 where
-    S: IncomingService<A>,
-    A: Account,
+    S: OutgoingService<A>,
+    A: Account + IldcpAccount,
 {
     type Future = BoxedIlpFuture;
 
     // TODO check if the request is actually for us and pass it on to the next handler if not
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
-        if let Some(ref ildcp_response) = *self.ildcp_response.read() {
-            if request
-                .prepare
-                .destination()
-                .starts_with(ildcp_response.client_address())
-            {
-                return Box::new(result(receive_money(
-                    &self.server_secret[..],
-                    ildcp_response,
-                    request.prepare,
-                )));
-            }
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        if request
+            .prepare
+            .destination()
+            .starts_with(request.to.client_address())
+        {
+            Box::new(result(receive_money(
+                &self.server_secret[..],
+                request.to.client_address(),
+                request.prepare,
+            )))
         } else {
-            warn!("Got incoming Prepare packet before the StreamReceiverService was ready (before it had the ILDCP info)");
+            Box::new(self.next.send_request(request))
         }
-        Box::new(self.next.handle_request(request))
     }
 }
 
@@ -207,26 +186,24 @@ fn derive_shared_secret<'a>(
     }
 }
 
+// TODO send asset code and scale back to sender also
 fn receive_money(
     server_secret: &[u8],
-    ildcp_response: &IldcpResponse,
+    client_address: &[u8],
     prepare: Prepare,
 ) -> Result<Fulfill, Reject> {
     // Generate shared secret
-    if prepare.destination().len() < ildcp_response.client_address().len() + 1 {
+    if prepare.destination().len() < client_address.len() + 1 {
         debug!("Got Prepare packet with no token attached to the destination address");
         return Err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,
             message: &[],
-            triggered_by: ildcp_response.client_address(),
+            triggered_by: client_address,
             data: &[],
         }
         .build());
     }
-    let local_address = prepare
-        .destination()
-        .split_at(ildcp_response.client_address().len() + 1)
-        .1;
+    let local_address = prepare.destination().split_at(client_address.len() + 1).1;
     let (_conn_id, shared_secret) = derive_shared_secret(server_secret, &local_address, &prepare)?;
 
     // Generate fulfillment
@@ -243,7 +220,7 @@ fn receive_money(
             RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],
-                triggered_by: ildcp_response.client_address(),
+                triggered_by: client_address,
                 data: &[],
             }
             .build()
@@ -302,7 +279,7 @@ fn receive_money(
         let reject = RejectBuilder {
             code: ErrorCode::F99_APPLICATION_ERROR,
             message: &[],
-            triggered_by: ildcp_response.client_address(),
+            triggered_by: client_address,
             data: &encrypted_response[..],
         }
         .build();
@@ -319,11 +296,14 @@ mod connection_generator {
     #[test]
     fn with_connection_tag() {
         let server_secret = [9; 32];
-        let receiver_address = b"example.receiver";
-        let connection_generator = ConnectionGenerator::new(receiver_address, &server_secret);
+        let receiver_address = "example.receiver";
+        let connection_generator = ConnectionGenerator::new(
+            Bytes::from(receiver_address),
+            Bytes::from(&server_secret[..]),
+        );
         let (destination_account, _shared_secret) =
             connection_generator.generate_address_and_secret(b"tag");
-        assert!(destination_account.starts_with(receiver_address));
+        assert!(destination_account.starts_with(receiver_address.as_bytes()));
         let (conn_tag, _shared_secret) = derive_shared_secret(
             &server_secret,
             destination_account.split_at(receiver_address.len()).1,
@@ -343,11 +323,14 @@ mod connection_generator {
     #[test]
     fn without_connection_tag() {
         let server_secret = [9; 32];
-        let receiver_address = b"example.receiver";
-        let connection_generator = ConnectionGenerator::new(receiver_address, &server_secret);
+        let receiver_address = "example.receiver";
+        let connection_generator = ConnectionGenerator::new(
+            Bytes::from(receiver_address),
+            Bytes::from(&server_secret[..]),
+        );
         let (destination_account, _shared_secret) =
             connection_generator.generate_address_and_secret(b"");
-        assert!(destination_account.starts_with(receiver_address));
+        assert!(destination_account.starts_with(receiver_address.as_bytes()));
         let (conn_tag, _shared_secret) = derive_shared_secret(
             &server_secret,
             destination_account.split_at(receiver_address.len()).1,

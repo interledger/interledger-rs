@@ -1,4 +1,5 @@
 use super::SpspResponse;
+use bytes::Bytes;
 use futures::future::{ok, FutureResult, IntoFuture};
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_stream::ConnectionGenerator;
@@ -32,10 +33,6 @@ fn extract_original_url(request: &Request<Body>) -> String {
     url
 }
 
-pub fn spsp_responder(ilp_address: &[u8], server_secret: &[u8]) -> SpspResponder {
-    SpspResponder::new(ilp_address, server_secret)
-}
-
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.
 #[derive(Clone)]
@@ -44,7 +41,7 @@ pub struct SpspResponder {
 }
 
 impl SpspResponder {
-    pub fn new(ilp_address: &[u8], server_secret: &[u8]) -> Self {
+    pub fn new(ilp_address: Bytes, server_secret: Bytes) -> Self {
         let connection_generator = ConnectionGenerator::new(ilp_address, server_secret);
         SpspResponder {
             connection_generator,
@@ -116,7 +113,8 @@ mod spsp_server_test {
 
     #[test]
     fn spsp_response_headers() {
-        let mut responder = spsp_responder(b"example.receiver", &[0; 32]);
+        let mut responder =
+            SpspResponder::new(Bytes::from("example.receiver"), Bytes::from(&[0; 32][..]));
         let response = responder
             .call(
                 Request::builder()

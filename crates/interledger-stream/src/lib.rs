@@ -24,8 +24,12 @@ pub use server::{ConnectionGenerator, StreamReceiverService};
 #[cfg(test)]
 pub mod test_helpers {
     use bytes::Bytes;
+    use futures::{future::ok, Future};
+    use hashbrown::HashMap;
     use interledger_ildcp::IldcpAccount;
-    use interledger_service::Account;
+    use interledger_router::RouterStore;
+    use interledger_service::{Account, AccountStore};
+    use std::iter::FromIterator;
 
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct TestAccount {
@@ -56,43 +60,70 @@ pub mod test_helpers {
             &self.ilp_address[..]
         }
     }
+
+    #[derive(Clone)]
+    pub struct TestStore {
+        pub route: (Bytes, TestAccount),
+    }
+
+    impl AccountStore for TestStore {
+        type Account = TestAccount;
+
+        fn get_accounts(
+            &self,
+            _account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
+        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+            Box::new(ok(vec![self.route.1.clone()]))
+        }
+    }
+
+    impl RouterStore for TestStore {
+        fn routing_table(&self) -> HashMap<Bytes, u64> {
+            HashMap::from_iter(vec![(self.route.0.clone(), self.route.1.id())].into_iter())
+        }
+    }
 }
 
 #[cfg(test)]
 mod send_money_to_receiver {
+    use super::test_helpers::*;
     use super::*;
     use bytes::Bytes;
     use futures::Future;
-    use interledger_ildcp::{IldcpResponseBuilder, IldcpService};
+    use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode, RejectBuilder};
-    use interledger_service::incoming_service_fn;
+    use interledger_router::Router;
+    use interledger_service::outgoing_service_fn;
     use tokio::runtime::Runtime;
 
     #[test]
     fn send_money_test() {
-        let server_secret = [0; 32];
-        let destination_address = b"example.receiver";
-        let ildcp_info = IldcpResponseBuilder {
-            client_address: destination_address,
-            asset_code: "XYZ",
+        let server_secret = Bytes::from(&[0; 32][..]);
+        let destination_address = Bytes::from("example.receiver");
+        let account = TestAccount {
+            id: 0,
+            ilp_address: destination_address.clone(),
+            asset_code: "XYZ".to_string(),
             asset_scale: 9,
-        }
-        .build();
+        };
+        let store = TestStore {
+            route: (destination_address.clone(), account),
+        };
         let connection_generator =
-            ConnectionGenerator::new(destination_address, &server_secret[..]);
+            ConnectionGenerator::new(destination_address, server_secret.clone());
         let server = StreamReceiverService::new(
-            &server_secret,
-            ildcp_info,
-            incoming_service_fn(|_| {
+            server_secret,
+            outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
-                    message: b"No other incoming handler",
+                    message: b"No other outgoing handler",
                     triggered_by: b"example.receiver",
                     data: &[],
                 }
                 .build())
             }),
         );
+        let server = Router::new(store, server);
         let server = IldcpService::new(server);
 
         let (destination_account, shared_secret) =

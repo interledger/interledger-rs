@@ -12,7 +12,7 @@ use interledger_http::{HttpAccount, HttpServerService, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::BalanceStore;
-use interledger_spsp::{pay, spsp_responder};
+use interledger_spsp::{pay, SpspResponder};
 use std::str::FromStr;
 
 pub trait NodeAccount: HttpAccount {
@@ -225,8 +225,8 @@ impl_web! {
                     Response::builder().status(404).body(()).unwrap()
                 }))
                 .and_then(move |accounts| {
-                    let ilp_address = accounts[0].client_address();
-                    Ok(spsp_responder(ilp_address, &server_secret[..])
+                    let ilp_address = Bytes::from(accounts[0].client_address());
+                    Ok(SpspResponder::new(ilp_address, server_secret)
                         .generate_http_response_from_tag(""))
                     })
         }
@@ -243,8 +243,8 @@ impl_web! {
                 Response::builder().status(404).body(()).unwrap()
             })
             .and_then(move |accounts| {
-                let ilp_address = accounts[0].client_address();
-                Ok(spsp_responder(ilp_address, &server_secret[..])
+                let ilp_address = Bytes::from(accounts[0].client_address());
+                Ok(SpspResponder::new(ilp_address, server_secret)
                     .generate_http_response_from_tag(""))
                 })
         }

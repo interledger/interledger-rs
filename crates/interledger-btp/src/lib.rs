@@ -198,20 +198,9 @@ mod client_server {
             btp_uri: Some(Url::parse("btp+ws://:test_auth_token@127.0.0.1:12345").unwrap()),
             btp_incoming_token: None,
         };
-        let client_store = TestStore {
-            accounts: Arc::new(vec![account.clone()]),
-        };
-        let accounts: Vec<u64> = vec![0];
+        let accounts = vec![account.clone()];
         let client = connect_client(
-            incoming_service_fn(|_| {
-                Err(RejectBuilder {
-                    code: ErrorCode::F02_UNREACHABLE,
-                    message: &[],
-                    data: &[],
-                    triggered_by: &[],
-                }
-                .build())
-            }),
+            accounts,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
@@ -221,10 +210,17 @@ mod client_server {
                 }
                 .build())
             }),
-            client_store,
-            accounts,
         )
-        .and_then(move |mut btp_service| {
+        .and_then(move |btp_service| {
+            let mut btp_service = btp_service.handle_incoming(incoming_service_fn(|_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &[],
+                    data: &[],
+                    triggered_by: &[],
+                }
+                .build())
+            }));
             let btp_service_clone = btp_service.clone();
             btp_service
                 .send_request(OutgoingRequest {

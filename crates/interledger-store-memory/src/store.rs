@@ -10,8 +10,8 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use parking_lot::{Mutex, RwLock};
-use std::cmp::max;
 use std::{
+    cmp::max,
     iter::{empty, once, FromIterator, IntoIterator},
     str,
     sync::Arc,
@@ -88,6 +88,34 @@ impl InMemoryStore {
             http_auth: Arc::new(RwLock::new(http_auth)),
             next_account_id: Arc::new(Mutex::new(next_account_id)),
         }
+    }
+
+    pub fn add_account(&self, account: Account) {
+        self.accounts.write().insert(account.id(), account.clone());
+        self.routing_table
+            .write()
+            .insert(account.inner.ilp_address.clone(), account.id());
+        for route in &account.inner.additional_routes {
+            self.routing_table
+                .write()
+                .insert(route.clone(), account.id());
+        }
+        if let Some(ref btp_auth) = account.inner.btp_incoming_token {
+            self.btp_auth.write().insert(
+                (
+                    btp_auth.clone(),
+                    account.inner.btp_incoming_username.clone(),
+                ),
+                account.id(),
+            );
+        }
+        if let Some(ref http_auth) = account.inner.http_incoming_authorization {
+            self.http_auth
+                .write()
+                .insert(http_auth.clone(), account.id());
+        }
+        let mut next_account_id = self.next_account_id.lock();
+        *next_account_id = max(*next_account_id, account.inner.id);
     }
 }
 
