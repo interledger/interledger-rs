@@ -156,7 +156,7 @@ fn btp_end_to_end() {
             // Note: this needs to be run AFTER the accounts are created because the
             // store does not currently subscribe to notifications of accounts being created
             // or the routing table being updated
-            let connector = interledger::cli::run_connector_redis(
+            let connector = interledger::cli::run_node_redis(
                 &redis_uri_clone,
                 ([127, 0, 0, 1], btp_port).into(),
                 ([127, 0, 0, 1], http_port).into(),

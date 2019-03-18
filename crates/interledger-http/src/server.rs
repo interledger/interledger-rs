@@ -54,7 +54,7 @@ where
         }
     }
 
-    fn handle_http_request(
+    pub fn handle_http_request(
         &mut self,
         request: Request<Body>,
     ) -> impl Future<Item = Response<Body>, Error = Error> {

@@ -6,14 +6,14 @@ use hyper::{
     service::{service_fn, Service},
     Body, Error, Method, Request, Response, Server,
 };
-use interledger_api::NodeStore;
+use interledger_api::{NodeApi, NodeStore};
 use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
-use interledger_http::{HttpClientService, HttpServerService};
+use interledger_http::{HttpClientService, HttpServerService, HttpStore};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
 use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, IncomingRequest, OutgoingRequest,
+    incoming_service_fn, outgoing_service_fn, IncomingRequest, IncomingService, OutgoingRequest,
 };
 use interledger_service_util::{
     ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
@@ -25,7 +25,8 @@ use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::{net::SocketAddr, str, sync::Arc, u64};
-use tokio;
+use tokio::{self, net::TcpListener};
+use tower_web::ServiceBuilder;
 use url::Url;
 
 const ACCOUNT_ID: u64 = 0;
@@ -348,12 +349,12 @@ pub fn run_moneyd_local(
 #[doc(hidden)]
 // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
 // connector instances to forward packets for that account to us
-pub fn run_connector_redis(
+pub fn run_node_redis(
     redis_uri: &str,
     btp_address: SocketAddr,
     http_address: SocketAddr,
 ) -> impl Future<Item = (), Error = ()> {
-    debug!("Starting Redis connector");
+    debug!("Starting Interledger node with Redis store");
     connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
@@ -372,22 +373,44 @@ pub fn run_connector_redis(
                 btp_service.handle_incoming(incoming_service.clone());
 
                 // Handle packets sent via HTTP
-                let http_service = HttpServerService::new(incoming_service, store.clone());
-                let server = Server::bind(&http_address)
-                    .serve(move || {
-                        let mut http_service = http_service.clone();
-                        // TODO we shouldn't need to wrap this in a service_fn
-                        service_fn(
-                                move |req: Request<Body>| -> Box<
-                                    Future<Item = Response<Body>, Error = Error> + Send,
-                                > { http_service.call(req) },
-                            )
-                    })
-                    .map_err(|err| eprintln!("HTTP server error: {:?}", err));
+                let http_service = HttpServerService::new(incoming_service.clone(), store.clone());
+
+                let api = NodeApi::new(store.clone(), incoming_service.clone());
+                let listener =
+                    TcpListener::bind(&http_address).expect("Unable to bind to HTTP address");
+                println!("Interledger node listening on: {}", http_address);
+                let server = ServiceBuilder::new()
+                    .resource(api)
+                    .resource(IlpOverHttpResource { http_service })
+                    .serve(listener.incoming());
                 tokio::spawn(server);
                 Ok(())
             })
         })
+}
+
+struct IlpOverHttpResource<S, T> {
+    http_service: HttpServerService<S, T>,
+}
+
+impl_web! {
+    impl<S, T> IlpOverHttpResource <S, T>
+    where
+
+    S: IncomingService<T::Account> + Clone + Send + Sync + 'static,
+    T: HttpStore,
+    {
+        #[post("/ilp")]
+        // TODO make sure taking the body as a Vec (instead of Bytes) doesn't cause a copy
+        // for some reason, it complains that Extract isn't implemented for Bytes even though tower-web says it is
+        fn post_ilp(&self, body: Vec<u8>, authorization: String) -> impl Future<Item = Response<Body>, Error = Error> {
+            let request = Request::builder()
+                .header("Authorization", authorization)
+                .body(Body::from(body))
+                .unwrap();
+            self.http_service.clone().handle_http_request(request)
+        }
+    }
 }
 
 #[doc(hidden)]
