@@ -9,7 +9,7 @@ use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs
 use std::collections::HashMap;
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 10;
+const ACCOUNT_DETAILS_FIELDS: usize = 11;
 
 #[derive(Clone, Debug)]
 pub struct Account {
@@ -72,6 +72,8 @@ impl ToRedisArgs for Account {
         self.asset_scale.write_redis_args(&mut rv);
         "max_packet_amount".write_redis_args(&mut rv);
         self.max_packet_amount.write_redis_args(&mut rv);
+        "is_admin".write_redis_args(&mut rv);
+        self.is_admin.write_redis_args(&mut rv);
 
         // Write optional fields
         if let Some(http_endpoint) = self.http_endpoint.as_ref() {
@@ -107,6 +109,8 @@ impl FromRedisValue for Account {
         trace!("Loaded value from Redis: {:?}", v);
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: Vec<u8> = get_value("ilp_address", &hash)?;
+        let is_admin: String = get_value("is_admin", &hash)?;
+        let is_admin = is_admin == "true".to_string();
         Ok(Account {
             id: get_value("id", &hash)?,
             ilp_address: Bytes::from(ilp_address),
@@ -118,7 +122,7 @@ impl FromRedisValue for Account {
             btp_uri: get_url_option("btp_uri", &hash)?,
             btp_incoming_authorization: get_value_option("btp_incoming_authorization", &hash)?,
             max_packet_amount: get_value("max_packet_amount", &hash)?,
-            is_admin: get_value("is_admin", &hash)?,
+            is_admin,
         })
     }
 }
@@ -132,7 +136,8 @@ where
     } else {
         Err(RedisError::from((
             ErrorKind::TypeError,
-            "Account has no id",
+            "Account is missing field",
+            key.to_string(),
         )))
     }
 }
