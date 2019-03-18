@@ -8,12 +8,12 @@ use hyper::{
 };
 use interledger_api::{NodeApi, NodeStore};
 use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
-use interledger_http::{HttpClientService, HttpServerService, HttpStore};
+use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
 use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, IncomingRequest, IncomingService, OutgoingRequest,
+    incoming_service_fn, outgoing_service_fn, IncomingRequest, OutgoingRequest,
 };
 use interledger_service_util::{
     ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
@@ -353,8 +353,10 @@ pub fn run_node_redis(
     redis_uri: &str,
     btp_address: SocketAddr,
     http_address: SocketAddr,
+    server_secret: &[u8; 32],
 ) -> impl Future<Item = (), Error = ()> {
     debug!("Starting Interledger node with Redis store");
+    let server_secret = Bytes::from(&server_secret[..]);
     connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
@@ -372,46 +374,19 @@ pub fn run_node_redis(
                 // Handle packets sent via BTP
                 btp_service.handle_incoming(incoming_service.clone());
 
-                // Handle packets sent via HTTP
-                let http_service = HttpServerService::new(incoming_service.clone(), store.clone());
-
                 // TODO should this run the node api on a different port so it's easier to separate public/private?
-                let api = NodeApi::new(store.clone(), incoming_service.clone());
+                // Note the API also includes receiving ILP packets sent via HTTP
+                let api = NodeApi::new(server_secret, store.clone(), incoming_service.clone());
                 let listener =
                     TcpListener::bind(&http_address).expect("Unable to bind to HTTP address");
                 println!("Interledger node listening on: {}", http_address);
                 let server = ServiceBuilder::new()
                     .resource(api)
-                    .resource(IlpOverHttpResource { http_service })
                     .serve(listener.incoming());
                 tokio::spawn(server);
                 Ok(())
             })
         })
-}
-
-struct IlpOverHttpResource<S, T> {
-    http_service: HttpServerService<S, T>,
-}
-
-impl_web! {
-    impl<S, T> IlpOverHttpResource <S, T>
-    where
-
-    S: IncomingService<T::Account> + Clone + Send + Sync + 'static,
-    T: HttpStore,
-    {
-        #[post("/ilp")]
-        // TODO make sure taking the body as a Vec (instead of Bytes) doesn't cause a copy
-        // for some reason, it complains that Extract isn't implemented for Bytes even though tower-web says it is
-        fn post_ilp(&self, body: Vec<u8>, authorization: String) -> impl Future<Item = Response<Body>, Error = Error> {
-            let request = Request::builder()
-                .header("Authorization", authorization)
-                .body(Body::from(body))
-                .unwrap();
-            self.http_service.clone().handle_http_request(request)
-        }
-    }
 }
 
 #[doc(hidden)]

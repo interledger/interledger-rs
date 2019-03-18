@@ -5,8 +5,6 @@
 #[macro_use]
 extern crate log;
 #[cfg(feature = "cli")]
-#[macro_use]
-extern crate tower_web;
 
 /// ILP Packet (De)Serialization
 pub mod packet {

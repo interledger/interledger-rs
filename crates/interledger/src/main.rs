@@ -4,6 +4,7 @@ extern crate clap;
 
 use base64;
 use clap::{App, Arg, ArgGroup, SubCommand};
+use hex;
 use interledger::cli::*;
 use interledger_ildcp::IldcpResponseBuilder;
 use tokio;
@@ -114,6 +115,10 @@ pub fn main() {
                         Arg::with_name("http_port")
                             .long("http_port")
                             .default_value("7770"),
+                        Arg::with_name("server_secret")
+                            .long("server_secret")
+                            .help("Cryptographic seed used to derive keys for STREAM, specified in hex")
+                            .takes_value(true),
                     ])
                     .group(ArgGroup::with_name("redis_connector").requires_all(&["redis_uri", "btp_port", "http_port"]))
                     .subcommand(SubCommand::with_name("accounts")
@@ -276,10 +281,22 @@ pub fn main() {
                     value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
+                let server_secret: [u8; 32] = if let Some(secret) =
+                    matches.value_of("server_secret")
+                {
+                    let mut server_secret = [0; 32];
+                    let decoded = hex::decode(secret).expect("server_secret must be hex-encoded");
+                    assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
+                    server_secret.clone_from_slice(&decoded);
+                    server_secret
+                } else {
+                    random_secret()
+                };
                 tokio::run(run_node_redis(
                     &redis_uri,
                     ([127, 0, 0, 1], btp_port).into(),
                     ([127, 0, 0, 1], http_port).into(),
+                    &server_secret,
                 ));
             }
         },

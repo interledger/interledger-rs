@@ -4,12 +4,15 @@ extern crate tower_web;
 #[macro_use]
 extern crate log;
 
+use bytes::Bytes;
 use futures::{future::result, Future};
-use http::Response;
-use interledger_http::{HttpAccount, HttpStore};
+use http::{Request, Response};
+use hyper::{body::Body, error::Error};
+use interledger_http::{HttpAccount, HttpServerService, HttpStore};
+use interledger_ildcp::IldcpAccount;
 use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::BalanceStore;
-use interledger_spsp::pay;
+use interledger_spsp::{pay, spsp_responder};
 use std::str::FromStr;
 
 pub trait NodeAccount: HttpAccount {
@@ -42,11 +45,6 @@ pub struct AccountDetails {
     pub btp_uri: Option<String>,
     pub btp_incoming_authorization: Option<String>,
     pub is_admin: bool,
-}
-
-pub struct NodeApi<T, S> {
-    store: T,
-    incoming_handler: S,
 }
 
 #[derive(Response)]
@@ -86,17 +84,31 @@ struct SpspPayResponse {
     amount_delivered: u64,
 }
 
+#[derive(Response)]
+#[web(status = "200")]
+struct SpspQueryResponse {
+    destination_account: String,
+    shared_secret: String,
+}
+
+pub struct NodeApi<T, S> {
+    store: T,
+    incoming_handler: S,
+    server_secret: Bytes,
+}
+
 impl_web! {
     impl<T, S, A> NodeApi<T, S>
     where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A>,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: AccountTrait + HttpAccount + NodeAccount + 'static,
+    A: AccountTrait + HttpAccount + NodeAccount + IldcpAccount + 'static,
 
     {
-        pub fn new(store: T, incoming_handler: S) -> Self {
+        pub fn new(server_secret: Bytes, store: T, incoming_handler: S) -> Self {
             NodeApi {
                 store,
                 incoming_handler,
+                server_secret,
             }
         }
 
@@ -187,6 +199,36 @@ impl_web! {
                             Response::builder().status(500).body(format!("Error sending SPSP payment: {:?}", err)).unwrap()
                         })
                 })
+        }
+
+        #[post("/ilp")]
+        // TODO make sure taking the body as a Vec (instead of Bytes) doesn't cause a copy
+        // for some reason, it complains that Extract isn't implemented for Bytes even though tower-web says it is
+        fn post_ilp(&self, body: Vec<u8>, authorization: String) -> impl Future<Item = Response<Body>, Error = Error> {
+            let request = Request::builder()
+                .header("Authorization", authorization)
+                .body(Body::from(body))
+                .unwrap();
+            HttpServerService::new(self.incoming_handler.clone(), self.store.clone()).handle_http_request(request)
+        }
+
+        #[get("/spsp/:id")]
+        fn get_spsp(&self, id: String) -> impl Future<Item = Response<Body>, Error = Response<()>> {
+            let server_secret = self.server_secret.clone();
+            let store = self.store.clone();
+            let id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id: {}", id));
+            result(id)
+                .map_err(|_| Response::builder().status(400).body(()).unwrap())
+                .and_then(move |id| store.get_accounts(vec![id])
+                .map_err(move |_| {
+                    error!("Account not found: {}", id);
+                    Response::builder().status(404).body(()).unwrap()
+                }))
+                .and_then(move |accounts| {
+                    let ilp_address = accounts[0].client_address();
+                    Ok(spsp_responder(ilp_address, &server_secret[..])
+                        .generate_http_response_from_tag(""))
+                    })
         }
 
         // TODO add quoting via SPSP/STREAM
