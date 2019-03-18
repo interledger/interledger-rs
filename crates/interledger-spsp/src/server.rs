@@ -6,52 +6,27 @@ use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
 use std::{fmt, str};
 
-fn extract_original_url(request: &Request<Body>) -> String {
-    let headers = request.headers();
-    let host = headers
-        .get("forwarded")
-        .and_then(|header| {
-            let header = header.to_str().ok()?;
-            if let Some(index) = header.find(" for=") {
-                let host_start = index + 5;
-                (&header[host_start..]).split_whitespace().next()
-            } else {
-                None
-            }
-        })
-        .or_else(|| {
-            headers
-                .get("x-forwarded-host")
-                .and_then(|header| header.to_str().ok())
-        })
-        .or_else(|| headers.get("host").and_then(|header| header.to_str().ok()))
-        .unwrap_or("");
-
-    let mut url = host.to_string();
-    url.push_str(request.uri().path());
-    url.push_str(request.uri().query().unwrap_or(""));
-    url
-}
-
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.
 #[derive(Clone)]
 pub struct SpspResponder {
+    ilp_address: Bytes,
     connection_generator: ConnectionGenerator,
 }
 
 impl SpspResponder {
     pub fn new(ilp_address: Bytes, server_secret: Bytes) -> Self {
-        let connection_generator = ConnectionGenerator::new(ilp_address, server_secret);
+        let connection_generator = ConnectionGenerator::new(server_secret);
         SpspResponder {
+            ilp_address,
             connection_generator,
         }
     }
 
-    pub fn generate_http_response_from_tag(&self, tag: &str) -> Response<Body> {
+    pub fn generate_http_response(&self) -> Response<Body> {
         let (destination_account, shared_secret) = self
             .connection_generator
-            .generate_address_and_secret(tag.as_bytes());
+            .generate_address_and_secret(&self.ilp_address[..]);
         let destination_account = String::from_utf8(destination_account.to_vec()).unwrap();
         debug!("Generated address and secret for: {}", destination_account);
         let response = SpspResponse {
@@ -74,9 +49,8 @@ impl HttpService for SpspResponder {
     type Error = Error;
     type Future = FutureResult<Response<Body>, Error>;
 
-    fn call(&mut self, request: Request<Self::ReqBody>) -> Self::Future {
-        let original_url = extract_original_url(&request);
-        ok(self.generate_http_response_from_tag(&original_url))
+    fn call(&mut self, _request: Request<Self::ReqBody>) -> Self::Future {
+        ok(self.generate_http_response())
     }
 }
 
