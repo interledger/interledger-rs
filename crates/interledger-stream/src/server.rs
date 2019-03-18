@@ -29,6 +29,7 @@ pub struct ConnectionGenerator {
 
 impl ConnectionGenerator {
     pub fn new(source_account: Bytes, server_secret: Bytes) -> Self {
+        assert_eq!(server_secret.len(), 32, "Server secret must be 32 bytes");
         ConnectionGenerator {
             source_account,
             server_secret,
@@ -65,6 +66,12 @@ impl ConnectionGenerator {
             account.put(encrypted_tag);
             account.freeze()
         };
+        // TODO maybe not a good idea to log the shared secret
+        trace!(
+            "Generated destination account: {} and shared secret: {}",
+            str::from_utf8(&destination_account[..]).unwrap_or("<not utf8>"),
+            hex::encode(&shared_secret[..])
+        );
         (destination_account, shared_secret)
     }
 }
@@ -106,10 +113,11 @@ where
 
     // TODO check if the request is actually for us and pass it on to the next handler if not
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
-        if request
-            .prepare
-            .destination()
-            .starts_with(request.to.client_address())
+        if !request.to.client_address().is_empty()
+            && request
+                .prepare
+                .destination()
+                .starts_with(request.to.client_address())
         {
             Box::new(result(receive_money(
                 &self.server_secret[..],
@@ -203,8 +211,18 @@ fn receive_money(
         }
         .build());
     }
+    debug!(
+        "Processing STREAM packet for: {} (destination address: {})",
+        str::from_utf8(client_address).unwrap_or("<not utf8"),
+        str::from_utf8(prepare.destination()).unwrap_or("<not utf8>")
+    );
     let local_address = prepare.destination().split_at(client_address.len() + 1).1;
     let (_conn_id, shared_secret) = derive_shared_secret(server_secret, &local_address, &prepare)?;
+    trace!(
+        "Generated shared secret: {} from destination address: {}",
+        hex::encode(&shared_secret[..]),
+        str::from_utf8(prepare.destination()).unwrap_or("<not utf8>")
+    );
 
     // Generate fulfillment
     let fulfillment = generate_fulfillment(&shared_secret[..], prepare.data());
@@ -218,8 +236,8 @@ fn receive_money(
         StreamPacket::from_encrypted(&shared_secret, prepare.into_data()).map_err(|_| {
             debug!("Unable to parse data, rejecting Prepare packet");
             RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &[],
+                code: ErrorCode::F06_UNEXPECTED_PAYMENT,
+                message: b"Could not decrypt data",
                 triggered_by: client_address,
                 data: &[],
             }
@@ -243,7 +261,7 @@ fn receive_money(
     }
 
     // Return Fulfill or Reject Packet
-    if is_fulfillable {
+    if is_fulfillable && prepare_amount >= stream_packet.prepare_amount() {
         let response_packet = StreamPacketBuilder {
             sequence: stream_packet.sequence(),
             ilp_packet_type: IlpPacketType::Fulfill,
@@ -271,6 +289,15 @@ fn receive_money(
             frames: &response_frames,
         }
         .build();
+        if !is_fulfillable {
+            debug!("Packet is unfulfillable");
+        } else if prepare_amount < stream_packet.prepare_amount() {
+            debug!(
+                "Received only: {} when we should have received at least: {}",
+                prepare_amount,
+                stream_packet.prepare_amount()
+            );
+        }
         debug!(
             "Rejecting Prepare and including encrypted stream packet {:?}",
             response_packet
@@ -301,10 +328,10 @@ mod connection_generator {
             Bytes::from(receiver_address),
             Bytes::from(&server_secret[..]),
         );
-        let (destination_account, _shared_secret) =
+        let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(b"tag");
         assert!(destination_account.starts_with(receiver_address.as_bytes()));
-        let (conn_tag, _shared_secret) = derive_shared_secret(
+        let (conn_tag, derived_shared_secret) = derive_shared_secret(
             &server_secret,
             destination_account.split_at(receiver_address.len()).1,
             &PrepareBuilder {
@@ -318,6 +345,7 @@ mod connection_generator {
         )
         .unwrap();
         assert!(conn_tag.ends_with("~tag"));
+        assert_eq!(shared_secret, derived_shared_secret);
     }
 
     #[test]
@@ -328,10 +356,10 @@ mod connection_generator {
             Bytes::from(receiver_address),
             Bytes::from(&server_secret[..]),
         );
-        let (destination_account, _shared_secret) =
+        let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(b"");
         assert!(destination_account.starts_with(receiver_address.as_bytes()));
-        let (conn_tag, _shared_secret) = derive_shared_secret(
+        let (conn_tag, derived_shared_secret) = derive_shared_secret(
             &server_secret,
             destination_account.split_at(receiver_address.len()).1,
             &PrepareBuilder {
@@ -345,5 +373,165 @@ mod connection_generator {
         )
         .unwrap();
         assert!(!conn_tag.contains('~'));
+        assert_eq!(shared_secret, derived_shared_secret);
+    }
+}
+
+#[cfg(test)]
+mod receiving_money {
+    use super::*;
+    use interledger_packet::PrepareBuilder;
+    use std::time::UNIX_EPOCH;
+
+    #[test]
+    fn fulfills_valid_packet() {
+        let client_address = Bytes::from("example.destination");
+        let server_secret = Bytes::from(&[1; 32][..]);
+        let connection_generator =
+            ConnectionGenerator::new(client_address.clone(), server_secret.clone());
+        let (destination_account, shared_secret) =
+            connection_generator.generate_address_and_secret(b"test");
+
+        let stream_packet = StreamPacketBuilder {
+            ilp_packet_type: IlpPacketType::Prepare,
+            // TODO enforce min exchange rate
+            prepare_amount: 0,
+            sequence: 1,
+            frames: &[Frame::StreamMoney(StreamMoneyFrame {
+                stream_id: 1,
+                shares: 1,
+            })],
+        }
+        .build();
+
+        let data = stream_packet.into_encrypted(&shared_secret[..]);
+        let execution_condition = generate_condition(&shared_secret[..], &data);
+
+        let prepare = PrepareBuilder {
+            destination: &destination_account[..],
+            amount: 100,
+            expires_at: UNIX_EPOCH,
+            data: &data[..],
+            execution_condition: &execution_condition,
+        }
+        .build();
+
+        let result = receive_money(&server_secret[..], &client_address[..], prepare);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn fulfills_valid_packet_without_connection_tag() {
+        let client_address = Bytes::from("example.destination");
+        let server_secret = Bytes::from(&[1; 32][..]);
+        let connection_generator =
+            ConnectionGenerator::new(client_address.clone(), server_secret.clone());
+        let (destination_account, shared_secret) =
+            connection_generator.generate_address_and_secret(b"");
+
+        let stream_packet = StreamPacketBuilder {
+            ilp_packet_type: IlpPacketType::Prepare,
+            // TODO enforce min exchange rate
+            prepare_amount: 0,
+            sequence: 1,
+            frames: &[Frame::StreamMoney(StreamMoneyFrame {
+                stream_id: 1,
+                shares: 1,
+            })],
+        }
+        .build();
+
+        let data = stream_packet.into_encrypted(&shared_secret[..]);
+        let execution_condition = generate_condition(&shared_secret[..], &data);
+
+        let prepare = PrepareBuilder {
+            destination: &destination_account[..],
+            amount: 100,
+            expires_at: UNIX_EPOCH,
+            data: &data[..],
+            execution_condition: &execution_condition,
+        }
+        .build();
+
+        let result = receive_money(&server_secret[..], &client_address[..], prepare);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_modified_data() {
+        let client_address = Bytes::from("example.destination");
+        let server_secret = Bytes::from(&[1; 32][..]);
+        let connection_generator =
+            ConnectionGenerator::new(client_address.clone(), server_secret.clone());
+        let (mut destination_account, shared_secret) =
+            connection_generator.generate_address_and_secret(b"test");
+
+        let stream_packet = StreamPacketBuilder {
+            ilp_packet_type: IlpPacketType::Prepare,
+            // TODO enforce min exchange rate
+            prepare_amount: 0,
+            sequence: 1,
+            frames: &[Frame::StreamMoney(StreamMoneyFrame {
+                stream_id: 1,
+                shares: 1,
+            })],
+        }
+        .build();
+
+        let mut data = stream_packet.into_encrypted(&shared_secret[..]);
+        data.extend_from_slice(b"x");
+        let execution_condition = generate_condition(&shared_secret[..], &data);
+
+        destination_account.extend_from_slice(b"x");
+
+        let prepare = PrepareBuilder {
+            destination: &destination_account[..],
+            amount: 100,
+            expires_at: UNIX_EPOCH,
+            data: &data[..],
+            execution_condition: &execution_condition,
+        }
+        .build();
+
+        let result = receive_money(&server_secret[..], &client_address[..], prepare);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_too_little_money() {
+        let client_address = Bytes::from("example.destination");
+        let server_secret = Bytes::from(&[1; 32][..]);
+        let connection_generator =
+            ConnectionGenerator::new(client_address.clone(), server_secret.clone());
+        let (mut destination_account, shared_secret) =
+            connection_generator.generate_address_and_secret(b"test");
+
+        let stream_packet = StreamPacketBuilder {
+            ilp_packet_type: IlpPacketType::Prepare,
+            prepare_amount: 101,
+            sequence: 1,
+            frames: &[Frame::StreamMoney(StreamMoneyFrame {
+                stream_id: 1,
+                shares: 1,
+            })],
+        }
+        .build();
+
+        let data = stream_packet.into_encrypted(&shared_secret[..]);
+        let execution_condition = generate_condition(&shared_secret[..], &data);
+
+        destination_account.extend_from_slice(b"x");
+
+        let prepare = PrepareBuilder {
+            destination: &destination_account[..],
+            amount: 100,
+            expires_at: UNIX_EPOCH,
+            data: &data[..],
+            execution_condition: &execution_condition,
+        }
+        .build();
+
+        let result = receive_money(&server_secret[..], &client_address[..], prepare);
+        assert!(result.is_err());
     }
 }

@@ -102,6 +102,7 @@ where
                     .build()
                 })
                 .and_then(move |_| next.send_request(request)),
+            // TODO reset balances if the request fails
         )
     }
 }

@@ -49,7 +49,7 @@ where
             );
             next_hop = Some(*account_id);
         } else if !routing_table.is_empty() {
-            let mut max_prefix_len = 0;
+            let mut matching_prefix = Bytes::new();
             for route in self.store.routing_table() {
                 trace!(
                     "Checking route: \"{}\" -> {}",
@@ -58,17 +58,19 @@ where
                 );
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
                 if (route.0.is_empty() || destination.starts_with(&route.0[..]))
-                    && route.0.len() >= max_prefix_len
+                    && route.0.len() >= matching_prefix.len()
                 {
                     next_hop.replace(route.1);
-                    max_prefix_len = route.0.len();
-                    debug!(
-                        "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
-                        str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
-                        str::from_utf8(&route.0[..]).unwrap_or("<not utf8>"),
-                        route.1,
-                    );
+                    matching_prefix = route.0.clone();
                 }
+            }
+            if let Some(account_id) = next_hop {
+                debug!(
+                    "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
+                    str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
+                    str::from_utf8(&matching_prefix[..]).unwrap_or("<not utf8>"),
+                    account_id,
+                );
             }
         } else {
             warn!("Unable to route request because routing table is empty");
