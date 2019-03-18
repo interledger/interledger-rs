@@ -7,7 +7,6 @@ const AUTH_TAG_LENGTH: usize = 16;
 
 static ENCRYPTION_KEY_STRING: &[u8] = b"ilp_stream_encryption";
 static FULFILLMENT_GENERATION_STRING: &[u8] = b"ilp_stream_fulfillment";
-static SHARED_SECRET_GENERATION_STRING: &[u8] = b"ilp_stream_shared_secret";
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     let key = hmac::SigningKey::new(&digest::SHA256, key);
@@ -22,8 +21,8 @@ pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> [u8; 32] {
     hmac_sha256(&key[..], &data[..])
 }
 
-pub fn fulfillment_to_condition(fulfillment: &[u8]) -> [u8; 32] {
-    let output = digest::digest(&digest::SHA256, &fulfillment[..]);
+pub fn hash_sha256(preimage: &[u8]) -> [u8; 32] {
+    let output = digest::digest(&digest::SHA256, &preimage[..]);
     let mut to_return: [u8; 32] = [0; 32];
     to_return.copy_from_slice(output.as_ref());
     to_return
@@ -31,7 +30,7 @@ pub fn fulfillment_to_condition(fulfillment: &[u8]) -> [u8; 32] {
 
 pub fn generate_condition(shared_secret: &[u8], data: &[u8]) -> [u8; 32] {
     let fulfillment = generate_fulfillment(&shared_secret, &data);
-    fulfillment_to_condition(&fulfillment)
+    hash_sha256(&fulfillment)
 }
 
 pub fn random_condition() -> [u8; 32] {
@@ -48,11 +47,6 @@ pub fn generate_token() -> [u8; 18] {
         .fill(&mut token)
         .expect("Failed to securely generate a random token!");
     token
-}
-
-pub fn generate_shared_secret_from_token(server_secret: &[u8], token: &[u8]) -> [u8; 32] {
-    let key = hmac_sha256(&server_secret[..], &SHARED_SECRET_GENERATION_STRING);
-    hmac_sha256(&key[..], &token[..])
 }
 
 pub fn encrypt(shared_secret: &[u8], plaintext: BytesMut) -> BytesMut {

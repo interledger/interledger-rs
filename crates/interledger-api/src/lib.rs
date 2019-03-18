@@ -226,8 +226,9 @@ impl_web! {
                 }))
                 .and_then(move |accounts| {
                     let ilp_address = Bytes::from(accounts[0].client_address());
+                    // TODO return the response without instantiating an SpspResponder (use a simple fn)
                     Ok(SpspResponder::new(ilp_address, server_secret)
-                        .generate_http_response_from_tag(""))
+                        .generate_http_response())
                     })
         }
 
@@ -245,7 +246,7 @@ impl_web! {
             .and_then(move |accounts| {
                 let ilp_address = Bytes::from(accounts[0].client_address());
                 Ok(SpspResponder::new(ilp_address, server_secret)
-                    .generate_http_response_from_tag(""))
+                    .generate_http_response())
                 })
         }
 

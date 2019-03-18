@@ -5,6 +5,7 @@
 //! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
 #[macro_use]
 extern crate log;
+#[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -109,8 +110,7 @@ mod send_money_to_receiver {
         let store = TestStore {
             route: (destination_address.clone(), account),
         };
-        let connection_generator =
-            ConnectionGenerator::new(destination_address, server_secret.clone());
+        let connection_generator = ConnectionGenerator::new(server_secret.clone());
         let server = StreamReceiverService::new(
             server_secret,
             outgoing_service_fn(|_| {
@@ -127,7 +127,7 @@ mod send_money_to_receiver {
         let server = IldcpService::new(server);
 
         let (destination_account, shared_secret) =
-            connection_generator.generate_address_and_secret(b"test");
+            connection_generator.generate_address_and_secret(&destination_address[..]);
 
         let run = send_money(
             server,
