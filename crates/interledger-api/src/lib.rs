@@ -231,6 +231,24 @@ impl_web! {
                     })
         }
 
+        // TODO resolve payment pointers with subdomains to the correct account
+        // also give accounts aliases to use in the payment pointer instead of the ids
+        #[get("/.well-known/pay")]
+        fn get_well_known(&self) -> impl Future<Item = Response<Body>, Error = Response<()>> {
+            let default_account = A::AccountId::default();
+            let server_secret = self.server_secret.clone();
+            self.store.get_accounts(vec![default_account])
+            .map_err(move |_| {
+                error!("Account not found: {}", default_account);
+                Response::builder().status(404).body(()).unwrap()
+            })
+            .and_then(move |accounts| {
+                let ilp_address = accounts[0].client_address();
+                Ok(spsp_responder(ilp_address, &server_secret[..])
+                    .generate_http_response_from_tag(""))
+                })
+        }
+
         // TODO add quoting via SPSP/STREAM
     }
 }

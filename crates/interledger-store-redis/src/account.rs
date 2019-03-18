@@ -110,7 +110,7 @@ impl FromRedisValue for Account {
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: Vec<u8> = get_value("ilp_address", &hash)?;
         let is_admin: String = get_value("is_admin", &hash)?;
-        let is_admin = is_admin == "true".to_string();
+        let is_admin = is_admin == "true";
         Ok(Account {
             id: get_value("id", &hash)?,
             ilp_address: Bytes::from(ilp_address),
