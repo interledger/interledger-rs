@@ -33,10 +33,7 @@ fn extract_original_url(request: &Request<Body>) -> String {
 }
 
 pub fn spsp_responder(ilp_address: &[u8], server_secret: &[u8]) -> SpspResponder {
-    let connection_generator = ConnectionGenerator::new(ilp_address, server_secret);
-    SpspResponder {
-        connection_generator,
-    }
+    SpspResponder::new(ilp_address, server_secret)
 }
 
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
@@ -44,6 +41,34 @@ pub fn spsp_responder(ilp_address: &[u8], server_secret: &[u8]) -> SpspResponder
 #[derive(Clone)]
 pub struct SpspResponder {
     connection_generator: ConnectionGenerator,
+}
+
+impl SpspResponder {
+    pub fn new(ilp_address: &[u8], server_secret: &[u8]) -> Self {
+        let connection_generator = ConnectionGenerator::new(ilp_address, server_secret);
+        SpspResponder {
+            connection_generator,
+        }
+    }
+
+    pub fn generate_http_response_from_tag(&self, tag: &str) -> Response<Body> {
+        let (destination_account, shared_secret) = self
+            .connection_generator
+            .generate_address_and_secret(tag.as_bytes());
+        let destination_account = String::from_utf8(destination_account.to_vec()).unwrap();
+        debug!("Generated address and secret for: {}", destination_account);
+        let response = SpspResponse {
+            destination_account,
+            shared_secret: shared_secret.to_vec(),
+        };
+
+        Response::builder()
+            .header("Content-Type", "application/spsp4+json")
+            .header("Cache-Control", "max-age=60")
+            .status(200)
+            .body(Body::from(serde_json::to_string(&response).unwrap()))
+            .unwrap()
+    }
 }
 
 impl HttpService for SpspResponder {
@@ -54,25 +79,7 @@ impl HttpService for SpspResponder {
 
     fn call(&mut self, request: Request<Self::ReqBody>) -> Self::Future {
         let original_url = extract_original_url(&request);
-        let (destination_account, shared_secret) = self
-            .connection_generator
-            .generate_address_and_secret(original_url.as_bytes());
-        debug!(
-            "Responding to SPSP query with destination_account: {} (original URL: {})",
-            str::from_utf8(&destination_account).unwrap_or("<not utf8>"),
-            original_url
-        );
-        let response = SpspResponse {
-            destination_account: String::from_utf8(destination_account.to_vec()).unwrap(),
-            shared_secret: shared_secret.to_vec(),
-        };
-
-        ok(Response::builder()
-            .header("Content-Type", "application/spsp4+json")
-            .header("Cache-Control", "max-age=60")
-            .status(200)
-            .body(Body::from(serde_json::to_string(&response).unwrap()))
-            .unwrap())
+        ok(self.generate_http_response_from_tag(&original_url))
     }
 }
 

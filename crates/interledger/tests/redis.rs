@@ -160,6 +160,7 @@ fn btp_end_to_end() {
                 &redis_uri_clone,
                 ([127, 0, 0, 1], btp_port).into(),
                 ([127, 0, 0, 1], http_port).into(),
+                &cli::random_secret(),
             );
             tokio::spawn(connector);
             Ok(())
