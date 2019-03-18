@@ -12,13 +12,11 @@ use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, IncomingRequest, OutgoingRequest,
-};
+use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
 use interledger_service_util::{
     ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
 };
-use interledger_spsp::{pay, spsp_responder};
+use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_store_redis::connect as connect_redis_store;
 use interledger_stream::StreamReceiverService;
@@ -28,8 +26,6 @@ use std::{net::SocketAddr, str, sync::Arc, u64};
 use tokio::{self, net::TcpListener};
 use tower_web::ServiceBuilder;
 use url::Url;
-
-const ACCOUNT_ID: u64 = 0;
 
 #[doc(hidden)]
 pub fn random_token() -> String {
@@ -57,17 +53,8 @@ pub fn send_spsp_payment_btp(
         .additional_routes(&[&b""[..]])
         .btp_uri(Url::parse(btp_server).unwrap())
         .build();
-    let store = InMemoryStore::from_accounts(vec![account.clone()]);
     connect_client(
-        incoming_service_fn(|_| {
-            Err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: b"Not expecting incoming prepare packets",
-                triggered_by: &[],
-                data: &[],
-            }
-            .build())
-        }),
+        vec![account.clone()],
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -81,19 +68,27 @@ pub fn send_spsp_payment_btp(
             }
             .build())
         }),
-        store.clone(),
-        vec![ACCOUNT_ID],
     )
     .map_err(|err| {
         eprintln!("Error connecting to BTP server: {:?}", err);
         eprintln!("(Hint: is moneyd running?)");
     })
-    .and_then(move |service| {
+    .and_then(move |btp_service| {
+        let service = btp_service.handle_incoming(incoming_service_fn(|_| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: b"Not expecting incoming prepare packets",
+                triggered_by: &[],
+                data: &[],
+            }
+            .build())
+        }));
         // TODO seems kind of janky to clone the btp_service just to
         // close it later. Is there some better way of making sure it closes?
         let btp_service = service.clone();
         let service = ValidatorService::outgoing(service);
-        let router = Router::new(service, store);
+        let store = InMemoryStore::from_accounts(vec![account.clone()]);
+        let router = Router::new(store, service);
         pay(router, account, &receiver, amount)
             .map_err(|err| {
                 eprintln!("Error sending SPSP payment: {:?}", err);
@@ -149,7 +144,7 @@ pub fn send_spsp_payment_http(
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let service = HttpClientService::new(store.clone());
     let service = ValidatorService::outgoing(service);
-    let service = Router::new(service, store);
+    let service = Router::new(store, service);
     pay(service, account, &receiver, amount)
         .map_err(|err| {
             eprintln!("Error sending SPSP payment: {:?}", err);
@@ -174,34 +169,16 @@ pub fn run_spsp_server_btp(
 ) -> impl Future<Item = (), Error = ()> {
     debug!("Starting SPSP server");
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
-    let account: Account = AccountBuilder::new()
-        .additional_routes(&[&b""[..]])
+    let incoming_account: Account = AccountBuilder::new()
+        .additional_routes(&[b"peer."])
         .btp_uri(parse_btp_url(btp_server).unwrap())
         .build();
-    let secret = random_secret();
-    let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let ilp_address_clone = ilp_address.clone();
-    let stream_server = StreamReceiverService::without_ildcp(
-        &secret,
-        incoming_service_fn(move |request: IncomingRequest<Account>| {
-            Err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &format!(
-                    "No handler configured for destination: {}",
-                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
-                )
-                .as_bytes(),
-                triggered_by: &ilp_address_clone.read()[..],
-                data: &[],
-            }
-            .build())
-        }),
-    );
+    let server_secret = Bytes::from(&random_secret()[..]);
+    let store = InMemoryStore::from_accounts(vec![incoming_account.clone()]);
 
-    let ilp_address_read_clone = ilp_address.clone();
-    let ilp_address_write_clone = ilp_address.clone();
+    let ilp_address_clone = ilp_address.clone();
     connect_client(
-        ValidatorService::incoming(stream_server.clone()),
+        vec![incoming_account.clone()],
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -210,32 +187,43 @@ pub fn run_spsp_server_btp(
                     str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
                 )
                 .as_bytes(),
-                triggered_by: &ilp_address_read_clone.read()[..],
+                triggered_by: &ilp_address_clone.read()[..],
                 data: &[],
             }
             .build())
         }),
-        store.clone(),
-        vec![ACCOUNT_ID],
     )
     .map_err(|err| {
         eprintln!("Error connecting to BTP server: {:?}", err);
         eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |btp_service| {
-        let btp_service = ValidatorService::outgoing(btp_service);
-        let mut router = Router::new(btp_service, store);
-        get_ildcp_info(&mut router, account.clone()).and_then(move |info| {
-            let client_address = Bytes::from(info.client_address());
-            *ilp_address_write_clone.write() = client_address.clone();
+        let outgoing_service = ValidatorService::outgoing(btp_service.clone());
+        let outgoing_service = StreamReceiverService::new(server_secret.clone(), outgoing_service);
+        let incoming_service = Router::new(store.clone(), outgoing_service);
+        let mut incoming_service = ValidatorService::incoming(incoming_service);
 
-            stream_server.set_ildcp(info);
+        btp_service.handle_incoming(incoming_service.clone());
+
+        get_ildcp_info(&mut incoming_service, incoming_account.clone()).and_then(move |info| {
+            let client_address = Bytes::from(info.client_address());
+            *ilp_address.write() = client_address.clone();
+
+            let receiver_account = AccountBuilder::new()
+                .ilp_address(&client_address[..])
+                .asset_code(String::from_utf8(info.asset_code().to_vec()).unwrap_or_default())
+                .asset_scale(info.asset_scale())
+                // Send all outgoing packets to this account
+                .additional_routes(&[&b""[..]])
+                .build();
+            store.add_account(receiver_account);
 
             if !quiet {
                 println!("Listening on: {}", address);
             }
+            let spsp_responder = SpspResponder::new(client_address, server_secret);
             Server::bind(&address)
-                .serve(move || spsp_responder(&client_address[..], &secret[..]))
+                .serve(move || spsp_responder.clone())
                 .map_err(|e| eprintln!("Server error: {:?}", e))
         })
     })
@@ -257,19 +245,21 @@ pub fn run_spsp_server_http(
     let account: Account = AccountBuilder::new()
         .http_incoming_authorization(format!("Bearer {}", auth_token))
         .build();
-    let secret = random_secret();
+    let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let spsp_responder = spsp_responder(&ildcp_info.client_address(), &secret[..]);
+    let spsp_responder = SpspResponder::new(
+        Bytes::from(ildcp_info.client_address()),
+        server_secret.clone(),
+    );
     let ilp_address = Bytes::from(ildcp_info.client_address());
-    let incoming_handler = StreamReceiverService::new(
-        &secret,
-        ildcp_info,
-        incoming_service_fn(move |request: IncomingRequest<Account>| {
+    let outgoing_handler = StreamReceiverService::new(
+        server_secret,
+        outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &format!(
                     "No handler configured for destination: {}",
-                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                    str::from_utf8(&request.prepare.destination()).unwrap_or("<not utf8>")
                 )
                 .as_bytes(),
                 triggered_by: &ilp_address[..],
@@ -278,6 +268,7 @@ pub fn run_spsp_server_http(
             .build())
         }),
     );
+    let incoming_handler = Router::new(store.clone(), outgoing_handler);
     let incoming_handler = IldcpService::new(incoming_handler);
     let incoming_handler = ValidatorService::incoming(incoming_handler);
     let http_service = HttpServerService::new(incoming_handler, store);
@@ -337,7 +328,7 @@ pub fn run_moneyd_local(
     });
     create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
         move |btp_service| {
-            let service = Router::new(btp_service.clone(), store);
+            let service = Router::new(store, btp_service.clone());
             let service = IldcpService::new(service);
             let service = ValidatorService::incoming(service);
             btp_service.handle_incoming(service);
@@ -360,32 +351,38 @@ pub fn run_node_redis(
     connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
-            let http_outgoing = HttpClientService::new(store.clone());
-            create_server(btp_address, store.clone(), http_outgoing).and_then(move |btp_service| {
-                let outgoing_service = btp_service.clone();
-                let outgoing_service =
-                    ExchangeRateAndBalanceService::new(store.clone(), outgoing_service);
+            let outgoing_service = HttpClientService::new(store.clone());
+            create_server(btp_address, store.clone(), outgoing_service).and_then(
+                move |btp_service| {
+                    // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
+                    // service to others like the router and then call handle_incoming on it to set up the incoming handler
+                    let outgoing_service = btp_service.clone();
+                    let outgoing_service =
+                        StreamReceiverService::new(server_secret.clone(), outgoing_service);
+                    let outgoing_service =
+                        ExchangeRateAndBalanceService::new(store.clone(), outgoing_service);
 
-                let incoming_service = Router::new(outgoing_service, store.clone());
-                let incoming_service = IldcpService::new(incoming_service);
-                let incoming_service = MaxPacketAmountService::new(incoming_service);
-                let incoming_service = ValidatorService::incoming(incoming_service);
+                    let incoming_service = Router::new(store.clone(), outgoing_service);
+                    let incoming_service = IldcpService::new(incoming_service);
+                    let incoming_service = MaxPacketAmountService::new(incoming_service);
+                    let incoming_service = ValidatorService::incoming(incoming_service);
 
-                // Handle packets sent via BTP
-                btp_service.handle_incoming(incoming_service.clone());
+                    // Handle incoming packets sent via BTP
+                    btp_service.handle_incoming(incoming_service.clone());
 
-                // TODO should this run the node api on a different port so it's easier to separate public/private?
-                // Note the API also includes receiving ILP packets sent via HTTP
-                let api = NodeApi::new(server_secret, store.clone(), incoming_service.clone());
-                let listener =
-                    TcpListener::bind(&http_address).expect("Unable to bind to HTTP address");
-                println!("Interledger node listening on: {}", http_address);
-                let server = ServiceBuilder::new()
-                    .resource(api)
-                    .serve(listener.incoming());
-                tokio::spawn(server);
-                Ok(())
-            })
+                    // TODO should this run the node api on a different port so it's easier to separate public/private?
+                    // Note the API also includes receiving ILP packets sent via HTTP
+                    let api = NodeApi::new(server_secret, store.clone(), incoming_service.clone());
+                    let listener =
+                        TcpListener::bind(&http_address).expect("Unable to bind to HTTP address");
+                    println!("Interledger node listening on: {}", http_address);
+                    let server = ServiceBuilder::new()
+                        .resource(api)
+                        .serve(listener.incoming());
+                    tokio::spawn(server);
+                    Ok(())
+                },
+            )
         })
 }
 

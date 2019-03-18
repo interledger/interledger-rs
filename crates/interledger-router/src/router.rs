@@ -13,25 +13,25 @@ use std::str;
 ///   - adjust account balances
 ///   - reduce the Prepare packet's expiry
 #[derive(Clone)]
-pub struct Router<S, T> {
-    next: S,
+pub struct Router<T, S> {
     store: T,
+    next: S,
 }
 
-impl<S, T> Router<S, T>
+impl<T, S> Router<T, S>
 where
-    S: OutgoingService<T::Account>,
     T: RouterStore,
+    S: OutgoingService<T::Account>,
 {
-    pub fn new(next: S, store: T) -> Self {
+    pub fn new(store: T, next: S) -> Self {
         Router { next, store }
     }
 }
 
-impl<S, T> IncomingService<T::Account> for Router<S, T>
+impl<T, S> IncomingService<T::Account> for Router<T, S>
 where
-    S: OutgoingService<T::Account> + Clone + Send + 'static,
     T: RouterStore,
+    S: OutgoingService<T::Account> + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -154,6 +154,9 @@ mod tests {
     #[test]
     fn empty_routing_table() {
         let mut router = Router::new(
+            TestStore {
+                routes: HashMap::new(),
+            },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
                     fulfillment: &[0; 32],
@@ -161,9 +164,6 @@ mod tests {
                 }
                 .build())
             }),
-            TestStore {
-                routes: HashMap::new(),
-            },
         );
 
         let result = router
@@ -185,6 +185,9 @@ mod tests {
     #[test]
     fn no_route() {
         let mut router = Router::new(
+            TestStore {
+                routes: HashMap::from_iter(vec![(Bytes::from("example.other"), 1)].into_iter()),
+            },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
                     fulfillment: &[0; 32],
@@ -192,9 +195,6 @@ mod tests {
                 }
                 .build())
             }),
-            TestStore {
-                routes: HashMap::from_iter(vec![(Bytes::from("example.other"), 1)].into_iter()),
-            },
         );
 
         let result = router
@@ -216,6 +216,11 @@ mod tests {
     #[test]
     fn finds_exact_route() {
         let mut router = Router::new(
+            TestStore {
+                routes: HashMap::from_iter(
+                    vec![(Bytes::from("example.destination"), 1)].into_iter(),
+                ),
+            },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
                     fulfillment: &[0; 32],
@@ -223,11 +228,6 @@ mod tests {
                 }
                 .build())
             }),
-            TestStore {
-                routes: HashMap::from_iter(
-                    vec![(Bytes::from("example.destination"), 1)].into_iter(),
-                ),
-            },
         );
 
         let result = router
@@ -249,6 +249,9 @@ mod tests {
     #[test]
     fn catch_all_route() {
         let mut router = Router::new(
+            TestStore {
+                routes: HashMap::from_iter(vec![(Bytes::from(""), 0)].into_iter()),
+            },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
                     fulfillment: &[0; 32],
@@ -256,9 +259,6 @@ mod tests {
                 }
                 .build())
             }),
-            TestStore {
-                routes: HashMap::from_iter(vec![(Bytes::from(""), 0)].into_iter()),
-            },
         );
 
         let result = router
@@ -280,6 +280,9 @@ mod tests {
     #[test]
     fn finds_matching_prefix() {
         let mut router = Router::new(
+            TestStore {
+                routes: HashMap::from_iter(vec![(Bytes::from("example."), 1)].into_iter()),
+            },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
                     fulfillment: &[0; 32],
@@ -287,9 +290,6 @@ mod tests {
                 }
                 .build())
             }),
-            TestStore {
-                routes: HashMap::from_iter(vec![(Bytes::from("example."), 1)].into_iter()),
-            },
         );
 
         let result = router
@@ -313,15 +313,6 @@ mod tests {
         let to: Arc<Mutex<Option<TestAccount>>> = Arc::new(Mutex::new(None));
         let to_clone = to.clone();
         let mut router = Router::new(
-            outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
-                *to_clone.lock() = Some(request.to.clone());
-
-                Ok(FulfillBuilder {
-                    fulfillment: &[0; 32],
-                    data: &[],
-                }
-                .build())
-            }),
             TestStore {
                 routes: HashMap::from_iter(
                     vec![
@@ -332,6 +323,15 @@ mod tests {
                     .into_iter(),
                 ),
             },
+            outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
+                *to_clone.lock() = Some(request.to.clone());
+
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: &[],
+                }
+                .build())
+            }),
         );
 
         let result = router
