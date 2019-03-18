@@ -375,6 +375,7 @@ pub fn run_node_redis(
                 // Handle packets sent via HTTP
                 let http_service = HttpServerService::new(incoming_service.clone(), store.clone());
 
+                // TODO should this run the node api on a different port so it's easier to separate public/private?
                 let api = NodeApi::new(store.clone(), incoming_service.clone());
                 let listener =
                     TcpListener::bind(&http_address).expect("Unable to bind to HTTP address");

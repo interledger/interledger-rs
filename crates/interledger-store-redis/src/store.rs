@@ -342,7 +342,10 @@ impl NodeStore for RedisStore {
 
         Box::new(
             self.get_next_account_id()
-                .and_then(|id| Account::try_from(id, account))
+                .and_then(|id| {
+                    debug!("Next account id is: {}", id);
+                    Account::try_from(id, account)
+                })
                 .and_then(move |account| {
                     let mut pipe = redis::pipe();
                     pipe.atomic().hset(BALANCES_KEY, account.id, 0u64).ignore();
