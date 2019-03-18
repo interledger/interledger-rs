@@ -102,8 +102,8 @@ pub fn main() {
                                 .default_value("9"),
                         ])
                     ),
-                SubCommand::with_name("connector")
-                    .about("Run a connector")
+                SubCommand::with_name("node")
+                    .about("Run an Interledger node (sender, connector, receiver bundle)")
                     .args(&[
                         Arg::with_name("redis_uri")
                             .long("redis_uri")
@@ -222,7 +222,7 @@ pub fn main() {
             }
             _ => app.print_help().unwrap(),
         },
-        ("connector", Some(matches)) => match matches.subcommand() {
+        ("node", Some(matches)) => match matches.subcommand() {
             ("accounts", Some(matches)) => match matches.subcommand() {
                 ("add", Some(matches)) => {
                     let (http_endpoint, http_outgoing_authorization) =
@@ -276,7 +276,7 @@ pub fn main() {
                     value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
-                tokio::run(run_connector_redis(
+                tokio::run(run_node_redis(
                     &redis_uri,
                     ([127, 0, 0, 1], btp_port).into(),
                     ([127, 0, 0, 1], http_port).into(),

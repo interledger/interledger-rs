@@ -44,9 +44,15 @@ pub struct AccountDetails {
     pub is_admin: bool,
 }
 
-pub struct Node<T, S> {
+pub struct NodeApi<T, S> {
     store: T,
     incoming_handler: S,
+}
+
+#[derive(Response)]
+#[web(status = "200")]
+struct ServerStatus {
+    status: String,
 }
 
 #[derive(Response)]
@@ -81,20 +87,29 @@ struct SpspPayResponse {
 }
 
 impl_web! {
-    impl<T, S, A> Node<T, S>
+    impl<T, S, A> NodeApi<T, S>
     where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A>,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
     A: AccountTrait + HttpAccount + NodeAccount + 'static,
 
     {
         pub fn new(store: T, incoming_handler: S) -> Self {
-            Node {
+            NodeApi {
                 store,
                 incoming_handler,
             }
         }
 
+        #[get("/")]
+        #[content_type("application/json")]
+        fn get_root(&self) -> Result<ServerStatus, ()> {
+            Ok(ServerStatus {
+                status: "Ready".to_string(),
+            })
+        }
+
         #[post("/accounts")]
+        #[content_type("application/json")]
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = AccountResponse, Error = Response<()>> {
             let store = self.store.clone();
             self.store.get_account_from_http_auth(&authorization)
@@ -113,6 +128,7 @@ impl_web! {
         }
 
         #[get("/accounts/:id/balance")]
+        #[content_type("application/json")]
         fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
             let store = self.store.clone();
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
@@ -135,6 +151,7 @@ impl_web! {
         }
 
         #[post("/rates")]
+        #[content_type("application/json")]
         fn post_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
             let store = self.store.clone();
             self.store.get_account_from_http_auth(&authorization)
@@ -153,6 +170,7 @@ impl_web! {
         }
 
         #[post("/pay")]
+        #[content_type("application/json")]
         // TODO add a version that lets you specify the destination amount instead
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
             let service = self.incoming_handler.clone();
@@ -165,6 +183,7 @@ impl_web! {
                             }))
                         .map_err(|err| {
                             error!("Error sending SPSP payment: {:?}", err);
+                            // TODO give a different error message depending on what type of error it is
                             Response::builder().status(500).body(format!("Error sending SPSP payment: {:?}", err)).unwrap()
                         })
                 })
