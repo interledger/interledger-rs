@@ -244,6 +244,54 @@ impl BalanceStore for RedisStore {
                 }),
         )
     }
+
+    fn undo_balance_update(
+        &self,
+        from_account: &Account,
+        incoming_amount: u64,
+        to_account: &Account,
+        outgoing_amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let from_account_id = from_account.id();
+        let to_account_id = to_account.id();
+
+        debug!(
+            "Decreasing balance of account {} by: {}. Increasing balance of account {} by: {}",
+            from_account_id, incoming_amount, to_account_id, outgoing_amount
+        );
+
+        // TODO check against balance limit
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .cmd("HINCRBY")
+            .arg(BALANCES_KEY)
+            .arg(from_account_id)
+            // TODO make sure this doesn't overflow
+            .arg(0i64 - incoming_amount as i64)
+            .cmd("HINCRBY")
+            .arg(BALANCES_KEY)
+            .arg(to_account_id)
+            .arg(outgoing_amount);
+
+        Box::new(
+            pipe.query_async(self.connection.clone().unwrap())
+                .map_err(move |err| {
+                    error!(
+                    "Error undoing balance update for accounts. from_account: {}, to_account: {}: {:?}",
+                    from_account_id,
+                    to_account_id,
+                    err
+                )
+                })
+                .and_then(move |(_connection, balances): (_, Vec<i64>)| {
+                    debug!(
+                        "Updated account balances. Account {} has: {}, account {} has: {}",
+                        from_account_id, balances[0], to_account_id, balances[1]
+                    );
+                    Ok(())
+                }),
+        )
+    }
 }
 
 impl ExchangeRateStore for RedisStore {
