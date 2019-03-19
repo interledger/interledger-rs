@@ -1,0 +1,12 @@
+.vscode
+node_modules
+**/*.js
+**/*.js.map
+**/*.d.ts
+!example.js
+!typedoc.js
+!scripts/*
+coverage
+.nyc_output
+doc
+dump.rdb
