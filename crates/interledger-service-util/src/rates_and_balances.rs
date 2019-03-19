@@ -4,11 +4,26 @@ use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 
 pub trait BalanceStore: AccountStore {
+    /// Fetch the current balance for the given account.
     fn get_balance(
         &self,
         account_id: <Self::Account as Account>::AccountId,
     ) -> Box<Future<Item = i64, Error = ()> + Send>;
+
+    /// Subtract the `incoming_amount` from the `from_account`'s balance.
+    /// Add the `outgoing_amount` to the `to_account`'s balance.
     fn update_balances(
+        &self,
+        from_account: &Self::Account,
+        incoming_amount: u64,
+        to_account: &Self::Account,
+        outgoing_amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send>;
+
+    /// Roll back the effect of a previous `update_balances` call.
+    /// Add the `incoming_amount` to the `from_account`'s balance.
+    /// Subtract the `outgoing_amount` from the `to_account`'s balance.
+    fn undo_balance_update(
         &self,
         from_account: &Self::Account,
         incoming_amount: u64,
@@ -42,8 +57,8 @@ impl<S, T> OutgoingService<T::Account> for ExchangeRateAndBalanceService<S, T>
 where
     // TODO can we make these non-'static?
     S: OutgoingService<T::Account> + Send + Clone + 'static,
-    T: BalanceStore + ExchangeRateStore + Send,
-    T::Account: IldcpAccount + 'static,
+    T: BalanceStore + ExchangeRateStore + Clone + Send + Sync + 'static,
+    T::Account: IldcpAccount + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -80,17 +95,16 @@ where
             .build()));
         };
 
-        request.prepare.set_amount(outgoing_amount);
-
         let mut next = self.next.clone();
+        let store = self.store.clone();
+        let from = request.from.clone();
+        let to = request.to.clone();
+        let incoming_amount = request.prepare.amount();
+
+        request.prepare.set_amount(outgoing_amount);
         Box::new(
             self.store
-                .update_balances(
-                    &request.from,
-                    request.prepare.amount(),
-                    &request.to,
-                    outgoing_amount,
-                )
+                .update_balances(&from, incoming_amount, &to, outgoing_amount)
                 .map_err(|_| {
                     debug!("Rejecting packet because it would exceed a balance limit");
                     RejectBuilder {
@@ -101,8 +115,16 @@ where
                     }
                     .build()
                 })
-                .and_then(move |_| next.send_request(request)),
-            // TODO reset balances if the request fails
+                .and_then(move |_| {
+                    next.send_request(request)
+                        .or_else(move |err| store.undo_balance_update(&from, incoming_amount, &to, outgoing_amount)
+                        .then(move |result| {
+                            if result.is_err() {
+                                error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from.id(), to.id(), incoming_amount, outgoing_amount);
+                            }
+                            Err(err)
+                        }))
+                }),
         )
     }
 }
