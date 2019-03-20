@@ -357,6 +357,7 @@ pub fn run_node_redis(
                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
                     let outgoing_service = btp_service.clone();
+                    let outgoing_service = ValidatorService::outgoing(outgoing_service);
                     let outgoing_service =
                         StreamReceiverService::new(server_secret.clone(), outgoing_service);
                     let outgoing_service =
