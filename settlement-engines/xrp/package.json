@@ -6,7 +6,8 @@
     "files": [
         "./build/*.js",
         "./build/*.js.map",
-        "./build/*.d.ts"
+        "./build/*.d.ts",
+        "./scripts/*.lua"
     ],
     "scripts": {
         "build": "tsc",

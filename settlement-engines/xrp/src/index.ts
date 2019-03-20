@@ -1,24 +1,23 @@
 import { RippleAPI } from 'ripple-lib'
 import { RedisClient, createClient } from 'redis'
-// import { readFile } from 'fs'
+import { readFile } from 'fs'
 import { promisify } from 'util'
 import Debug from 'debug'
 import { promisifyAll } from 'bluebird'
+import * as path from 'path'
+import { createHash } from 'crypto'
 const debug = Debug('xrp-settlement-engine')
+const readFileAsync = promisify(readFile)
 
 // TODO should the settlement engine go through and make sure all of the xrp_addresses are stored in this hash map?
-const XRP_ADDRESSES_KEY = 'xrp_addresses'
-const BALANCES_KEY = 'balances:xrp'
-const ACCOUNTS_PREFIX = 'accounts:'
-
 const DEFAULT_POLL_INTERVAL = 60000
+const KEY_ARGS = 0
 
 export interface XrpSettlementEngineConfig {
     address: string,
     secret: string,
     xrpServer?: string,
     redisUri?: string,
-    scale?: number,
     minSettlementDrops?: number,
     pollInterval?: number
 }
@@ -28,16 +27,17 @@ export class XrpSettlementEngine {
     private redisClient: any
     private address: string
     private secret: string
-    private scale: number
-    private minSettlementAmount: number
+    private minDropsToSettle: number
     private pollInterval: number
     private interval: NodeJS.Timeout
+    private checkAccountsScript: string
+    private creditAccountForSettlementScript: string
+    private updateBalanceAfterSettlementScript: string
 
     constructor(config: XrpSettlementEngineConfig) {
         this.address = config.address
         this.secret = config.secret
-        this.scale = (typeof config.scale === 'number' ? config.scale : 9)
-        this.minSettlementAmount = this.xrpDropsToAmount(typeof config.minSettlementDrops === 'number' ? config.minSettlementDrops : 1000000)
+        this.minDropsToSettle = (typeof config.minSettlementDrops === 'number' ? config.minSettlementDrops : 1000000)
         this.redisClient = promisifyAll(createClient(config.redisUri || 'redis://localhost:6379'))
         this.rippleClient = new RippleAPI({
             server: config.xrpServer || 'wss://s.altnet.rippletest.net:51233'// 'wss://s1.ripple.com'
@@ -46,26 +46,46 @@ export class XrpSettlementEngine {
     }
 
     async connect(): Promise<void> {
+        // Connect to redis and rippled
         await Promise.all([
             this.rippleClient.connect().then(() => debug('Connected to rippled')),
             new Promise((resolve, reject) => {
                 this.redisClient.once('ready', resolve)
                 this.redisClient.once('error', reject)
-            }).then(() => debug('Connected to Redis'))
+            }).then(() => {
+                debug('Connected to Redis')
+                return this.loadScripts()
+            })
         ])
 
+        // Set up the settlement engine to poll the accounts for balance changes
+        debug(`Setting up to poll for balance changes every ${this.pollInterval}ms`)
         await this.checkAccounts()
         this.interval = setInterval(() => this.checkAccounts(), this.pollInterval)
 
-        // Load and register script
-        // const checkBalancesScript = await readFileAsync("./check-balances.lua", 'utf8')
-        // this.redisClient.script('load', checkBalancesScript)
-
+        // Subscribe to rippled events to be notified of incoming payments
         this.rippleClient.connection.on('transaction', this.handleTransaction)
-
         await this.rippleClient.request('subscribe', {
             accounts: [this.address]
         })
+    }
+
+    private async loadScripts() {
+        debug('Loading scripts into Redis')
+
+        const checkAccountsScript = await readFileAsync(path.join(__dirname, "../scripts/get_accounts_that_need_settlement.lua"), 'utf8')
+        await this.redisClient.scriptAsync('load', checkAccountsScript)
+        this.checkAccountsScript = createHash('sha1').update(checkAccountsScript).digest('hex')
+
+        const creditAccountForSettlementScript = await readFileAsync(path.join(__dirname, "../scripts/credit_account_for_settlement.lua"), 'utf8')
+        await this.redisClient.scriptAsync('load', creditAccountForSettlementScript)
+        this.creditAccountForSettlementScript = createHash('sha1').update(creditAccountForSettlementScript).digest('hex')
+
+        const updateBalanceAfterSettlementScript = await readFileAsync(path.join(__dirname, "../scripts/update_balance_after_settlement.lua"), 'utf8')
+        await this.redisClient.scriptAsync('load', creditAccountForSettlementScript)
+        this.updateBalanceAfterSettlementScript = createHash('sha1').update(updateBalanceAfterSettlementScript).digest('hex')
+
+        debug('Loaded scripts')
     }
 
     async disconnect(): Promise<void> {
@@ -91,40 +111,17 @@ export class XrpSettlementEngine {
 
 
     private async scanAccounts(cursor: string): Promise<string> {
-        debug('Scanning accounts')
-        // TODO do the scan and lookup of the associated details in a lua script
-        const result = await this.redisClient.hscanAsync(BALANCES_KEY, cursor)
-        const newCursor = result[0]
-        const balances = result[1]
-        let command = this.redisClient.multi()
-        for (let i = 0; i < balances.length; i += 2) {
-            const account = balances[i]
-            const balance = balances[i + 1]
-            command = command.hmget(`${ACCOUNTS_PREFIX}${account}`, ['settle_threshold', 'settle_to', 'xrp_address'])
-            debug(`Account ${account} has balance: ${balance}`)
+        const [newCursor, accountsToSettle] = await this.redisClient.evalshaAsync(this.checkAccountsScript, KEY_ARGS, cursor, 20, this.minDropsToSettle)
+
+        for (let accountRecord in accountsToSettle) {
+            const [account, xrpAddress, dropsToSettle] = accountRecord
+            this.settle(account, xrpAddress, dropsToSettle)
         }
-        promisify(command.exec).call(command)
-            .then((results) => {
-                debug('Got account details:', results)
-                for (let i = 0; i < results.length; i++) {
-                    const account = balances[i * 2]
-                    const balance = parseInt(balances[i * 2 + 1])
-                    const settleThreshold = parseInt(results[i][0])
-                    const settleTo = parseInt(results[i][1])
-                    const xrpAddress = results[i][2]
-                    debug(`Account ${account} has balance: ${balance}, settleThreshold: ${settleThreshold}, and settleTo: ${settleTo}`)
-                    if (balance >= settleThreshold && balance - settleTo >= this.minSettlementAmount) {
-                        const amountToSettle = balance - settleTo
-                        this.settle(account, xrpAddress, amountToSettle)
-                    }
-                }
-            })
-            .catch((err) => console.error('Error getting account details:', err))
+
         return newCursor
     }
 
-    private async settle(account: string, xrpAddress: string, amount: number) {
-        const drops = this.amountToXrpDrops(amount)
+    private async settle(account: string, xrpAddress: string, drops: string) {
         debug(`Attempting to send ${drops} XRP drops to account: ${account} (XRP address: ${xrpAddress})`)
         try {
             const payment = await this.rippleClient.preparePayment(this.address, {
@@ -150,8 +147,7 @@ export class XrpSettlementEngine {
             const result = await this.rippleClient.submit(signedTransaction)
             if (result.resultCode === 'tesSUCCESS') {
                 debug(`Sent ${drops} drop payment to account: ${account} (xrpAddress: ${xrpAddress})`)
-                const adjustmentAmount = 0 - this.xrpDropsToAmount(drops)
-                const newBalance = await this.redisClient.hincrbyAsync(BALANCES_KEY, account, adjustmentAmount)
+                const newBalance = await this.redisClient.evalshaAsync(this.updateBalanceAfterSettlementScript, KEY_ARGS, account, drops)
                 debug(`Account ${account} now has balance: ${newBalance}`)
             }
         } catch (err) {
@@ -176,23 +172,13 @@ export class XrpSettlementEngine {
             console.error('Error parsing amount received from transaction: ', tx)
             return
         }
-        const amount = this.xrpDropsToAmount(drops)
 
-        // TODO look up the account and do the set transaction in lua
-        const account = await this.redisClient.hgetAsync(XRP_ADDRESSES_KEY, tx.transaction.Account)
-        if (account) {
-            const newBalance = await this.redisClient.hincrbyAsync(BALANCES_KEY, account, amount)
+        try {
+            const [account, newBalance] = await this.redisClient.evalshaAsync(this.creditAccountForSettlementScript, KEY_ARGS, tx.transaction.Account, drops)
             debug(`Got incoming settlement from account: ${account}, balance is now: ${newBalance}`)
-        } else {
+        } catch (err) {
+            debug('Error crediting account: ', err)
             console.warn('Got incoming payment from an unknown account: ', JSON.stringify(tx))
         }
-    }
-
-    private amountToXrpDrops(amount: number): number {
-        return Math.floor(amount * (Math.pow(10, 6 - this.scale)))
-    }
-
-    private xrpDropsToAmount(drops: number): number {
-        return Math.floor(drops * Math.pow(10, this.scale - 6))
     }
 }
