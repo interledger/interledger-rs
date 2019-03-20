@@ -25,13 +25,11 @@
         "@types/debug": "^4.1.2",
         "@types/node": "^11.11.3",
         "@types/redis": "^2.8.11",
-        "bluebird": "^3.5.3",
         "debug": "^4.1.1",
         "redis": "^2.8.0",
         "ripple-lib": "^1.2.0"
     },
     "devDependencies": {
-        "ts-node": "^8.0.3",
         "tslint": "^5.10.0",
         "tslint-config-standard": "^8.0.0",
         "typescript": "^3.0.1"
