@@ -29,11 +29,14 @@ static ACCOUNT_FROM_HTTP_AUTH_SCRIPT: &str =
     "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'http_auth', ARGV[1]))";
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
-static BALANCES_KEY: &str = "balances";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
+}
+
+fn balance_key(asset_code: &str) -> String {
+    format!("balances:{}", asset_code)
 }
 
 pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
@@ -139,7 +142,7 @@ impl RedisStore {
             .arg(NEXT_ACCOUNT_ID_KEY)
             .query_async(self.connection.clone().unwrap())
             .map_err(|err| error!("Error incrementing account ID: {:?}", err))
-            .and_then(|(_conn, next_account_id): (_, u64)| Ok(next_account_id))
+            .and_then(|(_conn, next_account_id): (_, u64)| Ok(next_account_id - 1))
     }
 }
 
@@ -179,18 +182,15 @@ impl AccountStore for RedisStore {
 }
 
 impl BalanceStore for RedisStore {
-    fn get_balance(
-        &self,
-        account_id: <Self::Account as AccountTrait>::AccountId,
-    ) -> Box<Future<Item = i64, Error = ()> + Send> {
+    fn get_balance(&self, account: Account) -> Box<Future<Item = i64, Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.hget(BALANCES_KEY, account_id);
+        pipe.hget(balance_key(account.asset_code.as_str()), account.id);
         Box::new(
             pipe.query_async(self.connection.clone().unwrap())
                 .map_err(move |err| {
                     error!(
                         "Error getting balance for account: {} {:?}",
-                        account_id, err
+                        account.id, err
                     )
                 })
                 .and_then(|(_connection, balance): (_, i64)| Ok(balance)),
@@ -199,9 +199,9 @@ impl BalanceStore for RedisStore {
 
     fn update_balances(
         &self,
-        from_account: &Account,
+        from_account: Account,
         incoming_amount: u64,
-        to_account: &Account,
+        to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let from_account_id = from_account.id();
@@ -216,11 +216,11 @@ impl BalanceStore for RedisStore {
         let mut pipe = redis::pipe();
         pipe.atomic()
             .cmd("HINCRBY")
-            .arg(BALANCES_KEY)
+            .arg(balance_key(from_account.asset_code.as_str()))
             .arg(from_account_id)
             .arg(incoming_amount)
             .cmd("HINCRBY")
-            .arg(BALANCES_KEY)
+            .arg(balance_key(to_account.asset_code.as_str()))
             .arg(to_account_id)
             // TODO make sure this doesn't overflow
             .arg(0i64 - outgoing_amount as i64);
@@ -247,9 +247,9 @@ impl BalanceStore for RedisStore {
 
     fn undo_balance_update(
         &self,
-        from_account: &Account,
+        from_account: Account,
         incoming_amount: u64,
-        to_account: &Account,
+        to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let from_account_id = from_account.id();
@@ -264,12 +264,12 @@ impl BalanceStore for RedisStore {
         let mut pipe = redis::pipe();
         pipe.atomic()
             .cmd("HINCRBY")
-            .arg(BALANCES_KEY)
+            .arg(balance_key(from_account.asset_code.as_str()))
             .arg(from_account_id)
             // TODO make sure this doesn't overflow
             .arg(0i64 - incoming_amount as i64)
             .cmd("HINCRBY")
-            .arg(BALANCES_KEY)
+            .arg(balance_key(to_account.asset_code.as_str()))
             .arg(to_account_id)
             .arg(outgoing_amount);
 
@@ -396,8 +396,16 @@ impl NodeStore for RedisStore {
                 })
                 .and_then(move |account| {
                     let mut pipe = redis::pipe();
-                    pipe.atomic().hset(BALANCES_KEY, account.id, 0u64).ignore();
-                    // TODO hard fail if the auth already exists
+
+                    // Set balance
+                    pipe.atomic()
+                        .cmd("HSETNX")
+                        .arg(balance_key(account.asset_code.as_str()))
+                        .arg(account.id)
+                        .arg(0u64)
+                        .ignore();
+
+                    // Set incoming auth details
                     if let Some(ref auth) = account.btp_incoming_authorization {
                         pipe.cmd("HSETNX")
                             .arg("btp_auth")
@@ -412,8 +420,25 @@ impl NodeStore for RedisStore {
                             .arg(account.id)
                             .ignore();
                     }
+
+                    // Add settlement details
+                    if account.asset_code == "XRP" {
+                        if let Some(ref xrp_address) = account.xrp_address {
+                            // Note: this will fail if there is already a record for the XRP address
+                            // This prevents a single address from being associated with multiple accounts
+                            pipe.cmd("HSETNX")
+                                .arg("xrp_addresses")
+                                .arg(xrp_address)
+                                .arg(account.id)
+                                .ignore();
+                        }
+                    }
+
+                    // Add route to routing table
                     pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
                         .ignore();
+
+                    // Set account details
                     pipe.cmd("HMSET")
                         .arg(account_details_key(account.id))
                         .arg(account.clone())

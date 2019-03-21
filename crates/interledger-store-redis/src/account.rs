@@ -9,12 +9,13 @@ use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs
 use std::collections::HashMap;
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 11;
+const ACCOUNT_DETAILS_FIELDS: usize = 14;
 
 #[derive(Clone, Debug)]
 pub struct Account {
     pub(crate) id: u64,
     pub(crate) ilp_address: Bytes,
+    // TODO add additional routes
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
@@ -24,6 +25,11 @@ pub struct Account {
     pub(crate) btp_uri: Option<Url>,
     pub(crate) btp_incoming_authorization: Option<String>,
     pub(crate) is_admin: bool,
+    // TODO maybe take these out of the Account and insert them separately into the db
+    // since they're only meant for the settlement engine
+    pub(crate) xrp_address: Option<String>,
+    pub(crate) settle_threshold: Option<i64>,
+    pub(crate) settle_to: Option<i64>,
 }
 
 impl Account {
@@ -41,7 +47,7 @@ impl Account {
         Ok(Account {
             id,
             ilp_address: Bytes::from(details.ilp_address),
-            asset_code: details.asset_code,
+            asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
             http_endpoint,
@@ -50,6 +56,9 @@ impl Account {
             btp_uri,
             btp_incoming_authorization: details.btp_incoming_authorization,
             is_admin: details.is_admin,
+            xrp_address: details.xrp_address,
+            settle_threshold: details.settle_threshold,
+            settle_to: details.settle_to,
         })
     }
 }
@@ -96,6 +105,18 @@ impl ToRedisArgs for Account {
             "btp_incoming_authorization".write_redis_args(&mut rv);
             btp_incoming_authorization.write_redis_args(&mut rv);
         }
+        if let Some(xrp_address) = self.xrp_address.as_ref() {
+            "xrp_address".write_redis_args(&mut rv);
+            xrp_address.write_redis_args(&mut rv);
+        }
+        if let Some(settle_threshold) = self.settle_threshold {
+            "settle_threshold".write_redis_args(&mut rv);
+            settle_threshold.write_redis_args(&mut rv);
+        }
+        if let Some(settle_to) = self.settle_to {
+            "settle_to".write_redis_args(&mut rv);
+            settle_to.write_redis_args(&mut rv);
+        }
 
         debug_assert!(rv.len() < ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -123,6 +144,9 @@ impl FromRedisValue for Account {
             btp_incoming_authorization: get_value_option("btp_incoming_authorization", &hash)?,
             max_packet_amount: get_value("max_packet_amount", &hash)?,
             is_admin,
+            xrp_address: get_value_option("xrp_address", &hash)?,
+            settle_threshold: get_value_option("settle_threshold", &hash)?,
+            settle_to: get_value_option("settle_to", &hash)?,
         })
     }
 }

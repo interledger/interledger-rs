@@ -5,7 +5,10 @@ extern crate tower_web;
 extern crate log;
 
 use bytes::Bytes;
-use futures::{future::result, Future};
+use futures::{
+    future::{err, ok, result, Either},
+    Future,
+};
 use http::{Request, Response};
 use hyper::{body::Body, error::Error};
 use interledger_http::{HttpAccount, HttpServerService, HttpStore};
@@ -45,6 +48,9 @@ pub struct AccountDetails {
     pub btp_uri: Option<String>,
     pub btp_incoming_authorization: Option<String>,
     pub is_admin: bool,
+    pub xrp_address: Option<String>,
+    pub settle_threshold: Option<i64>,
+    pub settle_to: Option<i64>,
 }
 
 #[derive(Response)]
@@ -123,6 +129,8 @@ impl_web! {
         #[post("/accounts")]
         #[content_type("application/json")]
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = AccountResponse, Error = Response<()>> {
+            // TODO don't allow accounts to be overwritten
+            // TODO add option for non-admin signups (maybe with invite code)
             let store = self.store.clone();
             self.store.get_account_from_http_auth(&authorization)
                 .and_then(|account| if account.is_admin() {
@@ -143,18 +151,22 @@ impl_web! {
         #[content_type("application/json")]
         fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
             let store = self.store.clone();
+            let store_clone = store.clone();
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
                     store.clone().get_account_from_http_auth(&authorization)
-                        .and_then(move |account| if account.is_admin() || account.id() == id {
-                            Ok(())
-                        } else {
-                            Err(())
-                        })
+                        .and_then(move |account|
+                            if account.id() == id {
+                                Either::A(ok(account))
+                            } else if account.is_admin() {
+                                Either::B(store_clone.get_accounts(vec![id]).and_then(|accounts| Ok(accounts[0].clone())))
+                            } else {
+                                Either::A(err(()))
+                            })
                         .map_err(|_| Response::builder().status(401).body(()).unwrap())
-                        .and_then(move |_| store.get_balance(id)
+                        .and_then(move |account| store.get_balance(account)
                         .and_then(|balance| Ok(BalanceResponse {
                             balance: balance.to_string(),
                         }))

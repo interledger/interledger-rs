@@ -297,25 +297,6 @@ where
     T: OutgoingService<A> + Clone,
     A: Account + 'static,
 {
-    pub(crate) fn new(incoming_handler: S, next_outgoing: T) -> Self {
-        let (incoming_sender, incoming_receiver) = unbounded();
-        let (close_all_connections, stream_valve) = Valve::new();
-        BtpOutgoingService {
-            connections: Arc::new(RwLock::new(HashMap::new())),
-            pending_outgoing: Arc::new(Mutex::new(HashMap::new())),
-            pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
-            incoming_sender,
-            next_outgoing,
-            close_all_connections: Arc::new(Mutex::new(Some(close_all_connections))),
-            stream_valve: Arc::new(stream_valve),
-        }
-        .handle_incoming(incoming_handler)
-    }
-
-    pub(crate) fn add_connection(&self, account: A, connection: WsStream) {
-        self.outgoing.add_connection(account, connection)
-    }
-
     /// Close all of the open WebSocket connections
     pub fn close(&self) {
         self.outgoing.close();

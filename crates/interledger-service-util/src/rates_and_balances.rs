@@ -5,18 +5,15 @@ use interledger_service::*;
 
 pub trait BalanceStore: AccountStore {
     /// Fetch the current balance for the given account.
-    fn get_balance(
-        &self,
-        account_id: <Self::Account as Account>::AccountId,
-    ) -> Box<Future<Item = i64, Error = ()> + Send>;
+    fn get_balance(&self, account: Self::Account) -> Box<Future<Item = i64, Error = ()> + Send>;
 
     /// Subtract the `incoming_amount` from the `from_account`'s balance.
     /// Add the `outgoing_amount` to the `to_account`'s balance.
     fn update_balances(
         &self,
-        from_account: &Self::Account,
+        from_account: Self::Account,
         incoming_amount: u64,
-        to_account: &Self::Account,
+        to_account: Self::Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send>;
 
@@ -25,9 +22,9 @@ pub trait BalanceStore: AccountStore {
     /// Subtract the `outgoing_amount` from the `to_account`'s balance.
     fn undo_balance_update(
         &self,
-        from_account: &Self::Account,
+        from_account: Self::Account,
         incoming_amount: u64,
-        to_account: &Self::Account,
+        to_account: Self::Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send>;
 }
@@ -104,7 +101,7 @@ where
         request.prepare.set_amount(outgoing_amount);
         Box::new(
             self.store
-                .update_balances(&from, incoming_amount, &to, outgoing_amount)
+                .update_balances(from.clone(), incoming_amount, to.clone(), outgoing_amount)
                 .map_err(|_| {
                     debug!("Rejecting packet because it would exceed a balance limit");
                     RejectBuilder {
@@ -117,7 +114,7 @@ where
                 })
                 .and_then(move |_| {
                     next.send_request(request)
-                        .or_else(move |err| store.undo_balance_update(&from, incoming_amount, &to, outgoing_amount)
+                        .or_else(move |err| store.undo_balance_update(from.clone(), incoming_amount, to.clone(), outgoing_amount)
                         .then(move |result| {
                             if result.is_err() {
                                 error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from.id(), to.id(), incoming_amount, outgoing_amount);

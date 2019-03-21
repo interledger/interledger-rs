@@ -130,6 +130,9 @@ fn btp_end_to_end() {
                     http_outgoing_authorization: None,
                     max_packet_amount: u64::max_value(),
                     is_admin: false,
+                    xrp_address: None,
+                    settle_threshold: None,
+                    settle_to: None,
                 },
             )
             .and_then(move |_| {
@@ -146,6 +149,9 @@ fn btp_end_to_end() {
                         http_outgoing_authorization: None,
                         max_packet_amount: u64::max_value(),
                         is_admin: false,
+                        xrp_address: None,
+                        settle_threshold: None,
+                        settle_to: None,
                     },
                 )
             })
