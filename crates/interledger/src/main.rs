@@ -126,30 +126,56 @@ pub fn main() {
                         .args(&[
                             Arg::with_name("redis_uri")
                                 .long("redis_uri")
+                                .help("Redis database to add the account to")
                                 .default_value("redis://127.0.0.1:6379"),
                             Arg::with_name("ilp_address")
                                 .long("ilp_address")
-                                .takes_value(true),
+                                .help("ILP Address of this account")
+                                .takes_value(true)
+                                .required(true),
                             Arg::with_name("asset_code")
                                 .long("asset_code")
-                                .takes_value(true),
+                                .help("Asset that this account's balance is denominated in")
+                                .takes_value(true)
+                                .required(true),
                             Arg::with_name("asset_scale")
                                 .long("asset_scale")
-                                .takes_value(true),
+                                .help("Scale of the asset this account's balance is denominated in (a scale of 2 means that 100.50 will be represented as 10050)")
+                                .takes_value(true)
+                                .required(true),
                             Arg::with_name("btp_incoming_authorization")
                                 .long("btp_incoming_authorization")
+                                .help("BTP token this account will use to connect")
                                 .takes_value(true),
                             Arg::with_name("btp_uri")
                                 .long("btp_uri")
+                                .help("URI of a BTP server or moneyd that this account should use to connect")
                                 .takes_value(true),
                             Arg::with_name("http_url")
+                                .help("URL of the ILP-Over-HTTP endpoint that should be used when sending outgoing requests to this account")
                                 .long("http_url")
                                 .takes_value(true),
                             Arg::with_name("http_incoming_token")
                                 .long("http_incoming_token")
+                                .help("Bearer token this account will use to authenticate HTTP requests sent to this server")
+                                .takes_value(true),
+                            Arg::with_name("admin")
+                                .long("admin")
+                                .help("Flag to indicate the account is an administrator (and can add, modify, delete other accounts and change configuration)"),
+                            Arg::with_name("xrp_address")
+                                .long("xrp_address")
+                                .help("XRP address to associate with this account for settlement")
+                                .takes_value(true),
+                            Arg::with_name("settle_threshold")
+                                .long("settle_threshold")
+                                .help("Threshold, denominated in the account's asset and scale, at which an outgoing settlement should be sent")
+                                .takes_value(true),
+                            Arg::with_name("settle_to")
+                                .long("settle_to")
+                                .help("The amount that should be left after a settlement is triggered and sent (a negative value indicates that more should be sent than what is already owed)")
                                 .takes_value(true),
                         ])
-                        .group(ArgGroup::with_name("account_details").requires_all(&["redis_uri", "id", "ilp_address", "asset_scale", "asset_code"]))))
+                        .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
 
     match app.clone().get_matches().subcommand() {
@@ -271,6 +297,9 @@ pub fn main() {
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
                         is_admin: matches.is_present("admin"),
+                        xrp_address: value_t!(matches, "xrp_address", String).ok(),
+                        settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
+                        settle_to: value_t!(matches, "settle_to", i64).ok(),
                     };
                     tokio::run(insert_account_redis(&redis_uri, account));
                 }
