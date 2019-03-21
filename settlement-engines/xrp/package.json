@@ -12,7 +12,7 @@
     "scripts": {
         "build": "tsc",
         "prepare": "tsc",
-        "start": "node ./build/cli.js",
+        "start": "./build/cli.js",
         "lint": "tslint --project ."
     },
     "bin": {
