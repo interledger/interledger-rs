@@ -205,7 +205,7 @@ pub fn main() {
                         .expect("BTP Server URL is required");
                     tokio::run(run_spsp_server_btp(
                         &btp_server,
-                        ([127, 0, 0, 1], port).into(),
+                        ([0, 0, 0, 0], port).into(),
                         quiet,
                     ));
                 }
@@ -323,8 +323,8 @@ pub fn main() {
                 };
                 tokio::run(run_node_redis(
                     &redis_uri,
-                    ([127, 0, 0, 1], btp_port).into(),
-                    ([127, 0, 0, 1], http_port).into(),
+                    ([0, 0, 0, 0], btp_port).into(),
+                    ([0, 0, 0, 0], http_port).into(),
                     &server_secret,
                 ));
             }
