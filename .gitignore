@@ -8,3 +8,4 @@ Cargo.lock
 *.ods*
 *.xls*
 *.rdb
+*.aof
