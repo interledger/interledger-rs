@@ -29,4 +29,7 @@ EXPOSE 7770
 
 COPY ./run-node.js ./run-node.js
 
+VOLUME [ "/data" ]
+ENV REDIS_DIR=/data
+
 CMD ["node", "./run-node.js"]

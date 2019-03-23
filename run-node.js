@@ -8,6 +8,8 @@ async function run() {
     const xrpSecret = process.env.XRP_SECRET
     const adminToken = process.env.ADMIN_TOKEN
     const ilpAddress = process.env.ILP_ADDRESS || 'private.local.node'
+    const redisDir = process.env.REDIS_DIR || '.'
+    console.log('Saving redis data to:', redisDir)
 
     if (!xrpAddress || !xrpSecret || !adminToken) {
         console.error('Must provide XRP_ADDRESS, XRP_SECRET, and ADMIN_TOKEN')
@@ -16,8 +18,13 @@ async function run() {
 
     console.log('Starting redis-server')
     const redis = spawn('redis-server', [
+        // Use a unix socket instead of TCP
         `--unixsocket ${REDIS_UNIX_SOCKET}`,
-        '--unixsocketperm 777'
+        '--unixsocketperm 777',
+        // Save redis data using append-only log of commands
+        '--appendonly yes',
+        '--appendfsync everysec',
+        `--dir ${redisDir}`
     ], {
             stdio: 'inherit'
         })
@@ -25,12 +32,19 @@ async function run() {
     redis.on('exit', (code, signal) => console.error(`Redis exited with code: ${code} and signal: ${signal}`))
 
     console.log('Starting XRP settlement engine')
-    const settlementEngine = spawn('./settlement-engines/xrp/build/cli.js', [`--address=${xrpAddress}`, `--secret=${xrpSecret}`], {
-        env: {
-            DEBUG: process.env.DEBUG
-        },
-        stdio: 'inherit'
-    })
+    const settlementEngine = spawn('node',
+        [
+            './settlement-engines/xrp/build/cli.js',
+            `--redis=${REDIS_UNIX_SOCKET}`,
+            `--address=${xrpAddress}`,
+            `--secret=${xrpSecret}`
+        ], {
+            env: {
+                DEBUG: process.env.DEBUG
+            },
+            shell: true,
+            stdio: 'inherit'
+        })
     settlementEngine.on('error', (err) => console.error('Settlement engine error:', err))
     settlementEngine.on('exit', (code, signal) => console.error(`Settlement engine exited with code: ${code} and signal: ${signal}`))
 
