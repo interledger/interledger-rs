@@ -10,6 +10,11 @@
 [![codecov](https://codecov.io/gh/emschwartz/interledger-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/emschwartz/interledger-rs)
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 
+## Understanding Interledger.rs
+- [API Docs](https://docs.rs/interledger)
+- [Interledger.rs Architecture](./docs/architecture.md)
+- [Interledger Forum](https://forum.interledger.org) for general questions about the Interledger Protocol and Project
+
 ## Installation
 - Install Rust (using [`rustup`](https://rustup.rs/) is recommended)
 - `cargo install interledger`
