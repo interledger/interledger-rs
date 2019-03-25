@@ -365,8 +365,22 @@ impl HttpStore for RedisStore {
             .arg(auth_header);
         Box::new(
             pipe.query_async(self.connection.clone().unwrap())
-                .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
-                .and_then(|(_connection, account): (_, Account)| Ok(account)),
+                .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
+                .and_then(|(_connection, bulk): (_, Value)| {
+                    // TODO why does it return a bulk value?
+                    if let Value::Bulk(ref items) = bulk {
+                        if !items.is_empty() {
+                            Account::from_redis_value(&items[0]).map_err(|err| {
+                                error!("Unable to parse Account from response: {:?}", err)
+                            })
+                        } else {
+                            error!("Unable to parse Account from empty response");
+                            Err(())
+                        }
+                    } else {
+                        Err(())
+                    }
+                }),
         )
     }
 }
@@ -450,6 +464,24 @@ impl NodeStore for RedisStore {
                         .and_then(move |_| store.update_routes())
                         .and_then(move |_| Ok(account))
                 }),
+        )
+    }
+
+    // TODO limit the number of results and page through them
+    fn get_all_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        Box::new(
+            cmd("GET")
+                .arg(NEXT_ACCOUNT_ID_KEY)
+                .query_async(self.connection.clone().unwrap())
+                .and_then(|(connection, next_account_id): (SharedConnection, u64)| {
+                    let mut pipe = redis::pipe();
+                    for i in 0..next_account_id - 1 {
+                        pipe.cmd("HGETALL").arg(account_details_key(i));
+                    }
+                    pipe.query_async(connection)
+                        .and_then(|(_, accounts): (_, Vec<Self::Account>)| Ok(accounts))
+                })
+                .map_err(|err| error!("Error getting all accounts: {:?}", err)),
         )
     }
 
