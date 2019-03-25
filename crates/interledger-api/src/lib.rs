@@ -1,8 +1,10 @@
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 #[macro_use]
 extern crate tower_web;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_json;
 
 use bytes::Bytes;
 use futures::{
@@ -13,10 +15,16 @@ use http::{Request, Response};
 use hyper::{body::Body, error::Error};
 use interledger_http::{HttpAccount, HttpServerService, HttpStore};
 use interledger_ildcp::IldcpAccount;
+use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::BalanceStore;
 use interledger_spsp::{pay, SpspResponder};
-use std::str::FromStr;
+use serde::Serialize;
+use serde_json::{Map, Value};
+use std::{
+    iter::FromIterator,
+    str::{self, FromStr},
+};
 
 pub trait NodeAccount: HttpAccount {
     fn is_admin(&self) -> bool;
@@ -29,6 +37,9 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+
+    // TODO limit the number of results and page through them
+    fn get_all_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
     fn set_rates<R>(&self, rates: R) -> Box<Future<Item = (), Error = ()> + Send>
     where
@@ -59,10 +70,10 @@ struct ServerStatus {
     status: String,
 }
 
-#[derive(Response)]
-#[web(status = "201")]
-struct AccountResponse {
-    id: String,
+#[derive(Serialize, Response)]
+#[web(status = "200")]
+struct AccountsResponse<A: Serialize> {
+    accounts: Vec<A>,
 }
 
 #[derive(Response)]
@@ -105,9 +116,9 @@ pub struct NodeApi<T, S> {
 
 impl_web! {
     impl<T, S, A> NodeApi<T, S>
-    where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A>,
+    where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A> + RouterStore,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: AccountTrait + HttpAccount + NodeAccount + IldcpAccount + 'static,
+    A: AccountTrait + HttpAccount + NodeAccount + IldcpAccount + Serialize + 'static,
 
     {
         pub fn new(server_secret: Bytes, store: T, incoming_handler: S) -> Self {
@@ -128,7 +139,7 @@ impl_web! {
 
         #[post("/accounts")]
         #[content_type("application/json")]
-        fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = AccountResponse, Error = Response<()>> {
+        fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
             // TODO add option for non-admin signups (maybe with invite code)
             let store = self.store.clone();
@@ -138,15 +149,61 @@ impl_web! {
                 } else {
                     Err(())
                 })
-                .map_err(|_| Response::builder().status(401).body(()).unwrap())
+                .map_err(move |_| {
+                    debug!("No account found with auth: {}", authorization);
+                    Response::builder().status(401).body(()).unwrap()
+                })
                 .and_then(move |_| store.insert_account(body)
                 // TODO make all Accounts (de)serializable with Serde so all the details can be returned here
-                .and_then(|account| Ok(AccountResponse {
-                    id: format!("{}", account.id())
-                }))
+                .and_then(|account| Ok(json!(account)))
                 .map_err(|_| Response::builder().status(500).body(()).unwrap()))
         }
 
+        #[get("/accounts")]
+        #[content_type("application/json")]
+        fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let store = self.store.clone();
+            self.store.get_account_from_http_auth(&authorization)
+                .map_err(move |_| {
+                    debug!("No account found with auth: {}", authorization);
+                    Response::builder().status(401).body(()).unwrap()
+                })
+                .and_then(move |account| if account.is_admin() {
+                    Either::A(store.get_all_accounts()
+                        .map_err(|_| Response::builder().status(500).body(()).unwrap()))
+                } else {
+                    Either::B(store.get_accounts(vec![account.id()])
+                        .map_err(|_| Response::builder().status(404).body(()).unwrap()))
+                })
+                .and_then(|accounts| Ok(json!(accounts)))
+        }
+
+        #[get("/accounts/:id")]
+        #[content_type("application/json")]
+        fn get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let store = self.store.clone();
+            let store_clone = store.clone();
+            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
+            result(parsed_id)
+                .map_err(|_| Response::builder().status(400).body(()).unwrap())
+                .and_then(move |id| {
+                    store.clone().get_account_from_http_auth(&authorization)
+                        .and_then(move |account|
+                            if account.id() == id {
+                                Either::A(ok(json!(account)))
+                            } else if account.is_admin() {
+                                Either::B(store_clone.get_accounts(vec![id]).and_then(|accounts| Ok(json!(accounts[0].clone()))))
+                            } else {
+                                Either::A(err(()))
+                            })
+                        .map_err(move |_| {
+                            debug!("No account found with auth: {}", authorization);
+                            Response::builder().status(401).body(()).unwrap()
+                        })
+                })
+        }
+
+        // TODO should this be combined into the account record?
         #[get("/accounts/:id/balance")]
         #[content_type("application/json")]
         fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
@@ -165,7 +222,10 @@ impl_web! {
                             } else {
                                 Either::A(err(()))
                             })
-                        .map_err(|_| Response::builder().status(401).body(()).unwrap())
+                        .map_err(move |_| {
+                            debug!("No account found with auth: {}", authorization);
+                            Response::builder().status(401).body(()).unwrap()
+                        })
                         .and_then(move |account| store.get_balance(account)
                         .and_then(|balance| Ok(BalanceResponse {
                             balance: balance.to_string(),
@@ -191,6 +251,20 @@ impl_web! {
                     error!("Error setting rates: {:?}", err);
                     Response::builder().status(500).body(()).unwrap()
                 }))
+        }
+
+        #[get("/routes")]
+        #[content_type("application/json")]
+        fn get_routes(&self) -> impl Future<Item = Value, Error = Response<()>> {
+            ok(Value::Object(Map::from_iter(self.store.routing_table()
+                .into_iter()
+                .filter_map(|(address, account)| {
+                    if let Ok(address) = str::from_utf8(address.as_ref()) {
+                        Some((address.to_string(), Value::String(account.to_string())))
+                    } else {
+                        None
+                    }
+                }))))
         }
 
         #[post("/pay")]

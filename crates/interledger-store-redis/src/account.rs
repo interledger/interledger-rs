@@ -6,22 +6,26 @@ use interledger_ildcp::IldcpAccount;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
-use std::collections::HashMap;
+use serde::Serializer;
+use std::{collections::HashMap, str};
 use url::Url;
 
 const ACCOUNT_DETAILS_FIELDS: usize = 14;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Account {
     pub(crate) id: u64,
+    #[serde(serialize_with = "address_to_string")]
     pub(crate) ilp_address: Bytes,
     // TODO add additional routes
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
+    #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) http_endpoint: Option<Url>,
     pub(crate) http_incoming_authorization: Option<String>,
     pub(crate) http_outgoing_authorization: Option<String>,
+    #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) btp_uri: Option<Url>,
     pub(crate) btp_incoming_authorization: Option<String>,
     pub(crate) is_admin: bool,
@@ -30,6 +34,24 @@ pub struct Account {
     pub(crate) xrp_address: Option<String>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
+}
+
+fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(str::from_utf8(address.as_ref()).unwrap_or(""))
+}
+
+fn optional_url_to_string<S>(url: &Option<Url>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(ref url) = url {
+        serializer.serialize_str(url.as_ref())
+    } else {
+        serializer.serialize_none()
+    }
 }
 
 impl Account {
@@ -129,12 +151,12 @@ impl FromRedisValue for Account {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         trace!("Loaded value from Redis: {:?}", v);
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
-        let ilp_address: Vec<u8> = get_value("ilp_address", &hash)?;
+        let ilp_address: String = get_value("ilp_address", &hash)?;
         let is_admin: String = get_value("is_admin", &hash)?;
         let is_admin = is_admin == "true";
         Ok(Account {
             id: get_value("id", &hash)?,
-            ilp_address: Bytes::from(ilp_address),
+            ilp_address: Bytes::from(ilp_address.as_bytes()),
             asset_code: get_value("asset_code", &hash)?,
             asset_scale: get_value("asset_scale", &hash)?,
             http_endpoint: get_url_option("http_endpoint", &hash)?,
