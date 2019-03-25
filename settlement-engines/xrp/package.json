@@ -3,6 +3,10 @@
     "version": "0.1.0",
     "description": "XRP Settlement Engine for use with Interledger.rs",
     "main": "./build/index.js",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/emschwartz/interledger-rs"
+    },
     "files": [
         "./build/*.js",
         "./build/*.js.map",
