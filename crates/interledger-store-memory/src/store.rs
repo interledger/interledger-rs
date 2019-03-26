@@ -17,8 +17,6 @@ use std::{
     sync::Arc,
 };
 
-type BtpTokenAndUsername = (String, Option<String>);
-
 /// A simple in-memory store intended primarily for testing and
 /// stateless sender/receiver services that are passed all of the
 /// relevant account details when the store is instantiated.
@@ -26,7 +24,7 @@ type BtpTokenAndUsername = (String, Option<String>);
 pub struct InMemoryStore {
     accounts: Arc<RwLock<HashMap<u64, Account>>>,
     routing_table: Arc<RwLock<HashMap<Bytes, u64>>>,
-    btp_auth: Arc<RwLock<HashMap<BtpTokenAndUsername, u64>>>,
+    btp_auth: Arc<RwLock<HashMap<String, u64>>>,
     http_auth: Arc<RwLock<HashMap<String, u64>>>,
     next_account_id: Arc<Mutex<u64>>,
 }
@@ -62,13 +60,7 @@ impl InMemoryStore {
 
         let btp_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
             if let Some(ref token) = account.inner.btp_incoming_token {
-                Some((
-                    (
-                        token.to_string(),
-                        account.inner.btp_incoming_username.clone(),
-                    ),
-                    *account_id,
-                ))
+                Some((token.to_string(), *account_id))
             } else {
                 None
             }
@@ -101,13 +93,7 @@ impl InMemoryStore {
                 .insert(route.clone(), account.id());
         }
         if let Some(ref btp_auth) = account.inner.btp_incoming_token {
-            self.btp_auth.write().insert(
-                (
-                    btp_auth.clone(),
-                    account.inner.btp_incoming_username.clone(),
-                ),
-                account.id(),
-            );
+            self.btp_auth.write().insert(btp_auth.clone(), account.id());
         }
         if let Some(ref http_auth) = account.inner.http_incoming_authorization {
             self.http_auth
@@ -165,13 +151,8 @@ impl BtpStore for InMemoryStore {
     fn get_account_from_btp_token(
         &self,
         token: &str,
-        username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
-        if let Some(account_id) = self
-            .btp_auth
-            .read()
-            .get(&(token.to_string(), username.map(|s| s.to_string())))
-        {
+        if let Some(account_id) = self.btp_auth.read().get(&(token.to_string())) {
             Box::new(ok(self.accounts.read()[account_id].clone()))
         } else {
             Box::new(err(()))
@@ -195,7 +176,6 @@ impl BtpOpenSignupStore for InMemoryStore {
             .id(account_id)
             .ilp_address(account.ilp_address)
             .btp_incoming_token(account.auth_token.to_string())
-            .btp_incoming_username(account.username.map(String::from))
             .asset_code(account.asset_code.to_string())
             .asset_scale(account.asset_scale)
             .build();
@@ -203,10 +183,7 @@ impl BtpOpenSignupStore for InMemoryStore {
         (*self.accounts.write()).insert(account_id, account.clone());
         (*self.routing_table.write()).insert(account.inner.ilp_address.clone(), account_id);
         (*self.btp_auth.write()).insert(
-            (
-                account.inner.btp_incoming_token.clone().unwrap(),
-                account.inner.btp_incoming_username.clone(),
-            ),
+            account.inner.btp_incoming_token.clone().unwrap(),
             account_id,
         );
 
@@ -255,11 +232,11 @@ mod tests {
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_btp_token("test_token", None)
+            .get_account_from_btp_token("test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_btp_token("bad_token", None)
+            .get_account_from_btp_token("bad_token")
             .wait()
             .is_err());
     }
@@ -290,7 +267,6 @@ mod tests {
         let account = store
             .create_btp_account(BtpOpenSignupAccount {
                 auth_token: "token",
-                username: None,
                 ilp_address: b"example.account",
                 asset_code: "XYZ",
                 asset_scale: 9,

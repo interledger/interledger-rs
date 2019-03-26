@@ -47,7 +47,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 }
 
 /// The Account type for the RedisStore.
-#[derive(Debug, Extract, Response)]
+#[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
     pub ilp_address: Vec<u8>,
     pub asset_code: String,
