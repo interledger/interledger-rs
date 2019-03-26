@@ -1,6 +1,9 @@
 use super::account::*;
 use bytes::Bytes;
-use futures::{future::result, Future, Stream};
+use futures::{
+    future::{err, result, Either},
+    Future, Stream,
+};
 use hashbrown::HashMap;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
@@ -8,25 +11,24 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use parking_lot::{Mutex, RwLock};
-use redis::{
-    self, cmd, r#async::SharedConnection, Client, FromRedisValue, PipelineCommands, Value,
-};
+use parking_lot::RwLock;
+use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
 use std::{
     iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
 };
-use stream_cancel::{Trigger, Valve};
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 
-const POLL_INTERVAL: u64 = 60; // 1 minute
+const POLL_INTERVAL: u64 = 60000; // 1 minute
 
-static ACCOUNT_FROM_BTP_AUTH_SCRIPT: &str =
-    "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'btp_auth', ARGV[1]))";
-static ACCOUNT_FROM_HTTP_AUTH_SCRIPT: &str =
-    "return redis.call('HGETALL', 'accounts:' .. redis.call('HGET', 'http_auth', ARGV[1]))";
+// TODO load this into redis cache
+static ACCOUNT_FROM_INDEX: &str = "local id = redis.call('HGET', KEYS[1], ARGV[1])
+    if not id then
+        return nil
+    end
+    return redis.call('HGETALL', 'accounts:' .. id)";
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
@@ -40,6 +42,14 @@ fn balance_key(asset_code: &str) -> String {
 }
 
 pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
+    connect_with_poll_interval(redis_uri, POLL_INTERVAL)
+}
+
+#[doc(hidden)]
+pub fn connect_with_poll_interval(
+    redis_uri: &str,
+    poll_interval: u64,
+) -> impl Future<Item = RedisStore, Error = ()> {
     debug!("Connecting to Redis: {}", redis_uri);
     result(Client::open(redis_uri))
         .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -48,37 +58,51 @@ pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
                 .get_shared_async_connection()
                 .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         })
-        .and_then(|connection| {
-            let (trigger, valve) = Valve::new();
+        .and_then(move |connection| {
             let store = RedisStore {
-                connection: Some(connection),
+                connection: Arc::new(connection),
                 exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                 routes: Arc::new(RwLock::new(HashMap::new())),
-                close_connection: Arc::new(Mutex::new(Some(trigger))),
             };
 
             // Start polling for rate updates
             // Note: if this behavior changes, make sure to update the Drop implementation
-            let store_clone = store.clone();
-            let poll_rates = valve
-                .wrap(Interval::new(
-                    Instant::now(),
-                    Duration::from_secs(POLL_INTERVAL),
-                ))
+            let connection_clone = Arc::downgrade(&store.connection);
+            let exchange_rates = store.exchange_rates.clone();
+            let poll_rates = Interval::new(Instant::now(), Duration::from_millis(poll_interval))
                 .map_err(|err| error!("Interval error: {:?}", err))
-                .for_each(move |_| store_clone.update_rates());
+                .for_each(move |_| {
+                    if let Some(connection) = connection_clone.upgrade() {
+                        Either::A(update_rates(
+                            connection.as_ref().clone(),
+                            exchange_rates.clone(),
+                        ))
+                    } else {
+                        debug!("Not polling rates anymore because connection was closed");
+                        // TODO make sure the interval stops
+                        Either::B(err(()))
+                    }
+                });
             spawn(poll_rates);
 
             // Poll for routing table updates
             // Note: if this behavior changes, make sure to update the Drop implementation
-            let store_clone = store.clone();
-            let poll_routes = valve
-                .wrap(Interval::new(
-                    Instant::now(),
-                    Duration::from_secs(POLL_INTERVAL),
-                ))
+            let connection_clone = Arc::downgrade(&store.connection);
+            let routing_table = store.routes.clone();
+            let poll_routes = Interval::new(Instant::now(), Duration::from_millis(poll_interval))
                 .map_err(|err| error!("Interval error: {:?}", err))
-                .for_each(move |_| store_clone.update_routes());
+                .for_each(move |_| {
+                    if let Some(connection) = connection_clone.upgrade() {
+                        Either::A(update_routes(
+                            connection.as_ref().clone(),
+                            routing_table.clone(),
+                        ))
+                    } else {
+                        debug!("Not polling routes anymore because connection was closed");
+                        // TODO make sure the interval stops
+                        Either::B(err(()))
+                    }
+                });
             spawn(poll_routes);
 
             Ok(store)
@@ -93,66 +117,18 @@ pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
 /// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
-    // This is only an option for testing purposes
-    connection: Option<SharedConnection>,
+    connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, u64>>>,
-    close_connection: Arc<Mutex<Option<Trigger>>>,
 }
 
 impl RedisStore {
-    // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
-    fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
-        let exchange_rates = self.exchange_rates.clone();
-        cmd("HGETALL")
-            .arg(RATES_KEY)
-            .query_async(self.connection.clone().unwrap())
-            .map_err(|err| error!("Error polling for exchange rates: {:?}", err))
-            .and_then(move |(_connection, rates): (_, Vec<(String, f64)>)| {
-                let num_assets = rates.len();
-                let rates = HashMap::from_iter(rates.into_iter());
-                (*exchange_rates.write()) = rates;
-                debug!("Updated rates for {} assets", num_assets);
-                Ok(())
-            })
-    }
-
-    // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
-    fn update_routes(&self) -> impl Future<Item = (), Error = ()> {
-        let routing_table = self.routes.clone();
-        cmd("HGETALL")
-            .arg(ROUTES_KEY)
-            .query_async(self.connection.clone().unwrap())
-            .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
-            .and_then(move |(_connection, routes): (_, Vec<(Vec<u8>, u64)>)| {
-                let num_routes = routes.len();
-                let routes = HashMap::from_iter(
-                    routes
-                        .into_iter()
-                        .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
-                );
-                *routing_table.write() = routes;
-                debug!("Updated routing table with {} routes", num_routes);
-                Ok(())
-            })
-    }
-
     fn get_next_account_id(&self) -> impl Future<Item = u64, Error = ()> {
         cmd("INCR")
             .arg(NEXT_ACCOUNT_ID_KEY)
-            .query_async(self.connection.clone().unwrap())
+            .query_async(self.connection.as_ref().clone())
             .map_err(|err| error!("Error incrementing account ID: {:?}", err))
             .and_then(|(_conn, next_account_id): (_, u64)| Ok(next_account_id - 1))
-    }
-}
-
-impl Drop for RedisStore {
-    fn drop(&mut self) {
-        // one for each of the pollers
-        if Arc::strong_count(&self.close_connection) == 3 {
-            debug!("Closing connection to Redis");
-            drop(self.close_connection.lock().take())
-        }
     }
 }
 
@@ -164,29 +140,37 @@ impl AccountStore for RedisStore {
         &self,
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
+        let num_accounts = account_ids.len();
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
             pipe.cmd("HGETALL").arg(account_details_key(*account_id));
         }
         Box::new(
-            pipe.query_async(self.connection.clone().unwrap())
+            pipe.query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
                         "Error querying details for accounts: {:?} {:?}",
                         account_ids, err
                     )
                 })
-                .and_then(|(_conn, accounts): (_, Vec<Account>)| Ok(accounts)),
+                .and_then(move |(_conn, accounts): (_, Vec<Account>)| {
+                    if accounts.len() == num_accounts {
+                        Ok(accounts)
+                    } else {
+                        Err(())
+                    }
+                }),
         )
     }
 }
 
 impl BalanceStore for RedisStore {
     fn get_balance(&self, account: Account) -> Box<Future<Item = i64, Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.hget(balance_key(account.asset_code.as_str()), account.id);
         Box::new(
-            pipe.query_async(self.connection.clone().unwrap())
+            cmd("HGET")
+                .arg(balance_key(account.asset_code.as_str()))
+                .arg(account.id)
+                .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
                         "Error getting balance for account: {} {:?}",
@@ -226,7 +210,7 @@ impl BalanceStore for RedisStore {
             .arg(0i64 - outgoing_amount as i64);
 
         Box::new(
-            pipe.query_async(self.connection.clone().unwrap())
+            pipe.query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
                     "Error updating balances for accounts. from_account: {}, to_account: {}: {:?}",
@@ -274,7 +258,7 @@ impl BalanceStore for RedisStore {
             .arg(outgoing_amount);
 
         Box::new(
-            pipe.query_async(self.connection.clone().unwrap())
+            pipe.query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
                     "Error undoing balance update for accounts. from_account: {}, to_account: {}: {:?}",
@@ -318,31 +302,23 @@ impl BtpStore for RedisStore {
     fn get_account_from_btp_token(
         &self,
         token: &str,
-        // TODO actually store the username
-        _username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
-        let mut pipe = redis::pipe();
-        pipe.cmd("EVAL")
-            .arg(ACCOUNT_FROM_BTP_AUTH_SCRIPT)
-            .arg(0)
-            .arg(token);
+        let token = token.to_string();
         Box::new(
-            pipe.query_async(self.connection.clone().unwrap())
+            cmd("EVAL")
+                .arg(ACCOUNT_FROM_INDEX)
+                .arg(1)
+                .arg("btp_auth")
+                .arg(&token)
+                .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
-                .and_then(|(_connection, bulk): (_, Value)| {
-                    // TODO why does it return a bulk value?
-                    if let Value::Bulk(ref items) = bulk {
-                        if !items.is_empty() {
-                            Account::from_redis_value(&items[0]).map_err(|err| {
-                                error!("Unable to parse Account from response: {:?}", err)
-                            })
-                        } else {
-                            error!("Unable to parse Account from empty response");
-                            Err(())
-                        }
+                .and_then(move |(_connection, account): (_, Option<Account>)| {
+                    if let Some(account) = account {
+                        Ok(account)
                     } else {
+                        warn!("No account found with BTP token: {}", token);
                         Err(())
                     }
                 }),
@@ -358,26 +334,20 @@ impl HttpStore for RedisStore {
         auth_header: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
-        let mut pipe = redis::pipe();
-        pipe.cmd("EVAL")
-            .arg(ACCOUNT_FROM_HTTP_AUTH_SCRIPT)
-            .arg(0)
-            .arg(auth_header);
+        let auth_header = auth_header.to_string();
         Box::new(
-            pipe.query_async(self.connection.clone().unwrap())
+            cmd("EVAL")
+                .arg(ACCOUNT_FROM_INDEX)
+                .arg(1)
+                .arg("http_auth")
+                .arg(&auth_header)
+                .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
-                .and_then(|(_connection, bulk): (_, Value)| {
-                    // TODO why does it return a bulk value?
-                    if let Value::Bulk(ref items) = bulk {
-                        if !items.is_empty() {
-                            Account::from_redis_value(&items[0]).map_err(|err| {
-                                error!("Unable to parse Account from response: {:?}", err)
-                            })
-                        } else {
-                            error!("Unable to parse Account from empty response");
-                            Err(())
-                        }
+                .and_then(move |(_connection, account): (_, Option<Account>)| {
+                    if let Some(account) = account {
+                        Ok(account)
                     } else {
+                        warn!("No account found with HTTP auth: {}", auth_header);
                         Err(())
                     }
                 }),
@@ -399,8 +369,8 @@ impl NodeStore for RedisStore {
         account: AccountDetails,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
         debug!("Inserting account: {:?}", account);
-        let store = self.clone();
         let connection = self.connection.clone();
+        let routing_table = self.routes.clone();
 
         Box::new(
             self.get_next_account_id()
@@ -409,11 +379,57 @@ impl NodeStore for RedisStore {
                     Account::try_from(id, account)
                 })
                 .and_then(move |account| {
+                    // Check that there isn't already an account with values that must be unique
+                    let mut keys: Vec<String> = vec!["ID".to_string(), "ID".to_string()];
+
+                    let mut pipe = redis::pipe();
+                    pipe.cmd("EXISTS")
+                        .arg(account_details_key(account.id))
+                        .cmd("HEXISTS")
+                        .arg(balance_key(account.asset_code.as_str()))
+                        .arg(account.id);
+
+                    if let Some(ref auth) = account.btp_incoming_authorization {
+                        keys.push("BTP auth".to_string());
+                        pipe.cmd("HEXISTS")
+                            .arg("btp_auth")
+                            .arg(auth.clone().to_string());
+                    }
+                    if let Some(ref auth) = account.http_incoming_authorization {
+                        keys.push("HTTP auth".to_string());
+                        pipe.cmd("HEXISTS")
+                            .arg("http_auth")
+                            .arg(auth.clone().to_string());
+                    }
+                    if let Some(ref xrp_address) = account.xrp_address {
+                        keys.push("XRP address".to_string());
+                        pipe.cmd("HEXISTS").arg("xrp_addresses").arg(xrp_address);
+                    }
+
+                    pipe.query_async(connection.as_ref().clone())
+                        .map_err(|err| {
+                            error!(
+                                "Error checking whether account details already exist: {:?}",
+                                err
+                            )
+                        })
+                        .and_then(
+                            move |(connection, results): (SharedConnection, Vec<bool>)| {
+                                if let Some(index) = results.iter().position(|val| *val) {
+                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
+                                    Err(())
+                                } else {
+                                    Ok((connection, account))
+                                }
+                            },
+                        )
+                })
+                .and_then(|(connection, account)| {
                     let mut pipe = redis::pipe();
 
                     // Set balance
                     pipe.atomic()
-                        .cmd("HSETNX")
+                        .cmd("HSET")
                         .arg(balance_key(account.asset_code.as_str()))
                         .arg(account.id)
                         .arg(0u64)
@@ -421,14 +437,14 @@ impl NodeStore for RedisStore {
 
                     // Set incoming auth details
                     if let Some(ref auth) = account.btp_incoming_authorization {
-                        pipe.cmd("HSETNX")
+                        pipe.cmd("HSET")
                             .arg("btp_auth")
                             .arg(auth.clone().to_string())
                             .arg(account.id)
                             .ignore();
                     }
                     if let Some(ref auth) = account.http_incoming_authorization {
-                        pipe.cmd("HSETNX")
+                        pipe.cmd("HSET")
                             .arg("http_auth")
                             .arg(auth.clone().to_string())
                             .arg(account.id)
@@ -436,17 +452,13 @@ impl NodeStore for RedisStore {
                     }
 
                     // Add settlement details
-                    if account.asset_code == "XRP" {
                         if let Some(ref xrp_address) = account.xrp_address {
-                            // Note: this will fail if there is already a record for the XRP address
-                            // This prevents a single address from being associated with multiple accounts
-                            pipe.cmd("HSETNX")
+                            pipe.cmd("HSET")
                                 .arg("xrp_addresses")
                                 .arg(xrp_address)
                                 .arg(account.id)
                                 .ignore();
                         }
-                    }
 
                     // Add route to routing table
                     pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
@@ -458,10 +470,11 @@ impl NodeStore for RedisStore {
                         .arg(account.clone())
                         .ignore();
 
-                    pipe.query_async(connection.unwrap())
-                        .and_then(|(_connection, _ret): (_, Value)| Ok(()))
+                    pipe.query_async(connection)
                         .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-                        .and_then(move |_| store.update_routes())
+                        .and_then(move |(connection, _ret): (SharedConnection, Value)| {
+                            update_routes(connection, routing_table)
+                        })
                         .and_then(move |_| Ok(account))
                 }),
         )
@@ -472,10 +485,10 @@ impl NodeStore for RedisStore {
         Box::new(
             cmd("GET")
                 .arg(NEXT_ACCOUNT_ID_KEY)
-                .query_async(self.connection.clone().unwrap())
+                .query_async(self.connection.as_ref().clone())
                 .and_then(|(connection, next_account_id): (SharedConnection, u64)| {
                     let mut pipe = redis::pipe();
-                    for i in 0..next_account_id - 1 {
+                    for i in 0..next_account_id {
                         pipe.cmd("HGETALL").arg(account_details_key(i));
                     }
                     pipe.query_async(connection)
@@ -490,64 +503,57 @@ impl NodeStore for RedisStore {
         R: IntoIterator<Item = (String, f64)>,
     {
         let rates: Vec<(String, f64)> = rates.into_iter().collect();
+        let connection = self.connection.as_ref().clone();
+        let exchange_rates = self.exchange_rates.clone();
         Box::new(
             cmd("HMSET")
                 .arg(RATES_KEY)
                 .arg(rates)
-                .query_async(self.connection.clone().unwrap())
+                .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error setting rates: {:?}", err))
-                .and_then(|(_connection, _): (_, Value)| Ok(())),
+                .and_then(move |(_connection, _): (_, Value)| {
+                    update_rates(connection, exchange_rates)
+                }),
         )
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
+fn update_rates(
+    connection: SharedConnection,
+    exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
+) -> impl Future<Item = (), Error = ()> {
+    cmd("HGETALL")
+        .arg(RATES_KEY)
+        .query_async(connection)
+        .map_err(|err| error!("Error polling for exchange rates: {:?}", err))
+        .and_then(move |(_connection, rates): (_, Vec<(String, f64)>)| {
+            let num_assets = rates.len();
+            let rates = HashMap::from_iter(rates.into_iter());
+            (*exchange_rates.write()) = rates;
+            debug!("Updated rates for {} assets", num_assets);
+            Ok(())
+        })
+}
 
-    #[test]
-    fn empty_routing_table() {
-        let store = RedisStore {
-            connection: None,
-            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-            routes: Arc::new(RwLock::new(HashMap::new())),
-            close_connection: Arc::new(Mutex::new(None)),
-        };
-        assert!(store.routing_table().is_empty());
-    }
-
-    #[test]
-    fn gets_routing_table() {
-        let routes = Arc::new(RwLock::new(HashMap::new()));
-        let store = RedisStore {
-            connection: None,
-            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-            routes: routes.clone(),
-            close_connection: Arc::new(Mutex::new(None)),
-        };
-        assert!(store.routing_table().is_empty());
-
-        routes.write().insert(Bytes::from("example.destination"), 1);
-
-        assert_eq!(store.routing_table().len(), 1);
-        assert_eq!(store.clone().routing_table().len(), 1);
-    }
-
-    #[test]
-    fn replacing_routing_table() {
-        let routes = Arc::new(RwLock::new(HashMap::new()));
-        let store = RedisStore {
-            connection: None,
-            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-            routes: routes.clone(),
-            close_connection: Arc::new(Mutex::new(None)),
-        };
-        assert!(store.routing_table().is_empty());
-
-        *routes.write() =
-            HashMap::from_iter(vec![(Bytes::from("example.destination"), 1)].into_iter());
-
-        assert_eq!(store.routing_table().len(), 1);
-        assert_eq!(store.clone().routing_table().len(), 1);
-    }
+// TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
+fn update_routes(
+    connection: SharedConnection,
+    routing_table: Arc<RwLock<HashMap<Bytes, u64>>>,
+) -> impl Future<Item = (), Error = ()> {
+    cmd("HGETALL")
+        .arg(ROUTES_KEY)
+        .query_async(connection)
+        .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
+        .and_then(move |(_connection, routes): (_, Vec<(Vec<u8>, u64)>)| {
+            let num_routes = routes.len();
+            let routes = HashMap::from_iter(
+                routes
+                    .into_iter()
+                    .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
+            );
+            *routing_table.write() = routes;
+            debug!("Updated routing table with {} routes", num_routes);
+            Ok(())
+        })
 }

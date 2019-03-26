@@ -140,7 +140,7 @@ impl ToRedisArgs for Account {
             settle_to.write_redis_args(&mut rv);
         }
 
-        debug_assert!(rv.len() < ACCOUNT_DETAILS_FIELDS * 2);
+        debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
 
         ToRedisArgs::make_arg_vec(&rv, out);

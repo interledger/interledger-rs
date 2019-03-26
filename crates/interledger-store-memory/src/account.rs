@@ -74,11 +74,6 @@ impl AccountBuilder {
         self
     }
 
-    pub fn btp_incoming_username(mut self, username: Option<String>) -> Self {
-        self.details.btp_incoming_username = username;
-        self
-    }
-
     pub fn max_packet_amount(mut self, amount: u64) -> Self {
         self.details.max_packet_amount = amount;
         self
@@ -97,7 +92,6 @@ pub(crate) struct AccountDetails {
     pub(crate) http_outgoing_authorization: Option<String>,
     pub(crate) btp_uri: Option<Url>,
     pub(crate) btp_incoming_token: Option<String>,
-    pub(crate) btp_incoming_username: Option<String>,
     pub(crate) max_packet_amount: u64,
 }
 

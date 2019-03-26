@@ -41,13 +41,11 @@ pub trait BtpStore {
     fn get_account_from_btp_token(
         &self,
         token: &str,
-        username: Option<&str>,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 }
 
 pub struct BtpOpenSignupAccount<'a> {
     pub auth_token: &'a str,
-    pub username: Option<&'a str>,
     pub ilp_address: &'a [u8],
     pub asset_code: &'a str,
     pub asset_scale: u8,
@@ -139,7 +137,6 @@ mod client_server {
         fn get_account_from_btp_token(
             &self,
             token: &str,
-            _username: Option<&str>,
         ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
             Box::new(result(
                 self.accounts
