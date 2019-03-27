@@ -3,7 +3,7 @@ extern crate interledger;
 extern crate log;
 
 use env_logger;
-use futures::Future;
+use futures::{future::ok, Future};
 use interledger::cli;
 use net2;
 use redis;
@@ -20,16 +20,23 @@ pub struct RedisServer {
     port: u16,
 }
 
-fn get_open_port() -> u16 {
-    let listener = net2::TcpBuilder::new_v4()
-        .unwrap()
-        .reuse_address(true)
-        .unwrap()
-        .bind("127.0.0.1:0")
-        .unwrap()
-        .listen(1)
-        .unwrap();
-    listener.local_addr().unwrap().port()
+fn get_open_port(try_port: Option<u16>) -> u16 {
+    if let Some(port) = try_port {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind(&format!("127.0.0.1:{}", port)) {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+
+    for _i in 0..1000 {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind("127.0.0.1:0") {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+    panic!("Cannot find open port!");
 }
 
 impl RedisServer {
@@ -41,7 +48,7 @@ impl RedisServer {
 
         // this is technically a race but we can't do better with
         // the tools that redis gives us :(
-        let port = get_open_port();
+        let port = get_open_port(Some(6379));
         cmd.arg("--loglevel").arg("verbose");
         cmd.arg("--port")
             .arg(port.to_string())
@@ -105,25 +112,42 @@ fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
 }
 
 #[test]
-#[cfg(feature = "test-redis")]
 fn btp_end_to_end() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let redis_server = RedisServer::new();
     // let redis_port = 6379;
     let redis_port = redis_server.port;
     let redis_uri = format!("redis://127.0.0.1:{}", redis_port);
-    let btp_port = get_open_port();
-    let http_port = get_open_port();
-    let run = delay(200).and_then(move |_| {
+    let btp_port = get_open_port(Some(7768));
+    let http_port = get_open_port(Some(7770));
+    let run = ok(()).and_then(move |_| {
         let redis_uri_clone = redis_uri.clone();
-        let create_accounts = delay(50).and_then(move |_| {
+        let create_accounts = cli::insert_account_redis(
+            &redis_uri_clone,
+            cli::AccountDetails {
+                ilp_address: Vec::from("example.one"),
+                asset_code: "XYZ".to_string(),
+                asset_scale: 9,
+                btp_incoming_authorization: Some("token-one".to_string()),
+                btp_uri: None,
+                http_endpoint: None,
+                http_incoming_authorization: None,
+                http_outgoing_authorization: None,
+                max_packet_amount: u64::max_value(),
+                is_admin: false,
+                xrp_address: None,
+                settle_threshold: None,
+                settle_to: None,
+            },
+        )
+        .and_then(move |_| {
             cli::insert_account_redis(
                 &redis_uri_clone,
                 cli::AccountDetails {
-                    ilp_address: Vec::from("example.one"),
+                    ilp_address: Vec::from("example.two"),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
-                    btp_incoming_authorization: Some("token-one".to_string()),
+                    btp_incoming_authorization: Some("token-two".to_string()),
                     btp_uri: None,
                     http_endpoint: None,
                     http_incoming_authorization: None,
@@ -135,30 +159,11 @@ fn btp_end_to_end() {
                     settle_to: None,
                 },
             )
-            .and_then(move |_| {
-                cli::insert_account_redis(
-                    &redis_uri_clone,
-                    cli::AccountDetails {
-                        ilp_address: Vec::from("example.two"),
-                        asset_code: "XYZ".to_string(),
-                        asset_scale: 9,
-                        btp_incoming_authorization: Some("token-two".to_string()),
-                        btp_uri: None,
-                        http_endpoint: None,
-                        http_incoming_authorization: None,
-                        http_outgoing_authorization: None,
-                        max_packet_amount: u64::max_value(),
-                        is_admin: false,
-                        xrp_address: None,
-                        settle_threshold: None,
-                        settle_to: None,
-                    },
-                )
-            })
         });
 
         let redis_uri_clone = redis_uri.clone();
         let spawn_connector = move |_| {
+            debug!("Spawning connector");
             // Note: this needs to be run AFTER the accounts are created because the
             // store does not currently subscribe to notifications of accounts being created
             // or the routing table being updated
@@ -172,8 +177,9 @@ fn btp_end_to_end() {
             Ok(())
         };
 
-        let spsp_server_port = get_open_port();
+        let spsp_server_port = get_open_port(Some(3000));
         let spawn_spsp_server = move |_| {
+            debug!("Spawning SPSP server");
             let spsp_server = cli::run_spsp_server_btp(
                 &format!("btp+ws://:token-one@localhost:{}", btp_port),
                 ([127, 0, 0, 1], spsp_server_port).into(),
@@ -185,9 +191,9 @@ fn btp_end_to_end() {
 
         create_accounts
             .and_then(spawn_connector)
-            .and_then(|_| delay(50))
+            .and_then(|_| delay(200))
             .and_then(spawn_spsp_server)
-            .and_then(|_| delay(50))
+            .and_then(|_| delay(200))
             .and_then(move |_| {
                 cli::send_spsp_payment_btp(
                     &format!("btp+ws://:token-two@localhost:{}", btp_port),
@@ -195,6 +201,10 @@ fn btp_end_to_end() {
                     10000,
                     true,
                 )
+                .then(move |result| {
+                    let _ = redis_server;
+                    result
+                })
             })
     });
     let mut runtime = Runtime::new().unwrap();

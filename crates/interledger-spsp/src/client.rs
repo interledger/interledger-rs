@@ -12,7 +12,7 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
         .get(&server)
         .header("Accept", "application/spsp4+json")
         .send()
-        .map_err(|err| Error::HttpError(format!("{:?}", err)))
+        .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))
         .and_then(|mut res| {
             res.json::<SpspResponse>()
                 .map_err(|err| Error::InvalidResponseError(format!("{:?}", err)))

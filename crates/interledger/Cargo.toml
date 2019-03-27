@@ -20,7 +20,6 @@ store-memory = ["interledger-store-memory"]
 ildcp = ["interledger-ildcp"]
 spsp = ["interledger-spsp", "stream"]
 stream = ["interledger-stream", "ildcp"]
-test-redis = []
 
 [dependencies]
 base64 = "0.10.1"
