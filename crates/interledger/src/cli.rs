@@ -206,6 +206,7 @@ pub fn run_spsp_server_btp(
         btp_service.handle_incoming(incoming_service.clone());
 
         get_ildcp_info(&mut incoming_service, incoming_account.clone()).and_then(move |info| {
+            debug!("SPSP server got ILDCP info: {:?}", info);
             let client_address = Bytes::from(info.client_address());
             *ilp_address.write() = client_address.clone();
 
@@ -221,6 +222,11 @@ pub fn run_spsp_server_btp(
             if !quiet {
                 println!("Listening on: {}", address);
             }
+            debug!(
+                "SPSP server listening on {} with ILP address {}",
+                &address,
+                str::from_utf8(&client_address).unwrap_or("<not utf8>")
+            );
             let spsp_responder = SpspResponder::new(client_address, server_secret);
             Server::bind(&address)
                 .serve(move || spsp_responder.clone())

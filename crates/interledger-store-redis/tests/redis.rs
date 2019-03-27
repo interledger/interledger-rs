@@ -59,15 +59,14 @@ pub struct RedisServer {
 }
 
 fn get_open_port() -> u16 {
-    let listener = net2::TcpBuilder::new_v4()
-        .unwrap()
-        .reuse_address(true)
-        .unwrap()
-        .bind("127.0.0.1:0")
-        .unwrap()
-        .listen(1)
-        .unwrap();
-    listener.local_addr().unwrap().port()
+    for _i in 0..1000 {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind("127.0.0.1:0") {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+    panic!("Cannot find open port!");
 }
 
 impl RedisServer {
