@@ -4,6 +4,7 @@ members = [
   "./crates/interledger",
   "./crates/interledger-api",
   "./crates/interledger-btp",
+  "./crates/interledger-ccp",
   "./crates/interledger-http",
   "./crates/interledger-ildcp",
   "./crates/interledger-packet",
