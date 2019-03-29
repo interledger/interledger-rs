@@ -10,6 +10,7 @@ ENV NODE 10.15.3
 # Build settlement engine
 WORKDIR /usr/src/settlement-engines/xrp
 COPY ./settlement-engines /usr/src/settlement-engines
+RUN npm install
 RUN npm run build
 RUN nexe \
     --target ${PLATFORM}-${ARCH}-${NODE} \
