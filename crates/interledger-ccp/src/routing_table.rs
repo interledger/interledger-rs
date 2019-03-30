@@ -41,8 +41,25 @@ impl<T> PrefixMap<T> {
             false
         }
     }
+
+    pub fn resolve(&self, prefix: &[u8]) -> Option<&T> {
+        let longest_matching_prefix = self
+            .prefixes
+            .iter()
+            .filter(|p| prefix.starts_with(p))
+            .max_by_key(|p| p.len());
+        if let Some(prefix) = longest_matching_prefix {
+            self.map.get(prefix)
+        } else {
+            None
+        }
+    }
 }
 
+/// The routing table is identified by an ID (a UUID in array form) and an "epoch".
+/// When an Interledger node reloads, it will generate a new UUID for its routing table.
+/// Each update applied increments the epoch number, so it acts as a version tracker.
+/// This helps peers make sure they are in sync with one another and request updates if not.
 pub struct RoutingTable {
     id: [u8; 16],
     epoch: u32,
@@ -68,6 +85,12 @@ impl RoutingTable {
         self.prefix_map.insert(route.prefix.clone(), route)
     }
 
+    /// Get the best route we have for the given prefix
+    pub fn get_route(&self, prefix: Bytes) -> Option<&Route> {
+        self.prefix_map.resolve(prefix.as_ref())
+    }
+
+    /// Handle a CCP Route Update Request from the peer this table represents
     pub fn handle_update_request(
         &mut self,
         request: RouteUpdateRequest,
@@ -89,7 +112,7 @@ impl RoutingTable {
         }
 
         if request.to_epoch_index <= self.epoch {
-            debug!(
+            trace!(
                 "Ignoring duplicate routing update for epoch: {}",
                 self.epoch
             );
@@ -97,9 +120,10 @@ impl RoutingTable {
         }
 
         if request.new_routes.is_empty() && request.withdrawn_routes.is_empty() {
-            debug!(
+            trace!(
                 "Got heartbeat route update for table ID: {:x?}, epoch: {}",
-                self.id, self.epoch
+                self.id,
+                self.epoch
             );
             return Ok(Vec::new());
         }
@@ -118,6 +142,13 @@ impl RoutingTable {
             }
         }
 
+        self.epoch = request.to_epoch_index;
+        trace!(
+            "Updated routing table {:x?} to epoch: {}",
+            self.id,
+            self.epoch
+        );
+
         Ok(changed_prefixes)
     }
 }
@@ -127,6 +158,40 @@ impl Default for RoutingTable {
         let mut id = [0; 16];
         RANDOM.fill(&mut id).expect("Unable to get randomness");
         RoutingTable::new(id)
+    }
+}
+
+#[cfg(test)]
+mod prefix_map {
+    use super::*;
+
+    #[test]
+    fn doesnt_insert_duplicates() {
+        let mut map = PrefixMap::new();
+        assert!(map.insert(Bytes::from("example.a"), 1));
+        assert!(!map.insert(Bytes::from("example.a"), 1));
+    }
+
+    #[test]
+    fn removes_entry() {
+        let mut map = PrefixMap::new();
+        assert!(map.insert(Bytes::from("example.a"), 1));
+        assert!(map.remove(Bytes::from("example.a")));
+        assert!(map.map.is_empty());
+        assert!(map.prefixes.is_empty());
+    }
+
+    #[test]
+    fn resolves_to_longest_matching_prefix() {
+        let mut map = PrefixMap::new();
+        map.insert(Bytes::from("example.a"), 1);
+        map.insert(Bytes::from("example.a.b.c"), 2);
+        map.insert(Bytes::from("example.a.b"), 3);
+
+        assert_eq!(map.resolve(b"example.a").unwrap(), &1);
+        assert_eq!(map.resolve(b"example.a.b.c").unwrap(), &2);
+        assert_eq!(map.resolve(b"example.a.b.c.d.e").unwrap(), &2);
+        assert!(map.resolve(b"example.other").is_none());
     }
 }
 
