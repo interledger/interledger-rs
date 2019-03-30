@@ -1,18 +1,24 @@
-use crate::{packet::*, RoutingAccount};
+use crate::{packet::*, routing_table::RoutingTable, RoutingAccount};
 use bytes::Bytes;
 use futures::{
     future::{err, ok},
     Future,
 };
+use hashbrown::HashMap;
 use interledger_packet::*;
 use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
-use std::{marker::PhantomData, str};
+use parking_lot::RwLock;
+use std::{marker::PhantomData, sync::Arc};
 use tokio_executor::spawn;
 
-pub struct CcpServerService<S, A> {
+#[derive(Clone)]
+pub struct CcpServerService<S, A: Account> {
     ilp_address: Bytes,
     next: S,
     account_type: PhantomData<A>,
+    forwarding_table: Arc<RwLock<RoutingTable>>,
+    local_table: Arc<RwLock<RoutingTable>>,
+    incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable>>>,
 }
 
 impl<S, A> CcpServerService<S, A>
@@ -27,6 +33,9 @@ where
             ilp_address,
             next,
             account_type: PhantomData,
+            forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
+            local_table: Arc::new(RwLock::new(RoutingTable::default())),
+            incoming_tables: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -93,6 +102,31 @@ where
             request.from.id(),
             update
         );
+
+        let mut incoming_tables = self.incoming_tables.write();
+        if !&incoming_tables.contains_key(&request.from.id()) {
+            incoming_tables.insert(
+                request.from.id(),
+                RoutingTable::new(update.routing_table_id),
+            );
+        }
+        match (*incoming_tables)
+            .get_mut(&request.from.id())
+            .expect("Should have inserted a routing table for this account")
+            .handle_update_request(update)
+        {
+            Ok(routes_updated) => {}
+            Err(message) => {
+                return err(RejectBuilder {
+                    code: ErrorCode::F00_BAD_REQUEST,
+                    message: &message.as_bytes(),
+                    data: &[],
+                    triggered_by: &self.ilp_address[..],
+                }
+                .build());
+            }
+        }
+
         ok(CCP_RESPONSE.clone())
     }
 }
@@ -182,7 +216,10 @@ mod handle_route_control_request {
     use super::helpers::*;
     use super::*;
     use crate::fixtures::*;
-    use std::time::{Duration, SystemTime};
+    use std::{
+        str,
+        time::{Duration, SystemTime},
+    };
 
     #[test]
     fn handles_valid_request() {
@@ -238,13 +275,21 @@ mod handle_route_update_request {
     use super::helpers::*;
     use super::*;
     use crate::fixtures::*;
-    use std::time::{Duration, SystemTime};
+    use std::{
+        str,
+        time::{Duration, SystemTime},
+    };
 
     #[test]
     fn handles_valid_request() {
-        test_service()
+        let mut service = test_service();
+        let mut update = UPDATE_REQUEST_SIMPLE.clone();
+        update.to_epoch_index = 1;
+        update.from_epoch_index = 0;
+
+        service
             .handle_request(IncomingRequest {
-                prepare: UPDATE_REQUEST_SIMPLE.to_prepare(),
+                prepare: update.to_prepare(),
                 from: *ROUTING_ACCOUNT,
             })
             .wait()
@@ -286,5 +331,22 @@ mod handle_route_update_request {
             str::from_utf8(result.unwrap_err().message()).unwrap(),
             "Invalid route update request"
         );
+    }
+
+    #[test]
+    fn adds_table_on_first_request() {
+        let mut service = test_service();
+        let mut update = UPDATE_REQUEST_SIMPLE.clone();
+        update.to_epoch_index = 1;
+        update.from_epoch_index = 0;
+
+        service
+            .handle_request(IncomingRequest {
+                prepare: update.to_prepare(),
+                from: *ROUTING_ACCOUNT,
+            })
+            .wait()
+            .unwrap();
+        assert_eq!(service.incoming_tables.read().len(), 1);
     }
 }
