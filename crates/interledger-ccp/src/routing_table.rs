@@ -56,19 +56,54 @@ impl<T> PrefixMap<T> {
     }
 }
 
+pub struct RoutingTable<I> {
+    id: [u8; 16],
+    epoch: u32,
+    prefix_map: PrefixMap<I>,
+}
+
+impl<I> RoutingTable<I> {
+    pub fn new(id: [u8; 16]) -> Self {
+        RoutingTable {
+            id,
+            epoch: 0,
+            prefix_map: PrefixMap::new(),
+        }
+    }
+
+    /// Set a particular route, overwriting the one that was there before
+    pub fn set_route(&mut self, prefix: Bytes, account_id: I) {
+        self.prefix_map.remove(prefix.clone());
+        self.prefix_map.insert(prefix, account_id);
+    }
+
+    /// Get the best route we have for the given prefix
+    pub fn get_route(&self, prefix: Bytes) -> Option<&I> {
+        self.prefix_map.resolve(prefix.as_ref())
+    }
+}
+
+impl<I> Default for RoutingTable<I> {
+    fn default() -> RoutingTable<I> {
+        let mut id = [0; 16];
+        RANDOM.fill(&mut id).expect("Unable to get randomness");
+        RoutingTable::new(id)
+    }
+}
+
 /// The routing table is identified by an ID (a UUID in array form) and an "epoch".
 /// When an Interledger node reloads, it will generate a new UUID for its routing table.
 /// Each update applied increments the epoch number, so it acts as a version tracker.
 /// This helps peers make sure they are in sync with one another and request updates if not.
-pub struct RoutingTable {
+pub struct IncomingRoutingTable {
     id: [u8; 16],
     epoch: u32,
     prefix_map: PrefixMap<Route>,
 }
 
-impl RoutingTable {
+impl IncomingRoutingTable {
     pub fn new(id: [u8; 16]) -> Self {
-        RoutingTable {
+        IncomingRoutingTable {
             id,
             epoch: 0,
             prefix_map: PrefixMap::new(),
@@ -86,8 +121,8 @@ impl RoutingTable {
     }
 
     /// Get the best route we have for the given prefix
-    pub fn get_route(&self, prefix: Bytes) -> Option<&Route> {
-        self.prefix_map.resolve(prefix.as_ref())
+    pub fn get_route(&self, prefix: &[u8]) -> Option<&Route> {
+        self.prefix_map.resolve(prefix)
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents
@@ -153,11 +188,11 @@ impl RoutingTable {
     }
 }
 
-impl Default for RoutingTable {
-    fn default() -> RoutingTable {
+impl Default for IncomingRoutingTable {
+    fn default() -> IncomingRoutingTable {
         let mut id = [0; 16];
         RANDOM.fill(&mut id).expect("Unable to get randomness");
-        RoutingTable::new(id)
+        IncomingRoutingTable::new(id)
     }
 }
 
@@ -202,7 +237,7 @@ mod incoming_table {
 
     #[test]
     fn sets_id_if_update_has_different() {
-        let mut table = RoutingTable::new([0; 16]);
+        let mut table = IncomingRoutingTable::new([0; 16]);
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.from_epoch_index = 0;
         table.handle_update_request(request.clone()).unwrap();
@@ -212,7 +247,7 @@ mod incoming_table {
 
     #[test]
     fn errors_if_gap_in_epoch_indecies() {
-        let mut table = RoutingTable::new([0; 16]);
+        let mut table = IncomingRoutingTable::new([0; 16]);
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.from_epoch_index = 1;
         let result = table.handle_update_request(request);
@@ -224,7 +259,7 @@ mod incoming_table {
 
     #[test]
     fn ignores_old_update() {
-        let mut table = RoutingTable::new(UPDATE_REQUEST_COMPLEX.routing_table_id);
+        let mut table = IncomingRoutingTable::new(UPDATE_REQUEST_COMPLEX.routing_table_id);
         table.epoch = 3;
         let mut request = UPDATE_REQUEST_COMPLEX.clone();
         request.from_epoch_index = 0;
@@ -235,7 +270,7 @@ mod incoming_table {
 
     #[test]
     fn ignores_empty_update() {
-        let mut table = RoutingTable::new([0; 16]);
+        let mut table = IncomingRoutingTable::new([0; 16]);
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.from_epoch_index = 0;
         request.to_epoch_index = 1;
