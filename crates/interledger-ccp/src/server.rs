@@ -14,6 +14,7 @@ use tokio_executor::spawn;
 #[derive(Clone)]
 pub struct CcpServerService<S, A: Account> {
     ilp_address: Bytes,
+    global_prefix: Bytes,
     next: S,
     account_type: PhantomData<A>,
     forwarding_table: Arc<RwLock<RoutingTable>>,
@@ -29,8 +30,16 @@ where
     // Note the next service will be used both to pass on incoming requests that are not CCP requests
     // as well as send outgoing messages for CCP
     pub fn new(ilp_address: Bytes, next: S) -> Self {
+        // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
+        let global_prefix: Bytes = ilp_address
+            .iter()
+            .position(|c| c == &b'.')
+            .map(|index| ilp_address.slice_to(index + 1))
+            .unwrap_or_else(|| ilp_address.clone());
+
         CcpServerService {
             ilp_address,
+            global_prefix,
             next,
             account_type: PhantomData,
             forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
@@ -72,6 +81,31 @@ where
         ok(CCP_RESPONSE.clone())
     }
 
+    fn filter_routes(&self, mut update: RouteUpdateRequest) -> RouteUpdateRequest {
+        update.new_routes = update
+            .new_routes
+            .into_iter()
+            .filter(|route| {
+                if !route.prefix.starts_with(&self.global_prefix) {
+                    warn!("Got route for a different global prefix: {:?}", route);
+                    false
+                } else if route.prefix.len() <= self.global_prefix.len() {
+                    warn!("Got route broadcast for the global prefix: {:?}", route);
+                    false
+                } else if route.path.contains(&self.ilp_address) {
+                    error!(
+                        "Got route broadcast with a routing loop (path includes us): {:?}",
+                        route
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+        update
+    }
+
     fn handle_route_update_request(
         &self,
         request: IncomingRequest<A>,
@@ -103,6 +137,8 @@ where
             update
         );
 
+        let update = self.filter_routes(update);
+
         let mut incoming_tables = self.incoming_tables.write();
         if !&incoming_tables.contains_key(&request.from.id()) {
             incoming_tables.insert(
@@ -115,7 +151,7 @@ where
             .expect("Should have inserted a routing table for this account")
             .handle_update_request(update)
         {
-            Ok(routes_updated) => {}
+            Ok(ref prefixes_updated) => self.update_best_routes(prefixes_updated),
             Err(message) => {
                 return err(RejectBuilder {
                     code: ErrorCode::F00_BAD_REQUEST,
@@ -129,6 +165,8 @@ where
 
         ok(CCP_RESPONSE.clone())
     }
+
+    fn update_best_routes(&self, prefixes: &[Bytes]) {}
 }
 
 impl<S, A> IncomingService<A> for CcpServerService<S, A>
@@ -348,5 +386,72 @@ mod handle_route_update_request {
             .wait()
             .unwrap();
         assert_eq!(service.incoming_tables.read().len(), 1);
+    }
+
+    #[test]
+    fn filters_routes_with_other_global_prefix() {
+        let service = test_service();
+        let mut request = UPDATE_REQUEST_SIMPLE.clone();
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.valid"),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        request.new_routes.push(Route {
+            prefix: Bytes::from("other.prefix"),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        let request = service.filter_routes(request);
+        assert_eq!(request.new_routes.len(), 1);
+        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+    }
+
+    #[test]
+    fn filters_routes_for_global_prefix() {
+        let service = test_service();
+        let mut request = UPDATE_REQUEST_SIMPLE.clone();
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.valid"),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example."),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        let request = service.filter_routes(request);
+        assert_eq!(request.new_routes.len(), 1);
+        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+    }
+
+    #[test]
+    fn filters_routing_loops() {
+        let service = test_service();
+        let mut request = UPDATE_REQUEST_SIMPLE.clone();
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.valid"),
+            path: vec![
+                Bytes::from("example.a"),
+                service.ilp_address.clone(),
+                Bytes::from("example.b"),
+            ],
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.valid"),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        let request = service.filter_routes(request);
+        assert_eq!(request.new_routes.len(), 1);
+        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
     }
 }
