@@ -1,4 +1,4 @@
-use crate::{packet::*, routing_table::RoutingTable, RoutingAccount};
+use crate::{packet::*, routing_table::RoutingTable, CcpAccount};
 use bytes::Bytes;
 use futures::{
     future::{err, ok},
@@ -11,21 +11,39 @@ use parking_lot::RwLock;
 use std::{marker::PhantomData, sync::Arc};
 use tokio_executor::spawn;
 
+/// The Routing Manager Service.
+///
+/// This implements the Connector-to-Connector Protocol (CCP)
+/// for exchanging route updates with peers. This service handles incoming CCP messages
+/// and sends updates to peers. It manages the routing table in the Store and updates it
+/// with the best routes determined by per-account configuration and the broadcasts we have
+/// received from peers.
 #[derive(Clone)]
 pub struct CcpServerService<S, A: Account> {
     ilp_address: Bytes,
     global_prefix: Bytes,
+    /// The next incoming request handler. This will be used both to pass on requests that are
+    /// not CCP messages AND to send outgoing CCP messages to peers.
     next: S,
     account_type: PhantomData<A>,
+    /// This represents the routing table we will forward to our peers.
+    /// It is the same as the local_table with our own address added to the path of each route.
     forwarding_table: Arc<RwLock<RoutingTable>>,
+    /// This is the routing table we have compile from configuration and
+    /// broadcasts we have received from our peers. It is saved to the Store so that
+    /// the Router services forwards packets according to what it says.
     local_table: Arc<RwLock<RoutingTable>>,
+    /// We store a routing table for each peer we receive Route Update Requests from.
+    /// When the peer sends us an update, we apply that update to this view of their table.
+    /// Updates from peers are applied to our local_table if they are better than the
+    /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable>>>,
 }
 
 impl<S, A> CcpServerService<S, A>
 where
     S: IncomingService<A>,
-    A: Account + RoutingAccount,
+    A: Account + CcpAccount,
 {
     // Note the next service will be used both to pass on incoming requests that are not CCP requests
     // as well as send outgoing messages for CCP
@@ -48,6 +66,8 @@ where
         }
     }
 
+    /// Handle a CCP Route Control Request. If this is from an account that we broadcast routes to,
+    /// we'll send an outgoing Route Update Request to them.
     fn handle_route_control_request(
         &self,
         request: IncomingRequest<A>,
@@ -81,6 +101,7 @@ where
         ok(CCP_RESPONSE.clone())
     }
 
+    /// Remove invalid routes before processing the Route Update Request
     fn filter_routes(&self, mut update: RouteUpdateRequest) -> RouteUpdateRequest {
         update.new_routes = update
             .new_routes
@@ -106,6 +127,10 @@ where
         update
     }
 
+    /// Check if this Route Update Request is valid and, if so, apply any updates it contains.
+    /// If updates are applied to the Incoming Routing Table for this peer, we will
+    /// then check whether those routes are better than the current best ones we have in the
+    /// Local Routing Table.
     fn handle_route_update_request(
         &self,
         request: IncomingRequest<A>,
@@ -166,16 +191,21 @@ where
         ok(CCP_RESPONSE.clone())
     }
 
+    /// Check whether the Local Routing Table currently has the best routes for the
+    /// given prefixes. This is triggered when we get an incoming Route Update Request
+    /// with some new or modified routes that might be better than our existing ones.
     fn update_best_routes(&self, prefixes: &[Bytes]) {}
 }
 
 impl<S, A> IncomingService<A> for CcpServerService<S, A>
 where
     S: IncomingService<A> + 'static,
-    A: Account + RoutingAccount + 'static,
+    A: Account + CcpAccount + 'static,
 {
     type Future = BoxedIlpFuture;
 
+    /// Handle the IncomingRequest if it is a CCP protocol message or
+    /// pass it on to the next handler if not
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         let destination = request.prepare.destination();
         if destination == CCP_CONTROL_DESTINATION {
@@ -221,7 +251,7 @@ mod helpers {
         }
     }
 
-    impl RoutingAccount for TestAccount {
+    impl CcpAccount for TestAccount {
         fn should_receive_routes(&self) -> bool {
             self.receive_routes
         }
