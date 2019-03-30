@@ -43,6 +43,23 @@ where
             }
             .build());
         }
+
+        let control = RouteControlRequest::try_from(&request.prepare);
+        if control.is_err() {
+            return err(RejectBuilder {
+                code: ErrorCode::F00_BAD_REQUEST,
+                message: b"Invalid route control request",
+                triggered_by: &self.ilp_address[..],
+                data: &[],
+            }
+            .build());
+        }
+        let control = control.unwrap();
+        debug!(
+            "Got route control request from account {}: {:?}",
+            request.from.id(),
+            control
+        );
         ok(CCP_RESPONSE.clone())
     }
 
@@ -59,6 +76,23 @@ where
             }
             .build());
         }
+
+        let update = RouteUpdateRequest::try_from(&request.prepare);
+        if update.is_err() {
+            return err(RejectBuilder {
+                code: ErrorCode::F00_BAD_REQUEST,
+                message: b"Invalid route update request",
+                triggered_by: &self.ilp_address[..],
+                data: &[],
+            }
+            .build());
+        }
+        let update = update.unwrap();
+        debug!(
+            "Got route update request from account {}: {:?}",
+            request.from.id(),
+            update
+        );
         ok(CCP_RESPONSE.clone())
     }
 }
@@ -85,9 +119,7 @@ where
 #[cfg(test)]
 mod helpers {
     use super::*;
-    use crate::fixtures::*;
-    use futures::future::FutureResult;
-    use interledger_service::{incoming_service_fn, ServiceFn};
+    use interledger_service::incoming_service_fn;
 
     lazy_static! {
         pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
@@ -150,6 +182,7 @@ mod handle_route_control_request {
     use super::helpers::*;
     use super::*;
     use crate::fixtures::*;
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn handles_valid_request() {
@@ -176,6 +209,28 @@ mod handle_route_control_request {
             "We are not configured to send routes to you, sorry"
         );
     }
+
+    #[test]
+    fn rejects_invalid_packet() {
+        let result = test_service()
+            .handle_request(IncomingRequest {
+                prepare: PrepareBuilder {
+                    destination: CCP_CONTROL_DESTINATION,
+                    amount: 0,
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
+                    data: &[],
+                    execution_condition: &PEER_PROTOCOL_CONDITION,
+                }
+                .build(),
+                from: *ROUTING_ACCOUNT,
+            })
+            .wait();
+        assert!(result.is_err());
+        assert_eq!(
+            str::from_utf8(result.unwrap_err().message()).unwrap(),
+            "Invalid route control request"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -183,6 +238,7 @@ mod handle_route_update_request {
     use super::helpers::*;
     use super::*;
     use crate::fixtures::*;
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn handles_valid_request() {
@@ -207,6 +263,28 @@ mod handle_route_update_request {
         assert_eq!(
             str::from_utf8(result.unwrap_err().message()).unwrap(),
             "Your route broadcasts are not accepted here",
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_packet() {
+        let result = test_service()
+            .handle_request(IncomingRequest {
+                prepare: PrepareBuilder {
+                    destination: CCP_UPDATE_DESTINATION,
+                    amount: 0,
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
+                    data: &[],
+                    execution_condition: &PEER_PROTOCOL_CONDITION,
+                }
+                .build(),
+                from: *ROUTING_ACCOUNT,
+            })
+            .wait();
+        assert!(result.is_err());
+        assert_eq!(
+            str::from_utf8(result.unwrap_err().message()).unwrap(),
+            "Invalid route update request"
         );
     }
 }
