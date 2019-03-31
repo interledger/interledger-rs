@@ -84,11 +84,24 @@ impl RoutingAccount for TestAccount {
 }
 
 #[derive(Clone)]
-pub struct TestStore {}
+pub struct TestStore {
+    local: HashMap<Bytes, TestAccount>,
+    configured: HashMap<Bytes, TestAccount>,
+}
 
 impl TestStore {
     pub fn new() -> TestStore {
-        TestStore {}
+        TestStore {
+            local: HashMap::new(),
+            configured: HashMap::new(),
+        }
+    }
+
+    pub fn with_routes(
+        local: HashMap<Bytes, TestAccount>,
+        configured: HashMap<Bytes, TestAccount>,
+    ) -> TestStore {
+        TestStore { local, configured }
     }
 }
 
@@ -101,7 +114,7 @@ impl RouteManagerStore for TestStore {
         Future<Item = (HashMap<Bytes, TestAccount>, HashMap<Bytes, TestAccount>), Error = ()>
             + Send,
     > {
-        Box::new(ok((HashMap::new(), HashMap::new())))
+        Box::new(ok((self.local.clone(), self.configured.clone())))
     }
 }
 
