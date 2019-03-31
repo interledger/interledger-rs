@@ -251,12 +251,9 @@ where
     /// If updates are applied to the Incoming Routing Table for this peer, we will
     /// then check whether those routes are better than the current best ones we have in the
     /// Local Routing Table.
-    fn handle_route_update_request(
-        &self,
-        request: IncomingRequest<A>,
-    ) -> impl Future<Item = Fulfill, Error = Reject> {
+    fn handle_route_update_request(&self, request: IncomingRequest<A>) -> BoxedIlpFuture {
         if !request.from.should_receive_routes() {
-            return Either::B(err(RejectBuilder {
+            return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
                 triggered_by: &self.ilp_address[..],
@@ -267,7 +264,7 @@ where
 
         let update = RouteUpdateRequest::try_from(&request.prepare);
         if update.is_err() {
-            return Either::B(err(RejectBuilder {
+            return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
                 triggered_by: &self.ilp_address[..],
@@ -297,42 +294,86 @@ where
             .expect("Should have inserted a routing table for this account")
             .handle_update_request(request.from.clone(), update)
         {
-            Ok(prefixes_updated) => Either::A(self.maybe_spawn_update(prefixes_updated)),
-            Err(message) => Either::B(err(RejectBuilder {
-                code: ErrorCode::F00_BAD_REQUEST,
-                message: &message.as_bytes(),
-                data: &[],
-                triggered_by: &ilp_address[..],
+            Ok(prefixes_updated) => {
+                let future = self.update_best_routes(Some(prefixes_updated));
+                if self.spawn_tasks {
+                    spawn(future);
+                    Box::new(ok(CCP_RESPONSE.clone()))
+                } else {
+                    let ilp_address = self.ilp_address.clone();
+                    Box::new(
+                        future
+                            .map_err(move |_| {
+                                RejectBuilder {
+                                    code: ErrorCode::T00_INTERNAL_ERROR,
+                                    message: b"Error processing route update",
+                                    data: &[],
+                                    triggered_by: &ilp_address[..],
+                                }
+                                .build()
+                            })
+                            .and_then(|_| Ok(CCP_RESPONSE.clone())),
+                    )
+                }
             }
-            .build())),
-        }
-    }
-
-    /// Either spawn the update task or wait for it to finish, depending on the configuration
-    fn maybe_spawn_update(
-        &self,
-        prefixes_updated: Vec<Bytes>,
-    ) -> impl Future<Item = Fulfill, Error = Reject> {
-        // Either run the update task in the background or wait
-        // until its done before we respond to the peer
-        let future = if self.spawn_tasks {
-            spawn(self.update_best_routes(Some(prefixes_updated)));
-            Either::A(ok(()))
-        } else {
-            Either::B(self.update_best_routes(Some(prefixes_updated)))
-        };
-        let ilp_address = self.ilp_address.clone();
-        future
-            .map_err(move |_| {
-                RejectBuilder {
-                    code: ErrorCode::T00_INTERNAL_ERROR,
-                    message: b"Error processing route update",
+            Err(message) => {
+                let reject = RejectBuilder {
+                    code: ErrorCode::F00_BAD_REQUEST,
+                    message: &message.as_bytes(),
                     data: &[],
                     triggered_by: &ilp_address[..],
                 }
-                .build()
+                .build();
+                let table = &incoming_tables[&request.from.id()];
+                let future = self.send_route_control_request(
+                    request.from.clone(),
+                    table.id(),
+                    table.epoch(),
+                );
+                if self.spawn_tasks {
+                    spawn(future);
+                    Box::new(err(reject))
+                } else {
+                    Box::new(future.then(move |_| Err(reject)))
+                }
+            }
+        }
+    }
+
+    /// Request a Route Update from the specified peer. This is sent when we get
+    /// a Route Update Request from them with a gap in the epochs since the last one we saw.
+    fn send_route_control_request(
+        &self,
+        to: A,
+        last_known_routing_table_id: [u8; 16],
+        last_known_epoch: u32,
+    ) -> impl Future<Item = (), Error = ()> {
+        let to_id = to.id();
+        let control = RouteControlRequest {
+            mode: Mode::Sync,
+            last_known_routing_table_id,
+            last_known_epoch,
+            features: Vec::new(),
+        };
+        debug!("Sending Route Control Request to account: {}, last known table id: {}, last known epoch: {}", to.id(), hex::encode(&last_known_routing_table_id[..]), last_known_epoch);
+        let prepare = control.to_prepare();
+        self.clone()
+            .outgoing
+            .send_request(OutgoingRequest {
+                from: self.account.clone(),
+                to,
+                prepare,
             })
-            .and_then(|_| Ok(CCP_RESPONSE.clone()))
+            .map_err(move |reject| {
+                error!(
+                    "Error sending Route Control Request to account {}: {:?}",
+                    to_id, reject
+                )
+            })
+            .and_then(move |_| {
+                trace!("Sent Route Control Request to account: {}", to_id);
+                Ok(())
+            })
     }
 
     /// Check whether the Local Routing Table currently has the best routes for the
@@ -430,12 +471,6 @@ where
                                     route.auth = hash(&route.auth);
                                     forwarding_table.set_route(prefix.clone(), account.clone(), route.clone());
                                     new_routes.push(route);
-
-                                    debug!("Setting new route in forwarding table: {} -> Account {}",
-                                        str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
-                                        account.id(),
-                                    );
-
                                 }
                         }
                     }
@@ -481,7 +516,10 @@ where
             .to_prepare();
         self.store
             .get_accounts_to_send_route_updates_to()
-            .and_then(move |accounts| {
+            .and_then(move |mut accounts| {
+                accounts.sort_unstable_by_key(|a| a.id().to_string());
+                accounts.dedup_by_key(|a| a.id());
+
                 let account_list: Vec<String> =
                     accounts.iter().map(|a| a.id().to_string()).collect();
                 trace!(
@@ -1216,6 +1254,78 @@ mod handle_route_update_request {
             .get_route(b"example.prefix2")
             .is_none());
     }
+
+    #[test]
+    fn sends_control_request_if_routing_table_id_changed() {
+
+        // First request is valid
+        let mut request1 = UPDATE_REQUEST_COMPLEX.clone();
+        request1.to_epoch_index = 3;
+        request1.from_epoch_index = 0;
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request1.to_prepare(),
+            })
+            .wait()
+            .unwrap();
+
+        // Second has a gap in epochs
+        let mut request2 = UPDATE_REQUEST_COMPLEX.clone();
+        request2.to_epoch_index = 8;
+        request2.from_epoch_index = 7;
+        request2.routing_table_id = [9; 16];
+        let err = service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request2.to_prepare(),
+            })
+            .wait()
+            .unwrap_err();
+        assert_eq!(err.code(), ErrorCode::F00_BAD_REQUEST);
+
+        let request = &outgoing_requests.lock()[0];
+        let control = RouteControlRequest::try_from(&request.prepare).unwrap();
+        assert_eq!(control.last_known_epoch, 0);
+        assert_eq!(
+            control.last_known_routing_table_id,
+            request2.routing_table_id
+        );
+    }
+
+    #[test]
+    fn sends_control_request_if_missing_epochs() {
+        let (mut service, outgoing_requests) = test_service_with_routes();
+
+        // First request is valid
+        let mut request = UPDATE_REQUEST_COMPLEX.clone();
+        request.to_epoch_index = 1;
+        request.from_epoch_index = 0;
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request.to_prepare(),
+            })
+            .wait()
+            .unwrap();
+
+        // Second has a gap in epochs
+        let mut request = UPDATE_REQUEST_COMPLEX.clone();
+        request.to_epoch_index = 8;
+        request.from_epoch_index = 7;
+        let err = service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request.to_prepare(),
+            })
+            .wait()
+            .unwrap_err();
+        assert_eq!(err.code(), ErrorCode::F00_BAD_REQUEST);
+
+        let request = &outgoing_requests.lock()[0];
+        let control = RouteControlRequest::try_from(&request.prepare).unwrap();
+        assert_eq!(control.last_known_epoch, 1);
+    }
 }
 
 #[cfg(test)]
@@ -1295,7 +1405,11 @@ mod create_route_update {
         assert_eq!(update.current_epoch_index, 4);
         assert_eq!(update.new_routes.len(), 2);
         assert_eq!(update.withdrawn_routes.len(), 1);
-        let new_routes: Vec<&str> = update.new_routes.iter().map(|r| str::from_utf8(r.prefix.as_ref()).unwrap()).collect();
+        let new_routes: Vec<&str> = update
+            .new_routes
+            .iter()
+            .map(|r| str::from_utf8(r.prefix.as_ref()).unwrap())
+            .collect();
         assert!(new_routes.contains(&"example.b"));
         assert!(new_routes.contains(&"example.c"));
         assert!(!new_routes.contains(&"example.m"));
