@@ -1257,7 +1257,7 @@ mod handle_route_update_request {
 
     #[test]
     fn sends_control_request_if_routing_table_id_changed() {
-
+        let (mut service, outgoing_requests) = test_service_with_routes();
         // First request is valid
         let mut request1 = UPDATE_REQUEST_COMPLEX.clone();
         request1.to_epoch_index = 3;
