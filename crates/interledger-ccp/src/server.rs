@@ -13,7 +13,7 @@ use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::{
     cmp::min,
-    iter, str,
+    str,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -354,7 +354,7 @@ where
 
         self.store.get_local_and_configured_routes().and_then(
             move |(ref local_routes, ref configured_routes)| {
-                let better_routes: Vec<(Bytes, A, Route)> = {
+                let (better_routes, withdrawn_routes) = {
                     // Note we only use a read lock here and later get a write lock if we need to update the table
                     let local_table = local_table.read();
                     let incoming_tables = incoming_tables.read();
@@ -366,33 +366,38 @@ where
                         let routes = configured_routes.iter().chain(local_routes.iter());
                         Box::new(routes.map(|(prefix, _account)| prefix.clone()))
                     };
-                    prefixes_to_check
-                        .filter_map(move |prefix| {
-                            // See which prefixes there is now a better route for
-                            if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
-                                local_routes,
-                                configured_routes,
-                                &incoming_tables,
-                                prefix.as_ref(),
-                            ) {
-                                if let Some((ref next_account, ref route)) = local_table.get_route(&prefix) {
-                                    if next_account.id() == best_next_account.id() {
-                                        None
-                                    } else {
-                                        Some((prefix.clone(), next_account.clone(), route.clone()))
-                                    }
+
+                    // Check all the prefixes to see which ones we have different routes for
+                    // and which ones we don't have routes for anymore
+                    let mut better_routes: Vec<(Bytes, A, Route)> = Vec::with_capacity(prefixes_to_check.size_hint().0);
+                    let mut withdrawn_routes: Vec<Bytes> = Vec::new();
+                    for prefix in prefixes_to_check {
+                        // See which prefixes there is now a better route for
+                        if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
+                            local_routes,
+                            configured_routes,
+                            &incoming_tables,
+                            prefix.as_ref(),
+                        ) {
+                            if let Some((ref next_account, ref route)) = local_table.get_route(&prefix) {
+                                if next_account.id() == best_next_account.id() {
+                                    continue
                                 } else {
-                                    Some((prefix.clone(), best_next_account, best_route))
+                                    better_routes.push((prefix.clone(), next_account.clone(), route.clone()));
                                 }
                             } else {
-                                None
+                                better_routes.push((prefix.clone(), best_next_account, best_route));
                             }
-                        })
-                        .collect()
+                        } else {
+                            // No longer have a route to this prefix
+                            withdrawn_routes.push(prefix);
+                        }
+                    }
+                    (better_routes, withdrawn_routes)
                 };
 
                 // Update the local and forwarding tables
-                if !better_routes.is_empty() {
+                if !better_routes.is_empty() || !withdrawn_routes.is_empty() {
                     let mut local_table = local_table.write();
                     let mut forwarding_table = forwarding_table.write();
                     let mut forwarding_table_updates = forwarding_table_updates.write();
@@ -414,7 +419,9 @@ where
                             && route.prefix != global_prefix
                             // Don't advertise completely local routes because advertising our own
                             // prefix will make sure we get packets sent to them
-                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.is_empty()) {
+                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.is_empty())
+                            // Don't include routes we're also withdrawing
+                            && !withdrawn_routes.contains(&prefix) {
 
                                 let old_route = forwarding_table.get_route(&prefix);
                                 if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
@@ -433,12 +440,18 @@ where
                         }
                     }
 
+                    for prefix in withdrawn_routes.iter() {
+                        debug!("Removed route for prefix: {}", str::from_utf8(&prefix[..]).unwrap_or("<not utf8>"));
+                        local_table.delete_route(prefix);
+                        forwarding_table.delete_route(prefix);
+                    }
+
                     let epoch = forwarding_table.increment_epoch();
-                    // TODO add withdrawn routes too
-                    forwarding_table_updates.insert(epoch, (new_routes, Vec::new()));
+                    forwarding_table_updates.insert(epoch, (new_routes, withdrawn_routes));
 
                     Either::A(store.set_routes(local_table.get_simplified_table()))
                 } else {
+                    // The routing table hasn't changed
                     Either::B(ok(()))
                 }
             },
@@ -512,26 +525,42 @@ where
         } else {
             0
         };
+
         // Merge the new routes and withdrawn routes from all of the given epochs
-        let (new_routes, withdrawn_routes) = forwarding_table_updates
+        let mut new_routes: Vec<Route> = Vec::with_capacity(epochs_to_take);
+        let mut withdrawn_routes: Vec<Bytes> = Vec::new();
+        // Iterate through each of the given epochs
+        for (new, withdrawn) in forwarding_table_updates
             .values()
             .skip(from_epoch_index as usize)
             .take(epochs_to_take)
-            .map(|(new_routes, withdrawn_routes)| (new_routes.iter(), withdrawn_routes.iter()))
-            .fold(
-                (
-                    Box::new(iter::empty()) as Box<Iterator<Item = &Route>>,
-                    Box::new(iter::empty()) as Box<Iterator<Item = &Bytes>>,
-                ),
-                |(new_routes, withdrawn_routes), (new, withdrawn)| {
-                    (
-                        Box::new(new.chain(new_routes)),
-                        Box::new(withdrawn.chain(withdrawn_routes)),
-                    )
-                },
-            );
-        let new_routes: Vec<Route> = new_routes.cloned().collect();
-        let withdrawn_routes: Vec<Bytes> = withdrawn_routes.cloned().collect();
+        {
+            for new_route in new {
+                new_routes.push(new_route.clone());
+                // If the route was previously withdrawn, ignore that now since it was added back
+                if withdrawn_routes.contains(&new_route.prefix) {
+                    withdrawn_routes = withdrawn_routes
+                        .into_iter()
+                        .filter(|prefix| prefix != &new_route.prefix)
+                        .collect();
+                }
+            }
+
+            for withdrawn_route in withdrawn {
+                withdrawn_routes.push(withdrawn_route.clone());
+                // If the route was previously added, ignore that since it was withdrawn later
+                if new_routes
+                    .iter()
+                    .any(|route| route.prefix == withdrawn_route)
+                {
+                    new_routes = new_routes
+                        .into_iter()
+                        .filter(|route| route.prefix != withdrawn_route)
+                        .collect();
+                }
+            }
+        }
+
         RouteUpdateRequest {
             routing_table_id,
             from_epoch_index,
@@ -1145,7 +1174,48 @@ mod handle_route_update_request {
     }
 
     #[test]
-    fn removes_withdrawn_routes() {}
+    fn removes_withdrawn_routes() {
+        let mut service = test_service();
+        let mut request = UPDATE_REQUEST_COMPLEX.clone();
+        request.to_epoch_index = 1;
+        request.from_epoch_index = 0;
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request.to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: RouteUpdateRequest {
+                    routing_table_id: UPDATE_REQUEST_COMPLEX.routing_table_id,
+                    from_epoch_index: 1,
+                    to_epoch_index: 3,
+                    current_epoch_index: 3,
+                    hold_down_time: 45000,
+                    speaker: UPDATE_REQUEST_COMPLEX.speaker.clone(),
+                    new_routes: Vec::new(),
+                    withdrawn_routes: vec![Bytes::from("example.prefix2")],
+                }
+                .to_prepare(),
+            })
+            .wait()
+            .unwrap();
+
+        assert_eq!(
+            (*service.local_table.read())
+                .get_route(b"example.prefix1")
+                .unwrap()
+                .0
+                .id(),
+            ROUTING_ACCOUNT.id()
+        );
+        assert!((*service.local_table.read())
+            .get_route(b"example.prefix2")
+            .is_none());
+    }
 }
 
 #[cfg(test)]
@@ -1225,18 +1295,11 @@ mod create_route_update {
         assert_eq!(update.current_epoch_index, 4);
         assert_eq!(update.new_routes.len(), 2);
         assert_eq!(update.withdrawn_routes.len(), 1);
-        assert_eq!(
-            str::from_utf8(update.new_routes[0].prefix.as_ref()).unwrap(),
-            "example.b"
-        );
-        assert_eq!(
-            str::from_utf8(update.new_routes[1].prefix.as_ref()).unwrap(),
-            "example.c"
-        );
-        assert_eq!(
-            str::from_utf8(update.withdrawn_routes[0].as_ref()).unwrap(),
-            "example.m"
-        );
+        let new_routes: Vec<&str> = update.new_routes.iter().map(|r| str::from_utf8(r.prefix.as_ref()).unwrap()).collect();
+        assert!(new_routes.contains(&"example.b"));
+        assert!(new_routes.contains(&"example.c"));
+        assert!(!new_routes.contains(&"example.m"));
+        assert_eq!(update.withdrawn_routes[0], &Bytes::from("example.m"));
     }
 }
 
@@ -1273,8 +1336,8 @@ mod send_route_updates {
             .iter()
             .map(|route| str::from_utf8(route.prefix.as_ref()).unwrap())
             .collect();
-        assert_eq!(prefixes[0], "example.configured.1");
-        assert_eq!(prefixes[1], "example.local.1");
+        assert!(prefixes.contains(&"example.local.1"));
+        assert!(prefixes.contains(&"example.configured.1"));
     }
 
     #[test]
@@ -1315,9 +1378,73 @@ mod send_route_updates {
             .iter()
             .map(|route| str::from_utf8(route.prefix.as_ref()).unwrap())
             .collect();
-        // TODO should configured and local routes be sent first?
-        assert_eq!(prefixes[0], "example.remote");
-        assert_eq!(prefixes[1], "example.configured.1");
-        assert_eq!(prefixes[2], "example.local.1");
+        assert!(prefixes.contains(&"example.local.1"));
+        assert!(prefixes.contains(&"example.configured.1"));
+        assert!(prefixes.contains(&"example.remote"));
+    }
+
+    #[test]
+    fn broadcasts_withdrawn_routes() {
+        let (service, outgoing_requests) = test_service_with_routes();
+
+        // This is normally spawned as a task when the service is created
+        service.update_best_routes(None).wait().unwrap();
+
+        service
+            .handle_route_update_request(IncomingRequest {
+                from: TestAccount::new(10, "example.peer"),
+                prepare: RouteUpdateRequest {
+                    routing_table_id: [0; 16],
+                    current_epoch_index: 1,
+                    from_epoch_index: 0,
+                    to_epoch_index: 1,
+                    hold_down_time: 30000,
+                    speaker: Bytes::from("example.remote"),
+                    new_routes: vec![Route {
+                        prefix: Bytes::from("example.remote"),
+                        path: vec![Bytes::from("example.peer")],
+                        auth: [0; 32],
+                        props: Vec::new(),
+                    }],
+                    withdrawn_routes: Vec::new(),
+                }
+                .to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        service
+            .handle_route_update_request(IncomingRequest {
+                from: TestAccount::new(10, "example.peer"),
+                prepare: RouteUpdateRequest {
+                    routing_table_id: [0; 16],
+                    current_epoch_index: 4,
+                    from_epoch_index: 1,
+                    to_epoch_index: 4,
+                    hold_down_time: 30000,
+                    speaker: Bytes::from("example.remote"),
+                    new_routes: Vec::new(),
+                    withdrawn_routes: vec![Bytes::from("example.remote")],
+                }
+                .to_prepare(),
+            })
+            .wait()
+            .unwrap();
+
+        service.send_route_updates().wait().unwrap();
+        let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
+        assert_eq!(update.new_routes.len(), 2);
+        let prefixes: Vec<&str> = update
+            .new_routes
+            .iter()
+            .map(|route| str::from_utf8(route.prefix.as_ref()).unwrap())
+            .collect();
+        assert!(prefixes.contains(&"example.local.1"));
+        assert!(prefixes.contains(&"example.configured.1"));
+        assert!(!prefixes.contains(&"example.remote"));
+        assert_eq!(update.withdrawn_routes.len(), 1);
+        assert_eq!(
+            str::from_utf8(&update.withdrawn_routes[0]).unwrap(),
+            "example.remote"
+        );
     }
 }

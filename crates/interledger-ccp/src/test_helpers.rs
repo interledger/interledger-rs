@@ -220,7 +220,7 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
-    let mut service = CcpServerService::with_spawn_bool(
+    let service = CcpServerService::with_spawn_bool(
         TestAccount::new(0, "example.connector"),
         store,
         outgoing,

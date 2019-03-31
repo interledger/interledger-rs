@@ -24,8 +24,8 @@ impl<T> PrefixMap<T> {
         self.map.insert(prefix.clone(), item).is_none()
     }
 
-    pub fn remove(&mut self, prefix: Bytes) -> bool {
-        self.map.remove(&prefix).is_some()
+    pub fn remove(&mut self, prefix: &[u8]) -> bool {
+        self.map.remove(prefix).is_some()
     }
 
     pub fn resolve(&self, prefix: &[u8]) -> Option<&T> {
@@ -88,12 +88,12 @@ where
 
     /// Set a particular route, overwriting the one that was there before
     pub fn set_route(&mut self, prefix: Bytes, account: A, route: Route) {
-        self.prefix_map.remove(prefix.clone());
+        self.prefix_map.remove(&prefix[..]);
         self.prefix_map.insert(prefix, (account, route));
     }
 
     /// Remove the route for the given prefix. Returns true if that route existed before
-    pub fn delete_route(&mut self, prefix: Bytes) -> bool {
+    pub fn delete_route(&mut self, prefix: &[u8]) -> bool {
         self.prefix_map.remove(prefix)
     }
 
@@ -158,7 +158,7 @@ where
 
         let mut changed_prefixes = Vec::new();
         for prefix in request.withdrawn_routes.iter() {
-            if self.delete_route(prefix.clone()) {
+            if self.delete_route(prefix) {
                 changed_prefixes.push(prefix.clone());
             }
         }
@@ -207,7 +207,7 @@ mod prefix_map {
     fn removes_entry() {
         let mut map = PrefixMap::new();
         assert!(map.insert(Bytes::from("example.a"), 1));
-        assert!(map.remove(Bytes::from("example.a")));
+        assert!(map.remove(&b"example.a"[..]));
         assert!(map.map.is_empty());
     }
 
