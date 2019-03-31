@@ -9,9 +9,9 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - project-v2-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-            - project-v2-{{ checksum "Cargo.toml" }}
-            - project-v2-
+            - project-v3-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+            - project-v3-{{ checksum "Cargo.toml" }}
+            - project-v3-
       - run:
           name: Install Cargo Extensions
           command: cargo install --quiet cargo-kcov cargo-audit || true
@@ -48,8 +48,7 @@ jobs:
           name: Upload Code Coverage
           command: "bash <(curl -s https://codecov.io/bash)"
       - save_cache:
-          key: project-v2-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+          key: project-v3-{{ checksum "Cargo.toml" }}-{{ .Branch }}
           paths:
             - ./target
             - /home/circleci/.cargo
-            - ./kcov-*
