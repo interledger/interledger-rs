@@ -33,7 +33,9 @@ jobs:
           command: cargo audit
       - run:
           name: Generate Coverage Report
-          command: RUST_LOG=interledger/.* cargo kcov --all --verbose
+          command: >-
+            RUST_LOG=interledger/.* cargo kcov --all --verbose --
+            --verify --exclude-region=kcov-ignore-start:kcov-ignore-end --exclude-pattern=$CARGO_HOME
       - run:
           name: Upload Code Coverage
           command: "bash <(curl -s https://codecov.io/bash)"
