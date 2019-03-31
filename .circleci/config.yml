@@ -13,7 +13,10 @@ jobs:
             - project-v2-
       - run:
           name: Install Cargo Extensions
-          command: cargo install --quiet cargo-kcov cargo-audit && rustup component add rustfmt
+          command: cargo install --quiet cargo-kcov cargo-audit || true
+      - run:
+          name: Install rustfmt
+          command: rustup component add rustfmt || true
       - run:
           name: Install kcov
           command: >-
@@ -35,7 +38,11 @@ jobs:
           name: Generate Coverage Report
           command: >-
             RUST_LOG=interledger/.* cargo kcov --all --verbose --
-            --verify --exclude-region=kcov-ignore-start:kcov-ignore-end --exclude-pattern=$CARGO_HOME
+            # kcov args
+            --verify
+            --exclude-region="kcov-ignore-start:kcov-ignore-end"
+            --exclude-pattern=$CARGO_HOME,**/tests/**
+            --exclude-line="^(\)*\}*,*)$"
       - run:
           name: Upload Code Coverage
           command: "bash <(curl -s https://codecov.io/bash)"
