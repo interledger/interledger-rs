@@ -52,3 +52,4 @@ jobs:
           paths:
             - ./target
             - /home/circleci/.cargo
+            - ./kcov-*
