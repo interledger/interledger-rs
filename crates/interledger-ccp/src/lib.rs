@@ -41,11 +41,6 @@ pub trait RoutingAccount: Account + IldcpAccount {
     fn should_receive_routes(&self) -> bool {
         false
     }
-
-    /// Address prefixes that this account has been configured to handle
-    fn configured_routes(&self) -> Vec<Bytes> {
-        Vec::new()
-    }
 }
 
 pub trait RouteManagerStore: Clone {
