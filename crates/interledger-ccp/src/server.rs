@@ -8,8 +8,17 @@ use hashbrown::HashMap;
 use interledger_packet::*;
 use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
 use parking_lot::RwLock;
+use ring::digest::{digest, SHA256};
 use std::{marker::PhantomData, str, sync::Arc};
 use tokio_executor::spawn;
+
+fn hash(preimage: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0; 32];
+    out.copy_from_slice(digest(&SHA256, preimage).as_ref());
+    out
+}
+
+type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 
 /// The Routing Manager Service.
 ///
@@ -29,6 +38,8 @@ pub struct CcpServerService<S, T, A: Account> {
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     forwarding_table: Arc<RwLock<RoutingTable<A>>>,
+    /// These updates are stored such that index 0 is the transition from epoch 0 to epoch 1
+    forwarding_table_updates: Arc<RwLock<HashMap<u32, NewAndWithDrawnRoutes>>>,
     /// This is the routing table we have compile from configuration and
     /// broadcasts we have received from our peers. It is saved to the Store so that
     /// the Router services forwards packets according to what it says.
@@ -77,6 +88,7 @@ where
             next,
             account_type: PhantomData,
             forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
+            forwarding_table_updates: Arc::new(RwLock::new(HashMap::new())),
             local_table: Arc::new(RwLock::new(RoutingTable::default())),
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
             store,
@@ -242,8 +254,10 @@ where
     ) -> impl Future<Item = (), Error = ()> + 'static {
         let local_table = self.local_table.clone();
         let forwarding_table = self.forwarding_table.clone();
+        let forwarding_table_updates = self.forwarding_table_updates.clone();
         let incoming_tables = self.incoming_tables.clone();
         let ilp_address = self.ilp_address.clone();
+        let global_prefix = self.global_prefix.clone();
         let mut store = self.store.clone();
 
         self.store.get_local_and_configured_routes().and_then(
@@ -283,6 +297,9 @@ where
                 if !better_routes.is_empty() {
                     let mut local_table = local_table.write();
                     let mut forwarding_table = forwarding_table.write();
+                    let mut forwarding_table_updates = forwarding_table_updates.write();
+
+                    let mut new_routes: Vec<Route> = Vec::with_capacity(better_routes.len());
 
                     for (prefix, account, mut route) in better_routes {
                         debug!(
@@ -292,10 +309,35 @@ where
                         );
                         local_table.set_route(prefix.clone(), account.clone(), route.clone());
 
-                        // Add the same route to the forwarding table with our address added to the path
-                        route.path.insert(0, ilp_address.clone());
-                        forwarding_table.set_route(prefix.clone(), account.clone(), route);
+                        // Update the forwarding table
+                        // Don't advertise routes that don't start with the global prefix
+                        if route.prefix.starts_with(&global_prefix[..])
+                            // Don't advertise the global prefix
+                            && route.prefix != global_prefix
+                            // Don't advertise completely local routes because advertising our own
+                            // prefix will make sure we get packets sent to them
+                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.len() == 1) {
+
+                                let old_route = forwarding_table.get_route(&prefix);
+                                if old_route.is_some() && old_route.unwrap().0.id() != account.id() {
+                                    route.path.insert(0, ilp_address.clone());
+                                    // Each hop hashes the auth before forwarding
+                                    route.auth = hash(&route.auth);
+                                    forwarding_table.set_route(prefix.clone(), account.clone(), route.clone());
+                                    new_routes.push(route);
+
+                                    debug!("Setting new route in forwarding table: {} -> Account {}",
+                                        str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
+                                        account.id(),
+                                    );
+
+                                }
+                        }
                     }
+
+                    let epoch = forwarding_table.increment_epoch();
+                    // TODO add withdrawn routes too
+                    forwarding_table_updates.insert(epoch, (new_routes, Vec::new()));
 
                     Either::A(store.set_routes(local_table.get_simplified_table()))
                 } else {
@@ -816,4 +858,24 @@ mod handle_route_update_request {
             10
         );
     }
+
+    #[test]
+    fn removes_withdrawn_routes() {}
+}
+
+#[cfg(test)]
+mod send_route_updates {
+    use super::*;
+
+    #[test]
+    fn broadcasts_empty_table() {}
+
+    #[test]
+    fn broadcasts_configured_routes() {}
+
+    #[test]
+    fn broadcasts_received_routes() {}
+
+    // TODO also start interval to send out route updates
+    // TODO store will need to give a way to load accounts that we should send routes to
 }

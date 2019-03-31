@@ -61,6 +61,12 @@ where
         }
     }
 
+    pub fn increment_epoch(&mut self) -> u32 {
+        let epoch = self.epoch;
+        self.epoch += 1;
+        epoch
+    }
+
     /// Set a particular route, overwriting the one that was there before
     pub fn set_route(&mut self, prefix: Bytes, account: A, route: Route) {
         self.prefix_map.remove(prefix.clone());
