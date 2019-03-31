@@ -62,6 +62,12 @@ where
     }
 
     #[cfg(test)]
+    pub fn set_id(&mut self, id: [u8; 16]) {
+        self.id = id;
+        self.epoch = 0;
+    }
+
+    #[cfg(test)]
     pub fn set_epoch(&mut self, epoch: u32) {
         self.epoch = epoch;
     }
