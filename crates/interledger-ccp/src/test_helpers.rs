@@ -1,5 +1,5 @@
 use super::*;
-use crate::server::CcpServerService;
+use crate::{packet::CCP_RESPONSE, server::CcpServerService};
 use bytes::Bytes;
 use futures::{
     future::{err, ok},
@@ -8,10 +8,11 @@ use futures::{
 use hashbrown::HashMap;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingService,
+    incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
+    OutgoingService,
 };
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::{iter::FromIterator, sync::Arc};
 
 lazy_static! {
     pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
@@ -179,4 +180,59 @@ pub fn test_service() -> CcpServerService<
         }),
         false,
     )
+}
+
+pub fn test_service_with_routes() -> (
+    CcpServerService<
+        impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+        impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+        TestStore,
+        TestAccount,
+    >,
+    Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>>,
+) {
+    let local_routes = HashMap::from_iter(vec![
+        (
+            Bytes::from("example.local.1"),
+            TestAccount::new(1, "example.local.1"),
+        ),
+        (
+            Bytes::from("example.connector.other-local"),
+            TestAccount {
+                id: 3,
+                ilp_address: Bytes::from("example.connector.other-local"),
+                send_routes: false,
+                receive_routes: false,
+                relation: RoutingRelation::Child,
+            },
+        ),
+    ]);
+    let configured_routes = HashMap::from_iter(vec![(
+        Bytes::from("example.configured.1"),
+        TestAccount::new(2, "example.configured.1"),
+    )]);
+    let store = TestStore::with_routes(local_routes, configured_routes);
+    let outgoing_requests: Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let outgoing_requests_clone = outgoing_requests.clone();
+    let outgoing = outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
+        (*outgoing_requests_clone.lock()).push(request);
+        Ok(CCP_RESPONSE.clone())
+    });
+    let mut service = CcpServerService::with_spawn_bool(
+        TestAccount::new(0, "example.connector"),
+        store,
+        outgoing,
+        incoming_service_fn(|_request| {
+            Box::new(err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: b"No other incoming handler!",
+                data: &[],
+                triggered_by: b"example.connector",
+            }
+            .build()))
+        }),
+        false,
+    );
+    (service, outgoing_requests)
 }

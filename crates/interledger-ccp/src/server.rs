@@ -12,6 +12,7 @@ use interledger_service::{
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::{
+    cmp::min,
     iter, str,
     sync::Arc,
     time::{Duration, Instant},
@@ -64,11 +65,13 @@ pub struct CcpServerService<S, T, U, A: Account> {
     /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
     store: U,
-    /// If true, the task to update the routing tables based on a Route Update will be
-    /// spawned and run in the background. If false, the response will only be returned
-    /// once the routing tables have been updated. This is primarily to help with testing
-    /// because spawning doesn't work well on Tokio's current_thread executor.
-    should_spawn_update: bool,
+    /// If true, tasks will be spawned to process Route Update Requests and respond
+    /// to Route Control Requests. If false, the response to the incoming request
+    /// will wait until the outgoing messages have been sent out.
+    /// Making requests wait is primarily intended for testing so that the tests do
+    /// not need to be run with a proper executor like Tokio. When running this for real,
+    /// it is better to respond to peer messages immediately.
+    spawn_tasks: bool,
 }
 
 impl<S, T, U, A> CcpServerService<S, T, U, A>
@@ -103,7 +106,7 @@ where
         store: U,
         outgoing: T,
         next_incoming: S,
-        should_spawn_update: bool,
+        spawn_tasks: bool,
     ) -> Self {
         // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
         let ilp_address = Bytes::from(account.client_address());
@@ -125,7 +128,7 @@ where
             local_table: Arc::new(RwLock::new(RoutingTable::default())),
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
             store,
-            should_spawn_update,
+            spawn_tasks,
         }
     }
 
@@ -151,24 +154,24 @@ where
         request: IncomingRequest<A>,
     ) -> impl Future<Item = Fulfill, Error = Reject> {
         if !request.from.should_send_routes() {
-            return err(RejectBuilder {
+            return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
                 triggered_by: &self.ilp_address[..],
                 data: &[],
             }
-            .build());
+            .build()));
         }
 
         let control = RouteControlRequest::try_from(&request.prepare);
         if control.is_err() {
-            return err(RejectBuilder {
+            return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
                 triggered_by: &self.ilp_address[..],
                 data: &[],
             }
-            .build());
+            .build()));
         }
         let control = control.unwrap();
         debug!(
@@ -176,7 +179,46 @@ where
             request.from.id(),
             control
         );
-        ok(CCP_RESPONSE.clone())
+
+        // TODO stop sending updates if they are in Idle mode
+        if control.mode == Mode::Sync {
+            let (from_epoch_index, to_epoch_index) = {
+                let forwarding_table = self.forwarding_table.read();
+                let to_epoch_index = forwarding_table.epoch();
+                let from_epoch_index =
+                    if control.last_known_routing_table_id != forwarding_table.id() {
+                        0
+                    } else {
+                        min(control.last_known_epoch, to_epoch_index)
+                    };
+                (from_epoch_index, to_epoch_index)
+            };
+
+            if !self.spawn_tasks {
+                let ilp_address = self.ilp_address.clone();
+                return Either::B(
+                    self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
+                        .map_err(move |_| {
+                            RejectBuilder {
+                                code: ErrorCode::T01_PEER_UNREACHABLE,
+                                message: b"Error sending route update request",
+                                data: &[],
+                                triggered_by: &ilp_address[..],
+                            }
+                            .build()
+                        })
+                        .and_then(|_| Ok(CCP_RESPONSE.clone())),
+                );
+            } else {
+                spawn(self.send_route_update(
+                    request.from.clone(),
+                    from_epoch_index,
+                    to_epoch_index,
+                ));
+            }
+        }
+
+        Either::A(ok(CCP_RESPONSE.clone()))
     }
 
     /// Remove invalid routes before processing the Route Update Request
@@ -273,7 +315,7 @@ where
     ) -> impl Future<Item = Fulfill, Error = Reject> {
         // Either run the update task in the background or wait
         // until its done before we respond to the peer
-        let future = if self.should_spawn_update {
+        let future = if self.spawn_tasks {
             spawn(self.update_best_routes(Some(prefixes_updated)));
             Either::A(ok(()))
         } else {
@@ -742,7 +784,8 @@ mod handle_route_control_request {
 
     #[test]
     fn handles_valid_request() {
-        test_service()
+        test_service_with_routes()
+            .0
             .handle_request(IncomingRequest {
                 prepare: CONTROL_REQUEST.to_prepare(),
                 from: ROUTING_ACCOUNT.clone(),
@@ -786,6 +829,62 @@ mod handle_route_control_request {
             str::from_utf8(result.unwrap_err().message()).unwrap(),
             "Invalid route control request"
         );
+    }
+
+    #[test]
+    fn sends_update_in_response() {
+        let (mut service, outgoing_requests) = test_service_with_routes();
+        (*service.forwarding_table.write()).set_id([0; 16]);
+        service.update_best_routes(None).wait().unwrap();
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: RouteControlRequest {
+                    last_known_routing_table_id: [0; 16],
+                    mode: Mode::Sync,
+                    last_known_epoch: 0,
+                    features: Vec::new(),
+                }
+                .to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        let request: &OutgoingRequest<TestAccount> = &outgoing_requests.lock()[0];
+        assert_eq!(request.to.id(), ROUTING_ACCOUNT.id());
+        let update = RouteUpdateRequest::try_from(&request.prepare).unwrap();
+        assert_eq!(update.routing_table_id, [0; 16]);
+        assert_eq!(update.from_epoch_index, 0);
+        assert_eq!(update.to_epoch_index, 1);
+        assert_eq!(update.current_epoch_index, 1);
+        assert_eq!(update.new_routes.len(), 2);
+    }
+
+    #[test]
+    fn sends_whole_table_if_id_is_different() {
+        let (mut service, outgoing_requests) = test_service_with_routes();
+        service.update_best_routes(None).wait().unwrap();
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: RouteControlRequest {
+                    last_known_routing_table_id: [0; 16],
+                    mode: Mode::Sync,
+                    last_known_epoch: 32,
+                    features: Vec::new(),
+                }
+                .to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        let routing_table_id = service.forwarding_table.read().id();
+        let request: &OutgoingRequest<TestAccount> = &outgoing_requests.lock()[0];
+        assert_eq!(request.to.id(), ROUTING_ACCOUNT.id());
+        let update = RouteUpdateRequest::try_from(&request.prepare).unwrap();
+        assert_eq!(update.routing_table_id, routing_table_id);
+        assert_eq!(update.from_epoch_index, 0);
+        assert_eq!(update.to_epoch_index, 1);
+        assert_eq!(update.current_epoch_index, 1);
+        assert_eq!(update.new_routes.len(), 2);
     }
 }
 
@@ -1145,67 +1244,7 @@ mod create_route_update {
 mod send_route_updates {
     use super::*;
     use crate::test_helpers::*;
-    use crate::RoutingRelation;
-    use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
-    use parking_lot::Mutex;
-    use std::{iter::FromIterator, sync::Arc};
 
-    fn test_service_with_routes() -> (
-        CcpServerService<
-            impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
-            impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
-            TestStore,
-            TestAccount,
-        >,
-        Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>>,
-    ) {
-        let local_routes = HashMap::from_iter(vec![
-            (
-                Bytes::from("example.local.1"),
-                TestAccount::new(1, "example.local.1"),
-            ),
-            (
-                Bytes::from("example.connector.other-local"),
-                TestAccount {
-                    id: 3,
-                    ilp_address: Bytes::from("example.connector.other-local"),
-                    send_routes: false,
-                    receive_routes: false,
-                    relation: RoutingRelation::Child,
-                },
-            ),
-        ]);
-        let configured_routes = HashMap::from_iter(vec![(
-            Bytes::from("example.configured.1"),
-            TestAccount::new(2, "example.configured.1"),
-        )]);
-        let store = TestStore::with_routes(local_routes, configured_routes);
-        let outgoing_requests: Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>> =
-            Arc::new(Mutex::new(Vec::new()));
-        let outgoing_requests_clone = outgoing_requests.clone();
-        let outgoing = outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
-            (*outgoing_requests_clone.lock()).push(request);
-            Ok(CCP_RESPONSE.clone())
-        });
-        (
-            CcpServerService::with_spawn_bool(
-                TestAccount::new(0, "example.connector"),
-                store,
-                outgoing,
-                incoming_service_fn(|_request| {
-                    Box::new(err(RejectBuilder {
-                        code: ErrorCode::F02_UNREACHABLE,
-                        message: b"No other incoming handler!",
-                        data: &[],
-                        triggered_by: b"example.connector",
-                    }
-                    .build()))
-                }),
-                false,
-            ),
-            outgoing_requests,
-        )
-    }
     #[test]
     fn broadcasts_to_all_accounts_we_send_updates_to() {
         let (service, outgoing_requests) = test_service_with_routes();
