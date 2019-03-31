@@ -1,4 +1,4 @@
-use crate::packet::{Route, RouteProp, RouteUpdateRequest};
+use crate::packet::{Route, RouteUpdateRequest};
 use bytes::Bytes;
 use hashbrown::HashMap;
 use ring::rand::{SecureRandom, SystemRandom};
@@ -56,13 +56,20 @@ impl<T> PrefixMap<T> {
     }
 }
 
-pub struct RoutingTable<I> {
+/// The routing table is identified by an ID (a UUID in array form) and an "epoch".
+/// When an Interledger node reloads, it will generate a new UUID for its routing table.
+/// Each update applied increments the epoch number, so it acts as a version tracker.
+/// This helps peers make sure they are in sync with one another and request updates if not.
+pub struct RoutingTable<A> {
     id: [u8; 16],
     epoch: u32,
-    prefix_map: PrefixMap<I>,
+    prefix_map: PrefixMap<(A, Route)>,
 }
 
-impl<I> RoutingTable<I> {
+impl<A> RoutingTable<A>
+where
+    A: Clone,
+{
     pub fn new(id: [u8; 16]) -> Self {
         RoutingTable {
             id,
@@ -72,42 +79,9 @@ impl<I> RoutingTable<I> {
     }
 
     /// Set a particular route, overwriting the one that was there before
-    pub fn set_route(&mut self, prefix: Bytes, account_id: I) {
+    pub fn set_route(&mut self, prefix: Bytes, account: A, route: Route) {
         self.prefix_map.remove(prefix.clone());
-        self.prefix_map.insert(prefix, account_id);
-    }
-
-    /// Get the best route we have for the given prefix
-    pub fn get_route(&self, prefix: Bytes) -> Option<&I> {
-        self.prefix_map.resolve(prefix.as_ref())
-    }
-}
-
-impl<I> Default for RoutingTable<I> {
-    fn default() -> RoutingTable<I> {
-        let mut id = [0; 16];
-        RANDOM.fill(&mut id).expect("Unable to get randomness");
-        RoutingTable::new(id)
-    }
-}
-
-/// The routing table is identified by an ID (a UUID in array form) and an "epoch".
-/// When an Interledger node reloads, it will generate a new UUID for its routing table.
-/// Each update applied increments the epoch number, so it acts as a version tracker.
-/// This helps peers make sure they are in sync with one another and request updates if not.
-pub struct IncomingRoutingTable {
-    id: [u8; 16],
-    epoch: u32,
-    prefix_map: PrefixMap<Route>,
-}
-
-impl IncomingRoutingTable {
-    pub fn new(id: [u8; 16]) -> Self {
-        IncomingRoutingTable {
-            id,
-            epoch: 0,
-            prefix_map: PrefixMap::new(),
-        }
+        self.prefix_map.insert(prefix, (account, route));
     }
 
     /// Remove the route for the given prefix. Returns true if that route existed before
@@ -116,18 +90,20 @@ impl IncomingRoutingTable {
     }
 
     /// Add the given route. Returns true if that routed did not already exist
-    pub fn add_route(&mut self, route: Route) -> bool {
-        self.prefix_map.insert(route.prefix.clone(), route)
+    pub fn add_route(&mut self, account: A, route: Route) -> bool {
+        self.prefix_map
+            .insert(route.prefix.clone(), (account, route))
     }
 
     /// Get the best route we have for the given prefix
-    pub fn get_route(&self, prefix: &[u8]) -> Option<&Route> {
+    pub fn get_route(&self, prefix: &[u8]) -> Option<&(A, Route)> {
         self.prefix_map.resolve(prefix)
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents
     pub fn handle_update_request(
         &mut self,
+        account: A,
         request: RouteUpdateRequest,
     ) -> Result<Vec<Bytes>, String> {
         if self.id != request.routing_table_id {
@@ -172,7 +148,7 @@ impl IncomingRoutingTable {
 
         for route in request.new_routes.into_iter() {
             let prefix = route.prefix.clone();
-            if self.add_route(route) {
+            if self.add_route(account.clone(), route) {
                 changed_prefixes.push(prefix);
             }
         }
@@ -188,11 +164,14 @@ impl IncomingRoutingTable {
     }
 }
 
-impl Default for IncomingRoutingTable {
-    fn default() -> IncomingRoutingTable {
+impl<A> Default for RoutingTable<A>
+where
+    A: Clone,
+{
+    fn default() -> RoutingTable<A> {
         let mut id = [0; 16];
         RANDOM.fill(&mut id).expect("Unable to get randomness");
-        IncomingRoutingTable::new(id)
+        RoutingTable::new(id)
     }
 }
 
@@ -234,23 +213,26 @@ mod prefix_map {
 mod incoming_table {
     use super::*;
     use crate::fixtures::*;
+    use crate::test_helpers::*;
 
     #[test]
     fn sets_id_if_update_has_different() {
-        let mut table = IncomingRoutingTable::new([0; 16]);
+        let mut table = RoutingTable::new([0; 16]);
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.from_epoch_index = 0;
-        table.handle_update_request(request.clone()).unwrap();
+        table
+            .handle_update_request(ROUTING_ACCOUNT.clone(), request.clone())
+            .unwrap();
         assert_eq!(table.id, request.routing_table_id);
         assert_eq!(table.epoch, 0);
     }
 
     #[test]
     fn errors_if_gap_in_epoch_indecies() {
-        let mut table = IncomingRoutingTable::new([0; 16]);
+        let mut table = RoutingTable::new([0; 16]);
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.from_epoch_index = 1;
-        let result = table.handle_update_request(request);
+        let result = table.handle_update_request(ROUTING_ACCOUNT.clone(), request);
         assert_eq!(
             result.unwrap_err(),
             "Gap in routing table. Expected epoch: 0, got from_epoch: 1"
@@ -259,22 +241,26 @@ mod incoming_table {
 
     #[test]
     fn ignores_old_update() {
-        let mut table = IncomingRoutingTable::new(UPDATE_REQUEST_COMPLEX.routing_table_id);
+        let mut table = RoutingTable::new(UPDATE_REQUEST_COMPLEX.routing_table_id);
         table.epoch = 3;
         let mut request = UPDATE_REQUEST_COMPLEX.clone();
         request.from_epoch_index = 0;
         request.to_epoch_index = 1;
-        let updated_routes = table.handle_update_request(request).unwrap();
+        let updated_routes = table
+            .handle_update_request(ROUTING_ACCOUNT.clone(), request)
+            .unwrap();
         assert_eq!(updated_routes.len(), 0);
     }
 
     #[test]
     fn ignores_empty_update() {
-        let mut table = IncomingRoutingTable::new([0; 16]);
+        let mut table = RoutingTable::new([0; 16]);
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.from_epoch_index = 0;
         request.to_epoch_index = 1;
-        let updated_routes = table.handle_update_request(request).unwrap();
+        let updated_routes = table
+            .handle_update_request(ROUTING_ACCOUNT.clone(), request)
+            .unwrap();
         assert_eq!(updated_routes.len(), 0);
     }
 }

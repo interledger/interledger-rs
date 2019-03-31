@@ -1,8 +1,4 @@
-use crate::{
-    packet::*,
-    routing_table::{IncomingRoutingTable, RoutingTable},
-    RouteManagerStore, RoutingAccount, RoutingRelation,
-};
+use crate::{packet::*, routing_table::RoutingTable, RouteManagerStore, RoutingAccount};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, Either},
@@ -32,16 +28,16 @@ pub struct CcpServerService<S, T, A: Account> {
     account_type: PhantomData<A>,
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
-    forwarding_table: Arc<RwLock<RoutingTable<A::AccountId>>>,
+    forwarding_table: Arc<RwLock<RoutingTable<A>>>,
     /// This is the routing table we have compile from configuration and
     /// broadcasts we have received from our peers. It is saved to the Store so that
     /// the Router services forwards packets according to what it says.
-    local_table: Arc<RwLock<RoutingTable<A::AccountId>>>,
+    local_table: Arc<RwLock<RoutingTable<A>>>,
     /// We store a routing table for each peer we receive Route Update Requests from.
     /// When the peer sends us an update, we apply that update to this view of their table.
     /// Updates from peers are applied to our local_table if they are better than the
     /// existing best route and if they do not attempt to overwrite configured routes.
-    incoming_tables: Arc<RwLock<HashMap<A::AccountId, (A, IncomingRoutingTable)>>>,
+    incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
     store: T,
     /// If true, the task to update the routing tables based on a Route Update will be
     /// spawned and run in the background. If false, the response will only be returned
@@ -54,7 +50,7 @@ impl<S, T, A> CcpServerService<S, T, A>
 where
     S: IncomingService<A> + Send + Sync + 'static,
     T: RouteManagerStore<Account = A> + Send + Sync + 'static,
-    A: Account + RoutingAccount + Send + Sync + 'static,
+    A: RoutingAccount + Send + Sync + 'static,
 {
     // Note the next service will be used both to pass on incoming requests that are not CCP requests
     // as well as send outgoing messages for CCP
@@ -62,7 +58,12 @@ where
         CcpServerService::with_spawn_bool(ilp_address, store, next, true)
     }
 
-    fn with_spawn_bool(ilp_address: Bytes, store: T, next: S, should_spawn_update: bool) -> Self {
+    pub(crate) fn with_spawn_bool(
+        ilp_address: Bytes,
+        store: T,
+        next: S,
+        should_spawn_update: bool,
+    ) -> Self {
         // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
         let global_prefix: Bytes = ilp_address
             .iter()
@@ -185,18 +186,14 @@ where
         if !&incoming_tables.contains_key(&request.from.id()) {
             incoming_tables.insert(
                 request.from.id(),
-                (
-                    request.from.clone(),
-                    IncomingRoutingTable::new(update.routing_table_id),
-                ),
+                RoutingTable::new(update.routing_table_id),
             );
         }
         let ilp_address = self.ilp_address.clone();
         match (*incoming_tables)
             .get_mut(&request.from.id())
             .expect("Should have inserted a routing table for this account")
-            .1
-            .handle_update_request(update)
+            .handle_update_request(request.from.clone(), update)
         {
             Ok(prefixes_updated) => Either::A(self.maybe_spawn_update(prefixes_updated)),
             Err(message) => Either::B(err(RejectBuilder {
@@ -256,20 +253,20 @@ where
                         .iter()
                         .filter_map(move |prefix| {
                             // See which prefixes there is now a better route for
-                            if let Some(best_route) = get_best_route_for_prefix(
+                            if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
                                 local_routes,
                                 configured_routes,
                                 &incoming_tables,
                                 prefix.as_ref(),
                             ) {
-                                if let Some(route) = local_table.get_route(prefix.clone()) {
-                                    if route == &best_route {
+                                if let Some((ref next_account, ref route)) = local_table.get_route(&prefix) {
+                                    if next_account.id() == best_next_account.id() {
                                         None
                                     } else {
-                                        Some((prefix.clone(), best_route))
+                                        Some((prefix.clone(), next_account.clone(), route.clone()))
                                     }
                                 } else {
-                                    Some((prefix.clone(), best_route))
+                                    Some((prefix.clone(), best_next_account, best_route))
                                 }
                             } else {
                                 None
@@ -282,13 +279,13 @@ where
                 if better_routes.peek().is_some() {
                     let mut local_table = local_table.write();
 
-                    better_routes.for_each(|(prefix, account_id)| {
+                    better_routes.for_each(|(prefix, account, route)| {
                         debug!(
-                            "Setting new route for prefix: {} -> {}",
+                            "Setting new route for prefix: {} -> Account {}",
                             str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
-                            account_id
+                            account.id(),
                         );
-                        local_table.set_route(prefix.clone(), account_id);
+                        local_table.set_route(prefix.clone(), account.clone(), route);
                         // TODO set forwarding table route
                     });
                 }
@@ -300,29 +297,40 @@ where
 }
 
 fn get_best_route_for_prefix<A: RoutingAccount>(
-    local_routes: &HashMap<Bytes, A::AccountId>,
-    configured_routes: &HashMap<Bytes, A::AccountId>,
-    incoming_tables: &HashMap<A::AccountId, (A, IncomingRoutingTable)>,
+    local_routes: &HashMap<Bytes, A>,
+    configured_routes: &HashMap<Bytes, A>,
+    incoming_tables: &HashMap<A::AccountId, RoutingTable<A>>,
     prefix: &[u8],
-) -> Option<A::AccountId> {
-    if let Some(id) = configured_routes.get(prefix) {
-        return Some(*id);
+) -> Option<(A, Route)> {
+    if let Some(account) = configured_routes.get(prefix) {
+        return Some((
+            account.clone(),
+            Route {
+                // TODO the Address type should let us avoid this copy
+                prefix: Bytes::from(account.client_address()),
+                auth: [0; 32],
+                path: Vec::new(),
+                props: Vec::new(),
+            },
+        ));
     }
-    if let Some(id) = local_routes.get(prefix) {
-        return Some(*id);
+    if let Some(account) = local_routes.get(prefix) {
+        return Some((
+            account.clone(),
+            Route {
+                prefix: Bytes::from(account.client_address()),
+                auth: [0; 32],
+                path: Vec::new(),
+                props: Vec::new(),
+            },
+        ));
     }
 
     let mut candidate_routes = incoming_tables
         .values()
-        .filter_map(|(account, incoming_table)| {
-            if let Some(route) = incoming_table.get_route(prefix) {
-                Some((account, route))
-            } else {
-                None
-            }
-        });
+        .filter_map(|incoming_table| incoming_table.get_route(prefix));
     if let Some((account, route)) = candidate_routes.next() {
-        let (best_account, _best_route) = candidate_routes.fold(
+        let (best_account, best_route) = candidate_routes.fold(
             (account, route),
             |(best_account, best_route), (account, route)| {
                 // Prioritize child > peer > parent
@@ -347,7 +355,7 @@ fn get_best_route_for_prefix<A: RoutingAccount>(
                 }
             },
         );
-        Some(best_account.id())
+        Some((best_account.clone(), best_route.clone()))
     } else {
         None
     }
@@ -357,7 +365,7 @@ impl<S, T, A> IncomingService<A> for CcpServerService<S, T, A>
 where
     S: IncomingService<A> + Send + Sync + 'static,
     T: RouteManagerStore<Account = A> + Send + Sync + 'static,
-    A: Account + RoutingAccount + Send + Sync + 'static,
+    A: RoutingAccount + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -376,204 +384,107 @@ where
 }
 
 #[cfg(test)]
-mod helpers {
-    use super::*;
-    use interledger_service::incoming_service_fn;
-
-    lazy_static! {
-        pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
-            id: 1,
-            send_routes: true,
-            receive_routes: true,
-            relation: RoutingRelation::Peer,
-        };
-        pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
-            id: 1,
-            send_routes: false,
-            receive_routes: false,
-            relation: RoutingRelation::Child,
-        };
-    }
-
-    #[derive(Clone, Debug, Copy)]
-    pub struct TestAccount {
-        pub id: u64,
-        pub receive_routes: bool,
-        pub send_routes: bool,
-        pub relation: RoutingRelation,
-    }
-
-    impl Account for TestAccount {
-        type AccountId = u64;
-
-        fn id(&self) -> u64 {
-            self.id
-        }
-    }
-
-    impl RoutingAccount for TestAccount {
-        fn routing_relation(&self) -> RoutingRelation {
-            self.relation
-        }
-
-        fn should_receive_routes(&self) -> bool {
-            self.receive_routes
-        }
-
-        fn should_send_routes(&self) -> bool {
-            self.send_routes
-        }
-    }
-
-    #[derive(Clone)]
-    pub struct TestStore {}
-
-    impl TestStore {
-        pub fn new() -> TestStore {
-            TestStore {}
-        }
-    }
-
-    impl RouteManagerStore for TestStore {
-        type Account = TestAccount;
-
-        fn get_local_and_configured_routes(
-            &self,
-        ) -> Box<Future<Item = (HashMap<Bytes, u64>, HashMap<Bytes, u64>), Error = ()> + Send>
-        {
-            Box::new(ok((HashMap::new(), HashMap::new())))
-        }
-    }
-
-    pub fn test_service() -> CcpServerService<
-        impl IncomingService<TestAccount, Future = BoxedIlpFuture>,
-        TestStore,
-        TestAccount,
-    > {
-        CcpServerService::with_spawn_bool(
-            Bytes::from("example.connector"),
-            TestStore::new(),
-            incoming_service_fn(|_request| {
-                Box::new(err(RejectBuilder {
-                    code: ErrorCode::F02_UNREACHABLE,
-                    message: b"No other handler!",
-                    data: &[],
-                    triggered_by: b"example.connector",
-                }
-                .build()))
-            }),
-            false,
-        )
-    }
-}
-
-#[cfg(test)]
 mod ranking_routes {
-    use super::helpers::*;
     use super::*;
+    use crate::test_helpers::*;
+    use crate::RoutingRelation;
     use std::iter::FromIterator;
 
     lazy_static! {
-        static ref LOCAL: HashMap<Bytes, u64> = HashMap::from_iter(vec![
-            (Bytes::from("example.a"), 1),
-            (Bytes::from("example.b"), 2),
-            (Bytes::from("example.c"), 3),
+        static ref LOCAL: HashMap<Bytes, TestAccount> = HashMap::from_iter(vec![
+            (
+                Bytes::from("example.a"),
+                TestAccount::new(1, "example.local.one")
+            ),
+            (
+                Bytes::from("example.b"),
+                TestAccount::new(2, "example.local.two")
+            ),
+            (
+                Bytes::from("example.c"),
+                TestAccount::new(3, "example.local.three")
+            ),
         ]);
-        static ref CONFIGURED: HashMap<Bytes, u64> = HashMap::from_iter(vec![
-            (Bytes::from("example.a"), 4),
-            (Bytes::from("example.b"), 5),
+        static ref CONFIGURED: HashMap<Bytes, TestAccount> = HashMap::from_iter(vec![
+            (
+                Bytes::from("example.a"),
+                TestAccount::new(4, "example.local.four")
+            ),
+            (
+                Bytes::from("example.b"),
+                TestAccount::new(5, "example.local.five")
+            ),
         ]);
-        static ref INCOMING: HashMap<u64, (TestAccount, IncomingRoutingTable)> = {
-            let mut child_table = IncomingRoutingTable::default();
-            child_table.add_route(Route {
-                prefix: Bytes::from("example.d"),
-                path: vec![Bytes::from("example.one")],
-                auth: [0; 32],
-                props: Vec::new(),
-            });
-            let mut peer_table_1 = IncomingRoutingTable::default();
-            peer_table_1.add_route(Route {
-                prefix: Bytes::from("example.d"),
-                path: Vec::new(),
-                auth: [0; 32],
-                props: Vec::new(),
-            });
-            peer_table_1.add_route(Route {
-                prefix: Bytes::from("example.e"),
-                path: vec![Bytes::from("example.one")],
-                auth: [0; 32],
-                props: Vec::new(),
-            });
-            let mut peer_table_2 = IncomingRoutingTable::default();
-            peer_table_2.add_route(Route {
-                prefix: Bytes::from("example.e"),
-                path: vec![Bytes::from("example.one"), Bytes::from("example.two")],
-                auth: [0; 32],
-                props: Vec::new(),
-            });
-            HashMap::from_iter(vec![
-                (
-                    6,
-                    (
-                        TestAccount {
-                            id: 6,
-                            send_routes: true,
-                            receive_routes: true,
-                            relation: RoutingRelation::Child,
-                        },
-                        child_table,
-                    ),
-                ),
-                (
-                    7,
-                    (
-                        TestAccount {
-                            id: 7,
-                            send_routes: true,
-                            receive_routes: true,
-                            relation: RoutingRelation::Peer,
-                        },
-                        peer_table_1,
-                    ),
-                ),
-                (
-                    8,
-                    (
-                        TestAccount {
-                            id: 8,
-                            send_routes: true,
-                            receive_routes: true,
-                            relation: RoutingRelation::Peer,
-                        },
-                        peer_table_2,
-                    ),
-                ),
-            ])
+        static ref INCOMING: HashMap<u64, RoutingTable<TestAccount>> = {
+            let mut child_table = RoutingTable::default();
+            let mut child = TestAccount::new(6, "example.child");
+            child.relation = RoutingRelation::Child;
+            child_table.add_route(
+                child.clone(),
+                Route {
+                    prefix: Bytes::from("example.d"),
+                    path: vec![Bytes::from("example.one")],
+                    auth: [0; 32],
+                    props: Vec::new(),
+                },
+            );
+            let mut peer_table_1 = RoutingTable::default();
+            let peer_1 = TestAccount::new(7, "example.peer1");
+            peer_table_1.add_route(
+                peer_1.clone(),
+                Route {
+                    prefix: Bytes::from("example.d"),
+                    path: Vec::new(),
+                    auth: [0; 32],
+                    props: Vec::new(),
+                },
+            );
+            peer_table_1.add_route(
+                peer_1.clone(),
+                Route {
+                    prefix: Bytes::from("example.e"),
+                    path: vec![Bytes::from("example.one")],
+                    auth: [0; 32],
+                    props: Vec::new(),
+                },
+            );
+            let mut peer_table_2 = RoutingTable::default();
+            let peer_2 = TestAccount::new(8, "example.peer2");
+            peer_table_2.add_route(
+                peer_2.clone(),
+                Route {
+                    prefix: Bytes::from("example.e"),
+                    path: vec![Bytes::from("example.one"), Bytes::from("example.two")],
+                    auth: [0; 32],
+                    props: Vec::new(),
+                },
+            );
+            HashMap::from_iter(vec![(6, child_table), (7, peer_table_1), (8, peer_table_2)])
         };
     }
 
     #[test]
     fn prioritizes_configured_routes() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a");
-        assert_eq!(best_route.unwrap(), 4);
+        assert_eq!(best_route.unwrap().0.id(), 4);
     }
 
     #[test]
     fn prioritizes_local_routes_over_broadcasted_ones() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.c");
-        assert_eq!(best_route.unwrap(), 3);
+        assert_eq!(best_route.unwrap().0.id(), 3);
     }
 
     #[test]
     fn prioritizes_children_over_peers() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.d");
-        assert_eq!(best_route.unwrap(), 6);
+        assert_eq!(best_route.unwrap().0.id(), 6);
     }
 
     #[test]
     fn prioritizes_shorter_paths() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.e");
-        assert_eq!(best_route.unwrap(), 7);
+        assert_eq!(best_route.unwrap().0.id(), 7);
     }
 
     #[test]
@@ -585,9 +496,9 @@ mod ranking_routes {
 
 #[cfg(test)]
 mod handle_route_control_request {
-    use super::helpers::*;
     use super::*;
     use crate::fixtures::*;
+    use crate::test_helpers::*;
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -595,7 +506,7 @@ mod handle_route_control_request {
         test_service()
             .handle_request(IncomingRequest {
                 prepare: CONTROL_REQUEST.to_prepare(),
-                from: *ROUTING_ACCOUNT,
+                from: ROUTING_ACCOUNT.clone(),
             })
             .wait()
             .unwrap();
@@ -606,7 +517,7 @@ mod handle_route_control_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: CONTROL_REQUEST.to_prepare(),
-                from: *NON_ROUTING_ACCOUNT,
+                from: NON_ROUTING_ACCOUNT.clone(),
             })
             .wait();
         assert!(result.is_err());
@@ -628,7 +539,7 @@ mod handle_route_control_request {
                     execution_condition: &PEER_PROTOCOL_CONDITION,
                 }
                 .build(),
-                from: *ROUTING_ACCOUNT,
+                from: ROUTING_ACCOUNT.clone(),
             })
             .wait();
         assert!(result.is_err());
@@ -641,9 +552,9 @@ mod handle_route_control_request {
 
 #[cfg(test)]
 mod handle_route_update_request {
-    use super::helpers::*;
     use super::*;
     use crate::fixtures::*;
+    use crate::test_helpers::*;
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -656,7 +567,7 @@ mod handle_route_update_request {
         service
             .handle_request(IncomingRequest {
                 prepare: update.to_prepare(),
-                from: *ROUTING_ACCOUNT,
+                from: ROUTING_ACCOUNT.clone(),
             })
             .wait()
             .unwrap();
@@ -667,7 +578,7 @@ mod handle_route_update_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: UPDATE_REQUEST_SIMPLE.to_prepare(),
-                from: *NON_ROUTING_ACCOUNT,
+                from: NON_ROUTING_ACCOUNT.clone(),
             })
             .wait();
         assert!(result.is_err());
@@ -689,7 +600,7 @@ mod handle_route_update_request {
                     execution_condition: &PEER_PROTOCOL_CONDITION,
                 }
                 .build(),
-                from: *ROUTING_ACCOUNT,
+                from: ROUTING_ACCOUNT.clone(),
             })
             .wait();
         assert!(result.is_err());
@@ -709,7 +620,7 @@ mod handle_route_update_request {
         service
             .handle_request(IncomingRequest {
                 prepare: update.to_prepare(),
-                from: *ROUTING_ACCOUNT,
+                from: ROUTING_ACCOUNT.clone(),
             })
             .wait()
             .unwrap();
