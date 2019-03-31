@@ -1,6 +1,7 @@
 use crate::packet::{Route, RouteUpdateRequest};
 use bytes::Bytes;
 use hashbrown::HashMap;
+use hex;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::iter::FromIterator;
 
@@ -125,8 +126,9 @@ where
     ) -> Result<Vec<Bytes>, String> {
         if self.id != request.routing_table_id {
             debug!(
-                "Saw new routing table. Old ID: {:x?}, new ID: {:x?}",
-                self.id, request.routing_table_id
+                "Saw new routing table. Old ID: {}, new ID: {}",
+                hex::encode(&self.id[..]),
+                hex::encode(&request.routing_table_id[..])
             );
             self.id = request.routing_table_id;
             self.epoch = 0;
@@ -134,8 +136,10 @@ where
 
         if request.from_epoch_index > self.epoch {
             return Err(format!(
-                "Gap in routing table. Expected epoch: {}, got from_epoch: {}",
-                self.epoch, request.from_epoch_index
+                "Gap in routing table {}. Expected epoch: {}, got from_epoch: {}",
+                hex::encode(&self.id[..]),
+                self.epoch,
+                request.from_epoch_index
             ));
         }
 
@@ -149,8 +153,8 @@ where
 
         if request.new_routes.is_empty() && request.withdrawn_routes.is_empty() {
             trace!(
-                "Got heartbeat route update for table ID: {:x?}, epoch: {}",
-                self.id,
+                "Got heartbeat route update for table ID: {}, epoch: {}",
+                hex::encode(&self.id[..]),
                 self.epoch
             );
             return Ok(Vec::new());
@@ -172,8 +176,8 @@ where
 
         self.epoch = request.to_epoch_index;
         trace!(
-            "Updated routing table {:x?} to epoch: {}",
-            self.id,
+            "Updated routing table {} to epoch: {}",
+            hex::encode(&self.id[..]),
             self.epoch
         );
 
@@ -251,7 +255,7 @@ mod table {
         let result = table.handle_update_request(ROUTING_ACCOUNT.clone(), request);
         assert_eq!(
             result.unwrap_err(),
-            "Gap in routing table. Expected epoch: 0, got from_epoch: 1"
+            "Gap in routing table 21e55f8eabcd4e979ab9bf0ff00a224c. Expected epoch: 0, got from_epoch: 1"
         );
     }
 

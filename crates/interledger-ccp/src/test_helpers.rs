@@ -132,7 +132,7 @@ impl RouteManagerStore for TestStore {
     fn get_accounts_to_send_route_updates_to(
         &self,
     ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
-        let accounts: Vec<TestAccount> = self
+        let mut accounts: Vec<TestAccount> = self
             .local
             .values()
             .chain(self.configured.values())
@@ -140,6 +140,7 @@ impl RouteManagerStore for TestStore {
             .filter(|account| account.send_routes)
             .cloned()
             .collect();
+        accounts.dedup_by_key(|a| a.id());
         Box::new(ok(accounts))
     }
 

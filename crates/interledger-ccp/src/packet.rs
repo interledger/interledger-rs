@@ -55,6 +55,7 @@ impl Mode {
 #[derive(Clone, PartialEq, Debug)]
 pub struct RouteControlRequest {
     pub(crate) mode: Mode,
+    // TODO change debug to format this as hex
     pub(crate) last_known_routing_table_id: [u8; 16],
     pub(crate) last_known_epoch: u32,
     pub(crate) features: Vec<String>,
