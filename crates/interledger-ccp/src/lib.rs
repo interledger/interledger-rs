@@ -59,6 +59,10 @@ pub trait RouteManagerStore: Clone {
             + Send,
     >;
 
+    fn get_accounts_to_send_route_updates_to(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+
     fn set_routes(
         &mut self,
         routes: HashMap<Bytes, Self::Account>,
