@@ -4,15 +4,18 @@ extern crate log;
 extern crate lazy_static;
 
 use bytes::Bytes;
-use futures::{future::join_all, Future};
+use futures::Future;
 use hashbrown::HashMap;
 use interledger_service::Account;
+use interledger_ildcp::IldcpAccount;
 
 #[cfg(test)]
 mod fixtures;
 mod packet;
 mod routing_table;
 mod server;
+#[cfg(test)]
+mod test_helpers;
 
 pub use server::CcpServerService;
 
@@ -25,7 +28,7 @@ pub enum RoutingRelation {
 }
 
 /// DefineCcpAccountethods Account types need to be used by the CCP Service
-pub trait RoutingAccount: Account {
+pub trait RoutingAccount: Account + IldcpAccount {
     /// The type of relationship we have with this account
     fn routing_relation(&self) -> RoutingRelation;
 
@@ -52,12 +55,7 @@ pub trait RouteManagerStore: Clone {
     fn get_local_and_configured_routes(
         &self,
     ) -> Box<
-        Future<
-                Item = (
-                    HashMap<Bytes, <Self::Account as Account>::AccountId>,
-                    HashMap<Bytes, <Self::Account as Account>::AccountId>,
-                ),
-                Error = (),
-            > + Send,
+        Future<Item = (HashMap<Bytes, Self::Account>, HashMap<Bytes, Self::Account>), Error = ()>
+            + Send,
     >;
 }
