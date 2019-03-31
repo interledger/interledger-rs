@@ -241,10 +241,12 @@ where
         prefixes: Vec<Bytes>,
     ) -> impl Future<Item = (), Error = ()> + 'static {
         let local_table = self.local_table.clone();
+        let forwarding_table = self.forwarding_table.clone();
         let incoming_tables = self.incoming_tables.clone();
+        let ilp_address = self.ilp_address.clone();
         self.store.get_local_and_configured_routes().and_then(
             move |(ref local_routes, ref configured_routes)| {
-                let mut better_routes = {
+                let better_routes: Vec<(Bytes, A, Route)> = {
                     // Note we only use a read lock here and later get a write lock if we need to update the table
                     let local_table = local_table.read();
                     let incoming_tables = incoming_tables.read();
@@ -272,22 +274,26 @@ where
                                 None
                             }
                         })
-                        .peekable()
+                        .collect()
                 };
 
                 // Update the local and forwarding tables
-                if better_routes.peek().is_some() {
+                if !better_routes.is_empty() {
                     let mut local_table = local_table.write();
+                    let mut forwarding_table = forwarding_table.write();
 
-                    better_routes.for_each(|(prefix, account, route)| {
+                    for (prefix, account, mut route) in better_routes {
                         debug!(
                             "Setting new route for prefix: {} -> Account {}",
                             str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
                             account.id(),
                         );
-                        local_table.set_route(prefix.clone(), account.clone(), route);
-                        // TODO set forwarding table route
-                    });
+                        local_table.set_route(prefix.clone(), account.clone(), route.clone());
+
+                        // Add the same route to the forwarding table with our address added to the path
+                        route.path.insert(0, ilp_address.clone());
+                        forwarding_table.set_route(prefix.clone(), account.clone(), route);
+                    }
                 }
 
                 Ok(())
@@ -555,7 +561,10 @@ mod handle_route_update_request {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
-    use std::time::{Duration, SystemTime};
+    use std::{
+        iter::FromIterator,
+        time::{Duration, SystemTime},
+    };
 
     #[test]
     fn handles_valid_request() {
@@ -692,5 +701,79 @@ mod handle_route_update_request {
         let request = service.filter_routes(request);
         assert_eq!(request.new_routes.len(), 1);
         assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+    }
+
+    #[test]
+    fn updates_local_routing_table() {
+        let mut service = test_service();
+        let mut request = UPDATE_REQUEST_COMPLEX.clone();
+        request.to_epoch_index = 1;
+        request.from_epoch_index = 0;
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request.to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        assert_eq!(
+            (*service.local_table.read())
+                .get_route(b"example.prefix1")
+                .unwrap()
+                .0
+                .id(),
+            ROUTING_ACCOUNT.id()
+        );
+        assert_eq!(
+            (*service.local_table.read())
+                .get_route(b"example.prefix2")
+                .unwrap()
+                .0
+                .id(),
+            ROUTING_ACCOUNT.id()
+        );
+    }
+
+    #[test]
+    fn doesnt_overwrite_configured_or_local_routes() {
+        let mut service = test_service();
+        let store = TestStore::with_routes(
+            HashMap::from_iter(vec![(
+                Bytes::from("example.prefix1"),
+                TestAccount::new(9, "example.account9"),
+            )]),
+            HashMap::from_iter(vec![(
+                Bytes::from("example.prefix2"),
+                TestAccount::new(10, "example.account10"),
+            )]),
+        );
+        service.store = store;
+
+        let mut request = UPDATE_REQUEST_COMPLEX.clone();
+        request.to_epoch_index = 1;
+        request.from_epoch_index = 0;
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request.to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        assert_eq!(
+            (*service.local_table.read())
+                .get_route(b"example.prefix1")
+                .unwrap()
+                .0
+                .id(),
+            9
+        );
+        assert_eq!(
+            (*service.local_table.read())
+                .get_route(b"example.prefix2")
+                .unwrap()
+                .0
+                .id(),
+            10
+        );
     }
 }
