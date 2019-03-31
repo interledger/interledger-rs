@@ -9,6 +9,7 @@ jobs:
       - checkout
       - restore_cache:
           keys:
+            - project-v2-{{ checksum "Cargo.toml" }}-{{ .Branch }}
             - project-v2-{{ checksum "Cargo.toml" }}
             - project-v2-
       - run:
@@ -47,7 +48,7 @@ jobs:
           name: Upload Code Coverage
           command: "bash <(curl -s https://codecov.io/bash)"
       - save_cache:
-          key: project-v2-{{ checksum "Cargo.toml" }}
+          key: project-v2-{{ checksum "Cargo.toml" }}-{{ .Branch }}
           paths:
             - ./target
             - /home/circleci/.cargo
