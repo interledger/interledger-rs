@@ -6,8 +6,8 @@ extern crate lazy_static;
 use bytes::Bytes;
 use futures::Future;
 use hashbrown::HashMap;
-use interledger_service::Account;
 use interledger_ildcp::IldcpAccount;
+use interledger_service::Account;
 
 #[cfg(test)]
 mod fixtures;
@@ -58,4 +58,9 @@ pub trait RouteManagerStore: Clone {
         Future<Item = (HashMap<Bytes, Self::Account>, HashMap<Bytes, Self::Account>), Error = ()>
             + Send,
     >;
+
+    fn set_routes(
+        &mut self,
+        routes: HashMap<Bytes, Self::Account>,
+    ) -> Box<Future<Item = (), Error = ()> + Send>;
 }

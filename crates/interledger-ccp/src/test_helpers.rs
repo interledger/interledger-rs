@@ -8,6 +8,8 @@ use futures::{
 use hashbrown::HashMap;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::{incoming_service_fn, BoxedIlpFuture, IncomingService};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 lazy_static! {
     pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
@@ -85,8 +87,9 @@ impl RoutingAccount for TestAccount {
 
 #[derive(Clone)]
 pub struct TestStore {
-    local: HashMap<Bytes, TestAccount>,
-    configured: HashMap<Bytes, TestAccount>,
+    pub local: HashMap<Bytes, TestAccount>,
+    pub configured: HashMap<Bytes, TestAccount>,
+    pub routes: Arc<Mutex<HashMap<Bytes, TestAccount>>>,
 }
 
 impl TestStore {
@@ -94,6 +97,7 @@ impl TestStore {
         TestStore {
             local: HashMap::new(),
             configured: HashMap::new(),
+            routes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -101,7 +105,11 @@ impl TestStore {
         local: HashMap<Bytes, TestAccount>,
         configured: HashMap<Bytes, TestAccount>,
     ) -> TestStore {
-        TestStore { local, configured }
+        TestStore {
+            local,
+            configured,
+            routes: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
@@ -115,6 +123,14 @@ impl RouteManagerStore for TestStore {
             + Send,
     > {
         Box::new(ok((self.local.clone(), self.configured.clone())))
+    }
+
+    fn set_routes(
+        &mut self,
+        routes: HashMap<Bytes, Self::Account>,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        *self.routes.lock() = routes;
+        Box::new(ok(()))
     }
 }
 
