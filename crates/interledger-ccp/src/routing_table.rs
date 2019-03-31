@@ -2,57 +2,39 @@ use crate::packet::{Route, RouteUpdateRequest};
 use bytes::Bytes;
 use hashbrown::HashMap;
 use ring::rand::{SecureRandom, SystemRandom};
+use std::iter::FromIterator;
 
 lazy_static! {
     static ref RANDOM: SystemRandom = SystemRandom::new();
 }
 
+#[derive(Debug)]
 struct PrefixMap<T> {
     map: HashMap<Bytes, T>,
-    // TODO keep prefixes sorted
-    // TODO use parallel iterator to find things in it
-    prefixes: Vec<Bytes>,
 }
 
 impl<T> PrefixMap<T> {
     pub fn new() -> Self {
         PrefixMap {
             map: HashMap::new(),
-            prefixes: Vec::new(),
         }
     }
 
     pub fn insert(&mut self, prefix: Bytes, item: T) -> bool {
-        if self.map.insert(prefix.clone(), item).is_none() {
-            self.prefixes.push(prefix);
-            true
-        } else {
-            false
-        }
+        self.map.insert(prefix.clone(), item).is_none()
     }
 
     pub fn remove(&mut self, prefix: Bytes) -> bool {
-        if self.map.remove(&prefix).is_some() {
-            if let Some(index) = self.prefixes.iter().position(|p| p == &prefix) {
-                self.prefixes.remove(index);
-            }
-            true
-        } else {
-            false
-        }
+        self.map.remove(&prefix).is_some()
     }
 
     pub fn resolve(&self, prefix: &[u8]) -> Option<&T> {
-        let longest_matching_prefix = self
-            .prefixes
+        // TODO use parallel iterator
+        self.map
             .iter()
-            .filter(|p| prefix.starts_with(p))
-            .max_by_key(|p| p.len());
-        if let Some(prefix) = longest_matching_prefix {
-            self.map.get(prefix)
-        } else {
-            None
-        }
+            .filter(|(p, _)| prefix.starts_with(p))
+            .max_by_key(|(p, _)| p.len())
+            .map(|(_prefix, item)| item)
     }
 }
 
@@ -60,6 +42,7 @@ impl<T> PrefixMap<T> {
 /// When an Interledger node reloads, it will generate a new UUID for its routing table.
 /// Each update applied increments the epoch number, so it acts as a version tracker.
 /// This helps peers make sure they are in sync with one another and request updates if not.
+#[derive(Debug)]
 pub struct RoutingTable<A> {
     id: [u8; 16],
     epoch: u32,
@@ -98,6 +81,15 @@ where
     /// Get the best route we have for the given prefix
     pub fn get_route(&self, prefix: &[u8]) -> Option<&(A, Route)> {
         self.prefix_map.resolve(prefix)
+    }
+
+    pub fn get_simplified_table(&self) -> HashMap<Bytes, A> {
+        HashMap::from_iter(
+            self.prefix_map
+                .map
+                .iter()
+                .map(|(address, (account, _route))| (address.clone(), account.clone())),
+        )
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents
@@ -192,7 +184,6 @@ mod prefix_map {
         assert!(map.insert(Bytes::from("example.a"), 1));
         assert!(map.remove(Bytes::from("example.a")));
         assert!(map.map.is_empty());
-        assert!(map.prefixes.is_empty());
     }
 
     #[test]
@@ -210,7 +201,7 @@ mod prefix_map {
 }
 
 #[cfg(test)]
-mod incoming_table {
+mod tests {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
@@ -262,5 +253,32 @@ mod incoming_table {
             .handle_update_request(ROUTING_ACCOUNT.clone(), request)
             .unwrap();
         assert_eq!(updated_routes.len(), 0);
+    }
+
+    #[test]
+    fn converts_to_a_simplified_table() {
+        let mut table = RoutingTable::new([0; 16]);
+        table.add_route(
+            TestAccount::new(1, "example.one"),
+            Route {
+                prefix: Bytes::from("example.one"),
+                path: Vec::new(),
+                props: Vec::new(),
+                auth: [0; 32],
+            },
+        );
+        table.add_route(
+            TestAccount::new(2, "example.two"),
+            Route {
+                prefix: Bytes::from("example.two"),
+                path: Vec::new(),
+                props: Vec::new(),
+                auth: [0; 32],
+            },
+        );
+        let simplified = table.get_simplified_table();
+        assert_eq!(simplified.len(), 2);
+        assert_eq!(simplified.get(&b"example.one"[..]).unwrap().id, 1);
+        assert_eq!(simplified.get(&b"example.two"[..]).unwrap().id, 2);
     }
 }

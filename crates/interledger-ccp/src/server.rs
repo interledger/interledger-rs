@@ -244,6 +244,8 @@ where
         let forwarding_table = self.forwarding_table.clone();
         let incoming_tables = self.incoming_tables.clone();
         let ilp_address = self.ilp_address.clone();
+        let mut store = self.store.clone();
+
         self.store.get_local_and_configured_routes().and_then(
             move |(ref local_routes, ref configured_routes)| {
                 let better_routes: Vec<(Bytes, A, Route)> = {
@@ -294,9 +296,12 @@ where
                         route.path.insert(0, ilp_address.clone());
                         forwarding_table.set_route(prefix.clone(), account.clone(), route);
                     }
+
+                    Either::A(store.set_routes(local_table.get_simplified_table()))
+                } else {
+                    Either::B(ok(()))
                 }
 
-                Ok(())
             },
         )
     }
@@ -729,6 +734,41 @@ mod handle_route_update_request {
                 .get_route(b"example.prefix2")
                 .unwrap()
                 .0
+                .id(),
+            ROUTING_ACCOUNT.id()
+        );
+    }
+
+    #[test]
+    fn writes_local_routing_table_to_store() {
+        let mut service = test_service();
+        let mut request = UPDATE_REQUEST_COMPLEX.clone();
+        request.to_epoch_index = 1;
+        request.from_epoch_index = 0;
+        service
+            .handle_request(IncomingRequest {
+                from: ROUTING_ACCOUNT.clone(),
+                prepare: request.to_prepare(),
+            })
+            .wait()
+            .unwrap();
+        assert_eq!(
+            service
+                .store
+                .routes
+                .lock()
+                .get(&b"example.prefix1"[..])
+                .unwrap()
+                .id(),
+            ROUTING_ACCOUNT.id()
+        );
+        assert_eq!(
+            service
+                .store
+                .routes
+                .lock()
+                .get(&b"example.prefix2"[..])
+                .unwrap()
                 .id(),
             ROUTING_ACCOUNT.id()
         );
