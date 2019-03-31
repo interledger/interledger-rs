@@ -1,16 +1,26 @@
 use crate::{packet::*, routing_table::RoutingTable, RouteManagerStore, RoutingAccount};
 use bytes::Bytes;
 use futures::{
-    future::{err, ok, Either},
-    Future,
+    future::{err, join_all, ok, Either},
+    Future, Stream,
 };
 use hashbrown::HashMap;
 use interledger_packet::*;
-use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
-use parking_lot::RwLock;
+use interledger_service::{
+    Account, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
+};
+use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
-use std::{marker::PhantomData, str, sync::Arc};
+use std::{
+    iter, str,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio_executor::spawn;
+use tokio_timer::Interval;
+
+const DEFAULT_ROUTE_EXPIRY_TIME: u32 = 45000;
+const DEFAULT_BROADCAST_INTERVAL: u64 = 30000;
 
 fn hash(preimage: &[u8; 32]) -> [u8; 32] {
     let mut out = [0; 32];
@@ -28,16 +38,20 @@ type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 /// with the best routes determined by per-account configuration and the broadcasts we have
 /// received from peers.
 #[derive(Clone)]
-pub struct CcpServerService<S, T, A: Account> {
+pub struct CcpServerService<S, T, U, A: Account> {
+    account: A,
     ilp_address: Bytes,
     global_prefix: Bytes,
-    /// The next incoming request handler. This will be used both to pass on requests that are
-    /// not CCP messages AND to send outgoing CCP messages to peers.
-    next: S,
-    account_type: PhantomData<A>,
+    /// The next request handler that will be used both to pass on requests that are not CCP messages.
+    next_incoming: S,
+    /// The outgoing request handler that will be used to send outgoing CCP messages.
+    /// Note that this service bypasses the Router because the Route Manager needs to be able to
+    /// send messages directly to specific peers.
+    outgoing: T,
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     forwarding_table: Arc<RwLock<RoutingTable<A>>>,
+    last_epoch_updates_sent_for: Arc<Mutex<u32>>,
     /// These updates are stored such that index 0 is the transition from epoch 0 to epoch 1
     forwarding_table_updates: Arc<RwLock<HashMap<u32, NewAndWithDrawnRoutes>>>,
     /// This is the routing table we have compile from configuration and
@@ -49,7 +63,7 @@ pub struct CcpServerService<S, T, A: Account> {
     /// Updates from peers are applied to our local_table if they are better than the
     /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
-    store: T,
+    store: U,
     /// If true, the task to update the routing tables based on a Route Update will be
     /// spawned and run in the background. If false, the response will only be returned
     /// once the routing tables have been updated. This is primarily to help with testing
@@ -57,25 +71,42 @@ pub struct CcpServerService<S, T, A: Account> {
     should_spawn_update: bool,
 }
 
-impl<S, T, A> CcpServerService<S, T, A>
+impl<S, T, U, A> CcpServerService<S, T, U, A>
 where
-    S: IncomingService<A> + Send + Sync + 'static,
-    T: RouteManagerStore<Account = A> + Send + Sync + 'static,
+    S: IncomingService<A> + Clone + Send + Sync + 'static,
+    T: OutgoingService<A> + Clone + Send + Sync + 'static,
+    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: RoutingAccount + Send + Sync + 'static,
 {
-    // Note the next service will be used both to pass on incoming requests that are not CCP requests
-    // as well as send outgoing messages for CCP
-    pub fn new(ilp_address: Bytes, store: T, next: S) -> Self {
-        CcpServerService::with_spawn_bool(ilp_address, store, next, true)
+    /// Create a new Route Manager service and spawn a task to broadcast the routes
+    /// to peers every 30 seconds.
+    pub fn new(account: A, store: U, outgoing: T, next_incoming: S) -> Self {
+        let service =
+            CcpServerService::with_spawn_bool(account, store, outgoing, next_incoming, true);
+        spawn(service.broadcast_routes(DEFAULT_BROADCAST_INTERVAL));
+        service
+    }
+
+    /// Create a new Route Manager Service but don't spawn a task to broadcast routes.
+    /// The `broadcast_routes` method must be called directly to start broadcasting.
+    pub fn new_without_spawn_broadcast(
+        account: A,
+        store: U,
+        outgoing: T,
+        next_incoming: S,
+    ) -> Self {
+        CcpServerService::with_spawn_bool(account, store, outgoing, next_incoming, false)
     }
 
     pub(crate) fn with_spawn_bool(
-        ilp_address: Bytes,
-        store: T,
-        next: S,
+        account: A,
+        store: U,
+        outgoing: T,
+        next_incoming: S,
         should_spawn_update: bool,
     ) -> Self {
         // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
+        let ilp_address = Bytes::from(account.client_address());
         let global_prefix: Bytes = ilp_address
             .iter()
             .position(|c| c == &b'.')
@@ -83,17 +114,34 @@ where
             .unwrap_or_else(|| ilp_address.clone());
 
         CcpServerService {
+            account,
             ilp_address,
             global_prefix,
-            next,
-            account_type: PhantomData,
+            next_incoming,
+            outgoing,
             forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
             forwarding_table_updates: Arc::new(RwLock::new(HashMap::new())),
+            last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
             local_table: Arc::new(RwLock::new(RoutingTable::default())),
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
             store,
             should_spawn_update,
         }
+    }
+
+    /// Returns a future that will trigger this service to update its routes and broadcast
+    /// updates to peers on the given interval.
+    pub fn broadcast_routes(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
+        let clone = self.clone();
+        Interval::new(Instant::now(), Duration::from_millis(interval))
+            .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
+            .for_each(move |_| {
+                let clone = clone.clone();
+                clone
+                    .clone()
+                    .update_best_routes(None)
+                    .and_then(move |_| clone.send_route_updates())
+            })
     }
 
     /// Handle a CCP Route Control Request. If this is from an account that we broadcast routes to,
@@ -226,10 +274,10 @@ where
         // Either run the update task in the background or wait
         // until its done before we respond to the peer
         let future = if self.should_spawn_update {
-            spawn(self.update_best_routes(prefixes_updated));
+            spawn(self.update_best_routes(Some(prefixes_updated)));
             Either::A(ok(()))
         } else {
-            Either::B(self.update_best_routes(prefixes_updated))
+            Either::B(self.update_best_routes(Some(prefixes_updated)))
         };
         let ilp_address = self.ilp_address.clone();
         future
@@ -248,9 +296,11 @@ where
     /// Check whether the Local Routing Table currently has the best routes for the
     /// given prefixes. This is triggered when we get an incoming Route Update Request
     /// with some new or modified routes that might be better than our existing ones.
+    ///
+    /// If prefixes is None, this will check the best routes for all local and configured prefixes.
     fn update_best_routes(
         &self,
-        prefixes: Vec<Bytes>,
+        prefixes: Option<Vec<Bytes>>,
     ) -> impl Future<Item = (), Error = ()> + 'static {
         let local_table = self.local_table.clone();
         let forwarding_table = self.forwarding_table.clone();
@@ -267,8 +317,14 @@ where
                     let local_table = local_table.read();
                     let incoming_tables = incoming_tables.read();
 
-                    prefixes
-                        .iter()
+                    // Either check the given prefixes or check all of our local and configured routes
+                    let prefixes_to_check: Box<Iterator<Item = Bytes>> = if let Some(prefixes) = prefixes {
+                        Box::new(prefixes.into_iter())
+                    } else {
+                        let routes = configured_routes.iter().chain(local_routes.iter());
+                        Box::new(routes.map(|(prefix, _account)| prefix.clone()))
+                    };
+                    prefixes_to_check
                         .filter_map(move |prefix| {
                             // See which prefixes there is now a better route for
                             if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
@@ -316,10 +372,10 @@ where
                             && route.prefix != global_prefix
                             // Don't advertise completely local routes because advertising our own
                             // prefix will make sure we get packets sent to them
-                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.len() == 1) {
+                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.is_empty()) {
 
                                 let old_route = forwarding_table.get_route(&prefix);
-                                if old_route.is_some() && old_route.unwrap().0.id() != account.id() {
+                                if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
                                     route.path.insert(0, ilp_address.clone());
                                     // Each hop hashes the auth before forwarding
                                     route.auth = hash(&route.auth);
@@ -343,9 +399,138 @@ where
                 } else {
                     Either::B(ok(()))
                 }
-
             },
         )
+    }
+
+    /// Send RouteUpdateRequests to all peers that we send routing messages to
+    fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
+        let mut outgoing = self.outgoing.clone();
+        let account = self.account.clone();
+        let to_epoch_index = self.forwarding_table.read().epoch();
+
+        let from_epoch_index: u32 = {
+            let mut lock = self.last_epoch_updates_sent_for.lock();
+            let epoch = *lock;
+            *lock = to_epoch_index;
+            epoch
+        };
+
+        debug!(
+            "Sending route udpates for epochs: {} - {}",
+            from_epoch_index, to_epoch_index
+        );
+
+        let prepare = self
+            .create_route_update(from_epoch_index, to_epoch_index)
+            .to_prepare();
+        self.store
+            .get_accounts_to_send_route_updates_to()
+            .and_then(move |accounts| {
+                let account_list: Vec<String> =
+                    accounts.iter().map(|a| a.id().to_string()).collect();
+                trace!(
+                    "Sending route updates to accounts: {}",
+                    account_list.join(", ")
+                );
+                join_all(accounts.into_iter().map(move |to| {
+                    let to_id = to.id();
+                    outgoing
+                        .send_request(OutgoingRequest {
+                            from: account.clone(),
+                            to,
+                            prepare: prepare.clone(),
+                        })
+                        .map_err(move |err| {
+                            error!("Error sending route update to account {}: {:?}", to_id, err)
+                        })
+                        .and_then(|_| Ok(()))
+                }))
+                .and_then(|_| {
+                    trace!("Finished sending route updates");
+                    Ok(())
+                })
+            })
+    }
+
+    /// Create a RouteUpdateRequest representing the given range of Forwarding Routing Table epochs.
+    /// If the epoch range is not specified, it will create an update for the last epoch only.
+    fn create_route_update(
+        &self,
+        from_epoch_index: u32,
+        to_epoch_index: u32,
+    ) -> RouteUpdateRequest {
+        let (routing_table_id, current_epoch_index) = {
+            let table = self.forwarding_table.read();
+            (table.id(), table.epoch())
+        };
+        let forwarding_table_updates = self.forwarding_table_updates.read();
+        let epochs_to_take: usize = if to_epoch_index > from_epoch_index {
+            (to_epoch_index - from_epoch_index) as usize
+        } else {
+            0
+        };
+        // Merge the new routes and withdrawn routes from all of the given epochs
+        let (new_routes, withdrawn_routes) = forwarding_table_updates
+            .values()
+            .skip(from_epoch_index as usize)
+            .take(epochs_to_take)
+            .map(|(new_routes, withdrawn_routes)| (new_routes.iter(), withdrawn_routes.iter()))
+            .fold(
+                (
+                    Box::new(iter::empty()) as Box<Iterator<Item = &Route>>,
+                    Box::new(iter::empty()) as Box<Iterator<Item = &Bytes>>,
+                ),
+                |(new_routes, withdrawn_routes), (new, withdrawn)| {
+                    (
+                        Box::new(new.chain(new_routes)),
+                        Box::new(withdrawn.chain(withdrawn_routes)),
+                    )
+                },
+            );
+        let new_routes: Vec<Route> = new_routes.cloned().collect();
+        let withdrawn_routes: Vec<Bytes> = withdrawn_routes.cloned().collect();
+        RouteUpdateRequest {
+            routing_table_id,
+            from_epoch_index,
+            to_epoch_index,
+            current_epoch_index,
+            new_routes: new_routes.clone(),
+            withdrawn_routes: withdrawn_routes.clone(),
+            speaker: self.ilp_address.clone(),
+            hold_down_time: DEFAULT_ROUTE_EXPIRY_TIME,
+        }
+    }
+
+    /// Send a Route Update Request to a specific account for the given epoch range.
+    /// This is used when the peer has fallen behind and has requested a specific range of updates.
+    fn send_route_update(
+        &self,
+        to: A,
+        from_epoch_index: u32,
+        to_epoch_index: u32,
+    ) -> impl Future<Item = (), Error = ()> {
+        let prepare = self
+            .create_route_update(from_epoch_index, to_epoch_index)
+            .to_prepare();
+        let to_id = to.id();
+        debug!(
+            "Sending individual route update to account: {} for epochs from: {} to: {}",
+            to.id(),
+            from_epoch_index,
+            to_epoch_index
+        );
+        self.outgoing
+            .clone()
+            .send_request(OutgoingRequest {
+                to,
+                from: self.account.clone(),
+                prepare,
+            })
+            .and_then(|_| Ok(()))
+            .map_err(move |err| {
+                error!("Error sending route update to account {}: {:?}", to_id, err)
+            })
     }
 }
 
@@ -414,10 +599,11 @@ fn get_best_route_for_prefix<A: RoutingAccount>(
     }
 }
 
-impl<S, T, A> IncomingService<A> for CcpServerService<S, T, A>
+impl<S, T, U, A> IncomingService<A> for CcpServerService<S, T, U, A>
 where
-    S: IncomingService<A> + Send + Sync + 'static,
-    T: RouteManagerStore<Account = A> + Send + Sync + 'static,
+    S: IncomingService<A> + Clone + Send + Sync + 'static,
+    T: OutgoingService<A> + Clone + Send + Sync + 'static,
+    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: RoutingAccount + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
@@ -431,7 +617,7 @@ where
         } else if destination == CCP_UPDATE_DESTINATION {
             Box::new(self.handle_route_update_request(request))
         } else {
-            Box::new(self.next.handle_request(request))
+            Box::new(self.next_incoming.handle_request(request))
         }
     }
 }
@@ -864,18 +1050,235 @@ mod handle_route_update_request {
 }
 
 #[cfg(test)]
+mod create_route_update {
+    use super::*;
+    use crate::test_helpers::*;
+    use std::iter::FromIterator;
+
+    #[test]
+    fn heartbeat_message_for_empty_table() {
+        let service = test_service();
+        let update = service.create_route_update(0, 0);
+        assert_eq!(update.from_epoch_index, 0);
+        assert_eq!(update.to_epoch_index, 0);
+        assert_eq!(update.current_epoch_index, 0);
+        assert!(update.new_routes.is_empty());
+        assert!(update.withdrawn_routes.is_empty());
+    }
+
+    #[test]
+    fn includes_the_given_range_of_epochs() {
+        let service = test_service();
+        (*service.forwarding_table.write()).set_epoch(4);
+        *service.forwarding_table_updates.write() = HashMap::from_iter(vec![
+            (
+                0,
+                (
+                    vec![Route {
+                        prefix: Bytes::from("example.a"),
+                        path: vec![Bytes::from("example.x")],
+                        auth: [1; 32],
+                        props: Vec::new(),
+                    }],
+                    Vec::new(),
+                ),
+            ),
+            (
+                1,
+                (
+                    vec![Route {
+                        prefix: Bytes::from("example.b"),
+                        path: vec![Bytes::from("example.x")],
+                        auth: [2; 32],
+                        props: Vec::new(),
+                    }],
+                    Vec::new(),
+                ),
+            ),
+            (
+                2,
+                (
+                    vec![Route {
+                        prefix: Bytes::from("example.c"),
+                        path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                        auth: [3; 32],
+                        props: Vec::new(),
+                    }],
+                    vec![Bytes::from("example.m")],
+                ),
+            ),
+            (
+                3,
+                (
+                    vec![Route {
+                        prefix: Bytes::from("example.d"),
+                        path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                        auth: [4; 32],
+                        props: Vec::new(),
+                    }],
+                    vec![Bytes::from("example.n")],
+                ),
+            ),
+        ]);
+        let update = service.create_route_update(1, 3);
+        assert_eq!(update.from_epoch_index, 1);
+        assert_eq!(update.to_epoch_index, 3);
+        assert_eq!(update.current_epoch_index, 4);
+        assert_eq!(update.new_routes.len(), 2);
+        assert_eq!(update.withdrawn_routes.len(), 1);
+        assert_eq!(
+            str::from_utf8(update.new_routes[0].prefix.as_ref()).unwrap(),
+            "example.b"
+        );
+        assert_eq!(
+            str::from_utf8(update.new_routes[1].prefix.as_ref()).unwrap(),
+            "example.c"
+        );
+        assert_eq!(
+            str::from_utf8(update.withdrawn_routes[0].as_ref()).unwrap(),
+            "example.m"
+        );
+    }
+}
+
+#[cfg(test)]
 mod send_route_updates {
     use super::*;
+    use crate::test_helpers::*;
+    use crate::RoutingRelation;
+    use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
+    use parking_lot::Mutex;
+    use std::{iter::FromIterator, sync::Arc};
+
+    fn test_service_with_routes() -> (
+        CcpServerService<
+            impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+            impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+            TestStore,
+            TestAccount,
+        >,
+        Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>>,
+    ) {
+        let local_routes = HashMap::from_iter(vec![
+            (
+                Bytes::from("example.local.1"),
+                TestAccount::new(1, "example.local.1"),
+            ),
+            (
+                Bytes::from("example.connector.other-local"),
+                TestAccount {
+                    id: 3,
+                    ilp_address: Bytes::from("example.connector.other-local"),
+                    send_routes: false,
+                    receive_routes: false,
+                    relation: RoutingRelation::Child,
+                },
+            ),
+        ]);
+        let configured_routes = HashMap::from_iter(vec![(
+            Bytes::from("example.configured.1"),
+            TestAccount::new(2, "example.configured.1"),
+        )]);
+        let store = TestStore::with_routes(local_routes, configured_routes);
+        let outgoing_requests: Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let outgoing_requests_clone = outgoing_requests.clone();
+        let outgoing = outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
+            (*outgoing_requests_clone.lock()).push(request);
+            Ok(CCP_RESPONSE.clone())
+        });
+        (
+            CcpServerService::with_spawn_bool(
+                TestAccount::new(0, "example.connector"),
+                store,
+                outgoing,
+                incoming_service_fn(|_request| {
+                    Box::new(err(RejectBuilder {
+                        code: ErrorCode::F02_UNREACHABLE,
+                        message: b"No other incoming handler!",
+                        data: &[],
+                        triggered_by: b"example.connector",
+                    }
+                    .build()))
+                }),
+                false,
+            ),
+            outgoing_requests,
+        )
+    }
+    #[test]
+    fn broadcasts_to_all_accounts_we_send_updates_to() {
+        let (service, outgoing_requests) = test_service_with_routes();
+        service.send_route_updates().wait().unwrap();
+        let mut accounts: Vec<u64> = outgoing_requests
+            .lock()
+            .iter()
+            .map(|request| request.to.id())
+            .collect();
+        accounts.sort_unstable();
+        assert_eq!(accounts, vec![1, 2]);
+    }
 
     #[test]
-    fn broadcasts_empty_table() {}
+    fn broadcasts_configured_and_local_routes() {
+        let (service, outgoing_requests) = test_service_with_routes();
+
+        // This is normally spawned as a task when the service is created
+        service.update_best_routes(None).wait().unwrap();
+
+        service.send_route_updates().wait().unwrap();
+        let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
+        assert_eq!(update.new_routes.len(), 2);
+        let prefixes: Vec<&str> = update
+            .new_routes
+            .iter()
+            .map(|route| str::from_utf8(route.prefix.as_ref()).unwrap())
+            .collect();
+        assert_eq!(prefixes[0], "example.configured.1");
+        assert_eq!(prefixes[1], "example.local.1");
+    }
 
     #[test]
-    fn broadcasts_configured_routes() {}
+    fn broadcasts_received_routes() {
+        let (service, outgoing_requests) = test_service_with_routes();
 
-    #[test]
-    fn broadcasts_received_routes() {}
+        // This is normally spawned as a task when the service is created
+        service.update_best_routes(None).wait().unwrap();
 
-    // TODO also start interval to send out route updates
-    // TODO store will need to give a way to load accounts that we should send routes to
+        service
+            .handle_route_update_request(IncomingRequest {
+                from: TestAccount::new(10, "example.peer"),
+                prepare: RouteUpdateRequest {
+                    routing_table_id: [0; 16],
+                    current_epoch_index: 1,
+                    from_epoch_index: 0,
+                    to_epoch_index: 1,
+                    hold_down_time: 30000,
+                    speaker: Bytes::from("example.remote"),
+                    new_routes: vec![Route {
+                        prefix: Bytes::from("example.remote"),
+                        path: vec![Bytes::from("example.peer")],
+                        auth: [0; 32],
+                        props: Vec::new(),
+                    }],
+                    withdrawn_routes: Vec::new(),
+                }
+                .to_prepare(),
+            })
+            .wait()
+            .unwrap();
+
+        service.send_route_updates().wait().unwrap();
+        let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
+        assert_eq!(update.new_routes.len(), 3);
+        let prefixes: Vec<&str> = update
+            .new_routes
+            .iter()
+            .map(|route| str::from_utf8(route.prefix.as_ref()).unwrap())
+            .collect();
+        // TODO should configured and local routes be sent first?
+        assert_eq!(prefixes[0], "example.remote");
+        assert_eq!(prefixes[1], "example.configured.1");
+        assert_eq!(prefixes[2], "example.local.1");
+    }
 }

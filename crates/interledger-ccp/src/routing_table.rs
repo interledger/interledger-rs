@@ -61,6 +61,19 @@ where
         }
     }
 
+    #[cfg(test)]
+    pub fn set_epoch(&mut self, epoch: u32) {
+        self.epoch = epoch;
+    }
+
+    pub fn id(&self) -> [u8; 16] {
+        self.id
+    }
+
+    pub fn epoch(&self) -> u32 {
+        self.epoch
+    }
+
     pub fn increment_epoch(&mut self) -> u32 {
         let epoch = self.epoch;
         self.epoch += 1;
@@ -207,7 +220,7 @@ mod prefix_map {
 }
 
 #[cfg(test)]
-mod tests {
+mod table {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;

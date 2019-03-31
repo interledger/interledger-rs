@@ -7,7 +7,9 @@ use futures::{
 };
 use hashbrown::HashMap;
 use interledger_packet::{ErrorCode, RejectBuilder};
-use interledger_service::{incoming_service_fn, BoxedIlpFuture, IncomingService};
+use interledger_service::{
+    incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingService,
+};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -20,7 +22,7 @@ lazy_static! {
         relation: RoutingRelation::Peer,
     };
     pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
-        id: 1,
+        id: 2,
         ilp_address: Bytes::from("example.me.child"),
         send_routes: false,
         receive_routes: false,
@@ -106,8 +108,8 @@ impl TestStore {
         configured: HashMap<Bytes, TestAccount>,
     ) -> TestStore {
         TestStore {
-            local,
-            configured,
+            local: local,
+            configured: configured,
             routes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -125,6 +127,20 @@ impl RouteManagerStore for TestStore {
         Box::new(ok((self.local.clone(), self.configured.clone())))
     }
 
+    fn get_accounts_to_send_route_updates_to(
+        &self,
+    ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        let accounts: Vec<TestAccount> = self
+            .local
+            .values()
+            .chain(self.configured.values())
+            .chain(self.routes.lock().values())
+            .filter(|account| account.send_routes)
+            .cloned()
+            .collect();
+        Box::new(ok(accounts))
+    }
+
     fn set_routes(
         &mut self,
         routes: HashMap<Bytes, Self::Account>,
@@ -135,17 +151,27 @@ impl RouteManagerStore for TestStore {
 }
 
 pub fn test_service() -> CcpServerService<
-    impl IncomingService<TestAccount, Future = BoxedIlpFuture>,
+    impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+    impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
     TestStore,
     TestAccount,
 > {
     CcpServerService::with_spawn_bool(
-        Bytes::from("example.connector"),
+        TestAccount::new(0, "example.connector"),
         TestStore::new(),
+        outgoing_service_fn(|_request| {
+            Box::new(err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: b"No other outgoing handler!",
+                data: &[],
+                triggered_by: b"example.connector",
+            }
+            .build()))
+        }),
         incoming_service_fn(|_request| {
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
-                message: b"No other handler!",
+                message: b"No other incoming handler!",
                 data: &[],
                 triggered_by: b"example.connector",
             }
