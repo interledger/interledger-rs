@@ -1,3 +1,4 @@
+/* kcov-ignore-start */
 use crate::packet::*;
 use bytes::Bytes;
 use hex;
@@ -62,3 +63,4 @@ lazy_static! {
         ]
     };
 }
+/* kcov-ignore-end */

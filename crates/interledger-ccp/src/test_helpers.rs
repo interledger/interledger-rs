@@ -1,3 +1,4 @@
+/* kcov-ignore-start */
 use super::*;
 use crate::{packet::CCP_RESPONSE, server::CcpServerService};
 use bytes::Bytes;
@@ -236,3 +237,4 @@ pub fn test_service_with_routes() -> (
     );
     (service, outgoing_requests)
 }
+/* kcov-ignore-end */
