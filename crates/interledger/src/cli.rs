@@ -8,7 +8,7 @@ use hyper::{
 };
 use interledger_api::{NodeApi, NodeStore};
 use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
-use interledger_ccp::CcpServerService;
+use interledger_ccp::CcpRouteManager;
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{ErrorCode, RejectBuilder};
@@ -383,7 +383,7 @@ pub fn run_node_redis(
                             // Set up the Router and Routing Manager
                             let incoming_service =
                                 Router::new(store.clone(), outgoing_service.clone());
-                            let incoming_service = CcpServerService::new(
+                            let incoming_service = CcpRouteManager::new(
                                 default_account,
                                 store.clone(),
                                 outgoing_service,

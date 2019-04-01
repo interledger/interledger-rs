@@ -1,6 +1,6 @@
 /* kcov-ignore-start */
 use super::*;
-use crate::{packet::CCP_RESPONSE, server::CcpServerService};
+use crate::{packet::CCP_RESPONSE, server::CcpRouteManager};
 use bytes::Bytes;
 use futures::{
     future::{err, ok},
@@ -75,7 +75,7 @@ impl IldcpAccount for TestAccount {
     }
 }
 
-impl RoutingAccount for TestAccount {
+impl CcpRoutingAccount for TestAccount {
     fn routing_relation(&self) -> RoutingRelation {
         self.relation
     }
@@ -153,13 +153,13 @@ impl RouteManagerStore for TestStore {
     }
 }
 
-pub fn test_service() -> CcpServerService<
+pub fn test_service() -> CcpRouteManager<
     impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
     impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
     TestStore,
     TestAccount,
 > {
-    CcpServerService::with_spawn_bool(
+    CcpRouteManager::with_spawn_bool(
         TestAccount::new(0, "example.connector"),
         TestStore::new(),
         outgoing_service_fn(|_request| {
@@ -185,7 +185,7 @@ pub fn test_service() -> CcpServerService<
 }
 
 pub fn test_service_with_routes() -> (
-    CcpServerService<
+    CcpRouteManager<
         impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
         impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
         TestStore,
@@ -221,7 +221,7 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
-    let service = CcpServerService::with_spawn_bool(
+    let service = CcpRouteManager::with_spawn_bool(
         TestAccount::new(0, "example.connector"),
         store,
         outgoing,

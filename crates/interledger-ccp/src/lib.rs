@@ -18,7 +18,7 @@ mod server;
 #[cfg(test)]
 mod test_helpers;
 
-pub use server::CcpServerService;
+pub use server::CcpRouteManager;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
@@ -52,7 +52,7 @@ impl ToString for RoutingRelation {
 }
 
 /// DefineCcpAccountethods Account types need to be used by the CCP Service
-pub trait RoutingAccount: Account + IldcpAccount {
+pub trait CcpRoutingAccount: Account + IldcpAccount {
     /// The type of relationship we have with this account
     fn routing_relation(&self) -> RoutingRelation;
 
@@ -68,7 +68,7 @@ pub trait RoutingAccount: Account + IldcpAccount {
 }
 
 pub trait RouteManagerStore: Clone {
-    type Account: RoutingAccount;
+    type Account: CcpRoutingAccount;
 
     // TODO should we have a way to only get the details for specific routes?
     fn get_local_and_configured_routes(
