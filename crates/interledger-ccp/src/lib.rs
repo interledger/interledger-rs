@@ -1,3 +1,14 @@
+//! # interledger-ccp
+//!
+//! This crate implements the Connector-to-Connector Protocol (CCP) for exchanging routing
+//! information with peers. The `CcpRouteManager` processes Route Update and Route Control
+//! messages from accounts that we are configured to receive routes from and sends route
+//! updates to accounts that we are configured to send updates to.
+//!
+//! The `CcpRouteManager` writes changes to the routing table to the store so that the
+//! updates are used by the `Router` to forward incoming packets to the best next hop
+//! we know about.
+
 #[macro_use]
 extern crate log;
 #[macro_use]
