@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use interledger_api::{AccountDetails, NodeAccount};
 use interledger_btp::BtpAccount;
-use interledger_ccp::{RoutingAccount, RoutingRelation};
+use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account as AccountTrait;
@@ -318,7 +318,7 @@ impl NodeAccount for Account {
     }
 }
 
-impl RoutingAccount for Account {
+impl CcpRoutingAccount for Account {
     fn routing_relation(&self) -> RoutingRelation {
         self.routing_relation
     }

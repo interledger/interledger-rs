@@ -1,4 +1,4 @@
-use crate::{packet::*, routing_table::RoutingTable, RouteManagerStore, RoutingAccount};
+use crate::{packet::*, routing_table::RoutingTable, CcpRoutingAccount, RouteManagerStore};
 use bytes::Bytes;
 use futures::{
     future::{err, join_all, ok, Either},
@@ -39,7 +39,7 @@ type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 /// with the best routes determined by per-account configuration and the broadcasts we have
 /// received from peers.
 #[derive(Clone)]
-pub struct CcpServerService<S, T, U, A: Account> {
+pub struct CcpRouteManager<S, T, U, A: Account> {
     account: A,
     ilp_address: Bytes,
     global_prefix: Bytes,
@@ -74,18 +74,18 @@ pub struct CcpServerService<S, T, U, A: Account> {
     spawn_tasks: bool,
 }
 
-impl<S, T, U, A> CcpServerService<S, T, U, A>
+impl<S, T, U, A> CcpRouteManager<S, T, U, A>
 where
     S: IncomingService<A> + Clone + Send + Sync + 'static,
     T: OutgoingService<A> + Clone + Send + Sync + 'static,
     U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
-    A: RoutingAccount + Send + Sync + 'static,
+    A: CcpRoutingAccount + Send + Sync + 'static,
 {
     /// Create a new Route Manager service and spawn a task to broadcast the routes
     /// to peers every 30 seconds.
     pub fn new(account: A, store: U, outgoing: T, next_incoming: S) -> Self {
         let service =
-            CcpServerService::with_spawn_bool(account, store, outgoing, next_incoming, true);
+            CcpRouteManager::with_spawn_bool(account, store, outgoing, next_incoming, true);
         spawn(service.broadcast_routes(DEFAULT_BROADCAST_INTERVAL));
         service
     }
@@ -98,7 +98,7 @@ where
         outgoing: T,
         next_incoming: S,
     ) -> Self {
-        CcpServerService::with_spawn_bool(account, store, outgoing, next_incoming, false)
+        CcpRouteManager::with_spawn_bool(account, store, outgoing, next_incoming, false)
     }
 
     pub(crate) fn with_spawn_bool(
@@ -116,7 +116,7 @@ where
             .map(|index| ilp_address.slice_to(index + 1))
             .unwrap_or_else(|| ilp_address.clone());
 
-        CcpServerService {
+        CcpRouteManager {
             account,
             ilp_address,
             global_prefix,
@@ -654,7 +654,7 @@ where
     }
 }
 
-fn get_best_route_for_prefix<A: RoutingAccount>(
+fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     local_routes: &HashMap<Bytes, A>,
     configured_routes: &HashMap<Bytes, A>,
     incoming_tables: &HashMap<A::AccountId, RoutingTable<A>>,
@@ -719,12 +719,12 @@ fn get_best_route_for_prefix<A: RoutingAccount>(
     }
 }
 
-impl<S, T, U, A> IncomingService<A> for CcpServerService<S, T, U, A>
+impl<S, T, U, A> IncomingService<A> for CcpRouteManager<S, T, U, A>
 where
     S: IncomingService<A> + Clone + Send + Sync + 'static,
     T: OutgoingService<A> + Clone + Send + Sync + 'static,
     U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
-    A: RoutingAccount + Send + Sync + 'static,
+    A: CcpRoutingAccount + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
