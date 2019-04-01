@@ -41,7 +41,7 @@ jobs:
             RUST_LOG=interledger/.* cargo kcov --all --verbose --
             --verify
             --exclude-region="kcov-ignore-start:kcov-ignore-end"
-            --exclude-pattern=$CARGO_HOME,**/tests/**
+            --exclude-pattern="$CARGO_HOME,**/tests/**"
             --exclude-line="^(\)*\}*,*)$"
       - run:
           name: Upload Code Coverage
