@@ -28,7 +28,7 @@ jobs:
           command: sudo apt-get install redis-server
       - run:
           name: Build + Test
-          command: RUSTFLAGS="-C link-dead-code" RUST_LOG=interledger/.* cargo test --all --all-features
+          command: RUSTFLAGS="-C link-dead-code" cargo test --all --all-features
       - run:
           name: Check Formatting
           command: cargo fmt --all -- --check
@@ -37,12 +37,12 @@ jobs:
           command: cargo audit
       - run:
           name: Generate Coverage Report
-          command: >-
-            RUST_LOG=interledger/.* cargo kcov --all --verbose --
-            --verify
-            --exclude-region="kcov-ignore-start:kcov-ignore-end"
-            --exclude-pattern="$CARGO_HOME,**/tests/**"
-            --exclude-line="^(\)*\}*,*)$"
+          command:
+            cargo kcov --all --verbose
+            # -- --verify
+            # --exclude-region="kcov-ignore-start:kcov-ignore-end"
+            # --exclude-pattern="$CARGO_HOME,**/tests/**"
+            # --exclude-line="^(\)*\}*,*)$"
       - run:
           name: Upload Code Coverage
           command: "bash <(curl -s https://codecov.io/bash)"
