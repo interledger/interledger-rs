@@ -185,7 +185,6 @@ impl ToRedisArgs for Account {
 
 impl FromRedisValue for Account {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
-        trace!("Loaded value from Redis: {:?}", v);
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: String = get_value("ilp_address", &hash)?;
         let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
