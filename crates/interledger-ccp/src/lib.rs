@@ -8,6 +8,7 @@ use futures::Future;
 use hashbrown::HashMap;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account;
+use std::{str::FromStr, string::ToString};
 
 #[cfg(test)]
 mod fixtures;
@@ -25,6 +26,29 @@ pub enum RoutingRelation {
     Parent = 1,
     Peer = 2,
     Child = 3,
+}
+
+impl FromStr for RoutingRelation {
+    type Err = ();
+
+    fn from_str(string: &str) -> Result<Self, ()> {
+        match string.to_lowercase().as_str() {
+            "parent" => Ok(RoutingRelation::Parent),
+            "peer" => Ok(RoutingRelation::Peer),
+            "child" => Ok(RoutingRelation::Child),
+            _ => Err(()),
+        }
+    }
+}
+
+impl ToString for RoutingRelation {
+    fn to_string(&self) -> String {
+        match self {
+            RoutingRelation::Parent => "Parent".to_string(),
+            RoutingRelation::Peer => "Peer".to_string(),
+            RoutingRelation::Child => "Child".to_string(),
+        }
+    }
 }
 
 /// DefineCcpAccountethods Account types need to be used by the CCP Service
@@ -54,12 +78,11 @@ pub trait RouteManagerStore: Clone {
             + Send,
     >;
 
-    fn get_accounts_to_send_route_updates_to(
+    fn get_accounts_to_send_routes_to(
         &self,
     ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
-    fn set_routes(
-        &mut self,
-        routes: HashMap<Bytes, Self::Account>,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (Bytes, Self::Account)>;
 }

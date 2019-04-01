@@ -8,10 +8,11 @@ use bytes::Bytes;
 use env_logger;
 use futures::{future, Future};
 use interledger_api::{AccountDetails, NodeStore};
-use interledger_store_redis::{connect, connect_with_poll_interval, RedisStore};
+use interledger_store_redis::{connect, connect_with_poll_interval, Account, RedisStore};
 use parking_lot::Mutex;
 use redis;
 use std::{
+    collections::HashMap,
     process,
     thread::sleep,
     time::{Duration, Instant},
@@ -33,6 +34,9 @@ lazy_static! {
         xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
+        send_routes: false,
+        receive_routes: false,
+        routing_relation: None,
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: b"example.bob".to_vec(),
@@ -48,6 +52,9 @@ lazy_static! {
         xrp_address: Some("rMLwdY4w8FT8zCEUL9q9173NrvpLGLEFDu".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
+        send_routes: true,
+        receive_routes: false,
+        routing_relation: None,
     };
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
@@ -213,7 +220,7 @@ mod insert_accounts {
                         .and_then(move |(_connection, values): (_, redis::Value)| {
                             let _ = server;
                             if let redis::Value::Bulk(ref items) = values {
-                                assert_eq!(items.len(), 14 * 2);
+                                assert_eq!(items.len(), 15 * 2);
                                 Ok(())
                             } else {
                                 panic!("not bulk value");
@@ -243,6 +250,9 @@ mod insert_accounts {
                     xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
                     settle_threshold: Some(0),
                     settle_to: Some(-1000),
+                    send_routes: false,
+                    receive_routes: false,
+                    routing_relation: None,
                 })
                 .then(move |result| {
                     let _ = server;
@@ -270,6 +280,9 @@ mod insert_accounts {
                     xrp_address: None,
                     settle_threshold: None,
                     settle_to: None,
+                    send_routes: false,
+                    receive_routes: false,
+                    routing_relation: None,
                 })
                 .then(move |result| {
                     let _ = server;
@@ -297,6 +310,9 @@ mod insert_accounts {
                     xrp_address: None,
                     settle_threshold: None,
                     settle_to: None,
+                    send_routes: false,
+                    receive_routes: false,
+                    routing_relation: None,
                 })
                 .then(move |result| {
                     let _ = server;
@@ -424,6 +440,9 @@ mod routes_and_rates {
                             xrp_address: None,
                             settle_threshold: None,
                             settle_to: None,
+                            send_routes: false,
+                            receive_routes: false,
+                            routing_relation: None,
                         })
                     })
                     .and_then(move |_| {
@@ -561,7 +580,7 @@ mod balances {
 mod from_btp {
     use super::*;
     use interledger_btp::BtpStore;
-    use interledger_service::Account;
+    use interledger_service::Account as AccountTrait;
 
     #[test]
     fn gets_account_from_btp_token() {
@@ -594,7 +613,7 @@ mod from_btp {
 mod from_http {
     use super::*;
     use interledger_http::HttpStore;
-    use interledger_service::Account;
+    use interledger_service::Account as AccountTrait;
 
     #[test]
     fn gets_account_from_http_bearer_token() {
@@ -635,5 +654,109 @@ mod from_http {
                 })
         }));
         assert!(result.is_err());
+    }
+}
+
+mod ccp_store {
+    use super::*;
+    use interledger_ccp::RouteManagerStore;
+    use interledger_router::RouterStore;
+    use interledger_service::Account as AccountTrait;
+
+    #[test]
+    fn gets_accounts_to_send_routes_to() {
+        block_on(test_store().and_then(|(store, server)| {
+            store
+                .get_accounts_to_send_routes_to()
+                .and_then(move |accounts| {
+                    assert_eq!(accounts[0].id(), 1);
+                    assert_eq!(accounts.len(), 1);
+                    let _ = server;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn gets_local_and_configured_routes() {
+        block_on(test_store().and_then(|(store, server)| {
+            store
+                .get_local_and_configured_routes()
+                .and_then(move |(local, configured)| {
+                    assert_eq!(local.len(), 2);
+                    assert!(configured.is_empty());
+                    let _ = server;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn saves_routes_to_db() {
+        block_on(test_store().and_then(|(mut store, server)| {
+            let redis_uri = server.redis_uri().to_string();
+            let account0 = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
+            let account1 = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
+            store
+                .set_routes(vec![
+                    (Bytes::from("example.a"), account0.clone()),
+                    (Bytes::from("example.b"), account0.clone()),
+                    (Bytes::from("example.c"), account1.clone()),
+                ])
+                .and_then(move |_| {
+                    redis::Client::open(redis_uri.as_str())
+                        .unwrap()
+                        .get_async_connection()
+                        .map_err(|err| panic!(err))
+                        .and_then(move |client| {
+                            redis::cmd("HGETALL")
+                                .arg("routes")
+                                .query_async(client)
+                                .map_err(|err| panic!(err))
+                                .and_then(|(_conn, routes): (_, HashMap<String, u64>)| {
+                                    assert_eq!(routes["example.a"], 0);
+                                    assert_eq!(routes["example.b"], 0);
+                                    assert_eq!(routes["example.c"], 1);
+                                    assert_eq!(routes.len(), 3);
+                                    Ok(())
+                                })
+                        })
+                })
+                .and_then(move |_| {
+                    let _ = server;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn updates_local_routes() {
+        block_on(test_store().and_then(|(store, server)| {
+            let account0 = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
+            let account1 = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
+            store
+                .clone()
+                .set_routes(vec![
+                    (Bytes::from("example.a"), account0.clone()),
+                    (Bytes::from("example.b"), account0.clone()),
+                    (Bytes::from("example.c"), account1.clone()),
+                ])
+                .and_then(move |_| {
+                    let routes = store.routing_table();
+                    assert_eq!(routes[&b"example.a"[..]], 0);
+                    assert_eq!(routes[&b"example.b"[..]], 0);
+                    assert_eq!(routes[&b"example.c"[..]], 1);
+                    assert_eq!(routes.len(), 3);
+                    Ok(())
+                })
+                .and_then(move |_| {
+                    let _ = server;
+                    Ok(())
+                })
+        }))
+        .unwrap()
     }
 }

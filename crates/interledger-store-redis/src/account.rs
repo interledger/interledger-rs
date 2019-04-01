@@ -1,16 +1,20 @@
 use bytes::Bytes;
 use interledger_api::{AccountDetails, NodeAccount};
 use interledger_btp::BtpAccount;
+use interledger_ccp::{RoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 use serde::Serializer;
-use std::{collections::HashMap, str};
+use std::{
+    collections::HashMap,
+    str::{self, FromStr},
+};
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 14;
+const ACCOUNT_DETAILS_FIELDS: usize = 17;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -34,6 +38,10 @@ pub struct Account {
     pub(crate) xrp_address: Option<String>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
+    #[serde(serialize_with = "routing_relation_to_string")]
+    pub(crate) routing_relation: RoutingRelation,
+    pub(crate) send_routes: bool,
+    pub(crate) receive_routes: bool,
 }
 
 fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
@@ -54,6 +62,16 @@ where
     }
 }
 
+fn routing_relation_to_string<S>(
+    relation: &RoutingRelation,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(relation.to_string().as_str())
+}
+
 impl Account {
     pub fn try_from(id: u64, details: AccountDetails) -> Result<Account, ()> {
         let http_endpoint = if let Some(ref url) = details.http_endpoint {
@@ -65,6 +83,11 @@ impl Account {
             Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
         } else {
             None
+        };
+        let routing_relation = if let Some(ref relation) = details.routing_relation {
+            RoutingRelation::from_str(relation)?
+        } else {
+            RoutingRelation::Child
         };
         Ok(Account {
             id,
@@ -81,6 +104,9 @@ impl Account {
             xrp_address: details.xrp_address,
             settle_threshold: details.settle_threshold,
             settle_to: details.settle_to,
+            send_routes: details.send_routes,
+            receive_routes: details.receive_routes,
+            routing_relation,
         })
     }
 }
@@ -105,6 +131,8 @@ impl ToRedisArgs for Account {
         self.max_packet_amount.write_redis_args(&mut rv);
         "is_admin".write_redis_args(&mut rv);
         self.is_admin.write_redis_args(&mut rv);
+        "routing_relation".write_redis_args(&mut rv);
+        self.routing_relation.to_string().write_redis_args(&mut rv);
 
         // Write optional fields
         if let Some(http_endpoint) = self.http_endpoint.as_ref() {
@@ -139,6 +167,14 @@ impl ToRedisArgs for Account {
             "settle_to".write_redis_args(&mut rv);
             settle_to.write_redis_args(&mut rv);
         }
+        if self.send_routes {
+            "send_routes".write_redis_args(&mut rv);
+            self.send_routes.write_redis_args(&mut rv);
+        }
+        if self.receive_routes {
+            "receive_routes".write_redis_args(&mut rv);
+            self.receive_routes.write_redis_args(&mut rv);
+        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -152,8 +188,13 @@ impl FromRedisValue for Account {
         trace!("Loaded value from Redis: {:?}", v);
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: String = get_value("ilp_address", &hash)?;
-        let is_admin: String = get_value("is_admin", &hash)?;
-        let is_admin = is_admin == "true";
+        let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
+        let routing_relation = if let Some(relation) = routing_relation {
+            RoutingRelation::from_str(relation.as_str())
+                .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid Routing Relation")))?
+        } else {
+            RoutingRelation::Child
+        };
         Ok(Account {
             id: get_value("id", &hash)?,
             ilp_address: Bytes::from(ilp_address.as_bytes()),
@@ -165,10 +206,13 @@ impl FromRedisValue for Account {
             btp_uri: get_url_option("btp_uri", &hash)?,
             btp_incoming_authorization: get_value_option("btp_incoming_authorization", &hash)?,
             max_packet_amount: get_value("max_packet_amount", &hash)?,
-            is_admin,
+            is_admin: get_bool("is_admin", &hash),
             xrp_address: get_value_option("xrp_address", &hash)?,
             settle_threshold: get_value_option("settle_threshold", &hash)?,
             settle_to: get_value_option("settle_to", &hash)?,
+            routing_relation,
+            send_routes: get_bool("send_routes", &hash),
+            receive_routes: get_bool("receive_routes", &hash),
         })
     }
 }
@@ -210,6 +254,17 @@ fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>
     } else {
         Ok(None)
     }
+}
+
+fn get_bool(key: &str, map: &HashMap<String, Value>) -> bool {
+    if let Some(ref value) = map.get(key) {
+        if let Ok(value) = from_redis_value(value) as Result<String, RedisError> {
+            if value.to_lowercase() == "true" {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 impl AccountTrait for Account {
@@ -261,5 +316,19 @@ impl MaxPacketAmountAccount for Account {
 impl NodeAccount for Account {
     fn is_admin(&self) -> bool {
         self.is_admin
+    }
+}
+
+impl RoutingAccount for Account {
+    fn routing_relation(&self) -> RoutingRelation {
+        self.routing_relation
+    }
+
+    fn should_send_routes(&self) -> bool {
+        self.send_routes
+    }
+
+    fn should_receive_routes(&self) -> bool {
+        self.receive_routes
     }
 }

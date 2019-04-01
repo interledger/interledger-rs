@@ -515,7 +515,7 @@ where
             .create_route_update(from_epoch_index, to_epoch_index)
             .to_prepare();
         self.store
-            .get_accounts_to_send_route_updates_to()
+            .get_accounts_to_send_routes_to()
             .and_then(move |mut accounts| {
                 accounts.sort_unstable_by_key(|a| a.id().to_string());
                 accounts.dedup_by_key(|a| a.id());
