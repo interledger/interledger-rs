@@ -138,6 +138,9 @@ fn btp_end_to_end() {
                 xrp_address: None,
                 settle_threshold: None,
                 settle_to: None,
+                send_routes: false,
+                receive_routes: false,
+                routing_relation: Some("Peer".to_string()),
             },
         )
         .and_then(move |_| {
@@ -157,6 +160,9 @@ fn btp_end_to_end() {
                     xrp_address: None,
                     settle_threshold: None,
                     settle_to: None,
+                    send_routes: false,
+                    receive_routes: false,
+                    routing_relation: Some("Peer".to_string()),
                 },
             )
         });

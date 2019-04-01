@@ -129,7 +129,7 @@ impl RouteManagerStore for TestStore {
         Box::new(ok((self.local.clone(), self.configured.clone())))
     }
 
-    fn get_accounts_to_send_route_updates_to(
+    fn get_accounts_to_send_routes_to(
         &self,
     ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
         let mut accounts: Vec<TestAccount> = self
@@ -144,11 +144,11 @@ impl RouteManagerStore for TestStore {
         Box::new(ok(accounts))
     }
 
-    fn set_routes(
-        &mut self,
-        routes: HashMap<Bytes, Self::Account>,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
-        *self.routes.lock() = routes;
+    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (Bytes, TestAccount)>,
+    {
+        *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Box::new(ok(()))
     }
 }

@@ -1,12 +1,13 @@
 use super::account::*;
 use bytes::Bytes;
 use futures::{
-    future::{err, result, Either},
+    future::{err, ok, result, Either},
     Future, Stream,
 };
 use hashbrown::HashMap;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
+use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
@@ -452,13 +453,20 @@ impl NodeStore for RedisStore {
                     }
 
                     // Add settlement details
-                        if let Some(ref xrp_address) = account.xrp_address {
-                            pipe.cmd("HSET")
-                                .arg("xrp_addresses")
-                                .arg(xrp_address)
-                                .arg(account.id)
-                                .ignore();
-                        }
+                    if let Some(ref xrp_address) = account.xrp_address {
+                        pipe.cmd("HSET")
+                            .arg("xrp_addresses")
+                            .arg(xrp_address)
+                            .arg(account.id)
+                            .ignore();
+                    }
+
+                    if account.send_routes {
+                        pipe.cmd("SADD")
+                            .arg("send_routes_to")
+                            .arg(account.id)
+                            .ignore();
+                    }
 
                     // Add route to routing table
                     pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
@@ -513,6 +521,95 @@ impl NodeStore for RedisStore {
                 .map_err(|err| error!("Error setting rates: {:?}", err))
                 .and_then(move |(_connection, _): (_, Value)| {
                     update_rates(connection, exchange_rates)
+                }),
+        )
+    }
+}
+
+impl RouteManagerStore for RedisStore {
+    type Account = Account;
+
+    fn get_accounts_to_send_routes_to(
+        &self,
+    ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
+        Box::new(
+            cmd("SMEMBERS")
+                .arg("send_routes_to")
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error getting members of set send_routes_to: {:?}", err))
+                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
+                    if account_ids.is_empty() {
+                        Either::A(ok(Vec::new()))
+                    } else {
+                        let mut pipe = redis::pipe();
+                        for id in account_ids {
+                            pipe.cmd("HGETALL").arg(account_details_key(id));
+                        }
+                        Either::B(
+                            pipe.query_async(connection)
+                                .map_err(|err| {
+                                    error!("Error getting accounts to send routes to: {:?}", err)
+                                })
+                                .and_then(
+                                    |(_connection, accounts): (SharedConnection, Vec<Account>)| {
+                                        Ok(accounts)
+                                    },
+                                ),
+                        )
+                    }
+                }),
+        )
+    }
+
+    fn get_local_and_configured_routes(
+        &self,
+    ) -> Box<Future<Item = ((HashMap<Bytes, Account>), (HashMap<Bytes, Account>)), Error = ()> + Send>
+    {
+        Box::new(self.get_all_accounts().and_then(|accounts| {
+            let local_table = HashMap::from_iter(
+                accounts
+                    .into_iter()
+                    .map(|account| (account.ilp_address.clone(), account)),
+            );
+            // TODO add configured routes
+            Ok((local_table, HashMap::new()))
+        }))
+    }
+
+    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (Bytes, Account)>,
+    {
+        let routes = routes.into_iter();
+        // Update local routes
+        let mut local_routes: HashMap<Bytes, u64> = HashMap::with_capacity(routes.size_hint().0);
+        let mut db_routes: Vec<(String, u64)> = Vec::with_capacity(routes.size_hint().0);
+        for (prefix, account) in routes {
+            local_routes.insert(prefix.clone(), account.id);
+            if let Ok(prefix) = String::from_utf8(prefix.to_vec()) {
+                db_routes.push((prefix, account.id));
+            }
+        }
+        let num_routes = db_routes.len();
+
+        *self.routes.write() = local_routes;
+
+        // Save routes to Redis
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .cmd("DEL")
+            .arg(ROUTES_KEY)
+            .ignore()
+            .cmd("HMSET")
+            .arg(ROUTES_KEY)
+            .arg(db_routes)
+            .ignore();
+        Box::new(
+            pipe.query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error setting routes: {:?}", err))
+                .and_then(move |(_connection, _): (SharedConnection, Value)| {
+                    trace!("Saved {} routes to Redis", num_routes);
+                    Ok(())
                 }),
         )
     }

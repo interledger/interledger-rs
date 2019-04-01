@@ -174,6 +174,16 @@ pub fn main() {
                                 .long("settle_to")
                                 .help("The amount that should be left after a settlement is triggered and sent (a negative value indicates that more should be sent than what is already owed)")
                                 .takes_value(true),
+                            Arg::with_name("send_routes")
+                                .long("send_routes")
+                                .help("Whether to broadcast routes to this account"),
+                            Arg::with_name("receive_routes")
+                                .long("receive_routes")
+                                .help("Whether to accept route broadcasts from this account"),
+                            Arg::with_name("routing_relation")
+                                .long("routing_relation")
+                                .help("Either 'Parent', 'Peer', or 'Child' to indicate our relationship to this account (used for routing)")
+                                .default_value("Child"),
                         ])
                         .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
@@ -300,6 +310,9 @@ pub fn main() {
                         xrp_address: value_t!(matches, "xrp_address", String).ok(),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
                         settle_to: value_t!(matches, "settle_to", i64).ok(),
+                        send_routes: matches.is_present("send_routes"),
+                        receive_routes: matches.is_present("receive_routes"),
+                        routing_relation: value_t!(matches, "routing_relation", String).ok(),
                     };
                     tokio::run(insert_account_redis(&redis_uri, account));
                 }
