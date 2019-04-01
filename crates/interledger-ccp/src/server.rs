@@ -520,29 +520,40 @@ where
                 accounts.sort_unstable_by_key(|a| a.id().to_string());
                 accounts.dedup_by_key(|a| a.id());
 
-                let account_list: Vec<String> =
-                    accounts.iter().map(|a| a.id().to_string()).collect();
-                trace!(
-                    "Sending route updates to accounts: {}",
-                    account_list.join(", ")
-                );
-                join_all(accounts.into_iter().map(move |to| {
-                    let to_id = to.id();
-                    outgoing
-                        .send_request(OutgoingRequest {
-                            from: account.clone(),
-                            to,
-                            prepare: prepare.clone(),
-                        })
-                        .map_err(move |err| {
-                            error!("Error sending route update to account {}: {:?}", to_id, err)
-                        })
-                        .and_then(|_| Ok(()))
-                }))
-                .and_then(|_| {
-                    trace!("Finished sending route updates");
-                    Ok(())
-                })
+                let broadcasting = !accounts.is_empty();
+                if broadcasting {
+                    let account_list: Vec<String> =
+                        accounts.iter().map(|a| a.id().to_string()).collect();
+                    trace!(
+                        "Sending route updates to accounts: {}",
+                        account_list.join(", ")
+                    );
+                    Either::A(
+                        join_all(accounts.into_iter().map(move |to| {
+                            let to_id = to.id();
+                            outgoing
+                                .send_request(OutgoingRequest {
+                                    from: account.clone(),
+                                    to,
+                                    prepare: prepare.clone(),
+                                })
+                                .map_err(move |err| {
+                                    error!(
+                                        "Error sending route update to account {}: {:?}",
+                                        to_id, err
+                                    )
+                                })
+                                .and_then(|_| Ok(()))
+                        }))
+                        .and_then(|_| {
+                            trace!("Finished sending route updates");
+                            Ok(())
+                        }),
+                    )
+                } else {
+                    trace!("No accounts to broadcast routes to");
+                    Either::B(ok(()))
+                }
             })
     }
 

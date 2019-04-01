@@ -15,6 +15,7 @@ path = "src/lib.rs"
 default = ["cli"]
 cli = [
     "btp",
+    "ccp",
     "http",
     "store-memory",
     "ildcp",
@@ -23,9 +24,9 @@ cli = [
     "interledger-service-util",
     "interledger-store-redis",
     "interledger-api",
-    "interledger-ccp"
 ]
 btp = ["interledger-btp"]
+ccp = ["interledger-ccp"]
 http = ["interledger-http"]
 store-memory = ["interledger-store-memory"]
 ildcp = ["interledger-ildcp"]

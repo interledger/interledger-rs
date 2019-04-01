@@ -26,6 +26,12 @@ pub mod btp {
     pub use interledger_btp::*;
 }
 
+/// Connector-to-Connector Protocol (CCP) routing manager
+#[cfg(feature = "ccp")]
+pub mod ccp {
+    pub use interledger_ccp::*;
+}
+
 /// ILP-Over-HTTP client and server
 #[cfg(feature = "http")]
 pub mod http {
