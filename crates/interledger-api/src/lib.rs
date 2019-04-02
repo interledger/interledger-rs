@@ -20,8 +20,9 @@ use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::BalanceStore;
 use interledger_spsp::{pay, SpspResponder};
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::{
+    collections::HashMap,
     iter::FromIterator,
     str::{self, FromStr},
 };
@@ -44,6 +45,16 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
     fn set_rates<R>(&self, rates: R) -> Box<Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (String, f64)>;
+
+    fn set_static_routes<R>(&self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (String, <Self::Account as AccountTrait>::AccountId)>;
+
+    fn set_static_route(
+        &self,
+        prefix: String,
+        account_id: <Self::Account as AccountTrait>::AccountId,
+    ) -> Box<Future<Item = (), Error = ()> + Send>;
 }
 
 /// The Account type for the RedisStore.
@@ -113,6 +124,10 @@ struct SpspQueryResponse {
     shared_secret: String,
 }
 
+#[derive(Extract, Response)]
+#[web(status = "200")]
+struct Routes(HashMap<String, String>);
+
 pub struct NodeApi<T, S> {
     store: T,
     incoming_handler: S,
@@ -134,6 +149,17 @@ impl_web! {
             }
         }
 
+        fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
+            let store = self.store.clone();
+            self.store.get_account_from_http_auth(&authorization)
+                .and_then(|account| if account.is_admin() {
+                    Ok(store)
+                } else {
+                    Err(())
+                })
+                .map_err(|_| Response::builder().status(401).body(()).unwrap())
+        }
+
         #[get("/")]
         #[content_type("application/json")]
         fn get_root(&self) -> Result<ServerStatus, ()> {
@@ -147,18 +173,8 @@ impl_web! {
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
             // TODO add option for non-admin signups (maybe with invite code)
-            let store = self.store.clone();
-            self.store.get_account_from_http_auth(&authorization)
-                .and_then(|account| if account.is_admin() {
-                    Ok(())
-                } else {
-                    Err(())
-                })
-                .map_err(move |_| {
-                    debug!("No account found with auth: {}", authorization);
-                    Response::builder().status(401).body(()).unwrap()
-                })
-                .and_then(move |_| store.insert_account(body)
+            self.validate_admin(authorization)
+                .and_then(move |store| store.insert_account(body)
                 // TODO make all Accounts (de)serializable with Serde so all the details can be returned here
                 .and_then(|account| Ok(json!(account)))
                 .map_err(|_| Response::builder().status(500).body(()).unwrap()))
@@ -242,15 +258,8 @@ impl_web! {
         #[post("/rates")]
         #[content_type("application/json")]
         fn post_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
-            let store = self.store.clone();
-            self.store.get_account_from_http_auth(&authorization)
-                .and_then(|account| if account.is_admin() {
-                    Ok(())
-                } else {
-                    Err(())
-                })
-                .map_err(|_| Response::builder().status(401).body(()).unwrap())
-                .and_then(move |_| store.set_rates(body.0)
+            self.validate_admin(authorization)
+                .and_then(move |store| store.set_rates(body.0)
                 .and_then(|_| Ok(Success))
                 .map_err(|err| {
                     error!("Error setting rates: {:?}", err);
@@ -260,16 +269,62 @@ impl_web! {
 
         #[get("/routes")]
         #[content_type("application/json")]
-        fn get_routes(&self) -> impl Future<Item = Value, Error = Response<()>> {
-            ok(Value::Object(Map::from_iter(self.store.routing_table()
+        fn get_routes(&self) -> impl Future<Item = Routes, Error = Response<()>> {
+            ok(Routes(HashMap::from_iter(self.store.routing_table()
                 .into_iter()
                 .filter_map(|(address, account)| {
                     if let Ok(address) = str::from_utf8(address.as_ref()) {
-                        Some((address.to_string(), Value::String(account.to_string())))
+                        Some((address.to_string(), account.to_string()))
                     } else {
                         None
                     }
                 }))))
+        }
+
+        #[put("/routes/static")]
+        #[content_type("application/json")]
+        fn post_static_routes(&self, body: Routes, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
+            self.validate_admin(authorization)
+                .and_then(move |store| {
+                    let mut routes: HashMap<String, A::AccountId> = HashMap::with_capacity(body.0.len());
+                    for (prefix, account_id) in body.0 {
+                        if let Ok(account_id) = A::AccountId::from_str(account_id.as_str()) {
+                            routes.insert(prefix, account_id);
+                        } else {
+                            return Err(Response::builder().status(400).body(()).unwrap());
+                        }
+                    }
+                    Ok((store, routes))
+                })
+                .and_then(|(store, routes)| {
+                    store.set_static_routes(routes)
+                    .and_then(|_| Ok(Success))
+                        .map_err(|err| {
+                            error!("Error setting static routes: {:?}", err);
+                            Response::builder().status(500).body(()).unwrap()
+                        })
+            })
+        }
+
+        #[put("/routes/static/:prefix")]
+        #[content_type("application/json")]
+        fn post_static_route(&self, prefix: String, body: String, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
+            self.validate_admin(authorization)
+                .and_then(move |store| {
+                    if let Ok(account_id) = A::AccountId::from_str(body.as_str()) {
+                        Ok((store, account_id))
+                    } else {
+                        Err(Response::builder().status(400).body(()).unwrap())
+                    }
+                })
+                .and_then(move |(store, account_id)| {
+                    store.set_static_route(prefix, account_id)
+                    .and_then(|_| Ok(Success))
+                        .map_err(|err| {
+                            error!("Error setting static route: {:?}", err);
+                            Response::builder().status(500).body(()).unwrap()
+                        })
+                })
         }
 
         #[post("/pay")]

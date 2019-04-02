@@ -4,7 +4,7 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
@@ -32,6 +32,7 @@ static ACCOUNT_FROM_INDEX: &str = "local id = redis.call('HGET', KEYS[1], ARGV[1
     return redis.call('HGETALL', 'accounts:' .. id)";
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
+static STATIC_ROUTES_KEY: &str = "routes:static";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 
 fn account_details_key(account_id: u64) -> String {
@@ -519,17 +520,99 @@ impl NodeStore for RedisStore {
         R: IntoIterator<Item = (String, f64)>,
     {
         let rates: Vec<(String, f64)> = rates.into_iter().collect();
-        let connection = self.connection.as_ref().clone();
         let exchange_rates = self.exchange_rates.clone();
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .cmd("DEL")
+            .arg(RATES_KEY)
+            .ignore()
+            .cmd("HMSET")
+            .arg(RATES_KEY)
+            .arg(rates)
+            .ignore();
         Box::new(
-            cmd("HMSET")
-                .arg(RATES_KEY)
-                .arg(rates)
-                .query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error setting rates: {:?}", err))
-                .and_then(move |(_connection, _): (_, Value)| {
+                .and_then(move |(connection, _): (SharedConnection, Value)| {
                     update_rates(connection, exchange_rates)
                 }),
+        )
+    }
+
+    // TODO fix inconsistency betwen this method and set_routes which
+    // takes the prefixes as Bytes and the account as an Account object
+    fn set_static_routes<R>(&self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
+    where
+        R: IntoIterator<Item = (String, u64)>,
+    {
+        let routes: Vec<(String, u64)> = routes.into_iter().collect();
+        let accounts: HashSet<u64> =
+            HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| *account_id));
+        let mut pipe = redis::pipe();
+        for account_id in accounts {
+            pipe.cmd("EXISTS").arg(account_details_key(account_id));
+        }
+
+        let routing_table = self.routes.clone();
+        Box::new(pipe.query_async(self.connection.as_ref().clone())
+            .map_err(|err| error!("Error checking if accounts exist while setting static routes: {:?}", err))
+            .and_then(|(connection, accounts_exist): (SharedConnection, Vec<bool>)| {
+                if accounts_exist.iter().all(|a| *a) {
+                    Ok(connection)
+                } else {
+                    error!("Error setting static routes because not all of the given accounts exist");
+                    Err(())
+                }
+            })
+            .and_then(move |connection| {
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .cmd("DEL")
+            .arg(STATIC_ROUTES_KEY)
+            .ignore()
+            .cmd("HMSET")
+            .arg(STATIC_ROUTES_KEY)
+            .arg(routes)
+            .ignore();
+            pipe.query_async(connection)
+                .map_err(|err| error!("Error setting static routes: {:?}", err))
+                .and_then(move |(connection, _): (SharedConnection, Value)| {
+                    update_routes(connection, routing_table)
+                })
+            }))
+    }
+
+    fn set_static_route(
+        &self,
+        prefix: String,
+        account_id: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let routing_table = self.routes.clone();
+        let prefix_clone = prefix.clone();
+        Box::new(
+        cmd("EXISTS")
+            .arg(account_details_key(account_id))
+            .query_async(self.connection.as_ref().clone())
+            .map_err(|err| error!("Error checking if account exists before setting static route: {:?}", err))
+            .and_then(move |(connection, exists): (SharedConnection, bool)| {
+                if exists {
+                    Ok(connection)
+                } else {
+                    error!("Cannot set static route for prefix: {} because account {} does not exist", prefix_clone, account_id);
+                    Err(())
+                }
+            })
+            .and_then(move |connection| {
+                cmd("HSET")
+                    .arg(STATIC_ROUTES_KEY)
+                    .arg(prefix)
+                    .arg(account_id)
+                    .query_async(connection)
+                    .map_err(|err| error!("Error setting static route: {:?}", err))
+                    .and_then(move |(connection, _): (SharedConnection, Value)| {
+                        update_routes(connection, routing_table)
+                    })
+            })
         )
     }
 }
@@ -573,36 +656,55 @@ impl RouteManagerStore for RedisStore {
         &self,
     ) -> Box<Future<Item = ((HashMap<Bytes, Account>), (HashMap<Bytes, Account>)), Error = ()> + Send>
     {
-        Box::new(self.get_all_accounts().and_then(|accounts| {
-            let local_table = HashMap::from_iter(
-                accounts
-                    .into_iter()
-                    .map(|account| (account.ilp_address.clone(), account)),
+        let get_static_routes = cmd("HGETALL")
+            .arg(STATIC_ROUTES_KEY)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(|err| error!("Error getting static routes: {:?}", err))
+            .and_then(
+                |(_, static_routes): (SharedConnection, Vec<(String, u64)>)| Ok(static_routes),
             );
-            // TODO add configured routes
-            Ok((local_table, HashMap::new()))
-        }))
+        Box::new(self.get_all_accounts().join(get_static_routes).and_then(
+            |(accounts, static_routes)| {
+                let local_table = HashMap::from_iter(
+                    accounts
+                        .iter()
+                        .map(|account| (account.ilp_address.clone(), account.clone())),
+                );
+
+                let account_map: HashMap<u64, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
+                let configured_table: HashMap<Bytes, Account> = HashMap::from_iter(static_routes.into_iter()
+                    .filter_map(|(prefix, account_id)| {
+                        if let Some(account) = account_map.get(&account_id) {
+                            Some((Bytes::from(prefix), (*account).clone()))
+                        } else {
+                            warn!("No account for ID: {}, ignoring configured route for prefix: {}", account_id, prefix);
+                            None
+                        }
+                    }));
+
+                Ok((local_table, configured_table))
+            },
+        ))
     }
 
     fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (Bytes, Account)>,
     {
-        let routes = routes.into_iter();
-        // Update local routes
-        let mut local_routes: HashMap<Bytes, u64> = HashMap::with_capacity(routes.size_hint().0);
-        let mut db_routes: Vec<(String, u64)> = Vec::with_capacity(routes.size_hint().0);
-        for (prefix, account) in routes {
-            local_routes.insert(prefix.clone(), account.id);
-            if let Ok(prefix) = String::from_utf8(prefix.to_vec()) {
-                db_routes.push((prefix, account.id));
-            }
-        }
-        let num_routes = db_routes.len();
-
-        *self.routes.write() = local_routes;
+        let routes: Vec<(String, u64)> = routes
+            .into_iter()
+            .filter_map(|(prefix, account)| {
+                if let Ok(prefix) = String::from_utf8(prefix.to_vec()) {
+                    Some((prefix, account.id))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let num_routes = routes.len();
 
         // Save routes to Redis
+        let routing_tale = self.routes.clone();
         let mut pipe = redis::pipe();
         pipe.atomic()
             .cmd("DEL")
@@ -610,14 +712,14 @@ impl RouteManagerStore for RedisStore {
             .ignore()
             .cmd("HMSET")
             .arg(ROUTES_KEY)
-            .arg(db_routes)
+            .arg(routes)
             .ignore();
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error setting routes: {:?}", err))
-                .and_then(move |(_connection, _): (SharedConnection, Value)| {
+                .and_then(move |(connection, _): (SharedConnection, Value)| {
                     trace!("Saved {} routes to Redis", num_routes);
-                    Ok(())
+                    update_routes(connection, routing_tale)
                 }),
         )
     }
@@ -642,23 +744,39 @@ fn update_rates(
 }
 
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
+type RouteVec = Vec<(String, u64)>;
+
 fn update_routes(
     connection: SharedConnection,
     routing_table: Arc<RwLock<HashMap<Bytes, u64>>>,
 ) -> impl Future<Item = (), Error = ()> {
-    cmd("HGETALL")
+    let mut pipe = redis::pipe();
+    pipe.cmd("HGETALL")
         .arg(ROUTES_KEY)
-        .query_async(connection)
+        .cmd("HGETALL")
+        .arg(STATIC_ROUTES_KEY);
+    pipe.query_async(connection)
         .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
-        .and_then(move |(_connection, routes): (_, Vec<(Vec<u8>, u64)>)| {
-            let num_routes = routes.len();
-            let routes = HashMap::from_iter(
-                routes
-                    .into_iter()
-                    .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
-            );
-            *routing_table.write() = routes;
-            debug!("Updated routing table with {} routes", num_routes);
-            Ok(())
-        })
+        .and_then(
+            move |(_connection, (routes, static_routes)): (_, (RouteVec, RouteVec))| {
+                trace!(
+                    "Loaded routes from redis. Static routes: {:?}, other routes: {:?}",
+                    static_routes,
+                    routes
+                );
+                let routes = HashMap::from_iter(
+                    routes
+                        .into_iter()
+                        // Having the static_routes inserted after ensures that they will overwrite
+                        // any routes with the same prefix from the first set
+                        .chain(static_routes.into_iter())
+                        .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
+                );
+                trace!("Routing table is now: {:?}", routes);
+                let num_routes = routes.len();
+                *routing_table.write() = routes;
+                debug!("Updated routing table with {} routes", num_routes);
+                Ok(())
+            },
+        )
 }
