@@ -165,10 +165,10 @@ impl TestContext {
         self.client.get_connection().unwrap()
     }
 
-    pub fn async_connection(
-        &self,
-    ) -> impl Future<Item = redis::r#async::Connection, Error = RedisError> {
-        self.client.get_async_connection()
+    pub fn async_connection(&self) -> impl Future<Item = redis::r#async::Connection, Error = ()> {
+        self.client
+            .get_async_connection()
+            .map_err(|err| panic!(err))
     }
 
     pub fn stop_server(&mut self) {

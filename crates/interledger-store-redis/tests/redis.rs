@@ -605,21 +605,19 @@ mod ccp_store {
                     (Bytes::from("example.c"), account1.clone()),
                 ])
                 .and_then(move |_| {
-                    get_connection
-                        .map_err(|err| panic!(err))
-                        .and_then(|connection| {
-                            redis::cmd("HGETALL")
-                                .arg("routes")
-                                .query_async(connection)
-                                .map_err(|err| panic!(err))
-                                .and_then(|(_conn, routes): (_, HashMap<String, u64>)| {
-                                    assert_eq!(routes["example.a"], 0);
-                                    assert_eq!(routes["example.b"], 0);
-                                    assert_eq!(routes["example.c"], 1);
-                                    assert_eq!(routes.len(), 3);
-                                    Ok(())
-                                })
-                        })
+                    get_connection.and_then(|connection| {
+                        redis::cmd("HGETALL")
+                            .arg("routes")
+                            .query_async(connection)
+                            .map_err(|err| panic!(err))
+                            .and_then(|(_conn, routes): (_, HashMap<String, u64>)| {
+                                assert_eq!(routes["example.a"], 0);
+                                assert_eq!(routes["example.b"], 0);
+                                assert_eq!(routes["example.c"], 1);
+                                assert_eq!(routes.len(), 3);
+                                Ok(())
+                            })
+                    })
                 })
                 .and_then(move |_| {
                     let _ = context;
@@ -650,6 +648,98 @@ mod ccp_store {
                     Ok(())
                 })
                 .and_then(move |_| {
+                    let _ = context;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+}
+
+mod configured_routes {
+    use super::*;
+    use interledger_api::NodeStore;
+    use interledger_ccp::RouteManagerStore;
+    use interledger_router::RouterStore;
+    use interledger_service::Account as AccountTrait;
+
+    #[test]
+    fn adds_static_routes_to_redis() {
+        block_on(test_store().and_then(|(store, context)| {
+            let get_connection = context.async_connection();
+            store
+                .clone()
+                .set_static_routes(vec![
+                    ("example.a".to_string(), 0),
+                    ("example.b".to_string(), 0),
+                    ("example.c".to_string(), 1),
+                ])
+                .and_then(move |_| {
+                    get_connection.and_then(|connection| {
+                        redis::cmd("HGETALL")
+                            .arg("routes:static")
+                            .query_async(connection)
+                            .map_err(|err| panic!(err))
+                            .and_then(move |(_, routes): (_, HashMap<String, u64>)| {
+                                assert_eq!(routes["example.a"], 0);
+                                assert_eq!(routes["example.b"], 0);
+                                assert_eq!(routes["example.c"], 1);
+                                assert_eq!(routes.len(), 3);
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn static_routes_override_others() {
+        block_on(test_store().and_then(|(store, context)| {
+            let mut store_clone = store.clone();
+            store
+                .clone()
+                .set_static_routes(vec![
+                    ("example.a".to_string(), 0),
+                    ("example.b".to_string(), 0),
+                ])
+                .and_then(move |_| {
+                    let account1 = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
+                    store_clone.set_routes(vec![
+                        (Bytes::from("example.a"), account1.clone()),
+                        (Bytes::from("example.b"), account1.clone()),
+                        (Bytes::from("example.c"), account1),
+                    ])
+                })
+                .and_then(move |_| {
+                    let routes = store.routing_table();
+                    dbg!(&routes);
+                    assert_eq!(routes[&b"example.a"[..]], 0);
+                    assert_eq!(routes[&b"example.b"[..]], 0);
+                    assert_eq!(routes[&b"example.c"[..]], 1);
+                    assert_eq!(routes.len(), 3);
+                    let _ = context;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn returns_configured_routes_for_route_manager() {
+        block_on(test_store().and_then(|(store, context)| {
+            store
+                .clone()
+                .set_static_routes(vec![
+                    ("example.a".to_string(), 0),
+                    ("example.b".to_string(), 1),
+                ])
+                .and_then(move |_| store.get_local_and_configured_routes())
+                .and_then(move |(_local, configured)| {
+                    assert_eq!(configured.len(), 2);
+                    assert_eq!(configured[&b"example.a"[..]].id(), 0);
+                    assert_eq!(configured[&b"example.b"[..]].id(), 1);
                     let _ = context;
                     Ok(())
                 })
