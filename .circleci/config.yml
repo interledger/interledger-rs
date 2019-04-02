@@ -29,6 +29,9 @@ jobs:
       - run:
           name: Build + Test
           command: cargo test --all --all-features
+          environment:
+            # Configure the redis tests to use a unix socket instead of TCP
+            REDISRS_SERVER_TYPE: unix
       - run:
           name: Check Formatting
           command: cargo fmt --all -- --check
@@ -43,6 +46,9 @@ jobs:
             # --exclude-region="kcov-ignore-start:kcov-ignore-end"
             # --exclude-pattern="$CARGO_HOME,**/tests/**"
             # --exclude-line="^(\)*\}*,*)$"
+          environment:
+            # Configure the redis tests to use a unix socket instead of TCP
+            REDISRS_SERVER_TYPE: unix
       - run:
           name: Upload Code Coverage
           command: "bash <(curl -s https://codecov.io/bash)"

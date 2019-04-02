@@ -42,19 +42,27 @@ fn balance_key(asset_code: &str) -> String {
     format!("balances:{}", asset_code)
 }
 
-pub fn connect(redis_uri: &str) -> impl Future<Item = RedisStore, Error = ()> {
+pub use redis::IntoConnectionInfo;
+
+pub fn connect<R>(redis_uri: R) -> impl Future<Item = RedisStore, Error = ()>
+where
+    R: IntoConnectionInfo,
+{
     connect_with_poll_interval(redis_uri, POLL_INTERVAL)
 }
 
 #[doc(hidden)]
-pub fn connect_with_poll_interval(
-    redis_uri: &str,
+pub fn connect_with_poll_interval<R>(
+    redis_uri: R,
     poll_interval: u64,
-) -> impl Future<Item = RedisStore, Error = ()> {
-    debug!("Connecting to Redis: {}", redis_uri);
+) -> impl Future<Item = RedisStore, Error = ()>
+where
+    R: IntoConnectionInfo,
+{
     result(Client::open(redis_uri))
         .map_err(|err| error!("Error creating Redis client: {:?}", err))
         .and_then(|client| {
+            debug!("Connected to redis: {:?}", client);
             client
                 .get_shared_async_connection()
                 .map_err(|err| error!("Error connecting to Redis: {:?}", err))

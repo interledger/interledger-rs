@@ -21,7 +21,7 @@ use interledger_service_util::{
 };
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
-use interledger_store_redis::connect as connect_redis_store;
+use interledger_store_redis::{connect as connect_redis_store, IntoConnectionInfo};
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
@@ -349,12 +349,15 @@ pub fn run_moneyd_local(
 #[doc(hidden)]
 // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
 // connector instances to forward packets for that account to us
-pub fn run_node_redis(
-    redis_uri: &str,
+pub fn run_node_redis<R>(
+    redis_uri: R,
     btp_address: SocketAddr,
     http_address: SocketAddr,
     server_secret: &[u8; 32],
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = (), Error = ()>
+where
+    R: IntoConnectionInfo,
+{
     debug!("Starting Interledger node with Redis store");
     let server_secret = Bytes::from(&server_secret[..]);
     connect_redis_store(redis_uri)
@@ -421,10 +424,13 @@ pub fn run_node_redis(
 #[doc(hidden)]
 pub use interledger_api::AccountDetails;
 #[doc(hidden)]
-pub fn insert_account_redis(
-    redis_uri: &str,
+pub fn insert_account_redis<R>(
+    redis_uri: R,
     account: AccountDetails,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = (), Error = ()>
+where
+    R: IntoConnectionInfo,
+{
     connect_redis_store(redis_uri)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
