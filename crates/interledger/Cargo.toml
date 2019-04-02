@@ -64,6 +64,7 @@ url = "1.7.2"
 
 [dev-dependencies]
 net2 = "0.2.33"
+rand = "0.6.5"
 redis = "0.10.0"
 
 [badges]

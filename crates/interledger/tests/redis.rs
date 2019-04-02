@@ -5,20 +5,11 @@ extern crate log;
 use env_logger;
 use futures::{future::ok, Future};
 use interledger::cli;
-use net2;
-use redis;
-use std::{
-    process,
-    thread::sleep,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tokio::{runtime::Runtime, timer::Delay};
 
-// Test helpers copied from https://github.com/mitsuhiko/redis-rs/blob/master/tests/support/mod.rs
-pub struct RedisServer {
-    process: process::Child,
-    port: u16,
-}
+mod redis_helpers;
+use redis_helpers::*;
 
 fn get_open_port(try_port: Option<u16>) -> u16 {
     if let Some(port) = try_port {
@@ -39,74 +30,6 @@ fn get_open_port(try_port: Option<u16>) -> u16 {
     panic!("Cannot find open port!");
 }
 
-impl RedisServer {
-    pub fn new() -> RedisServer {
-        let mut cmd = process::Command::new("redis-server");
-        // Comment these lines out to see Redis log output
-        cmd.stdout(process::Stdio::null())
-            .stderr(process::Stdio::null());
-
-        // this is technically a race but we can't do better with
-        // the tools that redis gives us :(
-        let port = get_open_port(Some(6379));
-        cmd.arg("--loglevel").arg("verbose");
-        cmd.arg("--port")
-            .arg(port.to_string())
-            .arg("--bind")
-            .arg("127.0.0.1");
-        let process = cmd.spawn().unwrap();
-
-        debug!("Spawning redis server on port: {}", port);
-        let mut server = RedisServer {
-            process: process,
-            port,
-        };
-        server.flush_db();
-
-        server
-    }
-
-    pub fn wait(&mut self) {
-        self.process.wait().unwrap();
-    }
-
-    pub fn stop(&mut self) {
-        let _ = self.process.kill();
-        let _ = self.process.wait();
-    }
-
-    fn flush_db(&mut self) {
-        let client =
-            redis::Client::open(format!("redis://127.0.0.1:{}", self.port).as_str()).unwrap();
-        let con;
-
-        let millisecond = Duration::from_millis(1);
-        loop {
-            match client.get_connection() {
-                Err(err) => {
-                    if err.is_connection_refusal() {
-                        sleep(millisecond);
-                    } else {
-                        panic!("Could not connect: {}", err);
-                    }
-                }
-                Ok(x) => {
-                    con = x;
-                    break;
-                }
-            }
-        }
-        redis::cmd("FLUSHDB").execute(&con);
-        debug!("Flushed db");
-    }
-}
-
-impl Drop for RedisServer {
-    fn drop(&mut self) {
-        self.stop()
-    }
-}
-
 fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
     Delay::new(Instant::now() + Duration::from_millis(ms)).map_err(|err| panic!(err))
 }
@@ -114,16 +37,16 @@ fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
 #[test]
 fn btp_end_to_end() {
     let _ = env_logger::try_init();
-    let redis_server = RedisServer::new();
+    let context = TestContext::new();
+    let connection_info1 = context.get_client_connection_info();
+    let connection_info2 = context.get_client_connection_info();
+    let connection_info3 = context.get_client_connection_info();
     // let redis_port = 6379;
-    let redis_port = redis_server.port;
-    let redis_uri = format!("redis://127.0.0.1:{}", redis_port);
     let btp_port = get_open_port(Some(7768));
     let http_port = get_open_port(Some(7770));
     let run = ok(()).and_then(move |_| {
-        let redis_uri_clone = redis_uri.clone();
         let create_accounts = cli::insert_account_redis(
-            &redis_uri_clone,
+            connection_info1,
             cli::AccountDetails {
                 ilp_address: Vec::from("example.one"),
                 asset_code: "XYZ".to_string(),
@@ -145,7 +68,7 @@ fn btp_end_to_end() {
         )
         .and_then(move |_| {
             cli::insert_account_redis(
-                &redis_uri_clone,
+                connection_info2,
                 cli::AccountDetails {
                     ilp_address: Vec::from("example.two"),
                     asset_code: "XYZ".to_string(),
@@ -167,14 +90,13 @@ fn btp_end_to_end() {
             )
         });
 
-        let redis_uri_clone = redis_uri.clone();
         let spawn_connector = move |_| {
             debug!("Spawning connector");
             // Note: this needs to be run AFTER the accounts are created because the
             // store does not currently subscribe to notifications of accounts being created
             // or the routing table being updated
             let connector = interledger::cli::run_node_redis(
-                &redis_uri_clone,
+                connection_info3,
                 ([127, 0, 0, 1], btp_port).into(),
                 ([127, 0, 0, 1], http_port).into(),
                 &cli::random_secret(),
@@ -208,7 +130,7 @@ fn btp_end_to_end() {
                     true,
                 )
                 .then(move |result| {
-                    let _ = redis_server;
+                    let _ = context;
                     result
                 })
             })

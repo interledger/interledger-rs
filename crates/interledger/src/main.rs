@@ -289,6 +289,7 @@ pub fn main() {
                         };
                     let redis_uri =
                         value_t!(matches, "redis_uri", String).expect("redis_uri is required");
+                    let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
                     let account = AccountDetails {
                         ilp_address: value_t!(matches, "ilp_address", String)
                             .unwrap()
@@ -314,13 +315,14 @@ pub fn main() {
                         receive_routes: matches.is_present("receive_routes"),
                         routing_relation: value_t!(matches, "routing_relation", String).ok(),
                     };
-                    tokio::run(insert_account_redis(&redis_uri, account));
+                    tokio::run(insert_account_redis(redis_uri, account));
                 }
                 _ => app.print_help().unwrap(),
             },
             _ => {
                 let redis_uri =
                     value_t!(matches, "redis_uri", String).expect("redis_uri is required");
+                let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
                 let server_secret: [u8; 32] = if let Some(secret) =
@@ -335,7 +337,7 @@ pub fn main() {
                     random_secret()
                 };
                 tokio::run(run_node_redis(
-                    &redis_uri,
+                    redis_uri,
                     ([0, 0, 0, 0], btp_port).into(),
                     ([0, 0, 0, 0], http_port).into(),
                     &server_secret,

@@ -1,7 +1,5 @@
 extern crate interledger_store_redis;
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate lazy_static;
 
 use bytes::Bytes;
@@ -13,11 +11,12 @@ use parking_lot::Mutex;
 use redis;
 use std::{
     collections::HashMap,
-    process,
-    thread::sleep,
     time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime, timer::Delay};
+
+mod redis_helpers;
+use redis_helpers::*;
 
 lazy_static! {
     static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
@@ -59,109 +58,15 @@ lazy_static! {
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
 
-// Test helpers copied from https://github.com/mitsuhiko/redis-rs/blob/master/tests/support/mod.rs
-pub struct RedisServer {
-    process: process::Child,
-    uri: String,
-}
-
-fn get_open_port() -> u16 {
-    for _i in 0..1000 {
-        let listener = net2::TcpBuilder::new_v4().unwrap();
-        listener.reuse_address(true).unwrap();
-        if let Ok(listener) = listener.bind("127.0.0.1:0") {
-            return listener.listen(1).unwrap().local_addr().unwrap().port();
-        }
-    }
-    panic!("Cannot find open port!");
-}
-
-impl RedisServer {
-    pub fn new() -> RedisServer {
-        let mut cmd = process::Command::new("redis-server");
-        // Comment these lines out to see Redis log output
-        cmd.stdout(process::Stdio::null())
-            .stderr(process::Stdio::null());
-
-        // this is technically a race but we can't do better with
-        // the tools that redis gives us :(
-        let port = get_open_port();
-        cmd.arg("--loglevel").arg("verbose");
-        cmd.arg("--port")
-            .arg(port.to_string())
-            .arg("--bind")
-            .arg("127.0.0.1");
-        let process = cmd.spawn().unwrap();
-
-        debug!("Spawning redis server on port: {}", port);
-        let mut server = RedisServer {
-            process: process,
-            uri: format!("redis://127.0.0.1:{}", port),
-        };
-        server.flush_db();
-
-        server
-    }
-
-    pub fn redis_uri(&self) -> &str {
-        self.uri.as_ref()
-    }
-
-    pub fn wait(&mut self) {
-        self.process.wait().unwrap();
-    }
-
-    pub fn stop(&mut self) {
-        let _ = self.process.kill();
-        let _ = self.process.wait();
-    }
-
-    fn flush_db(&mut self) {
-        let client = redis::Client::open(self.redis_uri()).unwrap();
-        let con;
-
-        let millisecond = Duration::from_millis(1);
-        loop {
-            match client.get_connection() {
-                Err(err) => {
-                    if err.is_connection_refusal() {
-                        sleep(millisecond);
-                    } else {
-                        panic!("Could not connect: {}", err);
-                    }
-                }
-                Ok(x) => {
-                    con = x;
-                    break;
-                }
-            }
-        }
-        redis::cmd("FLUSHDB").execute(&con);
-        debug!("Flushed db");
-    }
-}
-
-impl Default for RedisServer {
-    fn default() -> Self {
-        RedisServer::new()
-    }
-}
-
-impl Drop for RedisServer {
-    fn drop(&mut self) {
-        self.stop()
-    }
-}
-
-fn test_store() -> impl Future<Item = (RedisStore, RedisServer), Error = ()> {
-    let server = RedisServer::default();
-    connect(server.redis_uri()).and_then(|store| {
+fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
+    let context = TestContext::new();
+    connect(context.get_client_connection_info()).and_then(|store| {
         let store_clone = store.clone();
         store
             .clone()
             .insert_account(ACCOUNT_DETAILS_0.clone())
             .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_1.clone()))
-            .and_then(|_| Ok((store, server)))
+            .and_then(|_| Ok((store, context)))
     })
 }
 
@@ -189,14 +94,10 @@ mod connect_store {
         runtime
             .block_on(future::lazy(
                 || -> Box<Future<Item = (), Error = ()> + Send> {
-                    Box::new(
-                        connect(format!("redis://127.0.0.1:{}", get_open_port()).as_str()).then(
-                            |result| {
-                                assert!(result.is_err());
-                                Ok(())
-                            },
-                        ),
-                    )
+                    Box::new(connect("redis://127.0.0.1:0").then(|result| {
+                        assert!(result.is_err());
+                        Ok(())
+                    }))
                 },
             ))
             .unwrap();
@@ -208,17 +109,16 @@ mod insert_accounts {
 
     #[test]
     fn insert_accounts() {
-        block_on(test_store().and_then(|(_store, server)| {
-            redis::Client::open(server.redis_uri())
-                .unwrap()
-                .get_async_connection()
+        block_on(test_store().and_then(|(_store, context)| {
+            context
+                .async_connection()
                 .map_err(|err| panic!(err))
-                .and_then(move |client| {
+                .and_then(|connection| {
                     redis::cmd("HGETALL")
                         .arg("accounts:0")
-                        .query_async(client)
+                        .query_async(connection)
                         .and_then(move |(_connection, values): (_, redis::Value)| {
-                            let _ = server;
+                            let _ = context;
                             if let redis::Value::Bulk(ref items) = values {
                                 assert_eq!(items.len(), 15 * 2);
                                 Ok(())
@@ -234,7 +134,7 @@ mod insert_accounts {
 
     #[test]
     fn fails_on_duplicate_xrp_address() {
-        let result = block_on(test_store().and_then(|(store, server)| {
+        let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
                     ilp_address: b"example.charlie".to_vec(),
@@ -255,7 +155,7 @@ mod insert_accounts {
                     routing_relation: None,
                 })
                 .then(move |result| {
-                    let _ = server;
+                    let _ = context;
                     result
                 })
         }));
@@ -264,7 +164,7 @@ mod insert_accounts {
 
     #[test]
     fn fails_on_duplicate_http_incoming_auth() {
-        let result = block_on(test_store().and_then(|(store, server)| {
+        let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
                     ilp_address: b"example.charlie".to_vec(),
@@ -285,7 +185,7 @@ mod insert_accounts {
                     routing_relation: None,
                 })
                 .then(move |result| {
-                    let _ = server;
+                    let _ = context;
                     result
                 })
         }));
@@ -294,7 +194,7 @@ mod insert_accounts {
 
     #[test]
     fn fails_on_duplicate_btp_incoming_auth() {
-        let result = block_on(test_store().and_then(|(store, server)| {
+        let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
                     ilp_address: b"example.charlie".to_vec(),
@@ -315,7 +215,7 @@ mod insert_accounts {
                     routing_relation: None,
                 })
                 .then(move |result| {
-                    let _ = server;
+                    let _ = context;
                     result
                 })
         }));
@@ -330,10 +230,10 @@ mod node_store {
 
     #[test]
     fn get_all_accounts() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store.get_all_accounts().and_then(move |accounts| {
                 assert_eq!(accounts.len(), 2);
-                let _ = server;
+                let _ = context;
                 Ok(())
             })
         }))
@@ -342,7 +242,7 @@ mod node_store {
 
     #[test]
     fn set_rates() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             let store_clone = store.clone();
             let rates = store.get_exchange_rates(&["ABC", "XYZ"]);
             assert!(rates.is_err());
@@ -352,7 +252,7 @@ mod node_store {
                     let rates = store_clone.get_exchange_rates(&["XYZ", "ABC"]).unwrap();
                     assert_eq!(rates[0].to_string(), "0.005");
                     assert_eq!(rates[1].to_string(), "500");
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -367,10 +267,10 @@ mod get_accounts {
 
     #[test]
     fn gets_single_account() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1]).and_then(move |accounts| {
                 assert_eq!(accounts[0].client_address(), b"example.bob");
-                let _ = server;
+                let _ = context;
                 Ok(())
             })
         }))
@@ -379,12 +279,12 @@ mod get_accounts {
 
     #[test]
     fn gets_multiple() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1, 0]).and_then(move |accounts| {
                 // note reverse order is intentional
                 assert_eq!(accounts[0].client_address(), b"example.bob");
                 assert_eq!(accounts[1].client_address(), b"example.alice");
-                let _server = server;
+                let _ = context;
                 Ok(())
             })
         }))
@@ -393,9 +293,9 @@ mod get_accounts {
 
     #[test]
     fn errors_for_unknown_accounts() {
-        let result = block_on(test_store().and_then(|(store, server)| {
+        let result = block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![0, 2]).then(move |result| {
-                let _ = server;
+                let _ = context;
                 result
             })
         }));
@@ -410,9 +310,10 @@ mod routes_and_rates {
 
     #[test]
     fn polls_for_route_updates() {
-        let server = RedisServer::new();
+        let context = TestContext::new();
         block_on(
-            connect_with_poll_interval(server.redis_uri(), 1).and_then(|store| {
+            connect_with_poll_interval(context.get_client_connection_info(), 1).and_then(|store| {
+                let connection = context.async_connection();
                 assert_eq!(store.routing_table().len(), 0);
                 let store_clone_1 = store.clone();
                 let store_clone_2 = store.clone();
@@ -449,24 +350,22 @@ mod routes_and_rates {
                         let routing_table = store_clone_2.routing_table();
                         assert_eq!(routing_table.len(), 2);
                         assert_eq!(*routing_table.get(&Bytes::from("example.bob")).unwrap(), 1);
-                        redis::Client::open(server.redis_uri())
-                            .unwrap()
-                            .get_async_connection()
-                            .map_err(|_| panic!("Unable to get client connection to db"))
-                            .and_then(|client| {
+                        connection
+                            .map_err(|err| panic!(err))
+                            .and_then(|connection| {
                                 redis::cmd("HMSET")
                                     .arg("routes")
                                     .arg("example.alice")
                                     .arg(1)
                                     .arg("example.charlie")
                                     .arg(0)
-                                    .query_async(client)
+                                    .query_async(connection)
                                     .and_then(|(_connection, _result): (_, redis::Value)| Ok(()))
                                     .map_err(|err| panic!(err))
-                            })
-                            .and_then(|_| {
-                                Delay::new(Instant::now() + Duration::from_millis(10))
-                                    .then(|_| Ok(()))
+                                    .and_then(|_| {
+                                        Delay::new(Instant::now() + Duration::from_millis(10))
+                                            .then(|_| Ok(()))
+                                    })
                             })
                             .and_then(move |_| {
                                 let routing_table = store_clone_2.routing_table();
@@ -484,7 +383,7 @@ mod routes_and_rates {
                                     0
                                 );
                                 assert!(routing_table.get(&Bytes::from("example.other")).is_none());
-                                let _server = server;
+                                let _ = context;
                                 Ok(())
                             })
                     })
@@ -495,9 +394,9 @@ mod routes_and_rates {
 
     #[test]
     fn polls_for_rate_updates() {
-        let server = RedisServer::new();
+        let context = TestContext::new();
         block_on(
-            connect_with_poll_interval(server.redis_uri(), 1).and_then(|store| {
+            connect_with_poll_interval(context.get_client_connection_info(), 1).and_then(|store| {
                 assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
                 store
                     .clone()
@@ -515,7 +414,7 @@ mod routes_and_rates {
                             vec![0.5, 9_999_999_999.0]
                         );
                         assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
-                        let _ = server;
+                        let _ = context;
                         Ok(())
                     })
             }),
@@ -531,7 +430,7 @@ mod balances {
 
     #[test]
     fn updating_and_rolling_back() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             let store_clone_1 = store.clone();
             let store_clone_2 = store.clone();
             store
@@ -563,10 +462,10 @@ mod balances {
                                         .clone()
                                         .get_balance(account0.clone())
                                         .join(store_clone_2.clone().get_balance(account1.clone()))
-                                        .and_then(|(balance0, balance1)| {
+                                        .and_then(move |(balance0, balance1)| {
                                             assert_eq!(balance0, 0);
                                             assert_eq!(balance1, 0);
-                                            let _server = server;
+                                            let _ = context;
                                             Ok(())
                                         })
                                 })
@@ -584,12 +483,12 @@ mod from_btp {
 
     #[test]
     fn gets_account_from_btp_token() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store
                 .get_account_from_btp_token("other_btp_token")
                 .and_then(move |account| {
                     assert_eq!(account.id(), 1);
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -598,11 +497,11 @@ mod from_btp {
 
     #[test]
     fn errors_on_unknown_btp_token() {
-        let result = block_on(test_store().and_then(|(store, server)| {
+        let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .get_account_from_btp_token("unknown_btp_token")
                 .then(move |result| {
-                    let _ = server;
+                    let _ = context;
                     result
                 })
         }));
@@ -617,12 +516,12 @@ mod from_http {
 
     #[test]
     fn gets_account_from_http_bearer_token() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store
                 .get_account_from_http_auth("Bearer incoming_auth_token")
                 .and_then(move |account| {
                     assert_eq!(account.id(), 0);
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -631,12 +530,12 @@ mod from_http {
 
     #[test]
     fn gets_account_from_http_basic_auth() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store
                 .get_account_from_http_auth("Basic QWxhZGRpbjpPcGVuU2VzYW1l")
                 .and_then(move |account| {
                     assert_eq!(account.id(), 1);
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -645,11 +544,11 @@ mod from_http {
 
     #[test]
     fn errors_on_unknown_http_auth() {
-        let result = block_on(test_store().and_then(|(store, server)| {
+        let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .get_account_from_http_auth("Bearer unknown_token")
                 .then(move |result| {
-                    let _ = server;
+                    let _ = context;
                     result
                 })
         }));
@@ -665,13 +564,13 @@ mod ccp_store {
 
     #[test]
     fn gets_accounts_to_send_routes_to() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store
                 .get_accounts_to_send_routes_to()
                 .and_then(move |accounts| {
                     assert_eq!(accounts[0].id(), 1);
                     assert_eq!(accounts.len(), 1);
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -680,13 +579,13 @@ mod ccp_store {
 
     #[test]
     fn gets_local_and_configured_routes() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             store
                 .get_local_and_configured_routes()
                 .and_then(move |(local, configured)| {
                     assert_eq!(local.len(), 2);
                     assert!(configured.is_empty());
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -695,8 +594,8 @@ mod ccp_store {
 
     #[test]
     fn saves_routes_to_db() {
-        block_on(test_store().and_then(|(mut store, server)| {
-            let redis_uri = server.redis_uri().to_string();
+        block_on(test_store().and_then(|(mut store, context)| {
+            let get_connection = context.async_connection();
             let account0 = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
             let account1 = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
             store
@@ -706,14 +605,12 @@ mod ccp_store {
                     (Bytes::from("example.c"), account1.clone()),
                 ])
                 .and_then(move |_| {
-                    redis::Client::open(redis_uri.as_str())
-                        .unwrap()
-                        .get_async_connection()
+                    get_connection
                         .map_err(|err| panic!(err))
-                        .and_then(move |client| {
+                        .and_then(|connection| {
                             redis::cmd("HGETALL")
                                 .arg("routes")
-                                .query_async(client)
+                                .query_async(connection)
                                 .map_err(|err| panic!(err))
                                 .and_then(|(_conn, routes): (_, HashMap<String, u64>)| {
                                     assert_eq!(routes["example.a"], 0);
@@ -725,7 +622,7 @@ mod ccp_store {
                         })
                 })
                 .and_then(move |_| {
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
@@ -734,7 +631,7 @@ mod ccp_store {
 
     #[test]
     fn updates_local_routes() {
-        block_on(test_store().and_then(|(store, server)| {
+        block_on(test_store().and_then(|(store, context)| {
             let account0 = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
             let account1 = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
             store
@@ -753,7 +650,7 @@ mod ccp_store {
                     Ok(())
                 })
                 .and_then(move |_| {
-                    let _ = server;
+                    let _ = context;
                     Ok(())
                 })
         }))
