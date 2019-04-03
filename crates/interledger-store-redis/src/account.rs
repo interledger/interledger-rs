@@ -14,7 +14,7 @@ use std::{
 };
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 17;
+const ACCOUNT_DETAILS_FIELDS: usize = 18;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -25,6 +25,7 @@ pub struct Account {
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
+    pub(crate) min_balance: i64,
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) http_endpoint: Option<Url>,
     pub(crate) http_incoming_authorization: Option<String>,
@@ -95,6 +96,7 @@ impl Account {
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
+            min_balance: details.min_balance,
             http_endpoint,
             http_incoming_authorization: details.http_incoming_authorization,
             http_outgoing_authorization: details.http_outgoing_authorization,
@@ -133,6 +135,8 @@ impl ToRedisArgs for Account {
         self.is_admin.write_redis_args(&mut rv);
         "routing_relation".write_redis_args(&mut rv);
         self.routing_relation.to_string().write_redis_args(&mut rv);
+        "min_balance".write_redis_args(&mut rv);
+        self.min_balance.write_redis_args(&mut rv);
 
         // Write optional fields
         if let Some(http_endpoint) = self.http_endpoint.as_ref() {
@@ -205,6 +209,7 @@ impl FromRedisValue for Account {
             btp_uri: get_url_option("btp_uri", &hash)?,
             btp_incoming_authorization: get_value_option("btp_incoming_authorization", &hash)?,
             max_packet_amount: get_value("max_packet_amount", &hash)?,
+            min_balance: get_value("min_balance", &hash)?,
             is_admin: get_bool("is_admin", &hash),
             xrp_address: get_value_option("xrp_address", &hash)?,
             settle_threshold: get_value_option("settle_threshold", &hash)?,

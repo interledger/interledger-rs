@@ -64,6 +64,8 @@ pub struct AccountDetails {
     pub asset_code: String,
     pub asset_scale: u8,
     pub max_packet_amount: u64,
+    #[serde(default = "i64::min_value")]
+    pub min_balance: i64,
     pub http_endpoint: Option<String>,
     pub http_incoming_authorization: Option<String>,
     pub http_outgoing_authorization: Option<String>,
@@ -255,7 +257,7 @@ impl_web! {
                 })
         }
 
-        #[post("/rates")]
+        #[put("/rates")]
         #[content_type("application/json")]
         fn post_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
             self.validate_admin(authorization)

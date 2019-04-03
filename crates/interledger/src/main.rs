@@ -184,6 +184,10 @@ pub fn main() {
                                 .long("routing_relation")
                                 .help("Either 'Parent', 'Peer', or 'Child' to indicate our relationship to this account (used for routing)")
                                 .default_value("Child"),
+                            Arg::with_name("min_balance")
+                                .long("min_balance")
+                                .help("Minimum balance this account is allowed to have (can be negative)")
+                                .default_value("0"),
                         ])
                         .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
@@ -307,6 +311,7 @@ pub fn main() {
                         http_outgoing_authorization,
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
+                        min_balance: value_t!(matches, "min_balance", i64).unwrap(),
                         is_admin: matches.is_present("admin"),
                         xrp_address: value_t!(matches, "xrp_address", String).ok(),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),

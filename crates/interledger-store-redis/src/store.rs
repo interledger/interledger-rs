@@ -24,12 +24,31 @@ use tokio_timer::Interval;
 
 const POLL_INTERVAL: u64 = 60000; // 1 minute
 
-// TODO load this into redis cache
-static ACCOUNT_FROM_INDEX: &str = "local id = redis.call('HGET', KEYS[1], ARGV[1])
-    if not id then
-        return nil
+static ACCOUNT_FROM_INDEX: &str = "
+local id = redis.call('HGET', KEYS[1], ARGV[1])
+if not id then
+    return nil
+end
+return redis.call('HGETALL', 'accounts:' .. id)";
+static UPDATE_BALANCES: &str = "
+local from_asset_code = string.lower(ARGV[1])
+local from_id = ARGV[2]
+local from_amount = tonumber(ARGV[3])
+local to_asset_code = string.lower(ARGV[4])
+local to_id = ARGV[5]
+local to_amount = tonumber(ARGV[6])
+local min_balance = redis.call('HGET', 'accounts:' .. from_id, 'min_balance')
+if min_balance then
+    min_balance = tonumber(min_balance)
+    local balance = tonumber(redis.call('HGET', 'balances:' .. from_asset_code, from_id))
+    if balance < min_balance + from_amount then
+        error('Cannot subtract ' .. from_amount .. ' from balance. Current balance of account: ' .. from_id .. ' is: ' .. balance .. ' and min balance is: ' .. min_balance)
     end
-    return redis.call('HGETALL', 'accounts:' .. id)";
+end
+local from_balance = redis.call('HINCRBY', 'balances:' .. from_asset_code, from_id, 0 - from_amount)
+local to_balance = redis.call('HINCRBY', 'balances:' .. to_asset_code, to_id, to_amount)
+return {from_balance, to_balance}";
+
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
 static STATIC_ROUTES_KEY: &str = "routes:static";
@@ -40,7 +59,7 @@ fn account_details_key(account_id: u64) -> String {
 }
 
 fn balance_key(asset_code: &str) -> String {
-    format!("balances:{}", asset_code)
+    format!("balances:{}", asset_code.to_lowercase())
 }
 
 pub use redis::IntoConnectionInfo;
@@ -202,25 +221,22 @@ impl BalanceStore for RedisStore {
         let to_account_id = to_account.id();
 
         debug!(
-            "Increasing balance of account {} by: {}. Decreasing balance of account {} by: {}",
+            "Decreasing balance of account {} by: {}. Increasing balance of account {} by: {}",
             from_account_id, incoming_amount, to_account_id, outgoing_amount
         );
 
-        // TODO check against balance limit
-        let mut pipe = redis::pipe();
-        pipe.atomic()
-            .cmd("HINCRBY")
-            .arg(balance_key(from_account.asset_code.as_str()))
-            .arg(from_account_id)
-            .arg(incoming_amount)
-            .cmd("HINCRBY")
-            .arg(balance_key(to_account.asset_code.as_str()))
-            .arg(to_account_id)
-            // TODO make sure this doesn't overflow
-            .arg(0i64 - outgoing_amount as i64);
-
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            cmd("EVAL")
+                // Update the balance only if it does not exceed the max_balance configured on the account
+                .arg(UPDATE_BALANCES)
+                .arg(0)
+                .arg(from_account.asset_code)
+                .arg(from_account_id)
+                .arg(incoming_amount)
+                .arg(to_account.asset_code)
+                .arg(to_account_id)
+                .arg(outgoing_amount)
+                .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
                     "Error updating balances for accounts. from_account: {}, to_account: {}: {:?}",
@@ -229,13 +245,15 @@ impl BalanceStore for RedisStore {
                     err
                 )
                 })
-                .and_then(move |(_connection, balances): (_, Vec<i64>)| {
-                    debug!(
-                        "Updated account balances. Account {} has: {}, account {} has: {}",
-                        from_account_id, balances[0], to_account_id, balances[1]
-                    );
-                    Ok(())
-                }),
+                .and_then(
+                    move |(_connection, (from_balance, to_balance)): (_, (i64, i64))| {
+                        debug!(
+                            "Updated account balances. Account {} has: {}, account {} has: {}",
+                            from_account_id, from_balance, to_account_id, to_balance
+                        );
+                        Ok(())
+                    },
+                ),
         )
     }
 
@@ -250,7 +268,7 @@ impl BalanceStore for RedisStore {
         let to_account_id = to_account.id();
 
         debug!(
-            "Decreasing balance of account {} by: {}. Increasing balance of account {} by: {}",
+            "Rolling back transaction. Increasing balance of account {} by: {}. Decreasing balance of account {} by: {}",
             from_account_id, incoming_amount, to_account_id, outgoing_amount
         );
 
@@ -260,12 +278,12 @@ impl BalanceStore for RedisStore {
             .cmd("HINCRBY")
             .arg(balance_key(from_account.asset_code.as_str()))
             .arg(from_account_id)
-            // TODO make sure this doesn't overflow
-            .arg(0i64 - incoming_amount as i64)
+            .arg(incoming_amount as i64)
             .cmd("HINCRBY")
             .arg(balance_key(to_account.asset_code.as_str()))
             .arg(to_account_id)
-            .arg(outgoing_amount);
+            // TODO make sure this doesn't overflow
+            .arg(0i64 - outgoing_amount as i64);
 
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
