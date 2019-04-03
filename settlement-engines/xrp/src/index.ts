@@ -11,6 +11,7 @@ const readFileAsync = promisify(readFile)
 // TODO should the settlement engine go through and make sure all of the xrp_addresses are stored in this hash map?
 const DEFAULT_POLL_INTERVAL = 60000
 const KEY_ARGS = 0
+const UNCLAIMED_BALANCE_KEY = 'unclaimed_balances:xrp'
 
 export interface XrpSettlementEngineConfig {
   address: string,
@@ -29,10 +30,11 @@ export class XrpSettlementEngine {
   private minDropsToSettle: number
   private pollInterval: number
   private interval: NodeJS.Timeout
-    // TODO add type annotations to these arrow functions
+  // TODO add type annotations to these arrow functions
   private getAccountsThatNeedSettlement: any
   private creditAccountForSettlement: any
   private updateBalanceAfterSettlement: any
+  private addUnclaimedBalance: any
 
   constructor (config: XrpSettlementEngineConfig) {
     this.address = config.address
@@ -46,7 +48,7 @@ export class XrpSettlementEngine {
   }
 
   async connect (): Promise<void> {
-        // Connect to redis and rippled
+    // Connect to redis and rippled
     await Promise.all([
       this.rippleClient.connect().then(() => debug('Connected to rippled')),
       new Promise((resolve, reject) => {
@@ -58,12 +60,12 @@ export class XrpSettlementEngine {
       })
     ])
 
-        // Set up the settlement engine to poll the accounts for balance changes
+    // Set up the settlement engine to poll the accounts for balance changes
     debug(`Setting up to poll for balance changes every ${this.pollInterval}ms`)
     await this.checkAccounts()
     this.interval = setInterval(() => this.checkAccounts(), this.pollInterval)
 
-        // Subscribe to rippled events to be notified of incoming payments
+    // Subscribe to rippled events to be notified of incoming payments
     this.rippleClient.connection.on('transaction', this.handleTransaction.bind(this))
     await this.rippleClient.request('subscribe', {
       accounts: [this.address]
@@ -89,6 +91,8 @@ export class XrpSettlementEngine {
     await loadScript(updateBalanceAfterSettlementScript)
     const updateBalanceAfterSettlementScriptHash = createHash('sha1').update(updateBalanceAfterSettlementScript).digest('hex')
     this.updateBalanceAfterSettlement = promisify(this.redisClient.evalsha.bind(this.redisClient, updateBalanceAfterSettlementScriptHash, KEY_ARGS))
+
+    this.addUnclaimedBalance = promisify(this.redisClient.hincrby.bind(this.redisClient, UNCLAIMED_BALANCE_KEY))
 
     debug('Loaded scripts')
   }
@@ -144,7 +148,7 @@ export class XrpSettlementEngine {
           }
         }
       }, {
-                    // TODO add max fee
+          // TODO add max fee
         maxLedgerVersionOffset: 5
       })
       const { signedTransaction } = this.rippleClient.sign(payment.txJSON, this.secret)
@@ -164,7 +168,7 @@ export class XrpSettlementEngine {
       return
     }
 
-        // Parse amount received from transaction
+    // Parse amount received from transaction
     let drops
     try {
       if (tx.meta.delivered_amount) {
@@ -184,8 +188,15 @@ export class XrpSettlementEngine {
       const [account, newBalance] = await this.creditAccountForSettlement(fromAddress, drops)
       debug(`Credited account: ${account} for incoming settlement, balance is now: ${newBalance}`)
     } catch (err) {
-      debug('Error crediting account: ', err)
-      console.warn('Got incoming payment from an unknown account: ', JSON.stringify(tx))
+      if (err.message.includes('No account associated')) {
+        debug(`No account associated with address: ${fromAddress}, adding ${drops} to that address' unclaimed balance`)
+        try {
+          await this.addUnclaimedBalance(fromAddress, drops)
+        } catch (err) { }
+      } else {
+        debug('Error crediting account: ', err)
+        console.warn('Got incoming payment from an unknown account: ', JSON.stringify(tx))
+      }
     }
   }
 }

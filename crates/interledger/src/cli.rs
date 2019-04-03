@@ -17,7 +17,7 @@ use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AccountStore, OutgoingRequest,
 };
 use interledger_service_util::{
-    ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
+    ExchangeRateAndBalanceService, ExpiryShortenerService, MaxPacketAmountService, ValidatorService,
 };
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
@@ -354,6 +354,7 @@ pub fn run_node_redis<R>(
     btp_address: SocketAddr,
     http_address: SocketAddr,
     server_secret: &[u8; 32],
+    open_signup_min_balance: Option<u64>,
 ) -> impl Future<Item = (), Error = ()>
 where
     R: IntoConnectionInfo,
@@ -378,6 +379,9 @@ where
                             // service to others like the router and then call handle_incoming on it to set up the incoming handler
                             let outgoing_service = btp_service.clone();
                             let outgoing_service = ValidatorService::outgoing(outgoing_service);
+                            // Note: the expiry shortener must come after the Validator so that the expiry duration
+                            // is shortened before we check whether there is enough time left
+                            let outgoing_service = ExpiryShortenerService::new(outgoing_service);
                             let outgoing_service =
                                 StreamReceiverService::new(server_secret.clone(), outgoing_service);
                             let outgoing_service =
@@ -402,11 +406,18 @@ where
 
                             // TODO should this run the node api on a different port so it's easier to separate public/private?
                             // Note the API also includes receiving ILP packets sent via HTTP
-                            let api = NodeApi::new(
+                            let mut api = NodeApi::new(
                                 server_secret,
                                 store.clone(),
                                 incoming_service.clone(),
                             );
+                            if let Some(min_balance) = open_signup_min_balance {
+                                debug!(
+                                    "Enabling open signups with minimum balance: {}",
+                                    min_balance
+                                );
+                                api.enable_open_signups(min_balance);
+                            }
                             let listener = TcpListener::bind(&http_address)
                                 .expect("Unable to bind to HTTP address");
                             println!("Interledger node listening on: {}", http_address);
