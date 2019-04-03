@@ -24,6 +24,7 @@ lazy_static! {
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
+        min_balance: -1000,
         http_endpoint: Some("http://example.com/ilp".to_string()),
         http_incoming_authorization: Some("Bearer incoming_auth_token".to_string()),
         http_outgoing_authorization: Some("outgoing_auth_token".to_string()),
@@ -42,6 +43,7 @@ lazy_static! {
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
+        min_balance: 0,
         http_endpoint: Some("http://example.com/ilp".to_string()),
         http_incoming_authorization: Some("Basic QWxhZGRpbjpPcGVuU2VzYW1l".to_string()),
         http_outgoing_authorization: Some("outgoing_auth_token".to_string()),
@@ -120,7 +122,7 @@ mod insert_accounts {
                         .and_then(move |(_connection, values): (_, redis::Value)| {
                             let _ = context;
                             if let redis::Value::Bulk(ref items) = values {
-                                assert_eq!(items.len(), 15 * 2);
+                                assert_eq!(items.len(), 16 * 2);
                                 Ok(())
                             } else {
                                 panic!("not bulk value");
@@ -141,6 +143,7 @@ mod insert_accounts {
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
+                    min_balance: -1000,
                     http_endpoint: None,
                     http_incoming_authorization: None,
                     http_outgoing_authorization: None,
@@ -171,6 +174,7 @@ mod insert_accounts {
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
+                    min_balance: -1000,
                     http_endpoint: None,
                     http_incoming_authorization: Some("Bearer incoming_auth_token".to_string()),
                     http_outgoing_authorization: None,
@@ -201,6 +205,7 @@ mod insert_accounts {
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
+                    min_balance: -1000,
                     http_endpoint: None,
                     http_incoming_authorization: None,
                     http_outgoing_authorization: None,
@@ -332,6 +337,7 @@ mod routes_and_rates {
                             asset_scale: 6,
                             asset_code: "XYZ".to_string(),
                             max_packet_amount: 1000,
+                            min_balance: -1000,
                             http_endpoint: None,
                             http_incoming_authorization: None,
                             http_outgoing_authorization: None,
@@ -448,8 +454,8 @@ mod balances {
                                 .get_balance(accounts[0].clone())
                                 .join(store_clone_1.clone().get_balance(accounts[1].clone()))
                                 .and_then(|(balance0, balance1)| {
-                                    assert_eq!(balance0, 100);
-                                    assert_eq!(balance1, -500);
+                                    assert_eq!(balance0, -100);
+                                    assert_eq!(balance1, 500);
                                     Ok(())
                                 })
                         })
@@ -473,6 +479,26 @@ mod balances {
                 })
         }))
         .unwrap();
+    }
+
+    #[test]
+    fn enforces_minimum_balance() {
+        block_on(test_store().and_then(|(store, context)| {
+            store
+                .clone()
+                .get_accounts(vec![0, 1])
+                .map_err(|_err| panic!("Unable to get accounts"))
+                .and_then(move |accounts| {
+                    store
+                        .update_balances(accounts[0].clone(), 10000, accounts[1].clone(), 500)
+                        .then(move |result| {
+                            assert!(result.is_err());
+                            let _ = context;
+                            Ok(())
+                        })
+                })
+        }))
+        .unwrap()
     }
 }
 
@@ -714,7 +740,6 @@ mod configured_routes {
                 })
                 .and_then(move |_| {
                     let routes = store.routing_table();
-                    dbg!(&routes);
                     assert_eq!(routes[&b"example.a"[..]], 0);
                     assert_eq!(routes[&b"example.b"[..]], 0);
                     assert_eq!(routes[&b"example.c"[..]], 1);
