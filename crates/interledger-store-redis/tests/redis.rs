@@ -37,6 +37,7 @@ lazy_static! {
         send_routes: false,
         receive_routes: false,
         routing_relation: None,
+        round_trip_time: None,
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: b"example.bob".to_vec(),
@@ -56,6 +57,7 @@ lazy_static! {
         send_routes: true,
         receive_routes: false,
         routing_relation: None,
+        round_trip_time: None,
     };
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
@@ -122,7 +124,7 @@ mod insert_accounts {
                         .and_then(move |(_connection, values): (_, redis::Value)| {
                             let _ = context;
                             if let redis::Value::Bulk(ref items) = values {
-                                assert_eq!(items.len(), 16 * 2);
+                                assert_eq!(items.len(), 17 * 2);
                                 Ok(())
                             } else {
                                 panic!("not bulk value");
@@ -156,6 +158,7 @@ mod insert_accounts {
                     send_routes: false,
                     receive_routes: false,
                     routing_relation: None,
+                    round_trip_time: None,
                 })
                 .then(move |result| {
                     let _ = context;
@@ -187,6 +190,7 @@ mod insert_accounts {
                     send_routes: false,
                     receive_routes: false,
                     routing_relation: None,
+                    round_trip_time: None,
                 })
                 .then(move |result| {
                     let _ = context;
@@ -218,6 +222,7 @@ mod insert_accounts {
                     send_routes: false,
                     receive_routes: false,
                     routing_relation: None,
+                    round_trip_time: None,
                 })
                 .then(move |result| {
                     let _ = context;
@@ -350,6 +355,7 @@ mod routes_and_rates {
                             send_routes: false,
                             receive_routes: false,
                             routing_relation: None,
+                            round_trip_time: None,
                         })
                     })
                     .and_then(move |_| {

@@ -80,6 +80,7 @@ pub struct AccountDetails {
     #[serde(default)]
     pub receive_routes: bool,
     pub routing_relation: Option<String>,
+    pub round_trip_time: Option<u64>,
 }
 
 #[derive(Response)]

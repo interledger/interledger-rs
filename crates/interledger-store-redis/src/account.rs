@@ -5,7 +5,9 @@ use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account as AccountTrait;
-use interledger_service_util::MaxPacketAmountAccount;
+use interledger_service_util::{
+    MaxPacketAmountAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
+};
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 use serde::Serializer;
 use std::{
@@ -14,7 +16,7 @@ use std::{
 };
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 18;
+const ACCOUNT_DETAILS_FIELDS: usize = 19;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -43,6 +45,7 @@ pub struct Account {
     pub(crate) routing_relation: RoutingRelation,
     pub(crate) send_routes: bool,
     pub(crate) receive_routes: bool,
+    pub(crate) round_trip_time: u64,
 }
 
 fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
@@ -109,6 +112,7 @@ impl Account {
             send_routes: details.send_routes,
             receive_routes: details.receive_routes,
             routing_relation,
+            round_trip_time: details.round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME),
         })
     }
 }
@@ -137,6 +141,8 @@ impl ToRedisArgs for Account {
         self.routing_relation.to_string().write_redis_args(&mut rv);
         "min_balance".write_redis_args(&mut rv);
         self.min_balance.write_redis_args(&mut rv);
+        "round_trip_time".write_redis_args(&mut rv);
+        self.round_trip_time.write_redis_args(&mut rv);
 
         // Write optional fields
         if let Some(http_endpoint) = self.http_endpoint.as_ref() {
@@ -198,6 +204,8 @@ impl FromRedisValue for Account {
         } else {
             RoutingRelation::Child
         };
+        let round_trip_time: Option<u64> = get_value_option("round_trip_time", &hash)?;
+        let round_trip_time: u64 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
         Ok(Account {
             id: get_value("id", &hash)?,
             ilp_address: Bytes::from(ilp_address.as_bytes()),
@@ -217,6 +225,7 @@ impl FromRedisValue for Account {
             routing_relation,
             send_routes: get_bool("send_routes", &hash),
             receive_routes: get_bool("receive_routes", &hash),
+            round_trip_time,
         })
     }
 }
@@ -334,5 +343,11 @@ impl CcpRoutingAccount for Account {
 
     fn should_receive_routes(&self) -> bool {
         self.receive_routes
+    }
+}
+
+impl RoundTripTimeAccount for Account {
+    fn round_trip_time(&self) -> u64 {
+        self.round_trip_time
     }
 }
