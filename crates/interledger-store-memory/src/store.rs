@@ -132,10 +132,11 @@ impl HttpStore for InMemoryStore {
         auth_header: &str,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
         if let Some(account_id) = self.http_auth.read().get(auth_header) {
-            Box::new(ok(self.accounts.read()[account_id].clone()))
-        } else {
-            Box::new(err(()))
+            if let Some(account) = self.accounts.read().get(account_id) {
+                return Box::new(ok(account.clone()));
+            }
         }
+        Box::new(err(()))
     }
 }
 
