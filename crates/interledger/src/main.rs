@@ -188,6 +188,9 @@ pub fn main() {
                                 .long("min_balance")
                                 .help("Minimum balance this account is allowed to have (can be negative)")
                                 .default_value("0"),
+                            Arg::with_name("round_trip_time")
+                                .long("round_trip_time")
+                                .help("The estimated amount of time (in milliseconds) we expect it to take to send a message to this account and receive the response"),
                         ])
                         .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
@@ -319,6 +322,7 @@ pub fn main() {
                         send_routes: matches.is_present("send_routes"),
                         receive_routes: matches.is_present("receive_routes"),
                         routing_relation: value_t!(matches, "routing_relation", String).ok(),
+                        round_trip_time: value_t!(matches, "round_trip_time", u64).ok(),
                     };
                     tokio::run(insert_account_redis(redis_uri, account));
                 }

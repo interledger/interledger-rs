@@ -17,7 +17,7 @@ use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AccountStore, OutgoingRequest,
 };
 use interledger_service_util::{
-    ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
+    ExchangeRateAndBalanceService, ExpiryShortenerService, MaxPacketAmountService, ValidatorService,
 };
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
@@ -378,6 +378,9 @@ where
                             // service to others like the router and then call handle_incoming on it to set up the incoming handler
                             let outgoing_service = btp_service.clone();
                             let outgoing_service = ValidatorService::outgoing(outgoing_service);
+                            // Note: the expiry shortener must come after the Validator so that the expiry duration
+                            // is shortened before we check whether there is enough time left
+                            let outgoing_service = ExpiryShortenerService::new(outgoing_service);
                             let outgoing_service =
                                 StreamReceiverService::new(server_secret.clone(), outgoing_service);
                             let outgoing_service =

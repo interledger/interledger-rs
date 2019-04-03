@@ -65,6 +65,7 @@ fn btp_end_to_end() {
                 send_routes: false,
                 receive_routes: false,
                 routing_relation: Some("Peer".to_string()),
+                round_trip_time: None,
             },
         )
         .and_then(move |_| {
@@ -88,6 +89,7 @@ fn btp_end_to_end() {
                     send_routes: false,
                     receive_routes: false,
                     routing_relation: Some("Peer".to_string()),
+                    round_trip_time: None,
                 },
             )
         });

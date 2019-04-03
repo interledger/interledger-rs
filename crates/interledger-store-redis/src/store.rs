@@ -238,7 +238,7 @@ impl BalanceStore for RedisStore {
                 .arg(outgoing_amount)
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
-                    error!(
+                    warn!(
                     "Error updating balances for accounts. from_account: {}, to_account: {}: {:?}",
                     from_account_id,
                     to_account_id,
@@ -288,7 +288,7 @@ impl BalanceStore for RedisStore {
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
-                    error!(
+                    warn!(
                     "Error undoing balance update for accounts. from_account: {}, to_account: {}: {:?}",
                     from_account_id,
                     to_account_id,
