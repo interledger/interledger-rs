@@ -23,6 +23,8 @@ use tokio_executor::spawn;
 use tokio_timer::Interval;
 
 const POLL_INTERVAL: u64 = 60000; // 1 minute
+const DEFAULT_ADMIN_ACCOUNT: u64 = 0;
+const XRP_SCALE: u8 = 6;
 
 static ACCOUNT_FROM_INDEX: &str = "
 local id = redis.call('HGET', KEYS[1], ARGV[1])
@@ -64,6 +66,21 @@ if unclaimed_balance then
 else
     return 0
 end";
+static CHECK_SUFFICIENT_STARTING_BALANCE: &str = "
+local asset_code = string.lower(ARGV[1])
+local asset_scale = ARGV[2]
+local address = ARGV[3]
+local account_scale = ARGV[4]
+local min_balance = ARGV[5]
+local unclaimed_balance = redis.call('HGET', 'unclaimed_balances:' .. asset_code, address)
+if unclaimed_balance then
+    local scaled_amount =
+        math.floor(tonumber(unclaimed_balance) * 10 ^ (tonumber(account_scale) - tonumber(asset_scale)))
+    return tonumber(min_balance) <= scaled_amount
+else
+    return false
+end
+";
 
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
@@ -76,6 +93,10 @@ fn account_details_key(account_id: u64) -> String {
 
 fn balance_key(asset_code: &str) -> String {
     format!("balances:{}", asset_code.to_lowercase())
+}
+
+fn unclaimed_balance_key(asset_code: &str) -> String {
+    format!("unclaimed_balances:{}", asset_code.to_string())
 }
 
 pub use redis::IntoConnectionInfo;
@@ -174,6 +195,156 @@ impl RedisStore {
             .query_async(self.connection.as_ref().clone())
             .map_err(|err| error!("Error incrementing account ID: {:?}", err))
             .and_then(|(_conn, next_account_id): (_, u64)| Ok(next_account_id - 1))
+    }
+
+    fn create_new_account(
+        &self,
+        account: AccountDetails,
+        min_starting_balance: Option<u64>,
+    ) -> Box<Future<Item = Account, Error = ()> + Send> {
+        debug!("Inserting account: {:?}", account);
+        let connection = self.connection.clone();
+        let routing_table = self.routes.clone();
+
+        Box::new(
+            self.get_next_account_id()
+                .and_then(|id| {
+                    debug!("Next account id is: {}", id);
+                    Account::try_from(id, account)
+                })
+                .and_then(move |account| {
+                    // Check that there isn't already an account with values that must be unique
+                    let mut keys: Vec<String> = vec!["ID".to_string(), "ID".to_string()];
+
+                    let mut pipe = redis::pipe();
+                    pipe.cmd("EXISTS")
+                        .arg(account_details_key(account.id))
+                        .cmd("HEXISTS")
+                        .arg(balance_key(account.asset_code.as_str()))
+                        .arg(account.id);
+
+                    if let Some(ref auth) = account.btp_incoming_authorization {
+                        keys.push("BTP auth".to_string());
+                        pipe.cmd("HEXISTS")
+                            .arg("btp_auth")
+                            .arg(auth.clone().to_string());
+                    }
+                    if let Some(ref auth) = account.http_incoming_authorization {
+                        keys.push("HTTP auth".to_string());
+                        pipe.cmd("HEXISTS")
+                            .arg("http_auth")
+                            .arg(auth.clone().to_string());
+                    }
+                    if let Some(ref xrp_address) = account.xrp_address {
+                        keys.push("XRP address".to_string());
+                        pipe.cmd("HEXISTS").arg("xrp_addresses").arg(xrp_address);
+
+                        // TODO don't tie this feature to XRP
+                        // TODO make sure they can't exploit the fact that they set the account's asset scale
+                        if let Some(min_balance) = min_starting_balance {
+                            pipe.cmd("EVAL")
+                                .arg(CHECK_SUFFICIENT_STARTING_BALANCE)
+                                .arg(0)
+                                .arg("XRP")
+                                .arg(XRP_SCALE)
+                                .arg(xrp_address)
+                                .arg(account.asset_scale)
+                                .arg(min_balance);
+                        }
+                    }
+
+                    pipe.query_async(connection.as_ref().clone())
+                        .map_err(|err| {
+                            error!(
+                                "Error checking whether account details already exist: {:?}",
+                                err
+                            )
+                        })
+                        .and_then(
+                            move |(connection, results): (SharedConnection, Vec<bool>)| {
+                                if let Some(index) = results.iter().position(|val| *val) {
+                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
+                                    Err(())
+                                } else {
+                                    Ok((connection, account))
+                                }
+                            },
+                        )
+                })
+                .and_then(|(connection, account)| {
+                    let mut pipe = redis::pipe();
+
+                    // Set balance
+                    pipe.atomic()
+                        .cmd("HSET")
+                        .arg(balance_key(account.asset_code.as_str()))
+                        .arg(account.id)
+                        .arg(0u64)
+                        .ignore();
+
+                    // Set incoming auth details
+                    if let Some(ref auth) = account.btp_incoming_authorization {
+                        pipe.cmd("HSET")
+                            .arg("btp_auth")
+                            .arg(auth.clone().to_string())
+                            .arg(account.id)
+                            .ignore();
+                    }
+                    if let Some(ref auth) = account.http_incoming_authorization {
+                        pipe.cmd("HSET")
+                            .arg("http_auth")
+                            .arg(auth.clone().to_string())
+                            .arg(account.id)
+                            .ignore();
+                    }
+
+                    // Add settlement details
+                    if let Some(ref xrp_address) = account.xrp_address {
+                        pipe.cmd("HSET")
+                            .arg("xrp_addresses")
+                            .arg(xrp_address)
+                            .arg(account.id)
+                            .ignore();
+
+                        // Credit the account balance in case they sent us money before creating the account
+                        // TODO add an authentication mechanism so that an attacker can't watch the XRP ledger
+                        // for these transactions and quickly create accounts to skim the money before the user does
+                        pipe.cmd("EVAL")
+                            .arg(CREDIT_UNCLAIMED_BALANCE)
+                            .arg(0)
+                            .arg(account.asset_code.as_str())
+                            .arg(6)
+                            .arg(xrp_address)
+                            .arg(account.id)
+                            .arg(account.asset_scale)
+                            .ignore();
+                    }
+
+                    if account.send_routes {
+                        pipe.cmd("SADD")
+                            .arg("send_routes_to")
+                            .arg(account.id)
+                            .ignore();
+                    }
+
+                    // Add route to routing table
+                    pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
+                        .ignore();
+
+                    // Set account details
+                    pipe.cmd("HMSET")
+                        .arg(account_details_key(account.id))
+                        .arg(account.clone())
+                        .ignore();
+
+                    pipe.query_async(connection)
+                        .map_err(|err| error!("Error inserting account into DB: {:?}", err))
+                        .and_then(move |(connection, _ret): (SharedConnection, Value)| {
+                            update_routes(connection, routing_table)
+                        })
+                        .and_then(move |_| Ok(account))
+                }),
+        )
     }
 }
 
@@ -412,136 +583,15 @@ impl NodeStore for RedisStore {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        debug!("Inserting account: {:?}", account);
-        let connection = self.connection.clone();
-        let routing_table = self.routes.clone();
+        self.create_new_account(account, None)
+    }
 
-        Box::new(
-            self.get_next_account_id()
-                .and_then(|id| {
-                    debug!("Next account id is: {}", id);
-                    Account::try_from(id, account)
-                })
-                .and_then(move |account| {
-                    // Check that there isn't already an account with values that must be unique
-                    let mut keys: Vec<String> = vec!["ID".to_string(), "ID".to_string()];
-
-                    let mut pipe = redis::pipe();
-                    pipe.cmd("EXISTS")
-                        .arg(account_details_key(account.id))
-                        .cmd("HEXISTS")
-                        .arg(balance_key(account.asset_code.as_str()))
-                        .arg(account.id);
-
-                    if let Some(ref auth) = account.btp_incoming_authorization {
-                        keys.push("BTP auth".to_string());
-                        pipe.cmd("HEXISTS")
-                            .arg("btp_auth")
-                            .arg(auth.clone().to_string());
-                    }
-                    if let Some(ref auth) = account.http_incoming_authorization {
-                        keys.push("HTTP auth".to_string());
-                        pipe.cmd("HEXISTS")
-                            .arg("http_auth")
-                            .arg(auth.clone().to_string());
-                    }
-                    if let Some(ref xrp_address) = account.xrp_address {
-                        keys.push("XRP address".to_string());
-                        pipe.cmd("HEXISTS").arg("xrp_addresses").arg(xrp_address);
-                    }
-
-                    pipe.query_async(connection.as_ref().clone())
-                        .map_err(|err| {
-                            error!(
-                                "Error checking whether account details already exist: {:?}",
-                                err
-                            )
-                        })
-                        .and_then(
-                            move |(connection, results): (SharedConnection, Vec<bool>)| {
-                                if let Some(index) = results.iter().position(|val| *val) {
-                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
-                                    Err(())
-                                } else {
-                                    Ok((connection, account))
-                                }
-                            },
-                        )
-                })
-                .and_then(|(connection, account)| {
-                    let mut pipe = redis::pipe();
-
-                    // Set balance
-                    pipe.atomic()
-                        .cmd("HSET")
-                        .arg(balance_key(account.asset_code.as_str()))
-                        .arg(account.id)
-                        .arg(0u64)
-                        .ignore();
-
-                    // Set incoming auth details
-                    if let Some(ref auth) = account.btp_incoming_authorization {
-                        pipe.cmd("HSET")
-                            .arg("btp_auth")
-                            .arg(auth.clone().to_string())
-                            .arg(account.id)
-                            .ignore();
-                    }
-                    if let Some(ref auth) = account.http_incoming_authorization {
-                        pipe.cmd("HSET")
-                            .arg("http_auth")
-                            .arg(auth.clone().to_string())
-                            .arg(account.id)
-                            .ignore();
-                    }
-
-                    // Add settlement details
-                    if let Some(ref xrp_address) = account.xrp_address {
-                        pipe.cmd("HSET")
-                            .arg("xrp_addresses")
-                            .arg(xrp_address)
-                            .arg(account.id)
-                            .ignore();
-
-                        // Credit the account balance in case they sent us money before creating the account
-                        // TODO add an authentication mechanism so that an attacker can't watch the XRP ledger
-                        // for these transactions and quickly create accounts to skim the money before the user does
-                        pipe.cmd("EVAL")
-                            .arg(CREDIT_UNCLAIMED_BALANCE)
-                            .arg(0)
-                            .arg(account.asset_code.as_str())
-                            .arg(6)
-                            .arg(xrp_address)
-                            .arg(account.id)
-                            .arg(account.asset_scale)
-                            .ignore();
-                    }
-
-                    if account.send_routes {
-                        pipe.cmd("SADD")
-                            .arg("send_routes_to")
-                            .arg(account.id)
-                            .ignore();
-                    }
-
-                    // Add route to routing table
-                    pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
-                        .ignore();
-
-                    // Set account details
-                    pipe.cmd("HMSET")
-                        .arg(account_details_key(account.id))
-                        .arg(account.clone())
-                        .ignore();
-
-                    pipe.query_async(connection)
-                        .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-                        .and_then(move |(connection, _ret): (SharedConnection, Value)| {
-                            update_routes(connection, routing_table)
-                        })
-                        .and_then(move |_| Ok(account))
-                }),
-        )
+    fn insert_account_with_min_balance(
+        &self,
+        account: AccountDetails,
+        min_balance: u64,
+    ) -> Box<Future<Item = Account, Error = ()> + Send> {
+        self.create_new_account(account, None)
     }
 
     // TODO limit the number of results and page through them

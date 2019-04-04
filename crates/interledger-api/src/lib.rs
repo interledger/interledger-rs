@@ -17,11 +17,12 @@ use interledger_http::{HttpAccount, HttpServerService, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, IncomingService};
-use interledger_service_util::BalanceStore;
+use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_spsp::{pay, SpspResponder};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
+    cmp::max,
     collections::HashMap,
     iter::FromIterator,
     str::{self, FromStr},
@@ -38,6 +39,14 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+
+    fn insert_account_with_min_balance(
+        &self,
+        account: AccountDetails,
+        min_balance: u64,
+    ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+        Box::new(err(()))
+    }
 
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
@@ -60,9 +69,10 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 /// The Account type for the RedisStore.
 #[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
-    pub ilp_address: Vec<u8>,
+    pub ilp_address: String,
     pub asset_code: String,
     pub asset_scale: u8,
+    #[serde(default = "u64::max_value")]
     pub max_packet_amount: u64,
     #[serde(default = "i64::min_value")]
     pub min_balance: i64,
@@ -71,6 +81,7 @@ pub struct AccountDetails {
     pub http_outgoing_authorization: Option<String>,
     pub btp_uri: Option<String>,
     pub btp_incoming_authorization: Option<String>,
+    #[serde(default)]
     pub is_admin: bool,
     pub xrp_address: Option<String>,
     pub settle_threshold: Option<i64>,
@@ -135,11 +146,12 @@ pub struct NodeApi<T, S> {
     store: T,
     incoming_handler: S,
     server_secret: Bytes,
+    open_signup_min_balance: Option<u64>,
 }
 
 impl_web! {
     impl<T, S, A> NodeApi<T, S>
-    where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A> + RouterStore,
+    where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A> + RouterStore + ExchangeRateStore,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
     A: AccountTrait + HttpAccount + NodeAccount + IldcpAccount + Serialize + 'static,
 
@@ -149,7 +161,14 @@ impl_web! {
                 store,
                 incoming_handler,
                 server_secret,
+                open_signup_min_balance: None,
             }
+        }
+
+        pub fn enable_open_signups(&mut self, min_balance: u64) -> &mut Self {
+            debug!("Enabling open signups for accounts that pre-pay at least {} (of the admin account's units)", min_balance);
+            self.open_signup_min_balance = Some(min_balance);
+            self
         }
 
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
@@ -175,12 +194,80 @@ impl_web! {
         #[content_type("application/json")]
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
-            // TODO add option for non-admin signups (maybe with invite code)
+            let account_details = body.clone();
             self.validate_admin(authorization)
                 .and_then(move |store| store.insert_account(body)
-                // TODO make all Accounts (de)serializable with Serde so all the details can be returned here
                 .and_then(|account| Ok(json!(account)))
                 .map_err(|_| Response::builder().status(500).body(()).unwrap()))
+        }
+
+        #[post("/accounts/prepaid")]
+        #[content_type("application/json")]
+        fn post_accounts_prepaid(&self, body: AccountDetails) -> impl Future<Item = Value, Error = Response<()>> {
+                let store = self.store.clone();
+                let asset_code = body.asset_code.to_string();
+            result(self.open_signup_min_balance.ok_or_else(|| Response::builder().status(404).body(()).unwrap()))
+            .and_then(|min_balance| {
+                let store_clone = store.clone();
+                store.clone().get_accounts(vec![A::AccountId::default()])
+                    .map_err(|_| {
+                        error!("No default account set");
+                        Response::builder().status(500).body(()).unwrap()
+                    })
+                    .and_then(move |accounts| {
+                        let admin = accounts[0].clone();
+                        if admin.asset_code() == asset_code.as_str() {
+                            Ok((admin, vec![1f64, 1f64]))
+                        } else {
+                            store_clone.get_exchange_rates(&[admin.asset_code(), asset_code.as_str()])
+                                .map_err(|_| {
+                                    error!("Cannot convert account units into the default account's asset. No rate found");
+                                    Response::builder().status(500).body(()).unwrap()
+                                })
+                                .and_then(|rates| Ok((admin, rates)))
+                        }
+                    })
+                    .and_then(move |(admin, rates)| {
+                        let mut min_balance = min_balance as f64 * rates[1] / rates[0];
+                        if body.asset_scale > admin.asset_scale() {
+                            min_balance = min_balance * 10u32.pow(body.asset_scale as u32 - admin.asset_scale() as u32) as f64;
+                        } else {
+                            min_balance = min_balance / 10u32.pow(admin.asset_scale() as u32 - body.asset_scale as u32) as f64;
+                        }
+
+                        // Sanitize account
+                        let settle_to: i64 = if let Some(settle_to) = body.settle_to {
+                            max(settle_to, min_balance as i64)
+                        } else {
+                            min_balance as i64
+                        };
+                        let account = AccountDetails {
+                            is_admin: false,
+                            min_balance: 0,
+                            receive_routes: false,
+                            routing_relation: Some("Child".to_string()),
+                            settle_to: Some(settle_to),
+                            // All other fields can be left as is
+                            ilp_address: body.ilp_address,
+                            asset_code: body.asset_code,
+                            asset_scale: body.asset_scale,
+                            max_packet_amount: body.max_packet_amount,
+                            http_endpoint: body.http_endpoint,
+                            http_incoming_authorization: body.http_incoming_authorization,
+                            http_outgoing_authorization: body.http_outgoing_authorization,
+                            btp_uri: body.btp_uri,
+                            btp_incoming_authorization: body.btp_incoming_authorization,
+                            xrp_address: body.xrp_address,
+                            settle_threshold: body.settle_threshold,
+                            send_routes: body.send_routes,
+                            round_trip_time: body.round_trip_time,
+                        };
+
+                        store.insert_account_with_min_balance(account, min_balance as u64)
+                        .map_err(|_| Response::builder().status(402).body(()).unwrap())
+                        .and_then(|account| Ok(json!(account)))
+                    })
+            })
         }
 
         #[get("/accounts")]
