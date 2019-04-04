@@ -119,6 +119,10 @@ pub fn main() {
                             .long("server_secret")
                             .help("Cryptographic seed used to derive keys for STREAM, specified in hex")
                             .takes_value(true),
+                        Arg::with_name("open_signups_min_balance")
+                            .long("open_signups_min_balance")
+                            .help("Enable anyone to create an account if they firt send this amount (denominated in the asset of Account 0)")
+                            .takes_value(true),
                     ])
                     .group(ArgGroup::with_name("redis_connector").requires_all(&["redis_uri", "btp_port", "http_port"]))
                     .subcommand(SubCommand::with_name("accounts")
@@ -190,7 +194,8 @@ pub fn main() {
                                 .default_value("0"),
                             Arg::with_name("round_trip_time")
                                 .long("round_trip_time")
-                                .help("The estimated amount of time (in milliseconds) we expect it to take to send a message to this account and receive the response"),
+                                .help("The estimated amount of time (in milliseconds) we expect it to take to send a message to this account and receive the response")
+                                .default_value("500"),
                         ])
                         .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
@@ -298,10 +303,7 @@ pub fn main() {
                         value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                     let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
                     let account = AccountDetails {
-                        ilp_address: value_t!(matches, "ilp_address", String)
-                            .unwrap()
-                            .bytes()
-                            .collect(),
+                        ilp_address: value_t!(matches, "ilp_address", String).unwrap(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),
                         asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
                         btp_incoming_authorization: matches
@@ -334,6 +336,7 @@ pub fn main() {
                 let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
+                let open_signups_min_balance: Option<u64> = value_t!(matches, "open_signups_min_balance", u64).ok();
                 let server_secret: [u8; 32] = if let Some(secret) =
                     matches.value_of("server_secret")
                 {
@@ -350,6 +353,7 @@ pub fn main() {
                     ([0, 0, 0, 0], btp_port).into(),
                     ([0, 0, 0, 0], http_port).into(),
                     &server_secret,
+                    open_signups_min_balance,
                 ));
             }
         },

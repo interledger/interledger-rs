@@ -48,7 +48,7 @@ fn btp_end_to_end() {
         let create_accounts = cli::insert_account_redis(
             connection_info1,
             cli::AccountDetails {
-                ilp_address: Vec::from("example.one"),
+                ilp_address: String::from("example.one"),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_authorization: Some("token-one".to_string()),
@@ -72,7 +72,7 @@ fn btp_end_to_end() {
             cli::insert_account_redis(
                 connection_info2,
                 cli::AccountDetails {
-                    ilp_address: Vec::from("example.two"),
+                    ilp_address: String::from("example.two"),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_authorization: Some("token-two".to_string()),
@@ -104,6 +104,7 @@ fn btp_end_to_end() {
                 ([127, 0, 0, 1], btp_port).into(),
                 ([127, 0, 0, 1], http_port).into(),
                 &cli::random_secret(),
+                None,
             );
             tokio::spawn(connector);
             Ok(())

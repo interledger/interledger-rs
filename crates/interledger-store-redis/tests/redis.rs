@@ -20,7 +20,7 @@ use redis_helpers::*;
 
 lazy_static! {
     static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
-        ilp_address: b"example.alice".to_vec(),
+        ilp_address: "example.alice".to_string(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
@@ -40,7 +40,7 @@ lazy_static! {
         round_trip_time: None,
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
-        ilp_address: b"example.bob".to_vec(),
+        ilp_address: "example.bob".to_string(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
@@ -60,7 +60,7 @@ lazy_static! {
         round_trip_time: None,
     };
     static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
-        ilp_address: b"example.charlie".to_vec(),
+        ilp_address: "example.charlie".to_string(),
         asset_scale: 9,
         asset_code: "XRP".to_string(),
         max_packet_amount: 1000,
@@ -344,7 +344,7 @@ mod routes_and_rates {
                             0
                         );
                         store_clone_1.insert_account(AccountDetails {
-                            ilp_address: b"example.bob".to_vec(),
+                            ilp_address: "example.bob".to_string(),
                             asset_scale: 6,
                             asset_code: "XYZ".to_string(),
                             max_packet_amount: 1000,
