@@ -48,6 +48,22 @@ end
 local from_balance = redis.call('HINCRBY', 'balances:' .. from_asset_code, from_id, 0 - from_amount)
 local to_balance = redis.call('HINCRBY', 'balances:' .. to_asset_code, to_id, to_amount)
 return {from_balance, to_balance}";
+// TODO refactor this to make it not currency specific
+static CREDIT_UNCLAIMED_BALANCE: &str = "
+local asset_code = string.lower(ARGV[1])
+local asset_scale = ARGV[2]
+local address = ARGV[3]
+local id = ARGV[4]
+local account_scale = ARGV[5]
+local unclaimed_balance = redis.call('HGET', 'unclaimed_balances:' .. asset_code, address)
+if unclaimed_balance then
+    local scaled_amount =
+        math.floor(tonumber(unclaimed_balance) * 10 ^ (tonumber(account_scale) - tonumber(asset_scale)))
+    redis.call('HDEL', 'unclaimed_balances:' .. asset_code, address)
+    return redis.call('HINCRBY', 'balances:' .. asset_code, id, scaled_amount)
+else
+    return 0
+end";
 
 static ROUTES_KEY: &str = "routes";
 static RATES_KEY: &str = "rates";
@@ -485,6 +501,19 @@ impl NodeStore for RedisStore {
                             .arg("xrp_addresses")
                             .arg(xrp_address)
                             .arg(account.id)
+                            .ignore();
+
+                        // Credit the account balance in case they sent us money before creating the account
+                        // TODO add an authentication mechanism so that an attacker can't watch the XRP ledger
+                        // for these transactions and quickly create accounts to skim the money before the user does
+                        pipe.cmd("EVAL")
+                            .arg(CREDIT_UNCLAIMED_BALANCE)
+                            .arg(0)
+                            .arg(account.asset_code.as_str())
+                            .arg(6)
+                            .arg(xrp_address)
+                            .arg(account.id)
+                            .arg(account.asset_scale)
                             .ignore();
                     }
 

@@ -59,6 +59,26 @@ lazy_static! {
         routing_relation: None,
         round_trip_time: None,
     };
+    static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
+        ilp_address: b"example.charlie".to_vec(),
+        asset_scale: 9,
+        asset_code: "XRP".to_string(),
+        max_packet_amount: 1000,
+        min_balance: 0,
+        http_endpoint: None,
+        http_incoming_authorization: None,
+        http_outgoing_authorization: None,
+        btp_uri: None,
+        btp_incoming_authorization: None,
+        is_admin: false,
+        xrp_address: None,
+        settle_threshold: Some(0),
+        settle_to: Some(-1000),
+        send_routes: false,
+        receive_routes: false,
+        routing_relation: None,
+        round_trip_time: None,
+    };
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
 
@@ -110,126 +130,112 @@ mod connect_store {
 
 mod insert_accounts {
     use super::*;
+    use interledger_service::Account as AccontTrait;
+    use interledger_service_util::BalanceStore;
 
     #[test]
     fn insert_accounts() {
-        block_on(test_store().and_then(|(_store, context)| {
-            context
-                .async_connection()
-                .map_err(|err| panic!(err))
-                .and_then(|connection| {
-                    redis::cmd("HGETALL")
-                        .arg("accounts:0")
-                        .query_async(connection)
-                        .and_then(move |(_connection, values): (_, redis::Value)| {
-                            let _ = context;
-                            if let redis::Value::Bulk(ref items) = values {
-                                assert_eq!(items.len(), 17 * 2);
-                                Ok(())
-                            } else {
-                                panic!("not bulk value");
-                            }
-                        })
-                        .map_err(|_err| panic!("Error querying redis"))
+        block_on(test_store().and_then(|(store, context)| {
+            store
+                .insert_account(ACCOUNT_DETAILS_2.clone())
+                .and_then(move |account| {
+                    assert_eq!(account.id(), 2);
+                    let _ = context;
+                    Ok(())
                 })
         }))
         .unwrap();
     }
 
     #[test]
+    fn starts_with_zero_balance() {
+        block_on(test_store().and_then(|(store, context)| {
+            let account0 = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
+            store.get_balance(account0).and_then(move |balance| {
+                assert_eq!(balance, 0);
+                let _ = context;
+                Ok(())
+            })
+        }))
+        .unwrap();
+    }
+
+    #[test]
     fn fails_on_duplicate_xrp_address() {
+        let mut account = ACCOUNT_DETAILS_2.clone();
+        account.xrp_address = Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string());
         let result = block_on(test_store().and_then(|(store, context)| {
-            store
-                .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
-                    asset_scale: 6,
-                    asset_code: "XYZ".to_string(),
-                    max_packet_amount: 1000,
-                    min_balance: -1000,
-                    http_endpoint: None,
-                    http_incoming_authorization: None,
-                    http_outgoing_authorization: None,
-                    btp_uri: None,
-                    btp_incoming_authorization: None,
-                    is_admin: false,
-                    xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
-                    settle_threshold: Some(0),
-                    settle_to: Some(-1000),
-                    send_routes: false,
-                    receive_routes: false,
-                    routing_relation: None,
-                    round_trip_time: None,
-                })
-                .then(move |result| {
-                    let _ = context;
-                    result
-                })
+            store.insert_account(account).then(move |result| {
+                let _ = context;
+                result
+            })
         }));
         assert!(result.is_err());
     }
 
     #[test]
     fn fails_on_duplicate_http_incoming_auth() {
+        let mut account = ACCOUNT_DETAILS_2.clone();
+        account.http_incoming_authorization = Some("Bearer incoming_auth_token".to_string());
         let result = block_on(test_store().and_then(|(store, context)| {
-            store
-                .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
-                    asset_scale: 6,
-                    asset_code: "XYZ".to_string(),
-                    max_packet_amount: 1000,
-                    min_balance: -1000,
-                    http_endpoint: None,
-                    http_incoming_authorization: Some("Bearer incoming_auth_token".to_string()),
-                    http_outgoing_authorization: None,
-                    btp_uri: None,
-                    btp_incoming_authorization: None,
-                    is_admin: false,
-                    xrp_address: None,
-                    settle_threshold: None,
-                    settle_to: None,
-                    send_routes: false,
-                    receive_routes: false,
-                    routing_relation: None,
-                    round_trip_time: None,
-                })
-                .then(move |result| {
-                    let _ = context;
-                    result
-                })
+            store.insert_account(account).then(move |result| {
+                let _ = context;
+                result
+            })
         }));
         assert!(result.is_err());
     }
 
     #[test]
     fn fails_on_duplicate_btp_incoming_auth() {
+        let mut account = ACCOUNT_DETAILS_2.clone();
+        account.btp_incoming_authorization = Some("btp_token".to_string());
         let result = block_on(test_store().and_then(|(store, context)| {
-            store
-                .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
-                    asset_scale: 6,
-                    asset_code: "XYZ".to_string(),
-                    max_packet_amount: 1000,
-                    min_balance: -1000,
-                    http_endpoint: None,
-                    http_incoming_authorization: None,
-                    http_outgoing_authorization: None,
-                    btp_uri: None,
-                    btp_incoming_authorization: Some("btp_token".to_string()),
-                    is_admin: false,
-                    xrp_address: None,
-                    settle_threshold: None,
-                    settle_to: None,
-                    send_routes: false,
-                    receive_routes: false,
-                    routing_relation: None,
-                    round_trip_time: None,
-                })
-                .then(move |result| {
-                    let _ = context;
-                    result
-                })
+            store.insert_account(account).then(move |result| {
+                let _ = context;
+                result
+            })
         }));
         assert!(result.is_err());
+    }
+
+    #[test]
+
+    fn credits_account_for_unclaimed_balance() {
+        let xrp_address = "rJBKmQvMj4EMkGQA4dNV9hzQKnVJmKFfVa".to_string();
+        let mut account = ACCOUNT_DETAILS_2.clone();
+        account.xrp_address = Some(xrp_address.clone());
+        block_on(test_store().and_then(|(store, context)| {
+            context
+                .async_connection()
+                .map_err(|err| panic!(err))
+                .and_then(|connection| {
+                    redis::cmd("HSET")
+                        .arg("unclaimed_balances:xrp")
+                        .arg(xrp_address)
+                        .arg(1000000)
+                        .query_async(connection)
+                        .map_err(|err| panic!(err))
+                        .and_then(
+                            move |(_connection, _val): (
+                                redis::r#async::Connection,
+                                redis::Value,
+                            )| {
+                                store
+                                    .clone()
+                                    .insert_account(account)
+                                    .and_then(move |account| {
+                                        store.get_balance(account).and_then(move |balance| {
+                                            assert_eq!(balance, 1000000000);
+                                            let _ = context;
+                                            Ok(())
+                                        })
+                                    })
+                            },
+                        )
+                })
+        }))
+        .unwrap()
     }
 }
 
@@ -439,6 +445,32 @@ mod balances {
     use super::*;
     use interledger_service::AccountStore;
     use interledger_service_util::BalanceStore;
+
+    #[test]
+    fn get_balance() {
+        block_on(test_store().and_then(|(store, context)| {
+            context
+                .async_connection()
+                .map_err(|err| panic!(err))
+                .and_then(|connection| {
+                    redis::cmd("HSET")
+                        .arg("balances:xyz")
+                        .arg(0)
+                        .arg(1000)
+                        .query_async(connection)
+                        .map_err(|err| panic!(err))
+                        .and_then(move |(_, _): (_, redis::Value)| {
+                            let account = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
+                            store.get_balance(account).and_then(move |balance| {
+                                assert_eq!(balance, 1000);
+                                let _ = context;
+                                Ok(())
+                            })
+                        })
+                })
+        }))
+        .unwrap();
+    }
 
     #[test]
     fn updating_and_rolling_back() {
