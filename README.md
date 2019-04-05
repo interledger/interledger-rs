@@ -31,7 +31,7 @@ Install and run:
 
 2. Run the Interledger node
 
-    `docker run -i -t -v -e "RUST_LOG=interledger/.*" -e "DEBUG=xrp*" interledger-node-data:/data emschwartz/interledger-rs`
+    `docker run -i -t -e "RUST_LOG=interledger/.*" -e "DEBUG=xrp*" -v interledger-node-data:/data emschwartz/interledger-rs`
 
 3. Follow the instructions written to the terminal to try sending an SPSP payment
 
