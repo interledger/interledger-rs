@@ -23,7 +23,6 @@ use tokio_executor::spawn;
 use tokio_timer::Interval;
 
 const POLL_INTERVAL: u64 = 60000; // 1 minute
-const DEFAULT_ADMIN_ACCOUNT: u64 = 0;
 const XRP_SCALE: u8 = 6;
 
 static ACCOUNT_FROM_INDEX: &str = "
@@ -93,10 +92,6 @@ fn account_details_key(account_id: u64) -> String {
 
 fn balance_key(asset_code: &str) -> String {
     format!("balances:{}", asset_code.to_lowercase())
-}
-
-fn unclaimed_balance_key(asset_code: &str) -> String {
-    format!("unclaimed_balances:{}", asset_code.to_string())
 }
 
 pub use redis::IntoConnectionInfo;
@@ -591,7 +586,7 @@ impl NodeStore for RedisStore {
         account: AccountDetails,
         min_balance: u64,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        self.create_new_account(account, None)
+        self.create_new_account(account, Some(min_balance))
     }
 
     // TODO limit the number of results and page through them

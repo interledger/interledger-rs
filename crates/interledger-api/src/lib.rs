@@ -42,8 +42,8 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 
     fn insert_account_with_min_balance(
         &self,
-        account: AccountDetails,
-        min_balance: u64,
+        _account: AccountDetails,
+        _min_balance: u64,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         Box::new(err(()))
     }
@@ -194,7 +194,6 @@ impl_web! {
         #[content_type("application/json")]
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
-            let account_details = body.clone();
             self.validate_admin(authorization)
                 .and_then(move |store| store.insert_account(body)
                 .and_then(|account| Ok(json!(account)))
@@ -230,9 +229,9 @@ impl_web! {
                     .and_then(move |(admin, rates)| {
                         let mut min_balance = min_balance as f64 * rates[1] / rates[0];
                         if body.asset_scale > admin.asset_scale() {
-                            min_balance = min_balance * 10u32.pow(body.asset_scale as u32 - admin.asset_scale() as u32) as f64;
+                            min_balance *= f64::from(10u32.pow((body.asset_scale - admin.asset_scale()).into()));
                         } else {
-                            min_balance = min_balance / 10u32.pow(admin.asset_scale() as u32 - body.asset_scale as u32) as f64;
+                            min_balance /= f64::from(10u32.pow((admin.asset_scale() - body.asset_scale).into()));
                         }
 
                         // Sanitize account
