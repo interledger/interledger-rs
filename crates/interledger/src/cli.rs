@@ -412,6 +412,10 @@ where
                                 incoming_service.clone(),
                             );
                             if let Some(min_balance) = open_signup_min_balance {
+                                debug!(
+                                    "Enabling open signups with minimum balance: {}",
+                                    min_balance
+                                );
                                 api.enable_open_signups(min_balance);
                             }
                             let listener = TcpListener::bind(&http_address)

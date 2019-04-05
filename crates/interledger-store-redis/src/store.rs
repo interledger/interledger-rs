@@ -65,7 +65,8 @@ if unclaimed_balance then
 else
     return 0
 end";
-static CHECK_SUFFICIENT_STARTING_BALANCE: &str = "
+// Returns false if the account has enough balance
+static CHECK_INSUFFICIENT_STARTING_BALANCE: &str = "
 local asset_code = string.lower(ARGV[1])
 local asset_scale = ARGV[2]
 local address = ARGV[3]
@@ -75,9 +76,9 @@ local unclaimed_balance = redis.call('HGET', 'unclaimed_balances:' .. asset_code
 if unclaimed_balance then
     local scaled_amount =
         math.floor(tonumber(unclaimed_balance) * 10 ^ (tonumber(account_scale) - tonumber(asset_scale)))
-    return tonumber(min_balance) <= scaled_amount
+    return tonumber(min_balance) > scaled_amount
 else
-    return false
+    return true
 end
 ";
 
@@ -237,8 +238,9 @@ impl RedisStore {
                         // TODO don't tie this feature to XRP
                         // TODO make sure they can't exploit the fact that they set the account's asset scale
                         if let Some(min_balance) = min_starting_balance {
+                            keys.push("mininum balance".to_string());
                             pipe.cmd("EVAL")
-                                .arg(CHECK_SUFFICIENT_STARTING_BALANCE)
+                                .arg(CHECK_INSUFFICIENT_STARTING_BALANCE)
                                 .arg(0)
                                 .arg("XRP")
                                 .arg(XRP_SCALE)
@@ -258,7 +260,11 @@ impl RedisStore {
                         .and_then(
                             move |(connection, results): (SharedConnection, Vec<bool>)| {
                                 if let Some(index) = results.iter().position(|val| *val) {
-                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
+                                    if keys[index] == "minimum balance" {
+                                        warn!("Cannot insert account because it does not meet the minimum balance");
+                                    } else {
+                                        warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
+                                    }
                                     Err(())
                                 } else {
                                     Ok((connection, account))
