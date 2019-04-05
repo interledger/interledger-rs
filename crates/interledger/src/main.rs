@@ -336,7 +336,8 @@ pub fn main() {
                 let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
-                let open_signups_min_balance: Option<u64> = value_t!(matches, "open_signups_min_balance", u64).ok();
+                let open_signups_min_balance: Option<u64> =
+                    value_t!(matches, "open_signups_min_balance", u64).ok();
                 let server_secret: [u8; 32] = if let Some(secret) =
                     matches.value_of("server_secret")
                 {

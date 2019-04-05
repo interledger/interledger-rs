@@ -364,14 +364,15 @@ where
                 to,
                 prepare,
             })
-            .map_err(move |reject| {
-                error!(
-                    "Error sending Route Control Request to account {}: {:?}",
-                    to_id, reject
-                )
-            })
-            .and_then(move |_| {
-                trace!("Sent Route Control Request to account: {}", to_id);
+            .then(move |result| {
+                if let Err(err) = result {
+                    error!(
+                        "Error sending Route Control Request to account {}: {:?}",
+                        to_id, err
+                    )
+                } else {
+                    trace!("Sent Route Control Request to account: {}", to_id);
+                }
                 Ok(())
             })
     }
@@ -648,8 +649,11 @@ where
                 prepare,
             })
             .and_then(|_| Ok(()))
-            .map_err(move |err| {
-                error!("Error sending route update to account {}: {:?}", to_id, err)
+            .then(move |result| {
+                if let Err(err) = result {
+                    error!("Error sending route update to account {}: {:?}", to_id, err)
+                }
+                Ok(())
             })
     }
 }

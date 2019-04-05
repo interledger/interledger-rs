@@ -13,7 +13,7 @@ use std::{
 
 pub const CCP_CONTROL_DESTINATION: &[u8] = b"peer.route.control";
 pub const CCP_UPDATE_DESTINATION: &[u8] = b"peer.route.update";
-// pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
+pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
 pub const PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
@@ -26,7 +26,7 @@ const FLAG_UTF8: u8 = 0x10;
 
 lazy_static! {
     pub static ref CCP_RESPONSE: Fulfill = FulfillBuilder {
-        fulfillment: &PEER_PROTOCOL_CONDITION,
+        fulfillment: &PEER_PROTOCOL_FULFILLMENT,
         data: &[],
     }
     .build();

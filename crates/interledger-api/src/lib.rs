@@ -94,13 +94,13 @@ pub struct AccountDetails {
     pub round_trip_time: Option<u64>,
 }
 
-#[derive(Response)]
+#[derive(Response, Debug)]
 #[web(status = "200")]
 struct ServerStatus {
     status: String,
 }
 
-#[derive(Serialize, Response)]
+#[derive(Serialize, Response, Debug)]
 #[web(status = "200")]
 struct AccountsResponse<A: Serialize> {
     accounts: Vec<A>,
@@ -113,32 +113,32 @@ struct Success;
 #[derive(Extract)]
 struct Rates(Vec<(String, f64)>);
 
-#[derive(Response)]
+#[derive(Response, Debug)]
 #[web(status = "200")]
 struct BalanceResponse {
     balance: String,
 }
 
-#[derive(Extract)]
+#[derive(Extract, Debug)]
 struct SpspPayRequest {
     receiver: String,
     source_amount: u64,
 }
 
-#[derive(Response)]
+#[derive(Response, Debug)]
 #[web(status = "200")]
 struct SpspPayResponse {
     amount_delivered: u64,
 }
 
-#[derive(Response)]
+#[derive(Response, Debug)]
 #[web(status = "200")]
 struct SpspQueryResponse {
     destination_account: String,
     shared_secret: String,
 }
 
-#[derive(Extract, Response)]
+#[derive(Extract, Response, Debug)]
 #[web(status = "200")]
 struct Routes(HashMap<String, String>);
 
@@ -203,9 +203,13 @@ impl_web! {
         #[post("/accounts/prepaid")]
         #[content_type("application/json")]
         fn post_accounts_prepaid(&self, body: AccountDetails) -> impl Future<Item = Value, Error = Response<()>> {
-                let store = self.store.clone();
-                let asset_code = body.asset_code.to_string();
-            result(self.open_signup_min_balance.ok_or_else(|| Response::builder().status(404).body(()).unwrap()))
+            debug!("Got open signup request: {:?}", body);
+            let store = self.store.clone();
+            let asset_code = body.asset_code.to_string();
+            result(self.open_signup_min_balance.ok_or_else(|| {
+                debug!("Got open signup request but this node does not accept open signups");
+                Response::builder().status(404).body(()).unwrap()
+            }))
             .and_then(|min_balance| {
                 let store_clone = store.clone();
                 store.clone().get_accounts(vec![A::AccountId::default()])
@@ -243,7 +247,9 @@ impl_web! {
                         let account = AccountDetails {
                             is_admin: false,
                             min_balance: 0,
-                            receive_routes: false,
+                            // TODO don't receive routes from open signup accounts
+                            receive_routes: body.receive_routes,
+                            // receive_routes: false,
                             routing_relation: Some("Child".to_string()),
                             settle_to: Some(settle_to),
                             // All other fields can be left as is
@@ -263,7 +269,10 @@ impl_web! {
                         };
 
                         store.insert_account_with_min_balance(account, min_balance as u64)
-                        .map_err(|_| Response::builder().status(402).body(()).unwrap())
+                        .map_err(move |_| {
+                            warn!("Not creating account, probably because the amount the account has prefunded is lower than the min balance of {}", min_balance);
+                            Response::builder().status(402).body(()).unwrap()
+                        })
                         .and_then(|account| Ok(json!(account)))
                     })
             })
@@ -421,13 +430,17 @@ impl_web! {
         // TODO add a version that lets you specify the destination amount instead
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
             let service = self.incoming_handler.clone();
+            debug!("Got request to pay: {:?}", body);
             self.store.get_account_from_http_auth(&authorization)
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)
-                        .and_then(|amount_delivered| Ok(SpspPayResponse {
+                        .and_then(|amount_delivered| {
+                            debug!("Sent SPSP payment and delivered: {} of the receiver's units", amount_delivered);
+                            Ok(SpspPayResponse {
                                 amount_delivered,
-                            }))
+                            })
+                        })
                         .map_err(|err| {
                             error!("Error sending SPSP payment: {:?}", err);
                             // TODO give a different error message depending on what type of error it is
