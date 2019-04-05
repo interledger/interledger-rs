@@ -23,7 +23,7 @@ RUN apk --no-cache add \
     redis
 
 # Install localtunnel
-RUN npm install -g localtunnel
+RUN npm install localtunnel
 
 # Build settlement engine
 WORKDIR /usr/src/settlement-engines/xrp

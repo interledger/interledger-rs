@@ -5,6 +5,7 @@ const { randomBytes } = require('crypto')
 const https = require('https')
 const fs = require('fs')
 const { promisify } = require('util')
+const localtunnel = require('localtunnel')
 
 // Have the redis-server listen on a unix socket instead of TCP because it's faster
 const REDIS_UNIX_SOCKET = '/tmp/redis.sock'
@@ -60,7 +61,7 @@ async function run() {
     redis.on('exit', (code, signal) => console.error(`Redis exited with code: ${code} and signal: ${signal}`))
 
     if (useLocaltunnel) {
-        runLocalTunnel(localTunnelSubdomain, true)
+        await runLocalTunnel(localTunnelSubdomain, true)
     }
 
     console.log('Starting XRP settlement engine')
@@ -212,18 +213,15 @@ async function generateTestnetCredentials() {
     }
 }
 
-function runLocalTunnel(subdomain, restartOnError) {
+async function runLocalTunnel(subdomain, restartOnError) {
     console.log('Starting localtunnel to expose the local node to others')
-    const lt = spawn('lt', [
-        '--port=7770',
-        `--subdomain=${subdomain}`
-    ])
-    lt.on('error', (err) => {
-        console.error('localtunnel error:', err)
+
+    const tunnel = await promisify(localtunnel).call(null, 7770, { subdomain })
+
+    tunnel.on('close', function () {
+        console.error('localtunnel closed')
         if (restartOnError) {
             runLocalTunnel(subdomain, restartOnError)
         }
     })
-    lt.on('exit', (code, signal) => console.error(`localtunnel exited with code: ${code} and signal: ${signal}`))
-
 }
