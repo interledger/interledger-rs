@@ -14,10 +14,10 @@ const XRP_TESTNET_URI = 'wss://s.altnet.rippletest.net:51233'
 const CONFIG_PATH = '/data/node-config.json'
 
 const BOOTSTRAP_NODES = [{
-    signupEndpoint: 'https://ilp-node-94533a5a713707be5be13bfe.localtunnel.me/accounts/prepaid',
-    ilpEndpoint: 'https://ilp-node-94533a5a713707be5be13bfe.localtunnel.me/ilp',
-    xrpAddress: 'r9kUc4ikEye1WFZ57dFvt4mCXqLFuFz2zU',
-    ilpAddress: 'test.xrp.r9kUc4ikEye1WFZ57dFvt4mCXqLFuFz2zU'
+    signupEndpoint: 'https://ilp-node-2204f3bf5901558b1ef045f6.localtunnel.me/accounts/prepaid',
+    ilpEndpoint: 'https://ilp-node-2204f3bf5901558b1ef045f6.localtunnel.me/ilp',
+    xrpAddress: 'rQ3eSt2HyozxRixDUxFanCnsw79zE1np1x',
+    ilpAddress: 'test.xrp.rQ3eSt2HyozxRixDUxFanCnsw79zE1np1x'
 }]
 
 async function run() {
@@ -229,7 +229,7 @@ async function run() {
     with the header: "Authorization": "Bearer ${adminToken}"
     and the body:
     {
-        "receiver": "$ilp-node-94533a5a713707be5be13bfe.localtunnel.me",
+        "receiver": "$ilp-node-2204f3bf5901558b1ef045f6.localtunnel.me",
         "source_amount": 1000
     }
     `)
