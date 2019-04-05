@@ -28,8 +28,9 @@ async function run() {
     // Try reading from config file or generating testnet credentials
     if (!xrpAddress) {
         let config = await loadConfig()
-        createAdminAccount = false
-        if (!config) {
+        if (config) {
+            createAdminAccount = false
+        } else {
             config = await generateTestnetCredentials()
         }
         xrpAddress = config.xrpAddress
@@ -70,7 +71,8 @@ async function run() {
             `--redis=${REDIS_UNIX_SOCKET}`,
             `--address=${xrpAddress}`,
             `--secret=${xrpSecret}`,
-            `--rippled=${rippled}`
+            `--rippled=${rippled}`,
+            `--poll_interval=15000`
         ], {
             env: {
                 DEBUG: process.env.DEBUG
@@ -130,8 +132,12 @@ async function run() {
         console.log(`>>> Admin API Authorization header: "Bearer ${adminToken}"\n`)
     }
 
-    if (!process.env.LOCALTUNNEL_SUBDOMAIN) {
-        console.log(`>>> Node is accessible via: https://${localTunnelSubdomain}.localtunnel.me \n`)
+    if (useLocaltunnel) {
+        if (!process.env.LOCALTUNNEL_SUBDOMAIN) {
+            console.log(`>>> Node is accessible via: https://${localTunnelSubdomain}.localtunnel.me \n`)
+        }
+    } else {
+        console.log(`>>> Node is accessible via port 7770 on the docker container (try http://172.17.0.2:7770)\n`)
     }
 
     if (!process.env.XRP_ADDRESS) {
