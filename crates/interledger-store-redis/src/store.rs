@@ -1,4 +1,5 @@
 use super::account::*;
+use super::crypto::generate_keys;
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -14,6 +15,7 @@ use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use parking_lot::RwLock;
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
+use ring::{aead, hmac};
 use std::{
     iter::FromIterator,
     sync::Arc,
@@ -97,16 +99,17 @@ fn balance_key(asset_code: &str) -> String {
 
 pub use redis::IntoConnectionInfo;
 
-pub fn connect<R>(redis_uri: R) -> impl Future<Item = RedisStore, Error = ()>
+pub fn connect<R>(redis_uri: R, secret: [u8; 32]) -> impl Future<Item = RedisStore, Error = ()>
 where
     R: IntoConnectionInfo,
 {
-    connect_with_poll_interval(redis_uri, POLL_INTERVAL)
+    connect_with_poll_interval(redis_uri, secret, POLL_INTERVAL)
 }
 
 #[doc(hidden)]
 pub fn connect_with_poll_interval<R>(
     redis_uri: R,
+    secret: [u8; 32],
     poll_interval: u64,
 ) -> impl Future<Item = RedisStore, Error = ()>
 where
@@ -121,10 +124,14 @@ where
                 .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         })
         .and_then(move |connection| {
+            let (hmac_key, encryption_key, decryption_key) = generate_keys(&secret[..]);
             let store = RedisStore {
                 connection: Arc::new(connection),
                 exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                 routes: Arc::new(RwLock::new(HashMap::new())),
+                hmac_key: Arc::new(hmac_key),
+                encryption_key: Arc::new(encryption_key),
+                decryption_key: Arc::new(decryption_key),
             };
 
             // Start polling for rate updates
@@ -182,6 +189,9 @@ pub struct RedisStore {
     connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, u64>>>,
+    hmac_key: Arc<hmac::SigningKey>,
+    encryption_key: Arc<aead::SealingKey>,
+    decryption_key: Arc<aead::OpeningKey>,
 }
 
 impl RedisStore {
@@ -201,6 +211,21 @@ impl RedisStore {
         debug!("Inserting account: {:?}", account);
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
+        let encryption_key = self.encryption_key.clone();
+
+        // Instead of storing the incoming secrets, we store the HMAC digest of them
+        // (This is better than encrypting because the output is deterministic so we can look
+        // up the account by the HMAC of the auth details submitted by the account holder over the wire)
+        let btp_incoming_token_hmac = account
+            .btp_incoming_token
+            .clone()
+            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
+        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac.clone();
+        let http_incoming_token_hmac = account
+            .http_incoming_token
+            .clone()
+            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
+        let http_incoming_token_hmac_clone = http_incoming_token_hmac.clone();
 
         Box::new(
             self.get_next_account_id()
@@ -219,17 +244,17 @@ impl RedisStore {
                         .arg(balance_key(account.asset_code.as_str()))
                         .arg(account.id);
 
-                    if let Some(ref auth) = account.btp_incoming_authorization {
+                    if let Some(auth) = btp_incoming_token_hmac {
                         keys.push("BTP auth".to_string());
                         pipe.cmd("HEXISTS")
                             .arg("btp_auth")
-                            .arg(auth.clone().to_string());
+                            .arg(auth.as_ref());
                     }
-                    if let Some(ref auth) = account.http_incoming_authorization {
+                    if let Some(auth) = http_incoming_token_hmac {
                         keys.push("HTTP auth".to_string());
                         pipe.cmd("HEXISTS")
                             .arg("http_auth")
-                            .arg(auth.clone().to_string());
+                            .arg(auth.as_ref());
                     }
                     if let Some(ref xrp_address) = account.xrp_address {
                         keys.push("XRP address".to_string());
@@ -272,7 +297,7 @@ impl RedisStore {
                             },
                         )
                 })
-                .and_then(|(connection, account)| {
+                .and_then(move |(connection, account)| {
                     let mut pipe = redis::pipe();
 
                     // Set balance
@@ -284,17 +309,17 @@ impl RedisStore {
                         .ignore();
 
                     // Set incoming auth details
-                    if let Some(ref auth) = account.btp_incoming_authorization {
+                    if let Some(auth) = btp_incoming_token_hmac_clone {
                         pipe.cmd("HSET")
                             .arg("btp_auth")
-                            .arg(auth.clone().to_string())
+                            .arg(auth.as_ref())
                             .arg(account.id)
                             .ignore();
                     }
-                    if let Some(ref auth) = account.http_incoming_authorization {
+                    if let Some(auth) = http_incoming_token_hmac_clone {
                         pipe.cmd("HSET")
                             .arg("http_auth")
-                            .arg(auth.clone().to_string())
+                            .arg(auth.as_ref())
                             .arg(account.id)
                             .ignore();
                     }
@@ -335,7 +360,7 @@ impl RedisStore {
                     // Set account details
                     pipe.cmd("HMSET")
                         .arg(account_details_key(account.id))
-                        .arg(account.clone())
+                        .arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
 
                     pipe.query_async(connection)
@@ -357,6 +382,7 @@ impl AccountStore for RedisStore {
         &self,
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
+        let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
@@ -370,13 +396,19 @@ impl AccountStore for RedisStore {
                         account_ids, err
                     )
                 })
-                .and_then(move |(_conn, accounts): (_, Vec<Account>)| {
-                    if accounts.len() == num_accounts {
-                        Ok(accounts)
-                    } else {
-                        Err(())
-                    }
-                }),
+                .and_then(
+                    move |(_conn, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
+                        if accounts.len() == num_accounts {
+                            let accounts = accounts
+                                .into_iter()
+                                .map(|account| account.decrypt_tokens(&decryption_key))
+                                .collect();
+                            Ok(accounts)
+                        } else {
+                            Err(())
+                        }
+                    },
+                ),
         )
     }
 }
@@ -521,23 +553,26 @@ impl BtpStore for RedisStore {
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
-        let token = token.to_string();
+        let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_INDEX)
                 .arg(1)
                 .arg("btp_auth")
-                .arg(&token)
+                .arg(hmac::sign(&self.hmac_key, token.as_bytes()).as_ref())
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
-                .and_then(move |(_connection, account): (_, Option<Account>)| {
-                    if let Some(account) = account {
-                        Ok(account)
-                    } else {
-                        warn!("No account found with BTP token: {}", token);
-                        Err(())
-                    }
-                }),
+                .and_then(
+                    move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
+                        if let Some(account) = account {
+                            let account = account.decrypt_tokens(&decryption_key);
+                            Ok(account)
+                        } else {
+                            warn!("No account found with BTP token");
+                            Err(())
+                        }
+                    },
+                ),
         )
     }
 }
@@ -545,28 +580,31 @@ impl BtpStore for RedisStore {
 impl HttpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_http_auth(
+    fn get_account_from_http_token(
         &self,
-        auth_header: &str,
+        token: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
-        let auth_header = auth_header.to_string();
+        let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_INDEX)
                 .arg(1)
                 .arg("http_auth")
-                .arg(&auth_header)
+                .arg(hmac::sign(&self.hmac_key, token.as_bytes()).as_ref())
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
-                .and_then(move |(_connection, account): (_, Option<Account>)| {
-                    if let Some(account) = account {
-                        Ok(account)
-                    } else {
-                        warn!("No account found with HTTP auth: {}", auth_header);
-                        Err(())
-                    }
-                }),
+                .and_then(
+                    move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
+                        if let Some(account) = account {
+                            let account = account.decrypt_tokens(&decryption_key);
+                            Ok(account)
+                        } else {
+                            warn!("No account found with given HTTP auth");
+                            Err(())
+                        }
+                    },
+                ),
         )
     }
 }
@@ -597,18 +635,28 @@ impl NodeStore for RedisStore {
 
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("GET")
                 .arg(NEXT_ACCOUNT_ID_KEY)
                 .query_async(self.connection.as_ref().clone())
-                .and_then(|(connection, next_account_id): (SharedConnection, u64)| {
-                    let mut pipe = redis::pipe();
-                    for i in 0..next_account_id {
-                        pipe.cmd("HGETALL").arg(account_details_key(i));
-                    }
-                    pipe.query_async(connection)
-                        .and_then(|(_, accounts): (_, Vec<Self::Account>)| Ok(accounts))
-                })
+                .and_then(
+                    move |(connection, next_account_id): (SharedConnection, u64)| {
+                        let mut pipe = redis::pipe();
+                        for i in 0..next_account_id {
+                            pipe.cmd("HGETALL").arg(account_details_key(i));
+                        }
+                        pipe.query_async(connection).and_then(
+                            move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
+                                let accounts: Vec<Account> = accounts
+                                    .into_iter()
+                                    .map(|account| account.decrypt_tokens(&decryption_key))
+                                    .collect();
+                                Ok(accounts)
+                            },
+                        )
+                    },
+                )
                 .map_err(|err| error!("Error getting all accounts: {:?}", err)),
         )
     }
@@ -721,6 +769,7 @@ impl RouteManagerStore for RedisStore {
     fn get_accounts_to_send_routes_to(
         &self,
     ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
+        let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("SMEMBERS")
                 .arg("send_routes_to")
@@ -740,7 +789,14 @@ impl RouteManagerStore for RedisStore {
                                     error!("Error getting accounts to send routes to: {:?}", err)
                                 })
                                 .and_then(
-                                    |(_connection, accounts): (SharedConnection, Vec<Account>)| {
+                                    move |(_connection, accounts): (
+                                        SharedConnection,
+                                        Vec<AccountWithEncryptedTokens>,
+                                    )| {
+                                        let accounts: Vec<Account> = accounts
+                                            .into_iter()
+                                            .map(|account| account.decrypt_tokens(&decryption_key))
+                                            .collect();
                                         Ok(accounts)
                                     },
                                 ),

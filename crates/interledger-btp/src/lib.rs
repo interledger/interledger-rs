@@ -31,6 +31,7 @@ pub use self::service::{BtpOutgoingService, BtpService};
 
 pub trait BtpAccount: Account {
     fn get_btp_uri(&self) -> Option<&Url>;
+    fn get_btp_token(&self) -> Option<&[u8]>;
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
@@ -83,6 +84,7 @@ mod client_server {
     pub struct TestAccount {
         pub id: u64,
         pub btp_incoming_token: Option<String>,
+        pub btp_outgoing_token: Option<String>,
         pub btp_uri: Option<Url>,
     }
 
@@ -97,6 +99,14 @@ mod client_server {
     impl BtpAccount for TestAccount {
         fn get_btp_uri(&self) -> Option<&Url> {
             self.btp_uri.as_ref()
+        }
+
+        fn get_btp_token(&self) -> Option<&[u8]> {
+            if let Some(ref token) = self.btp_outgoing_token {
+                Some(token.as_bytes())
+            } else {
+                None
+            }
         }
     }
 
@@ -162,6 +172,7 @@ mod client_server {
             accounts: Arc::new(vec![TestAccount {
                 id: 0,
                 btp_incoming_token: Some("test_auth_token".to_string()),
+                btp_outgoing_token: None,
                 btp_uri: None,
             }]),
         };
@@ -192,7 +203,8 @@ mod client_server {
 
         let account = TestAccount {
             id: 0,
-            btp_uri: Some(Url::parse("btp+ws://:test_auth_token@127.0.0.1:12345").unwrap()),
+            btp_uri: Some(Url::parse("btp+ws://127.0.0.1:12345").unwrap()),
+            btp_outgoing_token: Some("test_auth_token".to_string()),
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];

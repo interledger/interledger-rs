@@ -26,10 +26,10 @@ lazy_static! {
         max_packet_amount: 1000,
         min_balance: -1000,
         http_endpoint: Some("http://example.com/ilp".to_string()),
-        http_incoming_authorization: Some("Bearer incoming_auth_token".to_string()),
-        http_outgoing_authorization: Some("outgoing_auth_token".to_string()),
-        btp_uri: Some("btp+ws://example.com/btp".to_string()),
-        btp_incoming_authorization: Some("btp_token".to_string()),
+        http_incoming_token: Some("incoming_auth_token".to_string()),
+        http_outgoing_token: Some("outgoing_auth_token".to_string()),
+        btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
+        btp_incoming_token: Some("btp_token".to_string()),
         is_admin: true,
         xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
         settle_threshold: Some(0),
@@ -46,10 +46,10 @@ lazy_static! {
         max_packet_amount: 1_000_000,
         min_balance: 0,
         http_endpoint: Some("http://example.com/ilp".to_string()),
-        http_incoming_authorization: Some("Basic QWxhZGRpbjpPcGVuU2VzYW1l".to_string()),
-        http_outgoing_authorization: Some("outgoing_auth_token".to_string()),
-        btp_uri: Some("btp+ws://example.com/btp".to_string()),
-        btp_incoming_authorization: Some("other_btp_token".to_string()),
+        http_incoming_token: Some("QWxhZGRpbjpPcGVuU2VzYW1l".to_string()),
+        http_outgoing_token: Some("outgoing_auth_token".to_string()),
+        btp_uri: Some("btp+ws://:other_outgoing_btp_token@example.com/btp".to_string()),
+        btp_incoming_token: Some("other_btp_token".to_string()),
         is_admin: true,
         xrp_address: Some("rMLwdY4w8FT8zCEUL9q9173NrvpLGLEFDu".to_string()),
         settle_threshold: Some(0),
@@ -66,10 +66,10 @@ lazy_static! {
         max_packet_amount: 1000,
         min_balance: 0,
         http_endpoint: None,
-        http_incoming_authorization: None,
-        http_outgoing_authorization: None,
+        http_incoming_token: None,
+        http_outgoing_token: None,
         btp_uri: None,
-        btp_incoming_authorization: None,
+        btp_incoming_token: None,
         is_admin: false,
         xrp_address: None,
         settle_threshold: Some(0),
@@ -84,7 +84,7 @@ lazy_static! {
 
 fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
     let context = TestContext::new();
-    connect(context.get_client_connection_info()).and_then(|store| {
+    connect(context.get_client_connection_info(), [0; 32]).and_then(|store| {
         let store_clone = store.clone();
         store
             .clone()
@@ -118,7 +118,7 @@ mod connect_store {
         runtime
             .block_on(future::lazy(
                 || -> Box<Future<Item = (), Error = ()> + Send> {
-                    Box::new(connect("redis://127.0.0.1:0").then(|result| {
+                    Box::new(connect("redis://127.0.0.1:0", [0; 32]).then(|result| {
                         assert!(result.is_err());
                         Ok(())
                     }))
@@ -176,7 +176,7 @@ mod insert_accounts {
     #[test]
     fn fails_on_duplicate_http_incoming_auth() {
         let mut account = ACCOUNT_DETAILS_2.clone();
-        account.http_incoming_authorization = Some("Bearer incoming_auth_token".to_string());
+        account.http_incoming_token = Some("incoming_auth_token".to_string());
         let result = block_on(test_store().and_then(|(store, context)| {
             store.insert_account(account).then(move |result| {
                 let _ = context;
@@ -189,7 +189,7 @@ mod insert_accounts {
     #[test]
     fn fails_on_duplicate_btp_incoming_auth() {
         let mut account = ACCOUNT_DETAILS_2.clone();
-        account.btp_incoming_authorization = Some("btp_token".to_string());
+        account.btp_incoming_token = Some("btp_token".to_string());
         let result = block_on(test_store().and_then(|(store, context)| {
             store.insert_account(account).then(move |result| {
                 let _ = context;
@@ -213,7 +213,7 @@ mod insert_accounts {
                     redis::cmd("HSET")
                         .arg("unclaimed_balances:xrp")
                         .arg(xrp_address)
-                        .arg(1000000)
+                        .arg(1_000_000)
                         .query_async(connection)
                         .map_err(|err| panic!(err))
                         .and_then(
@@ -226,7 +226,7 @@ mod insert_accounts {
                                     .insert_account(account)
                                     .and_then(move |account| {
                                         store.get_balance(account).and_then(move |balance| {
-                                            assert_eq!(balance, 1000000000);
+                                            assert_eq!(balance, 1_000_000_000);
                                             let _ = context;
                                             Ok(())
                                         })
@@ -278,6 +278,8 @@ mod node_store {
 
 mod get_accounts {
     use super::*;
+    use interledger_btp::BtpAccount;
+    use interledger_http::HttpAccount;
     use interledger_ildcp::IldcpAccount;
     use interledger_service::AccountStore;
 
@@ -308,6 +310,23 @@ mod get_accounts {
     }
 
     #[test]
+    fn decrypts_outgoing_tokens() {
+        block_on(test_store().and_then(|(store, context)| {
+            store.get_accounts(vec![0]).and_then(move |accounts| {
+                let account = &accounts[0];
+                assert_eq!(
+                    account.get_http_auth_token().unwrap(),
+                    "outgoing_auth_token"
+                );
+                assert_eq!(account.get_btp_token().unwrap().as_ref(), b"btp_token");
+                let _ = context;
+                Ok(())
+            })
+        }))
+        .unwrap()
+    }
+
+    #[test]
     fn errors_for_unknown_accounts() {
         let result = block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![0, 2]).then(move |result| {
@@ -328,84 +347,92 @@ mod routes_and_rates {
     fn polls_for_route_updates() {
         let context = TestContext::new();
         block_on(
-            connect_with_poll_interval(context.get_client_connection_info(), 1).and_then(|store| {
-                let connection = context.async_connection();
-                assert_eq!(store.routing_table().len(), 0);
-                let store_clone_1 = store.clone();
-                let store_clone_2 = store.clone();
-                store
-                    .clone()
-                    .insert_account(ACCOUNT_DETAILS_0.clone())
-                    .and_then(move |_| {
-                        let routing_table = store_clone_1.routing_table();
-                        assert_eq!(routing_table.len(), 1);
-                        assert_eq!(
-                            *routing_table.get(&Bytes::from("example.alice")).unwrap(),
-                            0
-                        );
-                        store_clone_1.insert_account(AccountDetails {
-                            ilp_address: "example.bob".to_string(),
-                            asset_scale: 6,
-                            asset_code: "XYZ".to_string(),
-                            max_packet_amount: 1000,
-                            min_balance: -1000,
-                            http_endpoint: None,
-                            http_incoming_authorization: None,
-                            http_outgoing_authorization: None,
-                            btp_uri: None,
-                            btp_incoming_authorization: None,
-                            is_admin: false,
-                            xrp_address: None,
-                            settle_threshold: None,
-                            settle_to: None,
-                            send_routes: false,
-                            receive_routes: false,
-                            routing_relation: None,
-                            round_trip_time: None,
+            connect_with_poll_interval(context.get_client_connection_info(), [0; 32], 1).and_then(
+                |store| {
+                    let connection = context.async_connection();
+                    assert_eq!(store.routing_table().len(), 0);
+                    let store_clone_1 = store.clone();
+                    let store_clone_2 = store.clone();
+                    store
+                        .clone()
+                        .insert_account(ACCOUNT_DETAILS_0.clone())
+                        .and_then(move |_| {
+                            let routing_table = store_clone_1.routing_table();
+                            assert_eq!(routing_table.len(), 1);
+                            assert_eq!(
+                                *routing_table.get(&Bytes::from("example.alice")).unwrap(),
+                                0
+                            );
+                            store_clone_1.insert_account(AccountDetails {
+                                ilp_address: "example.bob".to_string(),
+                                asset_scale: 6,
+                                asset_code: "XYZ".to_string(),
+                                max_packet_amount: 1000,
+                                min_balance: -1000,
+                                http_endpoint: None,
+                                http_incoming_token: None,
+                                http_outgoing_token: None,
+                                btp_uri: None,
+                                btp_incoming_token: None,
+                                is_admin: false,
+                                xrp_address: None,
+                                settle_threshold: None,
+                                settle_to: None,
+                                send_routes: false,
+                                receive_routes: false,
+                                routing_relation: None,
+                                round_trip_time: None,
+                            })
                         })
-                    })
-                    .and_then(move |_| {
-                        let routing_table = store_clone_2.routing_table();
-                        assert_eq!(routing_table.len(), 2);
-                        assert_eq!(*routing_table.get(&Bytes::from("example.bob")).unwrap(), 1);
-                        connection
-                            .map_err(|err| panic!(err))
-                            .and_then(|connection| {
-                                redis::cmd("HMSET")
-                                    .arg("routes")
-                                    .arg("example.alice")
-                                    .arg(1)
-                                    .arg("example.charlie")
-                                    .arg(0)
-                                    .query_async(connection)
-                                    .and_then(|(_connection, _result): (_, redis::Value)| Ok(()))
-                                    .map_err(|err| panic!(err))
-                                    .and_then(|_| {
-                                        Delay::new(Instant::now() + Duration::from_millis(10))
-                                            .then(|_| Ok(()))
-                                    })
-                            })
-                            .and_then(move |_| {
-                                let routing_table = store_clone_2.routing_table();
-                                assert_eq!(routing_table.len(), 3);
-                                assert_eq!(
-                                    *routing_table.get(&Bytes::from("example.alice")).unwrap(),
-                                    1
-                                );
-                                assert_eq!(
-                                    *routing_table.get(&Bytes::from("example.bob")).unwrap(),
-                                    1
-                                );
-                                assert_eq!(
-                                    *routing_table.get(&Bytes::from("example.charlie")).unwrap(),
-                                    0
-                                );
-                                assert!(routing_table.get(&Bytes::from("example.other")).is_none());
-                                let _ = context;
-                                Ok(())
-                            })
-                    })
-            }),
+                        .and_then(move |_| {
+                            let routing_table = store_clone_2.routing_table();
+                            assert_eq!(routing_table.len(), 2);
+                            assert_eq!(*routing_table.get(&Bytes::from("example.bob")).unwrap(), 1);
+                            connection
+                                .map_err(|err| panic!(err))
+                                .and_then(|connection| {
+                                    redis::cmd("HMSET")
+                                        .arg("routes")
+                                        .arg("example.alice")
+                                        .arg(1)
+                                        .arg("example.charlie")
+                                        .arg(0)
+                                        .query_async(connection)
+                                        .and_then(
+                                            |(_connection, _result): (_, redis::Value)| Ok(()),
+                                        )
+                                        .map_err(|err| panic!(err))
+                                        .and_then(|_| {
+                                            Delay::new(Instant::now() + Duration::from_millis(10))
+                                                .then(|_| Ok(()))
+                                        })
+                                })
+                                .and_then(move |_| {
+                                    let routing_table = store_clone_2.routing_table();
+                                    assert_eq!(routing_table.len(), 3);
+                                    assert_eq!(
+                                        *routing_table.get(&Bytes::from("example.alice")).unwrap(),
+                                        1
+                                    );
+                                    assert_eq!(
+                                        *routing_table.get(&Bytes::from("example.bob")).unwrap(),
+                                        1
+                                    );
+                                    assert_eq!(
+                                        *routing_table
+                                            .get(&Bytes::from("example.charlie"))
+                                            .unwrap(),
+                                        0
+                                    );
+                                    assert!(routing_table
+                                        .get(&Bytes::from("example.other"))
+                                        .is_none());
+                                    let _ = context;
+                                    Ok(())
+                                })
+                        })
+                },
+            ),
         )
         .unwrap();
     }
@@ -414,28 +441,30 @@ mod routes_and_rates {
     fn polls_for_rate_updates() {
         let context = TestContext::new();
         block_on(
-            connect_with_poll_interval(context.get_client_connection_info(), 1).and_then(|store| {
-                assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
-                store
-                    .clone()
-                    .set_rates(vec![
-                        ("ABC".to_string(), 0.5f64),
-                        ("DEF".to_string(), 9_999_999_999.0f64),
-                    ])
-                    .and_then(|_| {
-                        Delay::new(Instant::now() + Duration::from_millis(10)).then(|_| Ok(()))
-                    })
-                    .and_then(move |_| {
-                        assert_eq!(store.get_exchange_rates(&["ABC"]).unwrap(), vec![0.5]);
-                        assert_eq!(
-                            store.get_exchange_rates(&["ABC", "DEF"]).unwrap(),
-                            vec![0.5, 9_999_999_999.0]
-                        );
-                        assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
-                        let _ = context;
-                        Ok(())
-                    })
-            }),
+            connect_with_poll_interval(context.get_client_connection_info(), [0; 32], 1).and_then(
+                |store| {
+                    assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
+                    store
+                        .clone()
+                        .set_rates(vec![
+                            ("ABC".to_string(), 0.5f64),
+                            ("DEF".to_string(), 9_999_999_999.0f64),
+                        ])
+                        .and_then(|_| {
+                            Delay::new(Instant::now() + Duration::from_millis(10)).then(|_| Ok(()))
+                        })
+                        .and_then(move |_| {
+                            assert_eq!(store.get_exchange_rates(&["ABC"]).unwrap(), vec![0.5]);
+                            assert_eq!(
+                                store.get_exchange_rates(&["ABC", "DEF"]).unwrap(),
+                                vec![0.5, 9_999_999_999.0]
+                            );
+                            assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
+                            let _ = context;
+                            Ok(())
+                        })
+                },
+            ),
         )
         .unwrap();
     }
@@ -542,7 +571,8 @@ mod balances {
 
 mod from_btp {
     use super::*;
-    use interledger_btp::BtpStore;
+    use interledger_btp::{BtpAccount, BtpStore};
+    use interledger_http::HttpAccount;
     use interledger_service::Account as AccountTrait;
 
     #[test]
@@ -552,6 +582,27 @@ mod from_btp {
                 .get_account_from_btp_token("other_btp_token")
                 .and_then(move |account| {
                     assert_eq!(account.id(), 1);
+                    let _ = context;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn decrypts_outgoing_tokens() {
+        block_on(test_store().and_then(|(store, context)| {
+            store
+                .get_account_from_btp_token("other_btp_token")
+                .and_then(move |account| {
+                    assert_eq!(
+                        account.get_http_auth_token().unwrap(),
+                        "outgoing_auth_token"
+                    );
+                    assert_eq!(
+                        account.get_btp_token().unwrap().as_ref(),
+                        b"other_outgoing_btp_token"
+                    );
                     let _ = context;
                     Ok(())
                 })
@@ -575,16 +626,22 @@ mod from_btp {
 
 mod from_http {
     use super::*;
-    use interledger_http::HttpStore;
+    use interledger_btp::BtpAccount;
+    use interledger_http::{HttpAccount, HttpStore};
     use interledger_service::Account as AccountTrait;
 
     #[test]
     fn gets_account_from_http_bearer_token() {
         block_on(test_store().and_then(|(store, context)| {
             store
-                .get_account_from_http_auth("Bearer incoming_auth_token")
+                .get_account_from_http_token("incoming_auth_token")
                 .and_then(move |account| {
                     assert_eq!(account.id(), 0);
+                    assert_eq!(
+                        account.get_http_auth_token().unwrap(),
+                        "outgoing_auth_token"
+                    );
+                    assert_eq!(account.get_btp_token().unwrap().as_ref(), b"btp_token");
                     let _ = context;
                     Ok(())
                 })
@@ -593,12 +650,16 @@ mod from_http {
     }
 
     #[test]
-    fn gets_account_from_http_basic_auth() {
+    fn decrypts_outgoing_tokens() {
         block_on(test_store().and_then(|(store, context)| {
             store
-                .get_account_from_http_auth("Basic QWxhZGRpbjpPcGVuU2VzYW1l")
+                .get_account_from_http_token("incoming_auth_token")
                 .and_then(move |account| {
-                    assert_eq!(account.id(), 1);
+                    assert_eq!(
+                        account.get_http_auth_token().unwrap(),
+                        "outgoing_auth_token"
+                    );
+                    assert_eq!(account.get_btp_token().unwrap().as_ref(), b"btp_token");
                     let _ = context;
                     Ok(())
                 })
@@ -610,7 +671,7 @@ mod from_http {
     fn errors_on_unknown_http_auth() {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
-                .get_account_from_http_auth("Bearer unknown_token")
+                .get_account_from_http_token("unknown_token")
                 .then(move |result| {
                     let _ = context;
                     result

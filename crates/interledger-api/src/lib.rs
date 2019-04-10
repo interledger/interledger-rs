@@ -28,6 +28,8 @@ use std::{
     str::{self, FromStr},
 };
 
+const BEARER_TOKEN_START: usize = 7;
+
 pub trait NodeAccount: HttpAccount {
     fn is_admin(&self) -> bool;
 }
@@ -77,10 +79,10 @@ pub struct AccountDetails {
     #[serde(default = "i64::min_value")]
     pub min_balance: i64,
     pub http_endpoint: Option<String>,
-    pub http_incoming_authorization: Option<String>,
-    pub http_outgoing_authorization: Option<String>,
+    pub http_incoming_token: Option<String>,
+    pub http_outgoing_token: Option<String>,
     pub btp_uri: Option<String>,
-    pub btp_incoming_authorization: Option<String>,
+    pub btp_incoming_token: Option<String>,
     #[serde(default)]
     pub is_admin: bool,
     pub xrp_address: Option<String>,
@@ -173,7 +175,7 @@ impl_web! {
 
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
             let store = self.store.clone();
-            self.store.get_account_from_http_auth(&authorization)
+            self.store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
                 .and_then(|account| if account.is_admin() {
                     Ok(store)
                 } else {
@@ -258,10 +260,10 @@ impl_web! {
                             asset_scale: body.asset_scale,
                             max_packet_amount: body.max_packet_amount,
                             http_endpoint: body.http_endpoint,
-                            http_incoming_authorization: body.http_incoming_authorization,
-                            http_outgoing_authorization: body.http_outgoing_authorization,
+                            http_incoming_token: body.http_incoming_token,
+                            http_outgoing_token: body.http_outgoing_token,
                             btp_uri: body.btp_uri,
-                            btp_incoming_authorization: body.btp_incoming_authorization,
+                            btp_incoming_token: body.btp_incoming_token,
                             xrp_address: body.xrp_address,
                             settle_threshold: body.settle_threshold,
                             send_routes: body.send_routes,
@@ -282,7 +284,7 @@ impl_web! {
         #[content_type("application/json")]
         fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
-            self.store.get_account_from_http_auth(&authorization)
+            self.store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
                 .map_err(move |_| {
                     debug!("No account found with auth: {}", authorization);
                     Response::builder().status(401).body(()).unwrap()
@@ -306,7 +308,7 @@ impl_web! {
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
-                    store.clone().get_account_from_http_auth(&authorization)
+                    store.clone().get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
                         .and_then(move |account|
                             if account.id() == id {
                                 Either::A(ok(json!(account)))
@@ -332,7 +334,7 @@ impl_web! {
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
-                    store.clone().get_account_from_http_auth(&authorization)
+                    store.clone().get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
                         .and_then(move |account|
                             if account.id() == id {
                                 Either::A(ok(account))
@@ -431,7 +433,7 @@ impl_web! {
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
             let service = self.incoming_handler.clone();
             debug!("Got request to pay: {:?}", body);
-            self.store.get_account_from_http_auth(&authorization)
+            self.store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)

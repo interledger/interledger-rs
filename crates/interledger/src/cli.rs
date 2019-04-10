@@ -24,11 +24,26 @@ use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_store_redis::{connect as connect_redis_store, IntoConnectionInfo};
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
-use ring::rand::{SecureRandom, SystemRandom};
+use ring::{
+    digest, hmac,
+    rand::{SecureRandom, SystemRandom},
+};
 use std::{net::SocketAddr, str, sync::Arc, u64};
 use tokio::{self, net::TcpListener};
 use tower_web::ServiceBuilder;
 use url::Url;
+
+static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
+
+fn generate_redis_secret(server_secret: &[u8; 32]) -> [u8; 32] {
+    let mut redis_secret: [u8; 32] = [0; 32];
+    let sig = hmac::sign(
+        &hmac::SigningKey::new(&digest::SHA256, server_secret),
+        REDIS_SECRET_GENERATION_STRING.as_bytes(),
+    );
+    redis_secret.copy_from_slice(sig.as_ref());
+    redis_secret
+}
 
 #[doc(hidden)]
 pub fn random_token() -> String {
@@ -52,9 +67,11 @@ pub fn send_spsp_payment_btp(
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
+    let btp_server = parse_btp_url(btp_server).unwrap();
     let account = AccountBuilder::new()
         .additional_routes(&[&b""[..]])
-        .btp_uri(Url::parse(btp_server).unwrap())
+        .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
+        .btp_uri(btp_server)
         .build();
     connect_client(
         vec![account.clone()],
@@ -118,25 +135,11 @@ pub fn send_spsp_payment_http(
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
-    let auth_header = if !url.username().is_empty() {
-        Some(format!(
-            "Basic {}",
-            base64::encode(&format!(
-                "{}:{}",
-                url.username(),
-                url.password().unwrap_or("")
-            ))
-        ))
-    } else if let Some(password) = url.password() {
-        Some(format!("Bearer {}", password))
-    } else {
-        None
-    };
-    let account = if let Some(auth_header) = auth_header {
+    let account = if let Some(token) = url.password() {
         AccountBuilder::new()
             .additional_routes(&[&b""[..]])
             .http_endpoint(Url::parse(http_server).unwrap())
-            .http_outgoing_authorization(auth_header)
+            .http_outgoing_token(token.to_string())
             .build()
     } else {
         AccountBuilder::new()
@@ -172,9 +175,11 @@ pub fn run_spsp_server_btp(
 ) -> impl Future<Item = (), Error = ()> {
     debug!("Starting SPSP server");
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
+    let btp_server = parse_btp_url(btp_server).unwrap();
     let incoming_account: Account = AccountBuilder::new()
         .additional_routes(&[b"peer."])
-        .btp_uri(parse_btp_url(btp_server).unwrap())
+        .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
+        .btp_uri(btp_server)
         .build();
     let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![incoming_account.clone()]);
@@ -252,7 +257,7 @@ pub fn run_spsp_server_http(
         )
     }
     let account: Account = AccountBuilder::new()
-        .http_incoming_authorization(format!("Bearer {}", auth_token))
+        .http_incoming_token(auth_token)
         .build();
     let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
@@ -360,8 +365,9 @@ where
     R: IntoConnectionInfo,
 {
     debug!("Starting Interledger node with Redis store");
+    let redis_secret = generate_redis_secret(server_secret);
     let server_secret = Bytes::from(&server_secret[..]);
-    connect_redis_store(redis_uri)
+    connect_redis_store(redis_uri, redis_secret)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             store
@@ -437,12 +443,14 @@ pub use interledger_api::AccountDetails;
 #[doc(hidden)]
 pub fn insert_account_redis<R>(
     redis_uri: R,
+    server_secret: &[u8; 32],
     account: AccountDetails,
 ) -> impl Future<Item = (), Error = ()>
 where
     R: IntoConnectionInfo,
 {
-    connect_redis_store(redis_uri)
+    let redis_secret = generate_redis_secret(server_secret);
+    connect_redis_store(redis_uri, redis_secret)
         .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             store

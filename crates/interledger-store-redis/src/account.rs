@@ -1,3 +1,4 @@
+use super::crypto::{decrypt_token, encrypt_token};
 use bytes::Bytes;
 use interledger_api::{AccountDetails, NodeAccount};
 use interledger_btp::BtpAccount;
@@ -9,6 +10,7 @@ use interledger_service_util::{
     MaxPacketAmountAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
+use ring::aead;
 use serde::Serializer;
 use std::{
     collections::HashMap,
@@ -16,7 +18,7 @@ use std::{
 };
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 19;
+const ACCOUNT_DETAILS_FIELDS: usize = 18;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -30,11 +32,12 @@ pub struct Account {
     pub(crate) min_balance: i64,
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) http_endpoint: Option<Url>,
-    pub(crate) http_incoming_authorization: Option<String>,
-    pub(crate) http_outgoing_authorization: Option<String>,
+    #[serde(serialize_with = "optional_bytes_to_utf8")]
+    pub(crate) http_outgoing_token: Option<Bytes>,
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) btp_uri: Option<Url>,
-    pub(crate) btp_incoming_authorization: Option<String>,
+    #[serde(serialize_with = "optional_bytes_to_utf8")]
+    pub(crate) btp_outgoing_token: Option<Bytes>,
     pub(crate) is_admin: bool,
     // TODO maybe take these out of the Account and insert them separately into the db
     // since they're only meant for the settlement engine
@@ -53,6 +56,17 @@ where
     S: Serializer,
 {
     serializer.serialize_str(str::from_utf8(address.as_ref()).unwrap_or(""))
+}
+
+fn optional_bytes_to_utf8<S>(bytes: &Option<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(bytes) = bytes {
+        serializer.serialize_some(str::from_utf8(bytes.as_ref()).unwrap_or(""))
+    } else {
+        serializer.serialize_none()
+    }
 }
 
 fn optional_url_to_string<S>(url: &Option<Url>, serializer: S) -> Result<S::Ok, S::Error>
@@ -83,10 +97,13 @@ impl Account {
         } else {
             None
         };
-        let btp_uri = if let Some(ref url) = details.btp_uri {
-            Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
+        let (btp_uri, btp_outgoing_token) = if let Some(ref url) = details.btp_uri {
+            let mut btp_uri = Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?;
+            let btp_outgoing_token = btp_uri.password().map(Bytes::from);
+            btp_uri.set_password(None).unwrap();
+            (Some(btp_uri), btp_outgoing_token)
         } else {
-            None
+            (None, None)
         };
         let routing_relation = if let Some(ref relation) = details.routing_relation {
             RoutingRelation::from_str(relation)?
@@ -101,10 +118,9 @@ impl Account {
             max_packet_amount: details.max_packet_amount,
             min_balance: details.min_balance,
             http_endpoint,
-            http_incoming_authorization: details.http_incoming_authorization,
-            http_outgoing_authorization: details.http_outgoing_authorization,
+            http_outgoing_token: details.http_outgoing_token.map(Bytes::from),
             btp_uri,
-            btp_incoming_authorization: details.btp_incoming_authorization,
+            btp_outgoing_token,
             is_admin: details.is_admin,
             xrp_address: details.xrp_address,
             settle_threshold: details.settle_threshold,
@@ -115,75 +131,105 @@ impl Account {
             round_trip_time: details.round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME),
         })
     }
+
+    pub fn encrypt_tokens(
+        mut self,
+        encryption_key: &aead::SealingKey,
+    ) -> AccountWithEncryptedTokens {
+        if let Some(ref token) = self.btp_outgoing_token {
+            self.btp_outgoing_token = Some(encrypt_token(encryption_key, token));
+        }
+        if let Some(ref token) = self.http_outgoing_token {
+            self.http_outgoing_token = Some(encrypt_token(encryption_key, token));
+        }
+        AccountWithEncryptedTokens { account: self }
+    }
 }
 
-impl ToRedisArgs for Account {
+pub struct AccountWithEncryptedTokens {
+    account: Account,
+}
+
+impl AccountWithEncryptedTokens {
+    pub fn decrypt_tokens(mut self, decryption_key: &aead::OpeningKey) -> Account {
+        if let Some(ref encrypted) = self.account.btp_outgoing_token {
+            self.account.btp_outgoing_token = decrypt_token(decryption_key, encrypted);
+        }
+        if let Some(ref encrypted) = self.account.http_outgoing_token {
+            self.account.http_outgoing_token = decrypt_token(decryption_key, encrypted);
+        }
+
+        self.account
+    }
+}
+
+impl ToRedisArgs for AccountWithEncryptedTokens {
     fn write_redis_args(&self, out: &mut Vec<Vec<u8>>) {
         let mut rv = Vec::with_capacity(ACCOUNT_DETAILS_FIELDS * 2);
+        let account = &self.account;
 
         "id".write_redis_args(&mut rv);
-        self.id.write_redis_args(&mut rv);
-        if !self.ilp_address.is_empty() {
+        account.id.write_redis_args(&mut rv);
+        if !account.ilp_address.is_empty() {
             "ilp_address".write_redis_args(&mut rv);
-            rv.push(self.ilp_address.to_vec());
+            rv.push(account.ilp_address.to_vec());
         }
-        if !self.asset_code.is_empty() {
+        if !account.asset_code.is_empty() {
             "asset_code".write_redis_args(&mut rv);
-            self.asset_code.write_redis_args(&mut rv);
+            account.asset_code.write_redis_args(&mut rv);
         }
         "asset_scale".write_redis_args(&mut rv);
-        self.asset_scale.write_redis_args(&mut rv);
+        account.asset_scale.write_redis_args(&mut rv);
         "max_packet_amount".write_redis_args(&mut rv);
-        self.max_packet_amount.write_redis_args(&mut rv);
+        account.max_packet_amount.write_redis_args(&mut rv);
         "is_admin".write_redis_args(&mut rv);
-        self.is_admin.write_redis_args(&mut rv);
+        account.is_admin.write_redis_args(&mut rv);
         "routing_relation".write_redis_args(&mut rv);
-        self.routing_relation.to_string().write_redis_args(&mut rv);
+        account
+            .routing_relation
+            .to_string()
+            .write_redis_args(&mut rv);
         "min_balance".write_redis_args(&mut rv);
-        self.min_balance.write_redis_args(&mut rv);
+        account.min_balance.write_redis_args(&mut rv);
         "round_trip_time".write_redis_args(&mut rv);
-        self.round_trip_time.write_redis_args(&mut rv);
+        account.round_trip_time.write_redis_args(&mut rv);
 
         // Write optional fields
-        if let Some(http_endpoint) = self.http_endpoint.as_ref() {
+        if let Some(http_endpoint) = account.http_endpoint.as_ref() {
             "http_endpoint".write_redis_args(&mut rv);
             http_endpoint.as_str().write_redis_args(&mut rv);
         }
-        if let Some(http_incoming_authorization) = self.http_incoming_authorization.as_ref() {
-            "http_incoming_authorization".write_redis_args(&mut rv);
-            http_incoming_authorization.write_redis_args(&mut rv);
+        if let Some(http_outgoing_token) = account.http_outgoing_token.as_ref() {
+            "http_outgoing_token".write_redis_args(&mut rv);
+            http_outgoing_token.as_ref().write_redis_args(&mut rv);
         }
-        if let Some(http_outgoing_authorization) = self.http_outgoing_authorization.as_ref() {
-            "http_outgoing_authorization".write_redis_args(&mut rv);
-            http_outgoing_authorization.write_redis_args(&mut rv);
-        }
-        if let Some(btp_uri) = self.btp_uri.as_ref() {
+        if let Some(btp_uri) = account.btp_uri.as_ref() {
             "btp_uri".write_redis_args(&mut rv);
             btp_uri.as_str().write_redis_args(&mut rv);
         }
-        if let Some(btp_incoming_authorization) = self.btp_incoming_authorization.as_ref() {
-            "btp_incoming_authorization".write_redis_args(&mut rv);
-            btp_incoming_authorization.write_redis_args(&mut rv);
+        if let Some(btp_outgoing_token) = account.btp_outgoing_token.as_ref() {
+            "btp_outgoing_token".write_redis_args(&mut rv);
+            btp_outgoing_token.as_ref().write_redis_args(&mut rv);
         }
-        if let Some(xrp_address) = self.xrp_address.as_ref() {
+        if let Some(xrp_address) = account.xrp_address.as_ref() {
             "xrp_address".write_redis_args(&mut rv);
             xrp_address.write_redis_args(&mut rv);
         }
-        if let Some(settle_threshold) = self.settle_threshold {
+        if let Some(settle_threshold) = account.settle_threshold {
             "settle_threshold".write_redis_args(&mut rv);
             settle_threshold.write_redis_args(&mut rv);
         }
-        if let Some(settle_to) = self.settle_to {
+        if let Some(settle_to) = account.settle_to {
             "settle_to".write_redis_args(&mut rv);
             settle_to.write_redis_args(&mut rv);
         }
-        if self.send_routes {
+        if account.send_routes {
             "send_routes".write_redis_args(&mut rv);
-            self.send_routes.write_redis_args(&mut rv);
+            account.send_routes.write_redis_args(&mut rv);
         }
-        if self.receive_routes {
+        if account.receive_routes {
             "receive_routes".write_redis_args(&mut rv);
-            self.receive_routes.write_redis_args(&mut rv);
+            account.receive_routes.write_redis_args(&mut rv);
         }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
@@ -193,7 +239,7 @@ impl ToRedisArgs for Account {
     }
 }
 
-impl FromRedisValue for Account {
+impl FromRedisValue for AccountWithEncryptedTokens {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: String = get_value("ilp_address", &hash)?;
@@ -206,26 +252,27 @@ impl FromRedisValue for Account {
         };
         let round_trip_time: Option<u64> = get_value_option("round_trip_time", &hash)?;
         let round_trip_time: u64 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
-        Ok(Account {
-            id: get_value("id", &hash)?,
-            ilp_address: Bytes::from(ilp_address.as_bytes()),
-            asset_code: get_value("asset_code", &hash)?,
-            asset_scale: get_value("asset_scale", &hash)?,
-            http_endpoint: get_url_option("http_endpoint", &hash)?,
-            http_incoming_authorization: get_value_option("http_incoming_authorization", &hash)?,
-            http_outgoing_authorization: get_value_option("http_outgoing_authorization", &hash)?,
-            btp_uri: get_url_option("btp_uri", &hash)?,
-            btp_incoming_authorization: get_value_option("btp_incoming_authorization", &hash)?,
-            max_packet_amount: get_value("max_packet_amount", &hash)?,
-            min_balance: get_value("min_balance", &hash)?,
-            is_admin: get_bool("is_admin", &hash),
-            xrp_address: get_value_option("xrp_address", &hash)?,
-            settle_threshold: get_value_option("settle_threshold", &hash)?,
-            settle_to: get_value_option("settle_to", &hash)?,
-            routing_relation,
-            send_routes: get_bool("send_routes", &hash),
-            receive_routes: get_bool("receive_routes", &hash),
-            round_trip_time,
+        Ok(AccountWithEncryptedTokens {
+            account: Account {
+                id: get_value("id", &hash)?,
+                ilp_address: Bytes::from(ilp_address.as_bytes()),
+                asset_code: get_value("asset_code", &hash)?,
+                asset_scale: get_value("asset_scale", &hash)?,
+                http_endpoint: get_url_option("http_endpoint", &hash)?,
+                http_outgoing_token: get_bytes_option("http_outgoing_token", &hash)?,
+                btp_uri: get_url_option("btp_uri", &hash)?,
+                btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?,
+                max_packet_amount: get_value("max_packet_amount", &hash)?,
+                min_balance: get_value("min_balance", &hash)?,
+                is_admin: get_bool("is_admin", &hash),
+                xrp_address: get_value_option("xrp_address", &hash)?,
+                settle_threshold: get_value_option("settle_threshold", &hash)?,
+                settle_to: get_value_option("settle_to", &hash)?,
+                routing_relation,
+                send_routes: get_bool("send_routes", &hash),
+                receive_routes: get_bool("receive_routes", &hash),
+                round_trip_time,
+            },
         })
     }
 }
@@ -251,6 +298,15 @@ where
 {
     if let Some(ref value) = map.get(key) {
         from_redis_value(value).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_bytes_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Bytes>, RedisError> {
+    if let Some(ref value) = map.get(key) {
+        let vec: Vec<u8> = from_redis_value(value)?;
+        Ok(Some(Bytes::from(vec)))
     } else {
         Ok(None)
     }
@@ -307,16 +363,24 @@ impl HttpAccount for Account {
         self.http_endpoint.as_ref()
     }
 
-    fn get_http_auth_header(&self) -> Option<&str> {
-        self.http_outgoing_authorization
+    fn get_http_auth_token(&self) -> Option<&str> {
+        self.http_outgoing_token
             .as_ref()
-            .map(|s| s.as_str())
+            .map(|s| str::from_utf8(s.as_ref()).unwrap_or_default())
     }
 }
 
 impl BtpAccount for Account {
     fn get_btp_uri(&self) -> Option<&Url> {
         self.btp_uri.as_ref()
+    }
+
+    fn get_btp_token(&self) -> Option<&[u8]> {
+        if let Some(ref token) = self.btp_outgoing_token {
+            Some(token)
+        } else {
+            None
+        }
     }
 }
 
@@ -349,5 +413,45 @@ impl CcpRoutingAccount for Account {
 impl RoundTripTimeAccount for Account {
     fn round_trip_time(&self) -> u64 {
         self.round_trip_time
+    }
+}
+
+#[cfg(test)]
+mod redis_account {
+    use super::*;
+
+    lazy_static! {
+        static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
+            ilp_address: "example.alice".to_string(),
+            asset_scale: 6,
+            asset_code: "XYZ".to_string(),
+            max_packet_amount: 1000,
+            min_balance: -1000,
+            http_endpoint: Some("http://example.com/ilp".to_string()),
+            http_incoming_token: Some("incoming_auth_token".to_string()),
+            http_outgoing_token: Some("outgoing_auth_token".to_string()),
+            btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
+            btp_incoming_token: Some("btp_token".to_string()),
+            is_admin: true,
+            xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
+            settle_threshold: Some(0),
+            settle_to: Some(-1000),
+            send_routes: true,
+            receive_routes: true,
+            routing_relation: Some("Peer".to_string()),
+            round_trip_time: Some(600),
+        };
+    }
+
+    #[test]
+    fn from_account_details() {
+        let account = Account::try_from(10, ACCOUNT_DETAILS.clone()).unwrap();
+        assert_eq!(account.id(), 10);
+        assert_eq!(
+            account.get_http_auth_token().unwrap(),
+            "outgoing_auth_token"
+        );
+        assert_eq!(account.get_btp_token().unwrap(), b"btp_token");
+        assert_eq!(account.routing_relation(), RoutingRelation::Peer);
     }
 }
