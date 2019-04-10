@@ -57,7 +57,7 @@ where
                     .post(url.clone())
                     .header(
                         "authorization",
-                        request.to.get_http_auth_header().unwrap_or(""),
+                        format!("Bearer {}", request.to.get_http_auth_token().unwrap_or("")),
                     )
                     .body(BytesMut::from(request.prepare).freeze())
                     .send()

@@ -37,6 +37,10 @@ where
         if url.scheme().starts_with("btp+") {
             url.set_scheme(&url.scheme().replace("btp+", "")).unwrap();
         }
+        let token = account
+            .get_btp_token()
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
         debug!("Connecting to {}", url);
         connect_async(url.clone())
             .map_err(|err| error!("Error connecting to WebSocket server: {:?}", err))
@@ -53,14 +57,9 @@ where
                                 data: vec![],
                             },
                             ProtocolData {
-                                protocol_name: String::from("auth_username"),
-                                content_type: ContentType::TextPlainUtf8,
-                                data: String::from(url.username()).into_bytes(),
-                            },
-                            ProtocolData {
                                 protocol_name: String::from("auth_token"),
                                 content_type: ContentType::TextPlainUtf8,
-                                data: String::from(url.password().unwrap()).into_bytes(),
+                                data: token,
                             },
                         ],
                     })
