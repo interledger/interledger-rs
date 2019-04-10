@@ -5,8 +5,12 @@
 extern crate log;
 #[macro_use]
 extern crate serde;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 
 mod account;
+mod crypto;
 mod store;
 
 pub use account::Account;

@@ -66,7 +66,7 @@ impl InMemoryStore {
             }
         }));
         let http_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
-            if let Some(ref auth) = account.inner.http_incoming_authorization {
+            if let Some(ref auth) = account.inner.http_incoming_token {
                 Some((auth.to_string(), *account_id))
             } else {
                 None
@@ -95,7 +95,7 @@ impl InMemoryStore {
         if let Some(ref btp_auth) = account.inner.btp_incoming_token {
             self.btp_auth.write().insert(btp_auth.clone(), account.id());
         }
-        if let Some(ref http_auth) = account.inner.http_incoming_authorization {
+        if let Some(ref http_auth) = account.inner.http_incoming_token {
             self.http_auth
                 .write()
                 .insert(http_auth.clone(), account.id());
@@ -127,7 +127,7 @@ impl AccountStore for InMemoryStore {
 impl HttpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_http_auth(
+    fn get_account_from_http_token(
         &self,
         auth_header: &str,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
@@ -213,15 +213,15 @@ mod tests {
     #[test]
     fn query_by_http_auth() {
         let account = AccountBuilder::new()
-            .http_incoming_authorization("Bearer test_token".to_string())
+            .http_incoming_token("test_token".to_string())
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_auth("Bearer test_token")
+            .get_account_from_http_token("test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_http_auth("Bearer bad_token")
+            .get_account_from_http_token("bad_token")
             .wait()
             .is_err());
     }

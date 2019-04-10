@@ -117,7 +117,7 @@ pub fn main() {
                             .default_value("7770"),
                         Arg::with_name("server_secret")
                             .long("server_secret")
-                            .help("Cryptographic seed used to derive keys for STREAM, specified in hex")
+                            .help("Cryptographic seed used to derive keys")
                             .takes_value(true),
                         Arg::with_name("open_signups_min_balance")
                             .long("open_signups_min_balance")
@@ -132,6 +132,11 @@ pub fn main() {
                                 .long("redis_uri")
                                 .help("Redis database to add the account to")
                                 .default_value("redis://127.0.0.1:6379"),
+                            Arg::with_name("server_secret")
+                                .long("server_secret")
+                                .help("Cryptographic seed used to derive keys")
+                                .takes_value(true)
+                                .required(true),
                             Arg::with_name("ilp_address")
                                 .long("ilp_address")
                                 .help("ILP Address of this account")
@@ -147,8 +152,8 @@ pub fn main() {
                                 .help("Scale of the asset this account's balance is denominated in (a scale of 2 means that 100.50 will be represented as 10050)")
                                 .takes_value(true)
                                 .required(true),
-                            Arg::with_name("btp_incoming_authorization")
-                                .long("btp_incoming_authorization")
+                            Arg::with_name("btp_incoming_token")
+                                .long("btp_incoming_token")
                                 .help("BTP token this account will use to connect")
                                 .takes_value(true),
                             Arg::with_name("btp_uri")
@@ -278,7 +283,7 @@ pub fn main() {
         ("node", Some(matches)) => match matches.subcommand() {
             ("accounts", Some(matches)) => match matches.subcommand() {
                 ("add", Some(matches)) => {
-                    let (http_endpoint, http_outgoing_authorization) =
+                    let (http_endpoint, http_outgoing_token) =
                         if let Some(url) = matches.value_of("http_url") {
                             let url = Url::parse(url).expect("Invalid URL");
                             let auth = if !url.username().is_empty() {
@@ -302,18 +307,27 @@ pub fn main() {
                     let redis_uri =
                         value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                     let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
+                    let server_secret: [u8; 32] = {
+                        let encoded: String = value_t!(matches, "server_secret", String).unwrap();
+                        let mut server_secret = [0; 32];
+                        let decoded =
+                            hex::decode(encoded).expect("server_secret must be hex-encoded");
+                        assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
+                        server_secret.clone_from_slice(&decoded);
+                        server_secret
+                    };
                     let account = AccountDetails {
                         ilp_address: value_t!(matches, "ilp_address", String).unwrap(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),
                         asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
-                        btp_incoming_authorization: matches
-                            .value_of("btp_incoming_authorization")
+                        btp_incoming_token: matches
+                            .value_of("btp_incoming_token")
                             .map(|s| s.to_string()),
                         btp_uri: matches.value_of("btp_uri").map(|s| s.to_string()),
-                        http_incoming_authorization: matches
+                        http_incoming_token: matches
                             .value_of("http_incoming_token")
                             .map(|s| format!("Bearer {}", s)),
-                        http_outgoing_authorization,
+                        http_outgoing_token,
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
                         min_balance: value_t!(matches, "min_balance", i64).unwrap(),
@@ -326,7 +340,7 @@ pub fn main() {
                         routing_relation: value_t!(matches, "routing_relation", String).ok(),
                         round_trip_time: value_t!(matches, "round_trip_time", u64).ok(),
                     };
-                    tokio::run(insert_account_redis(redis_uri, account));
+                    tokio::run(insert_account_redis(redis_uri, &server_secret, account));
                 }
                 _ => app.print_help().unwrap(),
             },

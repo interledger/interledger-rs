@@ -31,6 +31,7 @@ async function run() {
     const redisDir = process.env.REDIS_DIR || '.'
     let nodeDomain = process.env.DOMAIN
     const connectToBootstrapNodes = !process.env.DISABLE_BOOTSTRAP
+    let nodeSecret = process.env.ILP_NODE_SECRET
 
     let createAccounts = true
 
@@ -48,6 +49,7 @@ async function run() {
         rippled = config.rippled
         ilpAddress = config.ilpAddress
         localTunnelSubdomain = localTunnelSubdomain || config.localTunnelSubdomain
+        nodeSecret = nodeSecret || config.nodeSecret
     }
 
     if (!nodeDomain) {
@@ -106,6 +108,7 @@ async function run() {
             'accounts',
             'add',
             `--redis_uri=unix:${REDIS_UNIX_SOCKET}`,
+            `--server_secret=${nodeSecret}`,
             `--ilp_address=${ilpAddress}`,
             `--xrp_address=${xrpAddress}`,
             `--http_incoming_token=${adminToken}`,
@@ -136,6 +139,7 @@ async function run() {
                     'accounts',
                     'add',
                     `--redis_uri=unix:${REDIS_UNIX_SOCKET}`,
+                    `--server_secret=${nodeSecret}`,
                     `--ilp_address=${node.ilpAddress}`,
                     `--xrp_address=${node.xrpAddress}`,
                     `--http_incoming_token=${node.peerAuthToken}`,
@@ -172,8 +176,8 @@ async function run() {
                         xrp_address: xrpAddress,
                         asset_code: 'XRP',
                         asset_scale: 9,
-                        http_incoming_authorization: `Bearer ${node.authToken}`,
-                        http_outgoing_authorization: `Bearer ${node.peerAuthToken}`,
+                        http_incoming_token: node.authToken,
+                        http_outgoing_token: node.peerAuthToken,
                         http_endpoint: nodeDomain,
                         settleThreshold: 100000000,
                         settleTo: 0,
@@ -196,6 +200,7 @@ async function run() {
     const node = spawn('interledger', [
         'node',
         `--redis_uri=unix:${REDIS_UNIX_SOCKET}`,
+        `--server_secret=${nodeSecret}`,
         // TODO make this greater than 0
         '--open_signups_min_balance=0'
     ], {
@@ -263,6 +268,7 @@ async function generateTestnetCredentials() {
     const xrpSecret = faucetResponse.account.secret
     const rippled = XRP_TESTNET_URI
     const ilpAddress = `test.xrp.${xrpAddress} `
+    const nodeSecret = randomBytes(32).toString('hex')
     console.log(`Got testnet XRP address: ${xrpAddress} and secret: ${xrpSecret} `)
 
     // Write config file
@@ -273,7 +279,8 @@ async function generateTestnetCredentials() {
             adminToken,
             ilpAddress,
             rippled,
-            localTunnelSubdomain
+            localTunnelSubdomain,
+            nodeSecret
         }))
         console.log('Saved config to ', CONFIG_PATH)
     } catch (err) {
@@ -285,7 +292,8 @@ async function generateTestnetCredentials() {
         rippled,
         ilpAddress,
         adminToken,
-        localTunnelSubdomain
+        localTunnelSubdomain,
+        nodeSecret
     }
 }
 
