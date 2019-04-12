@@ -24,8 +24,14 @@ jobs:
             sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
             && cargo kcov --print-install-kcov-sh | sh
       - run:
-          name: Install Redis (for end-to-end test)
-          command: sudo apt-get install redis-server
+          name: Install Redis
+          # Install from stretch-backports to get the latest version
+          # The normal repository has version 3.2, which doesn't support redis modules
+          command: >-
+            echo "deb http://deb.debian.org/debian stretch-backports main" | sudo tee -a /etc/apt/sources.list
+            && sudo apt-get update
+            && sudo apt-get -t stretch-backports install redis-server
+            && redis-server --version
       - run:
           name: Build + Test
           command: cargo test --all --all-features
