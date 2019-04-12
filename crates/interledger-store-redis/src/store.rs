@@ -12,7 +12,7 @@ use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
-use interledger_service_util::{BalanceStore, ExchangeRateStore};
+use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use parking_lot::RwLock;
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
 use ring::{aead, hmac};
@@ -220,12 +220,12 @@ impl RedisStore {
             .btp_incoming_token
             .clone()
             .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
-        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac.clone();
+        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac;
         let http_incoming_token_hmac = account
             .http_incoming_token
             .clone()
             .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
-        let http_incoming_token_hmac_clone = http_incoming_token_hmac.clone();
+        let http_incoming_token_hmac_clone = http_incoming_token_hmac;
 
         Box::new(
             self.get_next_account_id()
@@ -876,6 +876,96 @@ impl RouteManagerStore for RedisStore {
                     update_routes(connection, routing_tale)
                 }),
         )
+    }
+}
+
+impl RateLimitStore for RedisStore {
+    type Account = Account;
+
+    /// Apply rate limits for number of packets per minute and amount of money per minute
+    ///
+    /// This uses https://github.com/brandur/redis-cell so the redis-cell module MUST be loaded into redis before this is run
+    fn apply_rate_limits(
+        &self,
+        account: Account,
+        prepare_amount: u64,
+    ) -> Box<Future<Item = (), Error = RateLimitError> + Send> {
+        if account.amount_per_minute_limit.is_some() || account.packets_per_minute_limit.is_some() {
+            let mut pipe = redis::pipe();
+            let packet_limit = account.packets_per_minute_limit.is_some();
+            let amount_limit = account.amount_per_minute_limit.is_some();
+
+            if let Some(limit) = account.packets_per_minute_limit {
+                let limit = limit - 1;
+                pipe.cmd("CL.THROTTLE")
+                    .arg(format!("limit:packets:{}", account.id))
+                    .arg(limit)
+                    .arg(limit)
+                    .arg(60)
+                    .arg(1);
+            }
+
+            if let Some(limit) = account.amount_per_minute_limit {
+                let limit = limit - 1;
+                pipe.cmd("CL.THROTTLE")
+                    .arg(format!("limit:throughput:{}", account.id))
+                    // TODO allow separate configuration for burst limit
+                    .arg(limit)
+                    .arg(limit)
+                    .arg(60)
+                    .arg(prepare_amount);
+            }
+            Box::new(
+                pipe.query_async(self.connection.as_ref().clone())
+                    .map_err(|err| {
+                        error!("Error applying rate limits: {:?}", err);
+                        RateLimitError::StoreError
+                    })
+                    .and_then(move |(_, results): (_, Vec<Vec<i64>>)| {
+                        if packet_limit && amount_limit {
+                            if results[0][0] == 1 {
+                                Err(RateLimitError::PacketLimitExceeded)
+                            } else if results[1][0] == 1 {
+                                Err(RateLimitError::ThroughputLimitExceeded)
+                            } else {
+                                Ok(())
+                            }
+                        } else if packet_limit && results[0][0] == 1 {
+                            Err(RateLimitError::PacketLimitExceeded)
+                        } else if amount_limit && results[0][0] == 1 {
+                            Err(RateLimitError::ThroughputLimitExceeded)
+                        } else {
+                            Ok(())
+                        }
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
+    }
+
+    fn refund_throughput_limit(
+        &self,
+        account: Account,
+        prepare_amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        if let Some(limit) = account.amount_per_minute_limit {
+            let limit = limit - 1;
+            Box::new(
+                cmd("CL.THROTTLE")
+                    .arg(format!("limit:throughput:{}", account.id))
+                    .arg(limit)
+                    .arg(limit)
+                    .arg(60)
+                    // TODO make sure this doesn't overflow
+                    .arg(0i64 - (prepare_amount as i64))
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(|err| error!("Error refunding throughput limit: {:?}", err))
+                    .and_then(|(_, _): (_, Value)| Ok(())),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 }
 

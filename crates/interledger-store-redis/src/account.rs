@@ -7,7 +7,7 @@ use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::{
-    MaxPacketAmountAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
+    MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 use ring::aead;
@@ -18,7 +18,7 @@ use std::{
 };
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 18;
+const ACCOUNT_DETAILS_FIELDS: usize = 20;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -49,6 +49,8 @@ pub struct Account {
     pub(crate) send_routes: bool,
     pub(crate) receive_routes: bool,
     pub(crate) round_trip_time: u64,
+    pub(crate) packets_per_minute_limit: Option<u32>,
+    pub(crate) amount_per_minute_limit: Option<u64>,
 }
 
 fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
@@ -129,6 +131,8 @@ impl Account {
             receive_routes: details.receive_routes,
             routing_relation,
             round_trip_time: details.round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME),
+            packets_per_minute_limit: details.packets_per_minute_limit,
+            amount_per_minute_limit: details.amount_per_minute_limit,
         })
     }
 
@@ -231,6 +235,14 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "receive_routes".write_redis_args(&mut rv);
             account.receive_routes.write_redis_args(&mut rv);
         }
+        if let Some(limit) = account.packets_per_minute_limit {
+            "packets_per_minute_limit".write_redis_args(&mut rv);
+            limit.write_redis_args(&mut rv);
+        }
+        if let Some(limit) = account.amount_per_minute_limit {
+            "amount_per_minute_limit".write_redis_args(&mut rv);
+            limit.write_redis_args(&mut rv);
+        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -272,6 +284,8 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 send_routes: get_bool("send_routes", &hash),
                 receive_routes: get_bool("receive_routes", &hash),
                 round_trip_time,
+                packets_per_minute_limit: get_value_option("packets_per_minute_limit", &hash)?,
+                amount_per_minute_limit: get_value_option("amount_per_minute_limit", &hash)?,
             },
         })
     }
@@ -416,6 +430,16 @@ impl RoundTripTimeAccount for Account {
     }
 }
 
+impl RateLimitAccount for Account {
+    fn amount_per_minute_limit(&self) -> Option<u64> {
+        self.amount_per_minute_limit
+    }
+
+    fn packets_per_minute_limit(&self) -> Option<u32> {
+        self.packets_per_minute_limit
+    }
+}
+
 #[cfg(test)]
 mod redis_account {
     use super::*;
@@ -440,6 +464,8 @@ mod redis_account {
             receive_routes: true,
             routing_relation: Some("Peer".to_string()),
             round_trip_time: Some(600),
+            amount_per_minute_limit: None,
+            packets_per_minute_limit: None,
         };
     }
 

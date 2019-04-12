@@ -94,6 +94,8 @@ pub struct AccountDetails {
     pub receive_routes: bool,
     pub routing_relation: Option<String>,
     pub round_trip_time: Option<u64>,
+    pub amount_per_minute_limit: Option<u64>,
+    pub packets_per_minute_limit: Option<u32>,
 }
 
 #[derive(Response, Debug)]
@@ -268,6 +270,8 @@ impl_web! {
                             settle_threshold: body.settle_threshold,
                             send_routes: body.send_routes,
                             round_trip_time: body.round_trip_time,
+                            amount_per_minute_limit: body.amount_per_minute_limit,
+                            packets_per_minute_limit: body.packets_per_minute_limit,
                         };
 
                         store.insert_account_with_min_balance(account, min_balance as u64)

@@ -17,7 +17,8 @@ use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AccountStore, OutgoingRequest,
 };
 use interledger_service_util::{
-    ExchangeRateAndBalanceService, ExpiryShortenerService, MaxPacketAmountService, ValidatorService,
+    ExchangeRateAndBalanceService, ExpiryShortenerService, MaxPacketAmountService,
+    RateLimitService, ValidatorService,
 };
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
@@ -397,7 +398,7 @@ where
                             let incoming_service =
                                 Router::new(store.clone(), outgoing_service.clone());
                             let incoming_service = CcpRouteManager::new(
-                                default_account,
+                                default_account.clone(),
                                 store.clone(),
                                 outgoing_service,
                                 incoming_service,
@@ -406,6 +407,11 @@ where
                             let incoming_service = IldcpService::new(incoming_service);
                             let incoming_service = MaxPacketAmountService::new(incoming_service);
                             let incoming_service = ValidatorService::incoming(incoming_service);
+                            let incoming_service = RateLimitService::new(
+                                Bytes::from(default_account.client_address()),
+                                store.clone(),
+                                incoming_service,
+                            );
 
                             // Handle incoming packets sent via BTP
                             btp_service.handle_incoming(incoming_service.clone());
