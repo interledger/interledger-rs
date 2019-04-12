@@ -201,6 +201,14 @@ pub fn main() {
                                 .long("round_trip_time")
                                 .help("The estimated amount of time (in milliseconds) we expect it to take to send a message to this account and receive the response")
                                 .default_value("500"),
+                            Arg::with_name("packets_per_minute_limit")
+                                .long("packets_per_minute_limit")
+                                .help("Number of outgoing Prepare packets per minute this account can send. Defaults to no limit")
+                                .takes_value(true),
+                            Arg::with_name("amount_per_minute_limit")
+                                .long("amount_per_minute_limit")
+                                .help("Total amount of value this account can send per minute. Defaults to no limit")
+                                .takes_value(true),
                         ])
                         .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
@@ -339,6 +347,8 @@ pub fn main() {
                         receive_routes: matches.is_present("receive_routes"),
                         routing_relation: value_t!(matches, "routing_relation", String).ok(),
                         round_trip_time: value_t!(matches, "round_trip_time", u64).ok(),
+                        packets_per_minute_limit: value_t!(matches, "packets_per_minute_limit", u32).ok(),
+                        amount_per_minute_limit: value_t!(matches, "amount_per_minute_limit", u64).ok(),
                     };
                     tokio::run(insert_account_redis(redis_uri, &server_secret, account));
                 }

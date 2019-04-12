@@ -48,6 +48,13 @@ impl RedisServer {
     pub fn new() -> RedisServer {
         let server_type = ServerType::get_intended();
         let mut cmd = process::Command::new("redis-server");
+
+        // Load redis_cell
+        let mut cell_module: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        cell_module.push("tests");
+        cell_module.push("libredis_cell.so");
+        cmd.arg("--loadmodule").arg(cell_module.as_os_str());
+
         cmd.stdout(process::Stdio::null())
             .stderr(process::Stdio::null());
 

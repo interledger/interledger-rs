@@ -38,6 +38,8 @@ lazy_static! {
         receive_routes: false,
         routing_relation: None,
         round_trip_time: None,
+        amount_per_minute_limit: Some(1000),
+        packets_per_minute_limit: Some(2),
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: "example.bob".to_string(),
@@ -58,6 +60,8 @@ lazy_static! {
         receive_routes: false,
         routing_relation: None,
         round_trip_time: None,
+        amount_per_minute_limit: Some(1000),
+        packets_per_minute_limit: Some(20),
     };
     static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
         ilp_address: "example.charlie".to_string(),
@@ -78,6 +82,8 @@ lazy_static! {
         receive_routes: false,
         routing_relation: None,
         round_trip_time: None,
+        amount_per_minute_limit: None,
+        packets_per_minute_limit: None,
     };
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
@@ -382,6 +388,8 @@ mod routes_and_rates {
                                 receive_routes: false,
                                 routing_relation: None,
                                 round_trip_time: None,
+                                amount_per_minute_limit: None,
+                                packets_per_minute_limit: None,
                             })
                         })
                         .and_then(move |_| {
@@ -867,6 +875,89 @@ mod configured_routes {
                     let _ = context;
                     Ok(())
                 })
+        }))
+        .unwrap()
+    }
+}
+
+mod rate_limiting {
+    use super::*;
+    use futures::future::join_all;
+    use interledger_service_util::{RateLimitError, RateLimitStore};
+
+    #[test]
+    fn rate_limits_number_of_packets() {
+        block_on(test_store().and_then(|(store, context)| {
+            let account = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();
+            join_all(vec![
+                store.clone().apply_rate_limits(account.clone(), 10),
+                store.clone().apply_rate_limits(account.clone(), 10),
+                store.clone().apply_rate_limits(account.clone(), 10),
+            ])
+            .then(move |result| {
+                assert!(result.is_err());
+                assert_eq!(result.unwrap_err(), RateLimitError::PacketLimitExceeded);
+                let _ = context;
+                Ok(())
+            })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn limits_amount_throughput() {
+        block_on(test_store().and_then(|(store, context)| {
+            let account = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
+            join_all(vec![
+                store.clone().apply_rate_limits(account.clone(), 500),
+                store.clone().apply_rate_limits(account.clone(), 500),
+                store.clone().apply_rate_limits(account.clone(), 1),
+            ])
+            .then(move |result| {
+                assert!(result.is_err());
+                assert_eq!(result.unwrap_err(), RateLimitError::ThroughputLimitExceeded);
+                let _ = context;
+                Ok(())
+            })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn refunds_throughput_limit_for_rejected_packets() {
+        block_on(test_store().and_then(|(store, context)| {
+            let account = Account::try_from(1, ACCOUNT_DETAILS_1.clone()).unwrap();
+            join_all(vec![
+                store.clone().apply_rate_limits(account.clone(), 500),
+                store.clone().apply_rate_limits(account.clone(), 500),
+            ])
+            .map_err(|err| panic!(err))
+            .and_then(move |_| {
+                let store_clone = store.clone();
+                let account_clone = account.clone();
+                store
+                    .clone()
+                    .refund_throughput_limit(account.clone(), 500)
+                    .and_then(move |_| {
+                        store
+                            .clone()
+                            .apply_rate_limits(account.clone(), 500)
+                            .map_err(|err| panic!(err))
+                    })
+                    .and_then(move |_| {
+                        store_clone
+                            .apply_rate_limits(account_clone, 1)
+                            .then(move |result| {
+                                assert!(result.is_err());
+                                assert_eq!(
+                                    result.unwrap_err(),
+                                    RateLimitError::ThroughputLimitExceeded
+                                );
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+            })
         }))
         .unwrap()
     }
