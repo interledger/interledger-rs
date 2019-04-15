@@ -17,7 +17,7 @@ use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AccountStore, OutgoingRequest,
 };
 use interledger_service_util::{
-    ExchangeRateAndBalanceService, ExpiryShortenerService, MaxPacketAmountService,
+    BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
     RateLimitService, ValidatorService,
 };
 use interledger_spsp::{pay, SpspResponder};
@@ -382,6 +382,7 @@ where
                     let outgoing_service = HttpClientService::new(store.clone());
                     create_server(btp_address, store.clone(), outgoing_service).and_then(
                         move |btp_service| {
+                            let ilp_address = Bytes::from(default_account.client_address());
                             // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                             // service to others like the router and then call handle_incoming on it to set up the incoming handler
                             let outgoing_service = btp_service.clone();
@@ -391,8 +392,16 @@ where
                             let outgoing_service = ExpiryShortenerService::new(outgoing_service);
                             let outgoing_service =
                                 StreamReceiverService::new(server_secret.clone(), outgoing_service);
-                            let outgoing_service =
-                                ExchangeRateAndBalanceService::new(store.clone(), outgoing_service);
+                            let outgoing_service = BalanceService::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                outgoing_service,
+                            );
+                            let outgoing_service = ExchangeRateService::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                outgoing_service,
+                            );
 
                             // Set up the Router and Routing Manager
                             let incoming_service =
@@ -408,7 +417,7 @@ where
                             let incoming_service = MaxPacketAmountService::new(incoming_service);
                             let incoming_service = ValidatorService::incoming(incoming_service);
                             let incoming_service = RateLimitService::new(
-                                Bytes::from(default_account.client_address()),
+                                ilp_address.clone(),
                                 store.clone(),
                                 incoming_service,
                             );
