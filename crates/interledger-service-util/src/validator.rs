@@ -263,6 +263,7 @@ mod outgoing {
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
                 to: TestAccount(2),
+                original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,
@@ -297,6 +298,7 @@ mod outgoing {
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
                 to: TestAccount(2),
+                original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: b"example.destination",
                     amount: 100,

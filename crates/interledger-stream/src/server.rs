@@ -478,6 +478,7 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
+                original_amount: prepare.amount(),
                 prepare,
             })
             .wait();
@@ -527,6 +528,7 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
+                original_amount: prepare.amount(),
                 prepare,
             })
             .wait();
@@ -576,6 +578,7 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
+                original_amount: prepare.amount(),
                 to: TestAccount {
                     id: 1,
                     ilp_address: client_address.clone(),

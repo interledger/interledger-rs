@@ -235,6 +235,7 @@ mod client_server {
                 .send_request(OutgoingRequest {
                     from: account.clone(),
                     to: account.clone(),
+                    original_amount: 100,
                     prepare: PrepareBuilder {
                         destination: b"example.destination",
                         amount: 100,
