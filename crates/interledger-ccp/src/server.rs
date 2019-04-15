@@ -362,6 +362,7 @@ where
             .send_request(OutgoingRequest {
                 from: self.account.clone(),
                 to,
+                original_amount: prepare.amount(),
                 prepare,
             })
             .then(move |result| {
@@ -536,6 +537,7 @@ where
                                 .send_request(OutgoingRequest {
                                     from: account.clone(),
                                     to,
+                                    original_amount: prepare.amount(),
                                     prepare: prepare.clone(),
                                 })
                                 .map_err(move |err| {
@@ -646,6 +648,7 @@ where
             .send_request(OutgoingRequest {
                 to,
                 from: self.account.clone(),
+                original_amount: prepare.amount(),
                 prepare,
             })
             .and_then(|_| Ok(()))

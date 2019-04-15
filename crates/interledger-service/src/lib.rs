@@ -60,6 +60,7 @@ pub struct IncomingRequest<A: Account> {
 pub struct OutgoingRequest<A: Account> {
     pub from: A,
     pub to: A,
+    pub original_amount: u64,
     pub prepare: Prepare,
 }
 
@@ -71,6 +72,7 @@ where
     pub fn into_outgoing(self, to: A) -> OutgoingRequest<A> {
         OutgoingRequest {
             from: self.from,
+            original_amount: self.prepare.amount(),
             prepare: self.prepare,
             to,
         }
