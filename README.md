@@ -16,6 +16,10 @@
 - [Interledger.rs Architecture](./docs/architecture.md)
 - [Interledger Forum](https://forum.interledger.org) for general questions about the Interledger Protocol and Project
 
+## Understanding Rust
+- [The Rust Programming Language](https://doc.rust-lang.org/book/)
+- [Rust Language Cheat Sheet](https://cheats.rs/)
+
 ## Quickstart
 
 ### Docker Install
