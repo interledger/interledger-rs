@@ -347,8 +347,14 @@ pub fn main() {
                         receive_routes: matches.is_present("receive_routes"),
                         routing_relation: value_t!(matches, "routing_relation", String).ok(),
                         round_trip_time: value_t!(matches, "round_trip_time", u64).ok(),
-                        packets_per_minute_limit: value_t!(matches, "packets_per_minute_limit", u32).ok(),
-                        amount_per_minute_limit: value_t!(matches, "amount_per_minute_limit", u64).ok(),
+                        packets_per_minute_limit: value_t!(
+                            matches,
+                            "packets_per_minute_limit",
+                            u32
+                        )
+                        .ok(),
+                        amount_per_minute_limit: value_t!(matches, "amount_per_minute_limit", u64)
+                            .ok(),
                     };
                     tokio::run(insert_account_redis(redis_uri, &server_secret, account));
                 }

@@ -25,7 +25,6 @@ use tokio_executor::spawn;
 use tokio_timer::Interval;
 
 const POLL_INTERVAL: u64 = 60000; // 1 minute
-const XRP_SCALE: u8 = 6;
 
 static ACCOUNT_FROM_INDEX: &str = "
 local id = redis.call('HGET', KEYS[1], ARGV[1])
@@ -33,68 +32,74 @@ if not id then
     return nil
 end
 return redis.call('HGETALL', 'accounts:' .. id)";
-static UPDATE_BALANCES: &str = "
-local from_asset_code = string.lower(ARGV[1])
-local from_id = ARGV[2]
-local from_amount = tonumber(ARGV[3])
-local to_asset_code = string.lower(ARGV[4])
-local to_id = ARGV[5]
-local to_amount = tonumber(ARGV[6])
-local min_balance = redis.call('HGET', 'accounts:' .. from_id, 'min_balance')
-if min_balance then
-    min_balance = tonumber(min_balance)
-    local balance = tonumber(redis.call('HGET', 'balances:' .. from_asset_code, from_id))
-    if balance < min_balance + from_amount then
-        error('Cannot subtract ' .. from_amount .. ' from balance. Current balance of account: ' .. from_id .. ' is: ' .. balance .. ' and min balance is: ' .. min_balance)
+static PROCESS_PREPARE: &str = "
+local from_id = ARGV[1]
+local from_account = 'accounts:' .. ARGV[1]
+local from_amount = tonumber(ARGV[2])
+local to_account = 'accounts:' .. ARGV[3]
+local to_amount = tonumber(ARGV[4])
+local max_receivable_balance = redis.call('HGET', from_account, 'max_receivable_balance')
+
+-- Check that the prepare wouldn't exceed the receivable balance limit
+if max_receivable_balance then
+    max_receivable_balance = tonumber(max_receivable_balance)
+    local receivable_balance, payable_balance, pending_incoming = unpack(redis.call('HMGET', from_account, 'receivable_balance', 'payable_balance', 'pending_incoming'))
+    if receivable_balance + pending_incoming + from_amount - payable_balance > max_receivable_balance then
+        error('Incoming prepare of ' .. from_amount .. ' would exceed max receivable balance for account ' .. from_id .. '. Current receivable balance: ' .. receivable_balance .. ', max receivable balance: ' .. max_receivable_balance)
     end
 end
-local from_balance = redis.call('HINCRBY', 'balances:' .. from_asset_code, from_id, 0 - from_amount)
-local to_balance = redis.call('HINCRBY', 'balances:' .. to_asset_code, to_id, to_amount)
-return {from_balance, to_balance}";
-// TODO refactor this to make it not currency specific
-static CREDIT_UNCLAIMED_BALANCE: &str = "
-local asset_code = string.lower(ARGV[1])
-local asset_scale = ARGV[2]
-local address = ARGV[3]
-local id = ARGV[4]
-local account_scale = ARGV[5]
-local unclaimed_balance = redis.call('HGET', 'unclaimed_balances:' .. asset_code, address)
-if unclaimed_balance then
-    local scaled_amount =
-        math.floor(tonumber(unclaimed_balance) * 10 ^ (tonumber(account_scale) - tonumber(asset_scale)))
-    redis.call('HDEL', 'unclaimed_balances:' .. asset_code, address)
-    return redis.call('HINCRBY', 'balances:' .. asset_code, id, scaled_amount)
-else
-    return 0
-end";
-// Returns false if the account has enough balance
-static CHECK_INSUFFICIENT_STARTING_BALANCE: &str = "
-local asset_code = string.lower(ARGV[1])
-local asset_scale = ARGV[2]
-local address = ARGV[3]
-local account_scale = ARGV[4]
-local min_balance = ARGV[5]
-local unclaimed_balance = redis.call('HGET', 'unclaimed_balances:' .. asset_code, address)
-if unclaimed_balance then
-    local scaled_amount =
-        math.floor(tonumber(unclaimed_balance) * 10 ^ (tonumber(account_scale) - tonumber(asset_scale)))
-    return tonumber(min_balance) > scaled_amount
-else
-    return true
-end
-";
 
-static ROUTES_KEY: &str = "routes";
-static RATES_KEY: &str = "rates";
+local pending_incoming = redis.call('HINCRBY', from_account, 'pending_incoming', from_amount)
+local pending_outgoing = redis.call('HINCRBY', to_account, 'pending_outgoing', to_amount)
+return {pending_incoming, pending_outgoing}";
+static PROCESS_FULFILL: &str = "\
+local from_id = ARGV[1]
+local from_account = 'accounts:' .. ARGV[1]
+local from_amount = tonumber(ARGV[2])
+local to_account = 'accounts:' .. ARGV[3]
+local to_amount = tonumber(ARGV[4])
+
+-- Move the amounts from pending to the actual balances
+redis.call('HINCRBY', from_account, 'pending_incoming', 0 - from_amount)
+local receivable_balance = redis.call('HINCRBY', from_account, 'receivable_balance', from_amount)
+redis.call('HINCRBY', to_account, 'pending_outgoing', 0 - to_amount)
+local payable_balance = redis.call('HINCRBY', to_account, 'payable_balance', to_amount)
+
+-- Net out the Payable and Receivable balances for the from account
+local from_payable_balance = tonumber(redis.call('HGET', from_account, 'payable_balance'))
+if receivable_balance > 0 and from_payable_balance > 0 then
+    local amount_to_net = math.min(receivable_balance, from_payable_balance)
+    redis.call('HINCRBY', from_account, 'receivable_balance', 0 - amount_to_net)
+    redis.call('HINCRBY', from_account, 'payable_balance', 0 - amount_to_net)
+end
+
+-- Net out the Payable and Receivable balances for the to account
+local to_receivable_balance = tonumber(redis.call('HGET', to_account, 'receivable_balance'))
+if payable_balance > 0 and to_receivable_balance > 0 then
+    local amount_to_net = math.min(payable_balance, to_receivable_balance)
+    redis.call('HINCRBY', to_account, 'receivable_balance', 0 - amount_to_net)
+    redis.call('HINCRBY', to_account, 'payable_balance', 0 - amount_to_net)
+end
+
+return {receivable_balance, payable_balance}";
+static PROCESS_REJECT: &str = "\
+local from_id = ARGV[1]
+local from_account = 'accounts:' .. ARGV[1]
+local from_amount = tonumber(ARGV[2])
+local to_account = 'accounts:' .. ARGV[3]
+local to_amount = tonumber(ARGV[4])
+
+local pending_incoming = redis.call('HINCRBY', from_account, 'pending_incoming', 0 - from_amount)
+local pending_outgoing = redis.call('HINCRBY', to_account, 'pending_outgoing', 0 - to_amount)
+return {pending_incoming, pending_outgoing}";
+
+static ROUTES_KEY: &str = "routes:current";
+static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
-}
-
-fn balance_key(asset_code: &str) -> String {
-    format!("balances:{}", asset_code.to_lowercase())
 }
 
 pub use redis::IntoConnectionInfo;
@@ -206,7 +211,6 @@ impl RedisStore {
     fn create_new_account(
         &self,
         account: AccountDetails,
-        min_starting_balance: Option<u64>,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
         debug!("Inserting account: {:?}", account);
         let connection = self.connection.clone();
@@ -235,44 +239,22 @@ impl RedisStore {
                 })
                 .and_then(move |account| {
                     // Check that there isn't already an account with values that must be unique
-                    let mut keys: Vec<String> = vec!["ID".to_string(), "ID".to_string()];
+                    let mut keys: Vec<String> = vec!["ID".to_string()];
 
                     let mut pipe = redis::pipe();
-                    pipe.cmd("EXISTS")
-                        .arg(account_details_key(account.id))
-                        .cmd("HEXISTS")
-                        .arg(balance_key(account.asset_code.as_str()))
-                        .arg(account.id);
+                    pipe.exists(account_details_key(account.id));
 
                     if let Some(auth) = btp_incoming_token_hmac {
                         keys.push("BTP auth".to_string());
-                        pipe.cmd("HEXISTS")
-                            .arg("btp_auth")
-                            .arg(auth.as_ref());
+                        pipe.hexists("btp_auth", auth.as_ref());
                     }
                     if let Some(auth) = http_incoming_token_hmac {
                         keys.push("HTTP auth".to_string());
-                        pipe.cmd("HEXISTS")
-                            .arg("http_auth")
-                            .arg(auth.as_ref());
+                        pipe.hexists("http_auth", auth.as_ref());
                     }
                     if let Some(ref xrp_address) = account.xrp_address {
                         keys.push("XRP address".to_string());
-                        pipe.cmd("HEXISTS").arg("xrp_addresses").arg(xrp_address);
-
-                        // TODO don't tie this feature to XRP
-                        // TODO make sure they can't exploit the fact that they set the account's asset scale
-                        if let Some(min_balance) = min_starting_balance {
-                            keys.push("mininum balance".to_string());
-                            pipe.cmd("EVAL")
-                                .arg(CHECK_INSUFFICIENT_STARTING_BALANCE)
-                                .arg(0)
-                                .arg("XRP")
-                                .arg(XRP_SCALE)
-                                .arg(xrp_address)
-                                .arg(account.asset_scale)
-                                .arg(min_balance);
-                        }
+                        pipe.hexists("xrp_addresses", xrp_address);
                     }
 
                     pipe.query_async(connection.as_ref().clone())
@@ -285,11 +267,7 @@ impl RedisStore {
                         .and_then(
                             move |(connection, results): (SharedConnection, Vec<bool>)| {
                                 if let Some(index) = results.iter().position(|val| *val) {
-                                    if keys[index] == "minimum balance" {
-                                        warn!("Cannot insert account because it does not meet the minimum balance");
-                                    } else {
-                                        warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
-                                    }
+                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
                                     Err(())
                                 } else {
                                     Ok((connection, account))
@@ -299,68 +277,35 @@ impl RedisStore {
                 })
                 .and_then(move |(connection, account)| {
                     let mut pipe = redis::pipe();
+                    pipe.atomic();
 
-                    // Set balance
-                    pipe.atomic()
-                        .cmd("HSET")
-                        .arg(balance_key(account.asset_code.as_str()))
-                        .arg(account.id)
-                        .arg(0u64)
+                    // Set account details
+                    pipe.cmd("HMSET").arg(account_details_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
+
+                    // Set balance-related details
+                    pipe.hset_multiple(account_details_key(account.id), &[("payable_balance", 0), ("receivable_balance", 0), ("pending_incoming", 0), ("pending_outgoing", 0)]).ignore();
 
                     // Set incoming auth details
                     if let Some(auth) = btp_incoming_token_hmac_clone {
-                        pipe.cmd("HSET")
-                            .arg("btp_auth")
-                            .arg(auth.as_ref())
-                            .arg(account.id)
-                            .ignore();
+                        pipe.hset("btp_auth", auth.as_ref(), account.id).ignore();
                     }
+
                     if let Some(auth) = http_incoming_token_hmac_clone {
-                        pipe.cmd("HSET")
-                            .arg("http_auth")
-                            .arg(auth.as_ref())
-                            .arg(account.id)
-                            .ignore();
+                        pipe.hset("http_auth", auth.as_ref(), account.id).ignore();
                     }
 
                     // Add settlement details
                     if let Some(ref xrp_address) = account.xrp_address {
-                        pipe.cmd("HSET")
-                            .arg("xrp_addresses")
-                            .arg(xrp_address)
-                            .arg(account.id)
-                            .ignore();
-
-                        // Credit the account balance in case they sent us money before creating the account
-                        // TODO add an authentication mechanism so that an attacker can't watch the XRP ledger
-                        // for these transactions and quickly create accounts to skim the money before the user does
-                        pipe.cmd("EVAL")
-                            .arg(CREDIT_UNCLAIMED_BALANCE)
-                            .arg(0)
-                            .arg(account.asset_code.as_str())
-                            .arg(6)
-                            .arg(xrp_address)
-                            .arg(account.id)
-                            .arg(account.asset_scale)
-                            .ignore();
+                        pipe.hset("xrp_addresses", xrp_address, account.id).ignore();
                     }
 
                     if account.send_routes {
-                        pipe.cmd("SADD")
-                            .arg("send_routes_to")
-                            .arg(account.id)
-                            .ignore();
+                        pipe.sadd("send_routes_to", account.id).ignore();
                     }
 
                     // Add route to routing table
                     pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
-                        .ignore();
-
-                    // Set account details
-                    pipe.cmd("HMSET")
-                        .arg(account_details_key(account.id))
-                        .arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
 
                     pipe.query_async(connection)
@@ -386,7 +331,7 @@ impl AccountStore for RedisStore {
         let num_accounts = account_ids.len();
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
-            pipe.cmd("HGETALL").arg(account_details_key(*account_id));
+            pipe.hgetall(account_details_key(*account_id));
         }
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
@@ -414,11 +359,18 @@ impl AccountStore for RedisStore {
 }
 
 impl BalanceStore for RedisStore {
+    /// Returns the balance **from the account holder's perspective**, meaning the sum of
+    /// the Payable Balance and Pending Outgoing minus the Receivable Balance and the Pending Incoming.
     fn get_balance(&self, account: Account) -> Box<Future<Item = i64, Error = ()> + Send> {
         Box::new(
-            cmd("HGET")
-                .arg(balance_key(account.asset_code.as_str()))
-                .arg(account.id)
+            cmd("HMGET")
+                .arg(account_details_key(account.id))
+                .arg(&[
+                    "payable_balance",
+                    "receivable_balance",
+                    "pending_incoming",
+                    "pending_outgoing",
+                ])
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -426,102 +378,124 @@ impl BalanceStore for RedisStore {
                         account.id, err
                     )
                 })
-                .and_then(|(_connection, balance): (_, i64)| Ok(balance)),
+                .and_then(|(_connection, values): (_, Vec<i64>)| {
+                    let payable_balance = values[0];
+                    let receivable_balance = values[1];
+                    let pending_incoming = values[2];
+                    let pending_outgoing = values[3];
+                    Ok(payable_balance + pending_outgoing - receivable_balance - pending_incoming)
+                }),
         )
     }
 
-    fn update_balances(
+    fn update_balances_for_prepare(
         &self,
         from_account: Account,
         incoming_amount: u64,
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id();
-        let to_account_id = to_account.id();
-
-        debug!(
-            "Decreasing balance of account {} by: {}. Increasing balance of account {} by: {}",
-            from_account_id, incoming_amount, to_account_id, outgoing_amount
-        );
-
-        Box::new(
-            cmd("EVAL")
-                // Update the balance only if it does not exceed the max_balance configured on the account
-                .arg(UPDATE_BALANCES)
-                .arg(0)
-                .arg(from_account.asset_code)
-                .arg(from_account_id)
-                .arg(incoming_amount)
-                .arg(to_account.asset_code)
-                .arg(to_account_id)
-                .arg(outgoing_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    warn!(
-                    "Error updating balances for accounts. from_account: {}, to_account: {}: {:?}",
-                    from_account_id,
-                    to_account_id,
-                    err
-                )
-                })
-                .and_then(
-                    move |(_connection, (from_balance, to_balance)): (_, (i64, i64))| {
-                        debug!(
-                            "Updated account balances. Account {} has: {}, account {} has: {}",
-                            from_account_id, from_balance, to_account_id, to_balance
-                        );
-                        Ok(())
-                    },
-                ),
-        )
-    }
-
-    fn undo_balance_update(
-        &self,
-        from_account: Account,
-        incoming_amount: u64,
-        to_account: Account,
-        outgoing_amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id();
-        let to_account_id = to_account.id();
-
-        debug!(
-            "Rolling back transaction. Increasing balance of account {} by: {}. Decreasing balance of account {} by: {}",
-            from_account_id, incoming_amount, to_account_id, outgoing_amount
-        );
-
-        // TODO check against balance limit
-        let mut pipe = redis::pipe();
-        pipe.atomic()
-            .cmd("HINCRBY")
-            .arg(balance_key(from_account.asset_code.as_str()))
+        let from_account_id = from_account.id;
+        let to_account_id = to_account.id;
+        Box::new(cmd("EVAL")
+            .arg(PROCESS_PREPARE)
+            .arg(0)
             .arg(from_account_id)
-            .arg(incoming_amount as i64)
-            .cmd("HINCRBY")
-            .arg(balance_key(to_account.asset_code.as_str()))
+            .arg(incoming_amount)
             .arg(to_account_id)
-            // TODO make sure this doesn't overflow
-            .arg(0i64 - outgoing_amount as i64);
-
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    warn!(
-                    "Error undoing balance update for accounts. from_account: {}, to_account: {}: {:?}",
+            .arg(outgoing_amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| {
+                warn!(
+                    "Error handling prepare from account: {} to account: {}: {:?}",
                     from_account_id,
                     to_account_id,
                     err
                 )
-                })
-                .and_then(move |(_connection, balances): (_, Vec<i64>)| {
+            })
+            .and_then(
+                move |(_connection, (pending_incoming, pending_outgoing)): (_, (i64, i64))| {
                     debug!(
-                        "Updated account balances. Account {} has: {}, account {} has: {}",
-                        from_account_id, balances[0], to_account_id, balances[1]
+                        "Processed prepare. Account {} has: {} in pending incoming prepares, account {} has: {} in pending outgoing prepares",
+                        from_account_id, pending_incoming, to_account_id, pending_outgoing
                     );
                     Ok(())
-                }),
+                },
+            ),
+        )
+    }
+
+    fn update_balances_for_fulfill(
+        &self,
+        from_account: Account,
+        incoming_amount: u64,
+        to_account: Account,
+        outgoing_amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let from_account_id = from_account.id;
+        let to_account_id = to_account.id;
+        Box::new(cmd("EVAL")
+            .arg(PROCESS_FULFILL)
+            .arg(0)
+            .arg(from_account_id)
+            .arg(incoming_amount)
+            .arg(to_account_id)
+            .arg(outgoing_amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| {
+                error!(
+                    "Error handling fulfill from account: {} to account: {}: {:?}",
+                    from_account_id,
+                    to_account_id,
+                    err
+                )
+            })
+            .and_then(
+                move |(_connection, (receivable_balance, payable_balance)): (_, (i64, i64))| {
+                    debug!(
+                        "Processed fulfill. Account {} has receivable balance: {}, account {} has payable balance: {}",
+                        from_account_id, receivable_balance, to_account_id, payable_balance
+                    );
+                    Ok(())
+                },
+            ),
+        )
+    }
+
+    fn update_balances_for_reject(
+        &self,
+        from_account: Account,
+        incoming_amount: u64,
+        to_account: Account,
+        outgoing_amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let from_account_id = from_account.id;
+        let to_account_id = to_account.id;
+        Box::new(cmd("EVAL")
+            .arg(PROCESS_REJECT)
+            .arg(0)
+            .arg(from_account_id)
+            .arg(incoming_amount)
+            .arg(to_account_id)
+            .arg(outgoing_amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| {
+                warn!(
+                    "Error handling reject from account: {} to account: {}: {:?}",
+                    from_account_id,
+                    to_account_id,
+                    err
+                )
+            })
+                     .and_then(
+                         move |(_connection, (pending_incoming, pending_outgoing)): (_, (i64, i64))| {
+                             debug!(
+                                 "Processed reject. Account {} has: {} in pending incoming prepares, account {} has: {} in pending outgoing prepares",
+                                 from_account_id, pending_incoming, to_account_id, pending_outgoing
+                             );
+                             Ok(())
+                         },
+                     ),
         )
     }
 }
@@ -622,15 +596,7 @@ impl NodeStore for RedisStore {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        self.create_new_account(account, None)
-    }
-
-    fn insert_account_with_min_balance(
-        &self,
-        account: AccountDetails,
-        min_balance: u64,
-    ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        self.create_new_account(account, Some(min_balance))
+        self.create_new_account(account)
     }
 
     // TODO limit the number of results and page through them
@@ -644,7 +610,7 @@ impl NodeStore for RedisStore {
                     move |(connection, next_account_id): (SharedConnection, u64)| {
                         let mut pipe = redis::pipe();
                         for i in 0..next_account_id {
-                            pipe.cmd("HGETALL").arg(account_details_key(i));
+                            pipe.hgetall(account_details_key(i));
                         }
                         pipe.query_async(connection).and_then(
                             move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
@@ -669,12 +635,9 @@ impl NodeStore for RedisStore {
         let exchange_rates = self.exchange_rates.clone();
         let mut pipe = redis::pipe();
         pipe.atomic()
-            .cmd("DEL")
-            .arg(RATES_KEY)
+            .del(RATES_KEY)
             .ignore()
-            .cmd("HMSET")
-            .arg(RATES_KEY)
-            .arg(rates)
+            .hset_multiple(RATES_KEY, &rates)
             .ignore();
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
@@ -696,7 +659,7 @@ impl NodeStore for RedisStore {
             HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| *account_id));
         let mut pipe = redis::pipe();
         for account_id in accounts {
-            pipe.cmd("EXISTS").arg(account_details_key(account_id));
+            pipe.exists(account_details_key(account_id));
         }
 
         let routing_table = self.routes.clone();
@@ -713,12 +676,9 @@ impl NodeStore for RedisStore {
             .and_then(move |connection| {
         let mut pipe = redis::pipe();
         pipe.atomic()
-            .cmd("DEL")
-            .arg(STATIC_ROUTES_KEY)
+            .del(STATIC_ROUTES_KEY)
             .ignore()
-            .cmd("HMSET")
-            .arg(STATIC_ROUTES_KEY)
-            .arg(routes)
+            .hset_multiple(STATIC_ROUTES_KEY, &routes)
             .ignore();
             pipe.query_async(connection)
                 .map_err(|err| error!("Error setting static routes: {:?}", err))
@@ -781,7 +741,7 @@ impl RouteManagerStore for RedisStore {
                     } else {
                         let mut pipe = redis::pipe();
                         for id in account_ids {
-                            pipe.cmd("HGETALL").arg(account_details_key(id));
+                            pipe.hgetall(account_details_key(id));
                         }
                         Either::B(
                             pipe.query_async(connection)
@@ -861,12 +821,9 @@ impl RouteManagerStore for RedisStore {
         let routing_tale = self.routes.clone();
         let mut pipe = redis::pipe();
         pipe.atomic()
-            .cmd("DEL")
-            .arg(ROUTES_KEY)
+            .del(ROUTES_KEY)
             .ignore()
-            .cmd("HMSET")
-            .arg(ROUTES_KEY)
-            .arg(routes)
+            .hset_multiple(ROUTES_KEY, &routes)
             .ignore();
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
@@ -995,10 +952,7 @@ fn update_routes(
     routing_table: Arc<RwLock<HashMap<Bytes, u64>>>,
 ) -> impl Future<Item = (), Error = ()> {
     let mut pipe = redis::pipe();
-    pipe.cmd("HGETALL")
-        .arg(ROUTES_KEY)
-        .cmd("HGETALL")
-        .arg(STATIC_ROUTES_KEY);
+    pipe.hgetall(ROUTES_KEY).hgetall(STATIC_ROUTES_KEY);
     pipe.query_async(connection)
         .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
         .and_then(
