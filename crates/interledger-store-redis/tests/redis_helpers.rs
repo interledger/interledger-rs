@@ -51,7 +51,7 @@ impl RedisServer {
 
         // Load redis_cell
         let mut cell_module: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        cell_module.push("tests");
+        cell_module.push("external");
         cell_module.push("libredis_cell.so");
         cmd.arg("--loadmodule").arg(cell_module.as_os_str());
 
