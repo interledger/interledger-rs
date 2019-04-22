@@ -22,7 +22,6 @@ use interledger_spsp::{pay, SpspResponder};
 use serde::Serialize;
 use serde_json::Value;
 use std::{
-    cmp::max,
     collections::HashMap,
     iter::FromIterator,
     str::{self, FromStr},
@@ -202,86 +201,6 @@ impl_web! {
                 .and_then(move |store| store.insert_account(body)
                 .and_then(|account| Ok(json!(account)))
                 .map_err(|_| Response::builder().status(500).body(()).unwrap()))
-        }
-
-        #[post("/accounts/prepaid")]
-        #[content_type("application/json")]
-        fn post_accounts_prepaid(&self, body: AccountDetails) -> impl Future<Item = Value, Error = Response<()>> {
-            debug!("Got open signup request: {:?}", body);
-            let store = self.store.clone();
-            let asset_code = body.asset_code.to_string();
-            result(self.open_signup_min_balance.ok_or_else(|| {
-                debug!("Got open signup request but this node does not accept open signups");
-                Response::builder().status(404).body(()).unwrap()
-            }))
-            .and_then(|min_balance| {
-                let store_clone = store.clone();
-                store.clone().get_accounts(vec![A::AccountId::default()])
-                    .map_err(|_| {
-                        error!("No default account set");
-                        Response::builder().status(500).body(()).unwrap()
-                    })
-                    .and_then(move |accounts| {
-                        let admin = accounts[0].clone();
-                        if admin.asset_code() == asset_code.as_str() {
-                            Ok((admin, vec![1f64, 1f64]))
-                        } else {
-                            store_clone.get_exchange_rates(&[admin.asset_code(), asset_code.as_str()])
-                                .map_err(|_| {
-                                    error!("Cannot convert account units into the default account's asset. No rate found");
-                                    Response::builder().status(500).body(()).unwrap()
-                                })
-                                .and_then(|rates| Ok((admin, rates)))
-                        }
-                    })
-                    .and_then(move |(admin, rates)| {
-                        let mut min_balance = min_balance as f64 * rates[1] / rates[0];
-                        if body.asset_scale > admin.asset_scale() {
-                            min_balance *= f64::from(10u32.pow((body.asset_scale - admin.asset_scale()).into()));
-                        } else {
-                            min_balance /= f64::from(10u32.pow((admin.asset_scale() - body.asset_scale).into()));
-                        }
-
-                        // Sanitize account
-                        let settle_to: i64 = if let Some(settle_to) = body.settle_to {
-                            max(settle_to, min_balance as i64)
-                        } else {
-                            min_balance as i64
-                        };
-                        let account = AccountDetails {
-                            is_admin: false,
-                            min_balance: 0,
-                            // TODO don't receive routes from open signup accounts
-                            receive_routes: body.receive_routes,
-                            // receive_routes: false,
-                            routing_relation: Some("Child".to_string()),
-                            settle_to: Some(settle_to),
-                            // All other fields can be left as is
-                            ilp_address: body.ilp_address,
-                            asset_code: body.asset_code,
-                            asset_scale: body.asset_scale,
-                            max_packet_amount: body.max_packet_amount,
-                            http_endpoint: body.http_endpoint,
-                            http_incoming_token: body.http_incoming_token,
-                            http_outgoing_token: body.http_outgoing_token,
-                            btp_uri: body.btp_uri,
-                            btp_incoming_token: body.btp_incoming_token,
-                            xrp_address: body.xrp_address,
-                            settle_threshold: body.settle_threshold,
-                            send_routes: body.send_routes,
-                            round_trip_time: body.round_trip_time,
-                            amount_per_minute_limit: body.amount_per_minute_limit,
-                            packets_per_minute_limit: body.packets_per_minute_limit,
-                        };
-
-                        store.insert_account_with_min_balance(account, min_balance as u64)
-                        .map_err(move |_| {
-                            warn!("Not creating account, probably because the amount the account has prefunded is lower than the min balance of {}", min_balance);
-                            Response::builder().status(402).body(()).unwrap()
-                        })
-                        .and_then(|account| Ok(json!(account)))
-                    })
-            })
         }
 
         #[get("/accounts")]
