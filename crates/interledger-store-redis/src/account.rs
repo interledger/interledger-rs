@@ -29,7 +29,7 @@ pub struct Account {
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
-    pub(crate) max_receivable_balance: i64,
+    pub(crate) min_balance: i64,
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
@@ -118,7 +118,7 @@ impl Account {
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
-            max_receivable_balance: 0 - details.min_balance,
+            min_balance: details.min_balance,
             http_endpoint,
             http_outgoing_token: details.http_outgoing_token.map(Bytes::from),
             btp_uri,
@@ -193,8 +193,8 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             .routing_relation
             .to_string()
             .write_redis_args(&mut rv);
-        "max_receivable_balance".write_redis_args(&mut rv);
-        account.max_receivable_balance.write_redis_args(&mut rv);
+        "min_balance".write_redis_args(&mut rv);
+        account.min_balance.write_redis_args(&mut rv);
         "round_trip_time".write_redis_args(&mut rv);
         account.round_trip_time.write_redis_args(&mut rv);
 
@@ -275,7 +275,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 btp_uri: get_url_option("btp_uri", &hash)?,
                 btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?,
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
-                max_receivable_balance: get_value("max_receivable_balance", &hash)?,
+                min_balance: get_value("min_balance", &hash)?,
                 is_admin: get_bool("is_admin", &hash),
                 xrp_address: get_value_option("xrp_address", &hash)?,
                 settle_threshold: get_value_option("settle_threshold", &hash)?,

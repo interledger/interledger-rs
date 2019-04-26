@@ -37,9 +37,9 @@ impl ServerType {
             .as_ref()
             .map(|x| &x[..])
         {
-            // Default to TCP unlike original version
-            Some("unix") => ServerType::Unix,
-            _ => ServerType::Tcp,
+            // Default to unix unlike original version
+            Some("tcp") => ServerType::Tcp,
+            _ => ServerType::Unix,
         }
     }
 }

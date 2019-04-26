@@ -15,14 +15,15 @@ Static account details as well as balances are stored as hash maps under the key
 
 #### Balances
 
-This store keeps track of 4 balance-related values per account:
-- Payable Balance (`payable_balance`) - the amount that the operator of this node/store owes to accountholder X
-- Receivable Balance (`receivable_balance`) - the amount that accountholder X owes the operator of this node/store
-- Pending Incoming Prepares (`pending_incoming`) - the additional amount that accountholder X would owe the operator if all of the in-flight Prepare packets they have sent are fulfilled
-- Pending Outgoing Prepares (`pending_outgoing`) - the additional amount that the operator would owe accountholder X if all of the in-flight Prepare packets the operator has sent are fulfilled
+For each account, the store tracks a `balance` (as a signed 64-bit integer) that represents the **net** position with that account holder. 
+A positive balance indicates the operator of the store has an outstanding liability (owes money) to that account holder. 
+A negative balance represents an asset (the account holder owes money to the operator).
+
+The store also tracks `prepaid_amount`, which represents the amount that the account holder has pre-funded (in incoming settlements) above what they owe for ILP packets they have sent.
+This is tracked separately from the `balance` to avoid the ["settling back and forth forever" problem](https://forum.interledger.org/t/what-should-positive-negative-balances-represent/501/26).
 
 The `asset_code` and `asset_scale` for each of the accounts' balances can be found in the Account Details hash map. 
-Note that this means that accounts' balances are not directly comparable (for example if account 1's `payable_balance` is 100 and account 2's `payable_balance` is 1000, this does not necessarily mean that we owe accountholder 2 more than accountholder 1, because these values represent completely different assets).
+Note that this means that accounts' balances are not directly comparable (for example if account 1's `balance` is 100 and account 2's `balance` is 1000, this does not necessarily mean that we owe accountholder 2 more than accountholder 1, because these values represent completely different assets).
 
 #### Outgoing Auth Tokens
 
