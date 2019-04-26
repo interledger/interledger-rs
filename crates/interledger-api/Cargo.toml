@@ -21,7 +21,7 @@ interledger-spsp = { path = "../interledger-spsp", version = "0.2.1" }
 log = "0.4.6"
 serde = "1.0.89"
 serde_json = "1.0.39"
-tower-web = "0.3.6"
+tower-web = "0.3.7"
 
 [badges]
 circle-ci = { repository = "emschwartz/interledger-rs" }
