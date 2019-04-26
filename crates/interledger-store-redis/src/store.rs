@@ -36,62 +36,45 @@ static PROCESS_PREPARE: &str = "
 local from_id = ARGV[1]
 local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
-local to_account = 'accounts:' .. ARGV[3]
-local to_amount = tonumber(ARGV[4])
-local max_receivable_balance = redis.call('HGET', from_account, 'max_receivable_balance')
+local min_balance, balance, prepaid_amount = unpack(redis.call('HMGET', from_account, 'min_balance', 'balance', 'prepaid_amount'))
+balance = tonumber(balance)
+prepaid_amount = tonumber(balance)
 
--- Check that the prepare wouldn't exceed the receivable balance limit
-if max_receivable_balance then
-    max_receivable_balance = tonumber(max_receivable_balance)
-    local receivable_balance, payable_balance, pending_incoming = unpack(redis.call('HMGET', from_account, 'receivable_balance', 'payable_balance', 'pending_incoming'))
-    if receivable_balance + pending_incoming + from_amount - payable_balance > max_receivable_balance then
-        error('Incoming prepare of ' .. from_amount .. ' would exceed max receivable balance for account ' .. from_id .. '. Current receivable balance: ' .. receivable_balance .. ', max receivable balance: ' .. max_receivable_balance)
+-- Check that the prepare wouldn't go under the account's minimum balance
+if min_balance then
+    min_balance = tonumber(min_balance)
+    if balance + prepaid_amount - from_amount < min_balance then
+        error('Incoming prepare of ' .. from_amount .. ' would bring account ' .. from_id .. ' under its minimum balance. Current balance: ' .. balance .. ', min balance: ' .. min_balance)
     end
 end
 
-local pending_incoming = redis.call('HINCRBY', from_account, 'pending_incoming', from_amount)
-local pending_outgoing = redis.call('HINCRBY', to_account, 'pending_outgoing', to_amount)
-return {pending_incoming, pending_outgoing}";
+-- Deduct the from_amount from the prepaid_amount and/or the balance
+if prepaid_amount >= from_amount then
+    prepaid_amount = redis.call('HINCRBY', from_account, 'prepaid_amount', 0 - from_amount)
+elseif prepaid_amount > 0 then
+    local sub_from_balance = from_amount - prepaid_amount
+    prepaid_amount = 0
+    redis.call('HSET', from_account, 'prepaid_amount', 0)
+    balance = redis.call('HINCRBY', from_account, 'balance', 0 - sub_from_balance)
+else
+    balance = redis.call('HINCRBY', from_account, 'balance', 0 - from_amount)
+end
+
+return balance + prepaid_amount";
 static PROCESS_FULFILL: &str = "\
-local from_id = ARGV[1]
-local from_account = 'accounts:' .. ARGV[1]
-local from_amount = tonumber(ARGV[2])
-local to_account = 'accounts:' .. ARGV[3]
-local to_amount = tonumber(ARGV[4])
+local to_account = 'accounts:' .. ARGV[1]
+local to_amount = tonumber(ARGV[2])
 
--- Move the amounts from pending to the actual balances
-redis.call('HINCRBY', from_account, 'pending_incoming', 0 - from_amount)
-local receivable_balance = redis.call('HINCRBY', from_account, 'receivable_balance', from_amount)
-redis.call('HINCRBY', to_account, 'pending_outgoing', 0 - to_amount)
-local payable_balance = redis.call('HINCRBY', to_account, 'payable_balance', to_amount)
-
--- Net out the Payable and Receivable balances for the from account
-local from_payable_balance = tonumber(redis.call('HGET', from_account, 'payable_balance'))
-if receivable_balance > 0 and from_payable_balance > 0 then
-    local amount_to_net = math.min(receivable_balance, from_payable_balance)
-    redis.call('HINCRBY', from_account, 'receivable_balance', 0 - amount_to_net)
-    redis.call('HINCRBY', from_account, 'payable_balance', 0 - amount_to_net)
-end
-
--- Net out the Payable and Receivable balances for the to account
-local to_receivable_balance = tonumber(redis.call('HGET', to_account, 'receivable_balance'))
-if payable_balance > 0 and to_receivable_balance > 0 then
-    local amount_to_net = math.min(payable_balance, to_receivable_balance)
-    redis.call('HINCRBY', to_account, 'receivable_balance', 0 - amount_to_net)
-    redis.call('HINCRBY', to_account, 'payable_balance', 0 - amount_to_net)
-end
-
-return {receivable_balance, payable_balance}";
+local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
+local prepaid_amount = redis.call('HGET', to_account, 'prepaid_amount')
+return balance + prepaid_amount";
 static PROCESS_REJECT: &str = "\
-local from_id = ARGV[1]
 local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
-local to_account = 'accounts:' .. ARGV[3]
-local to_amount = tonumber(ARGV[4])
 
-local pending_incoming = redis.call('HINCRBY', from_account, 'pending_incoming', 0 - from_amount)
-local pending_outgoing = redis.call('HINCRBY', to_account, 'pending_outgoing', 0 - to_amount)
-return {pending_incoming, pending_outgoing}";
+local prepaid_amount = redis.call('HGET', from_account, 'prepaid_amount')
+local balance = redis.call('HINCRBY', from_account, 'balance', from_amount)
+return balance + prepaid_amount";
 
 static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
@@ -284,7 +267,7 @@ impl RedisStore {
                         .ignore();
 
                     // Set balance-related details
-                    pipe.hset_multiple(account_details_key(account.id), &[("payable_balance", 0), ("receivable_balance", 0), ("pending_incoming", 0), ("pending_outgoing", 0)]).ignore();
+                    pipe.hset_multiple(account_details_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
 
                     // Set incoming auth details
                     if let Some(auth) = btp_incoming_token_hmac_clone {
@@ -365,12 +348,7 @@ impl BalanceStore for RedisStore {
         Box::new(
             cmd("HMGET")
                 .arg(account_details_key(account.id))
-                .arg(&[
-                    "payable_balance",
-                    "receivable_balance",
-                    "pending_incoming",
-                    "pending_outgoing",
-                ])
+                .arg(&["balance", "prepaid_amount"])
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -379,11 +357,9 @@ impl BalanceStore for RedisStore {
                     )
                 })
                 .and_then(|(_connection, values): (_, Vec<i64>)| {
-                    let payable_balance = values[0];
-                    let receivable_balance = values[1];
-                    let pending_incoming = values[2];
-                    let pending_outgoing = values[3];
-                    Ok(payable_balance + pending_outgoing - receivable_balance - pending_incoming)
+                    let balance = values[0];
+                    let prepaid_amount = values[1];
+                    Ok(balance + prepaid_amount)
                 }),
         )
     }
@@ -393,72 +369,62 @@ impl BalanceStore for RedisStore {
         from_account: Account,
         incoming_amount: u64,
         to_account: Account,
-        outgoing_amount: u64,
+        _outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let from_account_id = from_account.id;
         let to_account_id = to_account.id;
-        Box::new(cmd("EVAL")
-            .arg(PROCESS_PREPARE)
-            .arg(0)
-            .arg(from_account_id)
-            .arg(incoming_amount)
-            .arg(to_account_id)
-            .arg(outgoing_amount)
-            .query_async(self.connection.as_ref().clone())
-            .map_err(move |err| {
-                warn!(
-                    "Error handling prepare from account: {} to account: {}: {:?}",
-                    from_account_id,
-                    to_account_id,
-                    err
-                )
-            })
-            .and_then(
-                move |(_connection, (pending_incoming, pending_outgoing)): (_, (i64, i64))| {
+        Box::new(
+            cmd("EVAL")
+                .arg(PROCESS_PREPARE)
+                .arg(0)
+                .arg(from_account_id)
+                .arg(incoming_amount)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    warn!(
+                        "Error handling prepare from account: {} to account: {}: {:?}",
+                        from_account_id, to_account_id, err
+                    )
+                })
+                .and_then(move |(_connection, balance): (_, i64)| {
                     debug!(
-                        "Processed prepare. Account {} has: {} in pending incoming prepares, account {} has: {} in pending outgoing prepares",
-                        from_account_id, pending_incoming, to_account_id, pending_outgoing
+                        "Processed prepare. Account {} has balance (including prepaid amount): {} ",
+                        from_account_id, balance
                     );
                     Ok(())
-                },
-            ),
+                }),
         )
     }
 
     fn update_balances_for_fulfill(
         &self,
         from_account: Account,
-        incoming_amount: u64,
+        _incoming_amount: u64,
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let from_account_id = from_account.id;
         let to_account_id = to_account.id;
-        Box::new(cmd("EVAL")
-            .arg(PROCESS_FULFILL)
-            .arg(0)
-            .arg(from_account_id)
-            .arg(incoming_amount)
-            .arg(to_account_id)
-            .arg(outgoing_amount)
-            .query_async(self.connection.as_ref().clone())
-            .map_err(move |err| {
-                error!(
-                    "Error handling fulfill from account: {} to account: {}: {:?}",
-                    from_account_id,
-                    to_account_id,
-                    err
-                )
-            })
-            .and_then(
-                move |(_connection, (receivable_balance, payable_balance)): (_, (i64, i64))| {
+        Box::new(
+            cmd("EVAL")
+                .arg(PROCESS_FULFILL)
+                .arg(0)
+                .arg(to_account_id)
+                .arg(outgoing_amount)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error handling fulfill from account: {} to account: {}: {:?}",
+                        from_account_id, to_account_id, err
+                    )
+                })
+                .and_then(move |(_connection, balance): (_, i64)| {
                     debug!(
-                        "Processed fulfill. Account {} has receivable balance: {}, account {} has payable balance: {}",
-                        from_account_id, receivable_balance, to_account_id, payable_balance
+                        "Processed fulfill. Account {} has balance: {}",
+                        to_account_id, balance,
                     );
                     Ok(())
-                },
-            ),
+                }),
         )
     }
 
@@ -467,35 +433,30 @@ impl BalanceStore for RedisStore {
         from_account: Account,
         incoming_amount: u64,
         to_account: Account,
-        outgoing_amount: u64,
+        _outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let from_account_id = from_account.id;
         let to_account_id = to_account.id;
-        Box::new(cmd("EVAL")
-            .arg(PROCESS_REJECT)
-            .arg(0)
-            .arg(from_account_id)
-            .arg(incoming_amount)
-            .arg(to_account_id)
-            .arg(outgoing_amount)
-            .query_async(self.connection.as_ref().clone())
-            .map_err(move |err| {
-                warn!(
-                    "Error handling reject from account: {} to account: {}: {:?}",
-                    from_account_id,
-                    to_account_id,
-                    err
-                )
-            })
-                     .and_then(
-                         move |(_connection, (pending_incoming, pending_outgoing)): (_, (i64, i64))| {
-                             debug!(
-                                 "Processed reject. Account {} has: {} in pending incoming prepares, account {} has: {} in pending outgoing prepares",
-                                 from_account_id, pending_incoming, to_account_id, pending_outgoing
-                             );
-                             Ok(())
-                         },
-                     ),
+        Box::new(
+            cmd("EVAL")
+                .arg(PROCESS_REJECT)
+                .arg(0)
+                .arg(from_account_id)
+                .arg(incoming_amount)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    warn!(
+                        "Error handling reject for packet from account: {} to account: {}: {:?}",
+                        from_account_id, to_account_id, err
+                    )
+                })
+                .and_then(move |(_connection, balance): (_, i64)| {
+                    debug!(
+                        "Processed reject. Account {} has balance (including prepaid amount): {}",
+                        from_account_id, balance
+                    );
+                    Ok(())
+                }),
         )
     }
 }

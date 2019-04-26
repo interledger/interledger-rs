@@ -451,10 +451,12 @@ mod balances {
                 .async_connection()
                 .map_err(|err| panic!(err))
                 .and_then(|connection| {
-                    redis::cmd("HSET")
+                    redis::cmd("HMSET")
                         .arg("accounts:0")
-                        .arg("payable_balance")
-                        .arg(1000)
+                        .arg("balance")
+                        .arg(600)
+                        .arg("prepaid_amount")
+                        .arg(400)
                         .query_async(connection)
                         .map_err(|err| panic!(err))
                         .and_then(move |(_, _): (_, redis::Value)| {
@@ -496,7 +498,7 @@ mod balances {
                                 .join(store_clone_1.clone().get_balance(accounts[1].clone()))
                                 .and_then(|(balance0, balance1)| {
                                     assert_eq!(balance0, -100);
-                                    assert_eq!(balance1, 500);
+                                    assert_eq!(balance1, 0);
                                     Ok(())
                                 })
                         })
@@ -553,7 +555,7 @@ mod balances {
                                 .join(store_clone_1.clone().get_balance(accounts[1].clone()))
                                 .and_then(|(balance0, balance1)| {
                                     assert_eq!(balance0, -100);
-                                    assert_eq!(balance1, 500);
+                                    assert_eq!(balance1, 0);
                                     Ok(())
                                 })
                         })
