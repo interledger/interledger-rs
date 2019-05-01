@@ -61,14 +61,14 @@ else
 end
 
 return balance + prepaid_amount";
-static PROCESS_FULFILL: &str = "\
+static PROCESS_FULFILL: &str = "
 local to_account = 'accounts:' .. ARGV[1]
 local to_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
 local prepaid_amount = redis.call('HGET', to_account, 'prepaid_amount')
 return balance + prepaid_amount";
-static PROCESS_REJECT: &str = "\
+static PROCESS_REJECT: &str = "
 local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
 
@@ -195,7 +195,6 @@ impl RedisStore {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        debug!("Inserting account: {:?}", account);
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
@@ -287,6 +286,10 @@ impl RedisStore {
                         pipe.sadd("send_routes_to", account.id).ignore();
                     }
 
+                    if account.btp_uri.is_some() {
+                        pipe.sadd("btp_outgoing", account.id).ignore();
+                    }
+
                     // Add route to routing table
                     pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
                         .ignore();
@@ -296,7 +299,10 @@ impl RedisStore {
                         .and_then(move |(connection, _ret): (SharedConnection, Value)| {
                             update_routes(connection, routing_table)
                         })
-                        .and_then(move |_| Ok(account))
+                        .and_then(move |_| {
+                            debug!("Inserted account {}", account.id);
+                            Ok(account)
+                        })
                 }),
         )
     }
@@ -371,29 +377,33 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         _outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id;
-        let to_account_id = to_account.id;
-        Box::new(
-            cmd("EVAL")
-                .arg(PROCESS_PREPARE)
-                .arg(0)
-                .arg(from_account_id)
-                .arg(incoming_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    warn!(
-                        "Error handling prepare from account: {} to account: {}: {:?}",
-                        from_account_id, to_account_id, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    debug!(
-                        "Processed prepare. Account {} has balance (including prepaid amount): {} ",
-                        from_account_id, balance
-                    );
-                    Ok(())
-                }),
-        )
+        if incoming_amount > 0 {
+            let from_account_id = from_account.id;
+            let to_account_id = to_account.id;
+            Box::new(
+                cmd("EVAL")
+                    .arg(PROCESS_PREPARE)
+                    .arg(0)
+                    .arg(from_account_id)
+                    .arg(incoming_amount)
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(move |err| {
+                        warn!(
+                            "Error handling prepare from account: {} to account: {}: {:?}",
+                            from_account_id, to_account_id, err
+                        )
+                    })
+                    .and_then(move |(_connection, balance): (_, i64)| {
+                        trace!(
+                            "Processed prepare with incoming amount: {}. Account {} has balance (including prepaid amount): {} ",
+                            incoming_amount, from_account_id, balance
+                        );
+                        Ok(())
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 
     fn update_balances_for_fulfill(
@@ -403,29 +413,35 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id;
-        let to_account_id = to_account.id;
-        Box::new(
-            cmd("EVAL")
-                .arg(PROCESS_FULFILL)
-                .arg(0)
-                .arg(to_account_id)
-                .arg(outgoing_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error handling fulfill from account: {} to account: {}: {:?}",
-                        from_account_id, to_account_id, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    debug!(
-                        "Processed fulfill. Account {} has balance: {}",
-                        to_account_id, balance,
-                    );
-                    Ok(())
-                }),
-        )
+        if outgoing_amount > 0 {
+            let from_account_id = from_account.id;
+            let to_account_id = to_account.id;
+            Box::new(
+                cmd("EVAL")
+                    .arg(PROCESS_FULFILL)
+                    .arg(0)
+                    .arg(to_account_id)
+                    .arg(outgoing_amount)
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(move |err| {
+                        error!(
+                            "Error handling fulfill from account: {} to account: {}: {:?}",
+                            from_account_id, to_account_id, err
+                        )
+                    })
+                    .and_then(move |(_connection, balance): (_, i64)| {
+                        trace!(
+                            "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
+                            outgoing_amount,
+                            to_account_id,
+                            balance,
+                        );
+                        Ok(())
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 
     fn update_balances_for_reject(
@@ -435,29 +451,33 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         _outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id;
-        let to_account_id = to_account.id;
-        Box::new(
-            cmd("EVAL")
-                .arg(PROCESS_REJECT)
-                .arg(0)
-                .arg(from_account_id)
-                .arg(incoming_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    warn!(
-                        "Error handling reject for packet from account: {} to account: {}: {:?}",
-                        from_account_id, to_account_id, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    debug!(
-                        "Processed reject. Account {} has balance (including prepaid amount): {}",
-                        from_account_id, balance
-                    );
-                    Ok(())
-                }),
-        )
+        if incoming_amount > 0 {
+            let from_account_id = from_account.id;
+            let to_account_id = to_account.id;
+            Box::new(
+                cmd("EVAL")
+                    .arg(PROCESS_REJECT)
+                    .arg(0)
+                    .arg(from_account_id)
+                    .arg(incoming_amount)
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(move |err| {
+                        warn!(
+                            "Error handling reject for packet from account: {} to account: {}: {:?}",
+                            from_account_id, to_account_id, err
+                        )
+                    })
+                    .and_then(move |(_connection, balance): (_, i64)| {
+                        trace!(
+                            "Processed reject for incoming amount: {}. Account {} has balance (including prepaid amount): {}",
+                            incoming_amount, from_account_id, balance
+                        );
+                        Ok(())
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 }
 
@@ -508,6 +528,49 @@ impl BtpStore for RedisStore {
                         }
                     },
                 ),
+        )
+    }
+
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        let decryption_key = self.decryption_key.clone();
+        Box::new(
+            cmd("SMEMBERS")
+                .arg("btp_outgoing")
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error getting members of set btp_outgoing: {:?}", err))
+                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
+                    if account_ids.is_empty() {
+                        Either::A(ok(Vec::new()))
+                    } else {
+                        let mut pipe = redis::pipe();
+                        for id in account_ids {
+                            pipe.hgetall(account_details_key(id));
+                        }
+                        Either::B(
+                            pipe.query_async(connection)
+                                .map_err(|err| {
+                                    error!(
+                                        "Error getting accounts with outgoing BTP details: {:?}",
+                                        err
+                                    )
+                                })
+                                .and_then(
+                                    move |(_connection, accounts): (
+                                        SharedConnection,
+                                        Vec<AccountWithEncryptedTokens>,
+                                    )| {
+                                        let accounts: Vec<Account> = accounts
+                                            .into_iter()
+                                            .map(|account| account.decrypt_tokens(&decryption_key))
+                                            .collect();
+                                        Ok(accounts)
+                                    },
+                                ),
+                        )
+                    }
+                }),
         )
     }
 }
@@ -900,7 +963,7 @@ fn update_rates(
             let num_assets = rates.len();
             let rates = HashMap::from_iter(rates.into_iter());
             (*exchange_rates.write()) = rates;
-            debug!("Updated rates for {} assets", num_assets);
+            trace!("Updated rates for {} assets", num_assets);
             Ok(())
         })
 }
@@ -934,7 +997,7 @@ fn update_routes(
                 trace!("Routing table is now: {:?}", routes);
                 let num_routes = routes.len();
                 *routing_table.write() = routes;
-                debug!("Updated routing table with {} routes", num_routes);
+                trace!("Updated routing table with {} routes", num_routes);
                 Ok(())
             },
         )

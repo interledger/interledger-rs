@@ -40,7 +40,7 @@ where
                 asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };
-            debug!(
+            trace!(
                 "Responding to query for ILDCP info by account: {:?}",
                 str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
             );
