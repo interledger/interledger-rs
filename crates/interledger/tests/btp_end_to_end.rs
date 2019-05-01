@@ -5,34 +5,10 @@ extern crate log;
 use env_logger;
 use futures::{future::ok, Future};
 use interledger::cli;
-use std::time::{Duration, Instant};
-use tokio::{runtime::Runtime, timer::Delay};
+use tokio::runtime::Runtime;
 
 mod redis_helpers;
 use redis_helpers::*;
-
-fn get_open_port(try_port: Option<u16>) -> u16 {
-    if let Some(port) = try_port {
-        let listener = net2::TcpBuilder::new_v4().unwrap();
-        listener.reuse_address(true).unwrap();
-        if let Ok(listener) = listener.bind(&format!("127.0.0.1:{}", port)) {
-            return listener.listen(1).unwrap().local_addr().unwrap().port();
-        }
-    }
-
-    for _i in 0..1000 {
-        let listener = net2::TcpBuilder::new_v4().unwrap();
-        listener.reuse_address(true).unwrap();
-        if let Ok(listener) = listener.bind("127.0.0.1:0") {
-            return listener.listen(1).unwrap().local_addr().unwrap().port();
-        }
-    }
-    panic!("Cannot find open port!");
-}
-
-fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
-    Delay::new(Instant::now() + Duration::from_millis(ms)).map_err(|err| panic!(err))
-}
 
 #[test]
 fn btp_end_to_end() {
@@ -111,7 +87,6 @@ fn btp_end_to_end() {
                 ([127, 0, 0, 1], btp_port).into(),
                 ([127, 0, 0, 1], http_port).into(),
                 &server_secret,
-                None,
             );
             tokio::spawn(connector);
             Ok(())

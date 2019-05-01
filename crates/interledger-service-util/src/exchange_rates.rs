@@ -46,36 +46,39 @@ where
         &mut self,
         mut request: OutgoingRequest<A>,
     ) -> Box<Future<Item = Fulfill, Error = Reject> + Send> {
-        let scale_change = u32::from(request.to.asset_scale() - request.from.asset_scale());
-        let outgoing_amount = if request.from.asset_code() == request.to.asset_code() {
-            debug!("Same currency. Forwarding request.");
-            request.prepare.amount() * 10u64.pow(scale_change)
-        } else if let Ok(rates) = self
-            .store
-            .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
-        {
-            // TODO use bignums to make sure none of these numbers overflow
-            let outgoing_amount = (rates[1] / rates[0]
-                * request.prepare.amount() as f64
-                * 10u64.pow(scale_change) as f64) as u64;
-            debug!("Converted incoming amount of {} {} (scale: {}) to outgoing amount of {} {} (scale: {})", request.prepare.amount(), request.from.asset_code(), request.from.asset_scale(), outgoing_amount, request.to.asset_code(), request.to.asset_scale());
-            outgoing_amount
-        } else {
-            error!(
-                "Error getting exchange rates for assets: {}, {}",
-                request.from.asset_code(),
-                request.to.asset_code()
-            );
-            return Box::new(err(RejectBuilder {
-                code: ErrorCode::T00_INTERNAL_ERROR,
-                message: &[],
-                triggered_by: &self.ilp_address,
-                data: &[],
-            }
-            .build()));
-        };
+        if request.prepare.amount() > 0 {
+            let rate: f64 = if request.from.asset_code() == request.to.asset_code() {
+                1f64
+            } else if let Ok(rates) = self
+                .store
+                .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
+            {
+                rates[1] / rates[0]
+            } else {
+                error!(
+                    "No exchange rates available for assets: {}, {}",
+                    request.from.asset_code(),
+                    request.to.asset_code()
+                );
+                return Box::new(err(RejectBuilder {
+                    code: ErrorCode::T00_INTERNAL_ERROR,
+                    message: &[],
+                    triggered_by: &self.ilp_address,
+                    data: &[],
+                }
+                .build()));
+            };
 
-        request.prepare.set_amount(outgoing_amount);
+            let scaled_rate = if request.to.asset_scale() >= request.from.asset_scale() {
+                rate * 10f64.powf(f64::from(request.to.asset_scale() - request.from.asset_scale()))
+            } else {
+                rate / 10f64.powf(f64::from(request.from.asset_scale() - request.to.asset_scale()))
+            };
+
+            let outgoing_amount = (request.prepare.amount() as f64 * scaled_rate) as u64;
+            request.prepare.set_amount(outgoing_amount);
+            debug!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}", request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(), outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
+        }
 
         Box::new(self.next.send_request(request))
     }

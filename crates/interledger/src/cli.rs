@@ -360,7 +360,6 @@ pub fn run_node_redis<R>(
     btp_address: SocketAddr,
     http_address: SocketAddr,
     server_secret: &[u8; 32],
-    open_signup_min_balance: Option<u64>,
 ) -> impl Future<Item = (), Error = ()>
 where
     R: IntoConnectionInfo,
@@ -427,18 +426,11 @@ where
 
                             // TODO should this run the node api on a different port so it's easier to separate public/private?
                             // Note the API also includes receiving ILP packets sent via HTTP
-                            let mut api = NodeApi::new(
+                            let api = NodeApi::new(
                                 server_secret,
                                 store.clone(),
                                 incoming_service.clone(),
                             );
-                            if let Some(min_balance) = open_signup_min_balance {
-                                debug!(
-                                    "Enabling open signups with minimum balance: {}",
-                                    min_balance
-                                );
-                                api.enable_open_signups(min_balance);
-                            }
                             let listener = TcpListener::bind(&http_address)
                                 .expect("Unable to bind to HTTP address");
                             println!("Interledger node listening on: {}", http_address);

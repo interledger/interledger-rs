@@ -371,29 +371,33 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         _outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id;
-        let to_account_id = to_account.id;
-        Box::new(
-            cmd("EVAL")
-                .arg(PROCESS_PREPARE)
-                .arg(0)
-                .arg(from_account_id)
-                .arg(incoming_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    warn!(
-                        "Error handling prepare from account: {} to account: {}: {:?}",
-                        from_account_id, to_account_id, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    debug!(
-                        "Processed prepare. Account {} has balance (including prepaid amount): {} ",
-                        from_account_id, balance
-                    );
-                    Ok(())
-                }),
-        )
+        if incoming_amount > 0 {
+            let from_account_id = from_account.id;
+            let to_account_id = to_account.id;
+            Box::new(
+                cmd("EVAL")
+                    .arg(PROCESS_PREPARE)
+                    .arg(0)
+                    .arg(from_account_id)
+                    .arg(incoming_amount)
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(move |err| {
+                        warn!(
+                            "Error handling prepare from account: {} to account: {}: {:?}",
+                            from_account_id, to_account_id, err
+                        )
+                    })
+                    .and_then(move |(_connection, balance): (_, i64)| {
+                        debug!(
+                            "Processed prepare. Account {} has balance (including prepaid amount): {} ",
+                            from_account_id, balance
+                        );
+                        Ok(())
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 
     fn update_balances_for_fulfill(
@@ -403,29 +407,33 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id;
-        let to_account_id = to_account.id;
-        Box::new(
-            cmd("EVAL")
-                .arg(PROCESS_FULFILL)
-                .arg(0)
-                .arg(to_account_id)
-                .arg(outgoing_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error handling fulfill from account: {} to account: {}: {:?}",
-                        from_account_id, to_account_id, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    debug!(
-                        "Processed fulfill. Account {} has balance: {}",
-                        to_account_id, balance,
-                    );
-                    Ok(())
-                }),
-        )
+        if outgoing_amount > 0 {
+            let from_account_id = from_account.id;
+            let to_account_id = to_account.id;
+            Box::new(
+                cmd("EVAL")
+                    .arg(PROCESS_FULFILL)
+                    .arg(0)
+                    .arg(to_account_id)
+                    .arg(outgoing_amount)
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(move |err| {
+                        error!(
+                            "Error handling fulfill from account: {} to account: {}: {:?}",
+                            from_account_id, to_account_id, err
+                        )
+                    })
+                    .and_then(move |(_connection, balance): (_, i64)| {
+                        debug!(
+                            "Processed fulfill. Account {} has balance: {}",
+                            to_account_id, balance,
+                        );
+                        Ok(())
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 
     fn update_balances_for_reject(
@@ -435,29 +443,33 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         _outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let from_account_id = from_account.id;
-        let to_account_id = to_account.id;
-        Box::new(
-            cmd("EVAL")
-                .arg(PROCESS_REJECT)
-                .arg(0)
-                .arg(from_account_id)
-                .arg(incoming_amount)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    warn!(
-                        "Error handling reject for packet from account: {} to account: {}: {:?}",
-                        from_account_id, to_account_id, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    debug!(
-                        "Processed reject. Account {} has balance (including prepaid amount): {}",
-                        from_account_id, balance
-                    );
-                    Ok(())
-                }),
-        )
+        if incoming_amount > 0 {
+            let from_account_id = from_account.id;
+            let to_account_id = to_account.id;
+            Box::new(
+                cmd("EVAL")
+                    .arg(PROCESS_REJECT)
+                    .arg(0)
+                    .arg(from_account_id)
+                    .arg(incoming_amount)
+                    .query_async(self.connection.as_ref().clone())
+                    .map_err(move |err| {
+                        warn!(
+                            "Error handling reject for packet from account: {} to account: {}: {:?}",
+                            from_account_id, to_account_id, err
+                        )
+                    })
+                    .and_then(move |(_connection, balance): (_, i64)| {
+                        debug!(
+                            "Processed reject. Account {} has balance (including prepaid amount): {}",
+                            from_account_id, balance
+                        );
+                        Ok(())
+                    }),
+            )
+        } else {
+            Box::new(ok(()))
+        }
     }
 }
 

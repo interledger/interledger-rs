@@ -149,7 +149,6 @@ pub struct NodeApi<T, S> {
     store: T,
     incoming_handler: S,
     server_secret: Bytes,
-    open_signup_min_balance: Option<u64>,
 }
 
 impl_web! {
@@ -164,14 +163,7 @@ impl_web! {
                 store,
                 incoming_handler,
                 server_secret,
-                open_signup_min_balance: None,
             }
-        }
-
-        pub fn enable_open_signups(&mut self, min_balance: u64) -> &mut Self {
-            debug!("Enabling open signups for accounts that pre-pay at least {} (of the admin account's units)", min_balance);
-            self.open_signup_min_balance = Some(min_balance);
-            self
         }
 
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
