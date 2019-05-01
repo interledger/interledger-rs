@@ -11,13 +11,38 @@ use std::env;
 use std::fs;
 use std::process;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use std::path::PathBuf;
 
 use self::futures::Future;
 
 use redis::RedisError;
+
+use tokio::timer::Delay;
+
+pub fn get_open_port(try_port: Option<u16>) -> u16 {
+    if let Some(port) = try_port {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind(&format!("127.0.0.1:{}", port)) {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+
+    for _i in 0..1000 {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind("127.0.0.1:0") {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+    panic!("Cannot find open port!");
+}
+
+pub fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
+    Delay::new(Instant::now() + Duration::from_millis(ms)).map_err(|err| panic!(err))
+}
 
 #[derive(PartialEq)]
 enum ServerType {
@@ -37,9 +62,9 @@ impl ServerType {
             .as_ref()
             .map(|x| &x[..])
         {
-            // Default to TCP unlike original version
-            Some("unix") => ServerType::Unix,
-            _ => ServerType::Tcp,
+            // Default to unix socket unlike original version
+            Some("tcp") => ServerType::Tcp,
+            _ => ServerType::Unix,
         }
     }
 }

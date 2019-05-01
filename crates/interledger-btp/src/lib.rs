@@ -43,6 +43,11 @@ pub trait BtpStore {
         &self,
         token: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+
+    /// Load accounts that have a btp_uri configured
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 pub struct BtpOpenSignupAccount<'a> {
@@ -162,6 +167,17 @@ mod client_server {
                     .ok_or(()),
             ))
         }
+
+        fn get_btp_outgoing_accounts(
+            &self,
+        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+            Box::new(ok(self
+                .accounts
+                .iter()
+                .filter(|account| account.btp_uri.is_some())
+                .cloned()
+                .collect()))
+        }
     }
 
     #[test]
@@ -210,6 +226,7 @@ mod client_server {
         let accounts = vec![account.clone()];
         let client = connect_client(
             accounts,
+            true,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,

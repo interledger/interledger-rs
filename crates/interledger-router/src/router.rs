@@ -42,7 +42,7 @@ where
 
         // Check if we have a direct path for that account or if we need to scan through the routing table
         if let Some(account_id) = routing_table.get(&destination) {
-            debug!(
+            trace!(
                 "Found direct route for address: \"{}\". Account: {}",
                 str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
                 account_id
@@ -65,7 +65,7 @@ where
                 }
             }
             if let Some(account_id) = next_hop {
-                debug!(
+                trace!(
                     "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
                     str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
                     str::from_utf8(&matching_prefix[..]).unwrap_or("<not utf8>"),
@@ -73,7 +73,7 @@ where
                 );
             }
         } else {
-            warn!("Unable to route request because routing table is empty");
+            error!("Unable to route request because routing table is empty");
         }
 
         if let Some(account_id) = next_hop {
@@ -97,7 +97,7 @@ where
                     }),
             )
         } else {
-            debug!("No route found for request: {:?}", request);
+            error!("No route found for request: {:?}", request);
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],

@@ -119,10 +119,6 @@ pub fn main() {
                             .long("server_secret")
                             .help("Cryptographic seed used to derive keys")
                             .takes_value(true),
-                        Arg::with_name("open_signups_min_balance")
-                            .long("open_signups_min_balance")
-                            .help("Enable anyone to create an account if they firt send this amount (denominated in the asset of Account 0)")
-                            .takes_value(true),
                     ])
                     .group(ArgGroup::with_name("redis_connector").requires_all(&["redis_uri", "btp_port", "http_port"]))
                     .subcommand(SubCommand::with_name("accounts")
@@ -366,8 +362,6 @@ pub fn main() {
                 let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
                 let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
                 let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
-                let open_signups_min_balance: Option<u64> =
-                    value_t!(matches, "open_signups_min_balance", u64).ok();
                 let server_secret: [u8; 32] = if let Some(secret) =
                     matches.value_of("server_secret")
                 {
@@ -384,7 +378,6 @@ pub fn main() {
                     ([0, 0, 0, 0], btp_port).into(),
                     ([0, 0, 0, 0], http_port).into(),
                     &server_secret,
-                    open_signups_min_balance,
                 ));
             }
         },

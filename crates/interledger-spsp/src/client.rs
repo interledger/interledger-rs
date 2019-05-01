@@ -75,7 +75,7 @@ fn payment_pointer_to_url(payment_pointer: &str) -> String {
         url.push_str(".well-known/pay");
     }
     trace!(
-        "Converted payment pointer: ${} to ${}",
+        "Converted payment pointer: {} to URL: {}",
         payment_pointer,
         url
     );

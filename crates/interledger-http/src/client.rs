@@ -1,29 +1,29 @@
 use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{
-    future::{err, result},
-    Future, Stream,
-};
+use futures::{future::result, Future, Stream};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
 };
-use std::sync::Arc;
-use std::time::Duration;
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
-pub struct HttpClientService<T> {
+pub struct HttpClientService<S, T, A> {
     client: Client,
     store: Arc<T>,
+    next: S,
+    account_type: PhantomData<A>,
 }
 
-impl<T> HttpClientService<T>
+impl<S, T, A> HttpClientService<S, T, A>
 where
     T: HttpStore,
+    S: OutgoingService<A> + Clone,
+    A: HttpAccount,
 {
-    pub fn new(store: T) -> Self {
+    pub fn new(store: T, next: S) -> Self {
         let mut headers = HeaderMap::with_capacity(2);
         headers.insert(
             HeaderName::from_static("content-type"),
@@ -38,12 +38,15 @@ where
         HttpClientService {
             client,
             store: Arc::new(store),
+            next,
+            account_type: PhantomData,
         }
     }
 }
 
-impl<T, A> OutgoingService<A> for HttpClientService<T>
+impl<S, T, A> OutgoingService<A> for HttpClientService<S, T, A>
 where
+    S: OutgoingService<A>,
     T: HttpStore,
     A: HttpAccount,
 {
@@ -52,6 +55,11 @@ where
     /// Send an OutgoingRequest to a peer that implements the ILP-Over-HTTP.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         if let Some(url) = request.to.get_http_url() {
+            trace!(
+                "Sending outgoing ILP over HTTP packet to account: {} (URL: {})",
+                request.to.id(),
+                url.as_str()
+            );
             Box::new(
                 self.client
                     .post(url.clone())
@@ -74,17 +82,7 @@ where
                     .and_then(parse_packet_from_response),
             )
         } else {
-            error!(
-                "Cannot send outgoing HTTP request to account with no HTTP details: {:?}",
-                request.to
-            );
-            Box::new(err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &[],
-                triggered_by: &[],
-                data: &[],
-            }
-            .build()))
+            Box::new(self.next.send_request(request))
         }
     }
 }
@@ -93,6 +91,7 @@ fn parse_packet_from_response(
     response: HttpResponse,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     result(response.error_for_status().map_err(|err| {
+        error!("HTTP error sending ILP over HTTP packet: {:?}", err);
         let code = if let Some(status) = err.status() {
             if status.is_client_error() {
                 ErrorCode::F02_UNREACHABLE

@@ -57,7 +57,7 @@ where
                 .map_err(|err| error!("Error accepting incoming WebSocket connection: {:?}", err))
                 .and_then(|connection| validate_auth(store, connection))
                 .and_then(move |(account, connection)| {
-                    debug!("Added connection for account: {:?}", account);
+                    debug!("Added connection for account {}", account.id());
                     service_clone.add_connection(account, connection);
                     Ok(())
                 })

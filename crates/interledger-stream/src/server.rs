@@ -77,7 +77,7 @@ impl ConnectionGenerator {
                 if derived_auth_tag == auth_tag {
                     return Ok(shared_secret);
                 } else {
-                    warn!("Got packet where auth tag doesn't match. Expected: {}, actual: {}, destination_account: {}",
+                    trace!("Ignoring packet where auth tag doesn't match (it is probably meant for another STREAM server). Expected: {}, actual: {}, destination_account: {}",
                     base64::encode_config(derived_auth_tag, base64::URL_SAFE_NO_PAD),
                     base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD),
                     str::from_utf8(destination_account).unwrap_or("<not utf8>"));
