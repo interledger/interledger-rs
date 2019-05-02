@@ -15,4 +15,5 @@ members = [
   "./crates/interledger-store-memory",
   "./crates/interledger-store-redis",
   "./crates/interledger-stream",
+  "./crates/interledger-util",
 ]
