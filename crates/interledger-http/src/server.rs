@@ -180,7 +180,7 @@ mod test_limit_stream {
     }
 
     fn make_prepare_and_parse(prepare_data: PrepareBuilder, max_message_size: usize) -> Prepare {
-        let prepare = prepare_data.clone().build();
+        let prepare = prepare_data.build();
         let prepare_bytes = BytesMut::from(prepare).freeze();
         println!("prepare_bytes: {:?}", prepare_bytes);
 
