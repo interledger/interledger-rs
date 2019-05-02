@@ -137,10 +137,7 @@ fn ilp_response_to_http_response(
 #[cfg(test)]
 mod test_limit_stream {
     use super::*;
-    use bytes::Bytes;
-    use core::borrow::Borrow;
-    use futures::future::*;
-    use interledger_packet::{Packet, PrepareBuilder};
+    use interledger_packet::PrepareBuilder;
     use std::time::{Duration, SystemTime};
 
     #[test]
