@@ -67,6 +67,7 @@ net2 = "0.2.33"
 rand = "0.6.5"
 redis = "0.10.0"
 reqwest = "0.9.16"
+serde_json = "1.0.39"
 
 [badges]
 circle-ci = { repository = "emschwartz/interledger-rs" }

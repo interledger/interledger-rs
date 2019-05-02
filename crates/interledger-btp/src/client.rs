@@ -23,6 +23,7 @@ pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
 /// BtpOutgoingService into a bidirectional handler.
 pub fn connect_client<A, S>(
     accounts: Vec<A>,
+    error_on_unavailable: bool,
     next_outgoing: S,
 ) -> impl Future<Item = BtpOutgoingService<S, A>, Error = ()>
 where
@@ -70,11 +71,21 @@ where
                     .send(auth_packet)
                     .map_err(move |_| error!("Error sending auth packet on connection: {}", url))
             })
-            .and_then(move |connection| Ok((account, connection)))
+            .then(move |result| {
+                match result {
+                    Ok(connection) => Ok(Some((account, connection))),
+                    Err(err) => if error_on_unavailable {
+                        Err(err)
+                    } else {
+                        Ok(None)
+                    }
+                }
+            })
     }))
     .and_then(|connections| {
         let service = BtpOutgoingService::new(next_outgoing);
-        for (account, connection) in connections.into_iter() {
+        let connections = connections.into_iter().filter_map(|conn| conn);
+        for (account, connection) in connections {
             service.add_connection(account, connection);
         }
         Ok(service)

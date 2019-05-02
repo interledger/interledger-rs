@@ -7,7 +7,9 @@ use hyper::{
     Body, Error, Method, Request, Response, Server,
 };
 use interledger_api::{NodeApi, NodeStore};
-use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
+use interledger_btp::{
+    connect_client, create_open_signup_server, create_server, parse_btp_url, BtpStore,
+};
 use interledger_ccp::CcpRouteManager;
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
@@ -76,6 +78,7 @@ pub fn send_spsp_payment_btp(
         .build();
     connect_client(
         vec![account.clone()],
+        true,
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -188,6 +191,7 @@ pub fn run_spsp_server_btp(
     let ilp_address_clone = ilp_address.clone();
     connect_client(
         vec![incoming_account.clone()],
+        true,
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -373,74 +377,90 @@ where
             store
                 .clone()
                 .get_accounts(vec![0])
+                .join(store.clone().get_btp_outgoing_accounts())
                 .map_err(|_| {
                     eprintln!("Must add account 0 (the default account) before running the node")
                 })
-                .and_then(move |accounts| {
+                .and_then(move |(accounts, btp_accounts)| {
                     let default_account = accounts[0].clone();
                     let outgoing_service = HttpClientService::new(store.clone());
-                    create_server(btp_address, store.clone(), outgoing_service).and_then(
-                        move |btp_service| {
-                            let ilp_address = Bytes::from(default_account.client_address());
-                            // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
-                            // service to others like the router and then call handle_incoming on it to set up the incoming handler
-                            let outgoing_service = btp_service.clone();
-                            let outgoing_service = ValidatorService::outgoing(outgoing_service);
-                            // Note: the expiry shortener must come after the Validator so that the expiry duration
-                            // is shortened before we check whether there is enough time left
-                            let outgoing_service = ExpiryShortenerService::new(outgoing_service);
-                            let outgoing_service =
-                                StreamReceiverService::new(server_secret.clone(), outgoing_service);
-                            let outgoing_service = BalanceService::new(
-                                ilp_address.clone(),
-                                store.clone(),
-                                outgoing_service,
-                            );
-                            let outgoing_service = ExchangeRateService::new(
-                                ilp_address.clone(),
-                                store.clone(),
-                                outgoing_service,
-                            );
 
-                            // Set up the Router and Routing Manager
-                            let incoming_service =
-                                Router::new(store.clone(), outgoing_service.clone());
-                            let incoming_service = CcpRouteManager::new(
-                                default_account.clone(),
-                                store.clone(),
-                                outgoing_service,
-                                incoming_service,
-                            );
+                    // Connect to all of the accounts that have outgoing btp_uris configured
+                    // but don't fail if we are unable to connect
+                    // TODO try reconnecting to those accounts later
+                    connect_client(btp_accounts, false, outgoing_service).and_then(
+                        move |outgoing_service| {
+                            create_server(btp_address, store.clone(), outgoing_service).and_then(
+                                move |btp_service| {
+                                    let ilp_address = Bytes::from(default_account.client_address());
+                                    // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
+                                    // service to others like the router and then call handle_incoming on it to set up the incoming handler
+                                    let outgoing_service = btp_service.clone();
+                                    let outgoing_service =
+                                        ValidatorService::outgoing(outgoing_service);
+                                    // Note: the expiry shortener must come after the Validator so that the expiry duration
+                                    // is shortened before we check whether there is enough time left
+                                    let outgoing_service =
+                                        ExpiryShortenerService::new(outgoing_service);
+                                    let outgoing_service = StreamReceiverService::new(
+                                        server_secret.clone(),
+                                        outgoing_service,
+                                    );
+                                    let outgoing_service = BalanceService::new(
+                                        ilp_address.clone(),
+                                        store.clone(),
+                                        outgoing_service,
+                                    );
+                                    let outgoing_service = ExchangeRateService::new(
+                                        ilp_address.clone(),
+                                        store.clone(),
+                                        outgoing_service,
+                                    );
 
-                            let incoming_service = IldcpService::new(incoming_service);
-                            let incoming_service = MaxPacketAmountService::new(incoming_service);
-                            let incoming_service = ValidatorService::incoming(incoming_service);
-                            let incoming_service = RateLimitService::new(
-                                ilp_address.clone(),
-                                store.clone(),
-                                incoming_service,
-                            );
+                                    // Set up the Router and Routing Manager
+                                    let incoming_service =
+                                        Router::new(store.clone(), outgoing_service.clone());
+                                    let incoming_service = CcpRouteManager::new(
+                                        default_account.clone(),
+                                        store.clone(),
+                                        outgoing_service,
+                                        incoming_service,
+                                    );
 
-                            // Handle incoming packets sent via BTP
-                            btp_service.handle_incoming(incoming_service.clone());
+                                    let incoming_service = IldcpService::new(incoming_service);
+                                    let incoming_service =
+                                        MaxPacketAmountService::new(incoming_service);
+                                    let incoming_service =
+                                        ValidatorService::incoming(incoming_service);
+                                    let incoming_service = RateLimitService::new(
+                                        ilp_address.clone(),
+                                        store.clone(),
+                                        incoming_service,
+                                    );
 
-                            // TODO should this run the node api on a different port so it's easier to separate public/private?
-                            // Note the API also includes receiving ILP packets sent via HTTP
-                            let api = NodeApi::new(
-                                server_secret,
-                                store.clone(),
-                                incoming_service.clone(),
-                            );
-                            let listener = TcpListener::bind(&http_address)
-                                .expect("Unable to bind to HTTP address");
-                            println!("Interledger node listening on: {}", http_address);
-                            let server = ServiceBuilder::new()
-                                .resource(api)
-                                .serve(listener.incoming());
-                            tokio::spawn(server);
-                            Ok(())
+                                    // Handle incoming packets sent via BTP
+                                    btp_service.handle_incoming(incoming_service.clone());
+
+                                    // TODO should this run the node api on a different port so it's easier to separate public/private?
+                                    // Note the API also includes receiving ILP packets sent via HTTP
+                                    let api = NodeApi::new(
+                                        server_secret,
+                                        store.clone(),
+                                        incoming_service.clone(),
+                                    );
+                                    let listener = TcpListener::bind(&http_address)
+                                        .expect("Unable to bind to HTTP address");
+                                    println!("Interledger node listening on: {}", http_address);
+                                    let server = ServiceBuilder::new()
+                                        .resource(api)
+                                        .serve(listener.incoming());
+                                    tokio::spawn(server);
+                                    Ok(())
+                                },
+                            )
                         },
                     )
+
                 })
         })
 }

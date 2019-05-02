@@ -189,6 +189,7 @@ impl_web! {
         #[content_type("application/json")]
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
+            // TODO try connecting to that account's websocket server if it has a btp_uri
             self.validate_admin(authorization)
                 .and_then(move |store| store.insert_account(body)
                 .and_then(|account| Ok(json!(account)))

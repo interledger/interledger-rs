@@ -159,6 +159,10 @@ impl BtpStore for InMemoryStore {
             Box::new(err(()))
         }
     }
+
+    fn get_btp_outgoing_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        Box::new(ok(self.accounts.read().values().filter(|account| (**account).inner.btp_uri.is_some()).cloned().collect()))
+    }
 }
 
 impl BtpOpenSignupStore for InMemoryStore {

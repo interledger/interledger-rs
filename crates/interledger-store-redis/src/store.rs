@@ -61,14 +61,14 @@ else
 end
 
 return balance + prepaid_amount";
-static PROCESS_FULFILL: &str = "\
+static PROCESS_FULFILL: &str = "
 local to_account = 'accounts:' .. ARGV[1]
 local to_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
 local prepaid_amount = redis.call('HGET', to_account, 'prepaid_amount')
 return balance + prepaid_amount";
-static PROCESS_REJECT: &str = "\
+static PROCESS_REJECT: &str = "
 local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
 
@@ -285,6 +285,10 @@ impl RedisStore {
 
                     if account.send_routes {
                         pipe.sadd("send_routes_to", account.id).ignore();
+                    }
+
+                    if account.btp_uri.is_some() {
+                        pipe.sadd("btp_outgoing", account.id).ignore();
                     }
 
                     // Add route to routing table
@@ -520,6 +524,44 @@ impl BtpStore for RedisStore {
                         }
                     },
                 ),
+        )
+    }
+
+    fn get_btp_outgoing_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        let decryption_key = self.decryption_key.clone();
+        Box::new(
+            cmd("SMEMBERS")
+                .arg("btp_outgoing")
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error getting members of set btp_outgoing: {:?}", err))
+                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
+                    if account_ids.is_empty() {
+                        Either::A(ok(Vec::new()))
+                    } else {
+                        let mut pipe = redis::pipe();
+                        for id in account_ids {
+                            pipe.hgetall(account_details_key(id));
+                        }
+                        Either::B(
+                            pipe.query_async(connection)
+                                .map_err(|err| {
+                                    error!("Error getting accounts with outgoing BTP details: {:?}", err)
+                                })
+                                .and_then(
+                                    move |(_connection, accounts): (
+                                        SharedConnection,
+                                        Vec<AccountWithEncryptedTokens>,
+                                    )| {
+                                        let accounts: Vec<Account> = accounts
+                                            .into_iter()
+                                            .map(|account| account.decrypt_tokens(&decryption_key))
+                                            .collect();
+                                        Ok(accounts)
+                                    },
+                                ),
+                        )
+                    }
+                }),
         )
     }
 }

@@ -2,9 +2,11 @@
 
 extern crate interledger;
 extern crate reqwest;
+#[macro_use]
+extern crate serde_json;
 
 use env_logger;
-use futures::{future, Future, Stream};
+use futures::{future, Future};
 use interledger::cli;
 use tokio::runtime::Runtime;
 
@@ -276,20 +278,17 @@ fn three_nodes() {
 
     runtime
         .block_on(
-            delay(32000)
+            delay(1000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     let client = reqwest::r#async::Client::new();
                     let send_1_to_3 = client
                         .post(&format!("http://localhost:{}/pay", node1_http))
                         .header("Authorization", "Bearer admin")
-                        .json(&[
-                            (
-                                "receiver",
-                                format!("http://localhost:{}/.well-known/pay", node3_http).as_str(),
-                            ),
-                            ("source_amount", "1000"),
-                        ])
+                        .json(&json!({
+                            "receiver": format!("http://localhost:{}/.well-known/pay", node3_http),
+                            "source_amount": 1000,
+                        }))
                         .send()
                         .and_then(|res| res.error_for_status());
                     // .and_then(|res| res.into_body().concat2())
@@ -301,13 +300,10 @@ fn three_nodes() {
                     let send_3_to_1 = client
                         .post(&format!("http://localhost:{}/pay", node3_http))
                         .header("Authorization", "Bearer admin")
-                        .json(&[
-                            (
-                                "receiver",
-                                format!("http://localhost:{}/.well-known/pay", node1_http).as_str(),
-                            ),
-                            ("source_amount", "1000"),
-                        ])
+                        .json(&json!({
+                                "receiver": format!("http://localhost:{}/.well-known/pay", node1_http).as_str(),
+                            "source_amount": 1000,
+                        }))
                         .send()
                         .and_then(|res| res.error_for_status());
                     // .and_then(|res| res.into_body().concat2())
@@ -317,8 +313,15 @@ fn three_nodes() {
                     // });
 
                     send_1_to_3
+                        .map_err(|err| {
+                            eprintln!("Error sending from node 1 to node 3: {:?}", err);
+                            err
+                        })
                         .and_then(|_| send_3_to_1)
-                        .map_err(|err| panic!(err))
+                        .map_err(|err| {
+                            eprintln!("Error sending from node 3 to node 1: {:?}", err);
+                            err
+                        })
                 }),
         )
         .unwrap();
