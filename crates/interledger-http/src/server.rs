@@ -9,6 +9,10 @@ use hyper::{
 };
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
+use interledger_util::limit_stream::LimitStream;
+
+/// Max message size that is allowed to transfer from a request.
+const MAX_MESSAGE_SIZE: usize = 40000;
 
 /// A Hyper::Service that parses incoming ILP-Over-HTTP requests, validates the authorization,
 /// and passes the request to an IncomingService handler.
@@ -95,8 +99,8 @@ where
 fn parse_prepare_from_request(
     request: Request<Body>,
 ) -> impl Future<Item = Prepare, Error = Response<Body>> + 'static {
-    request
-        .into_body()
+    let limit_stream = LimitStream::new(MAX_MESSAGE_SIZE, request.into_body());
+    limit_stream
         .concat2()
         .map_err(|_err| Response::builder().status(500).body(Body::empty()).unwrap())
         .and_then(|body| {
