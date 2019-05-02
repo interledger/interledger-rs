@@ -152,22 +152,21 @@ mod test_limit_stream {
         };
 
         let body_size = BytesMut::from(prepare_data.clone().build()).len();
-        let result = make_prepare_and_parse(prepare_data.clone(), body_size);
-        println!("result: {:?}", result);
+        let prepare = make_prepare_and_parse(prepare_data.clone(), body_size).unwrap();
+        println!("prepare: {:?}", prepare);
 
-        assert_eq!(prepare_data.amount, result.amount());
-        assert_eq!(prepare_data.destination, result.destination());
+        assert_eq!(prepare_data.amount, prepare.amount());
+        assert_eq!(prepare_data.destination, prepare.destination());
         assert_eq!(
             prepare_data.execution_condition,
-            result.execution_condition()
+            prepare.execution_condition()
         );
         // TODO this fails🤔 look into later.
-        // assert_eq!(prepare_data.expires_at, result.expires_at());
-        assert_eq!(prepare_data.data, result.data());
+        // assert_eq!(prepare_data.expires_at, prepare.expires_at());
+        assert_eq!(prepare_data.data, prepare.data());
     }
 
     #[test]
-    #[should_panic]
     fn test_parse_prepare_from_request_more() {
         let prepare_data = PrepareBuilder {
             amount: 1,
@@ -176,10 +175,14 @@ mod test_limit_stream {
             expires_at: SystemTime::now() + Duration::from_secs(30),
             data: &[0; 0],
         };
-        make_prepare_and_parse(prepare_data, 1);
+        let prepare = make_prepare_and_parse(prepare_data, 1);
+        assert!(prepare.is_err());
     }
 
-    fn make_prepare_and_parse(prepare_data: PrepareBuilder, max_message_size: usize) -> Prepare {
+    fn make_prepare_and_parse(
+        prepare_data: PrepareBuilder,
+        max_message_size: usize,
+    ) -> Result<Prepare, Response<Body>> {
         let prepare = prepare_data.build();
         let prepare_bytes = BytesMut::from(prepare).freeze();
         println!("prepare_bytes: {:?}", prepare_bytes);
@@ -190,8 +193,6 @@ mod test_limit_stream {
             .body(body)
             .unwrap();
 
-        parse_prepare_from_request(request, Some(max_message_size))
-            .wait()
-            .unwrap()
+        parse_prepare_from_request(request, Some(max_message_size)).wait()
     }
 }
