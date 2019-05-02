@@ -26,10 +26,10 @@ impl<S> LimitStream<S> {
 }
 
 impl<S> Stream for LimitStream<S>
-    where
-        S: Stream,
-        S::Item: AsRef<[u8]>,
-        S::Error: Error,
+where
+    S: Stream,
+    S::Item: AsRef<[u8]>,
+    S::Error: Error,
 {
     type Item = S::Item;
     type Error = LimitStreamError<S::Error>;
@@ -44,7 +44,7 @@ impl<S> Stream for LimitStream<S>
                 None => {
                     self.remaining = 0;
                     return Err(LimitStreamError::LimitExceeded);
-                },
+                }
             }
         }
 
@@ -77,9 +77,7 @@ impl<E: Error> fmt::Display for LimitStreamError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LimitStreamError::LimitExceeded => f.write_str("LimitExceeded"),
-            LimitStreamError::StreamError(error) => {
-                write!(f, "StreamError({})", error)
-            },
+            LimitStreamError::StreamError(error) => write!(f, "StreamError({})", error),
         }
     }
 }
@@ -113,9 +111,10 @@ mod test_limit_stream {
         });
     }
 
-    fn collect_limited_stream(buffer: Bytes, limit: usize)
-                              -> Result<Bytes, LimitStreamError<hyper::Error>>
-    {
+    fn collect_limited_stream(
+        buffer: Bytes,
+        limit: usize,
+    ) -> Result<Bytes, LimitStreamError<hyper::Error>> {
         let stream = hyper::Body::from(buffer);
         LimitStream::new(limit, stream)
             .concat2()
