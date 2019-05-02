@@ -104,6 +104,7 @@ where
                     .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
             },
             Ok((request_id, Packet::Fulfill(fulfill))) => {
+              trace!("Got fulfill response to request id {}", request_id);
               if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
                 channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill))
               } else {
@@ -112,6 +113,7 @@ where
               }
             }
             Ok((request_id, Packet::Reject(reject))) => {
+              trace!("Got reject response to request id {}", request_id);
               if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
                 channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject))
               } else {
@@ -172,7 +174,11 @@ where
                     from: account,
                     prepare,
                 };
-                debug!("Handling incoming request: {:?}", &request);
+                trace!(
+                    "Handling incoming request {} from account {}",
+                    request_id,
+                    request.from.id()
+                );
                 incoming_handler_clone
                     .handle_request(request)
                     .then(move |result| {
@@ -189,7 +195,7 @@ where
                             )
                             .clone()
                             .unbounded_send(message)
-                            .map_err(|err| {
+                            .map_err(move |err| {
                                 error!(
                                     "Error sending response to account: {} {:?}",
                                     account_id, err
@@ -198,7 +204,7 @@ where
                     })
             })
             .then(move |_| {
-                debug!("Finished reading from pending_incoming buffer");
+                trace!("Finished reading from pending_incoming buffer");
                 Ok(())
             });
         spawn(handle_pending_incoming);
@@ -222,14 +228,19 @@ where
     /// If there is no open connection for the Account specified in `request.to`, the
     /// request will be passed through to the `next_outgoing` handler.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
-        if let Some(connection) = (*self.connections.read()).get(&request.to.id()) {
+        let account_id = request.to.id();
+        if let Some(connection) = (*self.connections.read()).get(&account_id) {
             let request_id = random::<u32>();
 
             // Clone the trigger so that the connections stay open until we've
             // gotten the response to our outgoing request
             let keep_connections_open = self.close_all_connections.clone();
 
-            debug!("Sending outgoing request: {:?}", request);
+            trace!(
+                "Sending outgoing request {} to account {}",
+                request_id,
+                account_id
+            );
 
             match connection.unbounded_send(ilp_packet_to_ws_message(
                 request_id,
@@ -247,8 +258,11 @@ where
                                 let _ = keep_connections_open;
                                 result
                             })
-                            .map_err(|err| {
-                                debug!("Sending request failed: {:?}", err);
+                            .map_err(move |err| {
+                                error!(
+                                    "Sending request {} to account {} failed: {:?}",
+                                    request_id, account_id, err
+                                );
                                 RejectBuilder {
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: &[],
@@ -264,7 +278,10 @@ where
                     )
                 }
                 Err(send_error) => {
-                    error!("Error sending websocket message: {:?}", send_error);
+                    error!(
+                        "Error sending websocket message for request {} to account {}: {:?}",
+                        request_id, account_id, send_error
+                    );
                     let reject = RejectBuilder {
                         code: ErrorCode::T00_INTERNAL_ERROR,
                         message: &[],
@@ -276,7 +293,7 @@ where
                 }
             }
         } else {
-            debug!(
+            trace!(
                 "No open connection for account: {}, forwarding request to the next service",
                 request.to.id()
             );

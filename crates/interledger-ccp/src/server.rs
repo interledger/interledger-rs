@@ -508,9 +508,10 @@ where
             epoch
         };
 
-        debug!(
+        trace!(
             "Sending route udpates for epochs: {} - {}",
-            from_epoch_index, to_epoch_index
+            from_epoch_index,
+            to_epoch_index
         );
 
         let prepare = self

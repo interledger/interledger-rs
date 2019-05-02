@@ -46,7 +46,7 @@ where
         connect_async(url.clone())
             .map_err(|err| error!("Error connecting to WebSocket server: {:?}", err))
             .and_then(move |(connection, _)| {
-                debug!("Connected to {}, sending auth packet", url);
+                trace!("Connected to {}, sending auth packet", url);
                 // Send BTP authentication
                 let auth_packet = Message::Binary(
                     BtpPacket::Message(BtpMessage {
@@ -71,10 +71,13 @@ where
                     .send(auth_packet)
                     .map_err(move |_| error!("Error sending auth packet on connection: {}", url))
             })
-            .then(move |result| {
-                match result {
-                    Ok(connection) => Ok(Some((account, connection))),
-                    Err(err) => if error_on_unavailable {
+            .then(move |result| match result {
+                Ok(connection) => {
+                    debug!("Connected to account {}'s server", account.id());
+                    Ok(Some((account, connection)))
+                },
+                Err(err) => {
+                    if error_on_unavailable {
                         Err(err)
                     } else {
                         Ok(None)

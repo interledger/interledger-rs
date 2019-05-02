@@ -45,7 +45,9 @@ pub trait BtpStore {
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 
     /// Load accounts that have a btp_uri configured
-    fn get_btp_outgoing_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 pub struct BtpOpenSignupAccount<'a> {
@@ -166,8 +168,15 @@ mod client_server {
             ))
         }
 
-        fn get_btp_outgoing_accounts(&self) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
-            Box::new(ok(self.accounts.iter().filter(|account| account.btp_uri.is_some()).cloned().collect()))
+        fn get_btp_outgoing_accounts(
+            &self,
+        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+            Box::new(ok(self
+                .accounts
+                .iter()
+                .filter(|account| account.btp_uri.is_some())
+                .cloned()
+                .collect()))
         }
     }
 

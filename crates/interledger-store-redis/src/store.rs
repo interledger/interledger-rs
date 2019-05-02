@@ -195,7 +195,6 @@ impl RedisStore {
         &self,
         account: AccountDetails,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
-        debug!("Inserting account: {:?}", account);
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
@@ -300,7 +299,10 @@ impl RedisStore {
                         .and_then(move |(connection, _ret): (SharedConnection, Value)| {
                             update_routes(connection, routing_table)
                         })
-                        .and_then(move |_| Ok(account))
+                        .and_then(move |_| {
+                            debug!("Inserted account {}", account.id);
+                            Ok(account)
+                        })
                 }),
         )
     }
@@ -392,9 +394,9 @@ impl BalanceStore for RedisStore {
                         )
                     })
                     .and_then(move |(_connection, balance): (_, i64)| {
-                        debug!(
-                            "Processed prepare. Account {} has balance (including prepaid amount): {} ",
-                            from_account_id, balance
+                        trace!(
+                            "Processed prepare with incoming amount: {}. Account {} has balance (including prepaid amount): {} ",
+                            incoming_amount, from_account_id, balance
                         );
                         Ok(())
                     }),
@@ -428,9 +430,11 @@ impl BalanceStore for RedisStore {
                         )
                     })
                     .and_then(move |(_connection, balance): (_, i64)| {
-                        debug!(
-                            "Processed fulfill. Account {} has balance: {}",
-                            to_account_id, balance,
+                        trace!(
+                            "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
+                            outgoing_amount,
+                            to_account_id,
+                            balance,
                         );
                         Ok(())
                     }),
@@ -464,9 +468,9 @@ impl BalanceStore for RedisStore {
                         )
                     })
                     .and_then(move |(_connection, balance): (_, i64)| {
-                        debug!(
-                            "Processed reject. Account {} has balance (including prepaid amount): {}",
-                            from_account_id, balance
+                        trace!(
+                            "Processed reject for incoming amount: {}. Account {} has balance (including prepaid amount): {}",
+                            incoming_amount, from_account_id, balance
                         );
                         Ok(())
                     }),
@@ -527,7 +531,9 @@ impl BtpStore for RedisStore {
         )
     }
 
-    fn get_btp_outgoing_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("SMEMBERS")
@@ -545,7 +551,10 @@ impl BtpStore for RedisStore {
                         Either::B(
                             pipe.query_async(connection)
                                 .map_err(|err| {
-                                    error!("Error getting accounts with outgoing BTP details: {:?}", err)
+                                    error!(
+                                        "Error getting accounts with outgoing BTP details: {:?}",
+                                        err
+                                    )
                                 })
                                 .and_then(
                                     move |(_connection, accounts): (
@@ -954,7 +963,7 @@ fn update_rates(
             let num_assets = rates.len();
             let rates = HashMap::from_iter(rates.into_iter());
             (*exchange_rates.write()) = rates;
-            debug!("Updated rates for {} assets", num_assets);
+            trace!("Updated rates for {} assets", num_assets);
             Ok(())
         })
 }
@@ -988,7 +997,7 @@ fn update_routes(
                 trace!("Routing table is now: {:?}", routes);
                 let num_routes = routes.len();
                 *routing_table.write() = routes;
-                debug!("Updated routing table with {} routes", num_routes);
+                trace!("Updated routing table with {} routes", num_routes);
                 Ok(())
             },
         )
