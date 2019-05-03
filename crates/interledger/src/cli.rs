@@ -24,7 +24,9 @@ use interledger_service_util::{
 };
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
-use interledger_store_redis::{connect as connect_redis_store, IntoConnectionInfo, Account as RedisAccount};
+use interledger_store_redis::{
+    connect as connect_redis_store, Account as RedisAccount, IntoConnectionInfo,
+};
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::{
@@ -152,7 +154,9 @@ pub fn send_spsp_payment_http(
             .build()
     };
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let service = HttpClientService::new(store.clone(), outgoing_service_fn(|request: OutgoingRequest<Account>| {
+    let service = HttpClientService::new(
+        store.clone(),
+        outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &format!(
@@ -164,7 +168,8 @@ pub fn send_spsp_payment_http(
                 data: &[],
             }
             .build())
-    }));
+        }),
+    );
     let service = ValidatorService::outgoing(service);
     let service = Router::new(store, service);
     pay(service, account, &receiver, amount)
@@ -396,19 +401,21 @@ where
                 .and_then(move |(accounts, btp_accounts)| {
                     let default_account = accounts[0].clone();
                     let ilp_address = Bytes::from(default_account.client_address());
-                    let outgoing_service = outgoing_service_fn(move |request: OutgoingRequest<RedisAccount>| {
-                        Err(RejectBuilder {
-                            code: ErrorCode::F02_UNREACHABLE,
-                            message: &format!(
-                                "No outgoing route for: {}",
-                                str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
-                            )
-                            .as_bytes(),
-                            triggered_by: &ilp_address[..],
-                            data: &[],
-                        }
-                        .build())
-                    });
+                    let outgoing_service =
+                        outgoing_service_fn(move |request: OutgoingRequest<RedisAccount>| {
+                            Err(RejectBuilder {
+                                code: ErrorCode::F02_UNREACHABLE,
+                                message: &format!(
+                                    "No outgoing route for: {}",
+                                    str::from_utf8(&request.from.client_address()[..])
+                                        .unwrap_or("<not utf8>")
+                                )
+                                .as_bytes(),
+                                triggered_by: &ilp_address[..],
+                                data: &[],
+                            }
+                            .build())
+                        });
                     let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
 
                     // Connect to all of the accounts that have outgoing btp_uris configured

@@ -257,7 +257,7 @@ fn three_nodes() {
                 xrp_address: None,
                 settle_threshold: None,
                 settle_to: None,
-                send_routes: true,
+                send_routes: false,
                 receive_routes: true,
                 routing_relation: Some("Parent".to_string()),
                 round_trip_time: None,
@@ -317,11 +317,11 @@ fn three_nodes() {
                             eprintln!("Error sending from node 1 to node 3: {:?}", err);
                             err
                         })
-                        .and_then(|_| send_3_to_1)
+                        .and_then(|_| send_3_to_1
                         .map_err(|err| {
                             eprintln!("Error sending from node 3 to node 1: {:?}", err);
                             err
-                        })
+                        }))
                 }),
         )
         .unwrap();

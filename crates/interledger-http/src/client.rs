@@ -1,16 +1,13 @@
 use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{
-    future::result,
-    Future, Stream,
-};
+use futures::{future::result, Future, Stream};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
 };
-use std::{sync::Arc, time::Duration, marker::PhantomData};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct HttpClientService<S, T, A> {
