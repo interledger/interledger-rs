@@ -20,15 +20,17 @@ use futures::prelude::*;
 /// A stream combinator which returns a maximum number of bytes before failing.
 #[derive(Debug)]
 pub struct LimitStream<S> {
+    is_limited: bool,
     remaining: usize,
     stream: S,
 }
 
 impl<S> LimitStream<S> {
     #[inline]
-    pub fn new(max_bytes: usize, stream: S) -> Self {
+    pub fn new(max_bytes: Option<usize>, stream: S) -> Self {
         LimitStream {
-            remaining: max_bytes,
+            is_limited: max_bytes.is_some(),
+            remaining: max_bytes.unwrap_or_default(),
             stream,
         }
     }
@@ -45,6 +47,10 @@ where
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let item = self.stream.poll()?;
+
+        if self.is_limited == false {
+            return Ok(item);
+        }
 
         if let Async::Ready(Some(chunk)) = &item {
             let chunk_size = chunk.as_ref().len();
@@ -104,25 +110,30 @@ mod test_limit_stream {
 
         // Buffer size is below limit.
         assert_eq!(
-            collect_limited_stream(buffer.clone(), SIZE + 1).unwrap(),
+            collect_limited_stream(buffer.clone(), Some(SIZE + 1)).unwrap(),
             buffer,
         );
         // Buffer size is equal to the limit.
         assert_eq!(
-            collect_limited_stream(buffer.clone(), SIZE).unwrap(),
+            collect_limited_stream(buffer.clone(), Some(SIZE)).unwrap(),
             buffer,
         );
         // Buffer size is above the limit.
         assert!({
-            collect_limited_stream(buffer.clone(), SIZE - 1)
+            collect_limited_stream(buffer.clone(), Some(SIZE - 1))
                 .unwrap_err()
                 .is_limit_exceeded()
         });
+        // Stream is not limited.
+        assert_eq!(
+            collect_limited_stream(buffer.clone(), None).unwrap(),
+            buffer,
+        );
     }
 
     fn collect_limited_stream(
         buffer: Bytes,
-        limit: usize,
+        limit: Option<usize>,
     ) -> Result<Bytes, LimitStreamError<hyper::Error>> {
         let stream = hyper::Body::from(buffer);
         LimitStream::new(limit, stream)
