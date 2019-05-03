@@ -36,3 +36,6 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
         auth_header: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 }
+
+/// Max message size that is allowed to transfer from a request or a message.
+pub const MAX_MESSAGE_SIZE: usize = 40000;

@@ -1,5 +1,6 @@
 use super::limit_stream::LimitStream;
 use super::HttpStore;
+use super::MAX_MESSAGE_SIZE;
 use bytes::BytesMut;
 use futures::{
     future::{err, Either},
@@ -10,9 +11,6 @@ use hyper::{
 };
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
-
-/// Max message size that is allowed to transfer from a request.
-const MAX_MESSAGE_SIZE: usize = 40000;
 
 /// A Hyper::Service that parses incoming ILP-Over-HTTP requests, validates the authorization,
 /// and passes the request to an IncomingService handler.

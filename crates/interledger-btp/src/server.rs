@@ -4,6 +4,7 @@ use super::{
 use base64;
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::{future::result, Future, Sink, Stream};
+use interledger_http::MAX_MESSAGE_SIZE;
 use interledger_ildcp::IldcpResponse;
 use interledger_service::*;
 use ring::digest::{digest, SHA256};
@@ -12,8 +13,6 @@ use tokio_executor::spawn;
 use tokio_tcp::TcpListener;
 use tokio_tungstenite::{accept_async_with_config, stream::Stream as MaybeTlsStream};
 use tungstenite::protocol::{Message, WebSocketConfig};
-
-const MAX_MESSAGE_SIZE: usize = 40000;
 
 /// Returns a BtpOutgoingService that wraps all BTP/WebSocket connections that come
 /// in on the given address. Calling `handle_incoming` with an `IncomingService` will
