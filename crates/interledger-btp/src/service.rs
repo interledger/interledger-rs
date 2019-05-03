@@ -16,12 +16,16 @@ use std::{
     iter::IntoIterator,
     marker::PhantomData,
     sync::Arc,
+    time::Duration,
 };
-use stream_cancel::{Trigger, Valve, Valved};
+use stream_cancel::{Trigger, Valve};
 use tokio_executor::spawn;
 use tokio_tcp::TcpStream;
+use tokio_timer::Interval;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::{error::Error as WebSocketError, Message};
+
+const PING_INTERVAL: u64 = 30; // seconds
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
@@ -78,7 +82,8 @@ where
         // Set up a channel to forward outgoing packets to the WebSocket connection
         let (tx, rx) = unbounded();
         let (sink, stream) = connection.split();
-        let (close_connection, stream) = Valved::new(stream);
+        let (close_connection, valve) = Valve::new();
+        let stream = valve.wrap(stream);
         let stream = self.stream_valve.wrap(stream);
         let forward_to_connection = sink
             .send_all(
@@ -92,40 +97,68 @@ where
                 Ok(())
             });
 
+        // Send pings every PING_INTERVAL until the connection closes or the Service is dropped
+        let tx_clone = tx.clone();
+        let send_pings = valve
+            .wrap(
+                self.stream_valve
+                    .wrap(Interval::new_interval(Duration::from_secs(PING_INTERVAL))),
+            )
+            .map_err(|err| {
+                warn!("Timer error on Ping interval: {:?}", err);
+            })
+            .for_each(move |_| {
+                if let Err(err) = tx_clone.unbounded_send(Message::Ping(Vec::with_capacity(0))) {
+                    warn!(
+                        "Error sending Ping on connection to account {}: {:?}",
+                        account_id, err
+                    );
+                }
+                Ok(())
+            });
+        spawn(send_pings);
+
         // Set up a listener to handle incoming packets from the WebSocket connection
         // TODO do we need all this cloning?
         let pending_requests = self.pending_outgoing.clone();
         let incoming_sender = self.incoming_sender.clone();
+        let tx_clone = tx.clone();
         let handle_incoming = stream.map_err(move |err| error!("Error reading from WebSocket stream for account {}: {:?}", account_id, err)).for_each(move |message| {
           // Handle the packets based on whether they are an incoming request or a response to something we sent
-          match parse_ilp_packet(message) {
-            Ok((request_id, Packet::Prepare(prepare))) => {
-                incoming_sender.clone().unbounded_send((account.clone(), request_id, prepare))
-                    .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
-            },
-            Ok((request_id, Packet::Fulfill(fulfill))) => {
-              trace!("Got fulfill response to request id {}", request_id);
-              if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
-                channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill))
-              } else {
-                warn!("Got Fulfill packet that does not match an outgoing Prepare we sent: {:?}", fulfill);
-                Ok(())
+          if message.is_binary() {
+              match parse_ilp_packet(message) {
+                Ok((request_id, Packet::Prepare(prepare))) => {
+                    incoming_sender.clone().unbounded_send((account.clone(), request_id, prepare))
+                        .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
+                },
+                Ok((request_id, Packet::Fulfill(fulfill))) => {
+                  trace!("Got fulfill response to request id {}", request_id);
+                  if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
+                    channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill))
+                  } else {
+                    warn!("Got Fulfill packet that does not match an outgoing Prepare we sent: {:?}", fulfill);
+                    Ok(())
+                  }
+                }
+                Ok((request_id, Packet::Reject(reject))) => {
+                  trace!("Got reject response to request id {}", request_id);
+                  if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
+                    channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject))
+                  } else {
+                    warn!("Got Reject packet that does not match an outgoing Prepare we sent: {:?}", reject);
+                    Ok(())
+                  }
+                },
+                Err(_) => {
+                  debug!("Unable to parse ILP packet from BTP packet (if this is the first time this appears, the packet was probably the auth response)");
+                  // TODO Send error back
+                  Ok(())
+                }
               }
-            }
-            Ok((request_id, Packet::Reject(reject))) => {
-              trace!("Got reject response to request id {}", request_id);
-              if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
-                channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject))
-              } else {
-                warn!("Got Reject packet that does not match an outgoing Prepare we sent: {:?}", reject);
-                Ok(())
-              }
-            },
-            Err(_) => {
-              debug!("Unable to parse ILP packet from BTP packet (if this is the first time this appears, the packet was probably the auth response)");
-              // TODO Send error back
+          } else if message.is_ping() {
+              tx_clone.unbounded_send(Message::Pong(Vec::new())).map_err(|err| error!("Error sending Pong message back: {:?}", err))
+          } else {
               Ok(())
-            }
           }
         });
 
