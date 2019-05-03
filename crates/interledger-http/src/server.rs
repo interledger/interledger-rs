@@ -1,3 +1,4 @@
+use super::limit_stream::LimitStream;
 use super::HttpStore;
 use bytes::BytesMut;
 use futures::{
@@ -9,7 +10,6 @@ use hyper::{
 };
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
-use interledger_util::limit_stream::LimitStream;
 
 /// Max message size that is allowed to transfer from a request.
 const MAX_MESSAGE_SIZE: usize = 40000;
