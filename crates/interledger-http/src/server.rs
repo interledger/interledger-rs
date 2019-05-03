@@ -148,20 +148,21 @@ mod test_limit_stream {
             expires_at: SystemTime::now() + Duration::from_secs(30),
             data: &[0; MAX_MESSAGE_SIZE],
         };
+        let prepare = prepare_data.clone().build();
+        let body_size = BytesMut::from(prepare.clone()).len();
+        let parsed_prepare = make_prepare_and_parse(prepare_data, Some(body_size)).unwrap();
 
-        let body_size = BytesMut::from(prepare_data.clone().build()).len();
-        let prepare = make_prepare_and_parse(prepare_data.clone(), Some(body_size)).unwrap();
-        println!("prepare: {:?}", prepare);
-
-        assert_eq!(prepare_data.amount, prepare.amount());
-        assert_eq!(prepare_data.destination, prepare.destination());
+        assert_eq!(prepare.amount(), parsed_prepare.amount());
+        assert_eq!(prepare.destination(), parsed_prepare.destination());
         assert_eq!(
-            prepare_data.execution_condition,
-            prepare.execution_condition()
+            prepare.execution_condition(),
+            parsed_prepare.execution_condition()
         );
-        // TODO this fails🤔 look into later.
-        // assert_eq!(prepare_data.expires_at, prepare.expires_at());
-        assert_eq!(prepare_data.data, prepare.data());
+        assert_eq!(
+            get_millis_from_unix_epoch(prepare.expires_at()),
+            get_millis_from_unix_epoch(parsed_prepare.expires_at())
+        );
+        assert_eq!(prepare.data(), parsed_prepare.data());
     }
 
     #[test]
@@ -186,16 +187,20 @@ mod test_limit_stream {
             expires_at: SystemTime::now() + Duration::from_secs(30),
             data: &[0; MAX_MESSAGE_SIZE],
         };
-        let prepare = make_prepare_and_parse(prepare_data.clone(), None).unwrap();
-        assert_eq!(prepare_data.amount, prepare.amount());
-        assert_eq!(prepare_data.destination, prepare.destination());
+        let prepare = prepare_data.clone().build();
+        let parsed_prepare = make_prepare_and_parse(prepare_data, None).unwrap();
+
+        assert_eq!(prepare.amount(), parsed_prepare.amount());
+        assert_eq!(prepare.destination(), parsed_prepare.destination());
         assert_eq!(
-            prepare_data.execution_condition,
-            prepare.execution_condition()
+            prepare.execution_condition(),
+            parsed_prepare.execution_condition()
         );
-        // TODO this fails🤔 look into later.
-        // assert_eq!(prepare_data.expires_at, prepare.expires_at());
-        assert_eq!(prepare_data.data, prepare.data());
+        assert_eq!(
+            get_millis_from_unix_epoch(prepare.expires_at()),
+            get_millis_from_unix_epoch(parsed_prepare.expires_at())
+        );
+        assert_eq!(prepare.data(), parsed_prepare.data());
     }
 
     fn make_prepare_and_parse(
@@ -213,5 +218,12 @@ mod test_limit_stream {
             .unwrap();
 
         parse_prepare_from_request(request, max_message_size).wait()
+    }
+
+    fn get_millis_from_unix_epoch(system_time: SystemTime) -> u128 {
+        system_time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
     }
 }
