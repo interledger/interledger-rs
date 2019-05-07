@@ -420,7 +420,6 @@ where
                             }
                             .build())
                         });
-                    let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
 
                     // Connect to all of the accounts that have outgoing btp_uris configured
                     // but don't fail if we are unable to connect
@@ -435,6 +434,8 @@ where
                                     let outgoing_service = btp_server_service.clone();
                                     let outgoing_service =
                                         ValidatorService::outgoing(outgoing_service);
+                                    let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
+
                                     // Note: the expiry shortener must come after the Validator so that the expiry duration
                                     // is shortened before we check whether there is enough time left
                                     let outgoing_service =
