@@ -144,6 +144,21 @@ impl RouteManagerStore for TestStore {
         Box::new(ok(accounts))
     }
 
+    fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        let mut accounts: Vec<TestAccount> = self
+            .local
+            .values()
+            .chain(self.configured.values())
+            .chain(self.routes.lock().values())
+            .filter(|account| account.receive_routes)
+            .cloned()
+            .collect();
+        accounts.dedup_by_key(|a| a.id());
+        Box::new(ok(accounts))
+    }
+
     fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (Bytes, TestAccount)>,
