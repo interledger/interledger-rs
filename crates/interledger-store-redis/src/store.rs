@@ -234,11 +234,6 @@ impl RedisStore {
                         keys.push("HTTP auth".to_string());
                         pipe.hexists("http_auth", auth.as_ref());
                     }
-                    if let Some(ref xrp_address) = account.xrp_address {
-                        keys.push("XRP address".to_string());
-                        pipe.hexists("xrp_addresses", xrp_address);
-                    }
-
                     pipe.query_async(connection.as_ref().clone())
                         .map_err(|err| {
                             error!(
@@ -275,11 +270,6 @@ impl RedisStore {
 
                     if let Some(auth) = http_incoming_token_hmac_clone {
                         pipe.hset("http_auth", auth.as_ref(), account.id).ignore();
-                    }
-
-                    // Add settlement details
-                    if let Some(ref xrp_address) = account.xrp_address {
-                        pipe.hset("xrp_addresses", xrp_address, account.id).ignore();
                     }
 
                     if account.send_routes {

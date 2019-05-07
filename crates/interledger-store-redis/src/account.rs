@@ -39,9 +39,6 @@ pub struct Account {
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) btp_outgoing_token: Option<Bytes>,
     pub(crate) is_admin: bool,
-    // TODO maybe take these out of the Account and insert them separately into the db
-    // since they're only meant for the settlement engine
-    pub(crate) xrp_address: Option<String>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
     #[serde(serialize_with = "routing_relation_to_string")]
@@ -124,7 +121,6 @@ impl Account {
             btp_uri,
             btp_outgoing_token,
             is_admin: details.is_admin,
-            xrp_address: details.xrp_address,
             settle_threshold: details.settle_threshold,
             settle_to: details.settle_to,
             send_routes: details.send_routes,
@@ -215,10 +211,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "btp_outgoing_token".write_redis_args(&mut rv);
             btp_outgoing_token.as_ref().write_redis_args(&mut rv);
         }
-        if let Some(xrp_address) = account.xrp_address.as_ref() {
-            "xrp_address".write_redis_args(&mut rv);
-            xrp_address.write_redis_args(&mut rv);
-        }
         if let Some(settle_threshold) = account.settle_threshold {
             "settle_threshold".write_redis_args(&mut rv);
             settle_threshold.write_redis_args(&mut rv);
@@ -277,7 +269,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
                 min_balance: get_value("min_balance", &hash)?,
                 is_admin: get_bool("is_admin", &hash),
-                xrp_address: get_value_option("xrp_address", &hash)?,
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
                 settle_to: get_value_option("settle_to", &hash)?,
                 routing_relation,
@@ -457,7 +448,6 @@ mod redis_account {
             btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
             btp_incoming_token: Some("btp_token".to_string()),
             is_admin: true,
-            xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
             send_routes: true,

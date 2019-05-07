@@ -167,10 +167,6 @@ pub fn main() {
                             Arg::with_name("admin")
                                 .long("admin")
                                 .help("Flag to indicate the account is an administrator (and can add, modify, delete other accounts and change configuration)"),
-                            Arg::with_name("xrp_address")
-                                .long("xrp_address")
-                                .help("XRP address to associate with this account for settlement")
-                                .takes_value(true),
                             Arg::with_name("settle_threshold")
                                 .long("settle_threshold")
                                 .help("Threshold, denominated in the account's asset and scale, at which an outgoing settlement should be sent")
@@ -336,7 +332,6 @@ pub fn main() {
                         max_packet_amount: u64::max_value(),
                         min_balance: value_t!(matches, "min_balance", i64).unwrap(),
                         is_admin: matches.is_present("admin"),
-                        xrp_address: value_t!(matches, "xrp_address", String).ok(),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
                         settle_to: value_t!(matches, "settle_to", i64).ok(),
                         send_routes: matches.is_present("send_routes"),

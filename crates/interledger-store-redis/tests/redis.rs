@@ -31,7 +31,6 @@ lazy_static! {
         btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
         btp_incoming_token: Some("btp_token".to_string()),
         is_admin: true,
-        xrp_address: Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
         send_routes: false,
@@ -53,7 +52,6 @@ lazy_static! {
         btp_uri: Some("btp+ws://:other_outgoing_btp_token@example.com/btp".to_string()),
         btp_incoming_token: Some("other_btp_token".to_string()),
         is_admin: true,
-        xrp_address: Some("rMLwdY4w8FT8zCEUL9q9173NrvpLGLEFDu".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
         send_routes: true,
@@ -75,7 +73,6 @@ lazy_static! {
         btp_uri: None,
         btp_incoming_token: None,
         is_admin: false,
-        xrp_address: None,
         settle_threshold: Some(0),
         settle_to: Some(-1000),
         send_routes: false,
@@ -164,19 +161,6 @@ mod insert_accounts {
             })
         }))
         .unwrap();
-    }
-
-    #[test]
-    fn fails_on_duplicate_xrp_address() {
-        let mut account = ACCOUNT_DETAILS_2.clone();
-        account.xrp_address = Some("rELhRfZ7YS31jbouULKYLB64KmrizFuC3T".to_string());
-        let result = block_on(test_store().and_then(|(store, context)| {
-            store.insert_account(account).then(move |result| {
-                let _ = context;
-                result
-            })
-        }));
-        assert!(result.is_err());
     }
 
     #[test]
@@ -342,7 +326,6 @@ mod routes_and_rates {
                                 btp_uri: None,
                                 btp_incoming_token: None,
                                 is_admin: false,
-                                xrp_address: None,
                                 settle_threshold: None,
                                 settle_to: None,
                                 send_routes: false,
