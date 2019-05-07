@@ -6,8 +6,9 @@ extern crate reqwest;
 extern crate serde_json;
 
 use env_logger;
-use futures::{future, Future};
+use futures::{future, Future, Stream};
 use interledger::cli;
+use std::str;
 use tokio::runtime::Runtime;
 
 mod redis_helpers;
@@ -82,13 +83,13 @@ fn three_nodes() {
                 http_incoming_token: Some("two".to_string()),
                 http_outgoing_token: Some("one".to_string()),
                 max_packet_amount: u64::max_value(),
-                min_balance: -1_000_000,
+                min_balance: -1_000_000_000,
                 is_admin: false,
                 xrp_address: None,
                 settle_threshold: None,
                 settle_to: None,
-                send_routes: false,
-                receive_routes: false,
+                send_routes: true,
+                receive_routes: true,
                 routing_relation: Some("Peer".to_string()),
                 round_trip_time: None,
                 packets_per_minute_limit: None,
@@ -147,7 +148,7 @@ fn three_nodes() {
                 http_incoming_token: Some("one".to_string()),
                 http_outgoing_token: Some("two".to_string()),
                 max_packet_amount: u64::max_value(),
-                min_balance: -1_000_000,
+                min_balance: -1_000_000_000,
                 is_admin: false,
                 xrp_address: None,
                 settle_threshold: None,
@@ -173,7 +174,7 @@ fn three_nodes() {
                 http_incoming_token: None,
                 http_outgoing_token: None,
                 max_packet_amount: u64::max_value(),
-                min_balance: -1_000_000,
+                min_balance: -1_000_000_000,
                 is_admin: false,
                 xrp_address: None,
                 settle_threshold: None,
@@ -200,7 +201,7 @@ fn three_nodes() {
         client
             .put(&format!("http://localhost:{}/rates", node2_http))
             .header("Authorization", "Bearer admin")
-            .json(&[("ABC", 1), ("XYZ", 2500)])
+            .json(&[("ABC", 2), ("XYZ", 1)])
             .send()
             .map_err(|err| panic!(err))
             .and_then(|res| {
@@ -252,7 +253,7 @@ fn three_nodes() {
                 http_incoming_token: None,
                 http_outgoing_token: None,
                 max_packet_amount: u64::max_value(),
-                min_balance: -1_000_000,
+                min_balance: -1_000_000_000,
                 is_admin: false,
                 xrp_address: None,
                 settle_threshold: None,
@@ -266,6 +267,10 @@ fn three_nodes() {
             },
         ),
     ])
+    .and_then(|_| {
+        // Wait a bit to make sure the other node's BTP server is listening
+        delay(50).map_err(|err| panic!(err))
+    })
     .and_then(move |_| {
         cli::run_node_redis(
             connection_info3_clone,
@@ -278,7 +283,8 @@ fn three_nodes() {
 
     runtime
         .block_on(
-            delay(1000)
+            // Wait for the nodes to spin up
+            delay(200)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     let client = reqwest::r#async::Client::new();
@@ -290,12 +296,12 @@ fn three_nodes() {
                             "source_amount": 1000,
                         }))
                         .send()
-                        .and_then(|res| res.error_for_status());
-                    // .and_then(|res| res.into_body().concat2())
-                    // .and_then(|body| {
-                    //     println!("{:?}", body);
-                    //     Ok(())
-                    // });
+                        .and_then(|res| res.error_for_status())
+                    .and_then(|res| res.into_body().concat2())
+                    .and_then(|body| {
+                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"amount_delivered\":2}");
+                        Ok(())
+                    });
 
                     let send_3_to_1 = client
                         .post(&format!("http://localhost:{}/pay", node3_http))
@@ -305,12 +311,12 @@ fn three_nodes() {
                             "source_amount": 1000,
                         }))
                         .send()
-                        .and_then(|res| res.error_for_status());
-                    // .and_then(|res| res.into_body().concat2())
-                    // .and_then(|body| {
-                    //     println!("{:?}", body);
-                    //     Ok(())
-                    // });
+                        .and_then(|res| res.error_for_status())
+                    .and_then(|res| res.into_body().concat2())
+                    .and_then(|body| {
+                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"amount_delivered\":500000}");
+                        Ok(())
+                    });
 
                     send_1_to_3
                         .map_err(|err| {

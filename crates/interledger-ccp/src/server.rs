@@ -22,6 +22,7 @@ use tokio_timer::Interval;
 
 const DEFAULT_ROUTE_EXPIRY_TIME: u32 = 45000;
 const DEFAULT_BROADCAST_INTERVAL: u64 = 30000;
+const DUMMY_ROUTING_TABLE_ID: [u8; 16] = [0; 16];
 
 fn hash(preimage: &[u8; 32]) -> [u8; 32] {
     let mut out = [0; 32];
@@ -136,15 +137,32 @@ where
     /// updates to peers on the given interval.
     pub fn broadcast_routes(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
         let clone = self.clone();
-        Interval::new(Instant::now(), Duration::from_millis(interval))
-            .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-            .for_each(move |_| {
-                let clone = clone.clone();
-                clone
-                    .clone()
-                    .update_best_routes(None)
-                    .and_then(move |_| clone.send_route_updates())
+        self.request_all_routes().and_then(move |_| {
+            Interval::new(Instant::now(), Duration::from_millis(interval))
+                .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
+                .for_each(move |_| {
+                    let clone = clone.clone();
+                    clone
+                        .clone()
+                        .update_best_routes(None)
+                        .and_then(move |_| clone.send_route_updates())
+                })
+        })
+    }
+
+    /// Request routes from all the peers we are willing to receive routes from.
+    /// This is mostly intended for when the CCP server starts up and doesn't have any routes from peers.
+    fn request_all_routes(&self) -> impl Future<Item = (), Error = ()> {
+        let clone = self.clone();
+        self.store
+            .get_accounts_to_receive_routes_from()
+            .then(|result| {
+                let accounts = result.unwrap_or_else(|_| Vec::new());
+                join_all(accounts.into_iter().map(move |account| {
+                    clone.send_route_control_request(account, DUMMY_ROUTING_TABLE_ID, 0)
+                }))
             })
+            .then(|_| Ok(()))
     }
 
     /// Handle a CCP Route Control Request. If this is from an account that we broadcast routes to,
@@ -273,7 +291,7 @@ where
             .build()));
         }
         let update = update.unwrap();
-        debug!(
+        trace!(
             "Got route update request from account {}: {:?}",
             request.from.id(),
             update
@@ -367,7 +385,7 @@ where
             })
             .then(move |result| {
                 if let Err(err) = result {
-                    error!(
+                    warn!(
                         "Error sending Route Control Request to account {}: {:?}",
                         to_id, err
                     )
@@ -508,15 +526,15 @@ where
             epoch
         };
 
+        let route_update_request = self.create_route_update(from_epoch_index, to_epoch_index);
         trace!(
-            "Sending route udpates for epochs: {} - {}",
+            "Sending route udpates for epochs {} - {}: {:?}",
             from_epoch_index,
-            to_epoch_index
+            to_epoch_index,
+            route_update_request,
         );
 
-        let prepare = self
-            .create_route_update(from_epoch_index, to_epoch_index)
-            .to_prepare();
+        let prepare = route_update_request.to_prepare();
         self.store
             .get_accounts_to_send_routes_to()
             .and_then(move |mut accounts| {
@@ -542,7 +560,7 @@ where
                                     prepare: prepare.clone(),
                                 })
                                 .map_err(move |err| {
-                                    error!(
+                                    warn!(
                                         "Error sending route update to account {}: {:?}",
                                         to_id, err
                                     )

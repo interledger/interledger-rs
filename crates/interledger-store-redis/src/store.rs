@@ -286,6 +286,10 @@ impl RedisStore {
                         pipe.sadd("send_routes_to", account.id).ignore();
                     }
 
+                    if account.receive_routes {
+                        pipe.sadd("receive_routes_from", account.id).ignore();
+                    }
+
                     if account.btp_uri.is_some() {
                         pipe.sadd("btp_outgoing", account.id).ignore();
                     }
@@ -771,6 +775,54 @@ impl RouteManagerStore for RedisStore {
                             pipe.query_async(connection)
                                 .map_err(|err| {
                                     error!("Error getting accounts to send routes to: {:?}", err)
+                                })
+                                .and_then(
+                                    move |(_connection, accounts): (
+                                        SharedConnection,
+                                        Vec<AccountWithEncryptedTokens>,
+                                    )| {
+                                        let accounts: Vec<Account> = accounts
+                                            .into_iter()
+                                            .map(|account| account.decrypt_tokens(&decryption_key))
+                                            .collect();
+                                        Ok(accounts)
+                                    },
+                                ),
+                        )
+                    }
+                }),
+        )
+    }
+
+    fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
+        let decryption_key = self.decryption_key.clone();
+        Box::new(
+            cmd("SMEMBERS")
+                .arg("receive_routes_from")
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| {
+                    error!(
+                        "Error getting members of set receive_routes_from: {:?}",
+                        err
+                    )
+                })
+                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
+                    if account_ids.is_empty() {
+                        Either::A(ok(Vec::new()))
+                    } else {
+                        let mut pipe = redis::pipe();
+                        for id in account_ids {
+                            pipe.hgetall(account_details_key(id));
+                        }
+                        Either::B(
+                            pipe.query_async(connection)
+                                .map_err(|err| {
+                                    error!(
+                                        "Error getting accounts to receive routes from: {:?}",
+                                        err
+                                    )
                                 })
                                 .and_then(
                                     move |(_connection, accounts): (
