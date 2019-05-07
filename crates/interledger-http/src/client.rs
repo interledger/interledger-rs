@@ -55,6 +55,11 @@ where
     /// Send an OutgoingRequest to a peer that implements the ILP-Over-HTTP.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         if let Some(url) = request.to.get_http_url() {
+            trace!(
+                "Sending outgoing ILP over HTTP packet to account: {} (URL: {})",
+                request.to.id(),
+                url.as_str()
+            );
             Box::new(
                 self.client
                     .post(url.clone())
@@ -86,6 +91,7 @@ fn parse_packet_from_response(
     response: HttpResponse,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     result(response.error_for_status().map_err(|err| {
+        error!("HTTP error sending ILP over HTTP packet: {:?}", err);
         let code = if let Some(status) = err.status() {
             if status.is_client_error() {
                 ErrorCode::F02_UNREACHABLE

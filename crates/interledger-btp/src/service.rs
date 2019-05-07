@@ -92,7 +92,10 @@ where
                 }),
             )
             .then(move |_| {
-                debug!("Finished forwarding to WebSocket stream");
+                debug!(
+                    "Finished forwarding to WebSocket stream for account: {}",
+                    account_id
+                );
                 drop(close_connection);
                 Ok(())
             });
@@ -128,6 +131,7 @@ where
           if message.is_binary() {
               match parse_ilp_packet(message) {
                 Ok((request_id, Packet::Prepare(prepare))) => {
+                    trace!("Got incoming Prepare packet on request ID: {} {:?}", request_id, prepare);
                     incoming_sender.clone().unbounded_send((account.clone(), request_id, prepare))
                         .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
                 },
@@ -156,10 +160,14 @@ where
                 }
               }
           } else if message.is_ping() {
+              trace!("Responding to Ping message from account {}", account.id());
               tx_clone.unbounded_send(Message::Pong(Vec::new())).map_err(|err| error!("Error sending Pong message back: {:?}", err))
           } else {
               Ok(())
           }
+        }).then(move |result| {
+            debug!("Finished reading from WebSocket stream for account: {}", account_id);
+            result
         });
 
         let connections = self.connections.clone();

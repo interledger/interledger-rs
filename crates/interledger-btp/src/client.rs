@@ -31,6 +31,7 @@ where
     A: BtpAccount + 'static,
 {
     join_all(accounts.into_iter().map(move |account| {
+        let account_id = account.id();
         let mut url = account
             .get_btp_uri()
             .expect("Accounts must have BTP URLs")
@@ -44,9 +45,18 @@ where
             .unwrap_or_default();
         debug!("Connecting to {}", url);
         connect_async(url.clone())
-            .map_err(|err| error!("Error connecting to WebSocket server: {:?}", err))
+            .map_err(move |err| {
+                error!(
+                    "Error connecting to WebSocket server for account: {} {:?}",
+                    account_id, err
+                )
+            })
             .and_then(move |(connection, _)| {
-                trace!("Connected to {}, sending auth packet", url);
+                trace!(
+                    "Connected to account {} (URI: {}), sending auth packet",
+                    account_id,
+                    url
+                );
                 // Send BTP authentication
                 let auth_packet = Message::Binary(
                     BtpPacket::Message(BtpMessage {
