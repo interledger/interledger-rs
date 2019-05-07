@@ -35,7 +35,7 @@ lazy_static! {
         settle_threshold: Some(0),
         settle_to: Some(-1000),
         send_routes: false,
-        receive_routes: false,
+        receive_routes: true,
         routing_relation: None,
         round_trip_time: None,
         amount_per_minute_limit: Some(1000),
@@ -799,6 +799,21 @@ mod ccp_store {
                 .get_accounts_to_send_routes_to()
                 .and_then(move |accounts| {
                     assert_eq!(accounts[0].id(), 1);
+                    assert_eq!(accounts.len(), 1);
+                    let _ = context;
+                    Ok(())
+                })
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn gets_accounts_to_receive_routes_from() {
+        block_on(test_store().and_then(|(store, context)| {
+            store
+                .get_accounts_to_receive_routes_from()
+                .and_then(move |accounts| {
+                    assert_eq!(accounts[0].id(), 0);
                     assert_eq!(accounts.len(), 1);
                     let _ = context;
                     Ok(())

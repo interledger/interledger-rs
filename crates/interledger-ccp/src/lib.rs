@@ -93,6 +93,10 @@ pub trait RouteManagerStore: Clone {
         &self,
     ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
+    fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+
     fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (Bytes, Self::Account)>;
