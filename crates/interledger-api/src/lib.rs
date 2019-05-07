@@ -84,7 +84,6 @@ pub struct AccountDetails {
     pub btp_incoming_token: Option<String>,
     #[serde(default)]
     pub is_admin: bool,
-    pub xrp_address: Option<String>,
     pub settle_threshold: Option<i64>,
     pub settle_to: Option<i64>,
     #[serde(default)]
