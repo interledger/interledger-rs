@@ -32,7 +32,7 @@ You can learn some prerequisites with the following references.
     - If you have any opinion on the features of Interledger.rs, please [open issues](https://github.com/emschwartz/interledger-rs/issues) describing what you think we need.
 
 ## Pull Requests
-Please follow the instruction below when making pull requests (PRs).
+We welcome pull requests (PRs) that address reported issues. Please follow the instruction below when making pull requests.
 
 - Make sure that your branch is forked from the very recent `master` branch.
 - Make sure that you wrote tests, ran it and the results were all green.
