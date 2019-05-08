@@ -44,7 +44,16 @@ Please follow the instruction below when making pull requests (PRs).
     - Then if you want to make some changes on your PRs, `push -f` is allowed to renew your branch after squashing your new commits. You don't need to open new PRs.
 
 ## Bug Reports
+If you find any suspicious bugs, please feel free to report it on [issues](https://github.com/emschwartz/interledger-rs/issues). The similar bugs have possibly been reported before, so if you have time to take a look at existing [issues](https://github.com/emschwartz/interledger-rs/issues?utf8=✓&q=is%3Aissue), that would be really appreciated to avoid reporting duplicated bugs.
 
+To resolve the problem we need a detailed report of the bug. When you report your bugs, refer to the following example of a report.
+
+```
+Short summary: <summary>
+Commit hash or branch: <hash or branch> (or even tag etc. to determine exact version)
+How to reproduce the bug: <how to reproduce the bug> (procedure or sample code)
+Description: <description> (explanation and/or backtrace)
+```
 
 ## Questions
 If you have any questions, post it on [Interledger Forum](https://forum.interledger.org/) or [Interledger Slack #rust](https://interledger.slack.com/messages/CHC51E54J).
