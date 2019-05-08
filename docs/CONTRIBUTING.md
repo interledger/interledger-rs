@@ -3,9 +3,9 @@ title: Contributing
 ---
 
 # Contributing
-Welcome to interledger.rs!
+Welcome to Interledger.rs!
 
-Interledger.rs is an implementation of Interledger Protocol written in Rust language. If you are considering to contribute to interledger.rs, please read this document first of all.
+Interledger.rs is an implementation of Interledger Protocol written in Rust language. If you are considering to contribute to Interledger.rs, please read this document first of all.
 
 ## Prerequisites
 You can learn some prerequisites with the following references.
