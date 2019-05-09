@@ -62,3 +62,7 @@ Install and Run:
 1. `git clone https://github.com/emschwartz/interledger-rs && cd interledger-rs`
 2. `cargo build` (add `--release` to compile the release version, which is slower to compile but faster to run)
 2. `cargo run --package interledger` (append command line options after a `--` to use the CLI)
+
+## Contributing
+
+Contributions are very welcome and if you're interested in getting involved, see [CONTRIBUTING.md](docs/CONTRIBUTING.md).
