@@ -32,7 +32,7 @@ Before diving in to Interledger.rs, you may find it helpful to familiarize yours
     - If you have any opinion on the features of Interledger.rs, please [open issues](https://github.com/emschwartz/interledger-rs/issues) describing what you think we need.
 
 ## Pull Requests
-We welcome pull requests (PRs) that address reported issues. You can find appropriate issues by `bug` or `help-wanted` labels. To avoid multiple PRs for a single issue, please let us know that you are working on it by a comment for the issue.
+We welcome pull requests (PRs) that address reported issues. You can find appropriate issues by `bug` or `help-wanted` labels. To avoid multiple PRs for a single issue, please let us know that you are working on it by a comment for the issue. Also we recommend to make discussions on the issue of how to address the issue, methodology towards the resolution or the architecture of your code, in order to avoid writing inefficient or inappropriate code. 
 
 Please follow the instruction below when making pull requests.
 
