@@ -41,8 +41,9 @@ Please follow the instruction below when making pull requests.
 - Make sure that you wrote tests, ran it and the results were all green.
 - Make sure to run `cargo fmt` before you commit.
     - To install rustfmt, run `rustup component add rustfmt`
-- Make sure to commit using `-s` or `--signoff` option like `git cz -s` (`cz` means using the [commitizen](https://github.com/commitizen/cz-cli) explained below).
-    - The meaning of using the option is explained later in the [Signing-off](#Signing-off) section.
+- Make sure to commit using `-s` or `--signoff` option like `git cz -s`.
+    - `cz` means using the [commitizen](https://github.com/commitizen/cz-cli) explained below.
+    - Why we use the option is explained later in the [Signing-off](#Signing-off) section.
 - Make sure that you committed using the [commitizen](https://github.com/commitizen/cz-cli) format (commit messages should start with `feat:`, `docs:`, `refactor:`, `chore:`, etc). PRs may contain multiple commits but they should generally be squashed into one or a small number of complete change sets (for example, a feature followed by multiple refactors and another commit to add tests and docs should be combined into a single commit for that feature).
 - Make pull requests against `master` branch of this repository (emschwartz/interledger-rs) from your repository.
 - If reviewers request some changes, please follow the instruction or make discussions if you have any constructive opinions on the PRs you made.
