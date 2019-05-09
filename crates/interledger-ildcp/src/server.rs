@@ -37,7 +37,7 @@ where
         if is_ildcp_request(&request.prepare) {
             let builder = IldcpResponseBuilder {
                 client_address: &request.from.client_address(),
-                asset_code: &request.from.asset_code(),
+                asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };
             debug!(

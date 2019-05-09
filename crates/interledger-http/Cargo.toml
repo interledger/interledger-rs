@@ -1,18 +1,19 @@
 [package]
 name = "interledger-http"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "HTTP client and server services for Interledger.rs"
 license = "Apache-2.0"
 edition = "2018"
+repository = "https://github.com/emschwartz/interledger-rs"
 
 [dependencies]
 bytes = "0.4.12"
 futures = "0.1.25"
 http = "0.1.16"
 hyper = "0.12.25"
-interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
-interledger-service = { path = "../interledger-service", version = "0.1.0" }
+interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
+interledger-service = { path = "../interledger-service", version = "0.2.1" }
 log = "0.4.6"
 reqwest = "0.9.11"
 url = "1.7.2"

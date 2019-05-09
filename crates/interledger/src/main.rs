@@ -2,9 +2,13 @@ extern crate interledger;
 #[macro_use]
 extern crate clap;
 
+use base64;
 use clap::{App, Arg, ArgGroup, SubCommand};
-use interledger::*;
+use hex;
+use interledger::cli::*;
 use interledger_ildcp::IldcpResponseBuilder;
+use tokio;
+use url::Url;
 
 #[allow(clippy::cyclomatic_complexity)]
 pub fn main() {
@@ -80,7 +84,7 @@ pub fn main() {
                         ]),
                 ]),
                 SubCommand::with_name("moneyd")
-                    .about("Run a local connector")
+                    .about("Run a local connector that exposes a BTP server with open signup")
                     .subcommand(SubCommand::with_name("local")
                         .about("Run locally without connecting to a remote connector")
                         .args(&[
@@ -99,6 +103,93 @@ pub fn main() {
                                 .default_value("9"),
                         ])
                     ),
+                SubCommand::with_name("node")
+                    .about("Run an Interledger node (sender, connector, receiver bundle)")
+                    .args(&[
+                        Arg::with_name("redis_uri")
+                            .long("redis_uri")
+                            .default_value("redis://127.0.0.1:6379"),
+                        Arg::with_name("btp_port")
+                            .long("btp_port")
+                            .default_value("7768"),
+                        Arg::with_name("http_port")
+                            .long("http_port")
+                            .default_value("7770"),
+                        Arg::with_name("server_secret")
+                            .long("server_secret")
+                            .help("Cryptographic seed used to derive keys for STREAM, specified in hex")
+                            .takes_value(true),
+                    ])
+                    .group(ArgGroup::with_name("redis_connector").requires_all(&["redis_uri", "btp_port", "http_port"]))
+                    .subcommand(SubCommand::with_name("accounts")
+                        .subcommand(SubCommand::with_name("add")
+                        .args(&[
+                            Arg::with_name("redis_uri")
+                                .long("redis_uri")
+                                .help("Redis database to add the account to")
+                                .default_value("redis://127.0.0.1:6379"),
+                            Arg::with_name("ilp_address")
+                                .long("ilp_address")
+                                .help("ILP Address of this account")
+                                .takes_value(true)
+                                .required(true),
+                            Arg::with_name("asset_code")
+                                .long("asset_code")
+                                .help("Asset that this account's balance is denominated in")
+                                .takes_value(true)
+                                .required(true),
+                            Arg::with_name("asset_scale")
+                                .long("asset_scale")
+                                .help("Scale of the asset this account's balance is denominated in (a scale of 2 means that 100.50 will be represented as 10050)")
+                                .takes_value(true)
+                                .required(true),
+                            Arg::with_name("btp_incoming_authorization")
+                                .long("btp_incoming_authorization")
+                                .help("BTP token this account will use to connect")
+                                .takes_value(true),
+                            Arg::with_name("btp_uri")
+                                .long("btp_uri")
+                                .help("URI of a BTP server or moneyd that this account should use to connect")
+                                .takes_value(true),
+                            Arg::with_name("http_url")
+                                .help("URL of the ILP-Over-HTTP endpoint that should be used when sending outgoing requests to this account")
+                                .long("http_url")
+                                .takes_value(true),
+                            Arg::with_name("http_incoming_token")
+                                .long("http_incoming_token")
+                                .help("Bearer token this account will use to authenticate HTTP requests sent to this server")
+                                .takes_value(true),
+                            Arg::with_name("admin")
+                                .long("admin")
+                                .help("Flag to indicate the account is an administrator (and can add, modify, delete other accounts and change configuration)"),
+                            Arg::with_name("xrp_address")
+                                .long("xrp_address")
+                                .help("XRP address to associate with this account for settlement")
+                                .takes_value(true),
+                            Arg::with_name("settle_threshold")
+                                .long("settle_threshold")
+                                .help("Threshold, denominated in the account's asset and scale, at which an outgoing settlement should be sent")
+                                .takes_value(true),
+                            Arg::with_name("settle_to")
+                                .long("settle_to")
+                                .help("The amount that should be left after a settlement is triggered and sent (a negative value indicates that more should be sent than what is already owed)")
+                                .takes_value(true),
+                            Arg::with_name("send_routes")
+                                .long("send_routes")
+                                .help("Whether to broadcast routes to this account"),
+                            Arg::with_name("receive_routes")
+                                .long("receive_routes")
+                                .help("Whether to accept route broadcasts from this account"),
+                            Arg::with_name("routing_relation")
+                                .long("routing_relation")
+                                .help("Either 'Parent', 'Peer', or 'Child' to indicate our relationship to this account (used for routing)")
+                                .default_value("Child"),
+                            Arg::with_name("min_balance")
+                                .long("min_balance")
+                                .help("Minimum balance this account is allowed to have (can be negative)")
+                                .default_value("0"),
+                        ])
+                        .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
 
     match app.clone().get_matches().subcommand() {
@@ -117,16 +208,20 @@ pub fn main() {
                         asset_scale: 0,
                     }
                     .build();
-                    run_spsp_server_http(
+                    tokio::run(run_spsp_server_http(
                         ildcp_info,
                         ([127, 0, 0, 1], port).into(),
                         auth_token,
                         quiet,
-                    );
+                    ));
                 } else {
                     let btp_server = value_t!(matches, "btp_server", String)
                         .expect("BTP Server URL is required");
-                    run_spsp_server_btp(&btp_server, ([127, 0, 0, 1], port).into(), quiet);
+                    tokio::run(run_spsp_server_btp(
+                        &btp_server,
+                        ([0, 0, 0, 0], port).into(),
+                        quiet,
+                    ));
                 }
             }
             ("pay", Some(matches)) => {
@@ -136,9 +231,14 @@ pub fn main() {
 
                 // Check for http_server first because btp_server has the default value of connecting to moneyd
                 if let Ok(http_server) = value_t!(matches, "http_server", String) {
-                    send_spsp_payment_http(&http_server, &receiver, amount, quiet)
+                    tokio::run(send_spsp_payment_http(
+                        &http_server,
+                        &receiver,
+                        amount,
+                        quiet,
+                    ));
                 } else if let Ok(btp_server) = value_t!(matches, "btp_server", String) {
-                    send_spsp_payment_btp(&btp_server, &receiver, amount, quiet);
+                    tokio::run(send_spsp_payment_btp(&btp_server, &receiver, amount, quiet));
                 } else {
                     panic!("Must specify either btp_server or http_server");
                 }
@@ -160,9 +260,94 @@ pub fn main() {
                     asset_scale,
                 }
                 .build();
-                run_moneyd_local(([127, 0, 0, 1], btp_port).into(), ildcp_info);
+                tokio::run(run_moneyd_local(
+                    ([127, 0, 0, 1], btp_port).into(),
+                    ildcp_info,
+                ));
             }
             _ => app.print_help().unwrap(),
+        },
+        ("node", Some(matches)) => match matches.subcommand() {
+            ("accounts", Some(matches)) => match matches.subcommand() {
+                ("add", Some(matches)) => {
+                    let (http_endpoint, http_outgoing_authorization) =
+                        if let Some(url) = matches.value_of("http_url") {
+                            let url = Url::parse(url).expect("Invalid URL");
+                            let auth = if !url.username().is_empty() {
+                                Some(format!(
+                                    "Basic {}",
+                                    base64::encode(&format!(
+                                        "{}:{}",
+                                        url.username(),
+                                        url.password().unwrap_or("")
+                                    ))
+                                ))
+                            } else if let Some(password) = url.password() {
+                                Some(format!("Bearer {}", password))
+                            } else {
+                                None
+                            };
+                            (Some(url.to_string()), auth)
+                        } else {
+                            (None, None)
+                        };
+                    let redis_uri =
+                        value_t!(matches, "redis_uri", String).expect("redis_uri is required");
+                    let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
+                    let account = AccountDetails {
+                        ilp_address: value_t!(matches, "ilp_address", String)
+                            .unwrap()
+                            .bytes()
+                            .collect(),
+                        asset_code: value_t!(matches, "asset_code", String).unwrap(),
+                        asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
+                        btp_incoming_authorization: matches
+                            .value_of("btp_incoming_authorization")
+                            .map(|s| s.to_string()),
+                        btp_uri: matches.value_of("btp_uri").map(|s| s.to_string()),
+                        http_incoming_authorization: matches
+                            .value_of("http_incoming_token")
+                            .map(|s| format!("Bearer {}", s)),
+                        http_outgoing_authorization,
+                        http_endpoint,
+                        max_packet_amount: u64::max_value(),
+                        min_balance: value_t!(matches, "min_balance", i64).unwrap(),
+                        is_admin: matches.is_present("admin"),
+                        xrp_address: value_t!(matches, "xrp_address", String).ok(),
+                        settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
+                        settle_to: value_t!(matches, "settle_to", i64).ok(),
+                        send_routes: matches.is_present("send_routes"),
+                        receive_routes: matches.is_present("receive_routes"),
+                        routing_relation: value_t!(matches, "routing_relation", String).ok(),
+                    };
+                    tokio::run(insert_account_redis(redis_uri, account));
+                }
+                _ => app.print_help().unwrap(),
+            },
+            _ => {
+                let redis_uri =
+                    value_t!(matches, "redis_uri", String).expect("redis_uri is required");
+                let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
+                let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
+                let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
+                let server_secret: [u8; 32] = if let Some(secret) =
+                    matches.value_of("server_secret")
+                {
+                    let mut server_secret = [0; 32];
+                    let decoded = hex::decode(secret).expect("server_secret must be hex-encoded");
+                    assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
+                    server_secret.clone_from_slice(&decoded);
+                    server_secret
+                } else {
+                    random_secret()
+                };
+                tokio::run(run_node_redis(
+                    redis_uri,
+                    ([0, 0, 0, 0], btp_port).into(),
+                    ([0, 0, 0, 0], http_port).into(),
+                    &server_secret,
+                ));
+            }
         },
         _ => app.print_help().unwrap(),
     }

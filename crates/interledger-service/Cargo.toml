@@ -1,11 +1,12 @@
 [package]
 name = "interledger-service"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "The core abstraction for the Interledger.rs implementation"
 license = "Apache-2.0"
 edition = "2018"
+repository = "https://github.com/emschwartz/interledger-rs"
 
 [dependencies]
 futures = "0.1.25"
-interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
+interledger-packet = { path = "../interledger-packet", version = "0.2.1" }

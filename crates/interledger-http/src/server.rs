@@ -40,7 +40,7 @@ where
         if let Some(authorization) = authorization {
             Either::A(
                 self.store
-                    .get_account_from_authorization(&authorization)
+                    .get_account_from_http_auth(&authorization)
                     .map_err(move |_err| {
                         error!("Authorization not found in the DB: {}", authorization);
                         Response::builder().status(401).body(Body::empty()).unwrap()
@@ -54,7 +54,7 @@ where
         }
     }
 
-    fn handle_http_request(
+    pub fn handle_http_request(
         &mut self,
         request: Request<Body>,
     ) -> impl Future<Item = Response<Body>, Error = Error> {

@@ -6,8 +6,15 @@ pub trait MaxPacketAmountAccount: Account {
     fn max_packet_amount(&self) -> u64;
 }
 
+#[derive(Clone)]
 pub struct MaxPacketAmountService<S> {
     next: S,
+}
+
+impl<S> MaxPacketAmountService<S> {
+    pub fn new(next: S) -> Self {
+        MaxPacketAmountService { next }
+    }
 }
 
 impl<S, A> IncomingService<A> for MaxPacketAmountService<S>

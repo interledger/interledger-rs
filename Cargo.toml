@@ -2,7 +2,9 @@
 
 members = [
   "./crates/interledger",
+  "./crates/interledger-api",
   "./crates/interledger-btp",
+  "./crates/interledger-ccp",
   "./crates/interledger-http",
   "./crates/interledger-ildcp",
   "./crates/interledger-packet",
@@ -13,5 +15,4 @@ members = [
   "./crates/interledger-store-memory",
   "./crates/interledger-store-redis",
   "./crates/interledger-stream",
-  "./crates/interledger-test-helpers",
 ]

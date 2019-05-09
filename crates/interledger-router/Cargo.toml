@@ -1,16 +1,17 @@
 [package]
 name = "interledger-router"
-version = "0.1.0"
+version = "0.2.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Router for Interledger requests"
 license = "Apache-2.0"
 edition = "2018"
+repository = "https://github.com/emschwartz/interledger-rs"
 
 [dependencies]
 bytes = "0.4.12"
 futures = "0.1.25"
 hashbrown = "0.1.8"
-interledger-packet = { path = "../interledger-packet", version = "0.1.0" }
-interledger-service = { path = "../interledger-service", version = "0.1.0" }
+interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
+interledger-service = { path = "../interledger-service", version = "0.2.1" }
 log = "0.4.6"
 parking_lot = "0.7.1"

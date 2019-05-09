@@ -10,9 +10,12 @@ use interledger_packet::{
     Reject,
 };
 use interledger_service::*;
-use std::cell::Cell;
-use std::cmp::min;
-use std::time::{Duration, SystemTime};
+use std::{
+    cell::Cell,
+    cmp::min,
+    str,
+    time::{Duration, SystemTime},
+};
 
 /// Send a given amount of money using the STREAM transport protocol.
 ///
@@ -47,6 +50,7 @@ where
             amount_delivered: 0,
             should_send_source_account: true,
             sequence: 1,
+            rejected_packets: 0,
             error: None,
         })
 }
@@ -64,6 +68,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     amount_delivered: u64,
     should_send_source_account: bool,
     sequence: u64,
+    rejected_packets: u64,
     error: Option<Error>,
 }
 
@@ -252,6 +257,7 @@ where
     fn handle_reject(&mut self, sequence: u64, amount: u64, reject: Reject) {
         self.source_amount += amount;
         self.congestion_controller.reject(amount, &reject);
+        self.rejected_packets += 1;
         debug!(
             "Prepare {} with amount {} was rejected with code: {} ({} left to send)",
             sequence,
@@ -270,8 +276,9 @@ where
             }
             _ => {
                 self.error = Some(Error::SendMoneyError(format!(
-                    "Packet rejected with code: {}",
-                    reject.code()
+                    "Packet was rejected with error: {} {}",
+                    reject.code(),
+                    str::from_utf8(reject.message()).unwrap_or_default(),
                 )));
             }
         }
@@ -304,8 +311,7 @@ where
                 } else {
                     self.state = SendMoneyFutureState::Closed;
                     debug!(
-                        "Send money future finished. Delivered: {}",
-                        self.amount_delivered
+                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.amount_delivered, self.sequence - 1, self.rejected_packets,
                     );
                     return Ok(Async::Ready((
                         self.amount_delivered,
@@ -322,24 +328,35 @@ where
 #[cfg(test)]
 mod send_money_tests {
     use super::*;
+    use crate::test_helpers::TestAccount;
+    use bytes::Bytes;
     use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
-    use interledger_test_helpers::*;
+    use interledger_service::incoming_service_fn;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
     #[test]
     fn stops_at_final_errors() {
-        let account = TestAccount::default();
-        let rejecter = TestIncomingService::reject(
-            RejectBuilder {
-                code: IlpErrorCode::F00_BAD_REQUEST,
-                message: &[],
-                data: &[],
-                triggered_by: &[],
-            }
-            .build(),
-        );
+        let account = TestAccount {
+            id: 0,
+            asset_code: "XYZ".to_string(),
+            asset_scale: 9,
+            ilp_address: Bytes::from("example.destination"),
+        };
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
         let result = send_money(
-            IldcpService::new(rejecter.clone()),
+            IldcpService::new(incoming_service_fn(move |request| {
+                requests_clone.lock().push(request);
+                Err(RejectBuilder {
+                    code: IlpErrorCode::F00_BAD_REQUEST,
+                    message: b"just some final error",
+                    triggered_by: b"example.connector",
+                    data: &[],
+                }
+                .build())
+            })),
             &account,
             b"example.destination",
             &[0; 32][..],
@@ -347,6 +364,6 @@ mod send_money_tests {
         )
         .wait();
         assert!(result.is_err());
-        assert_eq!(rejecter.get_incoming_requests().len(), 1);
+        assert_eq!(requests.lock().len(), 1);
     }
 }

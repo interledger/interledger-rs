@@ -26,7 +26,7 @@ pub struct CongestionController {
 #[derive(PartialEq)]
 enum CongestionState {
     SlowStart,
-    AvosequenceCongestion,
+    AvoidCongestion,
 }
 
 impl CongestionController {
@@ -115,7 +115,7 @@ impl CongestionController {
 
         match reject.code() {
             ErrorCode::T04_INSUFFICIENT_LIQUIDITY => {
-                self.state = CongestionState::AvosequenceCongestion;
+                self.state = CongestionState::AvoidCongestion;
                 self.max_in_flight = max(
                     (self.max_in_flight as f64 / self.decrease_factor).floor() as u64,
                     1,
@@ -211,7 +211,7 @@ mod tests {
         }
     }
 
-    mod congestion_avosequenceance {
+    mod congestion_avoidance {
         use super::*;
         use interledger_packet::RejectBuilder;
 
@@ -228,7 +228,7 @@ mod tests {
         #[test]
         fn additive_increase() {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
-            controller.state = CongestionState::AvosequenceCongestion;
+            controller.state = CongestionState::AvoidCongestion;
             for i in 1..5 {
                 let amount = i * 1000;
                 controller.prepare(amount);
@@ -240,7 +240,7 @@ mod tests {
         #[test]
         fn multiplicative_decrease() {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
-            controller.state = CongestionState::AvosequenceCongestion;
+            controller.state = CongestionState::AvoidCongestion;
 
             let amount = controller.get_max_amount();
             controller.prepare(amount);
@@ -256,7 +256,7 @@ mod tests {
         #[test]
         fn aimd_combined() {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
-            controller.state = CongestionState::AvosequenceCongestion;
+            controller.state = CongestionState::AvoidCongestion;
 
             let amount = controller.get_max_amount();
             controller.prepare(amount);
@@ -312,7 +312,7 @@ mod tests {
         #[test]
         fn doesnt_overflow_u64() {
             let mut controller = CongestionController {
-                state: CongestionState::AvosequenceCongestion,
+                state: CongestionState::AvoidCongestion,
                 increase_amount: 1000,
                 decrease_factor: 2.0,
                 max_packet_amount: None,

@@ -26,11 +26,15 @@
 //!
 //! HttpServerService --> ValidatorService --> StreamReceiverService
 
-use futures::Future;
+use futures::{Future, IntoFuture};
 use interledger_packet::{Fulfill, Prepare, Reject};
-use std::cmp::Eq;
-use std::fmt::{Debug, Display};
-use std::hash::Hash;
+use std::{
+    cmp::Eq,
+    fmt::{Debug, Display},
+    hash::Hash,
+    marker::PhantomData,
+    str::FromStr,
+};
 
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
@@ -39,7 +43,7 @@ use std::hash::Hash;
 /// Store implementations will implement these Account traits for a concrete type that
 /// they will load from the database.
 pub trait Account: Clone + Send + Sized + Debug {
-    type AccountId: Eq + Hash + Debug + Display + Send + Sync + Copy;
+    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy;
 
     fn id(&self) -> Self::AccountId;
 }
@@ -98,4 +102,65 @@ pub trait AccountStore {
         &self,
         account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
     ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+}
+
+/// Create an IncomingService that calls the given handler for each request.
+pub fn incoming_service_fn<A, B, F>(handler: F) -> ServiceFn<F, A>
+where
+    A: Account,
+    B: IntoFuture<Item = Fulfill, Error = Reject>,
+    F: FnMut(IncomingRequest<A>) -> B,
+{
+    ServiceFn {
+        handler,
+        account_type: PhantomData,
+    }
+}
+
+/// Create an OutgoingService that calls the given handler for each request.
+pub fn outgoing_service_fn<A, B, F>(handler: F) -> ServiceFn<F, A>
+where
+    A: Account,
+    B: IntoFuture<Item = Fulfill, Error = Reject>,
+    F: FnMut(OutgoingRequest<A>) -> B,
+{
+    ServiceFn {
+        handler,
+        account_type: PhantomData,
+    }
+}
+
+/// A service created by `incoming_service_fn` or `outgoing_service_fn`
+#[derive(Clone)]
+pub struct ServiceFn<F, A> {
+    handler: F,
+    account_type: PhantomData<A>,
+}
+
+impl<F, A, B> IncomingService<A> for ServiceFn<F, A>
+where
+    A: Account,
+    B: IntoFuture<Item = Fulfill, Error = Reject>,
+    <B as futures::future::IntoFuture>::Future: std::marker::Send + 'static,
+    F: FnMut(IncomingRequest<A>) -> B,
+{
+    type Future = BoxedIlpFuture;
+
+    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+        Box::new((self.handler)(request).into_future())
+    }
+}
+
+impl<F, A, B> OutgoingService<A> for ServiceFn<F, A>
+where
+    A: Account,
+    B: IntoFuture<Item = Fulfill, Error = Reject>,
+    <B as futures::future::IntoFuture>::Future: std::marker::Send + 'static,
+    F: FnMut(OutgoingRequest<A>) -> B,
+{
+    type Future = BoxedIlpFuture;
+
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        Box::new((self.handler)(request).into_future())
+    }
 }

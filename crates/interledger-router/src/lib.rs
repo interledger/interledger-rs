@@ -6,6 +6,11 @@
 //!
 //! A routing table could be as simple as a single entry for the empty prefix
 //! ("") that will route all requests to a specific outgoing account.
+//!
+//! Note that the Router is not responsible for building the routing table,
+//! only using the information provided by the store. The routing table in the
+//! store can either be configured or populated using the `CcpRouteManager`
+//! (see the `interledger-ccp` crate for more details).
 
 #[macro_use]
 extern crate log;

@@ -18,7 +18,7 @@ mod client;
 mod server;
 
 pub use client::{pay, query};
-pub use server::spsp_responder;
+pub use server::SpspResponder;
 
 #[derive(Fail, Debug)]
 pub enum Error {
