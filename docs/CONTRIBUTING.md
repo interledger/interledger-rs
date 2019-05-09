@@ -15,6 +15,7 @@ Before diving in to Interledger.rs, you may find it helpful to familiarize yours
     - [RFCs](https://github.com/interledger/rfcs)
 - Knowledge about Interledger.rs
     - [Interledger.rs Architecture](architecture.md)
+    - [API Docs](https://docs.rs/interledger)
 - Knowledge about the Rust language
     - [The Book](https://doc.rust-lang.org/book/)
     - [Rust by Example](https://doc.rust-lang.org/stable/rust-by-example/)
