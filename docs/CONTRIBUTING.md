@@ -50,7 +50,7 @@ Please follow the instruction below when making pull requests.
     - Then if you want to make some changes on your PRs, `push -f` is allowed to renew your branch after squashing your new commits. You don't need to open new PRs.
     
 ### Signing-off
-By using `-s` or `--signoff` option, you agree to the following agreement ([Developer Certificate of Origin](https://developercertificate.org/)) which assures that your commits consist of your own code or code which you have rights to submit.
+By using `-s` or `--signoff` option, you agree to the following agreement ([Developer Certificate of Origin](https://developercertificate.org/)) which assures that your commits consist of your own code and/or code which you have rights to submit.
 
 
 ```:Developer Certificate of Origin
