@@ -4,13 +4,14 @@ extern crate clap;
 
 use base64;
 use clap::{App, Arg, ArgGroup, SubCommand};
+use config;
 use hex;
-use interledger::cli::*;
+use interledger::{cli::*, node::*};
 use interledger_ildcp::IldcpResponseBuilder;
 use tokio;
 use url::Url;
 
-#[allow(clippy::cyclomatic_complexity)]
+#[allow(clippy::cognitive_complexity)]
 pub fn main() {
     env_logger::init();
 
@@ -105,22 +106,10 @@ pub fn main() {
                     ),
                 SubCommand::with_name("node")
                     .about("Run an Interledger node (sender, connector, receiver bundle)")
-                    .args(&[
-                        Arg::with_name("redis_uri")
-                            .long("redis_uri")
-                            .default_value("redis://127.0.0.1:6379"),
-                        Arg::with_name("btp_port")
-                            .long("btp_port")
-                            .default_value("7768"),
-                        Arg::with_name("http_port")
-                            .long("http_port")
-                            .default_value("7770"),
-                        Arg::with_name("server_secret")
-                            .long("server_secret")
-                            .help("Cryptographic seed used to derive keys")
-                            .takes_value(true),
-                    ])
-                    .group(ArgGroup::with_name("redis_connector").requires_all(&["redis_uri", "btp_port", "http_port"]))
+                    .arg(Arg::with_name("config")
+                        .long("config")
+                        .short("c")
+                        .help("Name of config file (in JSON, TOML, YAML, or INI format)"))
                     .subcommand(SubCommand::with_name("accounts")
                         .subcommand(SubCommand::with_name("add")
                         .args(&[
@@ -352,28 +341,20 @@ pub fn main() {
                 _ => app.print_help().unwrap(),
             },
             _ => {
-                let redis_uri =
-                    value_t!(matches, "redis_uri", String).expect("redis_uri is required");
-                let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
-                let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
-                let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
-                let server_secret: [u8; 32] = if let Some(secret) =
-                    matches.value_of("server_secret")
-                {
-                    let mut server_secret = [0; 32];
-                    let decoded = hex::decode(secret).expect("server_secret must be hex-encoded");
-                    assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
-                    server_secret.clone_from_slice(&decoded);
-                    server_secret
-                } else {
-                    random_secret()
-                };
-                tokio::run(run_node_redis(
-                    redis_uri,
-                    ([0, 0, 0, 0], btp_port).into(),
-                    ([0, 0, 0, 0], http_port).into(),
-                    &server_secret,
-                ));
+                let mut node_config = config::Config::new();
+                if let Some(config_path) = matches.value_of("config") {
+                    node_config
+                        .merge(config::File::with_name(config_path))
+                        .unwrap();
+                }
+                node_config
+                    .merge(config::Environment::with_prefix("ILP"))
+                    .unwrap();
+
+                let node: InterledgerNode = node_config
+                    .try_into()
+                    .expect("Must provide config file name or config environment variables");
+                node.run();
             }
         },
         _ => app.print_help().unwrap(),

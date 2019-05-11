@@ -6,8 +6,11 @@ extern crate reqwest;
 extern crate serde_json;
 
 use env_logger;
-use futures::{future, Future, Stream};
-use interledger::cli;
+use futures::{future::join_all, Future, Stream};
+use interledger::{
+    cli,
+    node::{AccountDetails, InterledgerNode},
+};
 use std::str;
 use tokio::runtime::Runtime;
 
@@ -23,17 +26,10 @@ fn three_nodes() {
     // Each node will use its own DB within the redis instance
     let mut connection_info1 = context.get_client_connection_info();
     connection_info1.db = 1;
-    let connection_info1_clone = connection_info1.clone();
     let mut connection_info2 = context.get_client_connection_info();
     connection_info2.db = 2;
-    let connection_info2_clone = connection_info2.clone();
     let mut connection_info3 = context.get_client_connection_info();
     connection_info3.db = 3;
-    let connection_info3_clone = connection_info3.clone();
-
-    let server_secret1 = cli::random_secret();
-    let server_secret2 = cli::random_secret();
-    let server_secret3 = cli::random_secret();
 
     let node1_http = get_open_port(Some(3010));
     let node2_http = get_open_port(Some(3020));
@@ -42,37 +38,21 @@ fn three_nodes() {
 
     let mut runtime = Runtime::new().unwrap();
 
-    let node1 = future::join_all(vec![
-        // Own account
-        cli::insert_account_redis(
-            connection_info1.clone(),
-            &server_secret1,
-            cli::AccountDetails {
-                ilp_address: String::from("example.one"),
-                asset_code: "XYZ".to_string(),
-                asset_scale: 9,
-                btp_incoming_token: None,
-                btp_uri: None,
-                http_endpoint: None,
-                http_incoming_token: Some("admin".to_string()),
-                http_outgoing_token: None,
-                max_packet_amount: u64::max_value(),
-                min_balance: i64::min_value(),
-                is_admin: true,
-                settle_threshold: None,
-                settle_to: None,
-                send_routes: false,
-                receive_routes: false,
-                routing_relation: None,
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-            },
-        ),
-        cli::insert_account_redis(
-            connection_info1.clone(),
-            &server_secret1,
-            cli::AccountDetails {
+    let node1 = InterledgerNode {
+        ilp_address: "example.one".to_string(),
+        asset_code: "XYZ".to_string(),
+        asset_scale: 9,
+        admin_auth_token: "admin".to_string(),
+        redis_connection: connection_info1,
+        btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
+        http_address: ([127, 0, 0, 1], node1_http).into(),
+        server_secret: cli::random_secret(),
+    };
+    runtime.spawn(
+        node1.serve().and_then(move |_|
+        // TODO insert the accounts via HTTP request
+        node1
+            .insert_account(AccountDetails {
                 ilp_address: String::from("example.two"),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
@@ -92,50 +72,23 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
-            },
-        ),
-    ])
-    .and_then(move |_| {
-        cli::run_node_redis(
-            connection_info1_clone,
-            ([127, 0, 0, 1], get_open_port(None)).into(),
-            ([127, 0, 0, 1], node1_http).into(),
-            &server_secret1,
-        )
-    });
-    runtime.spawn(node1);
+            })));
 
-    let node2 = future::join_all(vec![
-        // Own account
-        cli::insert_account_redis(
-            connection_info2.clone(),
-            &server_secret2,
-            cli::AccountDetails {
-                ilp_address: String::from("example.two"),
-                asset_code: "XYZ".to_string(),
-                asset_scale: 9,
-                btp_incoming_token: None,
-                btp_uri: None,
-                http_endpoint: None,
-                http_incoming_token: Some("admin".to_string()),
-                http_outgoing_token: None,
-                max_packet_amount: u64::max_value(),
-                min_balance: i64::min_value(),
-                is_admin: true,
-                settle_threshold: None,
-                settle_to: None,
-                send_routes: false,
-                receive_routes: false,
-                routing_relation: None,
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-            },
-        ),
-        cli::insert_account_redis(
-            connection_info2.clone(),
-            &server_secret2,
-            cli::AccountDetails {
+    let node2 = InterledgerNode {
+        ilp_address: "example.two".to_string(),
+        asset_code: "XYZ".to_string(),
+        asset_scale: 9,
+        admin_auth_token: "admin".to_string(),
+        redis_connection: connection_info2,
+        btp_address: ([127, 0, 0, 1], node2_btp).into(),
+        http_address: ([127, 0, 0, 1], node2_http).into(),
+        server_secret: cli::random_secret(),
+    };
+    runtime.spawn(
+        node2.serve()
+        .and_then(move |_|
+        join_all(vec![
+            node2.insert_account(AccountDetails {
                 ilp_address: String::from("example.one"),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
@@ -155,12 +108,8 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
-            },
-        ),
-        cli::insert_account_redis(
-            connection_info2.clone(),
-            &server_secret2,
-            cli::AccountDetails {
+            }),
+            node2.insert_account(AccountDetails {
                 ilp_address: String::from("example.two.three"),
                 asset_code: "ABC".to_string(),
                 asset_scale: 6,
@@ -180,64 +129,42 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
-            },
-        ),
-    ])
-    .and_then(move |_| {
-        cli::run_node_redis(
-            connection_info2_clone,
-            ([127, 0, 0, 1], node2_btp).into(),
-            ([127, 0, 0, 1], node2_http).into(),
-            &server_secret2,
-        )
-    })
-    .and_then(move |_| {
-        let client = reqwest::r#async::Client::new();
-        client
-            .put(&format!("http://localhost:{}/rates", node2_http))
-            .header("Authorization", "Bearer admin")
-            .json(&[("ABC", 2), ("XYZ", 1)])
-            .send()
-            .map_err(|err| panic!(err))
-            .and_then(|res| {
-                res.error_for_status()
-                    .expect("Error setting exchange rates");
-                Ok(())
-            })
-    });
-    runtime.spawn(node2);
+            }),
+        ]))
+        .and_then(move |_| {
+            let client = reqwest::r#async::Client::new();
+            client
+                .put(&format!("http://localhost:{}/rates", node2_http))
+                .header("Authorization", "Bearer admin")
+                .json(&[("ABC", 2), ("XYZ", 1)])
+                .send()
+                .map_err(|err| panic!(err))
+                .and_then(|res| {
+                    res.error_for_status()
+                        .expect("Error setting exchange rates");
+                    Ok(())
+                })
+        }),
+    );
 
-    let node3 = future::join_all(vec![
-        // Own account
-        cli::insert_account_redis(
-            connection_info3.clone(),
-            &server_secret3,
-            cli::AccountDetails {
-                ilp_address: String::from("example.two.three"),
-                asset_code: "ABC".to_string(),
-                asset_scale: 6,
-                btp_incoming_token: None,
-                btp_uri: None,
-                http_endpoint: None,
-                http_incoming_token: Some("admin".to_string()),
-                http_outgoing_token: None,
-                max_packet_amount: u64::max_value(),
-                min_balance: i64::min_value(),
-                is_admin: true,
-                settle_threshold: None,
-                settle_to: None,
-                send_routes: false,
-                receive_routes: false,
-                routing_relation: None,
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-            },
-        ),
-        cli::insert_account_redis(
-            connection_info3.clone(),
-            &server_secret3,
-            cli::AccountDetails {
+    let node3 = InterledgerNode {
+        ilp_address: "example.two.three".to_string(),
+        asset_code: "ABC".to_string(),
+        asset_scale: 6,
+        admin_auth_token: "admin".to_string(),
+        redis_connection: connection_info3,
+        btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
+        http_address: ([127, 0, 0, 1], node3_http).into(),
+        server_secret: cli::random_secret(),
+    };
+    let node3_clone = node3.clone();
+    runtime.spawn(
+                // Wait a bit to make sure the other node's BTP server is listening
+                delay(50).map_err(|err| panic!(err))
+            .and_then(move |_| node3.serve())
+            .and_then(move |_|
+        node3_clone
+            .insert_account(AccountDetails {
                 ilp_address: String::from("example.two"),
                 asset_code: "ABC".to_string(),
                 asset_scale: 6,
@@ -257,22 +184,8 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
-            },
-        ),
-    ])
-    .and_then(|_| {
-        // Wait a bit to make sure the other node's BTP server is listening
-        delay(50).map_err(|err| panic!(err))
-    })
-    .and_then(move |_| {
-        cli::run_node_redis(
-            connection_info3_clone,
-            ([127, 0, 0, 1], get_open_port(None)).into(),
-            ([127, 0, 0, 1], node3_http).into(),
-            &server_secret3,
-        )
-    });
-    runtime.spawn(node3);
+            })
+    ));
 
     runtime
         .block_on(

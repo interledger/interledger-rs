@@ -14,9 +14,11 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use parking_lot::RwLock;
+use redis::IntoConnectionInfo;
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
 use ring::{aead, hmac};
 use std::{
+    str,
     iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
@@ -84,8 +86,6 @@ static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
 }
-
-pub use redis::IntoConnectionInfo;
 
 pub fn connect<R>(redis_uri: R, secret: [u8; 32]) -> impl Future<Item = RedisStore, Error = ()>
 where
@@ -294,7 +294,7 @@ impl RedisStore {
                             update_routes(connection, routing_table)
                         })
                         .and_then(move |_| {
-                            debug!("Inserted account {}", account.id);
+                            debug!("Inserted account {} (ILP address: {})", account.id, str::from_utf8(account.ilp_address.as_ref()).unwrap_or("<not utf8>"));
                             Ok(account)
                         })
                 }),
@@ -578,6 +578,7 @@ impl HttpStore for RedisStore {
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
+        let token = token.to_string();
         Box::new(
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_INDEX)
@@ -593,6 +594,8 @@ impl HttpStore for RedisStore {
                             Ok(account)
                         } else {
                             warn!("No account found with given HTTP auth");
+                            // TODO remove this log line (not safe to log auth token)
+                            trace!("Unknown HTTP auth token: {}", token);
                             Err(())
                         }
                     },

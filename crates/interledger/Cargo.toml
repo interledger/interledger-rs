@@ -37,6 +37,7 @@ stream = ["interledger-stream", "ildcp"]
 base64 = "0.10.1"
 bytes = "0.4.12"
 clap = "2.32.0"
+config = "0.9.3"
 env_logger = "0.6.1"
 futures = "0.1.25"
 hex = "0.3.2"
