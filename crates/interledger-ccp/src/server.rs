@@ -32,6 +32,78 @@ fn hash(preimage: &[u8; 32]) -> [u8; 32] {
 
 type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 
+pub struct CcpRouteManagerBuilder<S, T, U> {
+    /// The next request handler that will be used both to pass on requests that are not CCP messages.
+    next_incoming: S,
+    /// The outgoing request handler that will be used to send outgoing CCP messages.
+    /// Note that this service bypasses the Router because the Route Manager needs to be able to
+    /// send messages directly to specific peers.
+    outgoing: T,
+    /// This represents the routing table we will forward to our peers.
+    /// It is the same as the local_table with our own address added to the path of each route.
+    store: U,
+    ilp_address: Bytes,
+    global_prefix: Bytes,
+    spawn_tasks: bool,
+    boadcast_interval: u64,
+}
+
+impl<S, T, U, A> CcpRouteManagerBuilder<S, T, U>
+where
+    S: IncomingService<A> + Clone + Send + Sync + 'static,
+    T: OutgoingService<A> + Clone + Send + Sync + 'static,
+    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    A: CcpRoutingAccount + Send + Sync + 'static,
+{
+    pub fn new(store: U, outgoing: T, next_incoming: S) -> Self {
+        CcpRouteManagerBuilder {
+            ilp_address: Bytes::new(),
+            global_prefix: Bytes::from_static(b"g."),
+            next_incoming,
+            outgoing,
+            store,
+            spawn_tasks: true,
+            boadcast_interval: DEFAULT_BROADCAST_INTERVAL,
+        }
+    }
+
+    pub fn ilp_address(&mut self, ilp_address: Bytes) -> &mut Self {
+        self.global_prefix = ilp_address
+            .iter()
+            .position(|c| c == &b'.')
+            .map(|index| ilp_address.slice_to(index + 1))
+            .unwrap_or_else(|| ilp_address.clone());
+        self.ilp_address = ilp_address;
+        self
+    }
+
+    pub fn disable_spawn(&mut self) -> &mut Self {
+        self.spawn_tasks = false;
+        self
+    }
+
+    pub fn to_service(&self) -> CcpRouteManager<S, T, U, A> {
+        let service = CcpRouteManager {
+            ilp_address: self.ilp_address.clone(),
+            global_prefix: self.global_prefix.clone(),
+            next_incoming: self.next_incoming.clone(),
+            outgoing: self.outgoing.clone(),
+            store: self.store.clone(),
+            spawn_tasks: self.spawn_tasks,
+            forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
+            forwarding_table_updates: Arc::new(RwLock::new(HashMap::new())),
+            last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
+            local_table: Arc::new(RwLock::new(RoutingTable::default())),
+            incoming_tables: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        if self.spawn_tasks {
+            spawn(service.start_broadcast_interval(self.boadcast_interval));
+        }
+        service
+    }
+}
+
 /// The Routing Manager Service.
 ///
 /// This implements the Connector-to-Connector Protocol (CCP)
@@ -41,7 +113,6 @@ type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 /// received from peers.
 #[derive(Clone)]
 pub struct CcpRouteManager<S, T, U, A: Account> {
-    account: A,
     ilp_address: Bytes,
     global_prefix: Bytes,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
@@ -82,72 +153,21 @@ where
     U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
-    /// Create a new Route Manager service and spawn a task to broadcast the routes
-    /// to peers every 30 seconds.
-    pub fn new(account: A, store: U, outgoing: T, next_incoming: S) -> Self {
-        let service =
-            CcpRouteManager::with_spawn_bool(account, store, outgoing, next_incoming, true);
-        spawn(service.broadcast_routes(DEFAULT_BROADCAST_INTERVAL));
-        service
-    }
-
-    /// Create a new Route Manager Service but don't spawn a task to broadcast routes.
-    /// The `broadcast_routes` method must be called directly to start broadcasting.
-    pub fn new_without_spawn_broadcast(
-        account: A,
-        store: U,
-        outgoing: T,
-        next_incoming: S,
-    ) -> Self {
-        CcpRouteManager::with_spawn_bool(account, store, outgoing, next_incoming, false)
-    }
-
-    pub(crate) fn with_spawn_bool(
-        account: A,
-        store: U,
-        outgoing: T,
-        next_incoming: S,
-        spawn_tasks: bool,
-    ) -> Self {
-        // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
-        let ilp_address = Bytes::from(account.client_address());
-        let global_prefix: Bytes = ilp_address
-            .iter()
-            .position(|c| c == &b'.')
-            .map(|index| ilp_address.slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.clone());
-
-        CcpRouteManager {
-            account,
-            ilp_address,
-            global_prefix,
-            next_incoming,
-            outgoing,
-            forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
-            forwarding_table_updates: Arc::new(RwLock::new(HashMap::new())),
-            last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
-            local_table: Arc::new(RwLock::new(RoutingTable::default())),
-            incoming_tables: Arc::new(RwLock::new(HashMap::new())),
-            store,
-            spawn_tasks,
-        }
-    }
-
     /// Returns a future that will trigger this service to update its routes and broadcast
     /// updates to peers on the given interval.
-    pub fn broadcast_routes(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
+    pub fn start_broadcast_interval(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
         let clone = self.clone();
         self.request_all_routes().and_then(move |_| {
             Interval::new(Instant::now(), Duration::from_millis(interval))
                 .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-                .for_each(move |_| {
-                    let clone = clone.clone();
-                    clone
-                        .clone()
-                        .update_best_routes(None)
-                        .and_then(move |_| clone.send_route_updates())
-                })
+                .for_each(move |_| clone.broadcast_routes())
         })
+    }
+
+    pub fn broadcast_routes(&self) -> impl Future<Item = (), Error = ()> {
+        let clone = self.clone();
+        self.update_best_routes(None)
+            .and_then(move |_| clone.send_route_updates())
     }
 
     /// Request routes from all the peers we are willing to receive routes from.
@@ -362,24 +382,27 @@ where
     /// a Route Update Request from them with a gap in the epochs since the last one we saw.
     fn send_route_control_request(
         &self,
-        to: A,
+        account: A,
         last_known_routing_table_id: [u8; 16],
         last_known_epoch: u32,
     ) -> impl Future<Item = (), Error = ()> {
-        let to_id = to.id();
+        let account_id = account.id();
         let control = RouteControlRequest {
             mode: Mode::Sync,
             last_known_routing_table_id,
             last_known_epoch,
             features: Vec::new(),
         };
-        debug!("Sending Route Control Request to account: {}, last known table id: {}, last known epoch: {}", to.id(), hex::encode(&last_known_routing_table_id[..]), last_known_epoch);
+        debug!("Sending Route Control Request to account: {}, last known table id: {}, last known epoch: {}", account_id, hex::encode(&last_known_routing_table_id[..]), last_known_epoch);
         let prepare = control.to_prepare();
         self.clone()
             .outgoing
             .send_request(OutgoingRequest {
-                from: self.account.clone(),
-                to,
+                // TODO If we start charging or paying for CCP broadcasts we'll need to
+                // have a separate account that we send from, but for now it's fine to
+                // set the peer's account as the from account as well as the to account
+                from: account.clone(),
+                to: account,
                 original_amount: prepare.amount(),
                 prepare,
             })
@@ -387,10 +410,10 @@ where
                 if let Err(err) = result {
                     warn!(
                         "Error sending Route Control Request to account {}: {:?}",
-                        to_id, err
+                        account_id, err
                     )
                 } else {
-                    trace!("Sent Route Control Request to account: {}", to_id);
+                    trace!("Sent Route Control Request to account: {}", account_id);
                 }
                 Ok(())
             })
@@ -516,7 +539,6 @@ where
     /// Send RouteUpdateRequests to all peers that we send routing messages to
     fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
         let mut outgoing = self.outgoing.clone();
-        let account = self.account.clone();
         let to_epoch_index = self.forwarding_table.read().epoch();
 
         let from_epoch_index: u32 = {
@@ -550,19 +572,19 @@ where
                         account_list.join(", ")
                     );
                     Either::A(
-                        join_all(accounts.into_iter().map(move |to| {
-                            let to_id = to.id();
+                        join_all(accounts.into_iter().map(move |account| {
+                            let account_id = account.id();
                             outgoing
                                 .send_request(OutgoingRequest {
                                     from: account.clone(),
-                                    to,
+                                    to: account,
                                     original_amount: prepare.amount(),
                                     prepare: prepare.clone(),
                                 })
                                 .map_err(move |err| {
                                     warn!(
                                         "Error sending route update to account {}: {:?}",
-                                        to_id, err
+                                        account_id, err
                                     )
                                 })
                                 .and_then(|_| Ok(()))
@@ -648,32 +670,33 @@ where
     /// This is used when the peer has fallen behind and has requested a specific range of updates.
     fn send_route_update(
         &self,
-        to: A,
+        account: A,
         from_epoch_index: u32,
         to_epoch_index: u32,
     ) -> impl Future<Item = (), Error = ()> {
         let prepare = self
             .create_route_update(from_epoch_index, to_epoch_index)
             .to_prepare();
-        let to_id = to.id();
+        let account_id = account.id();
         debug!(
             "Sending individual route update to account: {} for epochs from: {} to: {}",
-            to.id(),
-            from_epoch_index,
-            to_epoch_index
+            account_id, from_epoch_index, to_epoch_index
         );
         self.outgoing
             .clone()
             .send_request(OutgoingRequest {
-                to,
-                from: self.account.clone(),
+                from: account.clone(),
+                to: account,
                 original_amount: prepare.amount(),
                 prepare,
             })
             .and_then(|_| Ok(()))
             .then(move |result| {
                 if let Err(err) = result {
-                    error!("Error sending route update to account {}: {:?}", to_id, err)
+                    error!(
+                        "Error sending route update to account {}: {:?}",
+                        account_id, err
+                    )
                 }
                 Ok(())
             })

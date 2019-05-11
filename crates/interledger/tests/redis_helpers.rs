@@ -169,7 +169,7 @@ impl TestContext {
                 }
             }
         }
-        redis::cmd("FLUSHDB").execute(&con);
+        redis::cmd("FLUSHALL").execute(&con);
 
         TestContext {
             server: server,

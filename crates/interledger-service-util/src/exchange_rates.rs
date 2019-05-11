@@ -61,8 +61,14 @@ where
                     request.to.asset_code()
                 );
                 return Box::new(err(RejectBuilder {
-                    code: ErrorCode::T00_INTERNAL_ERROR,
-                    message: &[],
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: format!(
+                        "No exchange rate available from asset: {} to: {}",
+                        request.from.asset_code(),
+                        request.to.asset_code()
+                    )
+                    .as_bytes()
+                    .as_ref(),
                     triggered_by: &self.ilp_address,
                     data: &[],
                 }

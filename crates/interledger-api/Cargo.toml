@@ -10,8 +10,8 @@ repository = "https://github.com/emschwartz/interledger-rs"
 [dependencies]
 bytes = "0.4.12"
 futures = "0.1.25"
-http = "0.1.16"
-hyper = "0.12.25"
+http = "0.1.17"
+hyper = "0.12.28"
 interledger-http = { path = "../interledger-http", version = "0.2.1" }
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 interledger-router = { path = "../interledger-router", version = "0.2.1" }

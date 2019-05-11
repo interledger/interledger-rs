@@ -29,10 +29,6 @@ use std::{
 
 const BEARER_TOKEN_START: usize = 7;
 
-pub trait NodeAccount: HttpAccount {
-    fn is_admin(&self) -> bool;
-}
-
 pub trait NodeStore: Clone + Send + Sync + 'static {
     type Account: AccountTrait;
 
@@ -82,8 +78,6 @@ pub struct AccountDetails {
     pub http_outgoing_token: Option<String>,
     pub btp_uri: Option<String>,
     pub btp_incoming_token: Option<String>,
-    #[serde(default)]
-    pub is_admin: bool,
     pub settle_threshold: Option<i64>,
     pub settle_to: Option<i64>,
     #[serde(default)]
@@ -112,7 +106,7 @@ struct AccountsResponse<A: Serialize> {
 #[web(status = "200")]
 struct Success;
 
-#[derive(Extract)]
+#[derive(Debug, Extract)]
 struct Rates(Vec<(String, f64)>);
 
 #[derive(Response, Debug)]
@@ -146,6 +140,8 @@ struct Routes(HashMap<String, String>);
 
 pub struct NodeApi<T, S> {
     store: T,
+    admin_api_token: String,
+    default_spsp_account: Option<String>,
     incoming_handler: S,
     server_secret: Bytes,
 }
@@ -154,26 +150,31 @@ impl_web! {
     impl<T, S, A> NodeApi<T, S>
     where T: NodeStore<Account = A> + HttpStore<Account = A> + BalanceStore<Account = A> + RouterStore + ExchangeRateStore,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: AccountTrait + HttpAccount + NodeAccount + IldcpAccount + Serialize + 'static,
+    A: AccountTrait + HttpAccount + IldcpAccount + Serialize + 'static,
 
     {
-        pub fn new(server_secret: Bytes, store: T, incoming_handler: S) -> Self {
+        pub fn new(server_secret: Bytes, admin_api_token: String, store: T, incoming_handler: S) -> Self {
             NodeApi {
                 store,
+                admin_api_token,
+                default_spsp_account: None,
                 incoming_handler,
                 server_secret,
             }
         }
 
+        pub fn default_spsp_account(&mut self, account_id: String) -> &mut Self {
+            self.default_spsp_account = Some(account_id);
+            self
+        }
+
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
-            let store = self.store.clone();
-            self.store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                .and_then(|account| if account.is_admin() {
-                    Ok(store)
-                } else {
-                    Err(())
-                })
-                .map_err(|_| Response::builder().status(401).body(()).unwrap())
+            if &authorization[BEARER_TOKEN_START..] == self.admin_api_token {
+                ok(self.store.clone())
+            } else {
+                error!("Admin API endpoint called with non-admin API key");
+                err(Response::builder().status(401).body(()).unwrap())
+            }
         }
 
         #[get("/")]
@@ -199,19 +200,15 @@ impl_web! {
         #[content_type("application/json")]
         fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
-            self.store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                .map_err(move |_| {
-                    debug!("No account found with auth: {}", authorization);
-                    Response::builder().status(401).body(()).unwrap()
-                })
-                .and_then(move |account| if account.is_admin() {
+            if authorization == self.admin_api_token {
                     Either::A(store.get_all_accounts()
-                        .map_err(|_| Response::builder().status(500).body(()).unwrap()))
-                } else {
-                    Either::B(store.get_accounts(vec![account.id()])
-                        .map_err(|_| Response::builder().status(404).body(()).unwrap()))
-                })
-                .and_then(|accounts| Ok(json!(accounts)))
+                        .map_err(|_| Response::builder().status(500).body(()).unwrap())
+                .and_then(|accounts| Ok(json!(accounts))))
+            } else {
+                    Either::B(store.get_account_from_http_token(authorization.as_str())
+                        .map_err(|_| Response::builder().status(404).body(()).unwrap())
+                        .and_then(|account| Ok(json!(vec![account]))))
+            }
         }
 
         #[get("/accounts/:id")]
@@ -219,6 +216,7 @@ impl_web! {
         fn get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let store_clone = store.clone();
+            let is_admin = authorization == self.admin_api_token;
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
@@ -227,7 +225,7 @@ impl_web! {
                         .and_then(move |account|
                             if account.id() == id {
                                 Either::A(ok(json!(account)))
-                            } else if account.is_admin() {
+                            } else if is_admin {
                                 Either::B(store_clone.get_accounts(vec![id]).and_then(|accounts| Ok(json!(accounts[0].clone()))))
                             } else {
                                 Either::A(err(()))
@@ -246,6 +244,7 @@ impl_web! {
             let store = self.store.clone();
             let store_clone = store.clone();
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
+            let is_admin = authorization == self.admin_api_token;
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
@@ -253,7 +252,7 @@ impl_web! {
                         .and_then(move |account|
                             if account.id() == id {
                                 Either::A(ok(account))
-                            } else if account.is_admin() {
+                            } else if is_admin {
                                 Either::B(store_clone.get_accounts(vec![id]).and_then(|accounts| Ok(accounts[0].clone())))
                             } else {
                                 Either::A(err(()))
@@ -273,13 +272,16 @@ impl_web! {
         #[put("/rates")]
         #[content_type("application/json")]
         fn post_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
+            debug!("Setting exchange rates: {:?}", body);
             self.validate_admin(authorization)
-                .and_then(move |store| store.set_rates(body.0)
-                .and_then(|_| Ok(Success))
-                .map_err(|err| {
-                    error!("Error setting rates: {:?}", err);
-                    Response::builder().status(500).body(()).unwrap()
-                }))
+                .and_then(move |store| {
+                    store.set_rates(body.0)
+                        .and_then(|_| Ok(Success))
+                        .map_err(|err| {
+                            error!("Error setting rates: {:?}", err);
+                            Response::builder().status(500).body(()).unwrap()
+                        })
+                })
         }
 
         #[get("/routes")]
@@ -397,22 +399,18 @@ impl_web! {
                     })
         }
 
+
+
         // TODO resolve payment pointers with subdomains to the correct account
         // also give accounts aliases to use in the payment pointer instead of the ids
         #[get("/.well-known/pay")]
         fn get_well_known(&self) -> impl Future<Item = Response<Body>, Error = Response<()>> {
-            let default_account = A::AccountId::default();
-            let server_secret = self.server_secret.clone();
-            self.store.get_accounts(vec![default_account])
-            .map_err(move |_| {
-                error!("Account not found: {}", default_account);
-                Response::builder().status(404).body(()).unwrap()
-            })
-            .and_then(move |accounts| {
-                let ilp_address = Bytes::from(accounts[0].client_address());
-                Ok(SpspResponder::new(ilp_address, server_secret)
-                    .generate_http_response())
-                })
+            if let Some(ref account_id) = &self.default_spsp_account {
+                Either::A(self.get_spsp(account_id.to_string()))
+            } else {
+                error!("Got SPSP request to /.well-known/pay endpoint but there is no default SPSP account configured");
+                Either::B(err(Response::builder().status(404).body(()).unwrap()))
+            }
         }
 
         // TODO add quoting via SPSP/STREAM

@@ -20,6 +20,8 @@ pub mod service {
 #[doc(hidden)]
 #[cfg(feature = "cli")]
 pub mod cli;
+#[cfg(feature = "cli")]
+pub mod node;
 
 /// Bilateral Transport Protocol (BTP) client and server
 #[cfg(feature = "btp")]
