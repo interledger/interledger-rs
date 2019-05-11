@@ -1,6 +1,6 @@
 use super::crypto::{decrypt_token, encrypt_token};
 use bytes::Bytes;
-use interledger_api::{AccountDetails, NodeAccount};
+use interledger_api::AccountDetails;
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
@@ -38,7 +38,6 @@ pub struct Account {
     pub(crate) btp_uri: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) btp_outgoing_token: Option<Bytes>,
-    pub(crate) is_admin: bool,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
     #[serde(serialize_with = "routing_relation_to_string")]
@@ -120,7 +119,6 @@ impl Account {
             http_outgoing_token: details.http_outgoing_token.map(Bytes::from),
             btp_uri,
             btp_outgoing_token,
-            is_admin: details.is_admin,
             settle_threshold: details.settle_threshold,
             settle_to: details.settle_to,
             send_routes: details.send_routes,
@@ -182,8 +180,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         account.asset_scale.write_redis_args(&mut rv);
         "max_packet_amount".write_redis_args(&mut rv);
         account.max_packet_amount.write_redis_args(&mut rv);
-        "is_admin".write_redis_args(&mut rv);
-        account.is_admin.write_redis_args(&mut rv);
         "routing_relation".write_redis_args(&mut rv);
         account
             .routing_relation
@@ -268,7 +264,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?,
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
                 min_balance: get_value("min_balance", &hash)?,
-                is_admin: get_bool("is_admin", &hash),
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
                 settle_to: get_value_option("settle_to", &hash)?,
                 routing_relation,
@@ -395,12 +390,6 @@ impl MaxPacketAmountAccount for Account {
     }
 }
 
-impl NodeAccount for Account {
-    fn is_admin(&self) -> bool {
-        self.is_admin
-    }
-}
-
 impl CcpRoutingAccount for Account {
     fn routing_relation(&self) -> RoutingRelation {
         self.routing_relation
@@ -447,7 +436,6 @@ mod redis_account {
             http_outgoing_token: Some("outgoing_auth_token".to_string()),
             btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
             btp_incoming_token: Some("btp_token".to_string()),
-            is_admin: true,
             settle_threshold: Some(0),
             settle_to: Some(-1000),
             send_routes: true,

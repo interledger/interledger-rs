@@ -174,8 +174,7 @@ pub fn test_service() -> CcpRouteManager<
     TestStore,
     TestAccount,
 > {
-    CcpRouteManager::with_spawn_bool(
-        TestAccount::new(0, "example.connector"),
+    CcpRouteManagerBuilder::new(
         TestStore::new(),
         outgoing_service_fn(|_request| {
             Box::new(err(RejectBuilder {
@@ -195,8 +194,10 @@ pub fn test_service() -> CcpRouteManager<
             }
             .build()))
         }),
-        false,
     )
+    .disable_spawn()
+    .ilp_address(Bytes::from_static(b"example.connector"))
+    .to_service()
 }
 
 pub fn test_service_with_routes() -> (
@@ -236,8 +237,7 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
-    let service = CcpRouteManager::with_spawn_bool(
-        TestAccount::new(0, "example.connector"),
+    let service = CcpRouteManagerBuilder::new(
         store,
         outgoing,
         incoming_service_fn(|_request| {
@@ -249,8 +249,10 @@ pub fn test_service_with_routes() -> (
             }
             .build()))
         }),
-        false,
-    );
+    )
+    .disable_spawn()
+    .ilp_address(Bytes::from_static(b"example.connector"))
+    .to_service();
     (service, outgoing_requests)
 }
 /* kcov-ignore-end */

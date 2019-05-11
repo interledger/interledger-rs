@@ -29,7 +29,7 @@ mod server;
 #[cfg(test)]
 mod test_helpers;
 
-pub use server::CcpRouteManager;
+pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
