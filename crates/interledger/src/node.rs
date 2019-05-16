@@ -25,36 +25,38 @@ use tower_web::ServiceBuilder;
 use url::Url;
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
+static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 
-/// An all-in-one Interledger node that includes sender and receiver functionality,
-/// a connector, and a management API. The node uses Redis for persistence.
-#[derive(Deserialize, Clone)]
-pub struct InterledgerNode {
-    pub ilp_address: String,
-    #[serde(deserialize_with = "deserialize_32_bytes_hex")]
-    pub server_secret: [u8; 32],
-    pub admin_auth_token: String,
-    #[serde(deserialize_with = "deserialize_redis_connection")]
-    pub redis_connection: ConnectionInfo,
-    pub http_address: SocketAddr,
-    // TODO should btp_address be optional?
-    pub btp_address: SocketAddr,
-    pub default_spsp_account: Option<u64>,
+fn default_http_address() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 7770))
+}
+fn default_btp_address() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 7768))
 }
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
     D: Deserializer<'de>,
 {
-    <[u8; 32]>::from_hex(String::deserialize(deserializer)?)
-        .map_err(|err| DeserializeError::custom(format!("Invalid hex value: {:?}", err)))
+    <[u8; 32]>::from_hex(String::deserialize(deserializer)?).map_err(|err| {
+        DeserializeError::custom(format!(
+            "Invalid hex value (must be 32 hex-encoded bytes): {:?}",
+            err
+        ))
+    })
 }
 
 fn deserialize_redis_connection<'de, D>(deserializer: D) -> Result<ConnectionInfo, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Url::parse(String::deserialize(deserializer)?.as_str())
+    let conn = String::deserialize(deserializer);
+    let conn = if let Ok(ref string) = conn {
+        string.as_str()
+    } else {
+        DEFAULT_REDIS_URL
+    };
+    Url::parse(conn)
         .map_err(|err| DeserializeError::custom(format!("Invalid URL: {:?}", err)))?
         .into_connection_info()
         .map_err(|err| {
@@ -65,7 +67,37 @@ where
         })
 }
 
+/// An all-in-one Interledger node that includes sender and receiver functionality,
+/// a connector, and a management API. The node uses Redis for persistence.
+#[derive(Deserialize, Clone)]
+pub struct InterledgerNode {
+    /// ILP address of the node
+    // Rename this one because the env vars are prefixed with "ILP_"
+    #[serde(rename(deserialize = "address"))]
+    pub ilp_address: String,
+    /// Root secret used to derive encryption keys
+    #[serde(deserialize_with = "deserialize_32_bytes_hex")]
+    pub server_secret: [u8; 32],
+    /// HTTP Authorization token for the node admin (sent as a Bearer token)
+    pub admin_auth_token: String,
+    /// Redis URI (for example, "redis://127.0.0.1:6379" or "unix:/tmp/redis.sock")
+    #[serde(deserialize_with = "deserialize_redis_connection")]
+    pub redis_connection: ConnectionInfo,
+    /// IP address and port to listen for HTTP connections on
+    /// This is used for both the API and ILP over HTTP packets
+    #[serde(default = "default_http_address")]
+    pub http_address: SocketAddr,
+    /// IP address and port to listen for BTP connections on
+    #[serde(default = "default_btp_address")]
+    pub btp_address: SocketAddr,
+    /// When SPSP payments are sent to the root domain, the payment pointer is resolved
+    /// to <domain>/.well-known/pay. This value determines which account those payments
+    /// will be sent to.
+    pub default_spsp_account: Option<u64>,
+}
+
 impl InterledgerNode {
+    /// Returns a future that runs the Interledger Node
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
@@ -191,6 +223,7 @@ impl InterledgerNode {
         })
     }
 
+    /// Run the node on the default Tokio runtime
     pub fn run(&self) {
         tokio::run(self.serve());
     }
