@@ -68,10 +68,10 @@ where
             .and_then(|from_account| {
                 parse_prepare_from_request(request, Some(MAX_MESSAGE_SIZE)).and_then(
                     move |prepare| {
-                    trace!(
-                        "Got incoming ILP over HTTP packet from account: {}",
-                        from_account.id()
-                    );
+                        trace!(
+                            "Got incoming ILP over HTTP packet from account: {}",
+                            from_account.id()
+                        );
                         // Call the inner ILP service
                         next.handle_request(IncomingRequest {
                             from: from_account,
