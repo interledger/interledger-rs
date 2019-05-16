@@ -153,9 +153,6 @@ pub fn main() {
                                 .long("http_incoming_token")
                                 .help("Bearer token this account will use to authenticate HTTP requests sent to this server")
                                 .takes_value(true),
-                            Arg::with_name("admin")
-                                .long("admin")
-                                .help("Flag to indicate the account is an administrator (and can add, modify, delete other accounts and change configuration)"),
                             Arg::with_name("settle_threshold")
                                 .long("settle_threshold")
                                 .help("Threshold, denominated in the account's asset and scale, at which an outgoing settlement should be sent")
@@ -190,8 +187,7 @@ pub fn main() {
                                 .long("amount_per_minute_limit")
                                 .help("Total amount of value this account can send per minute. Defaults to no limit")
                                 .takes_value(true),
-                        ])
-                        .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
+                        ]))),
         ]);
 
     match app.clone().get_matches().subcommand() {
@@ -320,7 +316,6 @@ pub fn main() {
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
                         min_balance: value_t!(matches, "min_balance", i64).unwrap(),
-                        is_admin: matches.is_present("admin"),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
                         settle_to: value_t!(matches, "settle_to", i64).ok(),
                         send_routes: matches.is_present("send_routes"),

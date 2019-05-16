@@ -1,22 +1,20 @@
 use bytes::Bytes;
 use futures::Future;
 use hex::FromHex;
-use interledger_api::{NodeApi, NodeStore, NodeAccount};
+use interledger_api::{NodeApi, NodeStore};
 use interledger_btp::{connect_client, create_server, BtpStore};
-use interledger_ccp::CcpRouteManager;
+use interledger_ccp::CcpRouteManagerBuilder;
 use interledger_http::HttpClientService;
-use interledger_ildcp::{IldcpAccount, IldcpService};
+use interledger_ildcp::IldcpService;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{
-    outgoing_service_fn, Account as AccountTrait, AccountStore, OutgoingRequest,
-};
+use interledger_service::{outgoing_service_fn, Account as AccountTrait, OutgoingRequest};
 use interledger_service_util::{
     BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
     RateLimitService, ValidatorService,
 };
 use interledger_store_redis::{
-    connect as connect_redis_store, Account, ConnectionInfo, IntoConnectionInfo, RedisStore,
+    connect as connect_redis_store, Account, ConnectionInfo, IntoConnectionInfo,
 };
 use interledger_stream::StreamReceiverService;
 use ring::{digest, hmac};
@@ -28,13 +26,11 @@ use url::Url;
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 
-///{} An all-in-one Interledger node that includes sender and receiver functionality,
+/// An all-in-one Interledger node that includes sender and receiver functionality,
 /// a connector, and a management API. The node uses Redis for persistence.
 #[derive(Deserialize, Clone)]
 pub struct InterledgerNode {
     pub ilp_address: String,
-    pub asset_code: String,
-    pub asset_scale: u8,
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
     pub server_secret: [u8; 32],
     pub admin_auth_token: String,
@@ -43,6 +39,7 @@ pub struct InterledgerNode {
     pub http_address: SocketAddr,
     // TODO should btp_address be optional?
     pub btp_address: SocketAddr,
+    pub default_spsp_account: Option<u64>,
 }
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
@@ -72,24 +69,25 @@ impl InterledgerNode {
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
-        debug!("Starting Interledger node with ILP address: {}", self.ilp_address);
+        debug!(
+            "Starting Interledger node with ILP address: {}",
+            str::from_utf8(self.ilp_address.as_ref()).unwrap_or("<not utf8>")
+        );
         let redis_secret = generate_redis_secret(&self.server_secret);
         let server_secret = Bytes::from(&self.server_secret[..]);
         let btp_address = self.btp_address.clone();
         let http_address = self.http_address.clone();
-        let ilp_address = self.ilp_address.clone();
-        let asset_code = self.asset_code.clone();
+        let ilp_address = Bytes::from(self.ilp_address.as_str());
+        let ilp_address_clone = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
-        let asset_scale = self.asset_scale;
+        let default_spsp_account = self.default_spsp_account.clone();
 
         connect_redis_store(self.redis_connection.clone(), redis_secret)
         .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
-            get_or_insert_default_account(store.clone(), ilp_address, asset_code, asset_scale, admin_auth_token)
-                .join(store.clone().get_btp_outgoing_accounts())
+                store.clone().get_btp_outgoing_accounts()
                 .map_err(|_| error!("Error getting accounts"))
-                .and_then(move |(default_account, btp_accounts)| {
-                    let ilp_address = Bytes::from(default_account.client_address());
+                .and_then(move |btp_accounts| {
                     let outgoing_service =
                         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
                             error!("No route found for outgoing account {}", request.to.id());
@@ -103,7 +101,7 @@ impl InterledgerNode {
                                         .unwrap_or("<not utf8>")
                                 )
                                 .as_bytes(),
-                                triggered_by: &ilp_address[..],
+                                triggered_by: ilp_address_clone.as_ref(),
                                 data: &[],
                             }
                             .build())
@@ -116,7 +114,6 @@ impl InterledgerNode {
                         move |btp_client_service| {
                             create_server(btp_address, store.clone(), btp_client_service.clone()).and_then(
                                 move |btp_server_service| {
-                                    let ilp_address = Bytes::from(default_account.client_address());
                                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
                                     let outgoing_service = btp_server_service.clone();
@@ -146,12 +143,11 @@ impl InterledgerNode {
                                     // Set up the Router and Routing Manager
                                     let incoming_service =
                                         Router::new(store.clone(), outgoing_service.clone());
-                                    let incoming_service = CcpRouteManager::new(
-                                        default_account.clone(),
+                                    let incoming_service = CcpRouteManagerBuilder::new(
                                         store.clone(),
                                         outgoing_service,
                                         incoming_service,
-                                    );
+                                    ).ilp_address(ilp_address.clone()).to_service();
 
                                     let incoming_service = IldcpService::new(incoming_service);
                                     let incoming_service =
@@ -170,11 +166,15 @@ impl InterledgerNode {
 
                                     // TODO should this run the node api on a different port so it's easier to separate public/private?
                                     // Note the API also includes receiving ILP packets sent via HTTP
-                                    let api = NodeApi::new(
+                                    let mut api = NodeApi::new(
                                         server_secret,
+                                        admin_auth_token,
                                         store.clone(),
                                         incoming_service.clone(),
                                     );
+                                    if let Some(account_id) = default_spsp_account {
+                                        api.default_spsp_account(format!("{}", account_id));
+                                    }
                                     let listener = TcpListener::bind(&http_address)
                                         .expect("Unable to bind to HTTP address");
                                     info!("Interledger node listening on: {}", http_address);
@@ -222,55 +222,6 @@ where
                     debug!("Created account: {}", account.id());
                     Ok(())
                 })
-        })
-}
-
-fn get_or_insert_default_account(
-    store: RedisStore,
-    ilp_address: String,
-    asset_code: String,
-    asset_scale: u8,
-    admin_auth_token: String,
-) -> impl Future<Item = Account, Error = ()> {
-    let account_details = AccountDetails {
-        ilp_address,
-        asset_code,
-        asset_scale,
-        btp_incoming_token: None,
-        btp_uri: None,
-        http_endpoint: None,
-        http_incoming_token: Some(admin_auth_token),
-        http_outgoing_token: None,
-        max_packet_amount: u64::max_value(),
-        // TODO there shouldn't be any min balance
-        min_balance: i64::min_value(),
-        is_admin: true,
-        settle_threshold: None,
-        settle_to: None,
-        send_routes: false,
-        receive_routes: false,
-        routing_relation: None,
-        round_trip_time: None,
-        packets_per_minute_limit: None,
-        amount_per_minute_limit: None,
-    };
-    store
-        .clone()
-        .get_accounts(vec![0])
-        .and_then(|mut accounts| {
-            let account = accounts.pop().expect("Get accounts returned empty vec");
-            if account.is_admin() {
-                Ok(account)
-            } else {
-                // TODO make it so this can't happen
-                error!("Another account was inserted before the admin account!");
-                Err(())
-            }
-        })
-        .or_else(move |_| {
-            // TODO make sure the error comes from the fact that the account doesn't exist and isn't a different type of error
-            debug!("Creating default account");
-            store.insert_account(account_details)
         })
 }
 

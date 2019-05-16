@@ -18,8 +18,8 @@ use redis::IntoConnectionInfo;
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
 use ring::{aead, hmac};
 use std::{
-    str,
     iter::FromIterator,
+    str,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -628,20 +628,30 @@ impl NodeStore for RedisStore {
                 .arg(NEXT_ACCOUNT_ID_KEY)
                 .query_async(self.connection.as_ref().clone())
                 .and_then(
-                    move |(connection, next_account_id): (SharedConnection, u64)| {
-                        let mut pipe = redis::pipe();
-                        for i in 0..next_account_id {
-                            pipe.hgetall(account_details_key(i));
+                    move |(connection, next_account_id): (SharedConnection, Option<u64>)| {
+                        if let Some(next_account_id) = next_account_id {
+                            if next_account_id > 0 {
+                                trace!("Getting accounts up to id: {}", next_account_id);
+                                let mut pipe = redis::pipe();
+                                for i in 0..next_account_id {
+                                    pipe.hgetall(account_details_key(i));
+                                }
+                                return Either::A(pipe.query_async(connection).and_then(
+                                    move |(_, accounts): (
+                                        _,
+                                        Vec<Option<AccountWithEncryptedTokens>>,
+                                    )| {
+                                        let accounts: Vec<Account> = accounts
+                                            .into_iter()
+                                            .filter_map(|a| a)
+                                            .map(|account| account.decrypt_tokens(&decryption_key))
+                                            .collect();
+                                        Ok(accounts)
+                                    },
+                                ));
+                            }
                         }
-                        pipe.query_async(connection).and_then(
-                            move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
-                                let accounts: Vec<Account> = accounts
-                                    .into_iter()
-                                    .map(|account| account.decrypt_tokens(&decryption_key))
-                                    .collect();
-                                Ok(accounts)
-                            },
-                        )
+                        Either::B(ok(Vec::new()))
                     },
                 )
                 .map_err(|err| error!("Error getting all accounts: {:?}", err)),
@@ -664,6 +674,7 @@ impl NodeStore for RedisStore {
             pipe.query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error setting rates: {:?}", err))
                 .and_then(move |(connection, _): (SharedConnection, Value)| {
+                    trace!("Set exchange rates: {:?}", exchange_rates);
                     update_rates(connection, exchange_rates)
                 }),
         )

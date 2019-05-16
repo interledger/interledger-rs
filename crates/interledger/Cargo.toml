@@ -41,7 +41,7 @@ config = "0.9.3"
 env_logger = "0.6.1"
 futures = "0.1.25"
 hex = "0.3.2"
-hyper = "0.12.25"
+hyper = "0.12.28"
 interledger-api = { path = "../interledger-api", version = "0.1.0", optional = true }
 interledger-btp = { path = "../interledger-btp", version = "0.2.1", optional = true }
 interledger-ccp = { path = "../interledger-ccp", version = "0.1.0", optional = true }
@@ -59,8 +59,8 @@ log = "0.4.6"
 parking_lot = "0.7.1"
 ring = "0.14.6"
 serde = "1.0.89"
-tokio = "0.1.16"
-tower-web = "0.3.6"
+tokio = "0.1.20"
+tower-web = "0.3.7"
 url = "1.7.2"
 
 [dev-dependencies]
