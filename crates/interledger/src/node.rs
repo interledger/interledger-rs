@@ -21,7 +21,6 @@ use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str};
 use tokio::{self, net::TcpListener};
-use tower_web::ServiceBuilder;
 use url::Url;
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
@@ -210,10 +209,7 @@ impl InterledgerNode {
                                     let listener = TcpListener::bind(&http_address)
                                         .expect("Unable to bind to HTTP address");
                                     info!("Interledger node listening on: {}", http_address);
-                                    let server = ServiceBuilder::new()
-                                        .resource(api)
-                                        .serve(listener.incoming());
-                                    tokio::spawn(server);
+                                    tokio::spawn(api.serve(listener.incoming()));
                                     Ok(())
                                 },
                             )
