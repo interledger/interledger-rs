@@ -13,6 +13,9 @@ use url::Url;
 mod client;
 mod server;
 
+/// Originally from [interledger-relay](https://github.com/coilhq/interledger-relay/blob/master/crates/interledger-relay/src/combinators/limit_stream.rs).
+mod limit_stream;
+
 pub use self::client::HttpClientService;
 pub use self::server::HttpServerService;
 
