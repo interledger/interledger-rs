@@ -32,6 +32,9 @@ fn default_http_address() -> SocketAddr {
 fn default_btp_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7768))
 }
+fn default_redis_uri() -> ConnectionInfo {
+    DEFAULT_REDIS_URL.into_connection_info().unwrap()
+}
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
@@ -49,13 +52,7 @@ fn deserialize_redis_connection<'de, D>(deserializer: D) -> Result<ConnectionInf
 where
     D: Deserializer<'de>,
 {
-    let conn = String::deserialize(deserializer);
-    let conn = if let Ok(ref string) = conn {
-        string.as_str()
-    } else {
-        DEFAULT_REDIS_URL
-    };
-    Url::parse(conn)
+    Url::parse(&String::deserialize(deserializer)?)
         .map_err(|err| DeserializeError::custom(format!("Invalid URL: {:?}", err)))?
         .into_connection_info()
         .map_err(|err| {
@@ -72,7 +69,7 @@ where
 pub struct InterledgerNode {
     /// ILP address of the node
     // Rename this one because the env vars are prefixed with "ILP_"
-    #[serde(rename(deserialize = "address"))]
+    #[serde(alias = "address")]
     pub ilp_address: String,
     /// Root secret used to derive encryption keys
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
@@ -80,7 +77,7 @@ pub struct InterledgerNode {
     /// HTTP Authorization token for the node admin (sent as a Bearer token)
     pub admin_auth_token: String,
     /// Redis URI (for example, "redis://127.0.0.1:6379" or "unix:/tmp/redis.sock")
-    #[serde(deserialize_with = "deserialize_redis_connection")]
+    #[serde(deserialize_with = "deserialize_redis_connection", default = "default_redis_uri")]
     pub redis_connection: ConnectionInfo,
     /// IP address and port to listen for HTTP connections on
     /// This is used for both the API and ILP over HTTP packets
@@ -112,9 +109,10 @@ impl InterledgerNode {
         let ilp_address_clone = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account.clone();
+        let redis_addr = self.redis_connection.addr.clone();
 
         connect_redis_store(self.redis_connection.clone(), redis_secret)
-        .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+        .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
                 store.clone().get_btp_outgoing_accounts()
                 .map_err(|_| error!("Error getting accounts"))
