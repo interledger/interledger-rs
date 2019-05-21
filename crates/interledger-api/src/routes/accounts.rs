@@ -45,8 +45,12 @@ impl_web! {
             }
         }
 
+        fn is_admin(&self, authorization: &str) -> bool {
+            &authorization[BEARER_TOKEN_START..] == self.admin_api_token
+        }
+
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
-            if &authorization[BEARER_TOKEN_START..] == self.admin_api_token {
+            if self.is_admin(&authorization) {
                 ok(self.store.clone())
             } else {
                 error!("Admin API endpoint called with non-admin API key");
@@ -69,7 +73,7 @@ impl_web! {
         #[content_type("application/json")]
         fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
-            if authorization == self.admin_api_token {
+            if self.is_admin(&authorization) {
                     Either::A(store.get_all_accounts()
                         .map_err(|_| Response::builder().status(500).body(()).unwrap())
                 .and_then(|accounts| Ok(json!(accounts))))
@@ -85,7 +89,7 @@ impl_web! {
         fn get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let store_clone = store.clone();
-            let is_admin = authorization == self.admin_api_token;
+            let is_admin = self.is_admin(&authorization);
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
@@ -113,7 +117,7 @@ impl_web! {
             let store = self.store.clone();
             let store_clone = store.clone();
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
-            let is_admin = authorization == self.admin_api_token;
+            let is_admin = self.is_admin(&authorization);
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
