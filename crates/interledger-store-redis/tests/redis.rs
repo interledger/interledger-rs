@@ -6,7 +6,7 @@ use bytes::Bytes;
 use env_logger;
 use futures::{future, Future};
 use interledger_api::{AccountDetails, NodeStore};
-use interledger_store_redis::{connect, connect_with_poll_interval, Account, RedisStore};
+use interledger_store_redis::{Account, ConnectionInfo, RedisStore, RedisStoreBuilder};
 use parking_lot::Mutex;
 use redis;
 use std::{
@@ -84,14 +84,16 @@ lazy_static! {
 
 fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
     let context = TestContext::new();
-    connect(context.get_client_connection_info(), [0; 32]).and_then(|store| {
-        let store_clone = store.clone();
-        store
-            .clone()
-            .insert_account(ACCOUNT_DETAILS_0.clone())
-            .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_1.clone()))
-            .and_then(|_| Ok((store, context)))
-    })
+    RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+        .connect()
+        .and_then(|store| {
+            let store_clone = store.clone();
+            store
+                .clone()
+                .insert_account(ACCOUNT_DETAILS_0.clone())
+                .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_1.clone()))
+                .and_then(|_| Ok((store, context)))
+        })
 }
 
 fn block_on<F>(f: F) -> Result<F::Item, F::Error>
@@ -111,6 +113,7 @@ where
 
 mod connect_store {
     use super::*;
+    use redis::IntoConnectionInfo;
 
     #[test]
     fn fails_if_db_unavailable() {
@@ -118,10 +121,17 @@ mod connect_store {
         runtime
             .block_on(future::lazy(
                 || -> Box<Future<Item = (), Error = ()> + Send> {
-                    Box::new(connect("redis://127.0.0.1:0", [0; 32]).then(|result| {
-                        assert!(result.is_err());
-                        Ok(())
-                    }))
+                    Box::new(
+                        RedisStoreBuilder::new(
+                            "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
+                            [0; 32],
+                        )
+                        .connect()
+                        .then(|result| {
+                            assert!(result.is_err());
+                            Ok(())
+                        }),
+                    )
                 },
             ))
             .unwrap();
@@ -295,8 +305,10 @@ mod routes_and_rates {
     fn polls_for_route_updates() {
         let context = TestContext::new();
         block_on(
-            connect_with_poll_interval(context.get_client_connection_info(), [0; 32], 1).and_then(
-                |store| {
+            RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+                .poll_interval(1)
+                .connect()
+                .and_then(|store| {
                     let connection = context.async_connection();
                     assert_eq!(store.routing_table().len(), 0);
                     let store_clone_1 = store.clone();
@@ -379,8 +391,7 @@ mod routes_and_rates {
                                     Ok(())
                                 })
                         })
-                },
-            ),
+                }),
         )
         .unwrap();
     }
@@ -389,8 +400,10 @@ mod routes_and_rates {
     fn polls_for_rate_updates() {
         let context = TestContext::new();
         block_on(
-            connect_with_poll_interval(context.get_client_connection_info(), [0; 32], 1).and_then(
-                |store| {
+            RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+                .poll_interval(1)
+                .connect()
+                .and_then(|store| {
                     assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
                     store
                         .clone()
@@ -411,8 +424,7 @@ mod routes_and_rates {
                             let _ = context;
                             Ok(())
                         })
-                },
-            ),
+                }),
         )
         .unwrap();
     }

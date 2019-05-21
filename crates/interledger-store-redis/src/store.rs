@@ -14,8 +14,9 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use parking_lot::RwLock;
-use redis::IntoConnectionInfo;
-use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
+use redis::{
+    self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
+};
 use ring::{aead, hmac};
 use std::{
     iter::FromIterator,
@@ -26,7 +27,7 @@ use std::{
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 
-const POLL_INTERVAL: u64 = 60000; // 1 minute
+const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 
 static ACCOUNT_FROM_INDEX: &str = "
 local id = redis.call('HGET', KEYS[1], ARGV[1])
@@ -87,83 +88,93 @@ fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
 }
 
-pub fn connect<R>(redis_uri: R, secret: [u8; 32]) -> impl Future<Item = RedisStore, Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    connect_with_poll_interval(redis_uri, secret, POLL_INTERVAL)
-}
-
-#[doc(hidden)]
-pub fn connect_with_poll_interval<R>(
-    redis_uri: R,
+pub struct RedisStoreBuilder {
+    redis_uri: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
-) -> impl Future<Item = RedisStore, Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    result(Client::open(redis_uri))
-        .map_err(|err| error!("Error creating Redis client: {:?}", err))
-        .and_then(|client| {
-            debug!("Connected to redis: {:?}", client);
-            client
-                .get_shared_async_connection()
-                .map_err(|err| error!("Error connecting to Redis: {:?}", err))
-        })
-        .and_then(move |connection| {
-            let (hmac_key, encryption_key, decryption_key) = generate_keys(&secret[..]);
-            let store = RedisStore {
-                connection: Arc::new(connection),
-                exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                routes: Arc::new(RwLock::new(HashMap::new())),
-                hmac_key: Arc::new(hmac_key),
-                encryption_key: Arc::new(encryption_key),
-                decryption_key: Arc::new(decryption_key),
-            };
+}
 
-            // Start polling for rate updates
-            // Note: if this behavior changes, make sure to update the Drop implementation
-            let connection_clone = Arc::downgrade(&store.connection);
-            let exchange_rates = store.exchange_rates.clone();
-            let poll_rates = Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                .map_err(|err| error!("Interval error: {:?}", err))
-                .for_each(move |_| {
-                    if let Some(connection) = connection_clone.upgrade() {
-                        Either::A(update_rates(
-                            connection.as_ref().clone(),
-                            exchange_rates.clone(),
-                        ))
-                    } else {
-                        debug!("Not polling rates anymore because connection was closed");
-                        // TODO make sure the interval stops
-                        Either::B(err(()))
-                    }
-                });
-            spawn(poll_rates);
+impl RedisStoreBuilder {
+    pub fn new(redis_uri: ConnectionInfo, secret: [u8; 32]) -> Self {
+        RedisStoreBuilder {
+            redis_uri,
+            secret,
+            poll_interval: DEFAULT_POLL_INTERVAL,
+        }
+    }
 
-            // Poll for routing table updates
-            // Note: if this behavior changes, make sure to update the Drop implementation
-            let connection_clone = Arc::downgrade(&store.connection);
-            let routing_table = store.routes.clone();
-            let poll_routes = Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                .map_err(|err| error!("Interval error: {:?}", err))
-                .for_each(move |_| {
-                    if let Some(connection) = connection_clone.upgrade() {
-                        Either::A(update_routes(
-                            connection.as_ref().clone(),
-                            routing_table.clone(),
-                        ))
-                    } else {
-                        debug!("Not polling routes anymore because connection was closed");
-                        // TODO make sure the interval stops
-                        Either::B(err(()))
-                    }
-                });
-            spawn(poll_routes);
+    pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
+        self.poll_interval = poll_interval;
+        self
+    }
 
-            Ok(store)
-        })
+    pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
+        let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
+        let poll_interval = self.poll_interval;
+
+        result(Client::open(self.redis_uri.clone()))
+            .map_err(|err| error!("Error creating Redis client: {:?}", err))
+            .and_then(|client| {
+                debug!("Connected to redis: {:?}", client);
+                client
+                    .get_shared_async_connection()
+                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            })
+            .and_then(move |connection| {
+                let store = RedisStore {
+                    connection: Arc::new(connection),
+                    exchange_rates: Arc::new(RwLock::new(HashMap::new())),
+                    routes: Arc::new(RwLock::new(HashMap::new())),
+                    hmac_key: Arc::new(hmac_key),
+                    encryption_key: Arc::new(encryption_key),
+                    decryption_key: Arc::new(decryption_key),
+                };
+
+                // Start polling for rate updates
+                // Note: if this behavior changes, make sure to update the Drop implementation
+                let connection_clone = Arc::downgrade(&store.connection);
+                let exchange_rates = store.exchange_rates.clone();
+                let poll_rates =
+                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
+                        .map_err(|err| error!("Interval error: {:?}", err))
+                        .for_each(move |_| {
+                            if let Some(connection) = connection_clone.upgrade() {
+                                Either::A(update_rates(
+                                    connection.as_ref().clone(),
+                                    exchange_rates.clone(),
+                                ))
+                            } else {
+                                debug!("Not polling rates anymore because connection was closed");
+                                // TODO make sure the interval stops
+                                Either::B(err(()))
+                            }
+                        });
+                spawn(poll_rates);
+
+                // Poll for routing table updates
+                // Note: if this behavior changes, make sure to update the Drop implementation
+                let connection_clone = Arc::downgrade(&store.connection);
+                let routing_table = store.routes.clone();
+                let poll_routes =
+                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
+                        .map_err(|err| error!("Interval error: {:?}", err))
+                        .for_each(move |_| {
+                            if let Some(connection) = connection_clone.upgrade() {
+                                Either::A(update_routes(
+                                    connection.as_ref().clone(),
+                                    routing_table.clone(),
+                                ))
+                            } else {
+                                debug!("Not polling routes anymore because connection was closed");
+                                // TODO make sure the interval stops
+                                Either::B(err(()))
+                            }
+                        });
+                spawn(poll_routes);
+
+                Ok(store)
+            })
+    }
 }
 
 /// A Store that uses Redis as its underlying database.
