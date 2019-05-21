@@ -15,4 +15,4 @@ mod store;
 
 pub use account::Account;
 pub use redis::{ConnectionInfo, IntoConnectionInfo};
-pub use store::{connect, connect_with_poll_interval, RedisStore};
+pub use store::{RedisStore, RedisStoreBuilder};
