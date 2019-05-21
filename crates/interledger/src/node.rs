@@ -77,7 +77,10 @@ pub struct InterledgerNode {
     /// HTTP Authorization token for the node admin (sent as a Bearer token)
     pub admin_auth_token: String,
     /// Redis URI (for example, "redis://127.0.0.1:6379" or "unix:/tmp/redis.sock")
-    #[serde(deserialize_with = "deserialize_redis_connection", default = "default_redis_uri")]
+    #[serde(
+        deserialize_with = "deserialize_redis_connection",
+        default = "default_redis_uri"
+    )]
     pub redis_connection: ConnectionInfo,
     /// IP address and port to listen for HTTP connections on
     /// This is used for both the API and ILP over HTTP packets
