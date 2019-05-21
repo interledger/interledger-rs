@@ -98,6 +98,7 @@ where
                 .and_then(move |_| {
                     next.send_request(request)
                         .and_then(move |fulfill| {
+                            // TODO should we spawn a task to update the balances instead of doing it before returning the fulfill?
                             store.update_balances_for_fulfill(from.clone(), incoming_amount, to.clone(), outgoing_amount)
                                 .then(move |result| {
                                     if result.is_err() {

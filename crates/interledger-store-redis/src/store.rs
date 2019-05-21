@@ -13,9 +13,11 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
+use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
 use parking_lot::RwLock;
-use redis::IntoConnectionInfo;
-use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
+use redis::{
+    self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
+};
 use ring::{aead, hmac};
 use std::{
     iter::FromIterator,
@@ -26,8 +28,13 @@ use std::{
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 
-const POLL_INTERVAL: u64 = 60000; // 1 minute
+const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 
+// The following are Lua scripts that are used to atomically execute the given logic
+// inside Redis. This allows for more complex logic without needing multiple round
+// trips for messages to be sent to and from Redis, as well as locks to ensure no other
+// process is accessing Redis at the same time.
+// For more information on scripting in Redis, see https://redis.io/commands/eval
 static ACCOUNT_FROM_INDEX: &str = "
 local id = redis.call('HGET', KEYS[1], ARGV[1])
 if not id then
@@ -68,14 +75,50 @@ local to_account = 'accounts:' .. ARGV[1]
 local to_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
-local prepaid_amount = redis.call('HGET', to_account, 'prepaid_amount')
-return balance + prepaid_amount";
+local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'prepaid_amount', 'settle_threshold', 'settle_to'))
+
+-- Check if we should send a settlement for this account
+local settle_amount = 0
+if settle_threshold and settle_to and balance > tonumber(settle_threshold) then
+    settle_amount = balance - tonumber(settle_to)
+
+    -- Update the balance _before_ sending the settlement so that we don't accidentally send
+    -- multiple settlements for the same balance. If the settlement fails we'll roll back
+    -- the balance change by re-adding the amount back to the balance
+    balance = settle_to
+end
+
+return {balance + prepaid_amount, settle_amount}";
 static PROCESS_REJECT: &str = "
 local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
 
 local prepaid_amount = redis.call('HGET', from_account, 'prepaid_amount')
 local balance = redis.call('HINCRBY', from_account, 'balance', from_amount)
+return balance + prepaid_amount";
+static REFUND_SETTLEMENT: &str = "
+local account = 'accounts:' .. ARGV[1]
+local settle_amount = tonumber(ARGV[2])
+
+local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
+return balance";
+static PROCESS_INCOMING_SETTLEMENT: &str = "
+local account = 'accounts:' .. ARGV[1]
+local amount = tonumber(ARGV[2])
+local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
+
+-- Credit the incoming settlement to the balance and/or prepaid amount,
+-- depending on whether that account currently owes money or not
+if balance >= 0 then
+    prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
+elseif math.abs(balance) >= amount then
+    balance = redis.call('HINCRBY', account, 'balance', amount)
+else
+    prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount + balance)
+    balance = 0
+    redis.call('HSET', account, 'balance', 0)
+end
+
 return balance + prepaid_amount";
 
 static ROUTES_KEY: &str = "routes:current";
@@ -87,83 +130,94 @@ fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
 }
 
-pub fn connect<R>(redis_uri: R, secret: [u8; 32]) -> impl Future<Item = RedisStore, Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    connect_with_poll_interval(redis_uri, secret, POLL_INTERVAL)
-}
-
-#[doc(hidden)]
-pub fn connect_with_poll_interval<R>(
-    redis_uri: R,
+pub struct RedisStoreBuilder {
+    redis_uri: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
-) -> impl Future<Item = RedisStore, Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    result(Client::open(redis_uri))
-        .map_err(|err| error!("Error creating Redis client: {:?}", err))
-        .and_then(|client| {
-            debug!("Connected to redis: {:?}", client);
-            client
-                .get_shared_async_connection()
-                .map_err(|err| error!("Error connecting to Redis: {:?}", err))
-        })
-        .and_then(move |connection| {
-            let (hmac_key, encryption_key, decryption_key) = generate_keys(&secret[..]);
-            let store = RedisStore {
-                connection: Arc::new(connection),
-                exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                routes: Arc::new(RwLock::new(HashMap::new())),
-                hmac_key: Arc::new(hmac_key),
-                encryption_key: Arc::new(encryption_key),
-                decryption_key: Arc::new(decryption_key),
-            };
+}
 
-            // Start polling for rate updates
-            // Note: if this behavior changes, make sure to update the Drop implementation
-            let connection_clone = Arc::downgrade(&store.connection);
-            let exchange_rates = store.exchange_rates.clone();
-            let poll_rates = Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                .map_err(|err| error!("Interval error: {:?}", err))
-                .for_each(move |_| {
-                    if let Some(connection) = connection_clone.upgrade() {
-                        Either::A(update_rates(
-                            connection.as_ref().clone(),
-                            exchange_rates.clone(),
-                        ))
-                    } else {
-                        debug!("Not polling rates anymore because connection was closed");
-                        // TODO make sure the interval stops
-                        Either::B(err(()))
-                    }
-                });
-            spawn(poll_rates);
+impl RedisStoreBuilder {
+    pub fn new(redis_uri: ConnectionInfo, secret: [u8; 32]) -> Self {
+        RedisStoreBuilder {
+            redis_uri,
+            secret,
+            poll_interval: DEFAULT_POLL_INTERVAL,
+        }
+    }
 
-            // Poll for routing table updates
-            // Note: if this behavior changes, make sure to update the Drop implementation
-            let connection_clone = Arc::downgrade(&store.connection);
-            let routing_table = store.routes.clone();
-            let poll_routes = Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                .map_err(|err| error!("Interval error: {:?}", err))
-                .for_each(move |_| {
-                    if let Some(connection) = connection_clone.upgrade() {
-                        Either::A(update_routes(
-                            connection.as_ref().clone(),
-                            routing_table.clone(),
-                        ))
-                    } else {
-                        debug!("Not polling routes anymore because connection was closed");
-                        // TODO make sure the interval stops
-                        Either::B(err(()))
-                    }
-                });
-            spawn(poll_routes);
+    pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
+        self.poll_interval = poll_interval;
+        self
+    }
 
-            Ok(store)
-        })
+    pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
+        let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
+        let poll_interval = self.poll_interval;
+
+        result(Client::open(self.redis_uri.clone()))
+            .map_err(|err| error!("Error creating Redis client: {:?}", err))
+            .and_then(|client| {
+                debug!("Connected to redis: {:?}", client);
+                client
+                    .get_shared_async_connection()
+                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            })
+            .and_then(move |connection| {
+                let store = RedisStore {
+                    connection: Arc::new(connection),
+                    exchange_rates: Arc::new(RwLock::new(HashMap::new())),
+                    routes: Arc::new(RwLock::new(HashMap::new())),
+                    hmac_key: Arc::new(hmac_key),
+                    encryption_key: Arc::new(encryption_key),
+                    decryption_key: Arc::new(decryption_key),
+                    settlement_client: SettlementClient::new(),
+                };
+
+                // Start polling for rate updates
+                // Note: if this behavior changes, make sure to update the Drop implementation
+                let connection_clone = Arc::downgrade(&store.connection);
+                let exchange_rates = store.exchange_rates.clone();
+                let poll_rates =
+                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
+                        .map_err(|err| error!("Interval error: {:?}", err))
+                        .for_each(move |_| {
+                            if let Some(connection) = connection_clone.upgrade() {
+                                Either::A(update_rates(
+                                    connection.as_ref().clone(),
+                                    exchange_rates.clone(),
+                                ))
+                            } else {
+                                debug!("Not polling rates anymore because connection was closed");
+                                // TODO make sure the interval stops
+                                Either::B(err(()))
+                            }
+                        });
+                spawn(poll_rates);
+
+                // Poll for routing table updates
+                // Note: if this behavior changes, make sure to update the Drop implementation
+                let connection_clone = Arc::downgrade(&store.connection);
+                let routing_table = store.routes.clone();
+                let poll_routes =
+                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
+                        .map_err(|err| error!("Interval error: {:?}", err))
+                        .for_each(move |_| {
+                            if let Some(connection) = connection_clone.upgrade() {
+                                Either::A(update_routes(
+                                    connection.as_ref().clone(),
+                                    routing_table.clone(),
+                                ))
+                            } else {
+                                debug!("Not polling routes anymore because connection was closed");
+                                // TODO make sure the interval stops
+                                Either::B(err(()))
+                            }
+                        });
+                spawn(poll_routes);
+
+                Ok(store)
+            })
+    }
 }
 
 /// A Store that uses Redis as its underlying database.
@@ -180,6 +234,7 @@ pub struct RedisStore {
     hmac_key: Arc<hmac::SigningKey>,
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
+    settlement_client: SettlementClient,
 }
 
 impl RedisStore {
@@ -300,6 +355,39 @@ impl RedisStore {
                 }),
         )
     }
+
+    fn refund_settlement(
+        &self,
+        account_id: u64,
+        settle_amount: u64,
+    ) -> impl Future<Item = (), Error = ()> {
+        trace!(
+            "Refunding settlement for account: {} of amount: {}",
+            account_id,
+            settle_amount
+        );
+        cmd("EVAL")
+            .arg(REFUND_SETTLEMENT)
+            .arg(0)
+            .arg(account_id)
+            .arg(settle_amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| {
+                error!(
+                    "Error refunding settlement for account: {} of amount: {}: {:?}",
+                    account_id, settle_amount, err
+                )
+            })
+            .and_then(move |(_connection, balance): (_, i64)| {
+                trace!(
+                    "Refunded settlement for account: {} of amount: {}. Balance is now: {}",
+                    account_id,
+                    settle_amount,
+                    balance
+                );
+                Ok(())
+            })
+    }
 }
 
 impl AccountStore for RedisStore {
@@ -407,6 +495,8 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let settlement_client = self.settlement_client.clone();
+        let store = self.clone();
         if outgoing_amount > 0 {
             let from_account_id = from_account.id;
             let to_account_id = to_account.id;
@@ -423,15 +513,37 @@ impl BalanceStore for RedisStore {
                             from_account_id, to_account_id, err
                         )
                     })
-                    .and_then(move |(_connection, balance): (_, i64)| {
-                        trace!(
-                            "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
-                            outgoing_amount,
-                            to_account_id,
-                            balance,
-                        );
-                        Ok(())
-                    }),
+                    .and_then(
+                        move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
+                            if amount_to_settle > 0 {
+                                trace!(
+                                    "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
+                                    outgoing_amount,
+                                    amount_to_settle,
+                                    to_account_id,
+                                    balance,
+                                );
+
+                                // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
+                                // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
+                                // No other instance will know that it was trying to send an outgoing settlement. We could
+                                // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
+                                // but then we would also need to prevent a situation where every connector instance is polling the
+                                // settlement engine for the status of each outgoing settlement and putting unnecessary load on the settlement engine.
+                                spawn(settlement_client
+                                    .send_settlement(to_account, amount_to_settle)
+                                    .or_else(move |_| store.refund_settlement(to_account_id, amount_to_settle)));
+                            } else {
+                                trace!(
+                                    "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
+                                    outgoing_amount,
+                                    to_account_id,
+                                    balance,
+                                );
+                            }
+                            Ok(())
+                        },
+                    ),
             )
         } else {
             Box::new(ok(()))
@@ -1006,6 +1118,28 @@ impl RateLimitStore for RedisStore {
     }
 }
 
+impl SettlementStore for RedisStore {
+    type Account = Account;
+
+    fn update_balance_for_incoming_settlement(
+        &self,
+        account_id: u64,
+        amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        Box::new(cmd("EVAL")
+            .arg(PROCESS_INCOMING_SETTLEMENT)
+            .arg(0)
+            .arg(account_id)
+            .arg(amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| error!("Error processing incoming settlement from account: {} for amount: {}: {:?}", account_id, amount, err))
+            .and_then(move |(_connection, balance): (_, i64)| {
+                trace!("Processed incoming settlement from account: {} for amount: {}. Balance is now: {}", account_id, amount, balance);
+                Ok(())
+            }))
+    }
+}
+
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 fn update_rates(
     connection: SharedConnection,
@@ -1057,4 +1191,34 @@ fn update_routes(
                 Ok(())
             },
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future;
+    use redis::IntoConnectionInfo;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn connect_fails_if_db_unavailable() {
+        let mut runtime = Runtime::new().unwrap();
+        runtime
+            .block_on(future::lazy(
+                || -> Box<Future<Item = (), Error = ()> + Send> {
+                    Box::new(
+                        RedisStoreBuilder::new(
+                            "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
+                            [0; 32],
+                        )
+                        .connect()
+                        .then(|result| {
+                            assert!(result.is_err());
+                            Ok(())
+                        }),
+                    )
+                },
+            ))
+            .unwrap();
+    }
 }

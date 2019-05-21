@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::Future;
+use futures::{future::result, Future};
 use hex::FromHex;
 use interledger_api::{NodeApi, NodeStore};
 use interledger_btp::{connect_client, create_server, BtpStore};
@@ -13,9 +13,7 @@ use interledger_service_util::{
     BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
     RateLimitService, ValidatorService,
 };
-use interledger_store_redis::{
-    connect as connect_redis_store, Account, ConnectionInfo, IntoConnectionInfo,
-};
+use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
@@ -114,7 +112,8 @@ impl InterledgerNode {
         let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
 
-        connect_redis_store(self.redis_connection.clone(), redis_secret)
+        RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
+        .connect()
         .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
                 store.clone().get_btp_outgoing_accounts()
@@ -242,7 +241,9 @@ where
     R: IntoConnectionInfo,
 {
     let redis_secret = generate_redis_secret(server_secret);
-    connect_redis_store(redis_uri, redis_secret)
+    result(redis_uri.into_connection_info())
+        .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
+        .and_then(move |redis_uri| RedisStoreBuilder::new(redis_uri, redis_secret).connect())
         .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             store
