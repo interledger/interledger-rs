@@ -56,8 +56,7 @@ pub struct AccountDetails {
     pub asset_scale: u8,
     #[serde(default = "u64::max_value")]
     pub max_packet_amount: u64,
-    #[serde(default = "i64::min_value")]
-    pub min_balance: i64,
+    pub min_balance: Option<i64>,
     pub http_endpoint: Option<String>,
     pub http_incoming_token: Option<String>,
     pub http_outgoing_token: Option<String>,
