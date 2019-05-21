@@ -315,7 +315,7 @@ pub fn main() {
                         http_outgoing_token,
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
-                        min_balance: value_t!(matches, "min_balance", i64).unwrap(),
+                        min_balance: value_t!(matches, "min_balance", i64).ok(),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
                         settle_to: value_t!(matches, "settle_to", i64).ok(),
                         send_routes: matches.is_present("send_routes"),

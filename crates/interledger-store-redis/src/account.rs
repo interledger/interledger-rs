@@ -29,7 +29,7 @@ pub struct Account {
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
-    pub(crate) min_balance: i64,
+    pub(crate) min_balance: Option<i64>,
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
@@ -185,8 +185,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             .routing_relation
             .to_string()
             .write_redis_args(&mut rv);
-        "min_balance".write_redis_args(&mut rv);
-        account.min_balance.write_redis_args(&mut rv);
         "round_trip_time".write_redis_args(&mut rv);
         account.round_trip_time.write_redis_args(&mut rv);
 
@@ -231,6 +229,10 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "amount_per_minute_limit".write_redis_args(&mut rv);
             limit.write_redis_args(&mut rv);
         }
+        if let Some(min_balance) = account.min_balance {
+            "min_balance".write_redis_args(&mut rv);
+            min_balance.write_redis_args(&mut rv);
+        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -263,7 +265,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 btp_uri: get_url_option("btp_uri", &hash)?,
                 btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?,
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
-                min_balance: get_value("min_balance", &hash)?,
+                min_balance: get_value_option("min_balance", &hash)?,
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
                 settle_to: get_value_option("settle_to", &hash)?,
                 routing_relation,
@@ -430,7 +432,7 @@ mod redis_account {
             asset_scale: 6,
             asset_code: "XYZ".to_string(),
             max_packet_amount: 1000,
-            min_balance: -1000,
+            min_balance: Some(-1000),
             http_endpoint: Some("http://example.com/ilp".to_string()),
             http_incoming_token: Some("incoming_auth_token".to_string()),
             http_outgoing_token: Some("outgoing_auth_token".to_string()),
