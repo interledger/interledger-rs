@@ -29,7 +29,7 @@ fn btp_end_to_end() {
         redis_connection: context.get_client_connection_info(),
         btp_address: ([127, 0, 0, 1], btp_port).into(),
         http_address: ([127, 0, 0, 1], http_port).into(),
-        server_secret: cli::random_secret(),
+        secret_seed: cli::random_secret(),
     };
     let run = ok(()).and_then(move |_| {
         let spawn_connector = ok(tokio::spawn(node.serve())).and_then(move |_| {

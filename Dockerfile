@@ -23,7 +23,7 @@ RUN apk --no-cache add \
     redis
 
 # Install localtunnel
-RUN npm install localtunnel
+RUN npm install localtunnel request request-promise-native
 
 # Build run script
 WORKDIR /usr/src
