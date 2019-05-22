@@ -71,7 +71,7 @@ pub struct InterledgerNode {
     pub ilp_address: String,
     /// Root secret used to derive encryption keys
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
-    pub server_secret: [u8; 32],
+    pub secret_seed: [u8; 32],
     /// HTTP Authorization token for the node admin (sent as a Bearer token)
     pub admin_auth_token: String,
     /// Redis URI (for example, "redis://127.0.0.1:6379" or "unix:/tmp/redis.sock")
@@ -102,8 +102,8 @@ impl InterledgerNode {
             "Starting Interledger node with ILP address: {}",
             str::from_utf8(self.ilp_address.as_ref()).unwrap_or("<not utf8>")
         );
-        let redis_secret = generate_redis_secret(&self.server_secret);
-        let server_secret = Bytes::from(&self.server_secret[..]);
+        let redis_secret = generate_redis_secret(&self.secret_seed);
+        let secret_seed = Bytes::from(&self.secret_seed[..]);
         let btp_address = self.btp_address.clone();
         let http_address = self.http_address.clone();
         let ilp_address = Bytes::from(self.ilp_address.as_str());
@@ -157,7 +157,7 @@ impl InterledgerNode {
                                     let outgoing_service =
                                         ExpiryShortenerService::new(outgoing_service);
                                     let outgoing_service = StreamReceiverService::new(
-                                        server_secret.clone(),
+                                        secret_seed.clone(),
                                         outgoing_service,
                                     );
                                     let outgoing_service = BalanceService::new(
@@ -198,7 +198,7 @@ impl InterledgerNode {
                                     // TODO should this run the node api on a different port so it's easier to separate public/private?
                                     // Note the API also includes receiving ILP packets sent via HTTP
                                     let mut api = NodeApi::new(
-                                        server_secret,
+                                        secret_seed,
                                         admin_auth_token,
                                         store.clone(),
                                         incoming_service.clone(),
@@ -225,7 +225,7 @@ impl InterledgerNode {
     }
 
     pub fn insert_account(&self, account: AccountDetails) -> impl Future<Item = (), Error = ()> {
-        insert_account_redis(self.redis_connection.clone(), &self.server_secret, account)
+        insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account)
     }
 }
 
@@ -234,13 +234,13 @@ pub use interledger_api::AccountDetails;
 #[doc(hidden)]
 pub fn insert_account_redis<R>(
     redis_uri: R,
-    server_secret: &[u8; 32],
+    secret_seed: &[u8; 32],
     account: AccountDetails,
 ) -> impl Future<Item = (), Error = ()>
 where
     R: IntoConnectionInfo,
 {
-    let redis_secret = generate_redis_secret(server_secret);
+    let redis_secret = generate_redis_secret(secret_seed);
     result(redis_uri.into_connection_info())
         .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
         .and_then(move |redis_uri| RedisStoreBuilder::new(redis_uri, redis_secret).connect())
@@ -256,10 +256,10 @@ where
         })
 }
 
-fn generate_redis_secret(server_secret: &[u8; 32]) -> [u8; 32] {
+fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
     let mut redis_secret: [u8; 32] = [0; 32];
     let sig = hmac::sign(
-        &hmac::SigningKey::new(&digest::SHA256, server_secret),
+        &hmac::SigningKey::new(&digest::SHA256, secret_seed),
         REDIS_SECRET_GENERATION_STRING.as_bytes(),
     );
     redis_secret.copy_from_slice(sig.as_ref());
