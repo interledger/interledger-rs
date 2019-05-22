@@ -131,7 +131,7 @@ async function loadConfig() {
 async function generateTestnetCredentials() {
     console.log('Generating testnet credentials...')
     const adminToken = randomBytes(32).toString('hex')
-    const nodeId = randomBytes(20).toString('hex')
+    const nodeId = randomBytes(12).toString('hex')
     const localTunnelSubdomain = `ilp-node-${nodeId}`
     const ilpAddress = `test.${nodeId}`
     const secretSeed = randomBytes(32).toString('hex')

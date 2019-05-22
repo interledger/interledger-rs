@@ -47,7 +47,7 @@ where
             source_amount,
             congestion_controller: CongestionController::default(),
             pending_requests: Cell::new(Vec::new()),
-            amount_delivered: 0,
+            delivered_amount: 0,
             should_send_source_account: true,
             sequence: 1,
             rejected_packets: 0,
@@ -65,7 +65,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     source_amount: u64,
     congestion_controller: CongestionController,
     pending_requests: Cell<Vec<PendingRequest>>,
-    amount_delivered: u64,
+    delivered_amount: u64,
     should_send_source_account: bool,
     sequence: u64,
     rejected_packets: u64,
@@ -239,7 +239,7 @@ where
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
                 // TODO check that the sequence matches our outgoing packet
-                self.amount_delivered += packet.prepare_amount();
+                self.delivered_amount += packet.prepare_amount();
             }
         } else {
             warn!(
@@ -311,10 +311,10 @@ where
                 } else {
                     self.state = SendMoneyFutureState::Closed;
                     debug!(
-                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.amount_delivered, self.sequence - 1, self.rejected_packets,
+                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.delivered_amount, self.sequence - 1, self.rejected_packets,
                     );
                     return Ok(Async::Ready((
-                        self.amount_delivered,
+                        self.delivered_amount,
                         self.next.take().unwrap(),
                     )));
                 }

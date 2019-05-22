@@ -141,8 +141,8 @@ mod send_money_to_receiver {
             &shared_secret[..],
             100,
         )
-        .and_then(|(amount_delivered, _service)| {
-            assert_eq!(amount_delivered, 100);
+        .and_then(|(delivered_amount, _service)| {
+            assert_eq!(delivered_amount, 100);
             Ok(())
         })
         .map_err(|err| panic!(err));
