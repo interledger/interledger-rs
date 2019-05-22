@@ -31,7 +31,7 @@ Install and run:
 
 2. Run the Interledger node
 
-    `docker run --init -i -t -e "RUST_LOG=interledger/.*" -e "DEBUG=xrp*" -v interledger-node-data:/data emschwartz/interledger-rs`
+    `docker run --init -i -t -v interledger-node-data:/data emschwartz/interledger-rs`
 
 3. Follow the instructions written to the terminal to try sending an SPSP payment
 
@@ -41,7 +41,6 @@ Install and run:
 Prerequisites:
 - Git
 - Rust (using [`rustup`](https://rustup.rs/) is recommended)
-- Node.js - only to run the XRP settlement engine (using [`nvm`](https://github.com/creationix/nvm) is recommended)
 
 Install and Run:
 
