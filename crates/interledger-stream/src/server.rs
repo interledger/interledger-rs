@@ -252,6 +252,24 @@ fn receive_money(
 #[cfg(test)]
 mod connection_generator {
     use super::*;
+    use regex::Regex;
+
+    #[test]
+    fn generates_valid_ilp_address() {
+        let server_secret = [9; 32];
+        let receiver_address = b"example.receiver";
+        let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
+        let (destination_account, _shared_secret) =
+            connection_generator.generate_address_and_secret(receiver_address);
+
+        assert!(destination_account.starts_with(receiver_address));
+        assert!(Regex::new(
+            r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$"
+        )
+        .unwrap()
+        .is_match(str::from_utf8(destination_account.as_ref()).unwrap()));
+        assert!(destination_account.len() <= 1023);
+    }
 
     #[test]
     fn regenerates_the_shared_secret() {
@@ -260,8 +278,6 @@ mod connection_generator {
         let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(receiver_address);
-
-        assert!(destination_account.starts_with(receiver_address));
 
         assert_eq!(
             connection_generator
