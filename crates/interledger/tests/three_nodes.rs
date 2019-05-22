@@ -246,7 +246,7 @@ fn three_nodes() {
                         .and_then(|res| res.error_for_status())
                     .and_then(|res| res.into_body().concat2())
                     .and_then(|body| {
-                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"amount_delivered\":2}");
+                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"delivered_amount\":2}");
                         Ok(())
                     });
 
@@ -261,7 +261,7 @@ fn three_nodes() {
                         .and_then(|res| res.error_for_status())
                     .and_then(|res| res.into_body().concat2())
                     .and_then(|body| {
-                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"amount_delivered\":500000}");
+                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"delivered_amount\":500000}");
                         Ok(())
                     });
 

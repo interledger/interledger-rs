@@ -45,12 +45,12 @@ where
             &spsp.shared_secret,
             source_amount,
         )
-        .map(move |(amount_delivered, _plugin)| {
+        .map(move |(delivered_amount, _plugin)| {
             debug!(
                 "Sent SPSP payment of {} and delivered {} of the receiver's units",
-                source_amount, amount_delivered
+                source_amount, delivered_amount
             );
-            amount_delivered
+            delivered_amount
         })
         .map_err(move |err| {
             error!("Error sending payment: {:?}", err);
