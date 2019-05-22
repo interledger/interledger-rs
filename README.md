@@ -12,7 +12,8 @@
 [![Docker Image](https://img.shields.io/docker/pulls/emschwartz/interledger-rs.svg?maxAge=2592000)](https://hub.docker.com/r/emschwartz/interledger-rs/)
 
 ## Understanding Interledger.rs
-- [API Docs](https://docs.rs/interledger)
+- [HTTP API](./docs/api.md)
+- [Rust API](https://docs.rs/interledger)
 - [Interledger.rs Architecture](./docs/architecture.md)
 - [Interledger Forum](https://forum.interledger.org) for general questions about the Interledger Protocol and Project
 

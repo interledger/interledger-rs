@@ -20,7 +20,7 @@ struct SpspPayRequest {
 #[derive(Response, Debug)]
 #[web(status = "200")]
 struct SpspPayResponse {
-    amount_delivered: u64,
+    delivered_amount: u64,
 }
 
 #[derive(Response, Debug)]
@@ -67,10 +67,10 @@ impl_web! {
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)
-                        .and_then(|amount_delivered| {
-                            debug!("Sent SPSP payment and delivered: {} of the receiver's units", amount_delivered);
+                        .and_then(|delivered_amount| {
+                            debug!("Sent SPSP payment and delivered: {} of the receiver's units", delivered_amount);
                             Ok(SpspPayResponse {
-                                amount_delivered,
+                                delivered_amount,
                             })
                         })
                         .map_err(|err| {
