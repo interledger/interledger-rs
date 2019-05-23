@@ -73,6 +73,9 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
+                settlement_engine_url: None,
+                settlement_engine_asset_scale: None,
+                settlement_engine_ilp_address: None,
             })
             .and_then(move |_|
         // TODO insert the accounts via HTTP request
@@ -96,6 +99,9 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
+                settlement_engine_url: None,
+                settlement_engine_asset_scale: None,
+                                settlement_engine_ilp_address: None,
             }))
             .and_then(move |_| node1.serve()),
     );
@@ -130,6 +136,9 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
+                settlement_engine_url: None,
+                settlement_engine_asset_scale: None,
+                settlement_engine_ilp_address: None,
             }),
             node2.insert_account(AccountDetails {
                 ilp_address: String::from("example.two.three"),
@@ -150,6 +159,9 @@ fn three_nodes() {
                 round_trip_time: None,
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
+                settlement_engine_url: None,
+                settlement_engine_asset_scale: None,
+                settlement_engine_ilp_address: None,
             }),
         ])
         .and_then(move |_| node2.serve())
@@ -202,6 +214,9 @@ fn three_nodes() {
                     round_trip_time: None,
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
+                    settlement_engine_url: None,
+                    settlement_engine_asset_scale: None,
+                    settlement_engine_ilp_address: None,
                 }),
                 node3_clone.insert_account(AccountDetails {
                     ilp_address: String::from("example.two"),
@@ -222,6 +237,9 @@ fn three_nodes() {
                     round_trip_time: None,
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
+                    settlement_engine_url: None,
+                    settlement_engine_asset_scale: None,
+                    settlement_engine_ilp_address: None,
                 }),
             ])
             .and_then(move |_| node3.serve())

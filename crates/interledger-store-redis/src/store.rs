@@ -109,7 +109,7 @@ local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', '
 
 -- Credit the incoming settlement to the balance and/or prepaid amount,
 -- depending on whether that account currently owes money or not
-if balance >= 0 then
+if tonumber(balance) >= 0 then
     prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
 elseif math.abs(balance) >= amount then
     balance = redis.call('HINCRBY', account, 'balance', amount)
@@ -134,6 +134,7 @@ pub struct RedisStoreBuilder {
     redis_uri: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
+    settlement_client: Option<SettlementClient>,
 }
 
 impl RedisStoreBuilder {
@@ -142,6 +143,7 @@ impl RedisStoreBuilder {
             redis_uri,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
+            settlement_client: None,
         }
     }
 
@@ -150,9 +152,15 @@ impl RedisStoreBuilder {
         self
     }
 
+    pub fn settlement_client(&mut self, settlement_client: SettlementClient) -> &mut Self {
+        self.settlement_client = Some(settlement_client);
+        self
+    }
+
     pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
         let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         let poll_interval = self.poll_interval;
+        let settlement_client = self.settlement_client.clone();
 
         result(Client::open(self.redis_uri.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -515,7 +523,7 @@ impl BalanceStore for RedisStore {
                     })
                     .and_then(
                         move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
-                            if amount_to_settle > 0 {
+                            if amount_to_settle > 0 && to_account.settlement_engine_details().is_some() {
                                 trace!(
                                     "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
                                     outgoing_amount,
