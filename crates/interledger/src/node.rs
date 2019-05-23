@@ -13,6 +13,7 @@ use interledger_service_util::{
     BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
     RateLimitService, ValidatorService,
 };
+use interledger_settlement::SettlementMessageService;
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
 use ring::{digest, hmac};
@@ -176,10 +177,11 @@ impl InterledgerNode {
                                         Router::new(store.clone(), outgoing_service.clone());
                                     let incoming_service = CcpRouteManagerBuilder::new(
                                         store.clone(),
-                                        outgoing_service,
+                                        outgoing_service.clone(),
                                         incoming_service,
                                     ).ilp_address(ilp_address.clone()).to_service();
 
+                                    let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = IldcpService::new(incoming_service);
                                     let incoming_service =
                                         MaxPacketAmountService::new(incoming_service);
@@ -201,6 +203,7 @@ impl InterledgerNode {
                                         secret_seed,
                                         admin_auth_token,
                                         store.clone(),
+                                        outgoing_service.clone(),
                                         incoming_service.clone(),
                                     );
                                     if let Some(account_id) = default_spsp_account {

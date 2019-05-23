@@ -330,6 +330,9 @@ pub fn main() {
                         .ok(),
                         amount_per_minute_limit: value_t!(matches, "amount_per_minute_limit", u64)
                             .ok(),
+                        settlement_engine_url: None,
+                        settlement_engine_asset_scale: None,
+                        settlement_engine_ilp_address: None,
                     };
                     tokio::run(insert_account_redis(redis_uri, &server_secret, account));
                 }
