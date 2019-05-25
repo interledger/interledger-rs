@@ -38,6 +38,8 @@ lazy_static! {
         round_trip_time: None,
         amount_per_minute_limit: Some(1000),
         packets_per_minute_limit: Some(2),
+        settlement_engine_url: None,
+        settlement_engine_asset_scale: None,
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: "example.bob".to_string(),
@@ -58,6 +60,8 @@ lazy_static! {
         round_trip_time: None,
         amount_per_minute_limit: Some(1000),
         packets_per_minute_limit: Some(20),
+        settlement_engine_url: None,
+        settlement_engine_asset_scale: None,
     };
     static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
         ilp_address: "example.charlie".to_string(),
@@ -78,6 +82,8 @@ lazy_static! {
         round_trip_time: None,
         amount_per_minute_limit: None,
         packets_per_minute_limit: None,
+        settlement_engine_url: None,
+        settlement_engine_asset_scale: None,
     };
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
@@ -342,6 +348,8 @@ mod routes_and_rates {
                                 round_trip_time: None,
                                 amount_per_minute_limit: None,
                                 packets_per_minute_limit: None,
+                                settlement_engine_url: None,
+                                settlement_engine_asset_scale: None,
                             })
                         })
                         .and_then(move |_| {

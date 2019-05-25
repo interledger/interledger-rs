@@ -13,6 +13,7 @@ use interledger_service_util::{
     BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
     RateLimitService, ValidatorService,
 };
+use interledger_settlement::SettlementMessageService;
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
 use ring::{digest, hmac};
@@ -180,6 +181,7 @@ impl InterledgerNode {
                                         incoming_service,
                                     ).ilp_address(ilp_address.clone()).to_service();
 
+                                    let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = IldcpService::new(incoming_service);
                                     let incoming_service =
                                         MaxPacketAmountService::new(incoming_service);

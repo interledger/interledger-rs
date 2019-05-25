@@ -72,6 +72,8 @@ pub struct AccountDetails {
     pub round_trip_time: Option<u64>,
     pub amount_per_minute_limit: Option<u64>,
     pub packets_per_minute_limit: Option<u32>,
+    pub settlement_engine_url: Option<String>,
+    pub settlement_engine_asset_scale: Option<u8>,
 }
 
 pub struct NodeApi<T, S> {

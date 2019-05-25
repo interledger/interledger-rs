@@ -13,6 +13,7 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
+use interledger_settlement::SettlementClient;
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -69,8 +70,15 @@ local to_account = 'accounts:' .. ARGV[1]
 local to_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
-local prepaid_amount = redis.call('HGET', to_account, 'prepaid_amount')
-return balance + prepaid_amount";
+local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'prepaid_amount', 'settle_threshold', 'settle_to'))
+
+-- Check if we should send a settlement for this account
+local settle_amount = 0
+if settle_threshold and settle_to and balance > tonumber(settle_threshold) then
+    settle_amount = balance - tonumber(settle_to)
+end
+
+return {balance + prepaid_amount, settle_amount}";
 static PROCESS_REJECT: &str = "
 local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
@@ -92,6 +100,7 @@ pub struct RedisStoreBuilder {
     redis_uri: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
+    settlement_client: Option<SettlementClient>,
 }
 
 impl RedisStoreBuilder {
@@ -100,6 +109,7 @@ impl RedisStoreBuilder {
             redis_uri,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
+            settlement_client: None,
         }
     }
 
@@ -108,9 +118,15 @@ impl RedisStoreBuilder {
         self
     }
 
+    pub fn settlement_client(&mut self, settlement_client: SettlementClient) -> &mut Self {
+        self.settlement_client = Some(settlement_client);
+        self
+    }
+
     pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
         let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         let poll_interval = self.poll_interval;
+        let settlement_client = self.settlement_client.clone();
 
         result(Client::open(self.redis_uri.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -128,6 +144,7 @@ impl RedisStoreBuilder {
                     hmac_key: Arc::new(hmac_key),
                     encryption_key: Arc::new(encryption_key),
                     decryption_key: Arc::new(decryption_key),
+                    settlement_client,
                 };
 
                 // Start polling for rate updates
@@ -191,6 +208,7 @@ pub struct RedisStore {
     hmac_key: Arc<hmac::SigningKey>,
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
+    settlement_client: Option<SettlementClient>,
 }
 
 impl RedisStore {
@@ -418,6 +436,7 @@ impl BalanceStore for RedisStore {
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let settlement_client = self.settlement_client.clone();
         if outgoing_amount > 0 {
             let from_account_id = from_account.id;
             let to_account_id = to_account.id;
@@ -434,15 +453,26 @@ impl BalanceStore for RedisStore {
                             from_account_id, to_account_id, err
                         )
                     })
-                    .and_then(move |(_connection, balance): (_, i64)| {
-                        trace!(
+                    .and_then(
+                        move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
+                            trace!(
                             "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
                             outgoing_amount,
                             to_account_id,
                             balance,
                         );
-                        Ok(())
-                    }),
+
+                            if amount_to_settle > 0 {
+                                if let Some(settlement_client) = settlement_client {
+                                    spawn(
+                                        settlement_client
+                                            .send_settlement(to_account, amount_to_settle),
+                                    )
+                                }
+                            }
+                            Ok(())
+                        },
+                    ),
             )
         } else {
             Box::new(ok(()))
