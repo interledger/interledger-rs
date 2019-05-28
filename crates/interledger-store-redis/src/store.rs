@@ -30,6 +30,11 @@ use tokio_timer::Interval;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 
+// The following are Lua scripts that are used to atomically execute the given logic
+// inside Redis. This allows for more complex logic without needing multiple round
+// trips for messages to be sent to and from Redis, as well as locks to ensure no other
+// process is accessing Redis at the same time.
+// For more information on scripting in Redis, see https://redis.io/commands/eval
 static ACCOUNT_FROM_INDEX: &str = "
 local id = redis.call('HGET', KEYS[1], ARGV[1])
 if not id then
@@ -76,6 +81,11 @@ local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', t
 local settle_amount = 0
 if settle_threshold and settle_to and balance > tonumber(settle_threshold) then
     settle_amount = balance - tonumber(settle_to)
+
+    -- Update the balance _before_ sending the settlement so that we don't accidentally send
+    -- multiple settlements for the same balance. If the settlement fails we'll roll back
+    -- the balance change by re-adding the amount back to the balance
+    balance = settle_to
 end
 
 return {balance + prepaid_amount, settle_amount}";
@@ -86,6 +96,12 @@ local from_amount = tonumber(ARGV[2])
 local prepaid_amount = redis.call('HGET', from_account, 'prepaid_amount')
 local balance = redis.call('HINCRBY', from_account, 'balance', from_amount)
 return balance + prepaid_amount";
+static REFUND_SETTLEMENT: &str = "
+local account = 'accounts:' .. ARGV[1]
+local settle_amount = tonumber(ARGV[2])
+
+local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
+return balance";
 
 static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
@@ -100,7 +116,6 @@ pub struct RedisStoreBuilder {
     redis_uri: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
-    settlement_client: Option<SettlementClient>,
 }
 
 impl RedisStoreBuilder {
@@ -109,7 +124,6 @@ impl RedisStoreBuilder {
             redis_uri,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
-            settlement_client: None,
         }
     }
 
@@ -118,15 +132,9 @@ impl RedisStoreBuilder {
         self
     }
 
-    pub fn settlement_client(&mut self, settlement_client: SettlementClient) -> &mut Self {
-        self.settlement_client = Some(settlement_client);
-        self
-    }
-
     pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
         let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         let poll_interval = self.poll_interval;
-        let settlement_client = self.settlement_client.clone();
 
         result(Client::open(self.redis_uri.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -144,7 +152,7 @@ impl RedisStoreBuilder {
                     hmac_key: Arc::new(hmac_key),
                     encryption_key: Arc::new(encryption_key),
                     decryption_key: Arc::new(decryption_key),
-                    settlement_client,
+                    settlement_client: SettlementClient::new(),
                 };
 
                 // Start polling for rate updates
@@ -208,7 +216,7 @@ pub struct RedisStore {
     hmac_key: Arc<hmac::SigningKey>,
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
-    settlement_client: Option<SettlementClient>,
+    settlement_client: SettlementClient,
 }
 
 impl RedisStore {
@@ -329,6 +337,39 @@ impl RedisStore {
                 }),
         )
     }
+
+    fn refund_settlement(
+        &self,
+        account_id: u64,
+        settle_amount: u64,
+    ) -> impl Future<Item = (), Error = ()> {
+        trace!(
+            "Refunding settlement for account: {} of amount: {}",
+            account_id,
+            settle_amount
+        );
+        cmd("EVAL")
+            .arg(REFUND_SETTLEMENT)
+            .arg(0)
+            .arg(account_id)
+            .arg(settle_amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| {
+                error!(
+                    "Error refunding settlement for account: {} of amount: {}: {:?}",
+                    account_id, settle_amount, err
+                )
+            })
+            .and_then(move |(_connection, balance): (_, i64)| {
+                trace!(
+                    "Refunded settlement for account: {} of amount: {}. Balance is now: {}",
+                    account_id,
+                    settle_amount,
+                    balance
+                );
+                Ok(())
+            })
+    }
 }
 
 impl AccountStore for RedisStore {
@@ -437,6 +478,7 @@ impl BalanceStore for RedisStore {
         outgoing_amount: u64,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let settlement_client = self.settlement_client.clone();
+        let store = self.clone();
         if outgoing_amount > 0 {
             let from_account_id = from_account.id;
             let to_account_id = to_account.id;
@@ -455,20 +497,31 @@ impl BalanceStore for RedisStore {
                     })
                     .and_then(
                         move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
-                            trace!(
-                            "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
-                            outgoing_amount,
-                            to_account_id,
-                            balance,
-                        );
-
                             if amount_to_settle > 0 {
-                                if let Some(settlement_client) = settlement_client {
-                                    spawn(
-                                        settlement_client
-                                            .send_settlement(to_account, amount_to_settle),
-                                    )
-                                }
+                                trace!(
+                                    "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
+                                    outgoing_amount,
+                                    amount_to_settle,
+                                    to_account_id,
+                                    balance,
+                                );
+
+                                // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
+                                // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
+                                // No other instance will know that it was trying to send an outgoing settlement. We could
+                                // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
+                                // but then we would also need to prevent a situation where every connector instance is polling the
+                                // settlement engine for the status of each outgoing settlement and putting unnecessary load on the settlement engine.
+                                spawn(settlement_client
+                                    .send_settlement(to_account, amount_to_settle)
+                                    .or_else(move |_| store.refund_settlement(to_account_id, amount_to_settle)));
+                            } else {
+                                trace!(
+                                    "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
+                                    outgoing_amount,
+                                    to_account_id,
+                                    balance,
+                                );
                             }
                             Ok(())
                         },
