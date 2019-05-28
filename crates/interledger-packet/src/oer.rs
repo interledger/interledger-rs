@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
@@ -31,11 +33,17 @@ fn predict_var_uint_size(value: u64) -> usize {
 }
 
 pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
-    let buffer_lenth = buffer.len();
+    let buffer_length = buffer.len();
     let mut reader = &buffer[..];
     let content_length = reader.read_var_octet_string_length()?;
-    let content_offset = buffer_lenth - reader.len();
-    Ok(buffer.split_off(content_offset).split_to(content_length))
+    let content_offset = buffer_length - reader.len();
+
+    let mut remaining = buffer.split_off(content_offset);
+    if remaining.len() < content_length {
+        Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
+    } else {
+        Ok(remaining.split_to(content_length))
+    }
 }
 
 pub trait BufOerExt<'a> {
@@ -151,10 +159,11 @@ pub trait MutBufOerExt: BufMut + Sized {
 impl<B: BufMut + Sized> MutBufOerExt for B {}
 
 #[cfg(test)]
-mod test_predict {
+mod test_functions {
     use bytes::BytesMut;
 
     use super::*;
+    use super::fixtures::*;
 
     #[test]
     fn test_predict_var_octet_string() {
@@ -176,7 +185,30 @@ mod test_predict {
     fn test_predict_var_uint_size() {
         assert_eq!(predict_var_uint_size(0), 1);
         assert_eq!(predict_var_uint_size(1), 1);
+        assert_eq!(predict_var_uint_size(0xff), 1);
+        assert_eq!(predict_var_uint_size(0xff + 1), 2);
+        assert_eq!(predict_var_uint_size(u64::MAX - 1), 8);
         assert_eq!(predict_var_uint_size(u64::MAX), 8);
+    }
+
+    #[test]
+    fn test_extract_var_octet_string() {
+        assert_eq!(
+            extract_var_octet_string(BytesMut::from(TWO_BYTE_VARSTR)).unwrap(),
+            BytesMut::from(&TWO_BYTE_VARSTR[1..3]),
+        );
+        assert_eq!(
+            extract_var_octet_string(BytesMut::new())
+                .unwrap_err()
+                .kind(),
+            ErrorKind::UnexpectedEof,
+        );
+        assert_eq!(
+            extract_var_octet_string(BytesMut::from(LENGTH_TOO_HIGH_VARSTR))
+                .unwrap_err()
+                .kind(),
+            ErrorKind::UnexpectedEof,
+        );
     }
 }
 
@@ -185,15 +217,9 @@ mod test_buf_oer_ext {
     use lazy_static::lazy_static;
 
     use super::*;
+    use super::fixtures::*;
 
     lazy_static! {
-        static ref ZERO_LENGTH_VARSTR: Vec<u8> =
-            vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
-        static ref ONE_BYTE_VARSTR: Vec<u8> =
-            vec![0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
-        static ref TWO_BYTE_VARSTR: Vec<u8> =
-            vec![0x02, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
-
         // These bufferes have their lengths encoded in multiple bytes.
         static ref SIZE_128_VARSTR: Vec<u8> = {
             let mut data = vec![0x81, 0x80];
@@ -205,19 +231,15 @@ mod test_buf_oer_ext {
             data.extend(&[0x00; 5678][..]);
             data
         };
-
-        /// This buffer is an incorrectly-encoded VarString.
-        static ref LENGTH_TOO_HIGH_VARSTR: Vec<u8> =
-            vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
     }
 
     #[test]
     fn test_peek_var_octet_string() {
         let tests: &[(Vec<u8>, &[u8])] = &[
             (vec![0x00], &[]),
-            (ZERO_LENGTH_VARSTR.clone(), &[]),
-            (ONE_BYTE_VARSTR.clone(), &[0x01]),
-            (TWO_BYTE_VARSTR.clone(), &[0x01, 0x02]),
+            (ZERO_LENGTH_VARSTR.to_vec(), &[]),
+            (ONE_BYTE_VARSTR.to_vec(), &[0x01]),
+            (TWO_BYTE_VARSTR.to_vec(), &[0x01, 0x02]),
             (SIZE_128_VARSTR.clone(), &[0; 128][..]),
             (SIZE_5678_VARSTR.clone(), &[0; 5678][..]),
         ];
@@ -230,7 +252,7 @@ mod test_buf_oer_ext {
             ErrorKind::UnexpectedEof,
         );
         assert_eq!(
-            (&LENGTH_TOO_HIGH_VARSTR.clone()[..])
+            LENGTH_TOO_HIGH_VARSTR
                 .peek_var_octet_string()
                 .unwrap_err()
                 .kind(),
@@ -251,9 +273,9 @@ mod test_buf_oer_ext {
     #[test]
     fn test_skip_var_octet_string() {
         let tests: &[(Vec<u8>, usize)] = &[
-            (ZERO_LENGTH_VARSTR.clone(), 1),
-            (ONE_BYTE_VARSTR.clone(), 2),
-            (TWO_BYTE_VARSTR.clone(), 3),
+            (ZERO_LENGTH_VARSTR.to_vec(), 1),
+            (ONE_BYTE_VARSTR.to_vec(), 2),
+            (TWO_BYTE_VARSTR.to_vec(), 3),
             (SIZE_128_VARSTR.clone(), SIZE_128_VARSTR.len()),
             (SIZE_5678_VARSTR.clone(), SIZE_5678_VARSTR.len()),
         ];
@@ -386,4 +408,17 @@ mod buf_mut_oer_ext {
             assert_eq!(writer, *buffer);
         }
     }
+}
+
+#[cfg(test)]
+mod fixtures {
+    pub static ZERO_LENGTH_VARSTR: &'static [u8] =
+        &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    pub static ONE_BYTE_VARSTR: &'static [u8] =
+        &[0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    pub static TWO_BYTE_VARSTR: &'static [u8] =
+        &[0x02, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    /// This buffer is an incorrectly-encoded VarString.
+    pub static LENGTH_TOO_HIGH_VARSTR: &'static [u8] =
+        &[0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
 }
