@@ -9,7 +9,8 @@ use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
-use super::{Addr, ErrorCode, ParseError};
+use super::{Address, ErrorCode, ParseError};
+use std::convert::TryFrom;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -106,7 +107,7 @@ pub struct PrepareBuilder<'a> {
     pub amount: u64,
     pub expires_at: SystemTime,
     pub execution_condition: &'a [u8; 32],
-    pub destination: Addr<'a>,
+    pub destination: Address,
     pub data: &'a [u8],
 }
 
@@ -127,7 +128,7 @@ impl Prepare {
         // Skip execution condition.
         content.skip(CONDITION_LEN)?;
         // Validate and skip the destination.
-        Addr::try_from(content.read_var_octet_string()?)?;
+        Address::try_from(content.read_var_octet_string()?)?;
 
         // Skip the data.
         let data_offset = content_offset + content_len - content.len();
@@ -181,13 +182,11 @@ impl Prepare {
     }
 
     #[inline]
-    pub fn destination(&self) -> Addr {
+    pub fn destination(&self) -> Address {
         let offset = self.content_offset + AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
-        let addr_bytes = (&self.buffer[offset..])
-            .peek_var_octet_string()
-            .unwrap();
+        let addr_bytes = (&self.buffer[offset..]).peek_var_octet_string().unwrap();
         // TODO should this be new_unchecked?
-        Addr::try_from(addr_bytes).unwrap()
+        Address::try_from(addr_bytes).unwrap()
     }
 
     #[inline]
@@ -218,14 +217,18 @@ impl From<Prepare> for BytesMut {
 
 impl fmt::Debug for Prepare {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.debug_struct("Prepare")
+        formatter
+            .debug_struct("Prepare")
             .field("destination", &self.destination())
             .field("amount", &self.amount())
             .field(
                 "expires_at",
                 &DateTime::<Utc>::from(self.expires_at()).to_rfc3339(),
             )
-            .field("execution_condition", &hex::encode(self.execution_condition()))
+            .field(
+                "execution_condition",
+                &hex::encode(self.execution_condition()),
+            )
             .field("data_length", &self.data().len())
             .finish()
     }
@@ -255,7 +258,7 @@ impl<'a> PrepareBuilder<'a> {
         let mut buffer = writer.into_inner();
 
         buffer.put_slice(&self.execution_condition[..]);
-        buffer.put_var_octet_string(self.destination.as_ref());
+        buffer.put_var_octet_string::<&[u8]>(self.destination.as_ref());
         buffer.put_var_octet_string(self.data);
 
         Prepare {
@@ -331,7 +334,8 @@ impl From<Fulfill> for BytesMut {
 
 impl fmt::Debug for Fulfill {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.debug_struct("Fulfill")
+        formatter
+            .debug_struct("Fulfill")
             .field("fulfillment", &hex::encode(self.fulfillment()))
             .field("data_length", &self.data().len())
             .finish()
@@ -370,7 +374,7 @@ pub struct Reject {
 pub struct RejectBuilder<'a> {
     pub code: ErrorCode,
     pub message: &'a [u8],
-    pub triggered_by: Addr<'a>,
+    pub triggered_by: Address,
     pub data: &'a [u8],
 }
 
@@ -384,7 +388,7 @@ impl Reject {
         let code = ErrorCode::new(code);
 
         let triggered_by_offset = content_offset + content_len - content.len();
-        Addr::try_from(content.read_var_octet_string()?)?;
+        Address::try_from(content.read_var_octet_string()?)?;
 
         let message_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
@@ -407,12 +411,12 @@ impl Reject {
     }
 
     #[inline]
-    pub fn triggered_by(&self) -> Addr {
+    pub fn triggered_by(&self) -> Address {
         let address_bytes = (&self.buffer[self.triggered_by_offset..])
             .peek_var_octet_string()
             .unwrap();
         // TODO should this be new_unchecked?
-        Addr::try_from(address_bytes).unwrap()
+        Address::try_from(address_bytes).unwrap()
     }
 
     #[inline]
@@ -449,7 +453,8 @@ impl From<Reject> for BytesMut {
 
 impl fmt::Debug for Reject {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.debug_struct("Reject")
+        formatter
+            .debug_struct("Reject")
             .field("code", &self.code())
             .field(
                 "message",
@@ -473,7 +478,7 @@ impl<'a> RejectBuilder<'a> {
         buffer.put_u8(PacketType::Reject as u8);
         buffer.put_var_octet_string_length(content_len);
         buffer.put_slice(&<[u8; 3]>::from(self.code)[..]);
-        buffer.put_var_octet_string(self.triggered_by.as_ref());
+        buffer.put_var_octet_string::<&[u8]>(self.triggered_by.as_ref());
         buffer.put_var_octet_string(self.message);
         buffer.put_var_octet_string(self.data);
         Reject {
@@ -630,11 +635,11 @@ mod test_prepare {
         assert!(Prepare::try_from({
             let mut with_bad_address = PREPARE_BUILDER.clone();
             // NOTE: This intentionally creates an invalid ILP address.
-            with_bad_address.destination = unsafe {
-                Addr::new_unchecked(b"test.invalid address!")
-            };
+            with_bad_address.destination =
+                unsafe { Address::new_unchecked(b"test.invalid address!") };
             BytesMut::from(with_bad_address.build())
-        }).is_err());
+        })
+        .is_err());
 
         // A packet with junk data appened to the end.
         let with_junk_data = Prepare::try_from({
@@ -666,8 +671,10 @@ mod test_prepare {
     #[test]
     fn test_set_amount() {
         let target_amount = PREPARE_BUILDER.amount;
+        let destination = PREPARE_BUILDER.destination.clone();
         let mut prepare = PrepareBuilder {
             amount: 9999,
+            destination,
             ..*PREPARE_BUILDER
         }
         .build();
@@ -684,8 +691,10 @@ mod test_prepare {
     #[test]
     fn test_set_expires_at() {
         let target_expiry = PREPARE_BUILDER.expires_at;
+        let destination = PREPARE_BUILDER.destination.clone();
         let mut prepare = PrepareBuilder {
             expires_at: SystemTime::now(),
+            destination,
             ..*PREPARE_BUILDER
         }
         .build();
@@ -706,10 +715,7 @@ mod test_prepare {
 
     #[test]
     fn test_into_data() {
-        assert_eq!(
-            PREPARE.clone().into_data(),
-            BytesMut::from(PREPARE.data()),
-        );
+        assert_eq!(PREPARE.clone().into_data(), BytesMut::from(PREPARE.data()),);
     }
 }
 
@@ -765,10 +771,7 @@ mod test_fulfill {
 
     #[test]
     fn test_into_data() {
-        assert_eq!(
-            FULFILL.clone().into_data(),
-            BytesMut::from(FULFILL.data()),
-        );
+        assert_eq!(FULFILL.clone().into_data(), BytesMut::from(FULFILL.data()),);
     }
 }
 
@@ -824,10 +827,7 @@ mod test_reject {
 
     #[test]
     fn test_into_data() {
-        assert_eq!(
-            REJECT.clone().into_data(),
-            BytesMut::from(REJECT.data()),
-        );
+        assert_eq!(REJECT.clone().into_data(), BytesMut::from(REJECT.data()),);
     }
 }
 

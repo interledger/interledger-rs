@@ -4,15 +4,16 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
+use std::str::FromStr;
 
-use super::{Addr, ErrorCode};
+use super::{Address, ErrorCode};
 use super::{Fulfill, FulfillBuilder, Prepare, PrepareBuilder, Reject, RejectBuilder};
 
 lazy_static! {
     pub static ref PREPARE: Prepare = PREPARE_BUILDER.build();
     pub static ref PREPARE_BUILDER: PrepareBuilder<'static> = PrepareBuilder {
         amount: 107,
-        destination: Addr::new(b"example.alice"),
+        destination: Address::from_str("example.alice").unwrap(),
         expires_at: *EXPIRES_AT,
         execution_condition: &EXECUTION_CONDITION,
         data: &DATA,
@@ -90,7 +91,7 @@ lazy_static! {
     pub static ref REJECT_BUILDER: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
-        triggered_by: Addr::new(b"example.connector"),
+        triggered_by: Address::from_str("example.connector").unwrap(),
         data: &DATA,
     };
 }

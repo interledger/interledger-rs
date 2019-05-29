@@ -10,7 +10,7 @@ mod fixtures;
 pub mod oer;
 mod packet;
 
-pub use self::address::{Addr, Address, AddressError};
+pub use self::address::{Address, AddressError};
 pub use self::error::{ErrorClass, ErrorCode};
 pub use self::errors::ParseError;
 
