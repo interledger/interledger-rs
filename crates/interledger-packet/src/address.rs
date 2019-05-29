@@ -17,6 +17,17 @@ use std::str::FromStr;
 
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
+#[derive(Debug)]
+pub struct AddressError {}
+
+impl error::Error for AddressError {}
+
+impl fmt::Display for AddressError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("AddressError")
+    }
+}
+
 /// An ILP address backed by `Bytes`.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Address(Bytes);
@@ -98,8 +109,6 @@ impl fmt::Display for Address {
     }
 }
 
-// We want Address::From<u8>,<str> and <Bytes>
-
 impl Address {
     #[inline]
     pub fn len(&self) -> usize {
@@ -136,6 +145,45 @@ impl Address {
         Address::try_from(new_address.freeze())
     }
 }
+
+impl<'a> PartialEq<[u8]> for Address {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.0 == other
+    }
+}
+
+
+static SCHEMES: &'static [&'static [u8]] = &[
+    b"g", b"private", b"example", b"peer", b"self", b"test", b"test1", b"test2", b"test3", b"local",
+];
+
+fn is_scheme(segment: &[u8]) -> bool {
+    SCHEMES.contains(&segment)
+}
+
+/// <https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md#address-requirements>
+fn is_segment_byte(byte: u8) -> bool {
+    byte == b'_'
+        || byte == b'-'
+        || byte == b'~'
+        || (b'A' <= byte && byte <= b'Z')
+        || (b'a' <= byte && byte <= b'z')
+        || (b'0' <= byte && byte <= b'9')
+}
+
+#[cfg(any(feature = "serde", test))]
+impl<'de> serde::Deserialize<'de> for Address {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let string = <&str>::deserialize(deserializer)?;
+        Address::from_str(string).map_err(serde::de::Error::custom)
+    }
+}
+
+////               ADDRESS TODO: REMOVE EVERYTHING BELOW
+
 
 /// A borrowed ILP address.
 ///
@@ -213,6 +261,7 @@ impl<'a> Addr<'a> {
     }
 }
 
+
 impl<'a> AsRef<[u8]> for Addr<'a> {
     #[inline]
     fn as_ref(&self) -> &[u8] {
@@ -249,16 +298,6 @@ impl<'a> PartialEq<[u8]> for Addr<'a> {
 }
 
 #[cfg(any(feature = "serde", test))]
-impl<'de> serde::Deserialize<'de> for Address {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Addr::deserialize(deserializer).map(|addr| Address(Bytes::from(addr.as_ref())))
-    }
-}
-
-#[cfg(any(feature = "serde", test))]
 impl<'de> serde::Deserialize<'de> for Addr<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -268,36 +307,6 @@ impl<'de> serde::Deserialize<'de> for Addr<'de> {
         Addr::try_from(string.as_bytes()).map_err(serde::de::Error::custom)
     }
 }
-
-static SCHEMES: &'static [&'static [u8]] = &[
-    b"g", b"private", b"example", b"peer", b"self", b"test", b"test1", b"test2", b"test3", b"local",
-];
-
-fn is_scheme(segment: &[u8]) -> bool {
-    SCHEMES.contains(&segment)
-}
-
-/// <https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md#address-requirements>
-fn is_segment_byte(byte: u8) -> bool {
-    byte == b'_'
-        || byte == b'-'
-        || byte == b'~'
-        || (b'A' <= byte && byte <= b'Z')
-        || (b'a' <= byte && byte <= b'z')
-        || (b'0' <= byte && byte <= b'9')
-}
-
-#[derive(Debug)]
-pub struct AddressError {}
-
-impl error::Error for AddressError {}
-
-impl fmt::Display for AddressError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("AddressError")
-    }
-}
-
 #[cfg(test)]
 mod test_address {
     use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
