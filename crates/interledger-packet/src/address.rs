@@ -11,12 +11,33 @@ use std::fmt;
 use std::str;
 
 use bytes::{BufMut, Bytes, BytesMut};
+use std::convert::TryFrom;
+
 
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
 /// An ILP address backed by `Bytes`.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Address(Bytes);
+
+impl TryFrom<Bytes> for Address {
+    type Error = AddressError;
+
+    fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+        Addr::try_from(bytes.as_ref())?;
+        Ok(Address(bytes))
+    }
+}
+
+
+impl std::ops::Deref for Address {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 
 impl Address {
     /// # Panics
@@ -34,11 +55,6 @@ impl Address {
     #[inline]
     pub const unsafe fn new_unchecked(bytes: Bytes) -> Self {
         Address(bytes)
-    }
-
-    pub fn try_from(bytes: Bytes) -> Result<Self, AddressError> {
-        Addr::try_from(bytes.as_ref())?;
-        Ok(Address(bytes))
     }
 
     #[inline]
@@ -61,13 +77,6 @@ impl Address {
     }
 }
 
-impl AsRef<[u8]> for Address {
-    #[inline]
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
 impl AsRef<Bytes> for Address {
     #[inline]
     fn as_ref(&self) -> &Bytes {
@@ -77,7 +86,8 @@ impl AsRef<Bytes> for Address {
 
 impl fmt::Debug for Address {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.debug_tuple("Address")
+        formatter
+            .debug_tuple("Address")
             .field(&str::from_utf8(&self.0).unwrap())
             .finish()
     }
@@ -118,16 +128,17 @@ impl<'a> Addr<'a> {
 
     pub fn try_from(bytes: &'a [u8]) -> Result<Self, AddressError> {
         let mut segments = 0;
-        let is_valid = bytes.len() <= MAX_ADDRESS_LENGTH && bytes
-            .split(|&byte| byte == b'.')
-            .enumerate()
-            .all(|(i, segment)| {
-                segments += 1;
-                let scheme_ok = i != 0 || is_scheme(segment);
-                scheme_ok
-                    && !segment.is_empty()
-                    && segment.iter().all(|&byte| is_segment_byte(byte))
-            });
+        let is_valid = bytes.len() <= MAX_ADDRESS_LENGTH
+            && bytes
+                .split(|&byte| byte == b'.')
+                .enumerate()
+                .all(|(i, segment)| {
+                    segments += 1;
+                    let scheme_ok = i != 0 || is_scheme(segment);
+                    scheme_ok
+                        && !segment.is_empty()
+                        && segment.iter().all(|&byte| is_segment_byte(byte))
+                });
         if is_valid && segments > 1 {
             Ok(Addr(bytes))
         } else {
@@ -149,10 +160,7 @@ impl<'a> Addr<'a> {
     ///          "test" / "test1" / "test2" / "test3" / "local"
     /// ```
     pub fn scheme(&self) -> &'a [u8] {
-        self.0
-            .split(|&byte| byte == b'.')
-            .next()
-            .unwrap()
+        self.0.split(|&byte| byte == b'.').next().unwrap()
     }
 
     pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, AddressError> {
@@ -183,7 +191,8 @@ impl<'a> Borrow<[u8]> for Addr<'a> {
 
 impl<'a> fmt::Debug for Addr<'a> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.debug_tuple("Addr")
+        formatter
+            .debug_tuple("Addr")
             .field(&str::from_utf8(&self.0).unwrap())
             .finish()
     }
@@ -207,8 +216,7 @@ impl<'de> serde::Deserialize<'de> for Address {
     where
         D: serde::Deserializer<'de>,
     {
-        Addr::deserialize(deserializer)
-            .map(|addr| Address(Bytes::from(addr.as_ref())))
+        Addr::deserialize(deserializer).map(|addr| Address(Bytes::from(addr.as_ref())))
     }
 }
 
@@ -219,14 +227,12 @@ impl<'de> serde::Deserialize<'de> for Addr<'de> {
         D: serde::Deserializer<'de>,
     {
         let string = <&str>::deserialize(deserializer)?;
-        Addr::try_from(string.as_bytes())
-            .map_err(serde::de::Error::custom)
+        Addr::try_from(string.as_bytes()).map_err(serde::de::Error::custom)
     }
 }
 
 static SCHEMES: &'static [&'static [u8]] = &[
-    b"g", b"private", b"example", b"peer", b"self",
-    b"test", b"test1", b"test2", b"test3", b"local",
+    b"g", b"private", b"example", b"peer", b"self", b"test", b"test1", b"test2", b"test3", b"local",
 ];
 
 fn is_scheme(segment: &[u8]) -> bool {
@@ -235,7 +241,9 @@ fn is_scheme(segment: &[u8]) -> bool {
 
 /// <https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md#address-requirements>
 fn is_segment_byte(byte: u8) -> bool {
-    byte == b'_' || byte == b'-' || byte == b'~'
+    byte == b'_'
+        || byte == b'-'
+        || byte == b'~'
         || (b'A' <= byte && byte <= b'Z')
         || (b'a' <= byte && byte <= b'z')
         || (b'0' <= byte && byte <= b'9')
@@ -254,7 +262,7 @@ impl fmt::Display for AddressError {
 
 #[cfg(test)]
 mod test_address {
-    use serde_test::{Token, assert_de_tokens, assert_de_tokens_error};
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
 
     use super::*;
 
@@ -273,10 +281,7 @@ mod test_address {
             &Address::try_from(Bytes::from("test.alice")).unwrap(),
             &[Token::BorrowedStr("test.alice")],
         );
-        assert_de_tokens_error::<Address>(
-            &[Token::BorrowedStr("test.alice ")],
-            "AddressError",
-        );
+        assert_de_tokens_error::<Address>(&[Token::BorrowedStr("test.alice ")], "AddressError");
     }
 
     #[test]
@@ -289,16 +294,13 @@ mod test_address {
 
     #[test]
     fn test_display() {
-        assert_eq!(
-            format!("{}", Address::new(b"test.alice")),
-            "test.alice",
-        );
+        assert_eq!(format!("{}", Address::new(b"test.alice")), "test.alice",);
     }
 }
 
 #[cfg(test)]
 mod test_addr {
-    use serde_test::{Token, assert_de_tokens, assert_de_tokens_error};
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
 
     use super::*;
 
@@ -319,12 +321,12 @@ mod test_addr {
         b"test.alice/123",
 
         // Bad schemes.
-        b"test", // only a scheme
-        b"what.alice", // invalid scheme
+        b"test",        // only a scheme
+        b"what.alice",  // invalid scheme
         b"test4.alice", // invalid scheme
 
         // Invalid separators.
-        b"test.", // only a prefix
+        b"test.",       // only a prefix
         b"test.alice.", // ends in a separator
         b".test.alice", // begins with a separator
         b"test..alice", // double separator
@@ -336,7 +338,8 @@ mod test_addr {
             assert_eq!(
                 Addr::try_from(address).unwrap(),
                 Addr(address),
-                "address: {:?}", String::from_utf8_lossy(address),
+                "address: {:?}",
+                String::from_utf8_lossy(address),
             );
         }
 
@@ -349,7 +352,8 @@ mod test_addr {
         for address in INVALID_ADDRESSES {
             assert!(
                 Addr::try_from(address).is_err(),
-                "address: {:?}", String::from_utf8_lossy(address),
+                "address: {:?}",
+                String::from_utf8_lossy(address),
             );
         }
 
@@ -359,37 +363,22 @@ mod test_addr {
 
     #[test]
     fn test_len() {
-        assert_eq!(
-            Addr::new(b"test.alice").len(),
-            b"test.alice".len(),
-        );
+        assert_eq!(Addr::new(b"test.alice").len(), b"test.alice".len(),);
     }
 
     #[test]
     fn test_scheme() {
-        assert_eq!(
-            Addr::new(b"test.alice").scheme(),
-            b"test",
-        );
-        assert_eq!(
-            Addr::new(b"test.alice.1234").scheme(),
-            b"test",
-        );
+        assert_eq!(Addr::new(b"test.alice").scheme(), b"test",);
+        assert_eq!(Addr::new(b"test.alice.1234").scheme(), b"test",);
     }
 
     #[test]
     fn test_with_suffix() {
         assert_eq!(
-            Addr::new(b"test.alice")
-                .with_suffix(b"1234")
-                .unwrap(),
+            Addr::new(b"test.alice").with_suffix(b"1234").unwrap(),
             Address::new(b"test.alice.1234"),
         );
-        assert!({
-            Addr::new(b"test.alice")
-                .with_suffix(b"12 34")
-                .is_err()
-        });
+        assert!({ Addr::new(b"test.alice").with_suffix(b"12 34").is_err() });
     }
 
     #[test]
@@ -398,10 +387,7 @@ mod test_addr {
             &Addr::new(b"test.alice"),
             &[Token::BorrowedStr("test.alice")],
         );
-        assert_de_tokens_error::<Addr>(
-            &[Token::BorrowedStr("test.alice ")],
-            "AddressError",
-        );
+        assert_de_tokens_error::<Addr>(&[Token::BorrowedStr("test.alice ")], "AddressError");
     }
 
     #[test]
@@ -414,10 +400,7 @@ mod test_addr {
 
     #[test]
     fn test_display() {
-        assert_eq!(
-            format!("{}", Addr::new(b"test.alice")),
-            "test.alice",
-        );
+        assert_eq!(format!("{}", Addr::new(b"test.alice")), "test.alice",);
     }
 
     fn make_address(length: usize) -> Vec<u8> {
