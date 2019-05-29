@@ -12,6 +12,7 @@ use std::str;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 
 const MAX_ADDRESS_LENGTH: usize = 1023;
@@ -32,11 +33,33 @@ impl TryFrom<Bytes> for Address {
     type Error = AddressError;
 
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
-        Addr::try_from(bytes.as_ref())?;
-        Ok(Address(bytes))
+        Address::try_from(bytes.as_ref())
     }
 }
 
+impl TryFrom<&[u8]> for Address {
+    type Error = AddressError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let mut segments = 0;
+        let is_valid = bytes.len() <= MAX_ADDRESS_LENGTH
+            && bytes
+                .split(|&byte| byte == b'.')
+                .enumerate()
+                .all(|(i, segment)| {
+                    segments += 1;
+                    let scheme_ok = i != 0 || is_scheme(segment);
+                    scheme_ok
+                        && !segment.is_empty()
+                        && segment.iter().all(|&byte| is_segment_byte(byte))
+                });
+        if is_valid && segments > 1 {
+            Ok(Address(Bytes::from(bytes)))
+        } else {
+            Err(AddressError {})
+        }
+    }
+}
 
 impl std::ops::Deref for Address {
     type Target = [u8];
@@ -46,42 +69,10 @@ impl std::ops::Deref for Address {
     }
 }
 
-
-impl Address {
-    /// # Panics
-    ///
-    /// Panics if the bytes are not a valid ILP address.
-    pub fn new(bytes: &'static [u8]) -> Self {
-        Address::try_from(Bytes::from(bytes)).expect("invalid ILP address")
-    }
-
-    /// Creates an ILP address without validating the bytes.
-    ///
-    /// # Safety
-    ///
-    /// The given bytes must be a valid ILP address.
+impl AsRef<[u8]> for Address {
     #[inline]
-    pub const unsafe fn new_unchecked(bytes: Bytes) -> Self {
-        Address(bytes)
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.as_addr().len()
-    }
-
-    #[inline]
-    pub fn scheme(&self) -> &[u8] {
-        self.as_addr().scheme()
-    }
-
-    pub fn with_suffix(&self, suffix: &[u8]) -> Result<Self, AddressError> {
-        self.as_addr().with_suffix(suffix)
-    }
-
-    #[inline]
-    pub fn as_addr(&self) -> Addr {
-        Addr(self.0.as_ref())
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 
@@ -104,6 +95,35 @@ impl fmt::Debug for Address {
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(str::from_utf8(&self.0).unwrap())
+    }
+}
+
+// We want Address::From<u8>,<str> and <Bytes>
+
+impl Address {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// ```text
+    /// scheme = "g" / "private" / "example" / "peer" / "self" /
+    ///          "test" / "test1" / "test2" / "test3" / "local"
+    /// ```
+    #[inline]
+    pub fn scheme(&self) -> &[u8] {
+        self.0.split(|&byte| byte == b'.').next().unwrap()
+    }
+
+    pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, AddressError> {
+        let new_address_len = self.len() + 1 + suffix.len();
+        let mut new_address = BytesMut::with_capacity(new_address_len);
+
+        new_address.put_slice(self.0.as_ref());
+        new_address.put(b'.');
+        new_address.put_slice(suffix);
+
+        Address::try_from(new_address.freeze())
     }
 }
 
@@ -295,14 +315,17 @@ mod test_address {
     #[test]
     fn test_debug() {
         assert_eq!(
-            format!("{:?}", Address::new(b"test.alice")),
+            format!("{:?}", Address::from_str("test.alice").unwrap()),
             "Address(\"test.alice\")",
         );
     }
 
     #[test]
     fn test_display() {
-        assert_eq!(format!("{}", Address::new(b"test.alice")), "test.alice",);
+        assert_eq!(
+            format!("{}", Address::from_str("test.alice").unwrap()),
+            "test.alice",
+        );
     }
 }
 
@@ -384,7 +407,7 @@ mod test_addr {
     fn test_with_suffix() {
         assert_eq!(
             Addr::new(b"test.alice").with_suffix(b"1234").unwrap(),
-            Address::new(b"test.alice.1234"),
+            Address::from_str("test.alice.1234").unwrap(),
         );
         assert!({ Addr::new(b"test.alice").with_suffix(b"12 34").is_err() });
     }
