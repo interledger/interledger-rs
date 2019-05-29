@@ -106,6 +106,16 @@ impl Address {
         self.0.len()
     }
 
+    /// Creates an ILP address without validating the bytes.
+    ///
+    /// # Safety
+    ///
+    /// The given bytes must be a valid ILP address.
+    #[inline]
+    pub unsafe fn new_unchecked(bytes: &[u8]) -> Self {
+        Address(Bytes::from(bytes))
+    }
+
     /// ```text
     /// scheme = "g" / "private" / "example" / "peer" / "self" /
     ///          "test" / "test1" / "test2" / "test3" / "local"
