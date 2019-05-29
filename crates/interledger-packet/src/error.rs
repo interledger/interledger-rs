@@ -67,7 +67,8 @@ impl From<ErrorCode> for [u8; 3] {
 
 impl fmt::Debug for ErrorCode {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.debug_tuple("ErrorCode")
+        formatter
+            .debug_tuple("ErrorCode")
             .field(&str::from_utf8(&self.0[..]).map_err(|_| fmt::Error)?)
             .finish()
     }

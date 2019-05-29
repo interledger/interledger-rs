@@ -18,7 +18,6 @@ lazy_static! {
         execution_condition: &EXECUTION_CONDITION,
         data: &DATA,
     };
-
     pub static ref EXPIRES_AT: SystemTime =
         DateTime::parse_from_rfc3339("2018-06-07T20:48:42.483Z")
             .unwrap()

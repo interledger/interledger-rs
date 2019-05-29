@@ -162,8 +162,8 @@ impl<B: BufMut + Sized> MutBufOerExt for B {}
 mod test_functions {
     use bytes::BytesMut;
 
-    use super::*;
     use super::fixtures::*;
+    use super::*;
 
     #[test]
     fn test_predict_var_octet_string() {
@@ -216,8 +216,8 @@ mod test_functions {
 mod test_buf_oer_ext {
     use lazy_static::lazy_static;
 
-    use super::*;
     use super::fixtures::*;
+    use super::*;
 
     lazy_static! {
         // These bufferes have their lengths encoded in multiple bytes.
@@ -412,13 +412,9 @@ mod buf_mut_oer_ext {
 
 #[cfg(test)]
 mod fixtures {
-    pub static ZERO_LENGTH_VARSTR: &'static [u8] =
-        &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
-    pub static ONE_BYTE_VARSTR: &'static [u8] =
-        &[0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
-    pub static TWO_BYTE_VARSTR: &'static [u8] =
-        &[0x02, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    pub static ZERO_LENGTH_VARSTR: &'static [u8] = &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    pub static ONE_BYTE_VARSTR: &'static [u8] = &[0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    pub static TWO_BYTE_VARSTR: &'static [u8] = &[0x02, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
     /// This buffer is an incorrectly-encoded VarString.
-    pub static LENGTH_TOO_HIGH_VARSTR: &'static [u8] =
-        &[0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    pub static LENGTH_TOO_HIGH_VARSTR: &'static [u8] = &[0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
 }
