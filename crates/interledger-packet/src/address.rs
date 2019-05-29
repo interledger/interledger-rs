@@ -20,6 +20,14 @@ const MAX_ADDRESS_LENGTH: usize = 1023;
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Address(Bytes);
 
+impl std::str::FromStr for Address {
+    type Err = AddressError;
+
+    fn from_str(src: &str) -> Result<Self, Self::Err> {
+        Address::try_from(Bytes::from(src))
+    }
+}
+
 impl TryFrom<Bytes> for Address {
     type Error = AddressError;
 
