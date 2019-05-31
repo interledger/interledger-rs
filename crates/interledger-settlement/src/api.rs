@@ -6,6 +6,7 @@ use futures::{
 use hyper::Response;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
+use interledger_ildcp::IldcpAccount;
 use serde_json::Value;
 use std::{
     marker::PhantomData,
@@ -40,9 +41,9 @@ struct Success;
 impl_web! {
     impl<S, T, A> SettlementApi<S, T, A>
     where
-        S: OutgoingService<A> + Clone + Send + 'static,
-        T: SettlementStore<Account = A> + AccountStore<Account = A> + Clone + Send + 'static,
-        A: SettlementAccount + 'static,
+        S: OutgoingService<A> + Clone + Send + Sync + 'static,
+        T: SettlementStore<Account = A> + AccountStore<Account = A> + Clone + Send + Sync + 'static,
+        A: SettlementAccount + IldcpAccount + Send + Sync + 'static,
     {
         pub fn new(store: T, outgoing_handler: S) -> Self {
             SettlementApi {
@@ -56,14 +57,42 @@ impl_web! {
         fn receive_settlement(&self, body: SettlementDetails) -> impl Future<Item = Success, Error = Response<()>> {
             let amount = body.amount;
             let store = self.store.clone();
+            let store_clone = store.clone();
             let account_id = body.account_id;
             result(A::AccountId::from_str(account_id.as_str())
                 .map_err(move |_err| {
                     error!("Unable to parse account id: {}", account_id);
                     Response::builder().status(400).body(()).unwrap()
                 }))
-                .and_then(move |account_id| {
-                    store.update_balance_for_incoming_settlement(account_id, amount)
+                .and_then(move |account_id| store.get_accounts(vec![account_id]).map_err(move |_| {
+                    error!("Error getting account: {}", account_id);
+                    Response::builder().status(404).body(()).unwrap()
+                }))
+                .and_then(move |mut accounts| {
+                    let account = accounts.pop().unwrap();
+                    if let Some(settlement_engine) = account.settlement_engine_details() {
+                        Ok((account, settlement_engine))
+                    } else {
+                        error!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
+                        Err(Response::builder().status(500).body(()).unwrap())
+                    }
+                })
+                .and_then(move |(account, settlement_engine)| {
+                    let account_id = account.id();
+
+                    let amount = if account.asset_scale() >= settlement_engine.asset_scale {
+                        amount
+                            * 10u64.pow(u32::from(
+                                account.asset_scale() - settlement_engine.asset_scale,
+                            ))
+                    } else {
+                        amount
+                            / 10u64.pow(u32::from(
+                                settlement_engine.asset_scale - account.asset_scale(),
+                            ))
+                    };
+
+                    store_clone.update_balance_for_incoming_settlement(account_id, amount)
                         .map_err(move |_| {
                             error!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
                             Response::builder().status(500).body(()).unwrap()

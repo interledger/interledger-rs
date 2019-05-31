@@ -41,7 +41,7 @@ impl SettlementClient {
             } else {
                 amount
                     / 10u64.pow(u32::from(
-                        settlement_engine.asset_scale - account.asset_scale(),
+                        account.asset_scale() - settlement_engine.asset_scale,
                     ))
             };
 

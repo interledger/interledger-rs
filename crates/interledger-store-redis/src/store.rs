@@ -109,7 +109,7 @@ local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', '
 
 -- Credit the incoming settlement to the balance and/or prepaid amount,
 -- depending on whether that account currently owes money or not
-if balance >= 0 then
+if tonumber(balance) >= 0 then
     prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
 elseif math.abs(balance) >= amount then
     balance = redis.call('HINCRBY', account, 'balance', amount)
