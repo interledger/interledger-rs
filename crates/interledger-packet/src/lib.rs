@@ -3,6 +3,7 @@
 //! Interledger packet serialization/deserialization.
 
 mod address;
+
 mod error;
 mod errors;
 #[cfg(test)]

@@ -13,10 +13,11 @@ use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
+
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
 #[derive(Debug)]
-pub struct AddressError {}
+pub struct AddressError;
 
 impl error::Error for AddressError {}
 
@@ -35,6 +36,12 @@ impl std::str::FromStr for Address {
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
         Address::try_from(Bytes::from(src))
+    }
+}
+
+impl Default for Address {
+    fn default() -> Self {
+        Address::empty_address()
     }
 }
 
@@ -65,7 +72,7 @@ impl TryFrom<&[u8]> for Address {
         if is_valid && segments > 1 {
             Ok(Address(Bytes::from(bytes)))
         } else {
-            Err(AddressError {})
+            Err(AddressError)
         }
     }
 }
@@ -108,9 +115,21 @@ impl fmt::Display for Address {
 }
 
 impl Address {
+    /// Returns the length of the ILP Address.
     #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns an empty ILP Address with "0" as its only byte.
+    pub fn empty_address() -> Address {
+        let b: &[u8] = &[0];
+        Address(Bytes::from(b))
+    }
+
+    /// Returns the `Bytes` conversion of the ILP Address
+    pub fn as_bytes(&self) -> Bytes {
+        self.0.clone()
     }
 
     /// Creates an ILP address without validating the bytes.
@@ -132,12 +151,29 @@ impl Address {
         self.0.split(|&byte| byte == b'.').next().unwrap()
     }
 
+    /// Returns the local part (right-most '.' separated segment) of the ILP Address.
+    pub fn local(&self) -> &[u8] {
+        self.0.rsplit(|&byte| byte == b'.').next().unwrap()
+    }
+
+    /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator 
     pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, AddressError> {
         let new_address_len = self.len() + 1 + suffix.len();
         let mut new_address = BytesMut::with_capacity(new_address_len);
 
         new_address.put_slice(self.0.as_ref());
         new_address.put(b'.');
+        new_address.put_slice(suffix);
+
+        Address::try_from(new_address.freeze())
+    }
+
+    /// Appends the ILP Address with the provided suffix without a separator.
+    pub fn append(&self, suffix: &[u8]) -> Result<Address, AddressError> {
+        let new_address_len = self.len() + suffix.len();
+        let mut new_address = BytesMut::with_capacity(new_address_len);
+
+        new_address.put_slice(self.0.as_ref());
         new_address.put_slice(suffix);
 
         Address::try_from(new_address.freeze())
@@ -168,7 +204,6 @@ fn is_segment_byte(byte: u8) -> bool {
         || (b'0' <= byte && byte <= b'9')
 }
 
-#[cfg(any(feature = "serde", test))]
 impl<'de> serde::Deserialize<'de> for Address {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -179,9 +214,21 @@ impl<'de> serde::Deserialize<'de> for Address {
     }
 }
 
+impl serde::Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_newtype_struct("Address", &self.0)
+    }
+}
+
 #[cfg(test)]
 mod test_address {
-    use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
+    use serde::ser::{Serialize, SerializeStruct, Serializer};
+    use serde_test::{
+        assert_de_tokens, assert_de_tokens_error, assert_ser_tokens, assert_ser_tokens_error, Token,
+    };
 
     use super::*;
 
@@ -246,6 +293,19 @@ mod test_address {
             &[Token::BorrowedStr("test.alice")],
         );
         assert_de_tokens_error::<Address>(&[Token::BorrowedStr("test.alice ")], "AddressError");
+    }
+
+
+    #[test]
+    fn test_serialize() {
+        let addr = Address::try_from(Bytes::from("test.alice")).unwrap();
+        assert_ser_tokens(
+            &addr,
+            &[
+                Token::NewtypeStruct { name: "Address" },
+                Token::Bytes(b"test.alice"),
+            ],
+        );
     }
 
     #[test]
