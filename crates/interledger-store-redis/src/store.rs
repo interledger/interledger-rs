@@ -13,7 +13,7 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::SettlementClient;
+use interledger_settlement::{SettlementAccount, SettlementClient};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -497,7 +497,7 @@ impl BalanceStore for RedisStore {
                     })
                     .and_then(
                         move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
-                            if amount_to_settle > 0 {
+                            if amount_to_settle > 0 && to_account.settlement_engine_details().is_some() {
                                 trace!(
                                     "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
                                     outgoing_amount,

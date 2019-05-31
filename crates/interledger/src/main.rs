@@ -332,6 +332,7 @@ pub fn main() {
                             .ok(),
                         settlement_engine_url: None,
                         settlement_engine_asset_scale: None,
+                        settlement_engine_ilp_address: None,
                     };
                     tokio::run(insert_account_redis(redis_uri, &server_secret, account));
                 }

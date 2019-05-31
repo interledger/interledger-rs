@@ -55,6 +55,7 @@ fn btp_end_to_end() {
                     amount_per_minute_limit: None,
                     settlement_engine_url: None,
                     settlement_engine_asset_scale: None,
+                    settlement_engine_ilp_address: None,
                 }),
                 node.insert_account(AccountDetails {
                     ilp_address: String::from("example.node.two"),
@@ -77,6 +78,7 @@ fn btp_end_to_end() {
                     amount_per_minute_limit: None,
                     settlement_engine_url: None,
                     settlement_engine_asset_scale: None,
+                    settlement_engine_ilp_address: None,
                 }),
             ])
         });

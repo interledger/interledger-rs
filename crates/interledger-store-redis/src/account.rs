@@ -9,7 +9,7 @@ use interledger_service::Account as AccountTrait;
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
-use interledger_settlement::SettlementAccount;
+use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 use ring::aead;
 use serde::Serializer;
@@ -19,7 +19,7 @@ use std::{
 };
 use url::Url;
 
-const ACCOUNT_DETAILS_FIELDS: usize = 20;
+const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -51,6 +51,8 @@ pub struct Account {
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) settlement_engine_url: Option<Url>,
     pub(crate) settlement_engine_asset_scale: Option<u8>,
+    #[serde(serialize_with = "optional_bytes_to_utf8")]
+    pub(crate) settlement_engine_ilp_address: Option<Bytes>,
 }
 
 fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
@@ -118,6 +120,12 @@ impl Account {
             } else {
                 None
             };
+        let settlement_engine_ilp_address =
+            if let Some(settlement_engine_ilp_address) = details.settlement_engine_ilp_address {
+                Some(Bytes::from(settlement_engine_ilp_address))
+            } else {
+                None
+            };
         Ok(Account {
             id,
             ilp_address: Bytes::from(details.ilp_address),
@@ -139,6 +147,7 @@ impl Account {
             amount_per_minute_limit: details.amount_per_minute_limit,
             settlement_engine_url,
             settlement_engine_asset_scale: details.settlement_engine_asset_scale,
+            settlement_engine_ilp_address,
         })
     }
 
@@ -253,6 +262,12 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "settlement_engine_asset_scale".write_redis_args(&mut rv);
             settlement_engine_asset_scale.write_redis_args(&mut rv);
         }
+        if let Some(ref settlement_engine_ilp_address) = account.settlement_engine_ilp_address {
+            "settlement_engine_ilp_address".write_redis_args(&mut rv);
+            settlement_engine_ilp_address
+                .to_vec()
+                .write_redis_args(&mut rv);
+        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -297,6 +312,10 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 settlement_engine_url: get_url_option("settlement_engine_url", &hash)?,
                 settlement_engine_asset_scale: get_value_option(
                     "settlement_engine_asset_scale",
+                    &hash,
+                )?,
+                settlement_engine_ilp_address: get_bytes_option(
+                    "settlement_engine_ilp_address",
                     &hash,
                 )?,
             },
@@ -448,12 +467,19 @@ impl RateLimitAccount for Account {
 }
 
 impl SettlementAccount for Account {
-    fn settlement_engine_url(&self) -> Option<Url> {
-        self.settlement_engine_url.clone()
-    }
-
-    fn settlement_engine_asset_scale(&self) -> Option<u8> {
-        self.settlement_engine_asset_scale.clone()
+    fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
+        match (
+            &self.settlement_engine_url,
+            self.settlement_engine_asset_scale,
+            &self.settlement_engine_ilp_address,
+        ) {
+            (Some(url), Some(asset_scale), Some(ilp_address)) => Some(SettlementEngineDetails {
+                url: url.clone(),
+                asset_scale,
+                ilp_address: ilp_address.clone(),
+            }),
+            _ => None,
+        }
     }
 }
 
@@ -483,6 +509,7 @@ mod redis_account {
             packets_per_minute_limit: None,
             settlement_engine_asset_scale: None,
             settlement_engine_url: None,
+            settlement_engine_ilp_address: None,
         };
     }
 
