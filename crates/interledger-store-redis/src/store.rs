@@ -13,7 +13,7 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::{SettlementAccount, SettlementClient};
+use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -102,6 +102,24 @@ local settle_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
 return balance";
+static PROCESS_INCOMING_SETTLEMENT: &str = "
+local account = 'accounts:' .. ARGV[1]
+local amount = tonumber(ARGV[2])
+local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
+
+-- Credit the incoming settlement to the balance and/or prepaid amount,
+-- depending on whether that account currently owes money or not
+if balance >= 0 then
+    prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
+elseif math.abs(balance) >= amount then
+    balance = redis.call('HINCRBY', account, 'balance', amount)
+else
+    prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount + balance)
+    balance = 0
+    redis.call('HSET', account, 'balance', 0)
+end
+
+return balance + prepaid_amount";
 
 static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
@@ -1100,6 +1118,28 @@ impl RateLimitStore for RedisStore {
     }
 }
 
+impl SettlementStore for RedisStore {
+    type Account = Account;
+
+    fn update_balance_for_incoming_settlement(
+        &self,
+        account_id: u64,
+        amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        Box::new(cmd("EVAL")
+            .arg(PROCESS_INCOMING_SETTLEMENT)
+            .arg(0)
+            .arg(account_id)
+            .arg(amount)
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| error!("Error processing incoming settlement from account: {} for amount: {}: {:?}", account_id, amount, err))
+            .and_then(move |(_connection, balance): (_, i64)| {
+                trace!("Processed incoming settlement from account: {} for amount: {}. Balance is now: {}", account_id, amount, balance);
+                Ok(())
+            }))
+    }
+}
+
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 fn update_rates(
     connection: SharedConnection,
@@ -1151,4 +1191,34 @@ fn update_routes(
                 Ok(())
             },
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future;
+    use redis::IntoConnectionInfo;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn connect_fails_if_db_unavailable() {
+        let mut runtime = Runtime::new().unwrap();
+        runtime
+            .block_on(future::lazy(
+                || -> Box<Future<Item = (), Error = ()> + Send> {
+                    Box::new(
+                        RedisStoreBuilder::new(
+                            "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
+                            [0; 32],
+                        )
+                        .connect()
+                        .then(|result| {
+                            assert!(result.is_err());
+                            Ok(())
+                        }),
+                    )
+                },
+            ))
+            .unwrap();
+    }
 }
