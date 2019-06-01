@@ -83,10 +83,10 @@ impl TryFrom<&[u8]> for Address {
 }
 
 impl std::ops::Deref for Address {
-    type Target = [u8];
+    type Target = str;
 
-    fn deref(&self) -> &[u8] {
-        self.0.as_ref()
+    fn deref(&self) -> &str {
+        unsafe { str::from_utf8_unchecked(self.0.as_ref()) }
     }
 }
 
@@ -106,16 +106,18 @@ impl AsRef<Bytes> for Address {
 
 impl fmt::Debug for Address {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter
-            .debug_tuple("Address")
-            .field(&str::from_utf8(&self.0).unwrap())
-            .finish()
+        unsafe {
+            formatter
+                .debug_tuple("Address")
+                .field(&str::from_utf8_unchecked(&self.0))
+                .finish()
+        }
     }
 }
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(str::from_utf8(&self.0).unwrap())
+        unsafe { write!(f, "{}", str::from_utf8_unchecked(&self.0)) }
     }
 }
 
@@ -146,13 +148,13 @@ impl Address {
     ///          "test" / "test1" / "test2" / "test3" / "local"
     /// ```
     #[inline]
-    pub fn scheme(&self) -> &[u8] {
+    pub fn scheme(&self) -> &str {
         self.segments().next().unwrap()
     }
 
     /// Returns an iterator over all the segments of the ILP Address
-    pub fn segments(&self) -> impl Iterator<Item = &[u8]> {
-        self.0.split(|&b| b == b'.')
+    pub fn segments(&self) -> impl Iterator<Item = &str> {
+        unsafe { self.0.split(|&b| b == b'.').map(|s| str::from_utf8_unchecked(&s)) }
     }
 
     /// Returns the local part (right-most '.' separated segment) of the ILP Address.
@@ -324,10 +326,10 @@ mod test_address {
 
     #[test]
     fn test_scheme() {
-        assert_eq!(Address::from_str("test.alice").unwrap().scheme(), b"test",);
+        assert_eq!(Address::from_str("test.alice").unwrap().scheme(), "test",);
         assert_eq!(
             Address::from_str("test.alice.1234").unwrap().scheme(),
-            b"test",
+            "test",
         );
     }
 
