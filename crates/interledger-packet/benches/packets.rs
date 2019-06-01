@@ -5,9 +5,9 @@ use chrono::{DateTime, Utc};
 use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
 
+use ilp::Address;
 use ilp::{ErrorCode, Fulfill, Prepare, Reject};
 use ilp::{FulfillBuilder, PrepareBuilder, RejectBuilder};
-use ilp::Address;
 use interledger_packet as ilp;
 use std::str::FromStr;
 

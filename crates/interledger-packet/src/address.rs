@@ -13,17 +13,24 @@ use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
-
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
 #[derive(Debug)]
-pub struct AddressError;
+pub enum AddressError {
+    InvalidLength(usize),
+    InvalidFormat,
+}
 
 impl error::Error for AddressError {}
 
 impl fmt::Display for AddressError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("AddressError")
+        match *self {
+            AddressError::InvalidLength(ref length) => {
+                write!(f, "invalid address length {}", length)
+            }
+            AddressError::InvalidFormat => write!(f, "invalid address format"),
+        }
     }
 }
 
@@ -39,12 +46,6 @@ impl std::str::FromStr for Address {
     }
 }
 
-impl Default for Address {
-    fn default() -> Self {
-        Address::empty_address()
-    }
-}
-
 impl TryFrom<Bytes> for Address {
     type Error = AddressError;
 
@@ -57,22 +58,26 @@ impl TryFrom<&[u8]> for Address {
     type Error = AddressError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if bytes.len() > MAX_ADDRESS_LENGTH {
+            return Err(AddressError::InvalidLength(bytes.len()));
+        }
+
         let mut segments = 0;
-        let is_valid = bytes.len() <= MAX_ADDRESS_LENGTH
-            && bytes
-                .split(|&byte| byte == b'.')
-                .enumerate()
-                .all(|(i, segment)| {
-                    segments += 1;
-                    let scheme_ok = i != 0 || is_scheme(segment);
-                    scheme_ok
-                        && !segment.is_empty()
-                        && segment.iter().all(|&byte| is_segment_byte(byte))
-                });
-        if is_valid && segments > 1 {
+        let is_valid_scheme = bytes
+            .split(|&byte| byte == b'.')
+            .enumerate()
+            .all(|(i, segment)| {
+                segments += 1;
+                let scheme_ok = i != 0 || is_scheme(segment);
+                scheme_ok
+                    && !segment.is_empty()
+                    && segment.iter().all(|&byte| is_segment_byte(byte))
+            });
+
+        if is_valid_scheme && segments > 1 {
             Ok(Address(Bytes::from(bytes)))
         } else {
-            Err(AddressError)
+            Err(AddressError::InvalidFormat)
         }
     }
 }
@@ -121,12 +126,6 @@ impl Address {
         self.0.len()
     }
 
-    /// Returns an empty ILP Address with "0" as its only byte.
-    pub fn empty_address() -> Address {
-        let b: &[u8] = &[0];
-        Address(Bytes::from(b))
-    }
-
     /// Returns the `Bytes` conversion of the ILP Address
     pub fn as_bytes(&self) -> Bytes {
         self.0.clone()
@@ -148,7 +147,12 @@ impl Address {
     /// ```
     #[inline]
     pub fn scheme(&self) -> &[u8] {
-        self.0.split(|&byte| byte == b'.').next().unwrap()
+        self.segments().next().unwrap()
+    }
+
+    /// Returns an iterator over all the segments of the ILP Address
+    pub fn segments(&self) -> impl Iterator<Item = &[u8]> {
+        self.0.split(|&b| b == b'.')
     }
 
     /// Returns the local part (right-most '.' separated segment) of the ILP Address.
@@ -156,7 +160,7 @@ impl Address {
         self.0.rsplit(|&byte| byte == b'.').next().unwrap()
     }
 
-    /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator 
+    /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
     pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, AddressError> {
         let new_address_len = self.len() + 1 + suffix.len();
         let mut new_address = BytesMut::with_capacity(new_address_len);
@@ -292,9 +296,11 @@ mod test_address {
             &Address::try_from(Bytes::from("test.alice")).unwrap(),
             &[Token::BorrowedStr("test.alice")],
         );
-        assert_de_tokens_error::<Address>(&[Token::BorrowedStr("test.alice ")], "AddressError");
+        assert_de_tokens_error::<Address>(
+            &[Token::BorrowedStr("test.alice ")],
+            "invalid address format",
+        );
     }
-
 
     #[test]
     fn test_serialize() {
