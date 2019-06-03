@@ -11,6 +11,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use super::oer::{self, BufOerExt, MutBufOerExt};
 use super::{Address, ErrorCode, ParseError};
 use std::convert::TryFrom;
+use bytes::Bytes;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -185,8 +186,7 @@ impl Prepare {
     pub fn destination(&self) -> Address {
         let offset = self.content_offset + AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
         let addr_bytes = (&self.buffer[offset..]).peek_var_octet_string().unwrap();
-        // TODO should this be new_unchecked?
-        Address::try_from(addr_bytes).unwrap()
+        unsafe { Address::new_unchecked(Bytes::from(addr_bytes)) }
     }
 
     #[inline]
@@ -414,9 +414,8 @@ impl Reject {
     pub fn triggered_by(&self) -> Address {
         let address_bytes = (&self.buffer[self.triggered_by_offset..])
             .peek_var_octet_string()
-            .unwrap();
-        // TODO should this be new_unchecked?
-        Address::try_from(address_bytes).unwrap()
+            .unwrap(); // Can we unwrap safely here?
+        unsafe { Address::new_unchecked(Bytes::from(address_bytes)) }
     }
 
     #[inline]
@@ -636,7 +635,7 @@ mod test_prepare {
             let mut with_bad_address = PREPARE_BUILDER.clone();
             // NOTE: This intentionally creates an invalid ILP address.
             with_bad_address.destination =
-                unsafe { Address::new_unchecked(b"test.invalid address!") };
+                unsafe { Address::new_unchecked(Bytes::from("test.invalid address!")) };
             BytesMut::from(with_bad_address.build())
         })
         .is_err());

@@ -137,8 +137,8 @@ impl Address {
     ///
     /// The given bytes must be a valid ILP address.
     #[inline]
-    pub unsafe fn new_unchecked(bytes: &[u8]) -> Self {
-        Address(Bytes::from(bytes))
+    pub unsafe fn new_unchecked(bytes: Bytes) -> Self {
+        Address(bytes)
     }
 
     /// ```text
@@ -172,16 +172,6 @@ impl Address {
         Address::try_from(new_address.freeze())
     }
 
-    /// Appends the ILP Address with the provided suffix without a separator.
-    pub fn append(&self, suffix: &[u8]) -> Result<Address, AddressError> {
-        let new_address_len = self.len() + suffix.len();
-        let mut new_address = BytesMut::with_capacity(new_address_len);
-
-        new_address.put_slice(self.0.as_ref());
-        new_address.put_slice(suffix);
-
-        Address::try_from(new_address.freeze())
-    }
 }
 
 impl<'a> PartialEq<[u8]> for Address {
