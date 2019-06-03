@@ -12,8 +12,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-pub const CCP_CONTROL_DESTINATION: &[u8] = b"peer.route.control";
-pub const CCP_UPDATE_DESTINATION: &[u8] = b"peer.route.update";
 // pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
 pub const PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
@@ -31,6 +29,10 @@ lazy_static! {
         data: &[],
     }
     .build();
+    pub static ref CCP_CONTROL_DESTINATION: Address =
+        unsafe { Address::new_unchecked(b"peer.route.control") };
+    pub static ref CCP_UPDATE_DESTINATION: Address =
+        unsafe { Address::new_unchecked(b"peer.route.update") };
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -118,7 +120,7 @@ impl RouteControlRequest {
         }
 
         PrepareBuilder {
-            destination: Address::try_from(CCP_CONTROL_DESTINATION).unwrap(),
+            destination: (*CCP_CONTROL_DESTINATION).clone(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
@@ -321,7 +323,7 @@ impl RouteUpdateRequest {
         }
 
         PrepareBuilder {
-            destination: Address::try_from(CCP_UPDATE_DESTINATION).unwrap(),
+            destination: (*CCP_UPDATE_DESTINATION).clone(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
