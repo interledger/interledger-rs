@@ -30,9 +30,9 @@ lazy_static! {
     }
     .build();
     pub static ref CCP_CONTROL_DESTINATION: Address =
-        unsafe { Address::new_unchecked(b"peer.route.control") };
+        unsafe { Address::new_unchecked(Bytes::from("peer.route.control")) };
     pub static ref CCP_UPDATE_DESTINATION: Address =
-        unsafe { Address::new_unchecked(b"peer.route.update") };
+        unsafe { Address::new_unchecked(Bytes::from("peer.route.update")) };
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

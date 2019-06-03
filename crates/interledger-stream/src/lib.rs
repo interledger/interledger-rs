@@ -35,9 +35,9 @@ pub mod test_helpers {
 
     lazy_static! {
         pub static ref EXAMPLE_CONNECTOR: Address =
-            unsafe { Address::new_unchecked(b"example.connector") };
+            unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
         pub static ref EXAMPLE_RECEIVER: Address =
-            unsafe { Address::new_unchecked(b"example.receiver") };
+            unsafe { Address::new_unchecked(Bytes::from("example.receiver"))};
     }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
