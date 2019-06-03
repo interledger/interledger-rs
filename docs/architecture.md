@@ -68,7 +68,7 @@ Settlement engines are run as separate processes from the core Interledger node 
 
 ### Common Database
 
-The core Interledger.rs components and external settlement engines talk directly to the same databases. For example, the settlement engines will use the same balances tables as the Interledger node so that they can read the accrued account balance and update it to reflect incoming and outgoing settlements. Settlement engines can also define additional tables or indecies, for example to map ledger addresses to `Account` records or to store the latest payment channel claims.
+The core Interledger.rs components and external settlement engines talk directly to the same databases. For example, the settlement engines will use the same balances tables as the Interledger node so that they can read the accrued account balance and update it to reflect incoming and outgoing settlements. Settlement engines can also define additional tables or indices, for example to map ledger addresses to `Account` records or to store the latest payment channel claims.
 
 Note that this design means that each settlement engine must separately implement its interactions with different databases. Settlement engines _should_ support all databases for which there are Interledger.rs `Store` implementations.
 
