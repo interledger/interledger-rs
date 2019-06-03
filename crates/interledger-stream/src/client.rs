@@ -6,13 +6,15 @@ use bytes::Bytes;
 use futures::{Async, Future, Poll};
 use interledger_ildcp::get_ildcp_info;
 use interledger_packet::{
-    ErrorClass, ErrorCode as IlpErrorCode, Fulfill, PacketType as IlpPacketType, PrepareBuilder,
-    Reject,
+    Address, ErrorClass, ErrorCode as IlpErrorCode, Fulfill, PacketType as IlpPacketType,
+    PrepareBuilder, Reject,
 };
 use interledger_service::*;
 use std::{
     cell::Cell,
     cmp::min,
+    convert::TryFrom,
+    str::FromStr,
     str,
     time::{Duration, SystemTime},
 };
@@ -132,8 +134,10 @@ where
             );
             let data = stream_packet.into_encrypted(&self.shared_secret);
             let execution_condition = generate_condition(&self.shared_secret, &data);
+            // todo: Handle the error. Address returns a parse error so maybe the return type of this function will need to have information for that
+            let dest = Address::try_from(self.destination_account.clone()).unwrap();
             let prepare = PrepareBuilder {
-                destination: &self.destination_account[..],
+                destination: dest,
                 amount,
                 execution_condition: &execution_condition,
                 expires_at: SystemTime::now() + Duration::from_secs(30),
@@ -177,7 +181,7 @@ where
         // Create the ILP Prepare packet
         let data = stream_packet.into_encrypted(&self.shared_secret);
         let prepare = PrepareBuilder {
-            destination: &self.destination_account[..],
+            destination: Address::try_from(self.destination_account.clone()).unwrap(),
             amount: 0,
             execution_condition: &random_condition(),
             expires_at: SystemTime::now() + Duration::from_secs(30),
@@ -352,7 +356,7 @@ mod send_money_tests {
                 Err(RejectBuilder {
                     code: IlpErrorCode::F00_BAD_REQUEST,
                     message: b"just some final error",
-                    triggered_by: b"example.connector",
+                    triggered_by: Address::from_str("example.connector").ok(),
                     data: &[],
                 }
                 .build())

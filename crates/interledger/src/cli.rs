@@ -11,7 +11,7 @@ use interledger_btp::{connect_client, create_open_signup_server, create_server, 
 use interledger_ccp::CcpRouteManager;
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_router::Router;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AccountStore, OutgoingRequest,
@@ -25,7 +25,7 @@ use interledger_store_redis::{connect as connect_redis_store, IntoConnectionInfo
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
-use std::{net::SocketAddr, str, sync::Arc, u64};
+use std::{net::SocketAddr, str, sync::Arc, u64, convert::TryFrom};
 use tokio::{self, net::TcpListener};
 use tower_web::ServiceBuilder;
 use url::Url;
@@ -66,7 +66,7 @@ pub fn send_spsp_payment_btp(
                     str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
                 )
                 .as_bytes(),
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build())
@@ -81,7 +81,7 @@ pub fn send_spsp_payment_btp(
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"Not expecting incoming prepare packets",
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build())
@@ -190,7 +190,7 @@ pub fn run_spsp_server_btp(
                     str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
                 )
                 .as_bytes(),
-                triggered_by: &ilp_address_clone.read()[..],
+                triggered_by: Address::try_from(&ilp_address_clone.read()[..]).ok(),
                 data: &[],
             }
             .build())
@@ -260,7 +260,7 @@ pub fn run_spsp_server_http(
         Bytes::from(ildcp_info.client_address()),
         server_secret.clone(),
     );
-    let ilp_address = Bytes::from(ildcp_info.client_address());
+    let ilp_address = Address::try_from(ildcp_info.client_address()).ok();
     let outgoing_handler = StreamReceiverService::new(
         server_secret,
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
@@ -268,10 +268,10 @@ pub fn run_spsp_server_http(
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &format!(
                     "No handler configured for destination: {}",
-                    str::from_utf8(&request.prepare.destination()).unwrap_or("<not utf8>")
+                    request.prepare.destination(),
                 )
                 .as_bytes(),
-                triggered_by: &ilp_address[..],
+                triggered_by: ilp_address.clone(),
                 data: &[],
             }
             .build())
@@ -330,7 +330,7 @@ pub fn run_moneyd_local(
         Err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,
             message: b"No open connection for account",
-            triggered_by: &ilp_address_clone[..],
+            triggered_by: Address::try_from(&ilp_address_clone[..]).ok(),
             data: &[],
         }
         .build())

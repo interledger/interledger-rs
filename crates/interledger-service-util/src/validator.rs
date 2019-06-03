@@ -62,7 +62,7 @@ where
             let result = Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()));
@@ -103,7 +103,7 @@ where
                             RejectBuilder {
                                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                                 message: &[],
-                                triggered_by: &[],
+                                triggered_by: None,
                                 data: &[],
                             }
                             .build()
@@ -118,7 +118,7 @@ where
                             Err(RejectBuilder {
                                 code: ErrorCode::F09_INVALID_PEER_RESPONSE,
                                 message: b"Fulfillment did not match condition",
-                                triggered_by: &[],
+                                triggered_by: None,
                                 data: &[],
                             }
                             .build())
@@ -137,7 +137,7 @@ where
             Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()))
@@ -161,6 +161,7 @@ impl Account for TestAccount {
 mod incoming {
     use super::*;
     use interledger_packet::*;
+    use std::str::FromStr;
     use interledger_service::incoming_service_fn;
     use std::{
         sync::{Arc, Mutex},
@@ -183,7 +184,7 @@ mod incoming {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     execution_condition: &[
@@ -216,7 +217,7 @@ mod incoming {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     expires_at: SystemTime::now() - Duration::from_secs(30),
                     execution_condition: &[
@@ -246,6 +247,7 @@ mod outgoing {
         sync::{Arc, Mutex},
         time::SystemTime,
     };
+    use std::str::FromStr;
 
     #[test]
     fn lets_through_valid_outgoing_response() {
@@ -264,7 +266,7 @@ mod outgoing {
                 from: TestAccount(1),
                 to: TestAccount(2),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     execution_condition: &[
@@ -292,13 +294,12 @@ mod outgoing {
                 data: b"test data",
             }
             .build())
-        }));
-        let result = validator
+        })); let result = validator
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
                 to: TestAccount(2),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     execution_condition: &[

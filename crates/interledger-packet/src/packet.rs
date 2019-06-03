@@ -492,9 +492,7 @@ impl fmt::Debug for Reject {
 impl<'a> RejectBuilder<'a> {
     pub fn build(&self) -> Reject {
         let (trigerred_by_message, len) = match self.triggered_by {
-            Some(ref msg) => {
-                (msg.as_ref(), msg.len())
-            },
+            Some(ref msg) => (msg.as_ref(), msg.len()),
             None => {
                 let empty_msg: &[u8] = &[];
                 (empty_msg, 0)
@@ -828,7 +826,10 @@ mod test_reject {
         .unwrap();
         assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
-        assert_eq!(with_junk_data.triggered_by(), REJECT_BUILDER.triggered_by.clone().unwrap());
+        assert_eq!(
+            with_junk_data.triggered_by(),
+            REJECT_BUILDER.triggered_by.clone().unwrap()
+        );
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
 
@@ -849,7 +850,10 @@ mod test_reject {
 
     #[test]
     fn test_triggered_by() {
-        assert_eq!(REJECT.triggered_by(), REJECT_BUILDER.triggered_by.clone().unwrap());
+        assert_eq!(
+            REJECT.triggered_by(),
+            REJECT_BUILDER.triggered_by.clone().unwrap()
+        );
     }
 
     #[test]

@@ -2,8 +2,9 @@ use byteorder::ReadBytesExt;
 use bytes::{BufMut, Bytes, BytesMut};
 use interledger_packet::{
     oer::{predict_var_octet_string, BufOerExt, MutBufOerExt},
-    Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
+    Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
+use std::convert::TryFrom;
 use std::{
     fmt, str,
     time::{Duration, SystemTime},
@@ -23,7 +24,7 @@ lazy_static! {
 
 pub fn is_ildcp_request(prepare: &Prepare) -> bool {
     prepare.execution_condition() == PEER_PROTOCOL_CONDITION
-        && prepare.destination() == ILDCP_DESTINATION
+        && prepare.destination() == *ILDCP_DESTINATION
 }
 
 #[derive(Debug, Default)]
@@ -36,7 +37,7 @@ impl IldcpRequest {
 
     pub fn to_prepare(&self) -> Prepare {
         PrepareBuilder {
-            destination: ILDCP_DESTINATION,
+            destination: Address::try_from(ILDCP_DESTINATION).unwrap(),
             amount: 0,
             execution_condition: &PEER_PROTOCOL_CONDITION,
             expires_at: SystemTime::now() + *PEER_PROTOCOL_EXPIRY_DURATION,

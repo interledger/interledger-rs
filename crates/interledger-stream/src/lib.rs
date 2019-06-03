@@ -96,6 +96,8 @@ mod send_money_to_receiver {
     use interledger_router::Router;
     use interledger_service::outgoing_service_fn;
     use tokio::runtime::Runtime;
+    use interledger_packet::Address;
+    use std::str::FromStr;
 
     #[test]
     fn send_money_test() {
@@ -117,7 +119,7 @@ mod send_money_to_receiver {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other outgoing handler",
-                    triggered_by: b"example.receiver",
+                    triggered_by: Address::from_str("example.receiver").ok(),
                     data: &[],
                 }
                 .build())

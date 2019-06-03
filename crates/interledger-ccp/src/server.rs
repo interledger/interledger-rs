@@ -13,6 +13,7 @@ use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::{
     cmp::min,
+    convert::TryFrom,
     str,
     sync::Arc,
     time::{Duration, Instant},
@@ -153,11 +154,12 @@ where
         &self,
         request: IncomingRequest<A>,
     ) -> impl Future<Item = Fulfill, Error = Reject> {
+        let ilp_address = Address::try_from(self.ilp_address.clone()).ok();
         if !request.from.should_send_routes() {
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: ilp_address,
                 data: &[],
             }
             .build()));
@@ -168,7 +170,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: ilp_address,
                 data: &[],
             }
             .build()));
@@ -195,7 +197,8 @@ where
             };
 
             if !self.spawn_tasks {
-                let ilp_address = self.ilp_address.clone();
+                // TODO: Can we safely comment this out?
+                // let ilp_address = Address::try_from(self.ilp_address).ok();
                 return Either::B(
                     self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
                         .map_err(move |_| {
@@ -203,7 +206,7 @@ where
                                 code: ErrorCode::T01_PEER_UNREACHABLE,
                                 message: b"Error sending route update request",
                                 data: &[],
-                                triggered_by: &ilp_address[..],
+                                triggered_by: ilp_address,
                             }
                             .build()
                         })
@@ -252,11 +255,12 @@ where
     /// then check whether those routes are better than the current best ones we have in the
     /// Local Routing Table.
     fn handle_route_update_request(&self, request: IncomingRequest<A>) -> BoxedIlpFuture {
+        let ilp_address = Address::try_from(self.ilp_address.clone()).ok();
         if !request.from.should_receive_routes() {
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: ilp_address,
                 data: &[],
             }
             .build()));
@@ -267,7 +271,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: ilp_address,
                 data: &[],
             }
             .build()));
@@ -288,7 +292,7 @@ where
                 RoutingTable::new(update.routing_table_id),
             );
         }
-        let ilp_address = self.ilp_address.clone();
+
         match (*incoming_tables)
             .get_mut(&request.from.id())
             .expect("Should have inserted a routing table for this account")
@@ -300,7 +304,8 @@ where
                     spawn(future);
                     Box::new(ok(CCP_RESPONSE.clone()))
                 } else {
-                    let ilp_address = self.ilp_address.clone();
+                    // Can we safely remove this re-setting of the ilp_address?
+                    // let ilp_address = self.ilp_address.clone();
                     Box::new(
                         future
                             .map_err(move |_| {
@@ -308,7 +313,7 @@ where
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: b"Error processing route update",
                                     data: &[],
-                                    triggered_by: &ilp_address[..],
+                                    triggered_by: ilp_address,
                                 }
                                 .build()
                             })
@@ -321,7 +326,7 @@ where
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
                     data: &[],
-                    triggered_by: &ilp_address[..],
+                    triggered_by: ilp_address,
                 }
                 .build();
                 let table = &incoming_tables[&request.from.id()];
@@ -732,9 +737,9 @@ where
     /// pass it on to the next handler if not
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         let destination = request.prepare.destination();
-        if destination == CCP_CONTROL_DESTINATION {
+        if destination == *CCP_CONTROL_DESTINATION {
             Box::new(self.handle_route_control_request(request))
-        } else if destination == CCP_UPDATE_DESTINATION {
+        } else if destination == *CCP_UPDATE_DESTINATION {
             Box::new(self.handle_route_update_request(request))
         } else {
             Box::new(self.next_incoming.handle_request(request))
@@ -892,7 +897,7 @@ mod handle_route_control_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: CCP_CONTROL_DESTINATION,
+                    destination: Address::try_from(CCP_CONTROL_DESTINATION).unwrap(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],
@@ -1012,7 +1017,7 @@ mod handle_route_update_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: CCP_UPDATE_DESTINATION,
+                    destination: Address::try_from(CCP_UPDATE_DESTINATION).unwrap(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],

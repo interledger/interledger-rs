@@ -9,6 +9,7 @@ use std::error;
 use std::fmt;
 use std::str;
 
+use crate::errors::ParseError;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -21,16 +22,19 @@ pub enum AddressError {
     InvalidFormat,
 }
 
-impl error::Error for AddressError {}
+use std::error::Error;
+impl Error for AddressError {
+    fn description(&self) -> &str {
+        match *self {
+            AddressError::InvalidLength(length) => "invalid address length",
+            AddressError::InvalidFormat => "invalid address format",
+        }
+    }
+}
 
 impl fmt::Display for AddressError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            AddressError::InvalidLength(ref length) => {
-                write!(f, "invalid address length {}", length)
-            }
-            AddressError::InvalidFormat => write!(f, "invalid address format"),
-        }
+        self.description().fmt(f)
     }
 }
 
@@ -39,7 +43,7 @@ impl fmt::Display for AddressError {
 pub struct Address(Bytes);
 
 impl FromStr for Address {
-    type Err = AddressError;
+    type Err = ParseError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
         Address::try_from(Bytes::from(src))
@@ -47,11 +51,13 @@ impl FromStr for Address {
 }
 
 impl TryFrom<Bytes> for Address {
-    type Error = AddressError;
+    type Error = ParseError;
 
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
         if bytes.len() > MAX_ADDRESS_LENGTH {
-            return Err(AddressError::InvalidLength(bytes.len()));
+            return Err(ParseError::InvalidAddress(AddressError::InvalidLength(
+                bytes.len(),
+            )));
         }
 
         let mut segments = 0;
@@ -69,13 +75,13 @@ impl TryFrom<Bytes> for Address {
         if is_valid_scheme && segments > 1 {
             Ok(Address(bytes))
         } else {
-            Err(AddressError::InvalidFormat)
+            Err(ParseError::InvalidAddress(AddressError::InvalidFormat))
         }
     }
 }
 
 impl TryFrom<&[u8]> for Address {
-    type Error = AddressError;
+    type Error = ParseError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::try_from(Bytes::from(bytes))
@@ -152,7 +158,11 @@ impl Address {
 
     /// Returns an iterator over all the segments of the ILP Address
     pub fn segments(&self) -> impl Iterator<Item = &str> {
-        unsafe { self.0.split(|&b| b == b'.').map(|s| str::from_utf8_unchecked(&s)) }
+        unsafe {
+            self.0
+                .split(|&b| b == b'.')
+                .map(|s| str::from_utf8_unchecked(&s))
+        }
     }
 
     /// Returns the local part (right-most '.' separated segment) of the ILP Address.
@@ -161,7 +171,7 @@ impl Address {
     }
 
     /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
-    pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, AddressError> {
+    pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, ParseError> {
         let new_address_len = self.len() + 1 + suffix.len();
         let mut new_address = BytesMut::with_capacity(new_address_len);
 

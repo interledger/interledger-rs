@@ -6,11 +6,13 @@ use futures::future::result;
 use hex;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{
-    ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject, RejectBuilder,
+    Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
+    RejectBuilder,
 };
 use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService};
+use std::convert::TryFrom;
 use std::marker::PhantomData;
-use std::str;
+use std::{str, str::FromStr};
 
 const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_secret_generator";
 
@@ -134,11 +136,12 @@ where
         if request
             .prepare
             .destination()
+            .as_bytes()
             .starts_with(request.to.client_address())
         {
             if let Ok(shared_secret) = self
                 .connection_generator
-                .rederive_secret(request.prepare.destination())
+                .rederive_secret(request.prepare.destination().as_ref())
             {
                 {
                     return Box::new(result(receive_money(
@@ -167,13 +170,14 @@ fn receive_money(
     // Parse STREAM packet
     // TODO avoid copying data
     let prepare_amount = prepare.amount();
+    let client_addr = Address::try_from(client_address).ok();
     let stream_packet =
         StreamPacket::from_encrypted(shared_secret, prepare.into_data()).map_err(|_| {
             debug!("Unable to parse data, rejecting Prepare packet");
             RejectBuilder {
                 code: ErrorCode::F06_UNEXPECTED_PAYMENT,
                 message: b"Could not decrypt data",
-                triggered_by: client_address,
+                triggered_by: client_addr.clone(),
                 data: &[],
             }
             .build()
@@ -241,7 +245,7 @@ fn receive_money(
         let reject = RejectBuilder {
             code: ErrorCode::F99_APPLICATION_ERROR,
             message: &[],
-            triggered_by: client_address,
+            triggered_by: client_addr,
             data: &encrypted_response[..],
         }
         .build();
@@ -318,8 +322,9 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
+        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -328,7 +333,7 @@ mod receiving_money {
         .build();
 
         let shared_secret = connection_generator
-            .rederive_secret(prepare.destination())
+            .rederive_secret(prepare.destination().as_ref())
             .unwrap();
         let result = receive_money(&shared_secret, &client_address[..], prepare);
         assert!(result.is_ok());
@@ -345,8 +350,9 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
+        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -355,7 +361,7 @@ mod receiving_money {
         .build();
 
         let shared_secret = connection_generator
-            .rederive_secret(prepare.destination())
+            .rederive_secret(prepare.destination().as_ref())
             .unwrap();
         let result = receive_money(&shared_secret, &client_address[..], prepare);
         assert!(result.is_ok());
@@ -373,8 +379,9 @@ mod receiving_money {
         data.extend_from_slice(b"x");
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
+        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -383,7 +390,7 @@ mod receiving_money {
         .build();
 
         let shared_secret = connection_generator
-            .rederive_secret(prepare.destination())
+            .rederive_secret(prepare.destination().as_ref())
             .unwrap();
         let result = receive_money(&shared_secret, &client_address[..], prepare);
         assert!(result.is_err());
@@ -411,8 +418,9 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
+        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -421,7 +429,7 @@ mod receiving_money {
         .build();
 
         let shared_secret = connection_generator
-            .rederive_secret(prepare.destination())
+            .rederive_secret(prepare.destination().as_ref())
             .unwrap();
         let result = receive_money(&shared_secret, &client_address[..], prepare);
         assert!(result.is_err());
@@ -448,8 +456,9 @@ mod stream_receiver_service {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
+        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -496,9 +505,11 @@ mod stream_receiver_service {
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
         data.extend_from_slice(b"extra");
+        // destination_account.extend_from_slice(b"extra");
+        let dest = Address::try_from(destination_account).unwrap();
 
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -544,10 +555,12 @@ mod stream_receiver_service {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        destination_account.extend_from_slice(b"extra");
+        // destination_account.extend_from_slice(b"extra");
+        let dest = Address::try_from(destination_account).unwrap();
+        let dest = dest.with_suffix(b"extra").unwrap();
 
         let prepare = PrepareBuilder {
-            destination: &destination_account[..],
+            destination: dest,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -562,7 +575,7 @@ mod stream_receiver_service {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: b"example.other-receiver",
+                    triggered_by: Address::from_str("example.other-receiver").ok(),
                 }
                 .build())
             }),
@@ -588,7 +601,7 @@ mod stream_receiver_service {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().triggered_by(),
-            b"example.other-receiver"
+            Address::from_str("example.other-receiver").unwrap(),
         );
     }
 }

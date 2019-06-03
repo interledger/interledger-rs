@@ -3,9 +3,10 @@ use bytes::{BufMut, Bytes};
 use hex;
 use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
-    Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
+    Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
+    convert::TryFrom,
     io::Read,
     str,
     time::{Duration, SystemTime},
@@ -70,10 +71,10 @@ impl RouteControlRequest {
     }
 
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
-        if prepare.destination() != CCP_CONTROL_DESTINATION {
+        if prepare.destination() != *CCP_CONTROL_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
                 "Packet is not a CCP message. Destination: {}",
-                str::from_utf8(prepare.destination()).unwrap_or("<not utf8>")
+                prepare.destination(),
             )));
         }
 
@@ -117,7 +118,7 @@ impl RouteControlRequest {
         }
 
         PrepareBuilder {
-            destination: CCP_CONTROL_DESTINATION,
+            destination: Address::try_from(CCP_CONTROL_DESTINATION).unwrap(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
@@ -256,10 +257,10 @@ impl RouteUpdateRequest {
     }
 
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
-        if prepare.destination() != CCP_UPDATE_DESTINATION {
+        if prepare.destination() != *CCP_UPDATE_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
                 "Packet is not a CCP message. Destination: {}",
-                str::from_utf8(prepare.destination()).unwrap_or("<not utf8>")
+                prepare.destination(),
             )));
         }
 
@@ -320,7 +321,7 @@ impl RouteUpdateRequest {
         }
 
         PrepareBuilder {
-            destination: CCP_UPDATE_DESTINATION,
+            destination: Address::try_from(CCP_UPDATE_DESTINATION).unwrap(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
