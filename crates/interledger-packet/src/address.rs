@@ -38,7 +38,7 @@ impl fmt::Display for AddressError {
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Address(Bytes);
 
-impl std::str::FromStr for Address {
+impl FromStr for Address {
     type Err = AddressError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
@@ -106,18 +106,16 @@ impl AsRef<Bytes> for Address {
 
 impl fmt::Debug for Address {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            formatter
-                .debug_tuple("Address")
-                .field(&str::from_utf8_unchecked(&self.0))
-                .finish()
-        }
+        formatter
+            .debug_tuple("Address")
+            .field(&**self.to_string())
+            .finish()
     }
 }
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe { write!(f, "{}", str::from_utf8_unchecked(&self.0)) }
+        write!(f, "{}", &**self)
     }
 }
 
