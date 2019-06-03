@@ -827,7 +827,7 @@ mod test_reject {
 
     #[test]
     fn test_into_data() {
-        assert_eq!(REJECT.clone().into_data(), BytesMut::from(REJECT.data()),);
+        assert_eq!(REJECT.clone().into_data(), BytesMut::from(REJECT.data()));
     }
 }
 
