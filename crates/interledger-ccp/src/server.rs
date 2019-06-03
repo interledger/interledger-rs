@@ -159,7 +159,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
-                triggered_by: ilp_address,
+                triggered_by: ilp_address.as_ref(),
                 data: &[],
             }
             .build()));
@@ -170,7 +170,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
-                triggered_by: ilp_address,
+                triggered_by: ilp_address.as_ref(),
                 data: &[],
             }
             .build()));
@@ -206,7 +206,7 @@ where
                                 code: ErrorCode::T01_PEER_UNREACHABLE,
                                 message: b"Error sending route update request",
                                 data: &[],
-                                triggered_by: ilp_address,
+                                triggered_by: ilp_address.as_ref(),
                             }
                             .build()
                         })
@@ -260,7 +260,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
-                triggered_by: ilp_address,
+                triggered_by: ilp_address.as_ref(),
                 data: &[],
             }
             .build()));
@@ -271,7 +271,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
-                triggered_by: ilp_address,
+                triggered_by: ilp_address.as_ref(),
                 data: &[],
             }
             .build()));
@@ -313,7 +313,7 @@ where
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: b"Error processing route update",
                                     data: &[],
-                                    triggered_by: ilp_address,
+                                    triggered_by: ilp_address.as_ref(),
                                 }
                                 .build()
                             })
@@ -326,7 +326,7 @@ where
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
                     data: &[],
-                    triggered_by: ilp_address,
+                    triggered_by: ilp_address.as_ref(),
                 }
                 .build();
                 let table = &incoming_tables[&request.from.id()];

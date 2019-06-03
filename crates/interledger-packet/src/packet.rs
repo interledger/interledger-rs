@@ -398,7 +398,7 @@ pub struct Reject {
 pub struct RejectBuilder<'a> {
     pub code: ErrorCode,
     pub message: &'a [u8],
-    pub triggered_by: Option<Address>,
+    pub triggered_by: Option<&'a Address>,
     pub data: &'a [u8],
 }
 
@@ -828,7 +828,7 @@ mod test_reject {
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
         assert_eq!(
             with_junk_data.triggered_by(),
-            REJECT_BUILDER.triggered_by.clone().unwrap()
+            *REJECT_BUILDER.triggered_by.unwrap()
         );
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
@@ -850,10 +850,7 @@ mod test_reject {
 
     #[test]
     fn test_triggered_by() {
-        assert_eq!(
-            REJECT.triggered_by(),
-            REJECT_BUILDER.triggered_by.clone().unwrap()
-        );
+        assert_eq!(REJECT.triggered_by(), *REJECT_BUILDER.triggered_by.unwrap());
     }
 
     #[test]

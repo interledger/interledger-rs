@@ -46,6 +46,7 @@ impl ConnectionGenerator {
         let random_bytes = generate_token();
         // base_address + "." + 32-bytes encoded as base64url
         let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
+        // TODO: Use Address field here.
         let mut destination_account = BytesMut::with_capacity(base_address.len() + 45);
         destination_account.put(base_address);
         destination_account.put(b'.');
@@ -177,7 +178,7 @@ fn receive_money(
             RejectBuilder {
                 code: ErrorCode::F06_UNEXPECTED_PAYMENT,
                 message: b"Could not decrypt data",
-                triggered_by: client_addr.clone(),
+                triggered_by: client_addr.as_ref(),
                 data: &[],
             }
             .build()
@@ -245,7 +246,7 @@ fn receive_money(
         let reject = RejectBuilder {
             code: ErrorCode::F99_APPLICATION_ERROR,
             message: &[],
-            triggered_by: client_addr,
+            triggered_by: client_addr.as_ref(),
             data: &encrypted_response[..],
         }
         .build();
@@ -549,13 +550,12 @@ mod stream_receiver_service {
         let client_address = Bytes::from("example.destination");
         let server_secret = Bytes::from(&[1; 32][..]);
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
-        let (mut destination_account, shared_secret) =
+        let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(&client_address[..]);
         let stream_packet = test_stream_packet();
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        // destination_account.extend_from_slice(b"extra");
         let dest = Address::try_from(destination_account).unwrap();
         let dest = dest.with_suffix(b"extra").unwrap();
 
@@ -575,7 +575,7 @@ mod stream_receiver_service {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: Address::from_str("example.other-receiver").ok(),
+                    triggered_by: Address::from_str("example.other-receiver").ok().as_ref(),
                 }
                 .build())
             }),

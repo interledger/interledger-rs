@@ -28,9 +28,17 @@ pub mod test_helpers {
     use futures::{future::ok, Future};
     use hashbrown::HashMap;
     use interledger_ildcp::IldcpAccount;
+    use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore};
     use std::iter::FromIterator;
+
+    lazy_static! {
+        pub static ref EXAMPLE_CONNECTOR: Address =
+            unsafe { Address::new_unchecked(b"example.connector") };
+        pub static ref EXAMPLE_RECEIVER: Address =
+            unsafe { Address::new_unchecked(b"example.receiver") };
+    }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct TestAccount {
@@ -119,7 +127,7 @@ mod send_money_to_receiver {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other outgoing handler",
-                    triggered_by: Address::from_str("example.receiver").ok(),
+                    triggered_by: Some(&EXAMPLE_RECEIVER),
                     data: &[],
                 }
                 .build())

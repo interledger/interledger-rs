@@ -31,6 +31,8 @@ lazy_static! {
         receive_routes: false,
         relation: RoutingRelation::Child,
     };
+    pub static ref EXAMPLE_CONNECTOR: Address =
+        unsafe { Address::new_unchecked(b"example.connector") };
 }
 
 #[derive(Clone, Debug)]
@@ -168,7 +170,7 @@ pub fn test_service() -> CcpRouteManager<
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other outgoing handler!",
                 data: &[],
-                triggered_by: Address::from_str("example.connector").ok(),
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
@@ -177,7 +179,7 @@ pub fn test_service() -> CcpRouteManager<
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: Address::from_str("example.connector").ok(),
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
@@ -231,7 +233,7 @@ pub fn test_service_with_routes() -> (
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: Address::from_str("example.connector").ok(),
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),

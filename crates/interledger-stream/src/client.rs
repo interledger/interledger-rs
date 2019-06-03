@@ -332,7 +332,7 @@ where
 #[cfg(test)]
 mod send_money_tests {
     use super::*;
-    use crate::test_helpers::TestAccount;
+    use crate::test_helpers::{TestAccount, EXAMPLE_CONNECTOR};
     use bytes::Bytes;
     use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
@@ -356,7 +356,7 @@ mod send_money_tests {
                 Err(RejectBuilder {
                     code: IlpErrorCode::F00_BAD_REQUEST,
                     message: b"just some final error",
-                    triggered_by: Address::from_str("example.connector").ok(),
+                    triggered_by: Some(&EXAMPLE_CONNECTOR),
                     data: &[],
                 }
                 .build())

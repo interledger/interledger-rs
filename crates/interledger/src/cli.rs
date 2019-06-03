@@ -179,7 +179,8 @@ pub fn run_spsp_server_btp(
     let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![incoming_account.clone()]);
 
-    let ilp_address_clone = ilp_address.clone();
+    // Can we get better syntax than .read()[..] here? Doesn't seem too intuitive.
+    let ilp_addr = Address::try_from(&ilp_address.read()[..]).ok();
     connect_client(
         vec![incoming_account.clone()],
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
@@ -190,7 +191,7 @@ pub fn run_spsp_server_btp(
                     str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
                 )
                 .as_bytes(),
-                triggered_by: Address::try_from(&ilp_address_clone.read()[..]).ok(),
+                triggered_by: ilp_addr.as_ref(),
                 data: &[],
             }
             .build())
@@ -271,7 +272,7 @@ pub fn run_spsp_server_http(
                     request.prepare.destination(),
                 )
                 .as_bytes(),
-                triggered_by: ilp_address.clone(),
+                triggered_by: ilp_address.as_ref(),
                 data: &[],
             }
             .build())
@@ -325,12 +326,12 @@ pub fn run_moneyd_local(
     let store = InMemoryStore::default();
     // TODO this needs a reference to the BtpService so it can send outgoing packets
     println!("Listening on: {}", address);
-    let ilp_address_clone = ilp_address.clone();
+    let ilp_addr = Address::try_from(ilp_address).ok();
     let rejecter = outgoing_service_fn(move |_| {
         Err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,
             message: b"No open connection for account",
-            triggered_by: Address::try_from(&ilp_address_clone[..]).ok(),
+            triggered_by: ilp_addr.as_ref(),
             data: &[],
         }
         .build())
