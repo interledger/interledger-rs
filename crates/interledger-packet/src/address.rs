@@ -50,14 +50,6 @@ impl TryFrom<Bytes> for Address {
     type Error = AddressError;
 
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
-        Address::try_from(bytes.as_ref())
-    }
-}
-
-impl TryFrom<&[u8]> for Address {
-    type Error = AddressError;
-
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() > MAX_ADDRESS_LENGTH {
             return Err(AddressError::InvalidLength(bytes.len()));
         }
@@ -75,10 +67,18 @@ impl TryFrom<&[u8]> for Address {
             });
 
         if is_valid_scheme && segments > 1 {
-            Ok(Address(Bytes::from(bytes)))
+            Ok(Address(bytes))
         } else {
             Err(AddressError::InvalidFormat)
         }
+    }
+}
+
+impl TryFrom<&[u8]> for Address {
+    type Error = AddressError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::try_from(Bytes::from(bytes))
     }
 }
 
