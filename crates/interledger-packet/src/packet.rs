@@ -398,7 +398,7 @@ pub struct Reject {
 pub struct RejectBuilder<'a> {
     pub code: ErrorCode,
     pub message: &'a [u8],
-    pub triggered_by: Address,
+    pub triggered_by: Option<Address>,
     pub data: &'a [u8],
 }
 
@@ -491,7 +491,16 @@ impl fmt::Debug for Reject {
 
 impl<'a> RejectBuilder<'a> {
     pub fn build(&self) -> Reject {
-        let triggered_by_size = oer::predict_var_octet_string(self.triggered_by.len());
+        let (trigerred_by_message, len) = match self.triggered_by {
+            Some(ref msg) => {
+                (msg.as_ref(), msg.len())
+            },
+            None => {
+                let empty_msg: &[u8] = &[];
+                (empty_msg, 0)
+            }
+        };
+        let triggered_by_size = oer::predict_var_octet_string(len);
         let message_size = oer::predict_var_octet_string(self.message.len());
         let data_size = oer::predict_var_octet_string(self.data.len());
         let content_len = ERROR_CODE_LEN + triggered_by_size + message_size + data_size;
@@ -501,7 +510,7 @@ impl<'a> RejectBuilder<'a> {
         buffer.put_u8(PacketType::Reject as u8);
         buffer.put_var_octet_string_length(content_len);
         buffer.put_slice(&<[u8; 3]>::from(self.code)[..]);
-        buffer.put_var_octet_string::<&[u8]>(self.triggered_by.as_ref());
+        buffer.put_var_octet_string::<&[u8]>(trigerred_by_message);
         buffer.put_var_octet_string(self.message);
         buffer.put_var_octet_string(self.data);
         Reject {
@@ -819,7 +828,7 @@ mod test_reject {
         .unwrap();
         assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
-        assert_eq!(with_junk_data.triggered_by(), REJECT_BUILDER.triggered_by);
+        assert_eq!(with_junk_data.triggered_by(), REJECT_BUILDER.triggered_by.clone().unwrap());
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
 
@@ -840,7 +849,7 @@ mod test_reject {
 
     #[test]
     fn test_triggered_by() {
-        assert_eq!(REJECT.triggered_by(), REJECT_BUILDER.triggered_by);
+        assert_eq!(REJECT.triggered_by(), REJECT_BUILDER.triggered_by.clone().unwrap());
     }
 
     #[test]
