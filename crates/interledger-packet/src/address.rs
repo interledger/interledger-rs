@@ -225,7 +225,7 @@ impl serde::Serialize for Address {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_newtype_struct("Address", &self.0)
+        serializer.serialize_str(&*self)
     }
 }
 
@@ -310,8 +310,7 @@ mod test_address {
         assert_ser_tokens(
             &addr,
             &[
-                Token::NewtypeStruct { name: "Address" },
-                Token::Bytes(b"test.alice"),
+                Token::Str("test.alice"),
             ],
         );
     }
