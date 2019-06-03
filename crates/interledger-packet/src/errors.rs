@@ -37,10 +37,14 @@ quick_error! {
             description(err.description())
             cause(err)
         }
-        // TODO &'static str instead of String?
         InvalidPacket(descr: String) {
             description(descr)
             display("Invalid Packet {}", descr)
+        }
+        Other(err: Box<std::error::Error>) {
+            cause(&**err)
+            description(err.description())
+            display("Error {}", err.description())
         }
     }
 }

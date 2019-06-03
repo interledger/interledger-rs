@@ -108,7 +108,7 @@ impl fmt::Debug for Address {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_tuple("Address")
-            .field(&**self.to_string())
+            .field(&self.to_string())
             .finish()
     }
 }
@@ -208,6 +208,7 @@ fn is_segment_byte(byte: u8) -> bool {
         || (b'0' <= byte && byte <= b'9')
 }
 
+#[cfg(any(feature = "serde", test))]
 impl<'de> serde::Deserialize<'de> for Address {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -218,6 +219,7 @@ impl<'de> serde::Deserialize<'de> for Address {
     }
 }
 
+#[cfg(any(feature = "serde", test))]
 impl serde::Serialize for Address {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
