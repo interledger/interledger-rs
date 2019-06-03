@@ -92,12 +92,12 @@ mod send_money_to_receiver {
     use bytes::Bytes;
     use futures::Future;
     use interledger_ildcp::IldcpService;
+    use interledger_packet::Address;
     use interledger_packet::{ErrorCode, RejectBuilder};
     use interledger_router::Router;
     use interledger_service::outgoing_service_fn;
-    use tokio::runtime::Runtime;
-    use interledger_packet::Address;
     use std::str::FromStr;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn send_money_test() {

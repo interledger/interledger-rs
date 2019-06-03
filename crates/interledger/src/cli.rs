@@ -25,7 +25,7 @@ use interledger_store_redis::{connect as connect_redis_store, IntoConnectionInfo
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
-use std::{net::SocketAddr, str, sync::Arc, u64, convert::TryFrom};
+use std::{convert::TryFrom, net::SocketAddr, str, sync::Arc, u64};
 use tokio::{self, net::TcpListener};
 use tower_web::ServiceBuilder;
 use url::Url;

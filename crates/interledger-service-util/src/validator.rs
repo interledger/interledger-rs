@@ -161,8 +161,8 @@ impl Account for TestAccount {
 mod incoming {
     use super::*;
     use interledger_packet::*;
-    use std::str::FromStr;
     use interledger_service::incoming_service_fn;
+    use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
         time::SystemTime,
@@ -243,11 +243,11 @@ mod incoming {
 mod outgoing {
     use super::*;
     use interledger_packet::*;
+    use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
         time::SystemTime,
     };
-    use std::str::FromStr;
 
     #[test]
     fn lets_through_valid_outgoing_response() {
@@ -294,7 +294,8 @@ mod outgoing {
                 data: b"test data",
             }
             .build())
-        })); let result = validator
+        }));
+        let result = validator
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
                 to: TestAccount(2),

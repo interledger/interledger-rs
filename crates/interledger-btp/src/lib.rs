@@ -73,12 +73,12 @@ mod client_server {
     use futures::future::{err, ok, result};
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
+    use std::str::FromStr;
     use std::{
         sync::Arc,
         time::{Duration, SystemTime},
     };
     use tokio::runtime::Runtime;
-    use std::str::FromStr;
 
     #[derive(Clone, Debug)]
     pub struct TestAccount {

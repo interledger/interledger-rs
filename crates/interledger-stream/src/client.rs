@@ -14,8 +14,8 @@ use std::{
     cell::Cell,
     cmp::min,
     convert::TryFrom,
-    str::FromStr,
     str,
+    str::FromStr,
     time::{Duration, SystemTime},
 };
 
