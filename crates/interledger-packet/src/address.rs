@@ -171,7 +171,7 @@ impl Address {
     }
 
     /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
-    pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, ParseError> {
+    pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, AddressError> {
         let new_address_len = self.len() + 1 + suffix.len();
         let mut new_address = BytesMut::with_capacity(new_address_len);
 

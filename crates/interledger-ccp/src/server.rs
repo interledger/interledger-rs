@@ -197,8 +197,6 @@ where
             };
 
             if !self.spawn_tasks {
-                // TODO: Can we safely comment this out?
-                // let ilp_address = Address::try_from(self.ilp_address).ok();
                 return Either::B(
                     self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
                         .map_err(move |_| {
