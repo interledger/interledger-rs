@@ -2,6 +2,7 @@ use super::crypto::{decrypt, encrypt};
 use byteorder::ReadBytesExt;
 use bytes::{BufMut, BytesMut};
 use interledger_packet::{
+    Address,
     oer::{BufOerExt, MutBufOerExt},
     PacketType as IlpPacketType, ParseError,
 };
@@ -291,7 +292,7 @@ impl<'a> fmt::Debug for FrameIterator<'a> {
 #[derive(PartialEq, Clone)]
 pub enum Frame<'a> {
     ConnectionClose(ConnectionCloseFrame<'a>),
-    ConnectionNewAddress(ConnectionNewAddressFrame<'a>),
+    ConnectionNewAddress(ConnectionNewAddressFrame),
     ConnectionAssetDetails(ConnectionAssetDetailsFrame<'a>),
     ConnectionMaxData(ConnectionMaxDataFrame),
     ConnectionDataBlocked(ConnectionDataBlockedFrame),
@@ -429,28 +430,30 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
 }
 
 #[derive(PartialEq, Clone)]
-pub struct ConnectionNewAddressFrame<'a> {
-    pub source_account: &'a [u8],
+pub struct ConnectionNewAddressFrame {
+    pub source_account: Address,
 }
 
-impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame<'a> {
+impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_account = reader.read_var_octet_string()?;
+        let source_account = Address::try_from(source_account)?;
 
         Ok(ConnectionNewAddressFrame { source_account })
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
-        buf.put_var_octet_string(self.source_account);
+        let data: &[u8] = self.source_account.as_ref();
+        buf.put_var_octet_string(data);
     }
 }
 
-impl<'a> fmt::Debug for ConnectionNewAddressFrame<'a> {
+impl<'a> fmt::Debug for ConnectionNewAddressFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "ConnectionNewAddressFrame {{ source_account: {} }}",
-            str::from_utf8(self.source_account).map_err(|_| fmt::Error)?
+            self.source_account,
         )
     }
 }

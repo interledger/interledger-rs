@@ -42,25 +42,37 @@ impl ConnectionGenerator {
     /// from a Prepare packet's destination and the same server secret. If the address is modified
     /// in any way, the server will not be able to re-derive the secret and the packet will be rejected.
     // TODO make sure this is an ILP address
-    pub fn generate_address_and_secret(&self, base_address: &[u8]) -> (Bytes, [u8; 32]) {
+    pub fn generate_address_and_secret(&self, base_address: &Address) -> (Address, [u8; 32]) {
         let random_bytes = generate_token();
         // base_address + "." + 32-bytes encoded as base64url
         let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
-        // TODO: Use Address field here.
-        let mut destination_account = BytesMut::with_capacity(base_address.len() + 45);
-        destination_account.put(base_address);
-        destination_account.put(b'.');
-        destination_account.put(base64::encode_config(
-            &random_bytes[..],
-            base64::URL_SAFE_NO_PAD,
-        ));
-        let auth_tag = &hmac_sha256(&shared_secret[..], &destination_account[..])[..14];
-        destination_account.put(base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD));
+        let destination_account = base_address.with_suffix(
+            &base64::encode_config(
+                &random_bytes[..],
+                base64::URL_SAFE_NO_PAD,
+            ).as_ref()
+        ).unwrap(); // How should we handle an invalid suffix here? Can we assume this call will never fail?
+        
+        let auth_tag = &hmac_sha256(
+            &shared_secret[..], 
+            destination_account.as_ref(),
+        )[..14];
+
+        // can we avoid the copy?
+        let mut dest = destination_account.to_bytes();
+        dest.extend(
+            base64::encode_config(
+                auth_tag, 
+                base64::URL_SAFE_NO_PAD
+            ).bytes()
+        );
+        let destination_account = Address::try_from(dest).unwrap();
+
         debug!(
             "Generated address: {}",
-            str::from_utf8(&destination_account[..]).unwrap_or("<not utf8>"),
+            destination_account,
         );
-        (destination_account.freeze(), shared_secret)
+        (destination_account, shared_secret)
     }
 
     /// Rederive the `shared_secret` from a `destination_account`. This will return an
@@ -136,7 +148,7 @@ where
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let dest = request.prepare.destination();
         let dest: &[u8] = dest.as_ref();
-        if dest.as_ref().starts_with(request.to.client_address()) {
+        if dest.as_ref().starts_with(request.to.client_address().as_ref()) {
             if let Ok(shared_secret) = self
                 .connection_generator
                 .rederive_secret(request.prepare.destination().as_ref())
@@ -144,7 +156,7 @@ where
                 {
                     return Box::new(result(receive_money(
                         &shared_secret,
-                        request.to.client_address(),
+                        request.to.client_address().as_ref(),
                         request.prepare,
                     )));
                 }

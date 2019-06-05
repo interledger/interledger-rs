@@ -25,7 +25,7 @@ use std::{
 pub fn send_money<S, A>(
     service: S,
     from_account: &A,
-    destination_account: &[u8],
+    destination_account: Address,
     shared_secret: &[u8],
     source_amount: u64,
 ) -> impl Future<Item = (u64, S), Error = Error>
@@ -33,7 +33,6 @@ where
     S: IncomingService<A> + Clone,
     A: Account,
 {
-    let destination_account = Bytes::from(destination_account);
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
@@ -43,8 +42,8 @@ where
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),
             from_account,
-            source_account: Bytes::from(account_details.client_address()),
-            destination_account,
+            source_account: account_details.client_address().unwrap(),
+            destination_account: destination_account,
             shared_secret,
             source_amount,
             congestion_controller: CongestionController::default(),
@@ -61,8 +60,8 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     state: SendMoneyFutureState,
     next: Option<S>,
     from_account: A,
-    source_account: Bytes,
-    destination_account: Bytes,
+    source_account: Address,
+    destination_account: Address,
     shared_secret: Bytes,
     source_amount: u64,
     congestion_controller: CongestionController,
@@ -115,7 +114,8 @@ where
             })];
             if self.should_send_source_account {
                 frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: &self.source_account[..],
+                    // How can we make this take a reference?
+                    source_account: self.source_account.clone(), 
                 }));
             }
             let stream_packet = StreamPacketBuilder {
