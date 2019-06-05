@@ -30,9 +30,28 @@ pub enum PacketType {
     Reject = 14,
 }
 
-impl PacketType {
-    #[inline]
-    pub fn try_from(byte: u8) -> Result<Self, ParseError> {
+// Gets the packet type from a u8 array
+impl TryFrom<&[u8]> for PacketType {
+    type Error = ParseError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match bytes.first() {
+            Some(&12) => Ok(PacketType::Prepare),
+            Some(&13) => Ok(PacketType::Fulfill),
+            Some(&14) => Ok(PacketType::Reject),
+            _ => Err(ParseError::InvalidPacket(format!(
+                "Unknown packet type: {:?}",
+                bytes,
+            ))),
+        }
+    }
+}
+
+
+impl TryFrom<u8> for PacketType {
+    type Error = ParseError;
+
+    fn try_from(byte: u8) -> Result<Self, Self::Error> {
         match byte {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
@@ -52,8 +71,10 @@ pub enum Packet {
     Reject(Reject),
 }
 
-impl Packet {
-    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
+impl TryFrom<BytesMut> for Packet {
+    type Error = ParseError;
+
+    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         match buffer.first() {
             Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
             Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
@@ -112,9 +133,10 @@ pub struct PrepareBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl Prepare {
-    // TODO change this to `TryFrom` when it is stabilized
-    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
+impl TryFrom<BytesMut> for Prepare {
+    type Error = ParseError;
+
+    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
@@ -143,7 +165,9 @@ impl Prepare {
             data_offset,
         })
     }
+}
 
+impl Prepare {
     #[inline]
     pub fn amount(&self) -> u64 {
         self.amount
