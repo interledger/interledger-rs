@@ -28,9 +28,17 @@ pub mod test_helpers {
     use futures::{future::ok, Future};
     use hashbrown::HashMap;
     use interledger_ildcp::IldcpAccount;
+    use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore};
     use std::iter::FromIterator;
+
+    lazy_static! {
+        pub static ref EXAMPLE_CONNECTOR: Address =
+            unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
+        pub static ref EXAMPLE_RECEIVER: Address =
+            unsafe { Address::new_unchecked(Bytes::from("example.receiver"))};
+    }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct TestAccount {
@@ -92,9 +100,11 @@ mod send_money_to_receiver {
     use bytes::Bytes;
     use futures::Future;
     use interledger_ildcp::IldcpService;
+    use interledger_packet::Address;
     use interledger_packet::{ErrorCode, RejectBuilder};
     use interledger_router::Router;
     use interledger_service::outgoing_service_fn;
+    use std::str::FromStr;
     use tokio::runtime::Runtime;
 
     #[test]
@@ -117,7 +127,7 @@ mod send_money_to_receiver {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other outgoing handler",
-                    triggered_by: b"example.receiver",
+                    triggered_by: Some(&EXAMPLE_RECEIVER),
                     data: &[],
                 }
                 .build())

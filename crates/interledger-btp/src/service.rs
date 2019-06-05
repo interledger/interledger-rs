@@ -12,6 +12,7 @@ use interledger_service::*;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::{
+    convert::TryFrom,
     io::{Error as IoError, ErrorKind},
     iter::IntoIterator,
     marker::PhantomData,
@@ -252,7 +253,7 @@ where
                                 RejectBuilder {
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: &[],
-                                    triggered_by: &[],
+                                    triggered_by: None,
                                     data: &[],
                                 }
                                 .build()
@@ -268,7 +269,7 @@ where
                     let reject = RejectBuilder {
                         code: ErrorCode::T00_INTERNAL_ERROR,
                         message: &[],
-                        triggered_by: &[],
+                        triggered_by: None,
                         data: &[],
                     }
                     .build();

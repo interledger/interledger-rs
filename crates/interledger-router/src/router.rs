@@ -1,9 +1,9 @@
 use super::RouterStore;
 use bytes::Bytes;
 use futures::{future::err, Future};
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::*;
-use std::str;
+use std::{str, str::FromStr};
 
 /// The router implements the IncomingService trait and uses the routing table
 /// to determine the `to` (or "next hop") Account for the given request.
@@ -36,16 +36,16 @@ where
     type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, request: IncomingRequest<T::Account>) -> Self::Future {
-        let destination = Bytes::from(request.prepare.destination());
+        let destination = request.prepare.destination();
         let mut next_hop: Option<<T::Account as Account>::AccountId> = None;
         let routing_table = self.store.routing_table();
 
         // Check if we have a direct path for that account or if we need to scan through the routing table
-        if let Some(account_id) = routing_table.get(&destination) {
+        let dest: &[u8] = destination.as_ref();
+        if let Some(account_id) = routing_table.get(dest) {
             debug!(
                 "Found direct route for address: \"{}\". Account: {}",
-                str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
-                account_id
+                destination, account_id
             );
             next_hop = Some(*account_id);
         } else if !routing_table.is_empty() {
@@ -57,17 +57,17 @@ where
                     route.1
                 );
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
-                if (route.0.is_empty() || destination.starts_with(&route.0[..]))
+                if (route.0.is_empty() || dest.starts_with(&route.0[..]))
                     && route.0.len() >= matching_prefix.len()
                 {
                     next_hop.replace(route.1);
-                    matching_prefix = route.0.clone();
+                    matching_prefix = route.0;
                 }
             }
             if let Some(account_id) = next_hop {
                 debug!(
                     "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
-                    str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
+                    destination,
                     str::from_utf8(&matching_prefix[..]).unwrap_or("<not utf8>"),
                     account_id,
                 );
@@ -86,7 +86,7 @@ where
                         RejectBuilder {
                             code: ErrorCode::F02_UNREACHABLE,
                             message: &[],
-                            triggered_by: &[],
+                            triggered_by: None,
                             data: &[],
                         }
                         .build()
@@ -101,7 +101,7 @@ where
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()))
@@ -172,7 +172,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -203,7 +203,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -236,7 +236,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -267,7 +267,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -298,7 +298,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -340,7 +340,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,

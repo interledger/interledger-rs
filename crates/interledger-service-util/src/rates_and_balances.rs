@@ -86,7 +86,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::T00_INTERNAL_ERROR,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()));
@@ -107,7 +107,7 @@ where
                     RejectBuilder {
                         code: ErrorCode::T04_INSUFFICIENT_LIQUIDITY,
                         message: &[],
-                        triggered_by: &[],
+                        triggered_by: None,
                         data: &[],
                     }
                     .build()

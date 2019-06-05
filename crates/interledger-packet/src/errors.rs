@@ -32,7 +32,7 @@ quick_error! {
             description(descr)
             display("Wrong Type {}", descr)
         }
-        AddressError(err: AddressError) {
+        InvalidAddress(err: AddressError) {
             from()
             description(err.description())
             cause(err)

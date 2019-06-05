@@ -7,12 +7,13 @@ use futures::{
     Future,
 };
 use hashbrown::HashMap;
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
     OutgoingService,
 };
 use parking_lot::Mutex;
+use std::str::FromStr;
 use std::{iter::FromIterator, sync::Arc};
 
 lazy_static! {
@@ -30,6 +31,8 @@ lazy_static! {
         receive_routes: false,
         relation: RoutingRelation::Child,
     };
+    pub static ref EXAMPLE_CONNECTOR: Address =
+        unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
 }
 
 #[derive(Clone, Debug)]
@@ -167,7 +170,7 @@ pub fn test_service() -> CcpRouteManager<
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other outgoing handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
@@ -176,7 +179,7 @@ pub fn test_service() -> CcpRouteManager<
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
@@ -230,7 +233,7 @@ pub fn test_service_with_routes() -> (
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),

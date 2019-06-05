@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 use super::{Address, ErrorCode};
 use super::{Fulfill, FulfillBuilder, Prepare, PrepareBuilder, Reject, RejectBuilder};
+use bytes::Bytes;
 
 lazy_static! {
     pub static ref PREPARE: Prepare = PREPARE_BUILDER.build();
@@ -87,10 +88,12 @@ pub static FULFILLMENT: [u8; 32] = *b"\
 
 lazy_static! {
     pub static ref REJECT: Reject = REJECT_BUILDER.build();
+    pub static ref EXAMPLE_CONNECTOR: Address =
+        unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
     pub static ref REJECT_BUILDER: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
-        triggered_by: Address::from_str("example.connector").unwrap(),
+        triggered_by: Some(&EXAMPLE_CONNECTOR),
         data: &DATA,
     };
 }

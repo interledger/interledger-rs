@@ -30,9 +30,28 @@ pub enum PacketType {
     Reject = 14,
 }
 
-impl PacketType {
-    #[inline]
-    pub fn try_from(byte: u8) -> Result<Self, ParseError> {
+// Gets the packet type from a u8 array
+impl TryFrom<&[u8]> for PacketType {
+    type Error = ParseError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match bytes.first() {
+            Some(&12) => Ok(PacketType::Prepare),
+            Some(&13) => Ok(PacketType::Fulfill),
+            Some(&14) => Ok(PacketType::Reject),
+            _ => Err(ParseError::InvalidPacket(format!(
+                "Unknown packet type: {:?}",
+                bytes,
+            ))),
+        }
+    }
+}
+
+
+impl TryFrom<u8> for PacketType {
+    type Error = ParseError;
+
+    fn try_from(byte: u8) -> Result<Self, Self::Error> {
         match byte {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
@@ -52,8 +71,10 @@ pub enum Packet {
     Reject(Reject),
 }
 
-impl Packet {
-    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
+impl TryFrom<BytesMut> for Packet {
+    type Error = ParseError;
+
+    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         match buffer.first() {
             Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
             Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
@@ -112,9 +133,10 @@ pub struct PrepareBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl Prepare {
-    // TODO change this to `TryFrom` when it is stabilized
-    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
+impl TryFrom<BytesMut> for Prepare {
+    type Error = ParseError;
+
+    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
@@ -143,7 +165,9 @@ impl Prepare {
             data_offset,
         })
     }
+}
 
+impl Prepare {
     #[inline]
     pub fn amount(&self) -> u64 {
         self.amount
@@ -374,7 +398,7 @@ pub struct Reject {
 pub struct RejectBuilder<'a> {
     pub code: ErrorCode,
     pub message: &'a [u8],
-    pub triggered_by: Address,
+    pub triggered_by: Option<&'a Address>,
     pub data: &'a [u8],
 }
 
@@ -467,7 +491,14 @@ impl fmt::Debug for Reject {
 
 impl<'a> RejectBuilder<'a> {
     pub fn build(&self) -> Reject {
-        let triggered_by_size = oer::predict_var_octet_string(self.triggered_by.len());
+        let (trigerred_by_message, len) = match self.triggered_by {
+            Some(ref msg) => (msg.as_ref(), msg.len()),
+            None => {
+                let empty_msg: &[u8] = &[];
+                (empty_msg, 0)
+            }
+        };
+        let triggered_by_size = oer::predict_var_octet_string(len);
         let message_size = oer::predict_var_octet_string(self.message.len());
         let data_size = oer::predict_var_octet_string(self.data.len());
         let content_len = ERROR_CODE_LEN + triggered_by_size + message_size + data_size;
@@ -477,7 +508,7 @@ impl<'a> RejectBuilder<'a> {
         buffer.put_u8(PacketType::Reject as u8);
         buffer.put_var_octet_string_length(content_len);
         buffer.put_slice(&<[u8; 3]>::from(self.code)[..]);
-        buffer.put_var_octet_string::<&[u8]>(self.triggered_by.as_ref());
+        buffer.put_var_octet_string::<&[u8]>(trigerred_by_message);
         buffer.put_var_octet_string(self.message);
         buffer.put_var_octet_string(self.data);
         Reject {
@@ -795,7 +826,10 @@ mod test_reject {
         .unwrap();
         assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
-        assert_eq!(with_junk_data.triggered_by(), REJECT_BUILDER.triggered_by);
+        assert_eq!(
+            with_junk_data.triggered_by(),
+            *REJECT_BUILDER.triggered_by.unwrap()
+        );
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
 
@@ -816,7 +850,7 @@ mod test_reject {
 
     #[test]
     fn test_triggered_by() {
-        assert_eq!(REJECT.triggered_by(), REJECT_BUILDER.triggered_by);
+        assert_eq!(REJECT.triggered_by(), *REJECT_BUILDER.triggered_by.unwrap());
     }
 
     #[test]

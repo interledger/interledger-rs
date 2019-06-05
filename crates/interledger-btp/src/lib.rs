@@ -71,8 +71,9 @@ pub trait BtpOpenSignupStore {
 mod client_server {
     use super::*;
     use futures::future::{err, ok, result};
-    use interledger_packet::{ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
+    use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
+    use std::str::FromStr;
     use std::{
         sync::Arc,
         time::{Duration, SystemTime},
@@ -172,7 +173,7 @@ mod client_server {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other outgoing handler",
-                    triggered_by: &[],
+                    triggered_by: None,
                     data: &[],
                 }
                 .build())
@@ -203,7 +204,7 @@ mod client_server {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: &[],
+                    triggered_by: None,
                 }
                 .build())
             }),
@@ -214,7 +215,7 @@ mod client_server {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: &[],
+                    triggered_by: None,
                 }
                 .build())
             }));
@@ -224,7 +225,7 @@ mod client_server {
                     from: account.clone(),
                     to: account.clone(),
                     prepare: PrepareBuilder {
-                        destination: b"example.destination",
+                        destination: Address::from_str("example.destination").unwrap(),
                         amount: 100,
                         execution_condition: &[0; 32],
                         expires_at: SystemTime::now() + Duration::from_secs(30),
