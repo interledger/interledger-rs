@@ -21,7 +21,6 @@ const ERROR_CODE_LEN: usize = 3;
 
 static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
 
-// TODO TryFrom([u8])
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum PacketType {
@@ -46,6 +45,7 @@ impl TryFrom<&[u8]> for PacketType {
         }
     }
 }
+
 
 impl TryFrom<u8> for PacketType {
     type Error = ParseError;
@@ -646,6 +646,18 @@ mod test_prepare {
     use crate::fixtures::{self, PREPARE, PREPARE_BUILDER, PREPARE_BYTES};
 
     #[test]
+    #[should_panic]
+    fn test_invalid_address() {
+        Prepare::try_from({
+            let mut with_bad_address = PREPARE_BUILDER.clone();
+            // NOTE: This intentionally creates an invalid ILP address.
+            with_bad_address.destination =
+                unsafe { Address::new_unchecked(Bytes::from("test.invalid address!")) };
+            BytesMut::from(with_bad_address.build())
+        }).is_err();
+    }
+
+    #[test]
     fn test_try_from() {
         assert_eq!(
             Prepare::try_from(BytesMut::from(PREPARE_BYTES)).unwrap(),
@@ -657,16 +669,6 @@ mod test_prepare {
             let mut with_wrong_type = BytesMut::from(PREPARE_BYTES);
             with_wrong_type[0] = PacketType::Fulfill as u8;
             with_wrong_type
-        })
-        .is_err());
-
-        // Invalid destination address.
-        assert!(Prepare::try_from({
-            let mut with_bad_address = PREPARE_BUILDER.clone();
-            // NOTE: This intentionally creates an invalid ILP address.
-            with_bad_address.destination =
-                unsafe { Address::new_unchecked(Bytes::from("test.invalid address!")) };
-            BytesMut::from(with_bad_address.build())
         })
         .is_err());
 
