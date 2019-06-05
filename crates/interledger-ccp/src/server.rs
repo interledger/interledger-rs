@@ -302,8 +302,6 @@ where
                     spawn(future);
                     Box::new(ok(CCP_RESPONSE.clone()))
                 } else {
-                    // Can we safely remove this re-setting of the ilp_address?
-                    // let ilp_address = self.ilp_address.clone();
                     Box::new(
                         future
                             .map_err(move |_| {
