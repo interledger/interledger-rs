@@ -134,12 +134,9 @@ where
     /// the server to check whether the Prepare packet was created with STREAM parameters
     /// that this server would have created or not.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
-        if request
-            .prepare
-            .destination()
-            .as_bytes()
-            .starts_with(request.to.client_address())
-        {
+        let dest = request.prepare.destination();
+        let dest: &[u8] = dest.as_ref();
+        if dest.as_ref().starts_with(request.to.client_address()) {
             if let Ok(shared_secret) = self
                 .connection_generator
                 .rederive_secret(request.prepare.destination().as_ref())

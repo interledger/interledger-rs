@@ -41,7 +41,8 @@ where
         let routing_table = self.store.routing_table();
 
         // Check if we have a direct path for that account or if we need to scan through the routing table
-        if let Some(account_id) = routing_table.get(&destination.as_bytes()) {
+        let dest: &[u8] = destination.as_ref();
+        if let Some(account_id) = routing_table.get(dest) {
             debug!(
                 "Found direct route for address: \"{}\". Account: {}",
                 destination, account_id
@@ -56,11 +57,11 @@ where
                     route.1
                 );
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
-                if (route.0.is_empty() || destination.as_bytes().starts_with(&route.0[..]))
+                if (route.0.is_empty() || dest.starts_with(&route.0[..]))
                     && route.0.len() >= matching_prefix.len()
                 {
                     next_hop.replace(route.1);
-                    matching_prefix = route.0.clone();
+                    matching_prefix = route.0;
                 }
             }
             if let Some(account_id) = next_hop {
