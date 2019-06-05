@@ -127,7 +127,7 @@ impl Address {
     }
 
     /// Returns the `Bytes` conversion of the ILP Address
-    pub fn as_bytes(&self) -> Bytes {
+    pub fn to_bytes(&self) -> Bytes {
         self.0.clone()
     }
 
