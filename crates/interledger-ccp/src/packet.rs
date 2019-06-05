@@ -30,8 +30,10 @@ lazy_static! {
         data: &[],
     }
     .build();
-    pub static ref CCP_CONTROL_DESTINATION: Address = Address::from_str("peer.route.control").unwrap();
-    pub static ref CCP_UPDATE_DESTINATION: Address = Address::from_str("peer.route.update").unwrap();
+    pub static ref CCP_CONTROL_DESTINATION: Address =
+        Address::from_str("peer.route.control").unwrap();
+    pub static ref CCP_UPDATE_DESTINATION: Address =
+        Address::from_str("peer.route.update").unwrap();
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

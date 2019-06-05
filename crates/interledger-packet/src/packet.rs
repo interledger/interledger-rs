@@ -10,8 +10,8 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
 use super::{Address, ErrorCode, ParseError};
-use std::convert::TryFrom;
 use bytes::Bytes;
+use std::convert::TryFrom;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -46,7 +46,6 @@ impl TryFrom<&[u8]> for PacketType {
         }
     }
 }
-
 
 impl TryFrom<u8> for PacketType {
     type Error = ParseError;

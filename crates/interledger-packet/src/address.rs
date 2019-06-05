@@ -181,7 +181,6 @@ impl Address {
 
         Address::try_from(new_address.freeze())
     }
-
 }
 
 impl<'a> PartialEq<[u8]> for Address {
@@ -307,12 +306,7 @@ mod test_address {
     #[test]
     fn test_serialize() {
         let addr = Address::try_from(Bytes::from("test.alice")).unwrap();
-        assert_ser_tokens(
-            &addr,
-            &[
-                Token::Str("test.alice"),
-            ],
-        );
+        assert_ser_tokens(&addr, &[Token::Str("test.alice")]);
     }
 
     #[test]
