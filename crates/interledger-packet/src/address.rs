@@ -144,6 +144,7 @@ impl Address {
     /// The given bytes must be a valid ILP address.
     #[inline]
     pub unsafe fn new_unchecked(bytes: Bytes) -> Self {
+        debug_assert!(Address::try_from(bytes.as_ref()).is_ok());
         Address(bytes)
     }
 
