@@ -12,6 +12,7 @@ use reqwest::{
 };
 use std::sync::Arc;
 use std::time::Duration;
+use std::convert::TryFrom;
 
 #[derive(Clone)]
 pub struct HttpClientService<T> {
