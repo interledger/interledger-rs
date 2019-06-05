@@ -1,6 +1,8 @@
 /* kcov-ignore-start */
 use crate::packet::*;
 use bytes::Bytes;
+use std::str::FromStr;
+use interledger_packet::Address;
 use hex;
 
 lazy_static! {
@@ -19,7 +21,7 @@ lazy_static! {
         from_epoch_index: 52,
         to_epoch_index: 52,
         hold_down_time: 30000,
-        speaker: Bytes::from("example.alice"),
+        speaker: Address::from_str("example.alice").unwrap(),
         new_routes: Vec::new(),
         withdrawn_routes: Vec::new(),
     };
@@ -31,7 +33,7 @@ lazy_static! {
         from_epoch_index: 46,
         to_epoch_index: 50,
         hold_down_time: 30000,
-        speaker: Bytes::from("example.alice"),
+        speaker: Address::from_str("example.alice").unwrap(),
         new_routes: vec![Route {
           prefix: Bytes::from("example.prefix1"),
           path: vec![Bytes::from("example.prefix1")],

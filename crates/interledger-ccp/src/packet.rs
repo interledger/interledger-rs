@@ -246,7 +246,7 @@ pub struct RouteUpdateRequest {
     pub(crate) from_epoch_index: u32,
     pub(crate) to_epoch_index: u32,
     pub(crate) hold_down_time: u32,
-    pub(crate) speaker: Bytes,
+    pub(crate) speaker: Address,
     pub(crate) new_routes: Vec<Route>,
     pub(crate) withdrawn_routes: Vec<Bytes>,
 }
@@ -282,7 +282,7 @@ impl RouteUpdateRequest {
         let from_epoch_index = data.read_u32::<BigEndian>()?;
         let to_epoch_index = data.read_u32::<BigEndian>()?;
         let hold_down_time = data.read_u32::<BigEndian>()?;
-        let speaker = Bytes::from(data.read_var_octet_string()?);
+        let speaker = Address::try_from(data.read_var_octet_string()?)?;
         let new_routes_len = data.read_var_uint()? as usize;
         let mut new_routes: Vec<Route> = Vec::with_capacity(new_routes_len);
         for _i in 0..new_routes_len {

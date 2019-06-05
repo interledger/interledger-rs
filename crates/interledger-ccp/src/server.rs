@@ -15,6 +15,7 @@ use std::{
     cmp::min,
     convert::TryFrom,
     str,
+    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -42,7 +43,7 @@ type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 #[derive(Clone)]
 pub struct CcpRouteManager<S, T, U, A: Account> {
     account: A,
-    ilp_address: Bytes,
+    ilp_address: Address,
     global_prefix: Bytes,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
     next_incoming: S,
@@ -109,13 +110,10 @@ where
         next_incoming: S,
         spawn_tasks: bool,
     ) -> Self {
+        let ilp_address = account.client_address().clone(); // can we avoid the clone?
         // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
-        let ilp_address = Bytes::from(account.client_address());
-        let global_prefix: Bytes = ilp_address
-            .iter()
-            .position(|c| c == &b'.')
-            .map(|index| ilp_address.slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.clone());
+        let mut global_prefix: Bytes = ilp_address.scheme().into(); // get the scheme
+        global_prefix.extend(b"."); // append a separator with the scheme for the router
 
         CcpRouteManager {
             account,
@@ -234,7 +232,7 @@ where
                 } else if route.prefix.len() <= self.global_prefix.len() {
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
-                } else if route.path.contains(&self.ilp_address) {
+                } else if route.path.contains(self.ilp_address.as_ref()) {
                     error!(
                         "Got route broadcast with a routing loop (path includes us): {:?}",
                         route
@@ -461,13 +459,13 @@ where
                             && route.prefix != global_prefix
                             // Don't advertise completely local routes because advertising our own
                             // prefix will make sure we get packets sent to them
-                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.is_empty())
+                            && !(route.prefix.starts_with(ilp_address.as_ref()) && route.path.is_empty())
                             // Don't include routes we're also withdrawing
                             && !withdrawn_routes.contains(&prefix) {
 
                                 let old_route = forwarding_table.get_route(&prefix);
                                 if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                                    route.path.insert(0, ilp_address.clone());
+                                    route.path.insert(0, ilp_address.to_bytes());
                                     // Each hop hashes the auth before forwarding
                                     route.auth = hash(&route.auth);
                                     forwarding_table.set_route(prefix.clone(), account.clone(), route.clone());
@@ -665,8 +663,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                // TODO the Address type should let us avoid this copy
-                prefix: Bytes::from(account.client_address()),
+                prefix: account.client_address().to_bytes(), // can we remove the copy?
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -677,7 +674,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: Bytes::from(account.client_address()),
+                prefix: account.client_address().to_bytes(), // can we remove the copy?
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -1097,7 +1094,7 @@ mod handle_route_update_request {
             prefix: Bytes::from("example.valid"),
             path: vec![
                 Bytes::from("example.a"),
-                service.ilp_address.clone(),
+                service.ilp_address.to_bytes(),
                 Bytes::from("example.b"),
             ],
             auth: [0; 32],
@@ -1482,7 +1479,7 @@ mod send_route_updates {
                     from_epoch_index: 0,
                     to_epoch_index: 1,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
                         prefix: Bytes::from("example.remote"),
                         path: vec![Bytes::from("example.peer")],
@@ -1525,7 +1522,7 @@ mod send_route_updates {
                     from_epoch_index: 0,
                     to_epoch_index: 1,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
                         prefix: Bytes::from("example.remote"),
                         path: vec![Bytes::from("example.peer")],
@@ -1547,7 +1544,7 @@ mod send_route_updates {
                     from_epoch_index: 1,
                     to_epoch_index: 4,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: Vec::new(),
                     withdrawn_routes: vec![Bytes::from("example.remote")],
                 }
