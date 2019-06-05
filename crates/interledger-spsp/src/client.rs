@@ -41,7 +41,7 @@ where
         send_money(
             service,
             &from_account,
-            spsp.destination_account.as_bytes(),
+            spsp.destination_account,
             &spsp.shared_secret,
             source_amount,
         )

@@ -36,13 +36,13 @@ where
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if is_ildcp_request(&request.prepare) {
             let builder = IldcpResponseBuilder {
-                client_address: &request.from.client_address(),
+                client_address: request.from.client_address(),
                 asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };
             debug!(
                 "Responding to query for ILDCP info by account: {:?}",
-                str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                request.from.client_address(),
             );
             let response = builder.build();
             let fulfill = Fulfill::from(response);

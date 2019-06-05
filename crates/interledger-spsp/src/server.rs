@@ -4,18 +4,19 @@ use futures::future::{ok, FutureResult, IntoFuture};
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
-use std::{fmt, str};
+use std::{fmt, str, str::FromStr};
+use interledger_packet::Address;
 
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.
 #[derive(Clone)]
 pub struct SpspResponder {
-    ilp_address: Bytes,
+    ilp_address: &Address,
     connection_generator: ConnectionGenerator,
 }
 
 impl SpspResponder {
-    pub fn new(ilp_address: Bytes, server_secret: Bytes) -> Self {
+    pub fn new(ilp_address: &Address, server_secret: Bytes) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         SpspResponder {
             ilp_address,
@@ -88,7 +89,7 @@ mod spsp_server_test {
     #[test]
     fn spsp_response_headers() {
         let mut responder =
-            SpspResponder::new(Bytes::from("example.receiver"), Bytes::from(&[0; 32][..]));
+            SpspResponder::new(Address::from_str("example.receiver").unwrap(), Bytes::from(&[0; 32][..]));
         let response = responder
             .call(
                 Request::builder()

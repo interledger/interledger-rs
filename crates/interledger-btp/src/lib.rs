@@ -46,12 +46,12 @@ pub trait BtpStore {
 
 pub struct BtpOpenSignupAccount<'a> {
     pub auth_token: &'a str,
-    pub ilp_address: &'a [u8],
+    pub ilp_address: &'a [u8], // TODO: Convert to IlpAddress
     pub asset_code: &'a str,
     pub asset_scale: u8,
 }
 
-/// The interface for Store implementatoins that allow open BTP signups.
+/// The interface for Store implementations that allow open BTP signups.
 /// Every incoming WebSocket connection will automatically have a BtpOpenSignupAccount
 /// created and added to the store.
 ///

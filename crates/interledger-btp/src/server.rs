@@ -171,24 +171,21 @@ where
         store
             .get_account_from_btp_token(&auth.token)
             .or_else(move |_| {
-                let local_part: Bytes = if let Some(username) = auth.username {
-                    Bytes::from(username)
+                let local_part = if let Some(username) = auth.username {
+                    username
                 } else {
-                    Bytes::from(base64::encode_config(
+                    base64::encode_config(
                         digest(&SHA256, auth.token.as_str().as_bytes()).as_ref(),
                         base64::URL_SAFE_NO_PAD,
-                    ))
+                    )
                 };
-                let mut ilp_address = BytesMut::with_capacity(
-                    ildcp_info.client_address().len() + 1 + local_part.len(),
-                );
-                ilp_address.put(ildcp_info.client_address());
-                ilp_address.put(&b"."[..]);
-                ilp_address.put(local_part);
+                let ilp_address = ildcp_info.client_address().unwrap();
+                let ilp_address = ilp_address.with_suffix(local_part.as_ref()).unwrap();
+
                 store
                     .create_btp_account(BtpOpenSignupAccount {
                         auth_token: &auth.token,
-                        ilp_address: &ilp_address[..],
+                        ilp_address: ilp_address.as_ref(),
                         asset_code: str::from_utf8(ildcp_info.asset_code())
                             .expect("Asset code provided is not valid utf8"),
                         asset_scale: ildcp_info.asset_scale(),
