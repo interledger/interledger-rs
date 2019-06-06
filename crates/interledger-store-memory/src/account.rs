@@ -2,9 +2,10 @@ use bytes::Bytes;
 use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
-use std::{fmt, str, sync::Arc};
+use std::{fmt, str, str::FromStr, sync::Arc};
 use url::Url;
 
 /// A helper to create Accounts.
@@ -29,8 +30,8 @@ impl AccountBuilder {
         self
     }
 
-    pub fn ilp_address(mut self, ilp_address: &[u8]) -> Self {
-        self.details.ilp_address = Bytes::from(ilp_address);
+    pub fn ilp_address(mut self, ilp_address: Address) -> Self {
+        self.details.ilp_address = Some(ilp_address);
         self
     }
 
@@ -83,7 +84,7 @@ impl AccountBuilder {
 #[derive(Default, Clone)]
 pub(crate) struct AccountDetails {
     pub(crate) id: u64,
-    pub(crate) ilp_address: Bytes,
+    pub(crate) ilp_address: Option<Address>,
     pub(crate) additional_routes: Vec<Bytes>,
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
@@ -114,9 +115,8 @@ impl fmt::Debug for Account {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Account {{ id: {}, ilp_address: \"{}\" }}",
-            self.inner.id,
-            str::from_utf8(&self.inner.ilp_address[..]).map_err(|_| fmt::Error)?,
+            "Account {{ id: {}, ilp_address: \"{:?}\" }}",
+            self.inner.id, self.inner.ilp_address,
         )
     }
 }
@@ -130,8 +130,10 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-    fn client_address(&self) -> &[u8] {
-        &self.inner.ilp_address[..]
+    fn client_address(&self) -> Address {
+        // Ildcp account will always have an Address associated with it.
+        // Is it OK to call unwrap here?
+        self.inner.ilp_address.clone().unwrap()
     }
 
     fn asset_code(&self) -> &str {
@@ -181,14 +183,20 @@ mod tests {
         assert_eq!(account.get_btp_uri(), None);
         assert_eq!(account.get_http_auth_header(), None);
         assert_eq!(account.max_packet_amount(), u64::max_value());
-        assert_eq!(account.client_address(), Bytes::from(""));
+    }
+
+    #[test]
+    #[should_panic]
+    fn default_client_address_panics() {
+        let account = AccountBuilder::new().build();
+        account.client_address();
     }
 
     #[test]
     fn returns_properties_correctly() {
         let account = AccountBuilder::new()
             .id(1)
-            .ilp_address(b"example.address")
+            .ilp_address(Address::from_str("example.address").unwrap())
             .additional_routes(&[b"example.route", b"example.other-route"])
             .asset_code("XYZ".to_string())
             .asset_scale(9)
@@ -212,6 +220,9 @@ mod tests {
             Some("Bearer sodgiuoixfugoiudf")
         );
         assert_eq!(account.max_packet_amount(), 7777);
-        assert_eq!(account.client_address(), &b"example.address"[..]);
+        assert_eq!(
+            account.client_address(),
+            Address::from_str("example.address").unwrap()
+        );
     }
 }

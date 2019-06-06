@@ -7,6 +7,8 @@ use futures::{
 use hashbrown::HashMap;
 use interledger_btp::{BtpOpenSignupAccount, BtpOpenSignupStore, BtpStore};
 use interledger_http::HttpStore;
+use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use parking_lot::{Mutex, RwLock};
@@ -14,6 +16,7 @@ use std::{
     cmp::max,
     iter::{empty, once, FromIterator, IntoIterator},
     str,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -49,7 +52,13 @@ impl InMemoryStore {
 
         let routing_table: HashMap<Bytes, u64> =
             HashMap::from_iter(accounts.iter().flat_map(|(account_id, account)| {
-                once((account.inner.ilp_address.clone(), *account_id)).chain(
+                let addr = if let Some(ref a) = account.inner.ilp_address {
+                    a.to_bytes()
+                } else {
+                    Bytes::new()
+                };
+
+                once((addr, *account_id)).chain(
                     account
                         .inner
                         .additional_routes
@@ -65,6 +74,7 @@ impl InMemoryStore {
                 None
             }
         }));
+
         let http_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
             if let Some(ref auth) = account.inner.http_incoming_authorization {
                 Some((auth.to_string(), *account_id))
@@ -83,25 +93,28 @@ impl InMemoryStore {
     }
 
     pub fn add_account(&self, account: Account) {
-        self.accounts.write().insert(account.id(), account.clone());
-        self.routing_table
-            .write()
-            .insert(account.inner.ilp_address.clone(), account.id());
-        for route in &account.inner.additional_routes {
+        // update only if it has a valid ilp addr
+        if let Some(addr) = account.inner.ilp_address.clone() {
+            self.accounts.write().insert(account.id(), account.clone());
             self.routing_table
                 .write()
-                .insert(route.clone(), account.id());
+                .insert(addr.to_bytes(), account.id());
+            for route in &account.inner.additional_routes {
+                self.routing_table
+                    .write()
+                    .insert(route.clone(), account.id());
+            }
+            if let Some(ref btp_auth) = account.inner.btp_incoming_token {
+                self.btp_auth.write().insert(btp_auth.clone(), account.id());
+            }
+            if let Some(ref http_auth) = account.inner.http_incoming_authorization {
+                self.http_auth
+                    .write()
+                    .insert(http_auth.clone(), account.id());
+            }
+            let mut next_account_id = self.next_account_id.lock();
+            *next_account_id = max(*next_account_id, account.inner.id);
         }
-        if let Some(ref btp_auth) = account.inner.btp_incoming_token {
-            self.btp_auth.write().insert(btp_auth.clone(), account.id());
-        }
-        if let Some(ref http_auth) = account.inner.http_incoming_authorization {
-            self.http_auth
-                .write()
-                .insert(http_auth.clone(), account.id());
-        }
-        let mut next_account_id = self.next_account_id.lock();
-        *next_account_id = max(*next_account_id, account.inner.id);
     }
 }
 
@@ -174,14 +187,16 @@ impl BtpOpenSignupStore for InMemoryStore {
         };
         let account = AccountBuilder::new()
             .id(account_id)
-            .ilp_address(account.ilp_address)
+            .ilp_address(account.ilp_address.clone())
             .btp_incoming_token(account.auth_token.to_string())
             .asset_code(account.asset_code.to_string())
             .asset_scale(account.asset_scale)
             .build();
 
         (*self.accounts.write()).insert(account_id, account.clone());
-        (*self.routing_table.write()).insert(account.inner.ilp_address.clone(), account_id);
+        // Can we avoid the clone to get out of the Arc?
+        let addr = account.client_address().clone();
+        (*self.routing_table.write()).insert(addr.to_bytes(), account_id);
         (*self.btp_auth.write()).insert(
             account.inner.btp_incoming_token.clone().unwrap(),
             account_id,
@@ -246,9 +261,11 @@ mod tests {
         let store = InMemoryStore::new(vec![
             AccountBuilder::new()
                 .id(1)
-                .ilp_address(b"example.one")
+                .ilp_address(Address::from_str("example.one").unwrap())
                 .additional_routes(&[b"example.three"]),
-            AccountBuilder::new().id(2).ilp_address(b"example.two"),
+            AccountBuilder::new()
+                .id(2)
+                .ilp_address(Address::from_str("example.two").unwrap()),
         ]);
 
         assert_eq!(
@@ -264,10 +281,11 @@ mod tests {
     #[test]
     fn open_btp_signup() {
         let store = InMemoryStore::default();
+        let addr = Address::from_str("example.account").unwrap();
         let account = store
             .create_btp_account(BtpOpenSignupAccount {
                 auth_token: "token",
-                ilp_address: b"example.account",
+                ilp_address: &addr,
                 asset_code: "XYZ",
                 asset_scale: 9,
             })

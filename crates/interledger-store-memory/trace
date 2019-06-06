@@ -1,0 +1,194 @@
+    Finished dev [unoptimized + debuginfo] target(s) in 0.49s
+     Running /Users/gakonst/projects/interledger/interledger-rs/target/debug/deps/interledger_store_memory-698c5b9a0d1f8039
+
+running 8 tests
+test account::tests::uses_default_values ... ok
+test store::tests::open_btp_signup ... ok
+test account::tests::returns_properties_correctly ... ok
+test account::tests::default_client_address_panics ... ok
+test store::tests::routing_table ... ok
+test store::tests::get_accounts ... FAILED
+test store::tests::query_by_btp ... FAILED
+test store::tests::query_by_http_auth ... FAILED
+
+failures:
+
+---- store::tests::get_accounts stdout ----
+thread 'store::tests::get_accounts' panicked at 'called `Option::unwrap()` on a `None` value', src/libcore/option.rs:345:21
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+stack backtrace:
+   0: std::sys::unix::backtrace::tracing::imp::unwind_backtrace
+             at src/libstd/sys/unix/backtrace/tracing/gcc_s.rs:39
+   1: std::sys_common::backtrace::_print
+             at src/libstd/sys_common/backtrace.rs:71
+   2: std::panicking::default_hook::{{closure}}
+             at src/libstd/sys_common/backtrace.rs:59
+             at src/libstd/panicking.rs:197
+   3: std::panicking::default_hook
+             at src/libstd/panicking.rs:208
+   4: <std::panicking::begin_panic::PanicPayload<A> as core::panic::BoxMeUp>::get
+             at src/libstd/panicking.rs:474
+   5: std::panicking::continue_panic_fmt
+             at src/libstd/panicking.rs:381
+   6: std::panicking::try::do_call
+             at src/libstd/panicking.rs:308
+   7: <T as core::any::Any>::type_id
+             at src/libcore/panicking.rs:85
+   8: <T as core::any::Any>::type_id
+             at src/libcore/panicking.rs:49
+   9: core::option::Option<T>::unwrap
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/macros.rs:12
+  10: interledger_store_memory::store::InMemoryStore::from_accounts::{{closure}}
+             at crates/interledger-store-memory/src/store.rs:55
+  11: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &mut F>::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/ops/function.rs:279
+  12: core::option::Option<T>::map
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/option.rs:414
+  13: <core::iter::adapters::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/mod.rs:568
+  14: <core::iter::adapters::flatten::FlattenCompat<I,U> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/flatten.rs:218
+  15: <core::iter::adapters::flatten::FlatMap<I,U,F> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/flatten.rs:48
+  16: <hashbrown::map::HashMap<K,V,S> as core::iter::traits::collect::FromIterator<(K, V)>>::from_iter
+             at /Users/gakonst/.cargo/registry/src/github.com-1ecc6299db9ec823/hashbrown-0.1.8/src/map.rs:2429
+  17: interledger_store_memory::store::InMemoryStore::from_accounts
+             at crates/interledger-store-memory/src/store.rs:54
+  18: interledger_store_memory::store::InMemoryStore::new
+             at crates/interledger-store-memory/src/store.rs:37
+  19: interledger_store_memory::store::tests::get_accounts
+             at crates/interledger-store-memory/src/store.rs:210
+  20: interledger_store_memory::store::tests::get_accounts::{{closure}}
+             at crates/interledger-store-memory/src/store.rs:209
+  21: core::ops::function::FnOnce::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/ops/function.rs:231
+  22: <alloc::boxed::Box<F> as core::ops::function::FnOnce<A>>::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/liballoc/boxed.rs:702
+  23: panic_unwind::dwarf::eh::read_encoded_pointer
+             at src/libpanic_unwind/lib.rs:87
+  24: test::run_test::run_test_inner::{{closure}}
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libstd/panicking.rs:272
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libstd/panic.rs:388
+             at src/libtest/lib.rs:1468
+
+---- store::tests::query_by_btp stdout ----
+thread 'store::tests::query_by_btp' panicked at 'called `Option::unwrap()` on a `None` value', src/libcore/option.rs:345:21
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+stack backtrace:
+   0: std::sys::unix::backtrace::tracing::imp::unwind_backtrace
+             at src/libstd/sys/unix/backtrace/tracing/gcc_s.rs:39
+   1: std::sys_common::backtrace::_print
+             at src/libstd/sys_common/backtrace.rs:71
+   2: std::panicking::default_hook::{{closure}}
+             at src/libstd/sys_common/backtrace.rs:59
+             at src/libstd/panicking.rs:197
+   3: std::panicking::default_hook
+             at src/libstd/panicking.rs:208
+   4: <std::panicking::begin_panic::PanicPayload<A> as core::panic::BoxMeUp>::get
+             at src/libstd/panicking.rs:474
+   5: std::panicking::continue_panic_fmt
+             at src/libstd/panicking.rs:381
+   6: std::panicking::try::do_call
+             at src/libstd/panicking.rs:308
+   7: <T as core::any::Any>::type_id
+             at src/libcore/panicking.rs:85
+   8: <T as core::any::Any>::type_id
+             at src/libcore/panicking.rs:49
+   9: core::option::Option<T>::unwrap
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/macros.rs:12
+  10: interledger_store_memory::store::InMemoryStore::from_accounts::{{closure}}
+             at crates/interledger-store-memory/src/store.rs:55
+  11: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &mut F>::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/ops/function.rs:279
+  12: core::option::Option<T>::map
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/option.rs:414
+  13: <core::iter::adapters::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/mod.rs:568
+  14: <core::iter::adapters::flatten::FlattenCompat<I,U> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/flatten.rs:218
+  15: <core::iter::adapters::flatten::FlatMap<I,U,F> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/flatten.rs:48
+  16: <hashbrown::map::HashMap<K,V,S> as core::iter::traits::collect::FromIterator<(K, V)>>::from_iter
+             at /Users/gakonst/.cargo/registry/src/github.com-1ecc6299db9ec823/hashbrown-0.1.8/src/map.rs:2429
+  17: interledger_store_memory::store::InMemoryStore::from_accounts
+             at crates/interledger-store-memory/src/store.rs:54
+  18: interledger_store_memory::store::tests::query_by_btp
+             at crates/interledger-store-memory/src/store.rs:243
+  19: interledger_store_memory::store::tests::query_by_btp::{{closure}}
+             at crates/interledger-store-memory/src/store.rs:239
+  20: core::ops::function::FnOnce::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/ops/function.rs:231
+  21: <alloc::boxed::Box<F> as core::ops::function::FnOnce<A>>::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/liballoc/boxed.rs:702
+  22: panic_unwind::dwarf::eh::read_encoded_pointer
+             at src/libpanic_unwind/lib.rs:87
+  23: test::run_test::run_test_inner::{{closure}}
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libstd/panicking.rs:272
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libstd/panic.rs:388
+             at src/libtest/lib.rs:1468
+
+---- store::tests::query_by_http_auth stdout ----
+thread 'store::tests::query_by_http_auth' panicked at 'called `Option::unwrap()` on a `None` value', src/libcore/option.rs:345:21
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+stack backtrace:
+   0: std::sys::unix::backtrace::tracing::imp::unwind_backtrace
+             at src/libstd/sys/unix/backtrace/tracing/gcc_s.rs:39
+   1: std::sys_common::backtrace::_print
+             at src/libstd/sys_common/backtrace.rs:71
+   2: std::panicking::default_hook::{{closure}}
+             at src/libstd/sys_common/backtrace.rs:59
+             at src/libstd/panicking.rs:197
+   3: std::panicking::default_hook
+             at src/libstd/panicking.rs:208
+   4: <std::panicking::begin_panic::PanicPayload<A> as core::panic::BoxMeUp>::get
+             at src/libstd/panicking.rs:474
+   5: std::panicking::continue_panic_fmt
+             at src/libstd/panicking.rs:381
+   6: std::panicking::try::do_call
+             at src/libstd/panicking.rs:308
+   7: <T as core::any::Any>::type_id
+             at src/libcore/panicking.rs:85
+   8: <T as core::any::Any>::type_id
+             at src/libcore/panicking.rs:49
+   9: core::option::Option<T>::unwrap
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/macros.rs:12
+  10: interledger_store_memory::store::InMemoryStore::from_accounts::{{closure}}
+             at crates/interledger-store-memory/src/store.rs:55
+  11: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &mut F>::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/ops/function.rs:279
+  12: core::option::Option<T>::map
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/option.rs:414
+  13: <core::iter::adapters::Map<I,F> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/mod.rs:568
+  14: <core::iter::adapters::flatten::FlattenCompat<I,U> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/flatten.rs:218
+  15: <core::iter::adapters::flatten::FlatMap<I,U,F> as core::iter::traits::iterator::Iterator>::next
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/iter/adapters/flatten.rs:48
+  16: <hashbrown::map::HashMap<K,V,S> as core::iter::traits::collect::FromIterator<(K, V)>>::from_iter
+             at /Users/gakonst/.cargo/registry/src/github.com-1ecc6299db9ec823/hashbrown-0.1.8/src/map.rs:2429
+  17: interledger_store_memory::store::InMemoryStore::from_accounts
+             at crates/interledger-store-memory/src/store.rs:54
+  18: interledger_store_memory::store::tests::query_by_http_auth
+             at crates/interledger-store-memory/src/store.rs:227
+  19: interledger_store_memory::store::tests::query_by_http_auth::{{closure}}
+             at crates/interledger-store-memory/src/store.rs:223
+  20: core::ops::function::FnOnce::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libcore/ops/function.rs:231
+  21: <alloc::boxed::Box<F> as core::ops::function::FnOnce<A>>::call_once
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/liballoc/boxed.rs:702
+  22: panic_unwind::dwarf::eh::read_encoded_pointer
+             at src/libpanic_unwind/lib.rs:87
+  23: test::run_test::run_test_inner::{{closure}}
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libstd/panicking.rs:272
+             at /rustc/3c235d5600393dfe6c36eeed34042efad8d4f26e/src/libstd/panic.rs:388
+             at src/libtest/lib.rs:1468
+
+
+failures:
+    store::tests::get_accounts
+    store::tests::query_by_btp
+    store::tests::query_by_http_auth
+
+test result: FAILED. 5 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out
+
+error: test failed, to rerun pass '--lib'
