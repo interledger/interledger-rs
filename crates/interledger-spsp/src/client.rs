@@ -1,6 +1,8 @@
 use super::{Error, SpspResponse};
 use futures::Future;
 use interledger_service::{Account, IncomingService};
+use interledger_packet::Address;
+use std::str::FromStr;
 use interledger_stream::send_money;
 use reqwest::r#async::Client;
 
@@ -41,7 +43,7 @@ where
         send_money(
             service,
             &from_account,
-            spsp.destination_account,
+            Address::from_str(&spsp.destination_account).unwrap(), // todo: Figure out how to handle error
             &spsp.shared_secret,
             source_amount,
         )
