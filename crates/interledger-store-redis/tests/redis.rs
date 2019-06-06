@@ -6,11 +6,13 @@ use bytes::Bytes;
 use env_logger;
 use futures::{future, Future};
 use interledger_api::{AccountDetails, NodeStore};
+use interledger_packet::Address;
 use interledger_store_redis::{connect, connect_with_poll_interval, Account, RedisStore};
 use parking_lot::Mutex;
 use redis;
 use std::{
     collections::HashMap,
+    str::FromStr,
     time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime, timer::Delay};
@@ -274,7 +276,7 @@ mod get_accounts {
     fn gets_single_account() {
         block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1]).and_then(move |accounts| {
-                assert_eq!(accounts[0].client_address(), b"example.bob");
+                assert_eq!(accounts[0].client_address(), Address::from_str("example.bob").unwrap());
                 let _ = context;
                 Ok(())
             })
@@ -287,8 +289,8 @@ mod get_accounts {
         block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1, 0]).and_then(move |accounts| {
                 // note reverse order is intentional
-                assert_eq!(accounts[0].client_address(), b"example.bob");
-                assert_eq!(accounts[1].client_address(), b"example.alice");
+                assert_eq!(accounts[0].client_address(), Address::from_str("example.bob").unwrap());
+                assert_eq!(accounts[1].client_address(), Address::from_str("example.alice").unwrap());
                 let _ = context;
                 Ok(())
             })

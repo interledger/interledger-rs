@@ -9,12 +9,14 @@ use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use parking_lot::RwLock;
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
 use std::{
+    convert::TryFrom,
     iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
@@ -496,7 +498,7 @@ impl NodeStore for RedisStore {
                     }
 
                     // Add route to routing table
-                    pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
+                    pipe.hset(ROUTES_KEY, account.ilp_address.to_bytes().to_vec(), account.id) // TODO: Can we go directly to Vec<u8>?
                         .ignore();
 
                     // Set account details
@@ -686,7 +688,7 @@ impl RouteManagerStore for RedisStore {
                 let local_table = HashMap::from_iter(
                     accounts
                         .iter()
-                        .map(|account| (account.ilp_address.clone(), account.clone())),
+                        .map(|account| (account.ilp_address.to_bytes(), account.clone())),
                 );
 
                 let account_map: HashMap<u64, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
