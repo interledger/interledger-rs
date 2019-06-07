@@ -24,7 +24,7 @@ struct ServerStatus {
 struct Success;
 
 #[derive(Extract, Debug)]
-struct Rates(Vec<(String, f64)>);
+struct Rates(HashMap<String, f64>);
 
 #[derive(Extract, Response, Debug)]
 #[web(status = "200")]
