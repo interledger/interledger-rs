@@ -60,6 +60,9 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 /// The Account type for the RedisStore.
 #[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
+    // Error when converting this to Option<Address>
+    // `_IMPL_SERIALIZE_FOR_AccountsResponse::_serde::Serialize`
+    // is not implemented for `interledger_packet::address::Address`
     pub ilp_address: Vec<u8>,
     pub asset_code: String,
     pub asset_scale: u8,
@@ -373,7 +376,7 @@ impl_web! {
                     Response::builder().status(404).body(()).unwrap()
                 }))
                 .and_then(move |accounts| {
-                    let ilp_address = Bytes::from(accounts[0].client_address());
+                    let ilp_address = accounts[0].client_address();
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
                     Ok(SpspResponder::new(ilp_address, server_secret)
                         .generate_http_response())
@@ -392,7 +395,7 @@ impl_web! {
                 Response::builder().status(404).body(()).unwrap()
             })
             .and_then(move |accounts| {
-                let ilp_address = Bytes::from(accounts[0].client_address());
+                let ilp_address = accounts[0].client_address();
                 Ok(SpspResponder::new(ilp_address, server_secret)
                     .generate_http_response())
                 })
