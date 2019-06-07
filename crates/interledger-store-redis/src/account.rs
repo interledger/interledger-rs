@@ -94,8 +94,9 @@ impl Account {
         };
         Ok(Account {
             id,
-            ilp_address: Address::try_from(details.ilp_address.as_ref())
-                .map_err(|err| error!("Invalid ILP Address when creating Redis account: {:?}", err))?,
+            ilp_address: Address::try_from(details.ilp_address.as_ref()).map_err(|err| {
+                error!("Invalid ILP Address when creating Redis account: {:?}", err)
+            })?,
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,

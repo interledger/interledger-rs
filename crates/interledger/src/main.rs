@@ -7,6 +7,8 @@ use clap::{App, Arg, ArgGroup, SubCommand};
 use hex;
 use interledger::cli::*;
 use interledger_ildcp::IldcpResponseBuilder;
+use interledger_packet::Address;
+use std::str::FromStr;
 use tokio;
 use url::Url;
 
@@ -200,10 +202,11 @@ pub fn main() {
                 if matches.is_present("ilp_over_http") {
                     let client_address =
                         value_t!(matches, "ilp_address", String).expect("ilp_address is required");
+                    let client_address = Address::from_str(&client_address).unwrap();
                     let auth_token = value_t!(matches, "incoming_auth_token", String)
                         .expect("incoming_auth_token is required");
                     let ildcp_info = IldcpResponseBuilder {
-                        client_address: &client_address.as_bytes(),
+                        client_address: &client_address,
                         asset_code: "",
                         asset_scale: 0,
                     }
@@ -250,12 +253,14 @@ pub fn main() {
                 let btp_port = value_t!(matches, "port", u16).expect("btp_port is required");
                 let ilp_address =
                     value_t!(matches, "ilp_address", String).expect("ilp_address is required");
+                let ilp_address = Address::from_str(&ilp_address).unwrap();
                 let asset_code =
                     value_t!(matches, "asset_code", String).expect("asset_code is required");
                 let asset_scale =
                     value_t!(matches, "asset_scale", u8).expect("asset_scale is required");
+
                 let ildcp_info = IldcpResponseBuilder {
-                    client_address: ilp_address.as_str().as_bytes(),
+                    client_address: &ilp_address,
                     asset_code: &asset_code,
                     asset_scale,
                 }

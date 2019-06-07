@@ -17,6 +17,7 @@ pub struct AccountBuilder {
 impl AccountBuilder {
     pub fn new() -> Self {
         let mut details = AccountDetails::default();
+        details.ilp_address = Address::from_str("example.address").ok();
         details.max_packet_amount = u64::max_value();
         AccountBuilder { details }
     }
@@ -132,7 +133,7 @@ impl AccountTrait for Account {
 impl IldcpAccount for Account {
     fn client_address(&self) -> Address {
         // Ildcp account will always have an Address associated with it.
-        // Is it OK to call unwrap here?
+        // Is it OK to call unwrap here? -- Apparently not
         self.inner.ilp_address.clone().unwrap()
     }
 
