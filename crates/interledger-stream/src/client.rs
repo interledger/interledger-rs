@@ -115,7 +115,7 @@ where
             if self.should_send_source_account {
                 frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
                     // How can we make this take a reference?
-                    source_account: self.source_account.clone(), 
+                    source_account: self.source_account.clone(),
                 }));
             }
             let stream_packet = StreamPacketBuilder {
@@ -346,7 +346,7 @@ mod send_money_tests {
             id: 0,
             asset_code: "XYZ".to_string(),
             asset_scale: 9,
-            ilp_address: Bytes::from("example.destination"),
+            ilp_address: Address::from_str("example.destination").unwrap(),
         };
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
@@ -362,7 +362,7 @@ mod send_money_tests {
                 .build())
             })),
             &account,
-            b"example.destination",
+            Address::from_str("example.destination").unwrap(),
             &[0; 32][..],
             100,
         )

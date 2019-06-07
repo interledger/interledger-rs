@@ -2,21 +2,21 @@ use super::SpspResponse;
 use bytes::Bytes;
 use futures::future::{ok, FutureResult, IntoFuture};
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
+use interledger_packet::Address;
 use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
 use std::{fmt, str, str::FromStr};
-use interledger_packet::Address;
 
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.
 #[derive(Clone)]
-pub struct SpspResponder<'a> {
-    ilp_address: &'a Address,
+pub struct SpspResponder {
+    ilp_address: Address,
     connection_generator: ConnectionGenerator,
 }
 
-impl<'a> SpspResponder<'a> {
-    pub fn new(ilp_address: &'a Address, server_secret: Bytes) -> Self {
+impl SpspResponder {
+    pub fn new(ilp_address: Address, server_secret: Bytes) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         SpspResponder {
             ilp_address,
@@ -27,9 +27,12 @@ impl<'a> SpspResponder<'a> {
     pub fn generate_http_response(&self) -> Response<Body> {
         let (destination_account, shared_secret) = self
             .connection_generator
-            .generate_address_and_secret(self.ilp_address);
+            .generate_address_and_secret(&self.ilp_address);
         let destination_account = destination_account.to_string();
-        debug!("Generated address and secret for: {:?}", destination_account);
+        debug!(
+            "Generated address and secret for: {:?}",
+            destination_account
+        );
         let response = SpspResponse {
             destination_account,
             shared_secret: shared_secret.to_vec(),
@@ -44,7 +47,7 @@ impl<'a> SpspResponder<'a> {
     }
 }
 
-impl<'a> HttpService for SpspResponder<'a> {
+impl HttpService for SpspResponder {
     type ReqBody = Body;
     type ResBody = Body;
     type Error = Error;
@@ -55,7 +58,7 @@ impl<'a> HttpService for SpspResponder<'a> {
     }
 }
 
-impl<'a> IntoFuture for SpspResponder<'a> {
+impl IntoFuture for SpspResponder {
     type Item = Self;
     type Error = Never;
     type Future = FutureResult<Self::Item, Self::Error>;
@@ -89,8 +92,7 @@ mod spsp_server_test {
     #[test]
     fn spsp_response_headers() {
         let addr = Address::from_str("example.receiver").unwrap();
-        let mut responder =
-            SpspResponder::new(&addr, Bytes::from(&[0; 32][..]));
+        let mut responder = SpspResponder::new(addr, Bytes::from(&[0; 32][..]));
         let response = responder
             .call(
                 Request::builder()

@@ -2,11 +2,10 @@ use super::crypto::{decrypt, encrypt};
 use byteorder::ReadBytesExt;
 use bytes::{BufMut, BytesMut};
 use interledger_packet::{
-    Address,
     oer::{BufOerExt, MutBufOerExt},
-    PacketType as IlpPacketType, ParseError,
+    Address, PacketType as IlpPacketType, ParseError,
 };
-use std::{convert::TryFrom, fmt, str};
+use std::{convert::TryFrom, fmt, str, str::FromStr};
 
 const STREAM_VERSION: u8 = 1;
 
@@ -739,7 +738,7 @@ mod serialization {
                     message: "oop"
                 }),
                 Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: b"example.blah"
+                    source_account: Address::from_str("example.blah").unwrap()
                 }),
                 Frame::ConnectionMaxData(ConnectionMaxDataFrame { max_offset: 1000 }),
                 Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame { max_offset: 2000 }),
@@ -825,7 +824,7 @@ mod serialization {
         assert_eq!(
             iter.next().unwrap(),
             Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                source_account: b"example.blah"
+                source_account: Address::from_str("example.blah").unwrap()
             })
         );
         assert_eq!(iter.count(), 12);

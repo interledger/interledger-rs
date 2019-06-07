@@ -43,7 +43,7 @@ pub mod test_helpers {
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct TestAccount {
         pub id: u64,
-        pub ilp_address: Bytes,
+        pub ilp_address: Address,
         pub asset_scale: u8,
         pub asset_code: String,
     }
@@ -65,8 +65,8 @@ pub mod test_helpers {
             self.asset_scale
         }
 
-        fn client_address(&self) -> &[u8] {
-            &self.ilp_address[..]
+        fn client_address(&self) -> Address {
+            self.ilp_address.clone()
         }
     }
 
@@ -110,7 +110,7 @@ mod send_money_to_receiver {
     #[test]
     fn send_money_test() {
         let server_secret = Bytes::from(&[0; 32][..]);
-        let destination_address = Bytes::from("example.receiver");
+        let destination_address = Address::from_str("example.receiver").unwrap();
         let account = TestAccount {
             id: 0,
             ilp_address: destination_address.clone(),
@@ -118,7 +118,7 @@ mod send_money_to_receiver {
             asset_scale: 9,
         };
         let store = TestStore {
-            route: (destination_address.clone(), account),
+            route: (destination_address.to_bytes(), account),
         };
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
         let server = StreamReceiverService::new(
@@ -137,17 +137,18 @@ mod send_money_to_receiver {
         let server = IldcpService::new(server);
 
         let (destination_account, shared_secret) =
-            connection_generator.generate_address_and_secret(&destination_address[..]);
+            connection_generator.generate_address_and_secret(&destination_address);
 
+        let destination_address = Address::from_str("example.receiver").unwrap();
         let run = send_money(
             server,
             &test_helpers::TestAccount {
                 id: 0,
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
-                ilp_address: Bytes::from("example.receiver"),
+                ilp_address: destination_address,
             },
-            &destination_account[..],
+            destination_account,
             &shared_secret[..],
             100,
         )

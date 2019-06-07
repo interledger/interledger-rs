@@ -1,10 +1,10 @@
 use super::{Error, SpspResponse};
 use futures::Future;
-use interledger_service::{Account, IncomingService};
 use interledger_packet::Address;
-use std::str::FromStr;
+use interledger_service::{Account, IncomingService};
 use interledger_stream::send_money;
 use reqwest::r#async::Client;
+use std::str::FromStr;
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
     let server = payment_pointer_to_url(server);
