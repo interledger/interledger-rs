@@ -21,7 +21,7 @@ pub use packet::*;
 pub use server::IldcpService;
 
 pub trait IldcpAccount: Account {
-    fn client_address(&self) -> &Address;
+    fn client_address(&self) -> Address;
     fn asset_scale(&self) -> u8;
     fn asset_code(&self) -> &str;
 }

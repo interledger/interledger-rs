@@ -46,7 +46,6 @@ impl TryFrom<&[u8]> for PacketType {
     }
 }
 
-
 impl TryFrom<u8> for PacketType {
     type Error = ParseError;
 
@@ -654,7 +653,8 @@ mod test_prepare {
             with_bad_address.destination =
                 unsafe { Address::new_unchecked(Bytes::from("test.invalid address!")) };
             BytesMut::from(with_bad_address.build())
-        }).is_err();
+        })
+        .is_err();
     }
 
     #[test]

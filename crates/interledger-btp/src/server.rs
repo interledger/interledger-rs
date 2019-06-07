@@ -185,7 +185,7 @@ where
                 store
                     .create_btp_account(BtpOpenSignupAccount {
                         auth_token: &auth.token,
-                        ilp_address: ilp_address.as_ref(),
+                        ilp_address: &ilp_address,
                         asset_code: str::from_utf8(ildcp_info.asset_code())
                             .expect("Asset code provided is not valid utf8"),
                         asset_scale: ildcp_info.asset_scale(),
