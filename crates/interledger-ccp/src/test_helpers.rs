@@ -73,8 +73,8 @@ impl IldcpAccount for TestAccount {
         9
     }
 
-    fn client_address(&self) -> &Address {
-        &self.ilp_address
+    fn client_address(&self) -> Address {
+        self.ilp_address.clone()
     }
 }
 

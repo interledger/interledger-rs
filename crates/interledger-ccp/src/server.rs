@@ -111,7 +111,7 @@ where
         spawn_tasks: bool,
     ) -> Self {
         let ilp_address = account.client_address().clone(); // can we avoid the clone?
-        // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
+                                                            // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
         let mut global_prefix: Bytes = ilp_address.scheme().into(); // get the scheme
         global_prefix.extend(b"."); // append a separator with the scheme for the router
 
