@@ -170,7 +170,7 @@ fn three_nodes() {
             client
                 .put(&format!("http://localhost:{}/rates", node2_http))
                 .header("Authorization", "Bearer admin")
-                .json(&[("ABC", 2), ("XYZ", 1)])
+                .json(&json!({"ABC": 2, "XYZ": 1}))
                 .send()
                 .map_err(|err| panic!(err))
                 .and_then(|res| {
