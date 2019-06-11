@@ -5,10 +5,12 @@
 #[macro_use]
 extern crate log;
 
+mod echo;
 mod max_packet_amount;
 mod rates_and_balances;
 mod validator;
 
+pub use self::echo::EchoService;
 pub use self::max_packet_amount::{MaxPacketAmountAccount, MaxPacketAmountService};
 pub use self::rates_and_balances::{
     BalanceStore, ExchangeRateAndBalanceService, ExchangeRateStore,
