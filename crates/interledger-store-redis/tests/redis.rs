@@ -277,8 +277,8 @@ mod get_accounts {
         block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1]).and_then(move |accounts| {
                 assert_eq!(
-                    accounts[0].client_address(),
-                    Address::from_str("example.bob").unwrap()
+                    *accounts[0].client_address(),
+                    Address::from_str("example.bob").unwrap(),
                 );
                 let _ = context;
                 Ok(())
@@ -293,12 +293,12 @@ mod get_accounts {
             store.get_accounts(vec![1, 0]).and_then(move |accounts| {
                 // note reverse order is intentional
                 assert_eq!(
-                    accounts[0].client_address(),
-                    Address::from_str("example.bob").unwrap()
+                    *accounts[0].client_address(),
+                    Address::from_str("example.bob").unwrap(),
                 );
                 assert_eq!(
-                    accounts[1].client_address(),
-                    Address::from_str("example.alice").unwrap()
+                    *accounts[1].client_address(),
+                    Address::from_str("example.alice").unwrap(),
                 );
                 let _ = context;
                 Ok(())

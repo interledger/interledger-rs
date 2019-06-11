@@ -4,6 +4,10 @@
 
 #[macro_use]
 extern crate log;
+
+#[macro_use]
+extern crate lazy_static;
+
 #[cfg(feature = "cli")]
 
 /// ILP Packet (De)Serialization

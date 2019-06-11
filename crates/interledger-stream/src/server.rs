@@ -137,10 +137,8 @@ where
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let dest = request.prepare.destination();
         let dest: &[u8] = dest.as_ref();
-        if dest
-            .as_ref()
-            .starts_with(request.to.client_address().as_ref())
-        {
+        let to = request.to.client_address();
+        if dest.as_ref().starts_with(to.as_ref()) {
             if let Ok(shared_secret) = self
                 .connection_generator
                 .rederive_secret(&request.prepare.destination())
@@ -148,7 +146,7 @@ where
                 {
                     return Box::new(result(receive_money(
                         &shared_secret,
-                        &request.to.client_address(),
+                        &to,
                         request.prepare,
                     )));
                 }

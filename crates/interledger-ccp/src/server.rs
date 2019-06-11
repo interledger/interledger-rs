@@ -110,9 +110,9 @@ where
         next_incoming: S,
         spawn_tasks: bool,
     ) -> Self {
-        let ilp_address = account.client_address().clone(); // can we avoid the clone?
-                                                            // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
-        let mut global_prefix: Bytes = ilp_address.scheme().into(); // get the scheme
+        let ilp_address = account.client_address().clone();
+        // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
+        let mut global_prefix: Bytes = ilp_address.scheme().into();
         global_prefix.extend(b"."); // append a separator with the scheme for the router
 
         CcpRouteManager {
@@ -663,7 +663,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: account.client_address().to_bytes(), // can we remove the copy?
+                prefix: account.client_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -674,7 +674,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: account.client_address().to_bytes(), // can we remove the copy?
+                prefix: account.client_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),

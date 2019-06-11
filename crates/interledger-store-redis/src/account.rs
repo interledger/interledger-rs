@@ -286,8 +286,8 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-    fn client_address(&self) -> Address {
-        self.ilp_address.clone()
+    fn client_address(&self) -> &Address {
+        &self.ilp_address
     }
 
     fn asset_code(&self) -> &str {

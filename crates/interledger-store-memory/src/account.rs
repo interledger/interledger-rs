@@ -2,23 +2,34 @@ use bytes::Bytes;
 use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
-use interledger_packet::Address;
+use interledger_packet::{Address, AddressError};
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
-use std::{fmt, str, str::FromStr, sync::Arc};
+use std::convert::TryInto;
+use std::str::FromStr;
+use std::{fmt, str, sync::Arc};
 use url::Url;
 
 /// A helper to create Accounts.
-#[derive(Default)]
 pub struct AccountBuilder {
     details: AccountDetails,
 }
 
 impl AccountBuilder {
-    pub fn new() -> Self {
-        let mut details = AccountDetails::default();
-        details.ilp_address = Address::from_str("example.address").ok();
-        details.max_packet_amount = u64::max_value();
+    pub fn new(ilp_address: Address) -> Self {
+        let details = AccountDetails {
+            ilp_address,
+            max_packet_amount: u64::max_value(),
+            id: 0,
+            additional_routes: Vec::new(),
+            asset_code: String::new(),
+            asset_scale: 0,
+            http_endpoint: None,
+            http_incoming_authorization: None,
+            http_outgoing_authorization: None,
+            btp_uri: None,
+            btp_incoming_token: None,
+        };
         AccountBuilder { details }
     }
 
@@ -32,7 +43,7 @@ impl AccountBuilder {
     }
 
     pub fn ilp_address(mut self, ilp_address: Address) -> Self {
-        self.details.ilp_address = Some(ilp_address);
+        self.details.ilp_address = ilp_address;
         self
     }
 
@@ -82,10 +93,10 @@ impl AccountBuilder {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct AccountDetails {
     pub(crate) id: u64,
-    pub(crate) ilp_address: Option<Address>,
+    pub(crate) ilp_address: Address,
     pub(crate) additional_routes: Vec<Bytes>,
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
@@ -131,10 +142,8 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-    fn client_address(&self) -> Address {
-        // Ildcp account will always have an Address associated with it.
-        // Is it OK to call unwrap here? -- Apparently not
-        self.inner.ilp_address.clone().unwrap()
+    fn client_address(&self) -> &Address {
+        &self.inner.ilp_address
     }
 
     fn asset_code(&self) -> &str {
@@ -177,27 +186,23 @@ mod tests {
 
     #[test]
     fn uses_default_values() {
-        let account = AccountBuilder::new().build();
+        let account = AccountBuilder::new(Address::from_str("example.address").unwrap()).build();
         assert_eq!(account.id(), 0);
         assert_eq!(account.asset_code(), "");
         assert_eq!(account.asset_scale(), 0);
         assert_eq!(account.get_btp_uri(), None);
         assert_eq!(account.get_http_auth_header(), None);
         assert_eq!(account.max_packet_amount(), u64::max_value());
-    }
-
-    #[test]
-    #[should_panic]
-    fn default_client_address_panics() {
-        let account = AccountBuilder::new().build();
-        account.client_address();
+        assert_eq!(
+            *account.client_address(),
+            Address::from_str("example.address").unwrap()
+        );
     }
 
     #[test]
     fn returns_properties_correctly() {
-        let account = AccountBuilder::new()
+        let account = AccountBuilder::new(Address::from_str("example.address").unwrap())
             .id(1)
-            .ilp_address(Address::from_str("example.address").unwrap())
             .additional_routes(&[b"example.route", b"example.other-route"])
             .asset_code("XYZ".to_string())
             .asset_scale(9)
@@ -221,9 +226,6 @@ mod tests {
             Some("Bearer sodgiuoixfugoiudf")
         );
         assert_eq!(account.max_packet_amount(), 7777);
-        assert_eq!(
-            account.client_address(),
-            Address::from_str("example.address").unwrap()
-        );
+        assert_eq!(account.client_address(), &b"example.address"[..]);
     }
 }

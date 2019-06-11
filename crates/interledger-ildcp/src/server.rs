@@ -35,15 +35,13 @@ where
 
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if is_ildcp_request(&request.prepare) {
+            let from = request.from.client_address();
             let builder = IldcpResponseBuilder {
-                client_address: &request.from.client_address(),
+                client_address: &from,
                 asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };
-            debug!(
-                "Responding to query for ILDCP info by account: {:?}",
-                request.from.client_address(),
-            );
+            debug!("responding to query for ildcp info by account: {:?}", from);
             let response = builder.build();
             let fulfill = Fulfill::from(response);
             Box::new(ok(fulfill))

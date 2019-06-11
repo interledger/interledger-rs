@@ -376,11 +376,12 @@ impl_web! {
                     Response::builder().status(404).body(()).unwrap()
                 }))
                 .and_then(move |accounts| {
-                    let ilp_address = accounts[0].client_address();
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
-                    Ok(SpspResponder::new(ilp_address, server_secret)
-                        .generate_http_response())
-                    })
+                    Ok(SpspResponder::new(
+                        accounts[0].client_address().clone(),
+                        server_secret).generate_http_response()
+                    )
+                })
         }
 
         // TODO resolve payment pointers with subdomains to the correct account
@@ -395,10 +396,11 @@ impl_web! {
                 Response::builder().status(404).body(()).unwrap()
             })
             .and_then(move |accounts| {
-                let ilp_address = accounts[0].client_address();
-                Ok(SpspResponder::new(ilp_address, server_secret)
-                    .generate_http_response())
-                })
+                Ok(SpspResponder::new(
+                    accounts[0].client_address().clone(),
+                    server_secret).generate_http_response()
+                )
+            })
         }
 
         // TODO add quoting via SPSP/STREAM
