@@ -31,8 +31,7 @@ use tower_web::ServiceBuilder;
 use url::Url;
 
 lazy_static! {
-    pub static ref LOCAL_ILP_ADDRESS: Address = 
-        Address::from_str("local.host").unwrap();
+    pub static ref LOCAL_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
 }
 
 #[doc(hidden)]

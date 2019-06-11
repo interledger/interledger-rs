@@ -144,11 +144,7 @@ where
                 .rederive_secret(&request.prepare.destination())
             {
                 {
-                    return Box::new(result(receive_money(
-                        &shared_secret,
-                        &to,
-                        request.prepare,
-                    )));
+                    return Box::new(result(receive_money(&shared_secret, &to, request.prepare)));
                 }
             }
         }
