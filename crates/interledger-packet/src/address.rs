@@ -5,6 +5,7 @@
 // Addresses are never empty.
 #![allow(clippy::len_without_is_empty)]
 
+use regex::Regex;
 use std::error;
 use std::fmt;
 use std::str;
@@ -54,25 +55,18 @@ impl TryFrom<Bytes> for Address {
     type Error = ParseError;
 
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+        // https://interledger.org/rfcs/0015-ilp-addresses/#address-requirements
         if bytes.len() > MAX_ADDRESS_LENGTH {
             return Err(ParseError::InvalidAddress(AddressError::InvalidLength(
                 bytes.len(),
             )));
         }
 
-        let mut segments = 0;
-        let is_valid_scheme = bytes
-            .split(|&byte| byte == b'.')
-            .enumerate()
-            .all(|(i, segment)| {
-                segments += 1;
-                let scheme_ok = i != 0 || is_scheme(segment);
-                scheme_ok
-                    && !segment.is_empty()
-                    && segment.iter().all(|&byte| is_segment_byte(byte))
-            });
+        let pattern =
+            Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$")
+                .unwrap();
 
-        if is_valid_scheme && segments > 1 {
+        if pattern.is_match(str::from_utf8(&bytes).unwrap()) {
             Ok(Address(bytes))
         } else {
             Err(ParseError::InvalidAddress(AddressError::InvalidFormat))
@@ -188,24 +182,6 @@ impl<'a> PartialEq<[u8]> for Address {
     fn eq(&self, other: &[u8]) -> bool {
         self.0 == other
     }
-}
-
-static SCHEMES: &'static [&'static [u8]] = &[
-    b"g", b"private", b"example", b"peer", b"self", b"test", b"test1", b"test2", b"test3", b"local",
-];
-
-fn is_scheme(segment: &[u8]) -> bool {
-    SCHEMES.contains(&segment)
-}
-
-/// <https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md#address-requirements>
-fn is_segment_byte(byte: u8) -> bool {
-    byte == b'_'
-        || byte == b'-'
-        || byte == b'~'
-        || (b'A' <= byte && byte <= b'Z')
-        || (b'a' <= byte && byte <= b'z')
-        || (b'0' <= byte && byte <= b'9')
 }
 
 #[cfg(any(feature = "serde", test))]
