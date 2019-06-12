@@ -123,13 +123,13 @@ impl_web! {
                             })
                             .and_then(move |(account, settlement_engine)| {
                                 outgoing_handler.send_request(OutgoingRequest {
-                                    from: account.clone(),
-                                    to: account.clone(),
-                                    original_amount: 0,
-                                    
+                                        from: account.clone(), // Very rare case of dummy acount becuase we already know
+                                        to: account.clone(),
+                                        original_amount: 0,
                                         destination: settlement_engine.ilp_address.as_ref(),
                                         amount: 0,
                                         expires_at: SystemTime::now() + Duration::from_secs(30),
+                                        // AccountID should be in the path -  it should take arbitrary data
                                         data: body.to_string().as_bytes().as_ref(),
                                         execution_condition: &PEER_PROTOCOL_CONDITION,
                                     }.build()
