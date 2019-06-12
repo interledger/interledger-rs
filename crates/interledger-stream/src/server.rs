@@ -50,7 +50,7 @@ impl ConnectionGenerator {
             .with_suffix(
                 &base64::encode_config(&random_bytes[..], base64::URL_SAFE_NO_PAD).as_ref(),
             )
-            .unwrap(); // How should we handle an invalid suffix here? Can we assume this call will never fail?
+            .unwrap();
 
         let auth_tag = &hmac_sha256(&shared_secret[..], destination_account.as_ref())[..14];
 

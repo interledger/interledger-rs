@@ -43,7 +43,7 @@ where
             next: Some(service),
             from_account,
             source_account: account_details.client_address().unwrap(),
-            destination_account: destination_account,
+            destination_account,
             shared_secret,
             source_amount,
             congestion_controller: CongestionController::default(),

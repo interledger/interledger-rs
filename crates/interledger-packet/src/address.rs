@@ -15,6 +15,8 @@ use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
+use lazy_static::lazy_static;
+
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
 #[derive(Debug)]
@@ -22,6 +24,13 @@ pub enum AddressError {
     InvalidLength(usize),
     InvalidFormat,
 }
+
+lazy_static! {
+    static ref ADDRESS_PATTERN: Regex =
+        Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$")
+            .unwrap();
+}
+
 
 use std::error::Error;
 impl Error for AddressError {
@@ -62,11 +71,7 @@ impl TryFrom<Bytes> for Address {
             )));
         }
 
-        let pattern =
-            Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$")
-                .unwrap();
-
-        if pattern.is_match(str::from_utf8(&bytes).unwrap()) {
+        if ADDRESS_PATTERN.is_match(str::from_utf8(&bytes)?) {
             Ok(Address(bytes))
         } else {
             Err(ParseError::InvalidAddress(AddressError::InvalidFormat))
