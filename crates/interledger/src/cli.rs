@@ -176,7 +176,6 @@ pub fn run_spsp_server_btp(
 ) -> impl Future<Item = (), Error = ()> {
     debug!("Starting SPSP server");
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
-    // TODO Make this happen in opposite order so that ilp address is obtained otherwise
     let incoming_account: Account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
         .additional_routes(&[b"peer."])
         .btp_uri(parse_btp_url(btp_server).unwrap())
