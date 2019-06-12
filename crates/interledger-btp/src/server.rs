@@ -179,7 +179,9 @@ where
                         base64::URL_SAFE_NO_PAD,
                     )
                 };
-                let ilp_address = ildcp_info.client_address().unwrap();
+                let ilp_address = ildcp_info.client_address();
+                // in case local_part is set to be `auth.username`, will it always be a valid suffix?
+                // if we unwrap on the `with_suffix` call we implicitly allow auth.username to be an invalid suffix
                 let ilp_address = ilp_address.with_suffix(local_part.as_ref()).unwrap();
 
                 store

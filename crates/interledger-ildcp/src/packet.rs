@@ -59,6 +59,7 @@ pub struct IldcpResponse {
     buffer: Bytes,
     asset_scale: u8,
     asset_code_offset: usize,
+    ilp_address: Address,
 }
 
 impl From<IldcpResponse> for Bytes {
@@ -82,7 +83,9 @@ impl IldcpResponse {
         let mut reader = &buffer[..];
         let buffer_len = reader.len();
 
-        reader.skip_var_octet_string()?;
+        let buf = reader.read_var_octet_string()?;
+        let ilp_address = Address::try_from(buf)?;
+
         let asset_scale = reader.read_u8()?;
 
         let asset_code_offset = buffer_len - reader.len();
@@ -92,12 +95,12 @@ impl IldcpResponse {
             buffer,
             asset_scale,
             asset_code_offset,
+            ilp_address,
         })
     }
 
-    pub fn client_address(&self) -> Result<Address, ParseError> {
-        let buf = (&self.buffer[..]).peek_var_octet_string().unwrap();
-        Address::try_from(buf)
+    pub fn client_address(&self) -> Address {
+        self.ilp_address.clone()
     }
 
     pub fn asset_scale(&self) -> u8 {
@@ -147,6 +150,7 @@ impl<'a> IldcpResponseBuilder<'a> {
             buffer: buffer.freeze(),
             asset_scale: self.asset_scale,
             asset_code_offset: address_size + ASSET_SCALE_LEN,
+            ilp_address: self.client_address.clone(),
         }
     }
 }

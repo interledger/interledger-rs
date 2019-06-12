@@ -42,7 +42,7 @@ where
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),
             from_account,
-            source_account: account_details.client_address().unwrap(),
+            source_account: account_details.client_address(),
             destination_account,
             shared_secret,
             source_amount,

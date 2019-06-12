@@ -212,7 +212,7 @@ pub fn run_spsp_server_btp(
 
         get_ildcp_info(&mut incoming_service, incoming_account.clone()).and_then(move |info| {
             debug!("SPSP server got ILDCP info: {:?}", info);
-            let client_address = info.client_address().expect("Invalid ILDCP Packet Address");
+            let client_address = info.client_address();
             // Update the ILP Address with the ildcp info request's address
             *ilp_address.write() = client_address.to_bytes();
 
@@ -246,11 +246,9 @@ pub fn run_spsp_server_http(
     auth_token: String,
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
-    let ilp_address = ildcp_info
-        .client_address()
-        .expect("Invalid ILP Address for SPSP Server");
+    let ilp_address = ildcp_info.client_address();
     if !quiet {
-        println!("Creating SPSP server. ILP Address: {}", ilp_address,)
+        println!("Creating SPSP server. ILP Address: {}", ilp_address)
     }
 
     // HTTP Account created without ILP address
@@ -320,7 +318,7 @@ pub fn run_moneyd_local(
     address: SocketAddr,
     ildcp_info: IldcpResponse,
 ) -> impl Future<Item = (), Error = ()> {
-    let ilp_address = ildcp_info.client_address().ok();
+    let ilp_address = ildcp_info.client_address();
     let store = InMemoryStore::default();
     // TODO this needs a reference to the BtpService so it can send outgoing packets
     println!("Listening on: {}", address);
@@ -328,7 +326,7 @@ pub fn run_moneyd_local(
         Err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,
             message: b"No open connection for account",
-            triggered_by: ilp_address.as_ref(),
+            triggered_by: Some(&ilp_address),
             data: &[],
         }
         .build())
