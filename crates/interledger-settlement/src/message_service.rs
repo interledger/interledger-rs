@@ -16,7 +16,7 @@ const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 pub struct SettlementMessageService<S, A> {
     ilp_address: Bytes,
     next: S,
-    http_client: Client,
+    http_client: Client, // Client that's used to speak to the actual Settlement Service
     account_type: PhantomData<A>,
 }
 
@@ -40,16 +40,18 @@ where
     S: IncomingService<A>,
     A: SettlementAccount,
 {
-    type Future = BoxedIlpFuture;
+    type Future = BoxedIlpFuture; // boxed ILP futures everywhere!
 
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         // Only handle the request if the destination address matches the ILP address
         // of the settlement engine being used for this account
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
             if request.prepare.destination() == settlement_engine_details.ilp_address.as_ref() {
+                // ^ BOTH ARE SET BY THE REQUEST?
                 let ilp_address = self.ilp_address.clone();
                 let mut settlement_engine_url = settlement_engine_details.url;
 
+                // prepare's input data is where the settlement msges are
                 match serde_json::from_slice(request.prepare.data()) {
                     Ok(Value::Object(mut message)) => {
                         message.insert(
@@ -60,8 +62,9 @@ where
                         settlement_engine_url
                             .path_segments_mut()
                             .expect("Invalid settlement engine URL")
-                            .push("receiveMessage");
+                            .push("receiveMessage"); // Maybe set the idempotency flag here in the headers
                         let ilp_address_clone = ilp_address.clone();
+                        // Boxed new service 
                         return Box::new(self.http_client.post(settlement_engine_url)
                         .json(&message)
                         .send()
@@ -70,7 +73,7 @@ where
                             RejectBuilder {
                                 code: ErrorCode::T00_INTERNAL_ERROR,
                                 message: b"Error sending message to settlement engine",
-                                data: &[],
+                                data: &[], // Should we make these Option?
                                 triggered_by: ilp_address_clone.as_ref(),
                             }.build()
                         })
