@@ -2,7 +2,6 @@ use super::{
     packet::*, BtpAccount, BtpOpenSignupAccount, BtpOpenSignupStore, BtpOutgoingService, BtpStore,
 };
 use base64;
-use bytes::{BufMut, Bytes, BytesMut};
 use futures::{future::result, Future, Sink, Stream};
 use interledger_ildcp::IldcpResponse;
 use interledger_service::*;

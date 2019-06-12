@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use interledger_api::{AccountDetails, NodeAccount};
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};

@@ -15,7 +15,6 @@ use std::{
     cmp::min,
     convert::TryFrom,
     str,
-    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -1430,6 +1429,7 @@ mod create_route_update {
 mod send_route_updates {
     use super::*;
     use crate::test_helpers::*;
+    use std::str::FromStr;
 
     #[test]
     fn broadcasts_to_all_accounts_we_send_updates_to() {

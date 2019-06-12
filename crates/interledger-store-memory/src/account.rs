@@ -2,11 +2,9 @@ use bytes::Bytes;
 use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
-use interledger_packet::{Address, AddressError};
+use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
-use std::convert::TryInto;
-use std::str::FromStr;
 use std::{fmt, str, sync::Arc};
 use url::Url;
 
@@ -184,6 +182,8 @@ impl BtpAccount for Account {
 mod tests {
     use super::*;
 
+    use interledger_packet::Address;
+    use std::str::FromStr;
     #[test]
     fn uses_default_values() {
         let account = AccountBuilder::new(Address::from_str("example.address").unwrap()).build();

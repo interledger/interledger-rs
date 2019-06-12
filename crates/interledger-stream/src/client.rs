@@ -15,7 +15,6 @@ use std::{
     cmp::min,
     convert::TryFrom,
     str,
-    str::FromStr,
     time::{Duration, SystemTime},
 };
 
@@ -333,11 +332,11 @@ where
 mod send_money_tests {
     use super::*;
     use crate::test_helpers::{TestAccount, EXAMPLE_CONNECTOR};
-    use bytes::Bytes;
     use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
     use interledger_service::incoming_service_fn;
     use parking_lot::Mutex;
+    use std::str::FromStr;
     use std::sync::Arc;
 
     #[test]

@@ -9,14 +9,12 @@ use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
-use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use parking_lot::RwLock;
 use redis::{self, cmd, r#async::SharedConnection, Client, PipelineCommands, Value};
 use std::{
-    convert::TryFrom,
     iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},

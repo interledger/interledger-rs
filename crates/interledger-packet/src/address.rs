@@ -6,7 +6,6 @@
 #![allow(clippy::len_without_is_empty)]
 
 use regex::Regex;
-use std::error;
 use std::fmt;
 use std::str;
 
@@ -35,7 +34,7 @@ use std::error::Error;
 impl Error for AddressError {
     fn description(&self) -> &str {
         match *self {
-            AddressError::InvalidLength(length) => "invalid address length",
+            AddressError::InvalidLength(_length) => "invalid address length",
             AddressError::InvalidFormat => "invalid address format",
         }
     }
@@ -211,10 +210,7 @@ impl serde::Serialize for Address {
 
 #[cfg(test)]
 mod test_address {
-    use serde::ser::{Serialize, SerializeStruct, Serializer};
-    use serde_test::{
-        assert_de_tokens, assert_de_tokens_error, assert_ser_tokens, assert_ser_tokens_error, Token,
-    };
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, assert_ser_tokens, Token};
 
     use super::*;
 

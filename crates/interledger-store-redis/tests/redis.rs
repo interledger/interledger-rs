@@ -12,7 +12,6 @@ use parking_lot::Mutex;
 use redis;
 use std::{
     collections::HashMap,
-    str::FromStr,
     time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime, timer::Delay};
@@ -271,6 +270,7 @@ mod get_accounts {
     use super::*;
     use interledger_ildcp::IldcpAccount;
     use interledger_service::AccountStore;
+    use std::str::FromStr;
 
     #[test]
     fn gets_single_account() {

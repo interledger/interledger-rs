@@ -8,7 +8,6 @@ use interledger_packet::{
 use std::{
     convert::TryFrom,
     io::Read,
-    str,
     str::FromStr,
     time::{Duration, SystemTime},
 };

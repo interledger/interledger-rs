@@ -5,7 +5,7 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, PacketType as IlpPacketType, ParseError,
 };
-use std::{convert::TryFrom, fmt, str, str::FromStr};
+use std::{convert::TryFrom, fmt, str};
 
 const STREAM_VERSION: u8 = 1;
 
@@ -726,6 +726,7 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
 #[cfg(test)]
 mod serialization {
     use super::*;
+    use std::str::FromStr;
 
     lazy_static! {
         static ref PACKET: StreamPacket = StreamPacketBuilder {

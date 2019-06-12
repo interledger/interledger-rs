@@ -5,7 +5,7 @@ use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_packet::Address;
 use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
-use std::{fmt, str, str::FromStr};
+use std::{fmt, str};
 
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.
@@ -87,6 +87,7 @@ impl StdError for Never {
 mod spsp_server_test {
     use super::*;
     use futures::Future;
+    use std::str::FromStr;
 
     #[test]
     fn spsp_response_headers() {

@@ -12,7 +12,7 @@ use std::str::FromStr;
 use tokio;
 use url::Url;
 
-#[allow(clippy::cyclomatic_complexity)]
+#[allow(clippy::cognitive_complexity)]
 pub fn main() {
     env_logger::init();
 

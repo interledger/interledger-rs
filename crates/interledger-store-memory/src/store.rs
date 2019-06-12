@@ -8,7 +8,6 @@ use hashbrown::HashMap;
 use interledger_btp::{BtpOpenSignupAccount, BtpOpenSignupStore, BtpStore};
 use interledger_http::HttpStore;
 use interledger_ildcp::IldcpAccount;
-use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use parking_lot::{Mutex, RwLock};
@@ -16,7 +15,6 @@ use std::{
     cmp::max,
     iter::{empty, once, FromIterator, IntoIterator},
     str,
-    str::FromStr,
     sync::Arc,
 };
 
@@ -200,6 +198,8 @@ impl BtpOpenSignupStore for InMemoryStore {
 mod tests {
     use super::*;
 
+    use interledger_packet::Address;
+    use std::str::FromStr;
     #[test]
     fn get_accounts() {
         let store = InMemoryStore::new(vec![

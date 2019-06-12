@@ -1,7 +1,7 @@
 use super::crypto::*;
 use super::packet::*;
 use base64;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use futures::future::result;
 use hex;
 use interledger_ildcp::IldcpAccount;
@@ -12,7 +12,6 @@ use interledger_packet::{
 use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService};
 use std::convert::TryFrom;
 use std::marker::PhantomData;
-use std::{str, str::FromStr};
 
 const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_secret_generator";
 
@@ -249,6 +248,7 @@ fn receive_money(
 #[cfg(test)]
 mod connection_generator {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn regenerates_the_shared_secret() {
@@ -304,8 +304,9 @@ fn test_stream_packet() -> StreamPacket {
 mod receiving_money {
     use super::*;
     use interledger_packet::PrepareBuilder;
-    use std::time::UNIX_EPOCH;
 
+    use std::str::FromStr;
+    use std::time::UNIX_EPOCH;
     #[test]
     fn fulfills_valid_packet() {
         let client_address = Address::from_str("example.destination").unwrap();
@@ -438,8 +439,9 @@ mod stream_receiver_service {
     use futures::Future;
     use interledger_packet::PrepareBuilder;
     use interledger_service::outgoing_service_fn;
-    use std::time::UNIX_EPOCH;
 
+    use std::str::FromStr;
+    use std::time::UNIX_EPOCH;
     #[test]
     fn fulfills_correct_packets() {
         let client_address = Address::from_str("example.destination").unwrap();
