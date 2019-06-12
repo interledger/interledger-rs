@@ -31,7 +31,6 @@ lazy_static! {
             .unwrap();
 }
 
-
 use std::error::Error;
 impl Error for AddressError {
     fn description(&self) -> &str {

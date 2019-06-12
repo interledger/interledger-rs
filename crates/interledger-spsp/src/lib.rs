@@ -12,6 +12,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate failure;
 
+use interledger_packet::Address;
 use interledger_stream::Error as StreamError;
 
 mod client;
@@ -38,7 +39,7 @@ pub enum Error {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SpspResponse {
-    destination_account: String,
+    destination_account: Address,
     #[serde(with = "serde_base64")]
     shared_secret: Vec<u8>,
 }

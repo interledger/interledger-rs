@@ -74,10 +74,8 @@ impl ConnectionGenerator {
                 let (random_bytes, auth_tag) = local_part.split_at(18);
                 let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
                 let dest: &[u8] = destination_account.as_ref();
-                let derived_auth_tag = &hmac_sha256(
-                    &shared_secret[..],
-                    &dest[..dest.len() - 19],
-                )[..14];
+                let derived_auth_tag =
+                    &hmac_sha256(&shared_secret[..], &dest[..dest.len() - 19])[..14];
                 if derived_auth_tag == auth_tag {
                     return Ok(shared_secret);
                 } else {

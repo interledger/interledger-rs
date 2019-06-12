@@ -28,7 +28,6 @@ impl SpspResponder {
         let (destination_account, shared_secret) = self
             .connection_generator
             .generate_address_and_secret(&self.ilp_address);
-        let destination_account = destination_account.to_string();
         debug!(
             "Generated address and secret for: {:?}",
             destination_account
