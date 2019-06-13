@@ -12,32 +12,33 @@ use std::str;
 ///   - apply exchange rates or fees to the Prepare packet
 ///   - adjust account balances
 ///   - reduce the Prepare packet's expiry
+/// That is done by OutgoingServices.
 #[derive(Clone)]
-pub struct Router<T, S> {
-    store: T,
-    next: S,
+pub struct Router<S, O> {
+    store: S,
+    next: O,
 }
 
-impl<T, S> Router<T, S>
+impl<S, O> Router<S, O>
 where
-    T: RouterStore,
-    S: OutgoingService<T::Account>,
+    S: RouterStore,
+    O: OutgoingService<S::Account>,
 {
-    pub fn new(store: T, next: S) -> Self {
-        Router { next, store }
+    pub fn new(store: S, next: O) -> Self {
+        Router { store, next }
     }
 }
 
-impl<T, S> IncomingService<T::Account> for Router<T, S>
+impl<S, O> IncomingService<S::Account> for Router<S, O>
 where
-    T: RouterStore,
-    S: OutgoingService<T::Account> + Clone + Send + 'static,
+    S: RouterStore,
+    O: OutgoingService<S::Account> + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest<T::Account>) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest<S::Account>) -> Self::Future {
         let destination = Bytes::from(request.prepare.destination());
-        let mut next_hop: Option<<T::Account as Account>::AccountId> = None;
+        let mut next_hop = None;
         let routing_table = self.store.routing_table();
 
         // Check if we have a direct path for that account or if we need to scan through the routing table
