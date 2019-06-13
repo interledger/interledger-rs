@@ -3,7 +3,7 @@ use std::time::Duration;
 
 pub const DEFAULT_ROUND_TRIP_TIME: u64 = 500;
 
-pub trait RoundTripTimeAccount {
+pub trait RoundTripTimeAccount: Account {
     /// Estimate of how long we expect it to take to send a message to this
     fn round_trip_time(&self) -> u64 {
         DEFAULT_ROUND_TRIP_TIME
@@ -24,7 +24,7 @@ impl<S> ExpiryShortenerService<S> {
 impl<S, A> OutgoingService<A> for ExpiryShortenerService<S>
 where
     S: OutgoingService<A>,
-    A: RoundTripTimeAccount + Account,
+    A: RoundTripTimeAccount,
 {
     type Future = S::Future;
 
