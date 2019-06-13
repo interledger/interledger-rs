@@ -27,6 +27,7 @@ pub enum RateLimitError {
 pub trait RateLimitStore {
     type Account: RateLimitAccount;
 
+    
     fn apply_rate_limits(
         &self,
         account: Self::Account,
@@ -40,33 +41,33 @@ pub trait RateLimitStore {
 }
 
 #[derive(Clone)]
-pub struct RateLimitService<S, T, A> {
+pub struct RateLimitService<S, I, A> {
     ilp_address: Bytes,
-    next: S,
-    store: T,
+    store: S, 
+    next: I, // Can we somehow omit the PhantomData 
     account_type: PhantomData<A>,
 }
 
-impl<S, T, A> RateLimitService<S, T, A>
+impl<S, I, A> RateLimitService<S, I, A>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
-    A: RateLimitAccount + Sync + 'static, // should Sync + 'static be added to Account?
+    S: RateLimitStore<Account = A> + Clone + Send + Sync,
+    I: IncomingService<A> + Clone + Send + Sync, // Looks like 'static is not required?
+    A: RateLimitAccount + Sync 
 {
-    pub fn new(ilp_address: Bytes, store: T, next: S) -> Self {
+    pub fn new(ilp_address: Bytes, store: S, next: I) -> Self {
         RateLimitService {
             ilp_address,
-            next,
             store,
+            next,
             account_type: PhantomData,
         }
     }
 }
 
-impl<S, T, A> IncomingService<A> for RateLimitService<S, T, A>
+impl<S, I, A> IncomingService<A> for RateLimitService<S, I, A>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
+    S: RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
     A: RateLimitAccount + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
@@ -79,6 +80,8 @@ where
         let account_clone = account.clone();
         let prepare_amount = request.prepare.amount();
         let has_throughput_limit = account.amount_per_minute_limit().is_some();
+        // request.from and request.amount are used for apply_rate_limits, can't the previous service
+        // always set the account to have None for both?
         Box::new(self.store.apply_rate_limits(request.from.clone(), request.prepare.amount())
             .map_err(move |err| {
                 let code = match err {
