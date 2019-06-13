@@ -51,7 +51,7 @@ impl<S, T, A> RateLimitService<S, T, A>
 where
     S: IncomingService<A> + Clone + Send + Sync + 'static,
     T: RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
-    A: RateLimitAccount + Sync + 'static, // should Sync + 'static be added to Account or RateLimitAccount?
+    A: RateLimitAccount + Sync + 'static, // should Sync + 'static be added to Account?
 {
     pub fn new(ilp_address: Bytes, store: T, next: S) -> Self {
         RateLimitService {
