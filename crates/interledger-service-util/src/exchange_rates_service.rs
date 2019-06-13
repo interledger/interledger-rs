@@ -80,23 +80,21 @@ where
                 .build()));
             };
 
-            let outgoing_amount = calculate_amount(
-                request.prepare.amount(),
-                rate,
-                request.from.asset_scale(),
-                request.to.asset_scale(),
-            );
+            let scaled_rate = if request.to.asset_scale() >= request.from.asset_scale() {
+                rate * 10f64.powf(f64::from(
+                    request.to.asset_scale() - request.from.asset_scale(),
+                ))
+            } else {
+                rate / 10f64.powf(f64::from(
+                    request.from.asset_scale() - request.to.asset_scale(),
+                ))
+            };
+
+            let outgoing_amount = (request.prepare.amount() as f64 * scaled_rate) as u64;
             request.prepare.set_amount(outgoing_amount);
             trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}", request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(), outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
         }
 
         Box::new(self.next.send_request(request))
     }
-}
-
-// Evan had said that he encountered some problem hence the previous logic, is there something wrong with this operation?
-// TODO Add tests for this function
-fn calculate_amount(amount: u64, rate: f64, from_scale: u8, to_scale: u8) -> u64 {
-    let scaled_rate: f64 = rate * 10f64.powf((to_scale - from_scale).into());
-    (amount as f64 * scaled_rate) as u64
 }
