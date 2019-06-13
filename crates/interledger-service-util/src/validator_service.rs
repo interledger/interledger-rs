@@ -8,17 +8,17 @@ use std::time::{Duration, SystemTime};
 use tokio::prelude::FutureExt;
 
 #[derive(Clone)]
-pub struct ValidatorService<S, A> {
-    next: S,
+pub struct ValidatorService<IO, A> { 
+    next: IO,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> ValidatorService<S, A>
+impl<I, A> ValidatorService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
-    pub fn incoming(next: S) -> Self {
+    pub fn incoming(next: I) -> Self {
         ValidatorService {
             next,
             account_type: PhantomData,
@@ -26,12 +26,12 @@ where
     }
 }
 
-impl<S, A> ValidatorService<S, A>
+impl<O, A> ValidatorService<O, A>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: Account,
 {
-    pub fn outgoing(next: S) -> Self {
+    pub fn outgoing(next: O) -> Self {
         ValidatorService {
             next,
             account_type: PhantomData,
@@ -39,9 +39,9 @@ where
     }
 }
 
-impl<S, A> IncomingService<A> for ValidatorService<S, A>
+impl<I, A> IncomingService<A> for ValidatorService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
     type Future = BoxedIlpFuture;
@@ -62,7 +62,7 @@ where
             let result = Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: &[], // TODO: Add ilp_address to the service
                 data: &[],
             }
             .build()));
@@ -71,16 +71,16 @@ where
     }
 }
 
-impl<S, A> OutgoingService<A> for ValidatorService<S, A>
+impl<O, A> OutgoingService<A> for ValidatorService<O, A>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: Account,
 {
     type Future = BoxedIlpFuture;
 
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let mut condition: [u8; 32] = [0; 32];
-        condition[..].copy_from_slice(request.prepare.execution_condition());
+        condition[..].copy_from_slice(request.prepare.execution_condition()); // why?
 
         if let Ok(time_left) = request
             .prepare
@@ -103,7 +103,7 @@ where
                             RejectBuilder {
                                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                                 message: &[],
-                                triggered_by: &[],
+                                triggered_by: &[], // TODO: self.ilp_address
                                 data: &[],
                             }
                             .build()
@@ -118,7 +118,7 @@ where
                             Err(RejectBuilder {
                                 code: ErrorCode::F09_INVALID_PEER_RESPONSE,
                                 message: b"Fulfillment did not match condition",
-                                triggered_by: &[],
+                                triggered_by: &[], // Should this be the self.ilp_address? Don't we want to return the address of who gave us an invalid preimage?
                                 data: &[],
                             }
                             .build())

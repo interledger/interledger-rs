@@ -7,19 +7,19 @@ pub trait MaxPacketAmountAccount: Account {
 }
 
 #[derive(Clone)]
-pub struct MaxPacketAmountService<S> {
-    next: S,
+pub struct MaxPacketAmountService<I> {
+    next: I,
 }
 
-impl<S> MaxPacketAmountService<S> {
-    pub fn new(next: S) -> Self {
+impl<I> MaxPacketAmountService<I> {
+    pub fn new(next: I) -> Self {
         MaxPacketAmountService { next }
     }
 }
 
-impl<S, A> IncomingService<A> for MaxPacketAmountService<S>
+impl<I, A> IncomingService<A> for MaxPacketAmountService<I>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: MaxPacketAmountAccount,
 {
     type Future = BoxedIlpFuture;

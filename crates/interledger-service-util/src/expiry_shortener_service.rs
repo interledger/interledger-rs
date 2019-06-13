@@ -1,7 +1,7 @@
 use interledger_service::{Account, OutgoingRequest, OutgoingService};
 use std::time::Duration;
 
-pub const DEFAULT_ROUND_TRIP_TIME: u64 = 500;
+pub const DEFAULT_ROUND_TRIP_TIME: u64 = 500; // milliseconds?
 
 pub trait RoundTripTimeAccount: Account {
     /// Estimate of how long we expect it to take to send a message to this
@@ -11,22 +11,22 @@ pub trait RoundTripTimeAccount: Account {
 }
 
 #[derive(Clone)]
-pub struct ExpiryShortenerService<S> {
-    next: S,
+pub struct ExpiryShortenerService<O> {
+    next: O,
 }
 
-impl<S> ExpiryShortenerService<S> {
-    pub fn new(next: S) -> Self {
+impl<O> ExpiryShortenerService<O> {
+    pub fn new(next: O) -> Self {
         ExpiryShortenerService { next }
     }
 }
 
-impl<S, A> OutgoingService<A> for ExpiryShortenerService<S>
+impl<O, A> OutgoingService<A> for ExpiryShortenerService<O>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: RoundTripTimeAccount,
 {
-    type Future = S::Future;
+    type Future = O::Future;
 
     fn send_request(&mut self, mut request: OutgoingRequest<A>) -> Self::Future {
         let time_to_subtract = request.from.round_trip_time() + request.to.round_trip_time();
