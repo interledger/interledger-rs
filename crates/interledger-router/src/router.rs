@@ -5,6 +5,13 @@ use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use std::str;
 
+/// # Interledger Router
+///
+/// The router implements an incoming service and includes an outgoing service.
+/// It determines the next account to forward to and passes it on.
+/// Both incoming and outgoing services can respond to requests but many just pass the request on.
+/// It stores a RouterStore which stores the entire routing table. Once it receives a Prepare, it checks its destination and if it finds it in the routing table
+///
 /// The router implements the IncomingService trait and uses the routing table
 /// to determine the `to` (or "next hop") Account for the given request.
 ///
@@ -12,7 +19,9 @@ use std::str;
 ///   - apply exchange rates or fees to the Prepare packet
 ///   - adjust account balances
 ///   - reduce the Prepare packet's expiry
+///
 /// That is done by OutgoingServices.
+
 #[derive(Clone)]
 pub struct Router<S, O> {
     store: S,
@@ -36,6 +45,11 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// Figures out the next node to pass the received Prepare packet to.
+    ///
+    /// Firstly, it checks if there is a direct path for that account and use that.
+    /// If not it scans through the routing table and checks if the route prefix matches
+    /// the prepare packet's destination or if it's a catch-all address (i.e. empty prefix)
     fn handle_request(&mut self, request: IncomingRequest<S::Account>) -> Self::Future {
         let destination = Bytes::from(request.prepare.destination());
         let mut next_hop = None;

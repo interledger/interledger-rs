@@ -3,8 +3,8 @@
 
 extern crate futures;
 extern crate net2;
-extern crate rand;
 extern crate os_type;
+extern crate rand;
 
 use redis;
 
@@ -59,7 +59,7 @@ impl RedisServer {
         // Load redis_cell
         let mut cell_module: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         cell_module.push("external");
-        cell_module.push(fname); 
+        cell_module.push(fname);
         cmd.arg("--loadmodule").arg(cell_module.as_os_str());
 
         cmd.stdout(process::Stdio::null())

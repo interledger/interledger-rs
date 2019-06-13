@@ -10,6 +10,15 @@ pub trait RoundTripTimeAccount: Account {
     }
 }
 
+/// # Expiry Shortener Service
+///
+/// Each packet should have its expiry duration decreased as it gets propagated to nodes,
+/// since the time until it gets back to the original sender will have latency,
+/// and we want it to be still valid by then (without reducing the timeout the
+/// packet might expire by the time it's back after many hops).
+///
+/// This service reduces the expiry time of each packet before forwarding it out.
+/// Requires a `RoundtripTimeAccount` and _no store_
 #[derive(Clone)]
 pub struct ExpiryShortenerService<O> {
     next: O,
@@ -28,6 +37,10 @@ where
 {
     type Future = O::Future;
 
+    /// On send request:
+    /// 1. Get the sender and receiver's roundtrip time (default 500ms)
+    /// 2. Reduce the packet's expiry by that amount
+    /// 3. Forward the request
     fn send_request(&mut self, mut request: OutgoingRequest<A>) -> Self::Future {
         let time_to_subtract = request.from.round_trip_time() + request.to.round_trip_time();
         let new_expiry = request.prepare.expires_at() - Duration::from_millis(time_to_subtract);

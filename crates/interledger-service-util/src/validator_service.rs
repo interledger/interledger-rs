@@ -7,8 +7,15 @@ use std::marker::PhantomData;
 use std::time::{Duration, SystemTime};
 use tokio::prelude::FutureExt;
 
+/// # Validator Service
+///
+/// Incoming or Outgoing Service responsible for rejecting timed out
+/// requests and checking their fulfill condition is correct.
+/// Forwards everything else.
+///
+/// Requires an `Account` and _no store_
 #[derive(Clone)]
-pub struct ValidatorService<IO, A> { 
+pub struct ValidatorService<IO, A> {
     next: IO,
     account_type: PhantomData<A>,
 }
@@ -46,6 +53,8 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// On receiving a request:
+    /// 1. If the prepare packet in the request is not expired, forward it, otherwise return a reject
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if request.prepare.expires_at() >= SystemTime::now() {
             Box::new(self.next.handle_request(request))
@@ -78,6 +87,14 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// On sending a request:
+    /// 1. If the outgoing packet has expired, return a reject with the appropriate ErrorCode
+    /// 1. Tries to forward the request
+    ///     - If no response is received before the prepare packet's expiration, it assumes that the outgoing request has timed out.
+    ///     - If no timeout occurred, but still errored it will just return the reject
+    ///     - If the forwarding is successful, it should receive a fulfill packet. Depending on if the hash of the fulfillment condition inside the fulfill is a preimage of the condition of the prepare:
+    ///         - return the fulfill if it matches
+    ///         - otherwise reject
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition()); // why?

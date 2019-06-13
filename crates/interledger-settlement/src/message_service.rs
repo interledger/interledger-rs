@@ -40,14 +40,13 @@ where
     S: IncomingService<A>,
     A: SettlementAccount,
 {
-    type Future = BoxedIlpFuture; // boxed ILP futures everywhere!
+    type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         // Only handle the request if the destination address matches the ILP address
         // of the settlement engine being used for this account
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
             if request.prepare.destination() == settlement_engine_details.ilp_address.as_ref() {
-                // ^ BOTH ARE SET BY THE REQUEST?
                 let ilp_address = self.ilp_address.clone();
                 let mut settlement_engine_url = settlement_engine_details.url;
 
@@ -64,7 +63,6 @@ where
                             .expect("Invalid settlement engine URL")
                             .push("receiveMessage"); // Maybe set the idempotency flag here in the headers
                         let ilp_address_clone = ilp_address.clone();
-                        // Boxed new service
                         return Box::new(self.http_client.post(settlement_engine_url)
                         .json(&message)
                         .send()

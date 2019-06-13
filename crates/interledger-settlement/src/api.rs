@@ -132,7 +132,7 @@ impl_web! {
                                 }
                                 .build();
                                 outgoing_handler.send_request(OutgoingRequest {
-                                        from: account.clone(), // Very rare case of dummy acount becuase we already know
+                                        from: account.clone(),
                                         to: account.clone(),
                                         original_amount: 0,
                                         prepare,

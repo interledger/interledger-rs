@@ -27,7 +27,6 @@ pub enum RateLimitError {
 pub trait RateLimitStore {
     type Account: RateLimitAccount;
 
-    
     fn apply_rate_limits(
         &self,
         account: Self::Account,
@@ -40,19 +39,29 @@ pub trait RateLimitStore {
     ) -> Box<Future<Item = (), Error = ()> + Send>;
 }
 
+/// # Rate Limit Service
+///
+/// Incoming Service responsible for rejecting requests
+/// by users who have reached their account's rate limit.
+/// Talks with the associated Store in order to figure out
+/// and set the rate limits per account.
+/// This service does packet based limiting and amount based limiting.
+///
+/// Forwards everything else.
+/// Requires a `RateLimitAccount` and a `RateLimitStore`.
+/// It is an IncomingService.
 #[derive(Clone)]
 pub struct RateLimitService<S, I, A> {
     ilp_address: Bytes,
-    store: S, 
-    next: I, // Can we somehow omit the PhantomData 
+    store: S,
+    next: I, // Can we somehow omit the PhantomData
     account_type: PhantomData<A>,
 }
-
 impl<S, I, A> RateLimitService<S, I, A>
 where
     S: RateLimitStore<Account = A> + Clone + Send + Sync,
     I: IncomingService<A> + Clone + Send + Sync, // Looks like 'static is not required?
-    A: RateLimitAccount + Sync 
+    A: RateLimitAccount + Sync,
 {
     pub fn new(ilp_address: Bytes, store: S, next: I) -> Self {
         RateLimitService {
@@ -72,6 +81,12 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// On receiving a request:
+    /// 1. Apply rate limit based on the sender of the request and the amount in the prepare packet in the request
+    /// 1. If no limits were hit forward the request
+    ///     - If it succeeds, OK
+    ///     - If the request forwarding failed, the client should not be charged towards their throughput limit, so they are refunded, and return a reject
+    /// 1. If the limit was hit, return a reject with the appropriate ErrorCode.
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         let ilp_address = self.ilp_address.clone();
         let mut next = self.next.clone();

@@ -9,6 +9,10 @@ pub trait ExchangeRateStore {
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
 }
 
+/// # Exchange Rates Service
+///
+/// Responsible for getting the exchange rates for the two assets in the outgoing request (`request.from.asset_code`, `request.to.asset_code`).
+/// Requires a `ExchangeRateStore`
 #[derive(Clone)]
 pub struct ExchangeRateService<S, O, A> {
     ilp_address: Bytes,
@@ -42,6 +46,12 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// On send reques:
+    /// 1. If the prepare packet's amount is 0, it just forwards
+    /// 1. Retrieves the exchange rate from the store (the store independently is responsible for polling the rates)
+    ///     - return reject if the call to the store fails
+    /// 1. Calculates the exchange rate AND scales it up/down depending on how many decimals each asset requires
+    /// 1. Updates the amount in the prepare packet and forwards it
     fn send_request(
         &mut self,
         mut request: OutgoingRequest<A>,

@@ -34,6 +34,11 @@ pub trait BalanceStore: AccountStore {
     ) -> Box<Future<Item = (), Error = ()> + Send>;
 }
 
+/// # Balance Service
+///
+/// Responsible for managing the balances of the account and the interaction with the Settlement Engine
+///
+/// Requires an `IldcpAccount` and a `BalanceStore`
 #[derive(Clone)]
 pub struct BalanceService<S, O, A> {
     ilp_address: Bytes,
@@ -67,6 +72,14 @@ where
 {
     type Future = BoxedIlpFuture;
 
+    /// On send message:
+    /// 1. Calls `store.update_balances_for_prepare` with the prepare.
+    /// If it fails, it replies with a reject
+    /// 1. Tries to forward the request:
+    ///     - If it returns a fullfil, calls `store.update_balances_for_fulfill` and replies with the fulfill
+    ///       INDEPENDENTLY of if the call suceeds or fails. THIS MAKES A `sendMoney` CALL TO THE SETTLEMENT ENGINE
+    ///     - if it returns an reject calls `store.update_balances_for_reject` and replies with the fulfill
+    ///       INDEPENDENTLY of if the call suceeds or fails
     fn send_request(
         &mut self,
         request: OutgoingRequest<A>,
