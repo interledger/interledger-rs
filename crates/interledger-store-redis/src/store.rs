@@ -231,7 +231,7 @@ pub struct RedisStore {
     connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, u64>>>,
-    hmac_key: Arc<hmac::SigningKey>,
+    hmac_key: Arc<hmac::SigningKey>, // redisstore stores a key, this must be protected
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
     settlement_client: SettlementClient,
@@ -993,10 +993,10 @@ impl RouteManagerStore for RedisStore {
         ))
     }
 
-    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (Bytes, Account)>,
-    {
+    fn set_routes(
+        &mut self,
+        routes: impl IntoIterator<Item = (Bytes, Account)>,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
         let routes: Vec<(String, u64)> = routes
             .into_iter()
             .filter_map(|(prefix, account)| {

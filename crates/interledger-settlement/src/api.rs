@@ -4,9 +4,9 @@ use futures::{
     Future,
 };
 use hyper::Response;
+use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
-use interledger_ildcp::IldcpAccount;
 use serde_json::Value;
 use std::{
     marker::PhantomData,
@@ -122,17 +122,20 @@ impl_web! {
                                 }
                             })
                             .and_then(move |(account, settlement_engine)| {
-                                outgoing_handler.send_request(OutgoingRequest {
-                                        from: account.clone(), // Very rare case of dummy acount becuase we already know
-                                        to: account.clone(),
-                                        original_amount: 0,
-                                        destination: settlement_engine.ilp_address.as_ref(),
+                                let prepare = PrepareBuilder {
                                         amount: 0,
                                         expires_at: SystemTime::now() + Duration::from_secs(30),
                                         // AccountID should be in the path -  it should take arbitrary data
                                         data: body.to_string().as_bytes().as_ref(),
+                                        destination: settlement_engine.ilp_address.as_ref(),
                                         execution_condition: &PEER_PROTOCOL_CONDITION,
-                                    }.build()
+                                }
+                                .build();
+                                outgoing_handler.send_request(OutgoingRequest {
+                                        from: account.clone(), // Very rare case of dummy acount becuase we already know
+                                        to: account.clone(),
+                                        original_amount: 0,
+                                        prepare,
                                 })
                                 .map_err(|reject| {
                                     error!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());

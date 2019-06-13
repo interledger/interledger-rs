@@ -64,7 +64,7 @@ where
                             .expect("Invalid settlement engine URL")
                             .push("receiveMessage"); // Maybe set the idempotency flag here in the headers
                         let ilp_address_clone = ilp_address.clone();
-                        // Boxed new service 
+                        // Boxed new service
                         return Box::new(self.http_client.post(settlement_engine_url)
                         .json(&message)
                         .send()
