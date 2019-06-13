@@ -78,16 +78,16 @@ pub trait CcpRoutingAccount: Account + IldcpAccount {
     }
 }
 
+// key = Bytes, key should be Address -- TODO
+type Route<T> = HashMap<Bytes, T>;
+
 pub trait RouteManagerStore: Clone {
     type Account: CcpRoutingAccount;
 
     // TODO should we have a way to only get the details for specific routes?
     fn get_local_and_configured_routes(
         &self,
-    ) -> Box<
-        Future<Item = (HashMap<Bytes, Self::Account>, HashMap<Bytes, Self::Account>), Error = ()>
-            + Send,
-    >;
+    ) -> Box<Future<Item = (Route<Self::Account>, Route<Self::Account>), Error = ()> + Send>;
 
     fn get_accounts_to_send_routes_to(
         &self,
@@ -97,7 +97,8 @@ pub trait RouteManagerStore: Clone {
         &self,
     ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
-    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (Bytes, Self::Account)>;
+    fn set_routes(
+        &mut self,
+        routes: impl IntoIterator<Item = (Bytes, Self::Account)>,
+    ) -> Box<Future<Item = (), Error = ()> + Send>;
 }

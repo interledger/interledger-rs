@@ -21,7 +21,7 @@ impl<S, T, A> ExchangeRateService<S, T, A>
 where
     S: OutgoingService<A>,
     T: ExchangeRateStore,
-    A: IldcpAccount + Account,
+    A: IldcpAccount,
 {
     pub fn new(ilp_address: Bytes, store: T, next: S) -> Self {
         ExchangeRateService {
@@ -38,7 +38,7 @@ where
     // TODO can we make these non-'static?
     S: OutgoingService<A> + Send + Clone + 'static,
     T: ExchangeRateStore + Clone + Send + Sync + 'static,
-    A: IldcpAccount + Send + Sync + 'static,
+    A: IldcpAccount + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
