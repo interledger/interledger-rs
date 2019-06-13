@@ -48,14 +48,14 @@ pub struct CcpRouteManagerBuilder<S, T, U> {
     boadcast_interval: u64,
 }
 
-impl<S, T, U, A> CcpRouteManagerBuilder<S, T, U>
+impl<I, O, S, A> CcpRouteManagerBuilder<I, O, S>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: OutgoingService<A> + Clone + Send + Sync + 'static,
-    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
-    pub fn new(store: U, outgoing: T, next_incoming: S) -> Self {
+    pub fn new(store: S, outgoing: O, next_incoming: I) -> Self {
         CcpRouteManagerBuilder {
             ilp_address: Bytes::new(),
             global_prefix: Bytes::from_static(b"g."),
@@ -82,7 +82,7 @@ where
         self
     }
 
-    pub fn to_service(&self) -> CcpRouteManager<S, T, U, A> {
+    pub fn to_service(&self) -> CcpRouteManager<I, O, S, A> {
         let service = CcpRouteManager {
             ilp_address: self.ilp_address.clone(),
             global_prefix: self.global_prefix.clone(),
@@ -112,15 +112,15 @@ where
 /// with the best routes determined by per-account configuration and the broadcasts we have
 /// received from peers.
 #[derive(Clone)]
-pub struct CcpRouteManager<S, T, U, A: Account> {
+pub struct CcpRouteManager<I, O, S, A: Account> {
     ilp_address: Bytes,
     global_prefix: Bytes,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
-    next_incoming: S,
+    next_incoming: I,
     /// The outgoing request handler that will be used to send outgoing CCP messages.
     /// Note that this service bypasses the Router because the Route Manager needs to be able to
     /// send messages directly to specific peers.
-    outgoing: T,
+    outgoing: O,
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     forwarding_table: Arc<RwLock<RoutingTable<A>>>,
@@ -136,7 +136,7 @@ pub struct CcpRouteManager<S, T, U, A: Account> {
     /// Updates from peers are applied to our local_table if they are better than the
     /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
-    store: U,
+    store: S,
     /// If true, tasks will be spawned to process Route Update Requests and respond
     /// to Route Control Requests. If false, the response to the incoming request
     /// will wait until the outgoing messages have been sent out.
@@ -146,11 +146,11 @@ pub struct CcpRouteManager<S, T, U, A: Account> {
     spawn_tasks: bool,
 }
 
-impl<S, T, U, A> CcpRouteManager<S, T, U, A>
+impl<I, O, S, A> CcpRouteManager<I, O, S, A>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: OutgoingService<A> + Clone + Send + Sync + 'static,
-    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     /// Returns a future that will trigger this service to update its routes and broadcast
