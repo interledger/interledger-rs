@@ -47,6 +47,9 @@ jobs:
           command: cargo audit
       - run:
           name: Generate Coverage Report
+          # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
+          # See discussion in https://github.com/travis-ci/travis-ci/issues/9061
+          sudo: required
           command:
             cargo kcov --all --verbose
             # -- --verify
