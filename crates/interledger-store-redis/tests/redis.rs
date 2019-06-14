@@ -10,6 +10,7 @@ use interledger_packet::Address;
 use interledger_store_redis::{connect, connect_with_poll_interval, Account, RedisStore};
 use parking_lot::Mutex;
 use redis;
+use std::str::FromStr;
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
@@ -21,7 +22,7 @@ use redis_helpers::*;
 
 lazy_static! {
     static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
-        ilp_address: b"example.alice".to_vec(),
+        ilp_address: Address::from_str("example.alice").unwrap(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
@@ -40,7 +41,7 @@ lazy_static! {
         routing_relation: None,
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
-        ilp_address: b"example.bob".to_vec(),
+        ilp_address: Address::from_str("example.bob").unwrap(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
@@ -140,7 +141,7 @@ mod insert_accounts {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
+                    ilp_address: Address::from_str("example.charlie").unwrap(),
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
@@ -171,7 +172,7 @@ mod insert_accounts {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
+                    ilp_address: Address::from_str("example.charlie").unwrap(),
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
@@ -202,7 +203,7 @@ mod insert_accounts {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
+                    ilp_address: Address::from_str("example.charlie").unwrap(),
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
@@ -344,7 +345,7 @@ mod routes_and_rates {
                             0
                         );
                         store_clone_1.insert_account(AccountDetails {
-                            ilp_address: b"example.bob".to_vec(),
+                            ilp_address: Address::from_str("example.bob").unwrap(),
                             asset_scale: 6,
                             asset_code: "XYZ".to_string(),
                             max_packet_amount: 1000,

@@ -5,6 +5,8 @@ extern crate log;
 use env_logger;
 use futures::{future::ok, Future};
 use interledger::cli;
+use interledger_packet::Address;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 use tokio::{runtime::Runtime, timer::Delay};
 
@@ -48,7 +50,7 @@ fn btp_end_to_end() {
         let create_accounts = cli::insert_account_redis(
             connection_info1,
             cli::AccountDetails {
-                ilp_address: Vec::from("example.one"),
+                ilp_address: Address::from_str("example.one").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_authorization: Some("token-one".to_string()),
@@ -71,7 +73,7 @@ fn btp_end_to_end() {
             cli::insert_account_redis(
                 connection_info2,
                 cli::AccountDetails {
-                    ilp_address: Vec::from("example.two"),
+                    ilp_address: Address::from_str("example.two").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_authorization: Some("token-two".to_string()),

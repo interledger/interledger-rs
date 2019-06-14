@@ -15,6 +15,7 @@ use http::{Request, Response};
 use hyper::{body::Body, error::Error};
 use interledger_http::{HttpAccount, HttpServerService, HttpStore};
 use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::BalanceStore;
@@ -60,10 +61,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 /// The Account type for the RedisStore.
 #[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
-    // Error when converting this to Option<Address>
-    // `_IMPL_SERIALIZE_FOR_AccountsResponse::_serde::Serialize`
-    // is not implemented for `interledger_packet::address::Address`
-    pub ilp_address: Vec<u8>,
+    pub ilp_address: Address,
     pub asset_code: String,
     pub asset_scale: u8,
     pub max_packet_amount: u64,
