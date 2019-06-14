@@ -50,17 +50,17 @@ impl RedisServer {
         let server_type = ServerType::get_intended();
         let mut cmd = process::Command::new("redis-server");
 
-        let fname = if os_type::current_platform().os_type == os_type::OSType::OSX {
-            "libredis_cell.dylib"
-        } else {
-            "libredis_cell.so"
-        };
+        //let fname = if os_type::current_platform().os_type == os_type::OSType::OSX {
+        //    "libredis_cell.dylib"
+        //} else {
+        //    "libredis_cell.so"
+        //};
 
-        // Load redis_cell
-        let mut cell_module: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        cell_module.push("external");
-        cell_module.push(fname);
-        cmd.arg("--loadmodule").arg(cell_module.as_os_str());
+        //// Load redis_cell
+        //let mut cell_module: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        //cell_module.push("external");
+        //cell_module.push(fname);
+        //cmd.arg("--loadmodule").arg(cell_module.as_os_str());
 
         cmd.stdout(process::Stdio::null())
             .stderr(process::Stdio::null());
