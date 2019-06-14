@@ -645,16 +645,10 @@ mod test_prepare {
     use crate::fixtures::{self, PREPARE, PREPARE_BUILDER, PREPARE_BYTES};
 
     #[test]
-    #[should_panic]
     fn test_invalid_address() {
-        Prepare::try_from({
-            let mut with_bad_address = PREPARE_BUILDER.clone();
-            // NOTE: This intentionally creates an invalid ILP address.
-            with_bad_address.destination =
-                unsafe { Address::new_unchecked(Bytes::from("test.invalid address!")) };
-            BytesMut::from(with_bad_address.build())
-        })
-        .is_err();
+        let mut prep = BytesMut::from(PREPARE_BYTES);
+        prep[67] = 42; // convert a byte from the address to a junk character
+        assert!(Prepare::try_from(prep).is_err());
     }
 
     #[test]
