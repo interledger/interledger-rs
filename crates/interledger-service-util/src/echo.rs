@@ -107,7 +107,19 @@ where
 
         // check source address
         let source_address = match reader.read_var_octet_string() {
-            Ok(value) => value,
+            Ok(value) => match Address::try_from(value) {
+                Ok(value) => value,
+                Err(error) => {
+                    eprintln!("Could not convert source address: {:?}", error);
+                    return Box::new(err(RejectBuilder {
+                        code: ErrorCode::F01_INVALID_PACKET,
+                        message: b"Could not convert source address.",
+                        triggered_by: Some(&self.ilp_address),
+                        data: &[],
+                    }
+                    .build()));
+                }
+            },
             Err(error) => {
                 eprintln!("Could not read source address: {:?}", error);
                 return Box::new(err(RejectBuilder {
@@ -119,8 +131,6 @@ where
                 .build()));
             }
         };
-
-        let source_address = Address::try_from(source_address).unwrap();
 
         // create a new prepare packet to echo the prepare
         let execution_condition =
