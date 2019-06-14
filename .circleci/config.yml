@@ -5,6 +5,7 @@ jobs:
       - image: circleci/rust
         environment:
           CARGO_HOME: /home/circleci/.cargo
+    resource_class: large
     steps:
       - checkout
       - restore_cache:
@@ -21,8 +22,9 @@ jobs:
       - run:
           name: Install kcov
           command: >-
-            sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-            && cargo kcov --print-install-kcov-sh | sh
+            kcov --version ||
+            (sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
+            && cargo kcov --print-install-kcov-sh | sh)
       - run:
           name: Install Redis
           # Install from stretch-backports to get the latest version
@@ -46,6 +48,9 @@ jobs:
           command: cargo audit
       - run:
           name: Generate Coverage Report
+          # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
+          # See discussion in https://github.com/travis-ci/travis-ci/issues/9061
+          sudo: required
           command:
             cargo kcov --all --verbose
             # -- --verify

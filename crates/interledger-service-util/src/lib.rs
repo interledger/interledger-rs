@@ -5,16 +5,16 @@
 #[macro_use]
 extern crate log;
 
-mod echo;
 mod balances;
+mod echo;
 mod exchange_rates;
 mod expiry_shortener;
 mod max_packet_amount;
 mod rate_limit;
 mod validator;
 
-pub use self::echo::EchoService;
 pub use self::balances::{BalanceService, BalanceStore};
+pub use self::echo::EchoService;
 pub use self::exchange_rates::{ExchangeRateService, ExchangeRateStore};
 pub use self::expiry_shortener::{
     ExpiryShortenerService, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
