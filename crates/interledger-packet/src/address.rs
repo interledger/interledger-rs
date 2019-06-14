@@ -148,6 +148,15 @@ impl Address {
         Address(bytes)
     }
 
+    /// Returns an iterator over all the segments of the ILP Address
+    pub fn segments(&self) -> impl DoubleEndedIterator<Item = &str> {
+        unsafe {
+            self.0
+                .split(|&b| b == b'.')
+                .map(|s| str::from_utf8_unchecked(&s))
+        }
+    }
+
     /// ```text
     /// scheme = "g" / "private" / "example" / "peer" / "self" /
     ///          "test" / "test1" / "test2" / "test3" / "local"
@@ -157,18 +166,9 @@ impl Address {
         self.segments().next().unwrap()
     }
 
-    /// Returns an iterator over all the segments of the ILP Address
-    pub fn segments(&self) -> impl Iterator<Item = &str> {
-        unsafe {
-            self.0
-                .split(|&b| b == b'.')
-                .map(|s| str::from_utf8_unchecked(&s))
-        }
-    }
-
-    /// Returns the local part (right-most '.' separated segment) of the ILP Address.
-    pub fn local(&self) -> &[u8] {
-        self.0.rsplit(|&byte| byte == b'.').next().unwrap()
+    /// Returns the last part (right-most '.' separated segment) of the ILP Address.
+    pub fn last(&self) -> &str {
+        self.segments().rev().next().unwrap_or("")
     }
 
     /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
@@ -325,6 +325,25 @@ mod test_address {
             Address::from_str("test.alice.1234").unwrap().scheme(),
             "test",
         );
+    }
+
+    #[test]
+    fn test_segments() {
+        let addr = Address::from_str("test.alice.1234.5789").unwrap();
+        let expected = ["test", "alice", "1234", "5789"];
+        let segments = addr.segments();
+        for (a, b) in segments.zip(&expected) {
+            assert_eq!(a, *b);
+        }
+    }
+
+    #[test]
+    fn test_last() {
+        assert_eq!(
+            Address::from_str("test.alice.1234.5789").unwrap().last(),
+            "5789"
+        );
+        assert_eq!(Address::from_str("test.alice.1234").unwrap().last(), "1234");
     }
 
     #[test]
