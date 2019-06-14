@@ -889,7 +889,7 @@ mod handle_route_control_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: (*CCP_CONTROL_DESTINATION).clone(),
+                    destination: CCP_CONTROL_DESTINATION.clone(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],
@@ -1009,7 +1009,7 @@ mod handle_route_update_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: (*CCP_UPDATE_DESTINATION).clone(),
+                    destination: CCP_UPDATE_DESTINATION.clone(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],

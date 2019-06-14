@@ -120,7 +120,7 @@ impl RouteControlRequest {
         }
 
         PrepareBuilder {
-            destination: (*CCP_CONTROL_DESTINATION).clone(),
+            destination: CCP_CONTROL_DESTINATION.clone(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
@@ -323,7 +323,7 @@ impl RouteUpdateRequest {
         }
 
         PrepareBuilder {
-            destination: (*CCP_UPDATE_DESTINATION).clone(),
+            destination: CCP_UPDATE_DESTINATION.clone(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
