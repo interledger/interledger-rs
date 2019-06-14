@@ -167,8 +167,9 @@ impl Address {
     }
 
     /// Returns the last part (right-most '.' separated segment) of the ILP Address.
+    /// Addresses are guaranteed at least one segment (in addition to the scheme).
     pub fn last(&self) -> &str {
-        self.segments().rev().next().unwrap_or("")
+        self.segments().rev().next().unwrap()
     }
 
     /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
@@ -330,11 +331,8 @@ mod test_address {
     #[test]
     fn test_segments() {
         let addr = Address::from_str("test.alice.1234.5789").unwrap();
-        let expected = ["test", "alice", "1234", "5789"];
-        let segments = addr.segments();
-        for (a, b) in segments.zip(&expected) {
-            assert_eq!(a, *b);
-        }
+        let expected = vec!["test", "alice", "1234", "5789"];
+        assert!(addr.segments().eq(expected));
     }
 
     #[test]
