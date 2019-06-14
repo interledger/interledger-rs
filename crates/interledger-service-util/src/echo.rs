@@ -5,7 +5,7 @@ use futures::future::err;
 use interledger_packet::{
     oer,
     oer::{BufOerExt, MutBufOerExt},
-    ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
+    Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
 use interledger_service::*;
 use std::convert::TryFrom;
@@ -31,7 +31,7 @@ enum EchoPacketType {
 #[derive(Clone)]
 pub struct EchoService<S, A> {
     /// The ILP address which this ECHO service should respond for
-    ilp_address: Bytes,
+    ilp_address: Address,
     next_incoming: S,
     account_type: PhantomData<A>,
 }
@@ -41,7 +41,7 @@ where
     S: IncomingService<A>,
     A: Account,
 {
-    pub fn new(ilp_address: Bytes, next_incoming: S) -> Self {
+    pub fn new(ilp_address: Address, next_incoming: S) -> Self {
         EchoService {
             ilp_address,
             next_incoming,
@@ -58,11 +58,13 @@ where
     type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, mut request: IncomingRequest<A>) -> Self::Future {
-        let should_echo = request.prepare.destination() == self.ilp_address.borrow() as &[u8]
+        let should_echo = request.prepare.destination() == self.ilp_address
             && request.prepare.data().starts_with(ECHO_PREFIX.as_bytes());
         if !should_echo {
             return Box::new(self.next_incoming.handle_request(request));
         }
+
+        // TODO Define EchoPacket struct and implement From<&p[u8]> for it
 
         let mut reader = request.prepare.data();
 
@@ -77,7 +79,7 @@ where
                 return Box::new(err(RejectBuilder {
                     code: ErrorCode::F01_INVALID_PACKET,
                     message: b"Could not read echo packet type.",
-                    triggered_by: self.ilp_address.borrow(),
+                    triggered_by: Some(&self.ilp_address),
                     data: &[],
                 }
                 .build()));
@@ -97,7 +99,7 @@ where
                     echo_packet_type
                 )
                 .as_bytes(),
-                triggered_by: self.ilp_address.borrow(),
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -111,12 +113,14 @@ where
                 return Box::new(err(RejectBuilder {
                     code: ErrorCode::F01_INVALID_PACKET,
                     message: b"Could not read source address.",
-                    triggered_by: self.ilp_address.borrow(),
+                    triggered_by: Some(&self.ilp_address),
                     data: &[],
                 }
                 .build()));
             }
         };
+
+        let source_address = Address::try_from(source_address).unwrap();
 
         // create a new prepare packet to echo the prepare
         let execution_condition =
@@ -125,7 +129,7 @@ where
             amount: request.prepare.amount(),
             expires_at: request.prepare.expires_at(),
             execution_condition: &execution_condition,
-            destination: source_address,
+            destination: &source_address,
         }
         .build();
 
@@ -138,9 +142,9 @@ pub struct EchoRequestBuilder<'a> {
     pub expires_at: SystemTime,
     pub execution_condition: &'a [u8; 32],
     /// The ILP address that the initiator wants to Ping
-    pub destination: &'a [u8],
+    pub destination: &'a Address,
     /// The ILP address of the initiator
-    pub source_address: &'a [u8],
+    pub source_address: &'a Address,
 }
 
 impl<'a> EchoRequestBuilder<'a> {
@@ -149,12 +153,12 @@ impl<'a> EchoRequestBuilder<'a> {
         let mut data_buffer = BytesMut::with_capacity(ECHO_PREFIX_LEN + 1 + source_address_len);
         data_buffer.put(ECHO_PREFIX.as_bytes());
         data_buffer.put_u8(EchoPacketType::Request as u8);
-        data_buffer.put_var_octet_string(self.source_address);
+        data_buffer.put_var_octet_string(self.source_address.as_ref() as &[u8]);
         PrepareBuilder {
             amount: self.amount,
             expires_at: self.expires_at,
             execution_condition: self.execution_condition,
-            destination: self.destination,
+            destination: self.destination.clone(),
             data: data_buffer.borrow(),
         }
         .build()
@@ -166,7 +170,7 @@ pub struct EchoResponseBuilder<'a> {
     pub expires_at: SystemTime,
     pub execution_condition: &'a [u8; 32],
     /// The ILP address of the initiator which is extracted from the data section of the echo request packet.
-    pub destination: &'a [u8],
+    pub destination: &'a Address,
 }
 
 impl<'a> EchoResponseBuilder<'a> {
@@ -178,7 +182,7 @@ impl<'a> EchoResponseBuilder<'a> {
             amount: self.amount,
             expires_at: self.expires_at,
             execution_condition: self.execution_condition,
-            destination: self.destination,
+            destination: self.destination.clone(),
             data: data_buffer.borrow(),
         }
         .build()
@@ -193,8 +197,9 @@ mod echo_tests {
     use interledger_service::incoming_service_fn;
     use ring::digest::{digest, SHA256};
     use ring::rand::{SecureRandom, SystemRandom};
-    use std::time::{Duration, SystemTime};
 
+    use std::str::FromStr;
+    use std::time::{Duration, SystemTime};
     #[derive(Debug, Clone)]
     struct TestAccount(u64);
 
@@ -213,10 +218,10 @@ mod echo_tests {
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
         let execution_condition = &get_hash_of(fulfillment);
-        let destination = b"example.recipient";
+        let destination = Address::from_str("example.recipient").unwrap();
         let data = b"ECHOECHOECHOECHO\x00\x11example.initiator";
-        let node_address = b"example.node";
-        let source_address = b"example.initiator";
+        let node_address = Address::from_str("example.node").unwrap();
+        let source_address = Address::from_str("example.initiator").unwrap();
 
         // setup service
         let handler = incoming_service_fn(|request| {
@@ -231,15 +236,15 @@ mod echo_tests {
             }
             .build())
         });
-        let mut echo_service = EchoService::new(Bytes::from(&node_address[..]), handler);
+        let mut echo_service = EchoService::new(node_address, handler);
 
         // setup request
         let prepare = EchoRequestBuilder {
             amount,
             expires_at,
             execution_condition,
-            destination,
-            source_address,
+            destination: &destination,
+            source_address: &source_address,
         }
         .build();
         let from = TestAccount(1);
@@ -259,16 +264,17 @@ mod echo_tests {
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
         let execution_condition = &get_hash_of(fulfillment);
-        let destination = b"example.recipient";
+        let destination = Address::from_str("example.recipient").unwrap();
         let data = b"ECHO";
-        let node_address = b"example.recipient";
+        let node_address = Address::from_str("example.node").unwrap();
 
         // setup service
+        let dest = destination.clone();
         let handler = incoming_service_fn(|request| {
             assert_eq!(request.prepare.amount(), amount);
             assert_eq!(request.prepare.expires_at(), expires_at);
             assert_eq!(request.prepare.execution_condition(), execution_condition);
-            assert_eq!(request.prepare.destination(), destination);
+            assert_eq!(request.prepare.destination(), dest);
             assert_eq!(request.prepare.data(), &data[..]);
             Ok(FulfillBuilder {
                 fulfillment: &fulfillment,
@@ -276,7 +282,7 @@ mod echo_tests {
             }
             .build())
         });
-        let mut echo_service = EchoService::new(Bytes::from(&node_address[..]), handler);
+        let mut echo_service = EchoService::new(node_address, handler);
 
         // setup request
         let prepare = PrepareBuilder {
@@ -304,10 +310,10 @@ mod echo_tests {
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
         let execution_condition = &get_hash_of(fulfillment);
-        let destination = b"example.recipient";
+        let destination = Address::from_str("example.recipient").unwrap();
         let data = b"ECHOECHOECHOECHO\x01";
-        let node_address = b"example.recipient";
-        let source_address = b"example.initiator";
+        let node_address = Address::from_str("example.recipient").unwrap();
+        let source_address = Address::from_str("example.initiator").unwrap();
 
         // setup service
         let handler = incoming_service_fn(|request| {
@@ -322,15 +328,15 @@ mod echo_tests {
             }
             .build())
         });
-        let mut echo_service = EchoService::new(Bytes::from(&node_address[..]), handler);
+        let mut echo_service = EchoService::new(node_address, handler);
 
         // setup request
         let prepare = EchoRequestBuilder {
             amount,
             expires_at,
             execution_condition,
-            destination,
-            source_address,
+            destination: &destination,
+            source_address: &source_address,
         }
         .build();
         let from = TestAccount(1);
@@ -349,9 +355,9 @@ mod echo_tests {
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
         let execution_condition = &get_hash_of(fulfillment);
-        let destination = b"example.recipient";
+        let destination = Address::from_str("example.recipient").unwrap();
         let data = b"ECHOECHOECHOECHO\x03\0x00";
-        let node_address = b"example.recipient";
+        let node_address = Address::from_str("example.recipient").unwrap();
 
         // setup service
         let handler = incoming_service_fn(|_| {
@@ -359,12 +365,12 @@ mod echo_tests {
             Err(RejectBuilder {
                 code: ErrorCode::F01_INVALID_PACKET,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build())
         });
-        let mut echo_service = EchoService::new(Bytes::from(&node_address[..]), handler);
+        let mut echo_service = EchoService::new(node_address, handler);
 
         // setup request
         let prepare = PrepareBuilder {
@@ -392,9 +398,9 @@ mod echo_tests {
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
         let execution_condition = &get_hash_of(fulfillment);
-        let destination = b"example.recipient";
+        let destination = Address::from_str("example.recipient").unwrap();
         let data = b"ECHOECHOECHOECHO\x00\x04abc";
-        let node_address = b"example.recipient";
+        let node_address = Address::from_str("example.recipient").unwrap();
 
         // setup service
         let handler = incoming_service_fn(|_| {
@@ -402,12 +408,12 @@ mod echo_tests {
             Err(RejectBuilder {
                 code: ErrorCode::F01_INVALID_PACKET,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build())
         });
-        let mut echo_service = EchoService::new(Bytes::from(&node_address[..]), handler);
+        let mut echo_service = EchoService::new(node_address, handler);
 
         // setup request
         let prepare = PrepareBuilder {
