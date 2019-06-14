@@ -46,7 +46,6 @@ impl TryFrom<&[u8]> for PacketType {
     }
 }
 
-
 impl TryFrom<u8> for PacketType {
     type Error = ParseError;
 
