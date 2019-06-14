@@ -66,23 +66,22 @@ impl ConnectionGenerator {
     /// error if the address has been modified in any way or if the packet was not generated
     /// with the same server secret.
     pub fn rederive_secret(&self, destination_account: &Address) -> Result<[u8; 32], ()> {
-        if let Some(local_part) = destination_account.rsplit(|c| c == '.').next() {
-            let local_part =
-                base64::decode_config(local_part, base64::URL_SAFE_NO_PAD).map_err(|_| ())?;
-            if local_part.len() == 32 {
-                let (random_bytes, auth_tag) = local_part.split_at(18);
-                let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
-                let dest: &[u8] = destination_account.as_ref();
-                let derived_auth_tag =
-                    &hmac_sha256(&shared_secret[..], &dest[..dest.len() - 19])[..14];
-                if derived_auth_tag == auth_tag {
-                    return Ok(shared_secret);
-                } else {
-                    warn!("Got packet where auth tag doesn't match. Expected: {}, actual: {}, destination_account: {:?}",
-                    base64::encode_config(derived_auth_tag, base64::URL_SAFE_NO_PAD),
-                    base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD),
-                    destination_account)
-                }
+        let local_part = destination_account.last();
+        let local_part =
+            base64::decode_config(local_part, base64::URL_SAFE_NO_PAD).map_err(|_| ())?;
+        if local_part.len() == 32 {
+            let (random_bytes, auth_tag) = local_part.split_at(18);
+            let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
+            let dest: &[u8] = destination_account.as_ref();
+            let derived_auth_tag =
+                &hmac_sha256(&shared_secret[..], &dest[..dest.len() - 19])[..14];
+            if derived_auth_tag == auth_tag {
+                return Ok(shared_secret);
+            } else {
+                warn!("Got packet where auth tag doesn't match. Expected: {}, actual: {}, destination_account: {:?}",
+                base64::encode_config(derived_auth_tag, base64::URL_SAFE_NO_PAD),
+                base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD),
+                destination_account)
             }
         }
         Err(())
