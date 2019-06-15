@@ -12,7 +12,7 @@ pub trait RoundTripTimeAccount: Account {
 /// # Expiry Shortener Service
 ///
 /// Each node shortens the `Prepare` packet's expiry duration before passing it on.
-/// Nodes shorten the expiry duration so that even if the packet is fulfilled just before the expiry, 
+/// Nodes shorten the expiry duration so that even if the packet is fulfilled just before the expiry,
 /// they will still have enough time to pass the fulfillment to the previous node before it expires.
 ///
 /// This service reduces the expiry time of each packet before forwarding it out.
