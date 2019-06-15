@@ -2,7 +2,6 @@
 extern crate lazy_static;
 
 mod common;
-
 use common::*;
 use futures::future::join_all;
 use interledger_service_util::{RateLimitError, RateLimitStore};

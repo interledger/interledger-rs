@@ -159,10 +159,10 @@ impl RouteManagerStore for TestStore {
         Box::new(ok(accounts))
     }
 
-    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (Bytes, TestAccount)>,
-    {
+    fn set_routes(
+        &mut self,
+        routes: impl IntoIterator<Item = (Bytes, TestAccount)>,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
         *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Box::new(ok(()))
     }
