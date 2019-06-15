@@ -134,7 +134,7 @@ where
                             Err(RejectBuilder {
                                 code: ErrorCode::F09_INVALID_PEER_RESPONSE,
                                 message: b"Fulfillment did not match condition",
-                                triggered_by: &[], // Should this be the self.ilp_address? Don't we want to return the address of who gave us an invalid preimage?
+                                triggered_by: &[],
                                 data: &[],
                             }
                             .build())
