@@ -154,21 +154,6 @@ impl Address {
         }
     }
 
-    /// ```text
-    /// scheme = "g" / "private" / "example" / "peer" / "self" /
-    ///          "test" / "test1" / "test2" / "test3" / "local"
-    /// ```
-    #[inline]
-    pub fn scheme(&self) -> &str {
-        self.segments().next().unwrap()
-    }
-
-    /// Returns the last part (right-most '.' separated segment) of the ILP Address.
-    /// Addresses are guaranteed at least one segment (in addition to the scheme).
-    pub fn last(&self) -> &str {
-        self.segments().rev().next().unwrap()
-    }
-
     /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
     pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, ParseError> {
         let new_address_len = self.len() + 1 + suffix.len();
@@ -292,15 +277,6 @@ mod test_address {
         assert_eq!(
             Address::from_str("test.alice").unwrap().len(),
             "test.alice".len(),
-        );
-    }
-
-    #[test]
-    fn test_scheme() {
-        assert_eq!(Address::from_str("test.alice").unwrap().scheme(), "test",);
-        assert_eq!(
-            Address::from_str("test.alice.1234").unwrap().scheme(),
-            "test",
         );
     }
 

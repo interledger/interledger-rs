@@ -66,7 +66,7 @@ impl ConnectionGenerator {
     /// error if the address has been modified in any way or if the packet was not generated
     /// with the same server secret.
     pub fn rederive_secret(&self, destination_account: &Address) -> Result<[u8; 32], ()> {
-        let local_part = destination_account.last();
+        let local_part = destination_account.segments().rev().next().unwrap();
         let local_part =
             base64::decode_config(local_part, base64::URL_SAFE_NO_PAD).map_err(|_| ())?;
         if local_part.len() == 32 {
@@ -500,7 +500,6 @@ mod stream_receiver_service {
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
         data.extend_from_slice(b"extra");
-        // destination_account.extend_from_slice(b"extra");
         let dest = Address::try_from(destination_account).unwrap();
 
         let prepare = PrepareBuilder {
