@@ -117,6 +117,7 @@ impl From<Reject> for Packet {
 pub struct Prepare {
     buffer: BytesMut,
     content_offset: usize,
+    destination: Address,
     amount: u64,
     expires_at: SystemTime,
     data_offset: usize,
@@ -148,8 +149,8 @@ impl TryFrom<BytesMut> for Prepare {
 
         // Skip execution condition.
         content.skip(CONDITION_LEN)?;
-        // Validate and skip the destination.
-        Address::try_from(content.read_var_octet_string()?)?;
+
+        let destination = Address::try_from(content.read_var_octet_string()?)?;
 
         // Skip the data.
         let data_offset = content_offset + content_len - content.len();
@@ -158,6 +159,7 @@ impl TryFrom<BytesMut> for Prepare {
         Ok(Prepare {
             buffer,
             content_offset,
+            destination,
             amount,
             expires_at,
             data_offset,
@@ -206,9 +208,7 @@ impl Prepare {
 
     #[inline]
     pub fn destination(&self) -> Address {
-        let offset = self.content_offset + AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
-        let addr_bytes = (&self.buffer[offset..]).peek_var_octet_string().unwrap();
-        unsafe { Address::new_unchecked(Bytes::from(addr_bytes)) }
+        self.destination.clone()
     }
 
     #[inline]
@@ -286,6 +286,7 @@ impl<'a> PrepareBuilder<'a> {
         Prepare {
             buffer,
             content_offset,
+            destination: self.destination.clone(),
             amount: self.amount,
             expires_at: self.expires_at,
             data_offset: buf_size - data_size,
