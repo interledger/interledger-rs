@@ -65,7 +65,6 @@ where
 
 impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
 where
-    // TODO can we make these non-'static?
     S: BalanceStore<Account = A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
     A: IldcpAccount + Sync + 'static, // Should we just incorporate ILDCPAccount into Account?
@@ -77,7 +76,7 @@ where
     /// If it fails, it replies with a reject
     /// 1. Tries to forward the request:
     ///     - If it returns a fullfil, calls `store.update_balances_for_fulfill` and replies with the fulfill
-    ///       INDEPENDENTLY of if the call suceeds or fails. THIS MAKES A `sendMoney` CALL TO THE SETTLEMENT ENGINE
+    ///       INDEPENDENTLY of if the call suceeds or fails. This makes a `sendMoney` call if the fulfill puts the account's balance over the `settle_threshold`
     ///     - if it returns an reject calls `store.update_balances_for_reject` and replies with the fulfill
     ///       INDEPENDENTLY of if the call suceeds or fails
     fn send_request(

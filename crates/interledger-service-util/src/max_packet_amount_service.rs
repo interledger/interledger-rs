@@ -8,7 +8,11 @@ pub trait MaxPacketAmountAccount: Account {
 
 /// # MaxPacketAmount Service
 ///
-/// Used by the connector to limit the maximum size of each packet they want to forward. They may want to limit that size for liquidity or security reasons (you might not want one big packet using up a bunch of liquidity at once and since each packet carries some risk because of the different timeouts, you might want to keep each individual packet relatively small)
+/// This service is used by nodes to limit the maximum value of each packet they are willing to forward.
+/// Nodes may limit the packet amount for a variety of reasons:
+/// - Liquidity: a node operator may not way to allow a single high-value packet to tie up a large portion of its liquidity at once (especially because they do not know whether the packet will be fulfilled or rejected)
+/// - Security: each packet carries some risk, due to the possibility that a node's failure to pass back the fulfillment within the available time window would cause that node to lose money. Keeping the value of each individual packet low may help reduce the impact of such a failure
+/// Signaling: nodes SHOULD set the maximum packet amount _lower_ than the maximum amount in flight (also known as the payment or money bandwidth). `T04: Insufficient Liquidity` errors do not communicate to the sender how much they can send, largely because the "available liquidity" may be time based or based on the rate of other payments going through and thus difficult to communicate effectively. In contrast, the `F08: Amount Too Large` error conveys the maximum back to the sender, because this limit is assumed to be a static value, and alllows sender-side software like STREAM implementations to respond accordingly. Therefore, setting the maximum packet amount lower than the total money bandwidth allows client implementations to quickly adjust their packet amounts to appropriate levels.
 /// Requires a `MaxPacketAmountAccount` and _no store_.
 #[derive(Clone)]
 pub struct MaxPacketAmountService<I> {

@@ -10,10 +10,9 @@ use tokio::prelude::FutureExt;
 /// # Validator Service
 ///
 /// Incoming or Outgoing Service responsible for rejecting timed out
-/// requests and checking their fulfill condition is correct.
+/// requests and checking that fulfillments received match the `execution_condition` from the original `Prepare` packets.
 /// Forwards everything else.
 ///
-/// Requires an `Account` and _no store_
 #[derive(Clone)]
 pub struct ValidatorService<IO, A> {
     next: IO,

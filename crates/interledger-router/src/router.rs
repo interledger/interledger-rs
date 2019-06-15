@@ -7,10 +7,10 @@ use std::str;
 
 /// # Interledger Router
 ///
-/// The router implements an incoming service and includes an outgoing service.
+/// The `Router` implements an incoming service and includes an outgoing service.
 /// It determines the next account to forward to and passes it on.
 /// Both incoming and outgoing services can respond to requests but many just pass the request on.
-/// It stores a RouterStore which stores the entire routing table. Once it receives a Prepare, it checks its destination and if it finds it in the routing table
+/// The `Router` requires a `RouterStore`, which keeps track of the entire routing table. Once the `Router` receives a Prepare, it checks its destination and if it finds it in the routing table
 ///
 /// The router implements the IncomingService trait and uses the routing table
 /// to determine the `to` (or "next hop") Account for the given request.

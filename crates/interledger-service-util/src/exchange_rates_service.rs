@@ -46,7 +46,7 @@ where
 {
     type Future = BoxedIlpFuture;
 
-    /// On send reques:
+    /// On send request:
     /// 1. If the prepare packet's amount is 0, it just forwards
     /// 1. Retrieves the exchange rate from the store (the store independently is responsible for polling the rates)
     ///     - return reject if the call to the store fails

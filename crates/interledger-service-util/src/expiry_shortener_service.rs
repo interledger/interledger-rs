@@ -4,7 +4,6 @@ use std::time::Duration;
 pub const DEFAULT_ROUND_TRIP_TIME: u64 = 500; // milliseconds?
 
 pub trait RoundTripTimeAccount: Account {
-    /// Estimate of how long we expect it to take to send a message to this
     fn round_trip_time(&self) -> u64 {
         DEFAULT_ROUND_TRIP_TIME
     }
@@ -12,10 +11,9 @@ pub trait RoundTripTimeAccount: Account {
 
 /// # Expiry Shortener Service
 ///
-/// Each packet should have its expiry duration decreased as it gets propagated to nodes,
-/// since the time until it gets back to the original sender will have latency,
-/// and we want it to be still valid by then (without reducing the timeout the
-/// packet might expire by the time it's back after many hops).
+/// Each node shortens the `Prepare` packet's expiry duration before passing it on.
+/// Nodes shorten the expiry duration so that even if the packet is fulfilled just before the expiry, 
+/// they will still have enough time to pass the fulfillment to the previous node before it expires.
 ///
 /// This service reduces the expiry time of each packet before forwarding it out.
 /// Requires a `RoundtripTimeAccount` and _no store_

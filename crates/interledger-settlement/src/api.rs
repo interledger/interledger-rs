@@ -125,12 +125,16 @@ impl_web! {
                                 let prepare = PrepareBuilder {
                                         amount: 0,
                                         expires_at: SystemTime::now() + Duration::from_secs(30),
-                                        // AccountID should be in the path -  it should take arbitrary data
                                         data: body.to_string().as_bytes().as_ref(),
                                         destination: settlement_engine.ilp_address.as_ref(),
                                         execution_condition: &PEER_PROTOCOL_CONDITION,
                                 }
                                 .build();
+                                // Send the message to the peer's settlement engine.
+                                // Note that we use dummy values for the `from` and `original_amount`
+                                // because this `OutgoingRequest` will bypass the router and thus will not
+                                // use either of these values. Including dummy values in the rare case where
+                                // we do not need them seems easier than using `Option`s all over the place.
                                 outgoing_handler.send_request(OutgoingRequest {
                                         from: account.clone(),
                                         to: account.clone(),
