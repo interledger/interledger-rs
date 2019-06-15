@@ -34,8 +34,8 @@ use std::error::Error;
 impl Error for AddressError {
     fn description(&self) -> &str {
         match *self {
-            AddressError::InvalidLength(_length) => "invalid address length",
-            AddressError::InvalidFormat => "invalid address format",
+            AddressError::InvalidLength(_length) => "Invalid address length",
+            AddressError::InvalidFormat => "Invalid address format",
         }
     }
 }
@@ -89,6 +89,8 @@ impl std::ops::Deref for Address {
     type Target = str;
 
     fn deref(&self) -> &str {
+        // This call is safe to execute because the parsing is done
+        // during creation of the Address in try_from.
         unsafe { str::from_utf8_unchecked(self.0.as_ref()) }
     }
 }
@@ -214,6 +216,7 @@ mod test_address {
         b"test.alice 123",
         b"test.alice!123",
         b"test.alice/123",
+        b"test.alic\xF0",
         // Bad schemes.
         b"test",        // only a scheme
         b"what.alice",  // invalid scheme
@@ -262,7 +265,7 @@ mod test_address {
         );
         assert_de_tokens_error::<Address>(
             &[Token::BorrowedStr("test.alice ")],
-            "invalid address format",
+            "Invalid address format",
         );
     }
 
@@ -288,12 +291,16 @@ mod test_address {
     }
 
     #[test]
-    fn test_last() {
-        assert_eq!(
-            Address::from_str("test.alice.1234.5789").unwrap().last(),
-            "5789"
-        );
-        assert_eq!(Address::from_str("test.alice.1234").unwrap().last(), "1234");
+    fn test_eq() {
+        let addr1 = Address::from_str("test.alice.1234.5789").unwrap();
+        let addr2 = Address::from_str("test.bob").unwrap();
+        assert_ne!(addr1, addr2);
+        assert_eq!(addr1, addr1);
+        assert_eq!(addr2, addr2);
+        assert!(addr1 == addr1);
+        assert!(addr1 != addr2);
+        assert!(addr1.eq(&addr1));
+        assert!(addr1.ne(&addr2));
     }
 
     #[test]
@@ -305,10 +312,17 @@ mod test_address {
                 .unwrap(),
             Address::from_str("test.alice.1234").unwrap(),
         );
+        // invalid suffixes error out
         assert!({
             Address::from_str("test.alice")
                 .unwrap()
                 .with_suffix(b"12 34")
+                .is_err()
+        });
+        assert!({
+            Address::from_str("test.alice")
+                .unwrap()
+                .with_suffix(b".1234")
                 .is_err()
         });
     }
