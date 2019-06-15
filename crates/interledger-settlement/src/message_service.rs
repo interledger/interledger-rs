@@ -16,7 +16,7 @@ const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 pub struct SettlementMessageService<S, A> {
     ilp_address: Bytes,
     next: S,
-    http_client: Client, // Client that's used to speak to the actual Settlement Service
+    http_client: Client,
     account_type: PhantomData<A>,
 }
 
@@ -50,7 +50,6 @@ where
                 let ilp_address = self.ilp_address.clone();
                 let mut settlement_engine_url = settlement_engine_details.url;
 
-                // prepare's input data is where the settlement msges are
                 match serde_json::from_slice(request.prepare.data()) {
                     Ok(Value::Object(mut message)) => {
                         message.insert(
@@ -71,7 +70,7 @@ where
                             RejectBuilder {
                                 code: ErrorCode::T00_INTERNAL_ERROR,
                                 message: b"Error sending message to settlement engine",
-                                data: &[], // Should we make these Option?
+                                data: &[],
                                 triggered_by: ilp_address_clone.as_ref(),
                             }.build()
                         })

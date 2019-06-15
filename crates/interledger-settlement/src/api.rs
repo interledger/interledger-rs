@@ -122,24 +122,22 @@ impl_web! {
                                 }
                             })
                             .and_then(move |(account, settlement_engine)| {
-                                let prepare = PrepareBuilder {
-                                        amount: 0,
-                                        expires_at: SystemTime::now() + Duration::from_secs(30),
-                                        data: body.to_string().as_bytes().as_ref(),
-                                        destination: settlement_engine.ilp_address.as_ref(),
-                                        execution_condition: &PEER_PROTOCOL_CONDITION,
-                                }
-                                .build();
                                 // Send the message to the peer's settlement engine.
                                 // Note that we use dummy values for the `from` and `original_amount`
                                 // because this `OutgoingRequest` will bypass the router and thus will not
                                 // use either of these values. Including dummy values in the rare case where
                                 // we do not need them seems easier than using `Option`s all over the place.
                                 outgoing_handler.send_request(OutgoingRequest {
-                                        from: account.clone(),
-                                        to: account.clone(),
-                                        original_amount: 0,
-                                        prepare,
+                                    from: account.clone(),
+                                    to: account.clone(),
+                                    original_amount: 0,
+                                    prepare: PrepareBuilder {
+                                        destination: settlement_engine.ilp_address.as_ref(),
+                                        amount: 0,
+                                        expires_at: SystemTime::now() + Duration::from_secs(30),
+                                        data: body.to_string().as_bytes().as_ref(),
+                                        execution_condition: &PEER_PROTOCOL_CONDITION,
+                                    }.build()
                                 })
                                 .map_err(|reject| {
                                     error!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());
