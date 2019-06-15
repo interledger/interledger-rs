@@ -1,5 +1,5 @@
 use byteorder::ReadBytesExt;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use core::borrow::Borrow;
 use futures::future::err;
 use interledger_packet::{
@@ -373,7 +373,6 @@ mod echo_tests {
 
         // setup service
         let handler = incoming_service_fn(|_| {
-            unreachable!();
             Err(RejectBuilder {
                 code: ErrorCode::F01_INVALID_PACKET,
                 message: &[],
@@ -416,7 +415,6 @@ mod echo_tests {
 
         // setup service
         let handler = incoming_service_fn(|_| {
-            unreachable!();
             Err(RejectBuilder {
                 code: ErrorCode::F01_INVALID_PACKET,
                 message: &[],

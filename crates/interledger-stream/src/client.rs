@@ -13,7 +13,6 @@ use interledger_service::*;
 use std::{
     cell::Cell,
     cmp::min,
-    convert::TryFrom,
     str,
     time::{Duration, SystemTime},
 };
@@ -133,10 +132,8 @@ where
             );
             let data = stream_packet.into_encrypted(&self.shared_secret);
             let execution_condition = generate_condition(&self.shared_secret, &data);
-            // todo: Handle the error. Address returns a parse error so maybe the return type of this function will need to have information for that
-            let dest = Address::try_from(self.destination_account.clone()).unwrap();
             let prepare = PrepareBuilder {
-                destination: dest,
+                destination: self.destination_account.clone(),
                 amount,
                 execution_condition: &execution_condition,
                 expires_at: SystemTime::now() + Duration::from_secs(30),
@@ -180,7 +177,7 @@ where
         // Create the ILP Prepare packet
         let data = stream_packet.into_encrypted(&self.shared_secret);
         let prepare = PrepareBuilder {
-            destination: Address::try_from(self.destination_account.clone()).unwrap(),
+            destination: self.destination_account.clone(),
             amount: 0,
             execution_condition: &random_condition(),
             expires_at: SystemTime::now() + Duration::from_secs(30),
