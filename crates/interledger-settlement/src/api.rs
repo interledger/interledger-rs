@@ -122,6 +122,11 @@ impl_web! {
                                 }
                             })
                             .and_then(move |(account, settlement_engine)| {
+                                // Send the message to the peer's settlement engine.
+                                // Note that we use dummy values for the `from` and `original_amount`
+                                // because this `OutgoingRequest` will bypass the router and thus will not
+                                // use either of these values. Including dummy values in the rare case where
+                                // we do not need them seems easier than using `Option`s all over the place.
                                 outgoing_handler.send_request(OutgoingRequest {
                                     from: account.clone(),
                                     to: account.clone(),
