@@ -14,9 +14,6 @@ jobs:
             - project-v4-{{ checksum "Cargo.toml" }}
             - project-v4-
       - run:
-          name: Cleanup
-          command: cargo clean
-      - run:
           name: Install Cargo Extensions
           command: cargo install --quiet cargo-kcov cargo-audit || true
       - run:
