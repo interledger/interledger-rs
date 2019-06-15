@@ -1,9 +1,9 @@
 use super::RouterStore;
 use bytes::Bytes;
 use futures::{future::err, Future};
-use interledger_packet::{Address, ErrorCode, RejectBuilder};
+use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
-use std::{str, str::FromStr};
+use std::str;
 
 /// The router implements the IncomingService trait and uses the routing table
 /// to determine the `to` (or "next hop") Account for the given request.
@@ -114,10 +114,11 @@ mod tests {
     use super::*;
     use futures::future::ok;
     use hashbrown::HashMap;
-    use interledger_packet::{FulfillBuilder, PrepareBuilder};
+    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
     use parking_lot::Mutex;
     use std::iter::FromIterator;
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::time::UNIX_EPOCH;
 

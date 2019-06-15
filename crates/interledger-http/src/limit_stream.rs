@@ -50,7 +50,7 @@ where
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let item = self.stream.poll()?;
 
-        if self.is_limited == false {
+        if !self.is_limited {
             return Ok(item);
         }
 

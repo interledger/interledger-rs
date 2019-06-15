@@ -1,8 +1,10 @@
 use super::{Error, SpspResponse};
-use futures::Future;
+use futures::{future::result, Future};
+use interledger_packet::Address;
 use interledger_service::{Account, IncomingService};
 use interledger_stream::send_money;
 use reqwest::r#async::Client;
+use std::convert::TryFrom;
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
     let server = payment_pointer_to_url(server);
@@ -34,27 +36,27 @@ where
 {
     trace!("Querying receiver: {}", receiver);
     query(receiver).and_then(move |spsp| {
-        debug!(
-            "Sending SPSP payment to address: {}",
-            spsp.destination_account
-        );
-        send_money(
-            service,
-            &from_account,
-            spsp.destination_account.as_bytes(),
-            &spsp.shared_secret,
-            source_amount,
-        )
-        .map(move |(amount_delivered, _plugin)| {
-            debug!(
-                "Sent SPSP payment of {} and delivered {} of the receiver's units",
-                source_amount, amount_delivered
-            );
-            amount_delivered
-        })
-        .map_err(move |err| {
-            error!("Error sending payment: {:?}", err);
-            Error::SendMoneyError(source_amount)
+        let shared_secret = spsp.shared_secret;
+        let dest = spsp.destination_account;
+        result(Address::try_from(dest).map_err(move |err| {
+            error!("Error parsing address");
+            Error::InvalidResponseError(err.to_string())
+        }))
+        .and_then(move |addr| {
+            debug!("Sending SPSP payment to address: {}", addr);
+
+            send_money(service, &from_account, addr, &shared_secret, source_amount)
+                .map(move |(amount_delivered, _plugin)| {
+                    debug!(
+                        "Sent SPSP payment of {} and delivered {} of the receiver's units",
+                        source_amount, amount_delivered
+                    );
+                    amount_delivered
+                })
+                .map_err(move |err| {
+                    error!("Error sending payment: {:?}", err);
+                    Error::SendMoneyError(source_amount)
+                })
         })
     })
 }

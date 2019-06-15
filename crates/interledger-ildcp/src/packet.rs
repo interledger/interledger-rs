@@ -4,13 +4,13 @@ use interledger_packet::{
     oer::{predict_var_octet_string, BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
-use std::convert::TryFrom;
 use std::{
+    convert::TryFrom,
     fmt, str,
+    str::FromStr,
     time::{Duration, SystemTime},
 };
 
-static ILDCP_DESTINATION: &'static [u8] = b"peer.config";
 static PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
@@ -20,6 +20,7 @@ const ASSET_SCALE_LEN: usize = 1;
 
 lazy_static! {
     static ref PEER_PROTOCOL_EXPIRY_DURATION: Duration = Duration::from_secs(60);
+    static ref ILDCP_DESTINATION: Address = Address::from_str("peer.config").unwrap();
 }
 
 pub fn is_ildcp_request(prepare: &Prepare) -> bool {
@@ -37,7 +38,7 @@ impl IldcpRequest {
 
     pub fn to_prepare(&self) -> Prepare {
         PrepareBuilder {
-            destination: Address::try_from(ILDCP_DESTINATION).unwrap(),
+            destination: (*ILDCP_DESTINATION).clone(),
             amount: 0,
             execution_condition: &PEER_PROTOCOL_CONDITION,
             expires_at: SystemTime::now() + *PEER_PROTOCOL_EXPIRY_DURATION,
@@ -58,6 +59,7 @@ pub struct IldcpResponse {
     buffer: Bytes,
     asset_scale: u8,
     asset_code_offset: usize,
+    ilp_address: Address,
 }
 
 impl From<IldcpResponse> for Bytes {
@@ -81,7 +83,9 @@ impl IldcpResponse {
         let mut reader = &buffer[..];
         let buffer_len = reader.len();
 
-        reader.skip_var_octet_string()?;
+        let buf = reader.read_var_octet_string()?;
+        let ilp_address = Address::try_from(buf)?;
+
         let asset_scale = reader.read_u8()?;
 
         let asset_code_offset = buffer_len - reader.len();
@@ -91,11 +95,12 @@ impl IldcpResponse {
             buffer,
             asset_scale,
             asset_code_offset,
+            ilp_address,
         })
     }
 
-    pub fn client_address(&self) -> &[u8] {
-        (&self.buffer[..]).peek_var_octet_string().unwrap()
+    pub fn client_address(&self) -> Address {
+        self.ilp_address.clone()
     }
 
     pub fn asset_scale(&self) -> u8 {
@@ -113,8 +118,8 @@ impl fmt::Debug for IldcpResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "IldcpResponse {{ client_address: \"{}\", asset_code: \"{}\", asset_scale: {} }}",
-            str::from_utf8(self.client_address()).unwrap_or("<not utf8>"),
+            "IldcpResponse {{ client_address: \"{:?}\", asset_code: \"{}\", asset_scale: {} }}",
+            self.client_address(),
             str::from_utf8(self.asset_code()).unwrap_or("<not utf8>"),
             self.asset_scale
         )
@@ -123,7 +128,7 @@ impl fmt::Debug for IldcpResponse {
 
 #[derive(Debug, PartialEq)]
 pub struct IldcpResponseBuilder<'a> {
-    pub client_address: &'a [u8],
+    pub client_address: &'a Address,
     pub asset_scale: u8,
     pub asset_code: &'a str,
 }
@@ -136,7 +141,7 @@ impl<'a> IldcpResponseBuilder<'a> {
         let mut buffer = BytesMut::with_capacity(buf_size);
 
         buffer.put_var_octet_string_length(self.client_address.len());
-        buffer.put_slice(self.client_address);
+        buffer.put_slice(self.client_address.as_ref());
         buffer.put_u8(self.asset_scale);
         buffer.put_var_octet_string_length(self.asset_code.len());
         buffer.put_slice(self.asset_code.as_bytes());
@@ -145,6 +150,7 @@ impl<'a> IldcpResponseBuilder<'a> {
             buffer: buffer.freeze(),
             asset_scale: self.asset_scale,
             asset_code_offset: address_size + ASSET_SCALE_LEN,
+            ilp_address: self.client_address.clone(),
         }
     }
 }

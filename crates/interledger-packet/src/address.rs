@@ -5,7 +5,7 @@
 // Addresses are never empty.
 #![allow(clippy::len_without_is_empty)]
 
-use std::error;
+use regex::Regex;
 use std::fmt;
 use std::str;
 
@@ -13,6 +13,8 @@ use crate::errors::ParseError;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::str::FromStr;
+
+use lazy_static::lazy_static;
 
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
@@ -22,11 +24,17 @@ pub enum AddressError {
     InvalidFormat,
 }
 
+lazy_static! {
+    static ref ADDRESS_PATTERN: Regex =
+        Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$")
+            .unwrap();
+}
+
 use std::error::Error;
 impl Error for AddressError {
     fn description(&self) -> &str {
         match *self {
-            AddressError::InvalidLength(length) => "invalid address length",
+            AddressError::InvalidLength(_length) => "invalid address length",
             AddressError::InvalidFormat => "invalid address format",
         }
     }
@@ -54,25 +62,14 @@ impl TryFrom<Bytes> for Address {
     type Error = ParseError;
 
     fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+        // https://interledger.org/rfcs/0015-ilp-addresses/#address-requirements
         if bytes.len() > MAX_ADDRESS_LENGTH {
             return Err(ParseError::InvalidAddress(AddressError::InvalidLength(
                 bytes.len(),
             )));
         }
 
-        let mut segments = 0;
-        let is_valid_scheme = bytes
-            .split(|&byte| byte == b'.')
-            .enumerate()
-            .all(|(i, segment)| {
-                segments += 1;
-                let scheme_ok = i != 0 || is_scheme(segment);
-                scheme_ok
-                    && !segment.is_empty()
-                    && segment.iter().all(|&byte| is_segment_byte(byte))
-            });
-
-        if is_valid_scheme && segments > 1 {
+        if ADDRESS_PATTERN.is_match(str::from_utf8(&bytes)?) {
             Ok(Address(bytes))
         } else {
             Err(ParseError::InvalidAddress(AddressError::InvalidFormat))
@@ -191,24 +188,6 @@ impl<'a> PartialEq<[u8]> for Address {
     }
 }
 
-static SCHEMES: &'static [&'static [u8]] = &[
-    b"g", b"private", b"example", b"peer", b"self", b"test", b"test1", b"test2", b"test3", b"local",
-];
-
-fn is_scheme(segment: &[u8]) -> bool {
-    SCHEMES.contains(&segment)
-}
-
-/// <https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md#address-requirements>
-fn is_segment_byte(byte: u8) -> bool {
-    byte == b'_'
-        || byte == b'-'
-        || byte == b'~'
-        || (b'A' <= byte && byte <= b'Z')
-        || (b'a' <= byte && byte <= b'z')
-        || (b'0' <= byte && byte <= b'9')
-}
-
 #[cfg(any(feature = "serde", test))]
 impl<'de> serde::Deserialize<'de> for Address {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -232,10 +211,7 @@ impl serde::Serialize for Address {
 
 #[cfg(test)]
 mod test_address {
-    use serde::ser::{Serialize, SerializeStruct, Serializer};
-    use serde_test::{
-        assert_de_tokens, assert_de_tokens_error, assert_ser_tokens, assert_ser_tokens_error, Token,
-    };
+    use serde_test::{assert_de_tokens, assert_de_tokens_error, assert_ser_tokens, Token};
 
     use super::*;
 

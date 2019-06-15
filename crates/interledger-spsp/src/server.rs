@@ -2,6 +2,7 @@ use super::SpspResponse;
 use bytes::Bytes;
 use futures::future::{ok, FutureResult, IntoFuture};
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
+use interledger_packet::Address;
 use interledger_stream::ConnectionGenerator;
 use std::error::Error as StdError;
 use std::{fmt, str};
@@ -10,12 +11,12 @@ use std::{fmt, str};
 /// details for a STREAM connection.
 #[derive(Clone)]
 pub struct SpspResponder {
-    ilp_address: Bytes,
+    ilp_address: Address,
     connection_generator: ConnectionGenerator,
 }
 
 impl SpspResponder {
-    pub fn new(ilp_address: Bytes, server_secret: Bytes) -> Self {
+    pub fn new(ilp_address: Address, server_secret: Bytes) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         SpspResponder {
             ilp_address,
@@ -26,9 +27,11 @@ impl SpspResponder {
     pub fn generate_http_response(&self) -> Response<Body> {
         let (destination_account, shared_secret) = self
             .connection_generator
-            .generate_address_and_secret(&self.ilp_address[..]);
-        let destination_account = String::from_utf8(destination_account.to_vec()).unwrap();
-        debug!("Generated address and secret for: {}", destination_account);
+            .generate_address_and_secret(&self.ilp_address);
+        debug!(
+            "Generated address and secret for: {:?}",
+            destination_account
+        );
         let response = SpspResponse {
             destination_account,
             shared_secret: shared_secret.to_vec(),
@@ -84,11 +87,12 @@ impl StdError for Never {
 mod spsp_server_test {
     use super::*;
     use futures::Future;
+    use std::str::FromStr;
 
     #[test]
     fn spsp_response_headers() {
-        let mut responder =
-            SpspResponder::new(Bytes::from("example.receiver"), Bytes::from(&[0; 32][..]));
+        let addr = Address::from_str("example.receiver").unwrap();
+        let mut responder = SpspResponder::new(addr, Bytes::from(&[0; 32][..]));
         let response = responder
             .call(
                 Request::builder()

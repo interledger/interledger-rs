@@ -6,9 +6,11 @@ use bytes::Bytes;
 use env_logger;
 use futures::{future, Future};
 use interledger_api::{AccountDetails, NodeStore};
+use interledger_packet::Address;
 use interledger_store_redis::{connect, connect_with_poll_interval, Account, RedisStore};
 use parking_lot::Mutex;
 use redis;
+use std::str::FromStr;
 use std::{
     collections::HashMap,
     time::{Duration, Instant},
@@ -20,7 +22,7 @@ use redis_helpers::*;
 
 lazy_static! {
     static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
-        ilp_address: b"example.alice".to_vec(),
+        ilp_address: Address::from_str("example.alice").unwrap(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
@@ -39,7 +41,7 @@ lazy_static! {
         routing_relation: None,
     };
     static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
-        ilp_address: b"example.bob".to_vec(),
+        ilp_address: Address::from_str("example.bob").unwrap(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
@@ -139,7 +141,7 @@ mod insert_accounts {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
+                    ilp_address: Address::from_str("example.charlie").unwrap(),
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
@@ -170,7 +172,7 @@ mod insert_accounts {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
+                    ilp_address: Address::from_str("example.charlie").unwrap(),
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
@@ -201,7 +203,7 @@ mod insert_accounts {
         let result = block_on(test_store().and_then(|(store, context)| {
             store
                 .insert_account(AccountDetails {
-                    ilp_address: b"example.charlie".to_vec(),
+                    ilp_address: Address::from_str("example.charlie").unwrap(),
                     asset_scale: 6,
                     asset_code: "XYZ".to_string(),
                     max_packet_amount: 1000,
@@ -269,12 +271,16 @@ mod get_accounts {
     use super::*;
     use interledger_ildcp::IldcpAccount;
     use interledger_service::AccountStore;
+    use std::str::FromStr;
 
     #[test]
     fn gets_single_account() {
         block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1]).and_then(move |accounts| {
-                assert_eq!(accounts[0].client_address(), b"example.bob");
+                assert_eq!(
+                    *accounts[0].client_address(),
+                    Address::from_str("example.bob").unwrap(),
+                );
                 let _ = context;
                 Ok(())
             })
@@ -287,8 +293,14 @@ mod get_accounts {
         block_on(test_store().and_then(|(store, context)| {
             store.get_accounts(vec![1, 0]).and_then(move |accounts| {
                 // note reverse order is intentional
-                assert_eq!(accounts[0].client_address(), b"example.bob");
-                assert_eq!(accounts[1].client_address(), b"example.alice");
+                assert_eq!(
+                    *accounts[0].client_address(),
+                    Address::from_str("example.bob").unwrap(),
+                );
+                assert_eq!(
+                    *accounts[1].client_address(),
+                    Address::from_str("example.alice").unwrap(),
+                );
                 let _ = context;
                 Ok(())
             })
@@ -333,7 +345,7 @@ mod routes_and_rates {
                             0
                         );
                         store_clone_1.insert_account(AccountDetails {
-                            ilp_address: b"example.bob".to_vec(),
+                            ilp_address: Address::from_str("example.bob").unwrap(),
                             asset_scale: 6,
                             asset_code: "XYZ".to_string(),
                             max_packet_amount: 1000,

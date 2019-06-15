@@ -1,15 +1,16 @@
-use bytes::Bytes;
 use interledger_api::{AccountDetails, NodeAccount};
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::MaxPacketAmountAccount;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 use serde::Serializer;
 use std::{
     collections::HashMap,
+    convert::TryFrom,
     str::{self, FromStr},
 };
 use url::Url;
@@ -20,7 +21,7 @@ const ACCOUNT_DETAILS_FIELDS: usize = 18;
 pub struct Account {
     pub(crate) id: u64,
     #[serde(serialize_with = "address_to_string")]
-    pub(crate) ilp_address: Bytes,
+    pub(crate) ilp_address: Address,
     // TODO add additional routes
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
@@ -45,7 +46,7 @@ pub struct Account {
     pub(crate) receive_routes: bool,
 }
 
-fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -92,7 +93,9 @@ impl Account {
         };
         Ok(Account {
             id,
-            ilp_address: Bytes::from(details.ilp_address),
+            ilp_address: Address::try_from(details.ilp_address.as_ref()).map_err(|err| {
+                error!("Invalid ILP Address when creating Redis account: {:?}", err)
+            })?,
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
@@ -121,7 +124,7 @@ impl ToRedisArgs for Account {
         self.id.write_redis_args(&mut rv);
         if !self.ilp_address.is_empty() {
             "ilp_address".write_redis_args(&mut rv);
-            rv.push(self.ilp_address.to_vec());
+            rv.push(self.ilp_address.to_bytes().to_vec()); // TODO: Can we go directly to Vec<u8>?
         }
         if !self.asset_code.is_empty() {
             "asset_code".write_redis_args(&mut rv);
@@ -191,6 +194,8 @@ impl FromRedisValue for Account {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: String = get_value("ilp_address", &hash)?;
+        let ilp_address = Address::from_str(&ilp_address)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "invalid ILP address")))?;
         let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
         let routing_relation = if let Some(relation) = routing_relation {
             RoutingRelation::from_str(relation.as_str())
@@ -200,7 +205,7 @@ impl FromRedisValue for Account {
         };
         Ok(Account {
             id: get_value("id", &hash)?,
-            ilp_address: Bytes::from(ilp_address.as_bytes()),
+            ilp_address,
             asset_code: get_value("asset_code", &hash)?,
             asset_scale: get_value("asset_scale", &hash)?,
             http_endpoint: get_url_option("http_endpoint", &hash)?,
@@ -280,8 +285,8 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-    fn client_address(&self) -> &[u8] {
-        self.ilp_address.as_ref()
+    fn client_address(&self) -> &Address {
+        &self.ilp_address
     }
 
     fn asset_code(&self) -> &str {

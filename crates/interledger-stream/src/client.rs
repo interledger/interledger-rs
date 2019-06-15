@@ -15,7 +15,6 @@ use std::{
     cmp::min,
     convert::TryFrom,
     str,
-    str::FromStr,
     time::{Duration, SystemTime},
 };
 
@@ -25,7 +24,7 @@ use std::{
 pub fn send_money<S, A>(
     service: S,
     from_account: &A,
-    destination_account: &[u8],
+    destination_account: Address,
     shared_secret: &[u8],
     source_amount: u64,
 ) -> impl Future<Item = (u64, S), Error = Error>
@@ -33,7 +32,6 @@ where
     S: IncomingService<A> + Clone,
     A: Account,
 {
-    let destination_account = Bytes::from(destination_account);
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
@@ -43,7 +41,7 @@ where
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),
             from_account,
-            source_account: Bytes::from(account_details.client_address()),
+            source_account: account_details.client_address(),
             destination_account,
             shared_secret,
             source_amount,
@@ -61,8 +59,8 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     state: SendMoneyFutureState,
     next: Option<S>,
     from_account: A,
-    source_account: Bytes,
-    destination_account: Bytes,
+    source_account: Address,
+    destination_account: Address,
     shared_secret: Bytes,
     source_amount: u64,
     congestion_controller: CongestionController,
@@ -115,7 +113,8 @@ where
             })];
             if self.should_send_source_account {
                 frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: &self.source_account[..],
+                    // How can we make this take a reference?
+                    source_account: self.source_account.clone(),
                 }));
             }
             let stream_packet = StreamPacketBuilder {
@@ -333,11 +332,11 @@ where
 mod send_money_tests {
     use super::*;
     use crate::test_helpers::{TestAccount, EXAMPLE_CONNECTOR};
-    use bytes::Bytes;
     use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
     use interledger_service::incoming_service_fn;
     use parking_lot::Mutex;
+    use std::str::FromStr;
     use std::sync::Arc;
 
     #[test]
@@ -346,7 +345,7 @@ mod send_money_tests {
             id: 0,
             asset_code: "XYZ".to_string(),
             asset_scale: 9,
-            ilp_address: Bytes::from("example.destination"),
+            ilp_address: Address::from_str("example.destination").unwrap(),
         };
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
@@ -362,7 +361,7 @@ mod send_money_tests {
                 .build())
             })),
             &account,
-            b"example.destination",
+            Address::from_str("example.destination").unwrap(),
             &[0; 32][..],
             100,
         )

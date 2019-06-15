@@ -28,6 +28,7 @@ mod service;
 pub use self::client::{connect_client, parse_btp_url};
 pub use self::server::{create_open_signup_server, create_server};
 pub use self::service::{BtpOutgoingService, BtpService};
+use interledger_packet::Address;
 
 pub trait BtpAccount: Account {
     fn get_btp_uri(&self) -> Option<&Url>;
@@ -46,12 +47,12 @@ pub trait BtpStore {
 
 pub struct BtpOpenSignupAccount<'a> {
     pub auth_token: &'a str,
-    pub ilp_address: &'a [u8],
+    pub ilp_address: &'a Address,
     pub asset_code: &'a str,
     pub asset_scale: u8,
 }
 
-/// The interface for Store implementatoins that allow open BTP signups.
+/// The interface for Store implementations that allow open BTP signups.
 /// Every incoming WebSocket connection will automatically have a BtpOpenSignupAccount
 /// created and added to the store.
 ///
