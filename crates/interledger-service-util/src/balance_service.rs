@@ -34,39 +34,51 @@ pub trait BalanceStore: AccountStore {
     ) -> Box<Future<Item = (), Error = ()> + Send>;
 }
 
+/// # Balance Service
+///
+/// Responsible for managing the balances of the account and the interaction with the Settlement Engine
+///
+/// Requires an `IldcpAccount` and a `BalanceStore`
 #[derive(Clone)]
-pub struct BalanceService<S, T, A> {
+pub struct BalanceService<S, O, A> {
     ilp_address: Bytes,
-    next: S,
-    store: T,
+    store: S,
+    next: O,
     account_type: PhantomData<A>,
 }
 
-impl<S, T, A> BalanceService<S, T, A>
+impl<S, O, A> BalanceService<S, O, A>
 where
-    S: OutgoingService<A>,
-    T: BalanceStore,
-    A: IldcpAccount + Account,
+    S: BalanceStore,
+    O: OutgoingService<A>,
+    A: IldcpAccount,
 {
-    pub fn new(ilp_address: Bytes, store: T, next: S) -> Self {
+    pub fn new(ilp_address: Bytes, store: S, next: O) -> Self {
         BalanceService {
             ilp_address,
-            next,
             store,
+            next,
             account_type: PhantomData,
         }
     }
 }
 
-impl<S, T, A> OutgoingService<A> for BalanceService<S, T, A>
+impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
 where
-    // TODO can we make these non-'static?
-    S: OutgoingService<A> + Send + Clone + 'static,
-    T: BalanceStore<Account = A> + Clone + Send + Sync + 'static,
-    A: IldcpAccount + Send + Sync + 'static,
+    S: BalanceStore<Account = A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Send + Clone + 'static,
+    A: IldcpAccount + Sync + 'static, // Should we just incorporate ILDCPAccount into Account?
 {
     type Future = BoxedIlpFuture;
 
+    /// On send message:
+    /// 1. Calls `store.update_balances_for_prepare` with the prepare.
+    /// If it fails, it replies with a reject
+    /// 1. Tries to forward the request:
+    ///     - If it returns a fullfil, calls `store.update_balances_for_fulfill` and replies with the fulfill
+    ///       INDEPENDENTLY of if the call suceeds or fails. This makes a `sendMoney` call if the fulfill puts the account's balance over the `settle_threshold`
+    ///     - if it returns an reject calls `store.update_balances_for_reject` and replies with the fulfill
+    ///       INDEPENDENTLY of if the call suceeds or fails
     fn send_request(
         &mut self,
         request: OutgoingRequest<A>,
@@ -99,6 +111,7 @@ where
                     next.send_request(request)
                         .and_then(move |fulfill| {
                             // TODO should we spawn a task to update the balances instead of doing it before returning the fulfill?
+                            // do we always return the fulfill, even if the state update fails? If so, I think we can.
                             store.update_balances_for_fulfill(from.clone(), incoming_amount, to.clone(), outgoing_amount)
                                 .then(move |result| {
                                     if result.is_err() {
@@ -107,13 +120,14 @@ where
                                     Ok(fulfill)
                                 })
                         })
-                        .or_else(move |err| {
+                        .or_else(move |reject| {
+                            // can spawn here, if it is the case that the returned packet is not dependent on the outcome of the store state update
                             store_clone.update_balances_for_reject(from_clone.clone(), incoming_amount, to_clone.clone(), outgoing_amount)
                                 .then(move |result| {
                                     if result.is_err() {
                                         error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from_clone.id(), to_clone.id(), incoming_amount, outgoing_amount);
                                     }
-                                    Err(err)
+                                    Err(reject)
                                 })
                         })
                 }),

@@ -9,39 +9,49 @@ pub trait ExchangeRateStore {
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
 }
 
+/// # Exchange Rates Service
+///
+/// Responsible for getting the exchange rates for the two assets in the outgoing request (`request.from.asset_code`, `request.to.asset_code`).
+/// Requires a `ExchangeRateStore`
 #[derive(Clone)]
-pub struct ExchangeRateService<S, T, A> {
+pub struct ExchangeRateService<S, O, A> {
     ilp_address: Bytes,
-    next: S,
-    store: T,
+    store: S,
+    next: O,
     account_type: PhantomData<A>,
 }
 
-impl<S, T, A> ExchangeRateService<S, T, A>
+impl<S, O, A> ExchangeRateService<S, O, A>
 where
-    S: OutgoingService<A>,
-    T: ExchangeRateStore,
-    A: IldcpAccount + Account,
+    S: ExchangeRateStore,
+    O: OutgoingService<A>,
+    A: IldcpAccount,
 {
-    pub fn new(ilp_address: Bytes, store: T, next: S) -> Self {
+    pub fn new(ilp_address: Bytes, store: S, next: O) -> Self {
         ExchangeRateService {
             ilp_address,
-            next,
             store,
+            next,
             account_type: PhantomData,
         }
     }
 }
 
-impl<S, T, A> OutgoingService<A> for ExchangeRateService<S, T, A>
+impl<S, O, A> OutgoingService<A> for ExchangeRateService<S, O, A>
 where
     // TODO can we make these non-'static?
-    S: OutgoingService<A> + Send + Clone + 'static,
-    T: ExchangeRateStore + Clone + Send + Sync + 'static,
-    A: IldcpAccount + Send + Sync + 'static,
+    S: ExchangeRateStore + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Send + Clone + 'static,
+    A: IldcpAccount + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
+    /// On send request:
+    /// 1. If the prepare packet's amount is 0, it just forwards
+    /// 1. Retrieves the exchange rate from the store (the store independently is responsible for polling the rates)
+    ///     - return reject if the call to the store fails
+    /// 1. Calculates the exchange rate AND scales it up/down depending on how many decimals each asset requires
+    /// 1. Updates the amount in the prepare packet and forwards it
     fn send_request(
         &mut self,
         mut request: OutgoingRequest<A>,
@@ -61,6 +71,11 @@ where
                     request.to.asset_code()
                 );
                 return Box::new(err(RejectBuilder {
+                    // Unreachable doesn't seem to be the correct code here.
+                    // If the pair was not found, shouldn't we have a unique error code
+                    // for that such as `ErrorCode::F10_PAIRNOTFOUND` ?
+                    // Timeout should still apply we if we add a timeout
+                    // error in the get_exchange_rate call
                     code: ErrorCode::F02_UNREACHABLE,
                     message: format!(
                         "No exchange rate available from asset: {} to: {}",

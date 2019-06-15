@@ -5,20 +5,22 @@
 #[macro_use]
 extern crate log;
 
-mod balances;
-mod echo;
-mod exchange_rates;
-mod expiry_shortener;
-mod max_packet_amount;
-mod rate_limit;
-mod validator;
+mod balance_service;
+mod echo_service;
+mod exchange_rates_service;
+mod expiry_shortener_service;
+mod max_packet_amount_service;
+mod rate_limit_service;
+mod validator_service;
 
-pub use self::balances::{BalanceService, BalanceStore};
-pub use self::echo::EchoService;
-pub use self::exchange_rates::{ExchangeRateService, ExchangeRateStore};
-pub use self::expiry_shortener::{
+pub use self::balance_service::{BalanceService, BalanceStore};
+pub use self::echo_service::EchoService;
+pub use self::exchange_rates_service::{ExchangeRateService, ExchangeRateStore};
+pub use self::expiry_shortener_service::{
     ExpiryShortenerService, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
-pub use self::max_packet_amount::{MaxPacketAmountAccount, MaxPacketAmountService};
-pub use self::rate_limit::{RateLimitAccount, RateLimitError, RateLimitService, RateLimitStore};
-pub use self::validator::ValidatorService;
+pub use self::max_packet_amount_service::{MaxPacketAmountAccount, MaxPacketAmountService};
+pub use self::rate_limit_service::{
+    RateLimitAccount, RateLimitError, RateLimitService, RateLimitStore,
+};
+pub use self::validator_service::ValidatorService;

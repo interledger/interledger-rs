@@ -57,7 +57,7 @@ pub struct BtpOpenSignupAccount<'a> {
     pub asset_scale: u8,
 }
 
-/// The interface for Store implementatoins that allow open BTP signups.
+/// The interface for Store implementations that allow open BTP signups.
 /// Every incoming WebSocket connection will automatically have a BtpOpenSignupAccount
 /// created and added to the store.
 ///

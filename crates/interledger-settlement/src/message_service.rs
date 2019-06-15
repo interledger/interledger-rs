@@ -60,7 +60,7 @@ where
                         settlement_engine_url
                             .path_segments_mut()
                             .expect("Invalid settlement engine URL")
-                            .push("receiveMessage");
+                            .push("receiveMessage"); // Maybe set the idempotency flag here in the headers
                         let ilp_address_clone = ilp_address.clone();
                         return Box::new(self.http_client.post(settlement_engine_url)
                         .json(&message)
