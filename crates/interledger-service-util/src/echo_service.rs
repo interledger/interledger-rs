@@ -50,9 +50,9 @@ where
     }
 }
 
-impl<S, A> IncomingService<A> for EchoService<S, A>
+impl<I, A> IncomingService<A> for EchoService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
     type Future = BoxedIlpFuture;
