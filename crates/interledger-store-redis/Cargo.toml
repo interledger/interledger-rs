@@ -24,9 +24,11 @@ interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 interledger-router = { path = "../interledger-router", version = "0.2.1" }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
+interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
 log = "0.4.6"
 parking_lot = "0.7.1"
 redis = { version = "0.10.0", features = [ "with-unix-sockets" ] }
+ring = "0.14.6"
 serde = { version = "1.0.89", features = ["derive"] }
 stream-cancel = "0.4.4"
 tokio-executor = "0.1.6"
@@ -39,3 +41,4 @@ lazy_static = "1.3.0"
 net2 = "0.2.33"
 rand = "0.6.5"
 tokio = "0.1.18"
+os_type="2.2"

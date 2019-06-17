@@ -506,6 +506,7 @@ impl MaxPacketAmountDetails {
         }
     }
 
+    // Convert to use TryFrom? Also probably should go to max_packet_amount.rs
     pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, std::io::Error> {
         let amount_received = bytes.read_u64::<BigEndian>()?;
         let max_amount = bytes.read_u64::<BigEndian>()?;

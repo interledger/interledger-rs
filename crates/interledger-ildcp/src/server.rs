@@ -8,17 +8,17 @@ use std::{marker::PhantomData, str};
 /// A simple service that intercepts incoming ILDCP requests
 /// and responds using the information in the Account struct.
 #[derive(Clone)]
-pub struct IldcpService<S, A> {
-    next: S,
+pub struct IldcpService<I, A> {
+    next: I,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> IldcpService<S, A>
+impl<I, A> IldcpService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: IldcpAccount,
 {
-    pub fn new(next: S) -> Self {
+    pub fn new(next: I) -> Self {
         IldcpService {
             next,
             account_type: PhantomData,
@@ -26,9 +26,9 @@ where
     }
 }
 
-impl<S, A> IncomingService<A> for IldcpService<S, A>
+impl<I, A> IncomingService<A> for IldcpService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: IldcpAccount,
 {
     type Future = BoxedIlpFuture;
@@ -40,7 +40,7 @@ where
                 asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };
-            debug!(
+            trace!(
                 "Responding to query for ILDCP info by account: {:?}",
                 str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
             );
