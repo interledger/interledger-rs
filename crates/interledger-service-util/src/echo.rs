@@ -110,7 +110,10 @@ where
             Ok(value) => match Address::try_from(value) {
                 Ok(value) => value,
                 Err(error) => {
-                    eprintln!("Could not parse source address from echo packet: {:?}", error);
+                    eprintln!(
+                        "Could not parse source address from echo packet: {:?}",
+                        error
+                    );
                     return Box::new(err(RejectBuilder {
                         code: ErrorCode::F01_INVALID_PACKET,
                         message: b"Could not parse source address from Echo packet",
