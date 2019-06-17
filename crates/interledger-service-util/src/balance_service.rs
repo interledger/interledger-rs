@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use futures::Future;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use std::marker::PhantomData;
@@ -38,7 +37,7 @@ pub trait BalanceStore: AccountStore {
 ///
 /// Responsible for managing the balances of the account and the interaction with the Settlement Engine
 ///
-/// Requires an `IldcpAccount` and a `BalanceStore`
+/// Requires an `Account` and a `BalanceStore`
 #[derive(Clone)]
 pub struct BalanceService<S, O, A> {
     ilp_address: Bytes,
@@ -51,7 +50,7 @@ impl<S, O, A> BalanceService<S, O, A>
 where
     S: BalanceStore,
     O: OutgoingService<A>,
-    A: IldcpAccount,
+    A: Account,
 {
     pub fn new(ilp_address: Bytes, store: S, next: O) -> Self {
         BalanceService {
@@ -67,7 +66,7 @@ impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
 where
     S: BalanceStore<Account = A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
-    A: IldcpAccount + Sync + 'static, // Should we just incorporate ILDCPAccount into Account?
+    A: Account + 'static,
 {
     type Future = BoxedIlpFuture;
 
