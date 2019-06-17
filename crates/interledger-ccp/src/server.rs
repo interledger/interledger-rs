@@ -16,6 +16,7 @@ use std::{
     str,
     sync::Arc,
     time::{Duration, Instant},
+    convert::TryFrom,
 };
 use tokio_executor::spawn;
 use tokio_timer::Interval;

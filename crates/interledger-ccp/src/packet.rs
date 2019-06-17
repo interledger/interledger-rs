@@ -6,9 +6,11 @@ use interledger_packet::{
     Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
-    io::Read,
+    convert::TryFrom,
     str,
     time::{Duration, SystemTime},
+    io::Read,
+
 };
 
 pub const CCP_CONTROL_DESTINATION: &[u8] = b"peer.route.control";
@@ -39,8 +41,10 @@ pub enum Mode {
     Sync = 1,
 }
 
-impl Mode {
-    pub fn try_from(val: u8) -> Result<Self, ParseError> {
+impl TryFrom<u8> for Mode {
+    type Error = ParseError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
             0 => Ok(Mode::Idle),
             1 => Ok(Mode::Sync),
@@ -61,14 +65,18 @@ pub struct RouteControlRequest {
     pub(crate) features: Vec<String>,
 }
 
-impl RouteControlRequest {
-    pub fn try_from(prepare: &Prepare) -> Result<Self, ParseError> {
+impl TryFrom<&Prepare> for RouteControlRequest {
+    type Error = ParseError;
+
+    fn try_from(prepare: &Prepare) -> Result<Self, Self::Error> {
         if prepare.expires_at() < SystemTime::now() {
             return Err(ParseError::InvalidPacket("Packet expired".to_string()));
         }
         RouteControlRequest::try_from_without_expiry(prepare)
     }
+}
 
+impl RouteControlRequest {
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
         if prepare.destination() != CCP_CONTROL_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
