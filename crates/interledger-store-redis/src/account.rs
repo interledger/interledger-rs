@@ -124,7 +124,7 @@ impl ToRedisArgs for Account {
         self.id.write_redis_args(&mut rv);
         if !self.ilp_address.is_empty() {
             "ilp_address".write_redis_args(&mut rv);
-            rv.push(self.ilp_address.to_bytes().to_vec()); // TODO: Can we go directly to Vec<u8>?
+            rv.push((self.ilp_address.as_ref() as &[u8]).to_vec());
         }
         if !self.asset_code.is_empty() {
             "asset_code".write_redis_args(&mut rv);
@@ -195,7 +195,7 @@ impl FromRedisValue for Account {
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: String = get_value("ilp_address", &hash)?;
         let ilp_address = Address::from_str(&ilp_address)
-            .map_err(|_| RedisError::from((ErrorKind::TypeError, "invalid ILP address")))?;
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid ILP address")))?;
         let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
         let routing_relation = if let Some(relation) = routing_relation {
             RoutingRelation::from_str(relation.as_str())

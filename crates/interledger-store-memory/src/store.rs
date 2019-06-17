@@ -182,7 +182,6 @@ impl BtpOpenSignupStore for InMemoryStore {
             .build();
 
         (*self.accounts.write()).insert(account_id, account.clone());
-        // Can we avoid the clone to get out of the Arc?
         let ilp_address = account.client_address().clone();
         (*self.routing_table.write()).insert(ilp_address.to_bytes(), account_id);
         (*self.btp_auth.write()).insert(
