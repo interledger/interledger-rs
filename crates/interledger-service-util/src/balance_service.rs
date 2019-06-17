@@ -128,7 +128,7 @@ where
                                 incoming_amount,
                                 to.clone(),
                                 outgoing_amount,
-                            ).map_err(|_| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}", from.id(), to.id(), incoming_amount, outgoing_amount));
+                            ).map_err(move |_| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}", from.id(), to.id(), incoming_amount, outgoing_amount));
                             spawn(fulfill_balance_update);
 
                             Ok(fulfill)
@@ -148,7 +148,7 @@ where
                                 incoming_amount,
                                 to_clone.clone(),
                                 outgoing_amount,
-                            ).map_err(|_| error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from_clone.id(), to_clone.id(), incoming_amount, outgoing_amount));
+                            ).map_err(move |_| error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from_clone.id(), to_clone.id(), incoming_amount, outgoing_amount));
                             spawn(reject_balance_update);
 
                             Err(reject)
