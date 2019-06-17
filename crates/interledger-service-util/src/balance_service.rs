@@ -4,6 +4,7 @@ use interledger_ildcp::IldcpAccount;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use std::marker::PhantomData;
+use tokio_executor::spawn;
 
 pub trait BalanceStore: AccountStore {
     /// Fetch the current balance for the given account.
@@ -110,25 +111,26 @@ where
                 .and_then(move |_| {
                     next.send_request(request)
                         .and_then(move |fulfill| {
-                            // TODO should we spawn a task to update the balances instead of doing it before returning the fulfill?
-                            // do we always return the fulfill, even if the state update fails? If so, I think we can.
-                            store.update_balances_for_fulfill(from.clone(), incoming_amount, to.clone(), outgoing_amount)
-                                .then(move |result| {
-                                    if result.is_err() {
-                                        error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}", from.id(), to.id(), incoming_amount, outgoing_amount);
-                                    }
-                                    Ok(fulfill)
-                                })
+                            let fulfill_balance_update = store.update_balances_for_fulfill(
+                                    from.clone(), 
+                                    incoming_amount,
+                                    to.clone(),
+                                    outgoing_amount
+                            );
+                            spawn(fulfill_balance_update);
+
+                            Ok(fulfill)
                         })
                         .or_else(move |reject| {
-                            // can spawn here, if it is the case that the returned packet is not dependent on the outcome of the store state update
-                            store_clone.update_balances_for_reject(from_clone.clone(), incoming_amount, to_clone.clone(), outgoing_amount)
-                                .then(move |result| {
-                                    if result.is_err() {
-                                        error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from_clone.id(), to_clone.id(), incoming_amount, outgoing_amount);
-                                    }
-                                    Err(reject)
-                                })
+                            let reject_balance_update = store_clone.update_balances_for_reject(
+                                from_clone.clone(),
+                                incoming_amount,
+                                to_clone.clone(),
+                                outgoing_amount
+                            );
+                            spawn(reject_balance_update);
+
+                            Err(reject)
                         })
                 }),
         )
