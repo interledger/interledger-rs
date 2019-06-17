@@ -6,10 +6,10 @@ use interledger_packet::{
     Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
-    convert::TryFrom,
     str,
-    time::{Duration, SystemTime},
+    convert::TryFrom,
     io::Read,
+    time::{Duration, SystemTime},
 
 };
 
@@ -145,9 +145,11 @@ pub struct RouteProp {
     pub(crate) value: Bytes,
 }
 
-impl RouteProp {
+impl TryFrom<&mut &[u8]> for RouteProp {
+    type Error = ParseError;
+
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
-    pub fn try_from(data: &mut &[u8]) -> Result<Self, ParseError> {
+    fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
         let meta = data.read_u8()?;
 
         let is_optional = meta & FLAG_OPTIONAL != 0;
@@ -167,6 +169,10 @@ impl RouteProp {
             value,
         })
     }
+}
+
+
+impl RouteProp {
 
     pub fn write_to<B>(&self, buf: &mut B)
     where
@@ -200,9 +206,11 @@ pub struct Route {
     pub(crate) props: Vec<RouteProp>,
 }
 
-impl Route {
+impl TryFrom<&mut &[u8]> for Route {
+    type Error = ParseError;
+
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
-    pub fn try_from(data: &mut &[u8]) -> Result<Self, ParseError> {
+    fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
         let prefix = Bytes::from(data.read_var_octet_string()?);
         let path_len = data.read_var_uint()? as usize;
         let mut path = Vec::with_capacity(path_len);
@@ -215,7 +223,13 @@ impl Route {
         let prop_len = data.read_var_uint()? as usize;
         let mut props = Vec::with_capacity(prop_len);
         for _i in 0..prop_len {
-            props.push(RouteProp::try_from(data)?);
+            // For some reason we need to cast `data to `&mut &[u8]` again, otherwise
+            // error[E0382]: use of moved value: `data`
+            // fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
+            // move occurs because `data` has type `&mut &[u8]`, which does not implement the `Copy` trait
+            // props.push(RouteProp::try_from(data /* as &mut &[u8] */)?);
+            //                                ^^^^ value moved here, in previous iteration of loop
+            props.push(RouteProp::try_from(data as &mut &[u8])?);
         }
 
         Ok(Route {
@@ -225,7 +239,9 @@ impl Route {
             props,
         })
     }
+}
 
+impl Route {
     pub fn write_to<B>(&self, buf: &mut B)
     where
         B: BufMut,
