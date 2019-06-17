@@ -7,7 +7,7 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
 };
-use std::{marker::PhantomData, sync::Arc, time::Duration};
+use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct HttpClientService<S, O, A> {
