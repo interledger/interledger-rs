@@ -97,7 +97,12 @@ where
 
         Box::new(
             self.store
-                .update_balances_for_prepare(from.clone(), incoming_amount, to.clone(), outgoing_amount)
+                .update_balances_for_prepare(
+                    from.clone(),
+                    incoming_amount,
+                    to.clone(),
+                    outgoing_amount,
+                )
                 .map_err(move |_| {
                     debug!("Rejecting packet because it would exceed a balance limit");
                     RejectBuilder {
@@ -106,16 +111,16 @@ where
                         triggered_by: &ilp_address,
                         data: &[],
                     }
-                        .build()
+                    .build()
                 })
                 .and_then(move |_| {
                     next.send_request(request)
                         .and_then(move |fulfill| {
                             let fulfill_balance_update = store.update_balances_for_fulfill(
-                                    from.clone(), 
-                                    incoming_amount,
-                                    to.clone(),
-                                    outgoing_amount
+                                from.clone(),
+                                incoming_amount,
+                                to.clone(),
+                                outgoing_amount,
                             );
                             spawn(fulfill_balance_update);
 
@@ -126,7 +131,7 @@ where
                                 from_clone.clone(),
                                 incoming_amount,
                                 to_clone.clone(),
-                                outgoing_amount
+                                outgoing_amount,
                             );
                             spawn(reject_balance_update);
 
