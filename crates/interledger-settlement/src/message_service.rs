@@ -13,19 +13,19 @@ use std::marker::PhantomData;
 const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 
 #[derive(Clone)]
-pub struct SettlementMessageService<S, A> {
+pub struct SettlementMessageService<I, A> {
     ilp_address: Bytes,
-    next: S,
+    next: I,
     http_client: Client,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> SettlementMessageService<S, A>
+impl<I, A> SettlementMessageService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: SettlementAccount,
 {
-    pub fn new(ilp_address: Bytes, next: S) -> Self {
+    pub fn new(ilp_address: Bytes, next: I) -> Self {
         SettlementMessageService {
             next,
             ilp_address,
@@ -35,9 +35,9 @@ where
     }
 }
 
-impl<S, A> IncomingService<A> for SettlementMessageService<S, A>
+impl<I, A> IncomingService<A> for SettlementMessageService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: SettlementAccount,
 {
     type Future = BoxedIlpFuture;
