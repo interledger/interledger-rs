@@ -7,6 +7,7 @@ use interledger_packet::{
 use std::{
     fmt, str,
     time::{Duration, SystemTime},
+    convert::TryFrom,
 };
 
 static ILDCP_DESTINATION: &'static [u8] = b"peer.config";
@@ -75,8 +76,10 @@ impl From<IldcpResponse> for Fulfill {
     }
 }
 
-impl IldcpResponse {
-    pub fn try_from(buffer: Bytes) -> Result<Self, ParseError> {
+impl TryFrom<Bytes> for IldcpResponse {
+    type Error = ParseError;
+
+    fn try_from(buffer: Bytes) -> Result<Self, Self::Error> {
         let mut reader = &buffer[..];
         let buffer_len = reader.len();
 
@@ -92,7 +95,9 @@ impl IldcpResponse {
             asset_code_offset,
         })
     }
+}
 
+impl IldcpResponse {
     pub fn client_address(&self) -> &[u8] {
         (&self.buffer[..]).peek_var_octet_string().unwrap()
     }

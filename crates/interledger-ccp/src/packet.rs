@@ -271,14 +271,18 @@ pub struct RouteUpdateRequest {
     pub(crate) withdrawn_routes: Vec<Bytes>,
 }
 
-impl RouteUpdateRequest {
-    pub fn try_from(prepare: &Prepare) -> Result<Self, ParseError> {
+impl TryFrom<&Prepare> for RouteUpdateRequest {
+    type Error = ParseError;
+
+    fn try_from(prepare: &Prepare) -> Result<Self, Self::Error> {
         if prepare.expires_at() < SystemTime::now() {
             return Err(ParseError::InvalidPacket("Packet expired".to_string()));
         }
         RouteUpdateRequest::try_from_without_expiry(prepare)
     }
+}
 
+impl RouteUpdateRequest {
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
         if prepare.destination() != CCP_UPDATE_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
