@@ -1,10 +1,10 @@
 use hex;
+use std::convert::TryFrom;
 use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::str;
 use std::time::SystemTime;
-use std::convert::TryFrom;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
@@ -151,7 +151,6 @@ impl TryFrom<BytesMut> for Prepare {
 }
 
 impl Prepare {
-
     #[inline]
     pub fn amount(&self) -> u64 {
         self.amount
@@ -287,7 +286,6 @@ impl TryFrom<BytesMut> for Fulfill {
 }
 
 impl Fulfill {
-
     /// The returned value always has a length of 32.
     #[inline]
     pub fn fulfillment(&self) -> &[u8] {
@@ -395,7 +393,6 @@ impl TryFrom<BytesMut> for Reject {
 }
 
 impl Reject {
-
     #[inline]
     pub fn code(&self) -> ErrorCode {
         self.code

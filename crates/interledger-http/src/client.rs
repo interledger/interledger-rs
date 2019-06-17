@@ -10,6 +10,7 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
 };
+use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Duration;
 

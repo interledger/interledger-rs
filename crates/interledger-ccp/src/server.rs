@@ -13,10 +13,10 @@ use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::{
     cmp::min,
+    convert::TryFrom,
     str,
     sync::Arc,
     time::{Duration, Instant},
-    convert::TryFrom,
 };
 use tokio_executor::spawn;
 use tokio_timer::Interval;

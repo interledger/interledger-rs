@@ -6,11 +6,10 @@ use interledger_packet::{
     Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
-    str,
     convert::TryFrom,
     io::Read,
+    str,
     time::{Duration, SystemTime},
-
 };
 
 pub const CCP_CONTROL_DESTINATION: &[u8] = b"peer.route.control";
@@ -171,9 +170,7 @@ impl TryFrom<&mut &[u8]> for RouteProp {
     }
 }
 
-
 impl RouteProp {
-
     pub fn write_to<B>(&self, buf: &mut B)
     where
         B: BufMut,

@@ -5,9 +5,9 @@ use interledger_packet::{
     Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
+    convert::TryFrom,
     fmt, str,
     time::{Duration, SystemTime},
-    convert::TryFrom,
 };
 
 static ILDCP_DESTINATION: &'static [u8] = b"peer.config";

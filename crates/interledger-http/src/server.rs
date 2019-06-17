@@ -10,6 +10,7 @@ use hyper::{
 };
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
+use std::convert::TryFrom;
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_MESSAGE_SIZE: usize = 40000;
