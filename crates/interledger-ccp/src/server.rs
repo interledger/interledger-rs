@@ -32,16 +32,16 @@ fn hash(preimage: &[u8; 32]) -> [u8; 32] {
 
 type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 
-pub struct CcpRouteManagerBuilder<S, T, U> {
+pub struct CcpRouteManagerBuilder<I, O, S> {
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
-    next_incoming: S,
+    next_incoming: I,
     /// The outgoing request handler that will be used to send outgoing CCP messages.
     /// Note that this service bypasses the Router because the Route Manager needs to be able to
     /// send messages directly to specific peers.
-    outgoing: T,
+    outgoing: O,
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
-    store: U,
+    store: S,
     ilp_address: Bytes,
     global_prefix: Bytes,
     spawn_tasks: bool,
@@ -768,11 +768,11 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     }
 }
 
-impl<S, T, U, A> IncomingService<A> for CcpRouteManager<S, T, U, A>
+impl<I, O, S, A> IncomingService<A> for CcpRouteManager<I, O, S, A>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: OutgoingService<A> + Clone + Send + Sync + 'static,
-    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
