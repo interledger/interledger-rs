@@ -25,7 +25,7 @@ where
     I: IncomingService<A>,
     A: SettlementAccount,
 {
-    pub fn new(ilp_address: Bytes, next: S) -> Self {
+    pub fn new(ilp_address: Bytes, next: I) -> Self {
         SettlementMessageService {
             next,
             ilp_address,

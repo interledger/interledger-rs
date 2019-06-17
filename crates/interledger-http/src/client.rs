@@ -10,20 +10,20 @@ use reqwest::{
 use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
-pub struct HttpClientService<S, T, A> {
+pub struct HttpClientService<S, O, A> {
     client: Client,
-    store: Arc<T>,
-    next: S,
+    store: Arc<S>,
+    next: O,
     account_type: PhantomData<A>,
 }
 
-impl<S, T, A> HttpClientService<S, T, A>
+impl<S, O, A> HttpClientService<S, O, A>
 where
-    T: HttpStore,
-    S: OutgoingService<A> + Clone,
+    S: HttpStore,
+    O: OutgoingService<A> + Clone,
     A: HttpAccount,
 {
-    pub fn new(store: T, next: S) -> Self {
+    pub fn new(store: S, next: O) -> Self {
         let mut headers = HeaderMap::with_capacity(2);
         headers.insert(
             HeaderName::from_static("content-type"),
@@ -44,10 +44,10 @@ where
     }
 }
 
-impl<S, T, A> OutgoingService<A> for HttpClientService<S, T, A>
+impl<S, O, A> OutgoingService<A> for HttpClientService<S, O, A>
 where
-    S: OutgoingService<A>,
-    T: HttpStore,
+    S: HttpStore,
+    O: OutgoingService<A>,
     A: HttpAccount,
 {
     type Future = BoxedIlpFuture;
