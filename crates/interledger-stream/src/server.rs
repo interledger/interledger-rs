@@ -45,6 +45,8 @@ impl ConnectionGenerator {
         let random_bytes = generate_token();
         // base_address + "." + 32-bytes encoded as base64url
         let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
+        // Note that the unwrap here is safe because we know the base_address
+        // is valid and adding base64-url characters will always be valid
         let destination_account = base_address
             .with_suffix(
                 &base64::encode_config(&random_bytes[..], base64::URL_SAFE_NO_PAD).as_ref(),
