@@ -1,9 +1,8 @@
-use bytes::Bytes;
 use futures::{
     future::{err, Either},
     Future,
 };
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
 use std::marker::PhantomData;
 
@@ -52,18 +51,19 @@ pub trait RateLimitStore {
 /// It is an IncomingService.
 #[derive(Clone)]
 pub struct RateLimitService<S, I, A> {
-    ilp_address: Bytes,
+    ilp_address: Address,
     store: S,
     next: I, // Can we somehow omit the PhantomData
     account_type: PhantomData<A>,
 }
+
 impl<S, I, A> RateLimitService<S, I, A>
 where
     S: RateLimitStore<Account = A> + Clone + Send + Sync,
     I: IncomingService<A> + Clone + Send + Sync, // Looks like 'static is not required?
     A: RateLimitAccount + Sync,
 {
-    pub fn new(ilp_address: Bytes, store: S, next: I) -> Self {
+    pub fn new(ilp_address: Address, store: S, next: I) -> Self {
         RateLimitService {
             ilp_address,
             store,
@@ -116,7 +116,7 @@ where
                 };
                 RejectBuilder {
                     code,
-                    triggered_by: &ilp_address,
+                    triggered_by: Some(&ilp_address),
                     message: &[],
                     data: &[],
                 }.build()

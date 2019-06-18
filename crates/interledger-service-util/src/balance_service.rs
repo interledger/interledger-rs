@@ -1,6 +1,5 @@
-use bytes::Bytes;
 use futures::Future;
-use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use std::marker::PhantomData;
 use tokio_executor::spawn;
@@ -41,7 +40,7 @@ pub trait BalanceStore: AccountStore {
 /// Requires an `Account` and a `BalanceStore`
 #[derive(Clone)]
 pub struct BalanceService<S, O, A> {
-    ilp_address: Bytes,
+    ilp_address: Address,
     store: S,
     next: O,
     account_type: PhantomData<A>,
@@ -53,7 +52,7 @@ where
     O: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(ilp_address: Bytes, store: S, next: O) -> Self {
+    pub fn new(ilp_address: Address, store: S, next: O) -> Self {
         BalanceService {
             ilp_address,
             store,
@@ -107,7 +106,7 @@ where
                     RejectBuilder {
                         code: ErrorCode::T04_INSUFFICIENT_LIQUIDITY,
                         message: &[],
-                        triggered_by: &ilp_address,
+                        triggered_by: Some(&ilp_address),
                         data: &[],
                     }
                     .build()

@@ -32,7 +32,7 @@ enum EchoPacketType {
 pub struct EchoService<I, A> {
     /// The ILP address which this ECHO service should respond for
     ilp_address: Address,
-    next_incoming: S,
+    next: I,
     account_type: PhantomData<A>,
 }
 
@@ -41,7 +41,7 @@ where
     I: IncomingService<A>,
     A: Account,
 {
-    pub fn new(ilp_address: Address, next_incoming: S) -> Self {
+    pub fn new(ilp_address: Address, next: I) -> Self {
         EchoService {
             ilp_address,
             next,
