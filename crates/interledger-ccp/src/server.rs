@@ -43,7 +43,7 @@ pub struct CcpRouteManagerBuilder<I, O, S> {
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     store: S,
-    ilp_address: Bytes,
+    ilp_address: Address,
     global_prefix: Bytes,
     spawn_tasks: bool,
     boadcast_interval: u64,
@@ -56,9 +56,9 @@ where
     S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
-    pub fn new(store: S, outgoing: O, next_incoming: I) -> Self {
+    pub fn new(ilp_address: Address, store: S, outgoing: O, next_incoming: I) -> Self {
         CcpRouteManagerBuilder {
-            ilp_address: Bytes::new(),
+            ilp_address,
             global_prefix: Bytes::from_static(b"g."),
             next_incoming,
             outgoing,
@@ -68,12 +68,12 @@ where
         }
     }
 
-    pub fn ilp_address(&mut self, ilp_address: Bytes) -> &mut Self {
-        self.global_prefix = ilp_address
+    pub fn ilp_address(&mut self, ilp_address: Address) -> &mut Self {
+        self.global_prefix = ilp_address.to_bytes()
             .iter()
             .position(|c| c == &b'.')
-            .map(|index| ilp_address.slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.clone());
+            .map(|index| ilp_address.to_bytes().slice_to(index + 1))
+            .unwrap_or_else(|| ilp_address.to_bytes().clone());
         self.ilp_address = ilp_address;
         self
     }
@@ -113,8 +113,7 @@ where
 /// with the best routes determined by per-account configuration and the broadcasts we have
 /// received from peers.
 #[derive(Clone)]
-pub struct CcpRouteManager<S, T, U, A: Account> {
-    account: A,
+pub struct CcpRouteManager<I, O, S, A: Account> {
     ilp_address: Address,
     global_prefix: Bytes,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
@@ -193,12 +192,11 @@ where
         &self,
         request: IncomingRequest<A>,
     ) -> impl Future<Item = Fulfill, Error = Reject> {
-        let ilp_address = Address::try_from(self.ilp_address.clone()).ok();
         if !request.from.should_send_routes() {
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
-                triggered_by: ilp_address.as_ref(),
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -209,7 +207,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
-                triggered_by: ilp_address.as_ref(),
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -235,6 +233,7 @@ where
                 (from_epoch_index, to_epoch_index)
             };
 
+            let ilp_address = self.ilp_address.clone();
             if !self.spawn_tasks {
                 return Either::B(
                     self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
@@ -243,7 +242,7 @@ where
                                 code: ErrorCode::T01_PEER_UNREACHABLE,
                                 message: b"Error sending route update request",
                                 data: &[],
-                                triggered_by: ilp_address.as_ref(),
+                                triggered_by: Some(&ilp_address),
                             }
                             .build()
                         })
@@ -292,12 +291,11 @@ where
     /// then check whether those routes are better than the current best ones we have in the
     /// Local Routing Table.
     fn handle_route_update_request(&self, request: IncomingRequest<A>) -> BoxedIlpFuture {
-        let ilp_address = Address::try_from(self.ilp_address.clone()).ok();
         if !request.from.should_receive_routes() {
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
-                triggered_by: ilp_address.as_ref(),
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -308,7 +306,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
-                triggered_by: ilp_address.as_ref(),
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -341,6 +339,7 @@ where
                     spawn(future);
                     Box::new(ok(CCP_RESPONSE.clone()))
                 } else {
+                    let ilp_address = self.ilp_address.clone();
                     Box::new(
                         future
                             .map_err(move |_| {
@@ -348,7 +347,7 @@ where
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: b"Error processing route update",
                                     data: &[],
-                                    triggered_by: ilp_address.as_ref(),
+                                    triggered_by: Some(&ilp_address),
                                 }
                                 .build()
                             })
@@ -361,7 +360,7 @@ where
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
                     data: &[],
-                    triggered_by: ilp_address.as_ref(),
+                    triggered_by: Some(&self.ilp_address),
                 }
                 .build();
                 let table = &incoming_tables[&request.from.id()];

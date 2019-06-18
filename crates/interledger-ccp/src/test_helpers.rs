@@ -177,7 +177,9 @@ pub fn test_service() -> CcpRouteManager<
     TestStore,
     TestAccount,
 > {
+    let addr = Address::from_str("example.connector").unwrap();
     CcpRouteManagerBuilder::new(
+        addr.clone(),
         TestStore::new(),
         outgoing_service_fn(|_request| {
             Box::new(err(RejectBuilder {
@@ -199,7 +201,7 @@ pub fn test_service() -> CcpRouteManager<
         }),
     )
     .disable_spawn()
-    .ilp_address(Bytes::from_static(b"example.connector"))
+    .ilp_address(addr)
     .to_service()
 }
 
@@ -240,7 +242,9 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
+    let addr = Address::from_str("example.connector").unwrap();
     let service = CcpRouteManagerBuilder::new(
+        addr.clone(),
         store,
         outgoing,
         incoming_service_fn(|_request| {
@@ -254,7 +258,7 @@ pub fn test_service_with_routes() -> (
         }),
     )
     .disable_spawn()
-    .ilp_address(Bytes::from_static(b"example.connector"))
+    .ilp_address(addr)
     .to_service();
     (service, outgoing_requests)
 }
