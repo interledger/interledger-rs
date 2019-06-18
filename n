@@ -1,2 +1,0 @@
-# Nmap 7.70 scan initiated Mon Jun  3 16:09:01 2019 as: nmap -sn -on 192.169.0.0 192.168.1.255
-# Nmap done at Mon Jun  3 16:09:02 2019 -- 2 IP addresses (0 hosts up) scanned in 1.20 seconds

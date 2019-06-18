@@ -28,6 +28,7 @@ impl SpspResponder {
             .connection_generator
             .generate_address_and_secret(&self.ilp_address[..]);
         let destination_account = String::from_utf8(destination_account.to_vec()).unwrap();
+        debug!("Generated address and secret for: {}", destination_account);
         let response = SpspResponse {
             destination_account,
             shared_secret: shared_secret.to_vec(),

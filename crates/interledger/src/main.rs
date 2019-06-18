@@ -4,14 +4,13 @@ extern crate clap;
 
 use base64;
 use clap::{App, Arg, ArgGroup, SubCommand};
-use config;
 use hex;
-use interledger::{cli::*, node::*};
+use interledger::cli::*;
 use interledger_ildcp::IldcpResponseBuilder;
 use tokio;
 use url::Url;
 
-#[allow(clippy::cognitive_complexity)]
+#[allow(clippy::cyclomatic_complexity)]
 pub fn main() {
     env_logger::init();
 
@@ -106,10 +105,22 @@ pub fn main() {
                     ),
                 SubCommand::with_name("node")
                     .about("Run an Interledger node (sender, connector, receiver bundle)")
-                    .arg(Arg::with_name("config")
-                        .long("config")
-                        .short("c")
-                        .help("Name of config file (in JSON, TOML, YAML, or INI format)"))
+                    .args(&[
+                        Arg::with_name("redis_uri")
+                            .long("redis_uri")
+                            .default_value("redis://127.0.0.1:6379"),
+                        Arg::with_name("btp_port")
+                            .long("btp_port")
+                            .default_value("7768"),
+                        Arg::with_name("http_port")
+                            .long("http_port")
+                            .default_value("7770"),
+                        Arg::with_name("server_secret")
+                            .long("server_secret")
+                            .help("Cryptographic seed used to derive keys for STREAM, specified in hex")
+                            .takes_value(true),
+                    ])
+                    .group(ArgGroup::with_name("redis_connector").requires_all(&["redis_uri", "btp_port", "http_port"]))
                     .subcommand(SubCommand::with_name("accounts")
                         .subcommand(SubCommand::with_name("add")
                         .args(&[
@@ -117,11 +128,6 @@ pub fn main() {
                                 .long("redis_uri")
                                 .help("Redis database to add the account to")
                                 .default_value("redis://127.0.0.1:6379"),
-                            Arg::with_name("server_secret")
-                                .long("server_secret")
-                                .help("Cryptographic seed used to derive keys")
-                                .takes_value(true)
-                                .required(true),
                             Arg::with_name("ilp_address")
                                 .long("ilp_address")
                                 .help("ILP Address of this account")
@@ -137,8 +143,8 @@ pub fn main() {
                                 .help("Scale of the asset this account's balance is denominated in (a scale of 2 means that 100.50 will be represented as 10050)")
                                 .takes_value(true)
                                 .required(true),
-                            Arg::with_name("btp_incoming_token")
-                                .long("btp_incoming_token")
+                            Arg::with_name("btp_incoming_authorization")
+                                .long("btp_incoming_authorization")
                                 .help("BTP token this account will use to connect")
                                 .takes_value(true),
                             Arg::with_name("btp_uri")
@@ -152,6 +158,13 @@ pub fn main() {
                             Arg::with_name("http_incoming_token")
                                 .long("http_incoming_token")
                                 .help("Bearer token this account will use to authenticate HTTP requests sent to this server")
+                                .takes_value(true),
+                            Arg::with_name("admin")
+                                .long("admin")
+                                .help("Flag to indicate the account is an administrator (and can add, modify, delete other accounts and change configuration)"),
+                            Arg::with_name("xrp_address")
+                                .long("xrp_address")
+                                .help("XRP address to associate with this account for settlement")
                                 .takes_value(true),
                             Arg::with_name("settle_threshold")
                                 .long("settle_threshold")
@@ -175,19 +188,8 @@ pub fn main() {
                                 .long("min_balance")
                                 .help("Minimum balance this account is allowed to have (can be negative)")
                                 .default_value("0"),
-                            Arg::with_name("round_trip_time")
-                                .long("round_trip_time")
-                                .help("The estimated amount of time (in milliseconds) we expect it to take to send a message to this account and receive the response")
-                                .default_value("500"),
-                            Arg::with_name("packets_per_minute_limit")
-                                .long("packets_per_minute_limit")
-                                .help("Number of outgoing Prepare packets per minute this account can send. Defaults to no limit")
-                                .takes_value(true),
-                            Arg::with_name("amount_per_minute_limit")
-                                .long("amount_per_minute_limit")
-                                .help("Total amount of value this account can send per minute. Defaults to no limit")
-                                .takes_value(true),
-                        ]))),
+                        ])
+                        .group(ArgGroup::with_name("account_admin").arg("admin").requires("http_incoming_token")))),
         ]);
 
     match app.clone().get_matches().subcommand() {
@@ -268,7 +270,7 @@ pub fn main() {
         ("node", Some(matches)) => match matches.subcommand() {
             ("accounts", Some(matches)) => match matches.subcommand() {
                 ("add", Some(matches)) => {
-                    let (http_endpoint, http_outgoing_token) =
+                    let (http_endpoint, http_outgoing_authorization) =
                         if let Some(url) = matches.value_of("http_url") {
                             let url = Url::parse(url).expect("Invalid URL");
                             let auth = if !url.username().is_empty() {
@@ -292,67 +294,59 @@ pub fn main() {
                     let redis_uri =
                         value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                     let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
-                    let server_secret: [u8; 32] = {
-                        let encoded: String = value_t!(matches, "server_secret", String).unwrap();
-                        let mut server_secret = [0; 32];
-                        let decoded =
-                            hex::decode(encoded).expect("server_secret must be hex-encoded");
-                        assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
-                        server_secret.clone_from_slice(&decoded);
-                        server_secret
-                    };
                     let account = AccountDetails {
-                        ilp_address: value_t!(matches, "ilp_address", String).unwrap(),
+                        ilp_address: value_t!(matches, "ilp_address", String)
+                            .unwrap()
+                            .bytes()
+                            .collect(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),
                         asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
-                        btp_incoming_token: matches
-                            .value_of("btp_incoming_token")
+                        btp_incoming_authorization: matches
+                            .value_of("btp_incoming_authorization")
                             .map(|s| s.to_string()),
                         btp_uri: matches.value_of("btp_uri").map(|s| s.to_string()),
-                        http_incoming_token: matches
+                        http_incoming_authorization: matches
                             .value_of("http_incoming_token")
                             .map(|s| format!("Bearer {}", s)),
-                        http_outgoing_token,
+                        http_outgoing_authorization,
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
-                        min_balance: value_t!(matches, "min_balance", i64).ok(),
+                        min_balance: value_t!(matches, "min_balance", i64).unwrap(),
+                        is_admin: matches.is_present("admin"),
+                        xrp_address: value_t!(matches, "xrp_address", String).ok(),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
                         settle_to: value_t!(matches, "settle_to", i64).ok(),
                         send_routes: matches.is_present("send_routes"),
                         receive_routes: matches.is_present("receive_routes"),
                         routing_relation: value_t!(matches, "routing_relation", String).ok(),
-                        round_trip_time: value_t!(matches, "round_trip_time", u64).ok(),
-                        packets_per_minute_limit: value_t!(
-                            matches,
-                            "packets_per_minute_limit",
-                            u32
-                        )
-                        .ok(),
-                        amount_per_minute_limit: value_t!(matches, "amount_per_minute_limit", u64)
-                            .ok(),
-                        settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
-                        settlement_engine_ilp_address: None,
                     };
-                    tokio::run(insert_account_redis(redis_uri, &server_secret, account));
+                    tokio::run(insert_account_redis(redis_uri, account));
                 }
                 _ => app.print_help().unwrap(),
             },
             _ => {
-                let mut node_config = config::Config::new();
-                if let Some(config_path) = matches.value_of("config") {
-                    node_config
-                        .merge(config::File::with_name(config_path))
-                        .unwrap();
-                }
-                node_config
-                    .merge(config::Environment::with_prefix("ILP"))
-                    .unwrap();
-
-                let node: InterledgerNode = node_config
-                    .try_into()
-                    .expect("Must provide config file name or config environment variables");
-                node.run();
+                let redis_uri =
+                    value_t!(matches, "redis_uri", String).expect("redis_uri is required");
+                let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
+                let btp_port = value_t!(matches, "btp_port", u16).expect("btp_port is required");
+                let http_port = value_t!(matches, "http_port", u16).expect("http_port is required");
+                let server_secret: [u8; 32] = if let Some(secret) =
+                    matches.value_of("server_secret")
+                {
+                    let mut server_secret = [0; 32];
+                    let decoded = hex::decode(secret).expect("server_secret must be hex-encoded");
+                    assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
+                    server_secret.clone_from_slice(&decoded);
+                    server_secret
+                } else {
+                    random_secret()
+                };
+                tokio::run(run_node_redis(
+                    redis_uri,
+                    ([0, 0, 0, 0], btp_port).into(),
+                    ([0, 0, 0, 0], http_port).into(),
+                    &server_secret,
+                ));
             }
         },
         _ => app.print_help().unwrap(),

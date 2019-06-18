@@ -77,7 +77,7 @@ impl ConnectionGenerator {
                 if derived_auth_tag == auth_tag {
                     return Ok(shared_secret);
                 } else {
-                    trace!("Ignoring packet where auth tag doesn't match (it is probably meant for another STREAM server). Expected: {}, actual: {}, destination_account: {}",
+                    warn!("Got packet where auth tag doesn't match. Expected: {}, actual: {}, destination_account: {}",
                     base64::encode_config(derived_auth_tag, base64::URL_SAFE_NO_PAD),
                     base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD),
                     str::from_utf8(destination_account).unwrap_or("<not utf8>"));
@@ -95,18 +95,18 @@ impl ConnectionGenerator {
 ///
 /// This does not currently support handling data sent via STREAM.
 #[derive(Clone)]
-pub struct StreamReceiverService<O: OutgoingService<A>, A: Account> {
+pub struct StreamReceiverService<S: OutgoingService<A>, A: Account> {
     connection_generator: ConnectionGenerator,
-    next: O,
+    next: S,
     account_type: PhantomData<A>,
 }
 
-impl<O, A> StreamReceiverService<O, A>
+impl<S, A> StreamReceiverService<S, A>
 where
-    O: OutgoingService<A>,
+    S: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(server_secret: Bytes, next: O) -> Self {
+    pub fn new(server_secret: Bytes, next: S) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         StreamReceiverService {
             connection_generator,
@@ -117,9 +117,9 @@ where
 }
 
 // TODO should this be an OutgoingService instead so the balance logic is applied before this is called?
-impl<O, A> OutgoingService<A> for StreamReceiverService<O, A>
+impl<S, A> OutgoingService<A> for StreamReceiverService<S, A>
 where
-    O: OutgoingService<A>,
+    S: OutgoingService<A>,
     A: Account + IldcpAccount,
 {
     type Future = BoxedIlpFuture;
@@ -252,24 +252,6 @@ fn receive_money(
 #[cfg(test)]
 mod connection_generator {
     use super::*;
-    use regex::Regex;
-
-    #[test]
-    fn generates_valid_ilp_address() {
-        let server_secret = [9; 32];
-        let receiver_address = b"example.receiver";
-        let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
-        let (destination_account, _shared_secret) =
-            connection_generator.generate_address_and_secret(receiver_address);
-
-        assert!(destination_account.starts_with(receiver_address));
-        assert!(Regex::new(
-            r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$"
-        )
-        .unwrap()
-        .is_match(str::from_utf8(destination_account.as_ref()).unwrap()));
-        assert!(destination_account.len() <= 1023);
-    }
 
     #[test]
     fn regenerates_the_shared_secret() {
@@ -278,6 +260,8 @@ mod connection_generator {
         let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(receiver_address);
+
+        assert!(destination_account.starts_with(receiver_address));
 
         assert_eq!(
             connection_generator
@@ -494,7 +478,6 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
-                original_amount: prepare.amount(),
                 prepare,
             })
             .wait();
@@ -544,7 +527,6 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
-                original_amount: prepare.amount(),
                 prepare,
             })
             .wait();
@@ -594,7 +576,6 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
-                original_amount: prepare.amount(),
                 to: TestAccount {
                     id: 1,
                     ilp_address: client_address.clone(),

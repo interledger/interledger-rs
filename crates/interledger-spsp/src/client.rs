@@ -6,7 +6,6 @@ use reqwest::r#async::Client;
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
     let server = payment_pointer_to_url(server);
-    trace!("Querying receiver: {}", server);
 
     let client = Client::new();
     client
@@ -33,6 +32,7 @@ where
     S: IncomingService<A> + Clone,
     A: Account,
 {
+    trace!("Querying receiver: {}", receiver);
     query(receiver).and_then(move |spsp| {
         debug!(
             "Sending SPSP payment to address: {}",
@@ -45,12 +45,12 @@ where
             &spsp.shared_secret,
             source_amount,
         )
-        .map(move |(delivered_amount, _plugin)| {
+        .map(move |(amount_delivered, _plugin)| {
             debug!(
                 "Sent SPSP payment of {} and delivered {} of the receiver's units",
-                source_amount, delivered_amount
+                source_amount, amount_delivered
             );
-            delivered_amount
+            amount_delivered
         })
         .map_err(move |err| {
             error!("Error sending payment: {:?}", err);
@@ -69,29 +69,10 @@ fn payment_pointer_to_url(payment_pointer: &str) -> String {
     };
 
     let num_slashes = url.matches('/').count();
-    if num_slashes == 2 {
+    if num_slashes == 0 {
         url.push_str("/.well-known/pay");
     } else if num_slashes == 1 && url.ends_with('/') {
         url.push_str(".well-known/pay");
     }
-    trace!(
-        "Converted payment pointer: {} to URL: {}",
-        payment_pointer,
-        url
-    );
     url
-}
-
-#[cfg(test)]
-mod payment_pointer {
-    use super::*;
-
-    #[test]
-    fn converts_pointer() {
-        let pointer = "$subdomain.domain.example";
-        assert_eq!(
-            payment_pointer_to_url(pointer),
-            "https://subdomain.domain.example/.well-known/pay"
-        );
-    }
 }

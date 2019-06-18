@@ -22,7 +22,6 @@ cli = [
     "spsp",
     "interledger-router",
     "interledger-service-util",
-    "interledger-settlement",
     "interledger-store-redis",
     "interledger-api",
 ]
@@ -38,11 +37,10 @@ stream = ["interledger-stream", "ildcp"]
 base64 = "0.10.1"
 bytes = "0.4.12"
 clap = "2.32.0"
-config = "0.9.3"
 env_logger = "0.6.1"
 futures = "0.1.25"
 hex = "0.3.2"
-hyper = "0.12.28"
+hyper = "0.12.25"
 interledger-api = { path = "../interledger-api", version = "0.1.0", optional = true }
 interledger-btp = { path = "../interledger-btp", version = "0.2.1", optional = true }
 interledger-ccp = { path = "../interledger-ccp", version = "0.1.0", optional = true }
@@ -52,7 +50,6 @@ interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-router = { path = "../interledger-router", version = "0.2.1", optional = true }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1", optional = true }
-interledger-settlement = { path = "../interledger-settlement", version = "0.1.0", optional = true }
 interledger-spsp = { path = "../interledger-spsp", version = "0.2.1", optional = true }
 interledger-stream = { path = "../interledger-stream", version = "0.2.1", optional = true }
 interledger-store-memory = { path = "../interledger-store-memory", version = "0.2.1", optional = true }
@@ -61,15 +58,14 @@ log = "0.4.6"
 parking_lot = "0.7.1"
 ring = "0.14.6"
 serde = "1.0.89"
-tokio = "0.1.20"
+tokio = "0.1.16"
+tower-web = "0.3.6"
 url = "1.7.2"
 
 [dev-dependencies]
 net2 = "0.2.33"
 rand = "0.6.5"
 redis = "0.10.0"
-reqwest = "0.9.16"
-serde_json = "1.0.39"
 
 [badges]
 circle-ci = { repository = "emschwartz/interledger-rs" }
