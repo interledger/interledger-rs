@@ -46,7 +46,7 @@ pub struct CcpRouteManagerBuilder<I, O, S> {
     ilp_address: Address,
     global_prefix: Bytes,
     spawn_tasks: bool,
-    boadcast_interval: u64,
+    broadcast_interval: u64,
 }
 
 impl<I, O, S, A> CcpRouteManagerBuilder<I, O, S>
@@ -64,7 +64,7 @@ where
             outgoing,
             store,
             spawn_tasks: true,
-            boadcast_interval: DEFAULT_BROADCAST_INTERVAL,
+            broadcast_interval: DEFAULT_BROADCAST_INTERVAL,
         }
     }
 
@@ -84,6 +84,12 @@ where
         self
     }
 
+    /// Set the broadcast interval (in milliseconds)
+    pub fn broadcast_interval(&mut self, ms: u64) -> &mut Self {
+        self.broadcast_interval = ms;
+        self
+    }
+
     pub fn to_service(&self) -> CcpRouteManager<I, O, S, A> {
         let service = CcpRouteManager {
             ilp_address: self.ilp_address.clone(),
@@ -100,7 +106,7 @@ where
         };
 
         if self.spawn_tasks {
-            spawn(service.start_broadcast_interval(self.boadcast_interval));
+            spawn(service.start_broadcast_interval(self.broadcast_interval));
         }
         service
     }

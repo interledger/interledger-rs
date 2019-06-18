@@ -93,6 +93,9 @@ pub struct InterledgerNode {
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
     pub default_spsp_account: Option<u64>,
+    /// Interval, defined in milliseconds, on which the node will broadcast routing
+    /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
+    pub route_broadcast_interval: Option<u64>,
 }
 
 impl InterledgerNode {
@@ -113,6 +116,7 @@ impl InterledgerNode {
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account;
         let redis_addr = self.redis_connection.addr.clone();
+        let route_broadcast_interval = self.route_broadcast_interval;
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .connect()
@@ -175,12 +179,17 @@ impl InterledgerNode {
                                     // Set up the Router and Routing Manager
                                     let incoming_service =
                                         Router::new(store.clone(), outgoing_service.clone());
-                                    let incoming_service = CcpRouteManagerBuilder::new(
+                                    let mut ccp_builder = CcpRouteManagerBuilder::new(
                                         ilp_address.clone(),
                                         store.clone(),
                                         outgoing_service.clone(),
                                         incoming_service,
-                                    ).ilp_address(ilp_address.clone()).to_service();
+                                    );
+                                    ccp_builder.ilp_address(ilp_address.clone());
+                                    if let Some(ms) = route_broadcast_interval {
+                                        ccp_builder.broadcast_interval(ms);
+                                    }
+                                    let incoming_service = ccp_builder.to_service();
 
                                     let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = IldcpService::new(incoming_service);
