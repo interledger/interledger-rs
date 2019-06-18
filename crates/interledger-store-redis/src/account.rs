@@ -5,6 +5,7 @@ use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
@@ -15,6 +16,7 @@ use ring::aead;
 use serde::Serializer;
 use std::{
     collections::HashMap,
+    convert::TryFrom,
     str::{self, FromStr},
 };
 use url::Url;
@@ -25,7 +27,7 @@ const ACCOUNT_DETAILS_FIELDS: usize = 21;
 pub struct Account {
     pub(crate) id: u64,
     #[serde(serialize_with = "address_to_string")]
-    pub(crate) ilp_address: Bytes,
+    pub(crate) ilp_address: Address,
     // TODO add additional routes
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
@@ -51,11 +53,25 @@ pub struct Account {
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) settlement_engine_url: Option<Url>,
     pub(crate) settlement_engine_asset_scale: Option<u8>,
-    #[serde(serialize_with = "optional_bytes_to_utf8")]
-    pub(crate) settlement_engine_ilp_address: Option<Bytes>,
+    #[serde(serialize_with = "optional_address_to_string")]
+    pub(crate) settlement_engine_ilp_address: Option<Address>,
 }
 
-fn address_to_string<S>(address: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+fn optional_address_to_string<S>(
+    address: &Option<Address>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(address) = address {
+        serializer.serialize_str(str::from_utf8(address.as_ref()).unwrap_or(""))
+    } else {
+        serializer.serialize_none()
+    }
+}
+
+fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -120,15 +136,11 @@ impl Account {
             } else {
                 None
             };
-        let settlement_engine_ilp_address =
-            if let Some(settlement_engine_ilp_address) = details.settlement_engine_ilp_address {
-                Some(Bytes::from(settlement_engine_ilp_address))
-            } else {
-                None
-            };
         Ok(Account {
             id,
-            ilp_address: Bytes::from(details.ilp_address),
+            ilp_address: Address::try_from(details.ilp_address.as_ref()).map_err(|err| {
+                error!("Invalid ILP Address when creating Redis account: {:?}", err)
+            })?,
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
@@ -147,7 +159,7 @@ impl Account {
             amount_per_minute_limit: details.amount_per_minute_limit,
             settlement_engine_url,
             settlement_engine_asset_scale: details.settlement_engine_asset_scale,
-            settlement_engine_ilp_address,
+            settlement_engine_ilp_address: details.settlement_engine_ilp_address,
         })
     }
 
@@ -191,7 +203,7 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         account.id.write_redis_args(&mut rv);
         if !account.ilp_address.is_empty() {
             "ilp_address".write_redis_args(&mut rv);
-            rv.push(account.ilp_address.to_vec());
+            rv.push(account.ilp_address.to_bytes().to_vec());
         }
         if !account.asset_code.is_empty() {
             "asset_code".write_redis_args(&mut rv);
@@ -264,9 +276,7 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         }
         if let Some(ref settlement_engine_ilp_address) = account.settlement_engine_ilp_address {
             "settlement_engine_ilp_address".write_redis_args(&mut rv);
-            settlement_engine_ilp_address
-                .to_vec()
-                .write_redis_args(&mut rv);
+            rv.push(settlement_engine_ilp_address.to_bytes().to_vec());
         }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
@@ -280,6 +290,8 @@ impl FromRedisValue for AccountWithEncryptedTokens {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
         let ilp_address: String = get_value("ilp_address", &hash)?;
+        let ilp_address = Address::from_str(&ilp_address)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid ILP address")))?;
         let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
         let routing_relation = if let Some(relation) = routing_relation {
             RoutingRelation::from_str(relation.as_str())
@@ -289,10 +301,18 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         };
         let round_trip_time: Option<u64> = get_value_option("round_trip_time", &hash)?;
         let round_trip_time: u64 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
+        let settlement_engine_ilp_address: Option<String> =
+            get_value_option("settlement_engine_ilp_address", &hash)?;
+        let settlement_engine_ilp_address =
+            if let Some(ref settlement_engine_ilp_address) = settlement_engine_ilp_address {
+                Address::from_str(settlement_engine_ilp_address).ok()
+            } else {
+                None
+            };
         Ok(AccountWithEncryptedTokens {
             account: Account {
                 id: get_value("id", &hash)?,
-                ilp_address: Bytes::from(ilp_address.as_bytes()),
+                ilp_address,
                 asset_code: get_value("asset_code", &hash)?,
                 asset_scale: get_value("asset_scale", &hash)?,
                 http_endpoint: get_url_option("http_endpoint", &hash)?,
@@ -314,10 +334,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                     "settlement_engine_asset_scale",
                     &hash,
                 )?,
-                settlement_engine_ilp_address: get_bytes_option(
-                    "settlement_engine_ilp_address",
-                    &hash,
-                )?,
+                settlement_engine_ilp_address,
             },
         })
     }
@@ -391,8 +408,8 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-    fn client_address(&self) -> &[u8] {
-        self.ilp_address.as_ref()
+    fn client_address(&self) -> &Address {
+        &self.ilp_address
     }
 
     fn asset_code(&self) -> &str {
@@ -489,7 +506,7 @@ mod redis_account {
 
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
-            ilp_address: "example.alice".to_string(),
+            ilp_address: Address::from_str("example.alice").unwrap(),
             asset_scale: 6,
             asset_code: "XYZ".to_string(),
             max_packet_amount: 1000,

@@ -17,6 +17,7 @@ clap = "2.32.0"
 futures = "0.1.25"
 hashbrown = "0.1.8"
 interledger-api = { path = "../interledger-api", version = "0.1.0" }
+interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-btp = { path = "../interledger-btp", version = "0.2.1" }
 interledger-ccp = { path = "../interledger-ccp", version = "0.1.0" }
 interledger-http = { path = "../interledger-http", version = "0.2.1" }

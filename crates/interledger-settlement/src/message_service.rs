@@ -1,10 +1,9 @@
 use super::SettlementAccount;
-use bytes::Bytes;
 use futures::{
     future::{err, Either},
     Future, Stream,
 };
-use interledger_packet::{ErrorCode, FulfillBuilder, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{BoxedIlpFuture, IncomingRequest, IncomingService};
 use reqwest::r#async::Client;
 use serde_json::{self, Value};
@@ -14,7 +13,7 @@ const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 
 #[derive(Clone)]
 pub struct SettlementMessageService<I, A> {
-    ilp_address: Bytes,
+    ilp_address: Address,
     next: I,
     http_client: Client,
     account_type: PhantomData<A>,
@@ -25,7 +24,7 @@ where
     I: IncomingService<A>,
     A: SettlementAccount,
 {
-    pub fn new(ilp_address: Bytes, next: I) -> Self {
+    pub fn new(ilp_address: Address, next: I) -> Self {
         SettlementMessageService {
             next,
             ilp_address,
@@ -45,9 +44,10 @@ where
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         // Only handle the request if the destination address matches the ILP address
         // of the settlement engine being used for this account
+        let ilp_address = self.ilp_address.clone();
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
-            if request.prepare.destination() == settlement_engine_details.ilp_address.as_ref() {
-                let ilp_address = self.ilp_address.clone();
+            if request.prepare.destination() == settlement_engine_details.ilp_address {
+                let ilp_address_clone = self.ilp_address.clone();
                 let mut settlement_engine_url = settlement_engine_details.url;
 
                 match serde_json::from_slice(request.prepare.data()) {
@@ -61,7 +61,6 @@ where
                             .path_segments_mut()
                             .expect("Invalid settlement engine URL")
                             .push("receiveMessage"); // Maybe set the idempotency flag here in the headers
-                        let ilp_address_clone = ilp_address.clone();
                         return Box::new(self.http_client.post(settlement_engine_url)
                         .json(&message)
                         .send()
@@ -71,7 +70,7 @@ where
                                 code: ErrorCode::T00_INTERNAL_ERROR,
                                 message: b"Error sending message to settlement engine",
                                 data: &[],
-                                triggered_by: ilp_address_clone.as_ref(),
+                                triggered_by: Some(&ilp_address_clone),
                             }.build()
                         })
                         .and_then(move |response| {
@@ -83,7 +82,7 @@ where
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: b"Error getting settlement engine response",
                                     data: &[],
-                                    triggered_by: ilp_address.as_ref(),
+                                    triggered_by: Some(&ilp_address),
                                 }.build()
                                 })
                                 .and_then(|body| {
@@ -103,7 +102,7 @@ where
                                     code,
                                     message: format!("Settlement engine rejected request with error code: {}", response.status()).as_str().as_ref(),
                                     data: &[],
-                                    triggered_by: ilp_address.as_ref(),
+                                    triggered_by: Some(&ilp_address),
                                 }.build()))
                             }
                         }));
@@ -120,7 +119,7 @@ where
                                 .as_str()
                                 .as_ref(),
                             data: &[],
-                            triggered_by: self.ilp_address.as_ref(),
+                            triggered_by: Some(&ilp_address),
                         }
                         .build()));
                     }
@@ -130,7 +129,7 @@ where
                             code: ErrorCode::F00_BAD_REQUEST,
                             message: b"Unable to parse message as a JSON object",
                             data: &[],
-                            triggered_by: self.ilp_address.as_ref(),
+                            triggered_by: Some(&ilp_address),
                         }
                         .build()));
                     }
@@ -141,7 +140,7 @@ where
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: self.ilp_address.as_ref(),
+                    triggered_by: Some(&ilp_address),
                 }
                 .build()));
             }

@@ -348,7 +348,7 @@ impl RedisStore {
                     }
 
                     // Add route to routing table
-                    pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
+                    pipe.hset(ROUTES_KEY, account.ilp_address.to_bytes().to_vec(), account.id)
                         .ignore();
 
                     pipe.query_async(connection)
@@ -982,7 +982,7 @@ impl RouteManagerStore for RedisStore {
                 let local_table = HashMap::from_iter(
                     accounts
                         .iter()
-                        .map(|account| (account.ilp_address.clone(), account.clone())),
+                        .map(|account| (account.ilp_address.to_bytes(), account.clone())),
                 );
 
                 let account_map: HashMap<u64, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));

@@ -10,6 +10,7 @@ use bytes::Bytes;
 use futures::Future;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, IncomingService, OutgoingService};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
@@ -52,7 +53,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 /// The Account type for the RedisStore.
 #[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
-    pub ilp_address: String,
+    pub ilp_address: Address,
     pub asset_code: String,
     pub asset_scale: u8,
     #[serde(default = "u64::max_value")]
@@ -75,7 +76,7 @@ pub struct AccountDetails {
     pub packets_per_minute_limit: Option<u32>,
     pub settlement_engine_url: Option<String>,
     pub settlement_engine_asset_scale: Option<u8>,
-    pub settlement_engine_ilp_address: Option<String>,
+    pub settlement_engine_ilp_address: Option<Address>,
 }
 
 pub struct NodeApi<T, S, U> {

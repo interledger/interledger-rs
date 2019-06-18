@@ -3,17 +3,15 @@ use bytes::{BufMut, Bytes};
 use hex;
 use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
-    Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
+    Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
 use std::{
     convert::TryFrom,
     io::Read,
-    str,
+    str::FromStr,
     time::{Duration, SystemTime},
 };
 
-pub const CCP_CONTROL_DESTINATION: &[u8] = b"peer.route.control";
-pub const CCP_UPDATE_DESTINATION: &[u8] = b"peer.route.update";
 pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
 pub const PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
@@ -31,6 +29,10 @@ lazy_static! {
         data: &[],
     }
     .build();
+    pub static ref CCP_CONTROL_DESTINATION: Address =
+        Address::from_str("peer.route.control").unwrap();
+    pub static ref CCP_UPDATE_DESTINATION: Address =
+        Address::from_str("peer.route.update").unwrap();
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -77,10 +79,10 @@ impl TryFrom<&Prepare> for RouteControlRequest {
 
 impl RouteControlRequest {
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
-        if prepare.destination() != CCP_CONTROL_DESTINATION {
+        if prepare.destination() != *CCP_CONTROL_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
                 "Packet is not a CCP message. Destination: {}",
-                str::from_utf8(prepare.destination()).unwrap_or("<not utf8>")
+                prepare.destination(),
             )));
         }
 
@@ -124,7 +126,7 @@ impl RouteControlRequest {
         }
 
         PrepareBuilder {
-            destination: CCP_CONTROL_DESTINATION,
+            destination: CCP_CONTROL_DESTINATION.clone(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,
@@ -263,7 +265,7 @@ pub struct RouteUpdateRequest {
     pub(crate) from_epoch_index: u32,
     pub(crate) to_epoch_index: u32,
     pub(crate) hold_down_time: u32,
-    pub(crate) speaker: Bytes,
+    pub(crate) speaker: Address,
     pub(crate) new_routes: Vec<Route>,
     pub(crate) withdrawn_routes: Vec<Bytes>,
 }
@@ -281,10 +283,10 @@ impl TryFrom<&Prepare> for RouteUpdateRequest {
 
 impl RouteUpdateRequest {
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
-        if prepare.destination() != CCP_UPDATE_DESTINATION {
+        if prepare.destination() != *CCP_UPDATE_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
                 "Packet is not a CCP message. Destination: {}",
-                str::from_utf8(prepare.destination()).unwrap_or("<not utf8>")
+                prepare.destination(),
             )));
         }
 
@@ -303,7 +305,7 @@ impl RouteUpdateRequest {
         let from_epoch_index = data.read_u32::<BigEndian>()?;
         let to_epoch_index = data.read_u32::<BigEndian>()?;
         let hold_down_time = data.read_u32::<BigEndian>()?;
-        let speaker = Bytes::from(data.read_var_octet_string()?);
+        let speaker = Address::try_from(data.read_var_octet_string()?)?;
         let new_routes_len = data.read_var_uint()? as usize;
         let mut new_routes: Vec<Route> = Vec::with_capacity(new_routes_len);
         for _i in 0..new_routes_len {
@@ -345,7 +347,7 @@ impl RouteUpdateRequest {
         }
 
         PrepareBuilder {
-            destination: CCP_UPDATE_DESTINATION,
+            destination: CCP_UPDATE_DESTINATION.clone(),
             amount: 0,
             expires_at: SystemTime::now() + Duration::from_millis(PEER_PROTOCOL_EXPIRY_DURATION),
             execution_condition: &PEER_PROTOCOL_CONDITION,

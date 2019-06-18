@@ -143,7 +143,8 @@ fn ilp_response_to_http_response(
 #[cfg(test)]
 mod test_limit_stream {
     use super::*;
-    use interledger_packet::PrepareBuilder;
+    use interledger_packet::{Address, PrepareBuilder};
+    use std::str::FromStr;
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -151,7 +152,7 @@ mod test_limit_stream {
         // just ensuring that body size is more than default limit of MAX_MESSAGE_SIZE
         let prepare_data = PrepareBuilder {
             amount: 1,
-            destination: b"test.prepare",
+            destination: Address::from_str("test.prepare").unwrap(),
             execution_condition: &[0; 32],
             expires_at: SystemTime::now() + Duration::from_secs(30),
             data: &[0; MAX_MESSAGE_SIZE],
@@ -177,7 +178,7 @@ mod test_limit_stream {
     fn test_parse_prepare_from_request_more() {
         let prepare_data = PrepareBuilder {
             amount: 1,
-            destination: b"test.prepare",
+            destination: Address::from_str("test.prepare").unwrap(),
             execution_condition: &[0; 32],
             expires_at: SystemTime::now() + Duration::from_secs(30),
             data: &[0; 0],
@@ -190,7 +191,7 @@ mod test_limit_stream {
     fn test_parse_prepare_from_request_no_limit() {
         let prepare_data = PrepareBuilder {
             amount: 1,
-            destination: b"test.prepare",
+            destination: Address::from_str("test.prepare").unwrap(),
             execution_condition: &[0; 32],
             expires_at: SystemTime::now() + Duration::from_secs(30),
             data: &[0; MAX_MESSAGE_SIZE],

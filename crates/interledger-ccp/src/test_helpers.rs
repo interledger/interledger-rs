@@ -7,35 +7,38 @@ use futures::{
     Future,
 };
 use hashbrown::HashMap;
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
     OutgoingService,
 };
 use parking_lot::Mutex;
+use std::str::FromStr;
 use std::{iter::FromIterator, sync::Arc};
 
 lazy_static! {
     pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 1,
-        ilp_address: Bytes::from("example.peer"),
+        ilp_address: Address::from_str("example.peer").unwrap(),
         send_routes: true,
         receive_routes: true,
         relation: RoutingRelation::Peer,
     };
     pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 2,
-        ilp_address: Bytes::from("example.me.child"),
+        ilp_address: Address::from_str("example.me.child").unwrap(),
         send_routes: false,
         receive_routes: false,
         relation: RoutingRelation::Child,
     };
+    pub static ref EXAMPLE_CONNECTOR: Address =
+        unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
 }
 
 #[derive(Clone, Debug)]
 pub struct TestAccount {
     pub id: u64,
-    pub ilp_address: Bytes,
+    pub ilp_address: Address,
     pub receive_routes: bool,
     pub send_routes: bool,
     pub relation: RoutingRelation,
@@ -45,7 +48,7 @@ impl TestAccount {
     pub fn new(id: u64, ilp_address: &str) -> TestAccount {
         TestAccount {
             id,
-            ilp_address: Bytes::from(ilp_address),
+            ilp_address: Address::from_str(ilp_address).unwrap(),
             receive_routes: true,
             send_routes: true,
             relation: RoutingRelation::Peer,
@@ -70,8 +73,8 @@ impl IldcpAccount for TestAccount {
         9
     }
 
-    fn client_address(&self) -> &[u8] {
-        self.ilp_address.as_ref()
+    fn client_address(&self) -> &Address {
+        &self.ilp_address
     }
 }
 
@@ -174,14 +177,16 @@ pub fn test_service() -> CcpRouteManager<
     TestStore,
     TestAccount,
 > {
+    let addr = Address::from_str("example.connector").unwrap();
     CcpRouteManagerBuilder::new(
+        addr.clone(),
         TestStore::new(),
         outgoing_service_fn(|_request| {
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other outgoing handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
@@ -190,13 +195,13 @@ pub fn test_service() -> CcpRouteManager<
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
     )
     .disable_spawn()
-    .ilp_address(Bytes::from_static(b"example.connector"))
+    .ilp_address(addr)
     .to_service()
 }
 
@@ -218,7 +223,7 @@ pub fn test_service_with_routes() -> (
             Bytes::from("example.connector.other-local"),
             TestAccount {
                 id: 3,
-                ilp_address: Bytes::from("example.connector.other-local"),
+                ilp_address: Address::from_str("example.connector.other-local").unwrap(),
                 send_routes: false,
                 receive_routes: false,
                 relation: RoutingRelation::Child,
@@ -237,7 +242,9 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
+    let addr = Address::from_str("example.connector").unwrap();
     let service = CcpRouteManagerBuilder::new(
+        addr.clone(),
         store,
         outgoing,
         incoming_service_fn(|_request| {
@@ -245,13 +252,13 @@ pub fn test_service_with_routes() -> (
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
     )
     .disable_spawn()
-    .ilp_address(Bytes::from_static(b"example.connector"))
+    .ilp_address(addr)
     .to_service();
     (service, outgoing_requests)
 }

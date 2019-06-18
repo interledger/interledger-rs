@@ -6,8 +6,8 @@ use bytes::Bytes;
 use futures::{Async, Future, Poll};
 use interledger_ildcp::get_ildcp_info;
 use interledger_packet::{
-    ErrorClass, ErrorCode as IlpErrorCode, Fulfill, PacketType as IlpPacketType, PrepareBuilder,
-    Reject,
+    Address, ErrorClass, ErrorCode as IlpErrorCode, Fulfill, PacketType as IlpPacketType,
+    PrepareBuilder, Reject,
 };
 use interledger_service::*;
 use std::{
@@ -23,7 +23,7 @@ use std::{
 pub fn send_money<S, A>(
     service: S,
     from_account: &A,
-    destination_account: &[u8],
+    destination_account: Address,
     shared_secret: &[u8],
     source_amount: u64,
 ) -> impl Future<Item = (u64, S), Error = Error>
@@ -31,7 +31,6 @@ where
     S: IncomingService<A> + Clone,
     A: Account,
 {
-    let destination_account = Bytes::from(destination_account);
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
@@ -41,7 +40,7 @@ where
             state: SendMoneyFutureState::SendMoney,
             next: Some(service),
             from_account,
-            source_account: Bytes::from(account_details.client_address()),
+            source_account: account_details.client_address(),
             destination_account,
             shared_secret,
             source_amount,
@@ -59,8 +58,8 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     state: SendMoneyFutureState,
     next: Option<S>,
     from_account: A,
-    source_account: Bytes,
-    destination_account: Bytes,
+    source_account: Address,
+    destination_account: Address,
     shared_secret: Bytes,
     source_amount: u64,
     congestion_controller: CongestionController,
@@ -113,7 +112,7 @@ where
             })];
             if self.should_send_source_account {
                 frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: &self.source_account[..],
+                    source_account: self.source_account.clone(),
                 }));
             }
             let stream_packet = StreamPacketBuilder {
@@ -133,7 +132,7 @@ where
             let data = stream_packet.into_encrypted(&self.shared_secret);
             let execution_condition = generate_condition(&self.shared_secret, &data);
             let prepare = PrepareBuilder {
-                destination: &self.destination_account[..],
+                destination: self.destination_account.clone(),
                 amount,
                 execution_condition: &execution_condition,
                 expires_at: SystemTime::now() + Duration::from_secs(30),
@@ -177,7 +176,7 @@ where
         // Create the ILP Prepare packet
         let data = stream_packet.into_encrypted(&self.shared_secret);
         let prepare = PrepareBuilder {
-            destination: &self.destination_account[..],
+            destination: self.destination_account.clone(),
             amount: 0,
             execution_condition: &random_condition(),
             expires_at: SystemTime::now() + Duration::from_secs(30),
@@ -328,12 +327,12 @@ where
 #[cfg(test)]
 mod send_money_tests {
     use super::*;
-    use crate::test_helpers::TestAccount;
-    use bytes::Bytes;
+    use crate::test_helpers::{TestAccount, EXAMPLE_CONNECTOR};
     use interledger_ildcp::IldcpService;
     use interledger_packet::{ErrorCode as IlpErrorCode, RejectBuilder};
     use interledger_service::incoming_service_fn;
     use parking_lot::Mutex;
+    use std::str::FromStr;
     use std::sync::Arc;
 
     #[test]
@@ -342,7 +341,7 @@ mod send_money_tests {
             id: 0,
             asset_code: "XYZ".to_string(),
             asset_scale: 9,
-            ilp_address: Bytes::from("example.destination"),
+            ilp_address: Address::from_str("example.destination").unwrap(),
         };
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
@@ -352,13 +351,13 @@ mod send_money_tests {
                 Err(RejectBuilder {
                     code: IlpErrorCode::F00_BAD_REQUEST,
                     message: b"just some final error",
-                    triggered_by: b"example.connector",
+                    triggered_by: Some(&EXAMPLE_CONNECTOR),
                     data: &[],
                 }
                 .build())
             })),
             &account,
-            b"example.destination",
+            Address::from_str("example.destination").unwrap(),
             &[0; 32][..],
             100,
         )

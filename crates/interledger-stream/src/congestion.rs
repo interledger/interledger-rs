@@ -219,7 +219,7 @@ mod tests {
             static ref INSUFFICIENT_LIQUIDITY_ERROR: Reject = RejectBuilder {
                 code: ErrorCode::T04_INSUFFICIENT_LIQUIDITY,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build();
@@ -290,7 +290,7 @@ mod tests {
                 &RejectBuilder {
                     code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                     message: &[],
-                    triggered_by: &[],
+                    triggered_by: None,
                     data: &MaxPacketAmountDetails::new(100, 10).to_bytes(),
                 }
                 .build(),

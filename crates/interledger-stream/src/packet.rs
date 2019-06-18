@@ -3,7 +3,7 @@ use byteorder::ReadBytesExt;
 use bytes::{BufMut, BytesMut};
 use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
-    PacketType as IlpPacketType, ParseError,
+    Address, PacketType as IlpPacketType, ParseError,
 };
 use std::{convert::TryFrom, fmt, str};
 
@@ -291,7 +291,7 @@ impl<'a> fmt::Debug for FrameIterator<'a> {
 #[derive(PartialEq, Clone)]
 pub enum Frame<'a> {
     ConnectionClose(ConnectionCloseFrame<'a>),
-    ConnectionNewAddress(ConnectionNewAddressFrame<'a>),
+    ConnectionNewAddress(ConnectionNewAddressFrame),
     ConnectionAssetDetails(ConnectionAssetDetailsFrame<'a>),
     ConnectionMaxData(ConnectionMaxDataFrame),
     ConnectionDataBlocked(ConnectionDataBlockedFrame),
@@ -429,28 +429,30 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
 }
 
 #[derive(PartialEq, Clone)]
-pub struct ConnectionNewAddressFrame<'a> {
-    pub source_account: &'a [u8],
+pub struct ConnectionNewAddressFrame {
+    pub source_account: Address,
 }
 
-impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame<'a> {
+impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_account = reader.read_var_octet_string()?;
+        let source_account = Address::try_from(source_account)?;
 
         Ok(ConnectionNewAddressFrame { source_account })
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
-        buf.put_var_octet_string(self.source_account);
+        let data: &[u8] = self.source_account.as_ref();
+        buf.put_var_octet_string(data);
     }
 }
 
-impl<'a> fmt::Debug for ConnectionNewAddressFrame<'a> {
+impl<'a> fmt::Debug for ConnectionNewAddressFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "ConnectionNewAddressFrame {{ source_account: {} }}",
-            str::from_utf8(self.source_account).map_err(|_| fmt::Error)?
+            self.source_account,
         )
     }
 }
@@ -724,6 +726,7 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
 #[cfg(test)]
 mod serialization {
     use super::*;
+    use std::str::FromStr;
 
     lazy_static! {
         static ref PACKET: StreamPacket = StreamPacketBuilder {
@@ -736,7 +739,7 @@ mod serialization {
                     message: "oop"
                 }),
                 Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: b"example.blah"
+                    source_account: Address::from_str("example.blah").unwrap()
                 }),
                 Frame::ConnectionMaxData(ConnectionMaxDataFrame { max_offset: 1000 }),
                 Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame { max_offset: 2000 }),
@@ -822,7 +825,7 @@ mod serialization {
         assert_eq!(
             iter.next().unwrap(),
             Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                source_account: b"example.blah"
+                source_account: Address::from_str("example.blah").unwrap()
             })
         );
         assert_eq!(iter.count(), 12);

@@ -74,7 +74,7 @@ where
                         RejectBuilder {
                             code: ErrorCode::T01_PEER_UNREACHABLE,
                             message: &[],
-                            triggered_by: &[],
+                            triggered_by: None,
                             data: &[],
                         }
                         .build()
@@ -105,7 +105,7 @@ fn parse_packet_from_response(
         RejectBuilder {
             code,
             message: &[],
-            triggered_by: &[],
+            triggered_by: None,
             data: &[],
         }
         .build()
@@ -117,7 +117,7 @@ fn parse_packet_from_response(
             RejectBuilder {
                 code: ErrorCode::T01_PEER_UNREACHABLE,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()
@@ -132,7 +132,7 @@ fn parse_packet_from_response(
             _ => Err(RejectBuilder {
                 code: ErrorCode::T01_PEER_UNREACHABLE,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()),

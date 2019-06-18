@@ -1,5 +1,4 @@
 use hex;
-use std::convert::TryFrom;
 use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;
@@ -11,7 +10,9 @@ use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
-use super::{ErrorCode, ParseError};
+use super::{Address, ErrorCode, ParseError};
+use bytes::Bytes;
+use std::convert::TryFrom;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -21,7 +22,6 @@ const ERROR_CODE_LEN: usize = 3;
 
 static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
 
-// TODO TryFrom([u8])
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum PacketType {
@@ -30,10 +30,26 @@ pub enum PacketType {
     Reject = 14,
 }
 
+// Gets the packet type from a u8 array
+impl TryFrom<&[u8]> for PacketType {
+    type Error = ParseError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match bytes.first() {
+            Some(&12) => Ok(PacketType::Prepare),
+            Some(&13) => Ok(PacketType::Fulfill),
+            Some(&14) => Ok(PacketType::Reject),
+            _ => Err(ParseError::InvalidPacket(format!(
+                "Unknown packet type: {:?}",
+                bytes,
+            ))),
+        }
+    }
+}
+
 impl TryFrom<u8> for PacketType {
     type Error = ParseError;
 
-    #[inline]
     fn try_from(byte: u8) -> Result<Self, Self::Error> {
         match byte {
             12 => Ok(PacketType::Prepare),
@@ -102,6 +118,7 @@ impl From<Reject> for Packet {
 pub struct Prepare {
     buffer: BytesMut,
     content_offset: usize,
+    destination: Address,
     amount: u64,
     expires_at: SystemTime,
     data_offset: usize,
@@ -112,7 +129,7 @@ pub struct PrepareBuilder<'a> {
     pub amount: u64,
     pub expires_at: SystemTime,
     pub execution_condition: &'a [u8; 32],
-    pub destination: &'a [u8],
+    pub destination: Address,
     pub data: &'a [u8],
 }
 
@@ -133,16 +150,17 @@ impl TryFrom<BytesMut> for Prepare {
 
         // Skip execution condition.
         content.skip(CONDITION_LEN)?;
-        // Skip the data.
-        // TODO make sure address is only ASCII characters
-        content.skip_var_octet_string()?;
 
+        let destination = Address::try_from(content.read_var_octet_string()?)?;
+
+        // Skip the data.
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
 
         Ok(Prepare {
             buffer,
             content_offset,
+            destination,
             amount,
             expires_at,
             data_offset,
@@ -190,9 +208,8 @@ impl Prepare {
     }
 
     #[inline]
-    pub fn destination(&self) -> &[u8] {
-        let offset = self.content_offset + AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
-        (&self.buffer[offset..]).peek_var_octet_string().unwrap()
+    pub fn destination(&self) -> Address {
+        self.destination.clone()
     }
 
     #[inline]
@@ -208,6 +225,13 @@ impl Prepare {
     }
 }
 
+impl AsRef<[u8]> for Prepare {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer
+    }
+}
+
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
@@ -215,8 +239,21 @@ impl From<Prepare> for BytesMut {
 }
 
 impl fmt::Debug for Prepare {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Prepare {{ destination: \"{}\", amount: {}, expires_at: {:?}, execution_condition: {}, data_length: {} }}", str::from_utf8(self.destination()).map_err(|_| fmt::Error)?, self.amount(), DateTime::<Utc>::from(self.expires_at()).to_rfc3339(), hex::encode(self.execution_condition()), self.data().len())
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("Prepare")
+            .field("destination", &self.destination())
+            .field("amount", &self.amount())
+            .field(
+                "expires_at",
+                &DateTime::<Utc>::from(self.expires_at()).to_rfc3339(),
+            )
+            .field(
+                "execution_condition",
+                &hex::encode(self.execution_condition()),
+            )
+            .field("data_length", &self.data().len())
+            .finish()
     }
 }
 
@@ -244,12 +281,13 @@ impl<'a> PrepareBuilder<'a> {
         let mut buffer = writer.into_inner();
 
         buffer.put_slice(&self.execution_condition[..]);
-        buffer.put_var_octet_string(self.destination);
+        buffer.put_var_octet_string::<&[u8]>(self.destination.as_ref());
         buffer.put_var_octet_string(self.data);
 
         Prepare {
             buffer,
             content_offset,
+            destination: self.destination.clone(),
             amount: self.amount,
             expires_at: self.expires_at,
             data_offset: buf_size - data_size,
@@ -309,6 +347,13 @@ impl Fulfill {
     }
 }
 
+impl AsRef<[u8]> for Fulfill {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer
+    }
+}
+
 impl From<Fulfill> for BytesMut {
     fn from(fulfill: Fulfill) -> Self {
         fulfill.buffer
@@ -316,13 +361,12 @@ impl From<Fulfill> for BytesMut {
 }
 
 impl fmt::Debug for Fulfill {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Fulfill {{ fulfillment: \"{}\", data_length: {} }}",
-            hex::encode(self.fulfillment()),
-            self.data().len()
-        )
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("Fulfill")
+            .field("fulfillment", &hex::encode(self.fulfillment()))
+            .field("data_length", &self.data().len())
+            .finish()
     }
 }
 
@@ -358,7 +402,7 @@ pub struct Reject {
 pub struct RejectBuilder<'a> {
     pub code: ErrorCode,
     pub message: &'a [u8],
-    pub triggered_by: &'a [u8],
+    pub triggered_by: Option<&'a Address>,
     pub data: &'a [u8],
 }
 
@@ -374,7 +418,7 @@ impl TryFrom<BytesMut> for Reject {
         let code = ErrorCode::new(code);
 
         let triggered_by_offset = content_offset + content_len - content.len();
-        content.skip_var_octet_string()?;
+        Address::try_from(content.read_var_octet_string()?)?;
 
         let message_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
@@ -399,10 +443,11 @@ impl Reject {
     }
 
     #[inline]
-    pub fn triggered_by(&self) -> &[u8] {
-        (&self.buffer[self.triggered_by_offset..])
+    pub fn triggered_by(&self) -> Address {
+        let address_bytes = (&self.buffer[self.triggered_by_offset..])
             .peek_var_octet_string()
-            .unwrap()
+            .unwrap(); // Can we unwrap safely here?
+        unsafe { Address::new_unchecked(Bytes::from(address_bytes)) }
     }
 
     #[inline]
@@ -424,6 +469,13 @@ impl Reject {
     }
 }
 
+impl AsRef<[u8]> for Reject {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer
+    }
+}
+
 impl From<Reject> for BytesMut {
     fn from(reject: Reject) -> Self {
         reject.buffer
@@ -431,21 +483,30 @@ impl From<Reject> for BytesMut {
 }
 
 impl fmt::Debug for Reject {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Reject {{ code: \"{}\", message: \"{}\", triggered_by: \"{}\", data_length: {} }}",
-            self.code(),
-            str::from_utf8(self.message()).map_err(|_| fmt::Error)?,
-            str::from_utf8(self.triggered_by()).map_err(|_| fmt::Error)?,
-            self.data().len()
-        )
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("Reject")
+            .field("code", &self.code())
+            .field(
+                "message",
+                &str::from_utf8(self.message()).map_err(|_| fmt::Error)?,
+            )
+            .field("triggered_by", &self.triggered_by())
+            .field("data_length", &self.data().len())
+            .finish()
     }
 }
 
 impl<'a> RejectBuilder<'a> {
     pub fn build(&self) -> Reject {
-        let triggered_by_size = oer::predict_var_octet_string(self.triggered_by.len());
+        let (trigerred_by_message, len) = match self.triggered_by {
+            Some(ref msg) => (msg.as_ref(), msg.len()),
+            None => {
+                let empty_msg: &[u8] = &[];
+                (empty_msg, 0)
+            }
+        };
+        let triggered_by_size = oer::predict_var_octet_string(len);
         let message_size = oer::predict_var_octet_string(self.message.len());
         let data_size = oer::predict_var_octet_string(self.data.len());
         let content_len = ERROR_CODE_LEN + triggered_by_size + message_size + data_size;
@@ -455,7 +516,7 @@ impl<'a> RejectBuilder<'a> {
         buffer.put_u8(PacketType::Reject as u8);
         buffer.put_var_octet_string_length(content_len);
         buffer.put_slice(&<[u8; 3]>::from(self.code)[..]);
-        buffer.put_var_octet_string(self.triggered_by);
+        buffer.put_var_octet_string::<&[u8]>(trigerred_by_message);
         buffer.put_var_octet_string(self.message);
         buffer.put_var_octet_string(self.data);
         Reject {
@@ -554,15 +615,15 @@ mod test_packet {
     #[test]
     fn test_try_from() {
         assert_eq!(
-            Packet::try_from(BytesMut::from(*PREPARE_BYTES)).unwrap(),
+            Packet::try_from(BytesMut::from(PREPARE_BYTES)).unwrap(),
             Packet::Prepare(PREPARE.clone()),
         );
         assert_eq!(
-            Packet::try_from(BytesMut::from(*FULFILL_BYTES)).unwrap(),
+            Packet::try_from(BytesMut::from(FULFILL_BYTES)).unwrap(),
             Packet::Fulfill(FULFILL.clone()),
         );
         assert_eq!(
-            Packet::try_from(BytesMut::from(*REJECT_BYTES)).unwrap(),
+            Packet::try_from(BytesMut::from(REJECT_BYTES)).unwrap(),
             Packet::Reject(REJECT.clone()),
         );
 
@@ -576,15 +637,15 @@ mod test_packet {
     fn test_into_bytes_mut() {
         assert_eq!(
             BytesMut::from(Packet::Prepare(PREPARE.clone())),
-            BytesMut::from(*PREPARE_BYTES),
+            BytesMut::from(PREPARE_BYTES),
         );
         assert_eq!(
             BytesMut::from(Packet::Fulfill(FULFILL.clone())),
-            BytesMut::from(*FULFILL_BYTES),
+            BytesMut::from(FULFILL_BYTES),
         );
         assert_eq!(
             BytesMut::from(Packet::Reject(REJECT.clone())),
-            BytesMut::from(*REJECT_BYTES),
+            BytesMut::from(REJECT_BYTES),
         );
     }
 }
@@ -595,15 +656,22 @@ mod test_prepare {
     use crate::fixtures::{self, PREPARE, PREPARE_BUILDER, PREPARE_BYTES};
 
     #[test]
+    fn test_invalid_address() {
+        let mut prep = BytesMut::from(PREPARE_BYTES);
+        prep[67] = 42; // convert a byte from the address to a junk character
+        assert!(Prepare::try_from(prep).is_err());
+    }
+
+    #[test]
     fn test_try_from() {
         assert_eq!(
-            Prepare::try_from(BytesMut::from(*PREPARE_BYTES)).unwrap(),
+            Prepare::try_from(BytesMut::from(PREPARE_BYTES)).unwrap(),
             *PREPARE
         );
 
         // Incorrect packet type on an otherwise well-formed Prepare.
         assert!(Prepare::try_from({
-            let mut with_wrong_type = BytesMut::from(*PREPARE_BYTES);
+            let mut with_wrong_type = BytesMut::from(PREPARE_BYTES);
             with_wrong_type[0] = PacketType::Fulfill as u8;
             with_wrong_type
         })
@@ -611,7 +679,7 @@ mod test_prepare {
 
         // A packet with junk data appened to the end.
         let with_junk_data = Prepare::try_from({
-            let mut buffer = BytesMut::from(*PREPARE_BYTES);
+            let mut buffer = BytesMut::from(PREPARE_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
         })
@@ -628,7 +696,7 @@ mod test_prepare {
 
     #[test]
     fn test_into_bytes_mut() {
-        assert_eq!(BytesMut::from(PREPARE.clone()), *PREPARE_BYTES,);
+        assert_eq!(BytesMut::from(PREPARE.clone()), PREPARE_BYTES);
     }
 
     #[test]
@@ -639,14 +707,16 @@ mod test_prepare {
     #[test]
     fn test_set_amount() {
         let target_amount = PREPARE_BUILDER.amount;
+        let destination = PREPARE_BUILDER.destination.clone();
         let mut prepare = PrepareBuilder {
             amount: 9999,
+            destination,
             ..*PREPARE_BUILDER
         }
         .build();
         prepare.set_amount(target_amount);
         assert_eq!(prepare.amount(), target_amount);
-        assert_eq!(BytesMut::from(prepare), *PREPARE_BYTES);
+        assert_eq!(BytesMut::from(prepare), PREPARE_BYTES);
     }
 
     #[test]
@@ -657,14 +727,16 @@ mod test_prepare {
     #[test]
     fn test_set_expires_at() {
         let target_expiry = PREPARE_BUILDER.expires_at;
+        let destination = PREPARE_BUILDER.destination.clone();
         let mut prepare = PrepareBuilder {
             expires_at: SystemTime::now(),
+            destination,
             ..*PREPARE_BUILDER
         }
         .build();
         prepare.set_expires_at(target_expiry);
         assert_eq!(prepare.expires_at(), target_expiry);
-        assert_eq!(BytesMut::from(prepare), *PREPARE_BYTES);
+        assert_eq!(BytesMut::from(prepare), PREPARE_BYTES);
     }
 
     #[test]
@@ -676,6 +748,11 @@ mod test_prepare {
     fn test_data() {
         assert_eq!(PREPARE.data(), fixtures::DATA);
     }
+
+    #[test]
+    fn test_into_data() {
+        assert_eq!(PREPARE.clone().into_data(), BytesMut::from(PREPARE.data()),);
+    }
 }
 
 #[cfg(test)]
@@ -686,13 +763,13 @@ mod test_fulfill {
     #[test]
     fn test_try_from() {
         assert_eq!(
-            Fulfill::try_from(BytesMut::from(*FULFILL_BYTES)).unwrap(),
+            Fulfill::try_from(BytesMut::from(FULFILL_BYTES)).unwrap(),
             *FULFILL
         );
 
         // A packet with junk data appened to the end.
         let with_junk_data = Fulfill::try_from({
-            let mut buffer = BytesMut::from(*FULFILL_BYTES);
+            let mut buffer = BytesMut::from(FULFILL_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
         })
@@ -715,7 +792,7 @@ mod test_fulfill {
 
     #[test]
     fn test_into_bytes_mut() {
-        assert_eq!(BytesMut::from(FULFILL.clone()), *FULFILL_BYTES,);
+        assert_eq!(BytesMut::from(FULFILL.clone()), FULFILL_BYTES);
     }
 
     #[test]
@@ -727,6 +804,11 @@ mod test_fulfill {
     fn test_data() {
         assert_eq!(FULFILL.data(), fixtures::DATA);
     }
+
+    #[test]
+    fn test_into_data() {
+        assert_eq!(FULFILL.clone().into_data(), BytesMut::from(FULFILL.data()),);
+    }
 }
 
 #[cfg(test)]
@@ -737,26 +819,29 @@ mod test_reject {
     #[test]
     fn test_try_from() {
         assert_eq!(
-            Reject::try_from(BytesMut::from(*REJECT_BYTES)).unwrap(),
+            Reject::try_from(BytesMut::from(REJECT_BYTES)).unwrap(),
             *REJECT,
         );
 
         // A packet with junk data appened to the end.
         let with_junk_data = Reject::try_from({
-            let mut buffer = BytesMut::from(*REJECT_BYTES);
+            let mut buffer = BytesMut::from(REJECT_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
         })
         .unwrap();
         assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
-        assert_eq!(with_junk_data.triggered_by(), REJECT_BUILDER.triggered_by);
+        assert_eq!(
+            with_junk_data.triggered_by(),
+            *REJECT_BUILDER.triggered_by.unwrap()
+        );
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
 
     #[test]
     fn test_into_bytes_mut() {
-        assert_eq!(BytesMut::from(REJECT.clone()), *REJECT_BYTES,);
+        assert_eq!(BytesMut::from(REJECT.clone()), REJECT_BYTES);
     }
 
     #[test]
@@ -771,12 +856,17 @@ mod test_reject {
 
     #[test]
     fn test_triggered_by() {
-        assert_eq!(REJECT.triggered_by(), REJECT_BUILDER.triggered_by);
+        assert_eq!(REJECT.triggered_by(), *REJECT_BUILDER.triggered_by.unwrap());
     }
 
     #[test]
     fn test_data() {
         assert_eq!(REJECT.data(), fixtures::DATA);
+    }
+
+    #[test]
+    fn test_into_data() {
+        assert_eq!(REJECT.clone().into_data(), BytesMut::from(REJECT.data()));
     }
 }
 

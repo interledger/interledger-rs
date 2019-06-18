@@ -9,9 +9,11 @@ use interledger_api::NodeStore;
 use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
 use interledger_service::Account as AccontTrait;
 use interledger_service::AccountStore;
 use interledger_service_util::BalanceStore;
+use std::str::FromStr;
 
 #[test]
 fn insert_accounts() {
@@ -82,7 +84,10 @@ fn get_all_accounts() {
 fn gets_single_account() {
     block_on(test_store().and_then(|(store, context)| {
         store.get_accounts(vec![1]).and_then(move |accounts| {
-            assert_eq!(accounts[0].client_address(), b"example.bob");
+            assert_eq!(
+                accounts[0].client_address(),
+                &Address::from_str("example.bob").unwrap()
+            );
             let _ = context;
             Ok(())
         })
@@ -95,8 +100,14 @@ fn gets_multiple() {
     block_on(test_store().and_then(|(store, context)| {
         store.get_accounts(vec![1, 0]).and_then(move |accounts| {
             // note reverse order is intentional
-            assert_eq!(accounts[0].client_address(), b"example.bob");
-            assert_eq!(accounts[1].client_address(), b"example.alice");
+            assert_eq!(
+                accounts[0].client_address(),
+                &Address::from_str("example.bob").unwrap()
+            );
+            assert_eq!(
+                accounts[1].client_address(),
+                &Address::from_str("example.alice").unwrap()
+            );
             let _ = context;
             Ok(())
         })

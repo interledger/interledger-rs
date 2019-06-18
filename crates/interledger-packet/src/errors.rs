@@ -3,6 +3,8 @@ use std::string::FromUtf8Error;
 
 use quick_error::quick_error;
 
+use super::AddressError;
+
 quick_error! {
     #[derive(Debug)]
     pub enum ParseError {
@@ -29,6 +31,11 @@ quick_error! {
         WrongType(descr: String) {
             description(descr)
             display("Wrong Type {}", descr)
+        }
+        InvalidAddress(err: AddressError) {
+            from()
+            description(err.description())
+            cause(err)
         }
         InvalidPacket(descr: String) {
             description(descr)

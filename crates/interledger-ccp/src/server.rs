@@ -43,7 +43,7 @@ pub struct CcpRouteManagerBuilder<I, O, S> {
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     store: S,
-    ilp_address: Bytes,
+    ilp_address: Address,
     global_prefix: Bytes,
     spawn_tasks: bool,
     boadcast_interval: u64,
@@ -56,9 +56,9 @@ where
     S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
-    pub fn new(store: S, outgoing: O, next_incoming: I) -> Self {
+    pub fn new(ilp_address: Address, store: S, outgoing: O, next_incoming: I) -> Self {
         CcpRouteManagerBuilder {
-            ilp_address: Bytes::new(),
+            ilp_address,
             global_prefix: Bytes::from_static(b"g."),
             next_incoming,
             outgoing,
@@ -68,12 +68,13 @@ where
         }
     }
 
-    pub fn ilp_address(&mut self, ilp_address: Bytes) -> &mut Self {
+    pub fn ilp_address(&mut self, ilp_address: Address) -> &mut Self {
         self.global_prefix = ilp_address
+            .to_bytes()
             .iter()
             .position(|c| c == &b'.')
-            .map(|index| ilp_address.slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.clone());
+            .map(|index| ilp_address.to_bytes().slice_to(index + 1))
+            .unwrap_or_else(|| ilp_address.to_bytes().clone());
         self.ilp_address = ilp_address;
         self
     }
@@ -114,7 +115,7 @@ where
 /// received from peers.
 #[derive(Clone)]
 pub struct CcpRouteManager<I, O, S, A: Account> {
-    ilp_address: Bytes,
+    ilp_address: Address,
     global_prefix: Bytes,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
     next_incoming: I,
@@ -196,7 +197,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -207,7 +208,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -233,8 +234,8 @@ where
                 (from_epoch_index, to_epoch_index)
             };
 
+            let ilp_address = self.ilp_address.clone();
             if !self.spawn_tasks {
-                let ilp_address = self.ilp_address.clone();
                 return Either::B(
                     self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
                         .map_err(move |_| {
@@ -242,7 +243,7 @@ where
                                 code: ErrorCode::T01_PEER_UNREACHABLE,
                                 message: b"Error sending route update request",
                                 data: &[],
-                                triggered_by: &ilp_address[..],
+                                triggered_by: Some(&ilp_address),
                             }
                             .build()
                         })
@@ -272,7 +273,7 @@ where
                 } else if route.prefix.len() <= self.global_prefix.len() {
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
-                } else if route.path.contains(&self.ilp_address) {
+                } else if route.path.contains(self.ilp_address.as_ref()) {
                     error!(
                         "Got route broadcast with a routing loop (path includes us): {:?}",
                         route
@@ -295,7 +296,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -306,7 +307,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -327,7 +328,7 @@ where
                 RoutingTable::new(update.routing_table_id),
             );
         }
-        let ilp_address = self.ilp_address.clone();
+
         match (*incoming_tables)
             .get_mut(&request.from.id())
             .expect("Should have inserted a routing table for this account")
@@ -347,7 +348,7 @@ where
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: b"Error processing route update",
                                     data: &[],
-                                    triggered_by: &ilp_address[..],
+                                    triggered_by: Some(&ilp_address),
                                 }
                                 .build()
                             })
@@ -360,7 +361,7 @@ where
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
                     data: &[],
-                    triggered_by: &ilp_address[..],
+                    triggered_by: Some(&self.ilp_address),
                 }
                 .build();
                 let table = &incoming_tables[&request.from.id()];
@@ -504,13 +505,13 @@ where
                             && route.prefix != global_prefix
                             // Don't advertise completely local routes because advertising our own
                             // prefix will make sure we get packets sent to them
-                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.is_empty())
+                            && !(route.prefix.starts_with(ilp_address.as_ref()) && route.path.is_empty())
                             // Don't include routes we're also withdrawing
                             && !withdrawn_routes.contains(&prefix) {
 
                                 let old_route = forwarding_table.get_route(&prefix);
                                 if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                                    route.path.insert(0, ilp_address.clone());
+                                    route.path.insert(0, ilp_address.to_bytes());
                                     // Each hop hashes the auth before forwarding
                                     route.auth = hash(&route.auth);
                                     forwarding_table.set_route(prefix.clone(), account.clone(), route.clone());
@@ -714,8 +715,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                // TODO the Address type should let us avoid this copy
-                prefix: Bytes::from(account.client_address()),
+                prefix: account.client_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -726,7 +726,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: Bytes::from(account.client_address()),
+                prefix: account.client_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -782,9 +782,9 @@ where
     /// pass it on to the next handler if not
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         let destination = request.prepare.destination();
-        if destination == CCP_CONTROL_DESTINATION {
+        if destination == *CCP_CONTROL_DESTINATION {
             Box::new(self.handle_route_control_request(request))
-        } else if destination == CCP_UPDATE_DESTINATION {
+        } else if destination == *CCP_UPDATE_DESTINATION {
             Box::new(self.handle_route_update_request(request))
         } else {
             Box::new(self.next_incoming.handle_request(request))
@@ -942,7 +942,7 @@ mod handle_route_control_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: CCP_CONTROL_DESTINATION,
+                    destination: CCP_CONTROL_DESTINATION.clone(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],
@@ -1062,7 +1062,7 @@ mod handle_route_update_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: CCP_UPDATE_DESTINATION,
+                    destination: CCP_UPDATE_DESTINATION.clone(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],
@@ -1146,7 +1146,7 @@ mod handle_route_update_request {
             prefix: Bytes::from("example.valid"),
             path: vec![
                 Bytes::from("example.a"),
-                service.ilp_address.clone(),
+                service.ilp_address.to_bytes(),
                 Bytes::from("example.b"),
             ],
             auth: [0; 32],
@@ -1482,6 +1482,7 @@ mod create_route_update {
 mod send_route_updates {
     use super::*;
     use crate::test_helpers::*;
+    use std::str::FromStr;
 
     #[test]
     fn broadcasts_to_all_accounts_we_send_updates_to() {
@@ -1531,7 +1532,7 @@ mod send_route_updates {
                     from_epoch_index: 0,
                     to_epoch_index: 1,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
                         prefix: Bytes::from("example.remote"),
                         path: vec![Bytes::from("example.peer")],
@@ -1574,7 +1575,7 @@ mod send_route_updates {
                     from_epoch_index: 0,
                     to_epoch_index: 1,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
                         prefix: Bytes::from("example.remote"),
                         path: vec![Bytes::from("example.peer")],
@@ -1596,7 +1597,7 @@ mod send_route_updates {
                     from_epoch_index: 1,
                     to_epoch_index: 4,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: Vec::new(),
                     withdrawn_routes: vec![Bytes::from("example.remote")],
                 }

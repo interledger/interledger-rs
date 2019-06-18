@@ -1,8 +1,10 @@
 use interledger_api::AccountDetails;
+use interledger_packet::Address;
+use std::str::FromStr;
 
 lazy_static! {
     pub static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
-        ilp_address: "example.alice".to_string(),
+        ilp_address: Address::from_str("example.alice").unwrap(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
@@ -25,7 +27,7 @@ lazy_static! {
         settlement_engine_ilp_address: None,
     };
     pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
-        ilp_address: "example.bob".to_string(),
+        ilp_address: Address::from_str("example.bob").unwrap(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
@@ -48,7 +50,7 @@ lazy_static! {
         settlement_engine_ilp_address: None,
     };
     pub static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
-        ilp_address: "example.charlie".to_string(),
+        ilp_address: Address::from_str("example.charlie").unwrap(),
         asset_scale: 9,
         asset_code: "XRP".to_string(),
         max_packet_amount: 1000,

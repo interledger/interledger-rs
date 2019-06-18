@@ -7,6 +7,11 @@
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate lazy_static;
+
+#[cfg(feature = "cli")]
+
 /// ILP Packet (De)Serialization
 pub mod packet {
     pub use interledger_packet::*;

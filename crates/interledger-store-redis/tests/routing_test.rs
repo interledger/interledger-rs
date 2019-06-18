@@ -7,8 +7,10 @@ use bytes::Bytes;
 use common::*;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_ccp::RouteManagerStore;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::Account as AccountTrait;
+use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;
 
@@ -35,7 +37,7 @@ fn polls_for_route_updates() {
                             0
                         );
                         store_clone_1.insert_account(AccountDetails {
-                            ilp_address: "example.bob".to_string(),
+                            ilp_address: Address::from_str("example.bob").unwrap(),
                             asset_scale: 6,
                             asset_code: "XYZ".to_string(),
                             max_packet_amount: 1000,

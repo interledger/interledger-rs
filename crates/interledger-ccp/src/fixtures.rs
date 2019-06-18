@@ -2,6 +2,8 @@
 use crate::packet::*;
 use bytes::Bytes;
 use hex;
+use interledger_packet::Address;
+use std::str::FromStr;
 
 lazy_static! {
     pub static ref CONTROL_REQUEST_SERIALIZED: Vec<u8> = hex::decode("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172").unwrap();
@@ -19,7 +21,7 @@ lazy_static! {
         from_epoch_index: 52,
         to_epoch_index: 52,
         hold_down_time: 30000,
-        speaker: Bytes::from("example.alice"),
+        speaker: Address::from_str("example.alice").unwrap(),
         new_routes: Vec::new(),
         withdrawn_routes: Vec::new(),
     };
@@ -31,7 +33,7 @@ lazy_static! {
         from_epoch_index: 46,
         to_epoch_index: 50,
         hold_down_time: 30000,
-        speaker: Bytes::from("example.alice"),
+        speaker: Address::from_str("example.alice").unwrap(),
         new_routes: vec![Route {
           prefix: Bytes::from("example.prefix1"),
           path: vec![Bytes::from("example.prefix1")],

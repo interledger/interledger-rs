@@ -11,7 +11,9 @@ use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
+use interledger_packet::Address;
 use std::str;
+use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
@@ -42,7 +44,7 @@ fn three_nodes() {
         .unwrap();
 
     let node1 = InterledgerNode {
-        ilp_address: "example.one".to_string(),
+        ilp_address: Address::from_str("example.one").unwrap(),
         default_spsp_account: Some(0),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
@@ -55,7 +57,7 @@ fn three_nodes() {
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {
-                ilp_address: String::from("example.one"),
+                ilp_address: Address::from_str("example.one").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -81,7 +83,7 @@ fn three_nodes() {
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {
-                ilp_address: String::from("example.two"),
+                ilp_address: Address::from_str("example.two").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -107,7 +109,7 @@ fn three_nodes() {
     );
 
     let node2 = InterledgerNode {
-        ilp_address: "example.two".to_string(),
+        ilp_address: Address::from_str("example.two").unwrap(),
         default_spsp_account: Some(0),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
@@ -118,7 +120,7 @@ fn three_nodes() {
     runtime.spawn(
         join_all(vec![
             node2.insert_account(AccountDetails {
-                ilp_address: String::from("example.one"),
+                ilp_address: Address::from_str("example.one").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -141,7 +143,7 @@ fn three_nodes() {
                 settlement_engine_ilp_address: None,
             }),
             node2.insert_account(AccountDetails {
-                ilp_address: String::from("example.two.three"),
+                ilp_address: Address::from_str("example.two.three").unwrap(),
                 asset_code: "ABC".to_string(),
                 asset_scale: 6,
                 btp_incoming_token: Some("three".to_string()),
@@ -182,7 +184,7 @@ fn three_nodes() {
     );
 
     let node3 = InterledgerNode {
-        ilp_address: "example.two.three".to_string(),
+        ilp_address: Address::from_str("example.two.three").unwrap(),
         default_spsp_account: Some(0),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
@@ -196,7 +198,7 @@ fn three_nodes() {
         delay(50).map_err(|err| panic!(err)).and_then(move |_| {
             join_all(vec![
                 node3_clone.insert_account(AccountDetails {
-                    ilp_address: String::from("example.two.three"),
+                    ilp_address: Address::from_str("example.two.three").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
                     btp_incoming_token: None,
@@ -219,7 +221,7 @@ fn three_nodes() {
                     settlement_engine_ilp_address: None,
                 }),
                 node3_clone.insert_account(AccountDetails {
-                    ilp_address: String::from("example.two"),
+                    ilp_address: Address::from_str("example.two").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
                     btp_incoming_token: None,

@@ -1,7 +1,6 @@
-use bytes::Bytes;
 use futures::{future::err, Future};
 use interledger_ildcp::IldcpAccount;
-use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use std::marker::PhantomData;
 
@@ -15,7 +14,7 @@ pub trait ExchangeRateStore {
 /// Requires a `ExchangeRateStore`
 #[derive(Clone)]
 pub struct ExchangeRateService<S, O, A> {
-    ilp_address: Bytes,
+    ilp_address: Address,
     store: S,
     next: O,
     account_type: PhantomData<A>,
@@ -27,7 +26,7 @@ where
     O: OutgoingService<A>,
     A: IldcpAccount,
 {
-    pub fn new(ilp_address: Bytes, store: S, next: O) -> Self {
+    pub fn new(ilp_address: Address, store: S, next: O) -> Self {
         ExchangeRateService {
             ilp_address,
             store,
@@ -84,7 +83,7 @@ where
                     )
                     .as_bytes()
                     .as_ref(),
-                    triggered_by: &self.ilp_address,
+                    triggered_by: Some(&self.ilp_address),
                     data: &[],
                 }
                 .build()));
