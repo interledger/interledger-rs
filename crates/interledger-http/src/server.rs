@@ -10,9 +10,11 @@ use hyper::{
 };
 use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
+use std::convert::TryFrom;
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_MESSAGE_SIZE: usize = 40000;
+const BEARER_TOKEN_START: usize = 7;
 
 /// A Hyper::Service that parses incoming ILP-Over-HTTP requests, validates the authorization,
 /// and passes the request to an IncomingService handler.
@@ -40,11 +42,11 @@ where
             .headers()
             .get(AUTHORIZATION)
             .and_then(|auth| auth.to_str().ok())
-            .map(|auth| auth.to_string());
+            .map(|auth| auth[BEARER_TOKEN_START..].to_string());
         if let Some(authorization) = authorization {
             Either::A(
                 self.store
-                    .get_account_from_http_auth(&authorization)
+                    .get_account_from_http_token(&authorization)
                     .map_err(move |_err| {
                         error!("Authorization not found in the DB: {}", authorization);
                         Response::builder().status(401).body(Body::empty()).unwrap()
@@ -67,6 +69,10 @@ where
             .and_then(|from_account| {
                 parse_prepare_from_request(request, Some(MAX_MESSAGE_SIZE)).and_then(
                     move |prepare| {
+                        trace!(
+                            "Got incoming ILP over HTTP packet from account: {}",
+                            from_account.id()
+                        );
                         // Call the inner ILP service
                         next.handle_request(IncomingRequest {
                             from: from_account,

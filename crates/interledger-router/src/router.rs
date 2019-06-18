@@ -5,6 +5,13 @@ use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use std::str;
 
+/// # Interledger Router
+///
+/// The `Router` implements an incoming service and includes an outgoing service.
+/// It determines the next account to forward to and passes it on.
+/// Both incoming and outgoing services can respond to requests but many just pass the request on.
+/// The `Router` requires a `RouterStore`, which keeps track of the entire routing table. Once the `Router` receives a Prepare, it checks its destination and if it finds it in the routing table
+///
 /// The router implements the IncomingService trait and uses the routing table
 /// to determine the `to` (or "next hop") Account for the given request.
 ///
@@ -12,37 +19,45 @@ use std::str;
 ///   - apply exchange rates or fees to the Prepare packet
 ///   - adjust account balances
 ///   - reduce the Prepare packet's expiry
+///
+/// That is done by OutgoingServices.
+
 #[derive(Clone)]
-pub struct Router<T, S> {
-    store: T,
-    next: S,
+pub struct Router<S, O> {
+    store: S,
+    next: O,
 }
 
-impl<T, S> Router<T, S>
+impl<S, O> Router<S, O>
 where
-    T: RouterStore,
-    S: OutgoingService<T::Account>,
+    S: RouterStore,
+    O: OutgoingService<S::Account>,
 {
-    pub fn new(store: T, next: S) -> Self {
-        Router { next, store }
+    pub fn new(store: S, next: O) -> Self {
+        Router { store, next }
     }
 }
 
-impl<T, S> IncomingService<T::Account> for Router<T, S>
+impl<S, O> IncomingService<S::Account> for Router<S, O>
 where
-    T: RouterStore,
-    S: OutgoingService<T::Account> + Clone + Send + 'static,
+    S: RouterStore,
+    O: OutgoingService<S::Account> + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest<T::Account>) -> Self::Future {
+    /// Figures out the next node to pass the received Prepare packet to.
+    ///
+    /// Firstly, it checks if there is a direct path for that account and use that.
+    /// If not it scans through the routing table and checks if the route prefix matches
+    /// the prepare packet's destination or if it's a catch-all address (i.e. empty prefix)
+    fn handle_request(&mut self, request: IncomingRequest<S::Account>) -> Self::Future {
         let destination = Bytes::from(request.prepare.destination());
-        let mut next_hop: Option<<T::Account as Account>::AccountId> = None;
+        let mut next_hop = None;
         let routing_table = self.store.routing_table();
 
         // Check if we have a direct path for that account or if we need to scan through the routing table
         if let Some(account_id) = routing_table.get(&destination) {
-            debug!(
+            trace!(
                 "Found direct route for address: \"{}\". Account: {}",
                 str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
                 account_id
@@ -65,7 +80,7 @@ where
                 }
             }
             if let Some(account_id) = next_hop {
-                debug!(
+                trace!(
                     "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
                     str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
                     str::from_utf8(&matching_prefix[..]).unwrap_or("<not utf8>"),
@@ -73,7 +88,7 @@ where
                 );
             }
         } else {
-            warn!("Unable to route request because routing table is empty");
+            error!("Unable to route request because routing table is empty");
         }
 
         if let Some(account_id) = next_hop {
@@ -97,7 +112,7 @@ where
                     }),
             )
         } else {
-            debug!("No route found for request: {:?}", request);
+            error!("No route found for request: {:?}", request);
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],

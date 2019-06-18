@@ -54,18 +54,23 @@ impl AccountBuilder {
         self
     }
 
-    pub fn http_incoming_authorization(mut self, auth_header: String) -> Self {
-        self.details.http_incoming_authorization = Some(auth_header);
+    pub fn http_incoming_token(mut self, token: String) -> Self {
+        self.details.http_incoming_token = Some(token);
         self
     }
 
-    pub fn http_outgoing_authorization(mut self, auth_header: String) -> Self {
-        self.details.http_outgoing_authorization = Some(auth_header);
+    pub fn http_outgoing_token(mut self, token: String) -> Self {
+        self.details.http_outgoing_token = Some(token);
         self
     }
 
     pub fn btp_uri(mut self, uri: Url) -> Self {
         self.details.btp_uri = Some(uri);
+        self
+    }
+
+    pub fn btp_outgoing_token(mut self, token: String) -> Self {
+        self.details.btp_outgoing_token = Some(token);
         self
     }
 
@@ -88,9 +93,10 @@ pub(crate) struct AccountDetails {
     pub(crate) asset_code: String,
     pub(crate) asset_scale: u8,
     pub(crate) http_endpoint: Option<Url>,
-    pub(crate) http_incoming_authorization: Option<String>,
-    pub(crate) http_outgoing_authorization: Option<String>,
+    pub(crate) http_incoming_token: Option<String>,
+    pub(crate) http_outgoing_token: Option<String>,
     pub(crate) btp_uri: Option<Url>,
+    pub(crate) btp_outgoing_token: Option<String>,
     pub(crate) btp_incoming_token: Option<String>,
     pub(crate) max_packet_amount: u64,
 }
@@ -154,17 +160,22 @@ impl HttpAccount for Account {
         self.inner.http_endpoint.as_ref()
     }
 
-    fn get_http_auth_header(&self) -> Option<&str> {
-        self.inner
-            .http_outgoing_authorization
-            .as_ref()
-            .map(|s| s.as_str())
+    fn get_http_auth_token(&self) -> Option<&str> {
+        self.inner.http_outgoing_token.as_ref().map(|s| s.as_str())
     }
 }
 
 impl BtpAccount for Account {
     fn get_btp_uri(&self) -> Option<&Url> {
         self.inner.btp_uri.as_ref()
+    }
+
+    fn get_btp_token(&self) -> Option<&[u8]> {
+        if let Some(ref token) = self.inner.btp_outgoing_token {
+            Some(token.as_bytes())
+        } else {
+            None
+        }
     }
 }
 
@@ -179,7 +190,7 @@ mod tests {
         assert_eq!(account.asset_code(), "");
         assert_eq!(account.asset_scale(), 0);
         assert_eq!(account.get_btp_uri(), None);
-        assert_eq!(account.get_http_auth_header(), None);
+        assert_eq!(account.get_http_auth_token(), None);
         assert_eq!(account.max_packet_amount(), u64::max_value());
         assert_eq!(account.client_address(), Bytes::from(""));
     }
@@ -192,11 +203,12 @@ mod tests {
             .additional_routes(&[b"example.route", b"example.other-route"])
             .asset_code("XYZ".to_string())
             .asset_scale(9)
-            .btp_uri(Url::parse("btp+wss://:token@example.com").unwrap())
+            .btp_uri(Url::parse("btp+wss://example.com").unwrap())
+            .btp_outgoing_token("token".to_string())
             .btp_incoming_token("auth".to_string())
             .http_endpoint(Url::parse("http://example.com").unwrap())
-            .http_incoming_authorization("Bearer sldkfjlkdsjflj".to_string())
-            .http_outgoing_authorization("Bearer sodgiuoixfugoiudf".to_string())
+            .http_incoming_token("sldkfjlkdsjflj".to_string())
+            .http_outgoing_token("sodgiuoixfugoiudf".to_string())
             .btp_incoming_token("asdflkjsaldkfjoi".to_string())
             .max_packet_amount(7777)
             .build();
@@ -205,12 +217,10 @@ mod tests {
         assert_eq!(account.asset_scale(), 9);
         assert_eq!(
             account.get_btp_uri(),
-            Some(&Url::parse("btp+wss://:token@example.com").unwrap())
+            Some(&Url::parse("btp+wss://example.com").unwrap())
         );
-        assert_eq!(
-            account.get_http_auth_header(),
-            Some("Bearer sodgiuoixfugoiudf")
-        );
+        assert_eq!(account.get_btp_token(), Some(&b"token"[..]));
+        assert_eq!(account.get_http_auth_token(), Some("sodgiuoixfugoiudf"));
         assert_eq!(account.max_packet_amount(), 7777);
         assert_eq!(account.client_address(), &b"example.address"[..]);
     }

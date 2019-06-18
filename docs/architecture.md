@@ -10,7 +10,6 @@ Note that this document assumes some familiarity with the Interledger Protocol (
 - All details related to an account or peer are bundled in an [`Account`](#accounts) object, which is loaded from the `Store` and passed through the `Services`
 - Nothing is instantiated for each packet or for each account; services that behave differently depending on account-specific details or configuration use methods on the `Account` object to get those details and behave accordingly
 - Multiple identical nodes / connectors can be run and pointed at the same underlying database to horizontally scale a deployment for increased throughput
-- Settlement is handled by [Settlement Engines](#settlement-engines) that run in separate processes but read from and write to the same database as the Interledger.rs components
 
 ## Services - Core Internal Abstraction
 
@@ -55,29 +54,3 @@ Each service that needs access to the database can define traits that the `Store
 This approach to abstracting over different databases allows Interledger.rs to be used on top of multiple types of databases while leveraging the specific capabilities of each one. Instead of having one database abstraction that is the least common denominator of what each service requires, such as a simple key-value store, each service defines exactly what it needs and it is up to the `Store` implementation to provide it. For example, a `Store` implementation on top of a database that provides atomic transactions can use those for balance updates without the balance service needing to implement its own locking mechanism on top.
 
 A further benefit of this approach is that each `Store` implementation can decide how to save and format the data in the underlying database and those choices are completely abstracted away from the services. The `Store` can organize all account-related details into sensible tables and indexes and multiple services can access the same underlying data using the service-specific methods from the traits the `Store` implements.
-
-## Settlement Engines
-
-### Separate Clearing and Settlement
-
-Interledger.rs separates the "clearing" of ILP packets from the "settlement" of balances between directly connected nodes.
-
-The logic for forwarding and processing ILP packets and updating account balances for them is implemented in Rust. External [settlement engines](./settlement-engines) are provided for specific ledgers and "Layer 2" technologies such as payment channels. The settlement engines can be written in any programming language -- ideally whichever has the best SDK for the underlying settlement mechanism.
-
-Settlement engines are run as separate processes from the core Interledger node / connector. This means that even slower settlement engine implementations should not affect the latency or throughput of the Interledger.rs node.
-
-### Common Database
-
-The core Interledger.rs components and external settlement engines talk directly to the same databases. For example, the settlement engines will use the same balances tables as the Interledger node so that they can read the accrued account balance and update it to reflect incoming and outgoing settlements. Settlement engines can also define additional tables or indices, for example to map ledger addresses to `Account` records or to store the latest payment channel claims.
-
-Note that this design means that each settlement engine must separately implement its interactions with different databases. Settlement engines _should_ support all databases for which there are Interledger.rs `Store` implementations.
-
-### Polling Over PubSub
-
-It is recommended for performance reasons that settlement engines poll the underlying database on some configured interval, rather than using a publish / subscribe method to receive real-time balance updates. The Interledger.rs node / connector may process orders of magnitude more ILP packets than the settlement engine can handle. The settlement engine can poll the database at any frequency that makes sense for that settlement method (every couple seconds or minutes for on-ledger transfer-based methods or more often for payment channel-based methods).
-
-### Bilateral Messaging
-
-If a settlement engine requires bilateral messaging, for example to exchange payment channel claims or updates, it is recommended to have a component written in Rust and a separate settlement engine. The Rust service will be added to service chain to handle incoming messages and write relevant details to the underlying database (through a `Store` abstraction). The separate settlement engine will connect to the underlying ledger or blockchain, listen for notifications, and submit transactions such as payment channel closes when applicable.
-
-This design is preferable to having the Interledger.rs node / connector forward ILP Prepare packets with a specific ILP Address prefix to the external settlement engine. Forwarding all packets with a certain prefix to the settlement engine would make it easy to DoS by overwhelming the (not necessarily high-throughput) settlement engine with too many packets.

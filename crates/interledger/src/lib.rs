@@ -1,10 +1,11 @@
 //! # Interledger.rs
 //!
 //! A CLI and library bundle for the Rust implementation of the Interledger Protocol stack.
+#![recursion_limit = "128"]
 
+#[cfg(feature = "cli")]
 #[macro_use]
 extern crate log;
-#[cfg(feature = "cli")]
 
 /// ILP Packet (De)Serialization
 pub mod packet {
@@ -19,6 +20,8 @@ pub mod service {
 #[doc(hidden)]
 #[cfg(feature = "cli")]
 pub mod cli;
+#[cfg(feature = "cli")]
+pub mod node;
 
 /// Bilateral Transport Protocol (BTP) client and server
 #[cfg(feature = "btp")]
