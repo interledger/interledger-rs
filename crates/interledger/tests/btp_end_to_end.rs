@@ -32,6 +32,7 @@ fn btp_end_to_end() {
         btp_address: ([127, 0, 0, 1], btp_port).into(),
         http_address: ([127, 0, 0, 1], http_port).into(),
         secret_seed: cli::random_secret(),
+        route_broadcast_interval: Some(200),
     };
     let run = ok(()).and_then(move |_| {
         let spawn_connector = ok(tokio::spawn(node.serve())).and_then(move |_| {

@@ -51,6 +51,7 @@ fn three_nodes() {
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_address: ([127, 0, 0, 1], node1_http).into(),
         secret_seed: cli::random_secret(),
+        route_broadcast_interval: Some(200),
     };
     let node1_clone = node1.clone();
     runtime.spawn(
@@ -116,6 +117,7 @@ fn three_nodes() {
         btp_address: ([127, 0, 0, 1], node2_btp).into(),
         http_address: ([127, 0, 0, 1], node2_http).into(),
         secret_seed: cli::random_secret(),
+        route_broadcast_interval: Some(200),
     };
     runtime.spawn(
         join_all(vec![
@@ -191,6 +193,7 @@ fn three_nodes() {
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_address: ([127, 0, 0, 1], node3_http).into(),
         secret_seed: cli::random_secret(),
+        route_broadcast_interval: Some(200),
     };
     let node3_clone = node3.clone();
     runtime.spawn(
