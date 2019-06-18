@@ -61,7 +61,8 @@ where
         if let Some(account_id) = routing_table.get(dest) {
             trace!(
                 "Found direct route for address: \"{}\". Account: {}",
-                destination, account_id
+                destination,
+                account_id
             );
             next_hop = Some(*account_id);
         } else if !routing_table.is_empty() {

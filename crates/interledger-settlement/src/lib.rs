@@ -6,8 +6,8 @@ extern crate log;
 extern crate tower_web;
 
 use futures::Future;
-use interledger_service::Account;
 use interledger_packet::Address;
+use interledger_service::Account;
 use url::Url;
 
 mod api;

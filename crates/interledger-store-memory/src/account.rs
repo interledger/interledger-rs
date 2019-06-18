@@ -113,7 +113,6 @@ pub(crate) struct AccountDetails {
     pub(crate) max_packet_amount: u64,
 }
 
-
 impl AccountDetails {
     pub(crate) fn build(self) -> Account {
         Account {

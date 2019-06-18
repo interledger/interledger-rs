@@ -248,8 +248,8 @@ fn receive_money(
 #[cfg(test)]
 mod connection_generator {
     use super::*;
-    use std::str::FromStr;
     use regex::Regex;
+    use std::str::FromStr;
 
     #[test]
     fn generates_valid_ilp_address() {

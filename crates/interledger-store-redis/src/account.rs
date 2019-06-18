@@ -57,7 +57,10 @@ pub struct Account {
     pub(crate) settlement_engine_ilp_address: Option<Address>,
 }
 
-fn optional_address_to_string<S>(address: &Option<Address>, serializer: S) -> Result<S::Ok, S::Error>
+fn optional_address_to_string<S>(
+    address: &Option<Address>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -298,12 +301,14 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         };
         let round_trip_time: Option<u64> = get_value_option("round_trip_time", &hash)?;
         let round_trip_time: u64 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
-        let settlement_engine_ilp_address: Option<String> = get_value_option("settlement_engine_ilp_address", &hash)?;
-        let settlement_engine_ilp_address = if let Some(ref settlement_engine_ilp_address) = settlement_engine_ilp_address {
-            Address::from_str(settlement_engine_ilp_address).ok()
-        } else {
-            None
-        };
+        let settlement_engine_ilp_address: Option<String> =
+            get_value_option("settlement_engine_ilp_address", &hash)?;
+        let settlement_engine_ilp_address =
+            if let Some(ref settlement_engine_ilp_address) = settlement_engine_ilp_address {
+                Address::from_str(settlement_engine_ilp_address).ok()
+            } else {
+                None
+            };
         Ok(AccountWithEncryptedTokens {
             account: Account {
                 id: get_value("id", &hash)?,

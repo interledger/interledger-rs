@@ -6,6 +6,7 @@ use interledger_btp::{connect_client, create_server, BtpStore};
 use interledger_ccp::CcpRouteManagerBuilder;
 use interledger_http::HttpClientService;
 use interledger_ildcp::IldcpService;
+use interledger_packet::Address;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
 use interledger_service::{outgoing_service_fn, Account as AccountTrait, OutgoingRequest};
@@ -15,7 +16,6 @@ use interledger_service_util::{
 };
 use interledger_settlement::SettlementMessageService;
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
-use interledger_packet::Address;
 use interledger_stream::StreamReceiverService;
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};

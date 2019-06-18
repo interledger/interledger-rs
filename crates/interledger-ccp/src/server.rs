@@ -69,7 +69,8 @@ where
     }
 
     pub fn ilp_address(&mut self, ilp_address: Address) -> &mut Self {
-        self.global_prefix = ilp_address.to_bytes()
+        self.global_prefix = ilp_address
+            .to_bytes()
             .iter()
             .position(|c| c == &b'.')
             .map(|index| ilp_address.to_bytes().slice_to(index + 1))

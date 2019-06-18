@@ -11,10 +11,10 @@ use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
-use std::str;
-use tokio::runtime::Builder as RuntimeBuilder;
 use interledger_packet::Address;
+use std::str;
 use std::str::FromStr;
+use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
 use redis_helpers::*;

@@ -18,9 +18,9 @@ use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
+use std::str::FromStr;
 use std::{convert::TryFrom, net::SocketAddr, str, sync::Arc, u64};
 use url::Url;
-use std::str::FromStr;
 
 lazy_static! {
     pub static ref LOCAL_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
@@ -137,11 +137,8 @@ pub fn send_spsp_payment_http(
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
-                message: &format!(
-                    "No outgoing route for: {:?}",
-                    request.from.client_address()
-                )
-                .as_bytes(),
+                message: &format!("No outgoing route for: {:?}", request.from.client_address())
+                    .as_bytes(),
                 triggered_by: None,
                 data: &[],
             }

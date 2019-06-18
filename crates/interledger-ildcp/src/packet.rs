@@ -103,7 +103,6 @@ impl TryFrom<Bytes> for IldcpResponse {
 }
 
 impl IldcpResponse {
-
     pub fn client_address(&self) -> Address {
         self.ilp_address.clone()
     }

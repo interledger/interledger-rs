@@ -7,12 +7,12 @@ use bytes::Bytes;
 use common::*;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_ccp::RouteManagerStore;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::Account as AccountTrait;
-use interledger_packet::Address;
+use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;
-use std::str::FromStr;
 
 #[test]
 fn polls_for_route_updates() {
