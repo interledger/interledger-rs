@@ -1,6 +1,6 @@
 use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{future::result, Future, Stream};
+use futures::{future::{err, result}, Future, Stream};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use reqwest::{
