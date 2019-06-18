@@ -49,7 +49,6 @@ pub fn send_spsp_payment_btp(
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let btp_server = parse_btp_url(btp_server).unwrap();
-    println!("SENDING SPSP PAYMENT OVER BTP");
     let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
         .additional_routes(&[&b""[..]])
         .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
@@ -92,7 +91,6 @@ pub fn send_spsp_payment_btp(
         let service = ValidatorService::outgoing(service);
         let store = InMemoryStore::from_accounts(vec![account.clone()]);
         let router = Router::new(store, service);
-        println!("SENDING THE PAYMENT");
         pay(router, account, &receiver, amount)
             .map_err(|err| {
                 eprintln!("Error sending SPSP payment: {:?}", err);
