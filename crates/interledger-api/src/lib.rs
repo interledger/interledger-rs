@@ -30,16 +30,16 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
     fn insert_account(
         &self,
         account: AccountDetails,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
     // TODO limit the number of results and page through them
-    fn get_all_accounts(&self) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
-    fn set_rates<R>(&self, rates: R) -> Box<Future<Item = (), Error = ()> + Send>
+    fn set_rates<R>(&self, rates: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (String, f64)>;
 
-    fn set_static_routes<R>(&self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
+    fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (String, <Self::Account as AccountTrait>::AccountId)>;
 
@@ -47,7 +47,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         &self,
         prefix: String,
         account_id: <Self::Account as AccountTrait>::AccountId,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
 /// The Account type for the RedisStore.

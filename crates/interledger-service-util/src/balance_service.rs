@@ -6,7 +6,8 @@ use tokio_executor::spawn;
 
 pub trait BalanceStore: AccountStore {
     /// Fetch the current balance for the given account.
-    fn get_balance(&self, account: Self::Account) -> Box<Future<Item = i64, Error = ()> + Send>;
+    fn get_balance(&self, account: Self::Account)
+        -> Box<dyn Future<Item = i64, Error = ()> + Send>;
 
     fn update_balances_for_prepare(
         &self,
@@ -14,7 +15,7 @@ pub trait BalanceStore: AccountStore {
         incoming_amount: u64,
         to_account: Self::Account,
         outgoing_amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn update_balances_for_fulfill(
         &self,
@@ -22,7 +23,7 @@ pub trait BalanceStore: AccountStore {
         incoming_amount: u64,
         to_account: Self::Account,
         outgoing_amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn update_balances_for_reject(
         &self,
@@ -30,7 +31,7 @@ pub trait BalanceStore: AccountStore {
         incoming_amount: u64,
         to_account: Self::Account,
         outgoing_amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
 /// # Balance Service
@@ -81,7 +82,7 @@ where
     fn send_request(
         &mut self,
         request: OutgoingRequest<A>,
-    ) -> Box<Future<Item = Fulfill, Error = Reject> + Send> {
+    ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
         let mut next = self.next.clone();
         let store = self.store.clone();
         let store_clone = store.clone();

@@ -43,12 +43,12 @@ pub trait BtpStore {
     fn get_account_from_btp_token(
         &self,
         token: &str,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
     /// Load accounts that have a btp_uri configured
     fn get_btp_outgoing_accounts(
         &self,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 pub struct BtpOpenSignupAccount<'a> {
@@ -71,7 +71,7 @@ pub trait BtpOpenSignupStore {
     fn create_btp_account<'a>(
         &self,
         account: BtpOpenSignupAccount<'a>,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 }
 
 #[cfg(test)]
@@ -128,7 +128,7 @@ mod client_server {
         fn get_accounts(
             &self,
             account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-        ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
             let accounts: Vec<TestAccount> = self
                 .accounts
                 .iter()
@@ -154,7 +154,7 @@ mod client_server {
         fn get_account_from_btp_token(
             &self,
             token: &str,
-        ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
             Box::new(result(
                 self.accounts
                     .iter()
@@ -172,7 +172,7 @@ mod client_server {
 
         fn get_btp_outgoing_accounts(
             &self,
-        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(self
                 .accounts
                 .iter()

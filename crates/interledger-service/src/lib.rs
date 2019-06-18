@@ -94,7 +94,7 @@ pub trait OutgoingService<A: Account> {
 }
 
 /// A future that returns an ILP Fulfill or Reject packet.
-pub type BoxedIlpFuture = Box<Future<Item = Fulfill, Error = Reject> + Send + 'static>;
+pub type BoxedIlpFuture = Box<dyn Future<Item = Fulfill, Error = Reject> + Send + 'static>;
 
 /// The base Store trait that can load a given account based on the ID.
 pub trait AccountStore {
@@ -103,7 +103,7 @@ pub trait AccountStore {
     fn get_accounts(
         &self,
         account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 /// Create an IncomingService that calls the given handler for each request.

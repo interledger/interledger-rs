@@ -46,7 +46,7 @@ impl_web! {
         }
 
         fn is_admin(&self, authorization: &str) -> bool {
-            &authorization[BEARER_TOKEN_START..] == self.admin_api_token
+            authorization[BEARER_TOKEN_START..] == self.admin_api_token
         }
 
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {

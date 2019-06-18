@@ -97,7 +97,8 @@ where
     type ReqBody = Body;
     type ResBody = Body;
     type Error = Error;
-    type Future = Box<Future<Item = Response<Self::ResBody>, Error = Self::Error> + Send + 'static>;
+    type Future =
+        Box<dyn Future<Item = Response<Self::ResBody>, Error = Self::Error> + Send + 'static>;
 
     fn call(&mut self, request: Request<Self::ReqBody>) -> Self::Future {
         Box::new(self.handle_http_request(request))

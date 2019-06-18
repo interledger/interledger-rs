@@ -54,7 +54,7 @@ where
     fn send_request(
         &mut self,
         mut request: OutgoingRequest<A>,
-    ) -> Box<Future<Item = Fulfill, Error = Reject> + Send> {
+    ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
         if request.prepare.amount() > 0 {
             let rate: f64 = if request.from.asset_code() == request.to.asset_code() {
                 1f64
@@ -81,8 +81,7 @@ where
                         request.from.asset_code(),
                         request.to.asset_code()
                     )
-                    .as_bytes()
-                    .as_ref(),
+                    .as_bytes(),
                     triggered_by: Some(&self.ilp_address),
                     data: &[],
                 }

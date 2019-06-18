@@ -3,9 +3,7 @@ use bytes::{BufMut, BytesMut};
 use core::borrow::Borrow;
 use futures::future::err;
 use interledger_packet::{
-    oer,
-    oer::{BufOerExt, MutBufOerExt},
-    Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
+    oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
 use interledger_service::*;
 use std::convert::TryFrom;
@@ -148,10 +146,14 @@ where
         }
         .build();
 
-        return Box::new(self.next.handle_request(request));
+        Box::new(self.next.handle_request(request))
     }
 }
 
+#[cfg(test)]
+use interledger_packet::{oer, oer::MutBufOerExt};
+// This should be exported when we have a use for it outside of the tests
+#[cfg(test)]
 pub struct EchoRequestBuilder<'a> {
     pub amount: u64,
     pub expires_at: SystemTime,
@@ -162,6 +164,7 @@ pub struct EchoRequestBuilder<'a> {
     pub source_address: &'a Address,
 }
 
+#[cfg(test)]
 impl<'a> EchoRequestBuilder<'a> {
     pub fn build(&self) -> Prepare {
         let source_address_len = oer::predict_var_octet_string(self.source_address.len());

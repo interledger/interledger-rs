@@ -20,7 +20,7 @@ const CONDITION_LEN: usize = 32;
 const FULFILLMENT_LEN: usize = 32;
 const ERROR_CODE_LEN: usize = 3;
 
-static INTERLEDGER_TIMESTAMP_FORMAT: &'static str = "%Y%m%d%H%M%S%3f";
+static INTERLEDGER_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%3f";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
@@ -874,14 +874,14 @@ mod test_reject {
 mod test_max_packet_amount_details {
     use super::*;
 
-    static BYTES: &'static [u8] = b"\
+    static BYTES: &[u8] = b"\
         \x00\x00\x00\x00\x00\x03\x02\x01\
         \x00\x00\x00\x00\x00\x06\x05\x04\
     ";
 
     static DETAILS: MaxPacketAmountDetails = MaxPacketAmountDetails {
-        amount_received: 0x030201,
-        max_amount: 0x060504,
+        amount_received: 0x0003_0201,
+        max_amount: 0x0006_0504,
     };
 
     #[test]
@@ -902,11 +902,11 @@ mod test_max_packet_amount_details {
 
     #[test]
     fn test_amount_received() {
-        assert_eq!(DETAILS.amount_received(), 0x030201);
+        assert_eq!(DETAILS.amount_received(), 0x0003_0201);
     }
 
     #[test]
     fn test_max_amount() {
-        assert_eq!(DETAILS.max_amount(), 0x060504);
+        assert_eq!(DETAILS.max_amount(), 0x0006_0504);
     }
 }

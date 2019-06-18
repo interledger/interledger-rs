@@ -30,12 +30,12 @@ pub trait RateLimitStore {
         &self,
         account: Self::Account,
         prepare_amount: u64,
-    ) -> Box<Future<Item = (), Error = RateLimitError> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = RateLimitError> + Send>;
     fn refund_throughput_limit(
         &self,
         account: Self::Account,
         prepare_amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
 /// # Rate Limit Service

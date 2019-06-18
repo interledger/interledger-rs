@@ -78,3 +78,9 @@ impl SettlementClient {
         Either::B(err(()))
     }
 }
+
+impl Default for SettlementClient {
+    fn default() -> Self {
+        SettlementClient::new()
+    }
+}

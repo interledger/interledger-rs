@@ -113,7 +113,7 @@ impl AccountStore for InMemoryStore {
     fn get_accounts(
         &self,
         accounts_ids: Vec<u64>,
-    ) -> Box<Future<Item = Vec<Account>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let accounts: Vec<Account> = accounts_ids
             .iter()
             .filter_map(|account_id| self.accounts.read().get(account_id).cloned())
@@ -132,7 +132,7 @@ impl HttpStore for InMemoryStore {
     fn get_account_from_http_token(
         &self,
         auth_header: &str,
-    ) -> Box<Future<Item = Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         if let Some(account_id) = self.http_auth.read().get(auth_header) {
             if let Some(account) = self.accounts.read().get(account_id) {
                 return Box::new(ok(account.clone()));
@@ -154,7 +154,7 @@ impl BtpStore for InMemoryStore {
     fn get_account_from_btp_token(
         &self,
         token: &str,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         if let Some(account_id) = self.btp_auth.read().get(&(token.to_string())) {
             Box::new(ok(self.accounts.read()[account_id].clone()))
         } else {
@@ -164,7 +164,7 @@ impl BtpStore for InMemoryStore {
 
     fn get_btp_outgoing_accounts(
         &self,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         Box::new(ok(self
             .accounts
             .read()
@@ -181,7 +181,7 @@ impl BtpOpenSignupStore for InMemoryStore {
     fn create_btp_account<'a>(
         &self,
         account: BtpOpenSignupAccount<'a>,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         let account_id = {
             let next_id: u64 = *self.next_account_id.lock();
             *self.next_account_id.lock() += 1;

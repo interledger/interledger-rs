@@ -86,9 +86,9 @@ where
                     debug!("Connected to account {}'s server", account.id());
                     Ok(Some((account, connection)))
                 }
-                Err(err) => {
+                Err(_) => {
                     if error_on_unavailable {
-                        Err(err)
+                        Err(())
                     } else {
                         Ok(None)
                     }
