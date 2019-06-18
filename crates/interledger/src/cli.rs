@@ -247,7 +247,7 @@ pub fn run_spsp_server_http(
         println!("Creating SPSP server. ILP Address: {}", ilp_address)
     }
 
-    let account: Account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
+    let account: Account = AccountBuilder::new(ilp_address.clone())
         .http_incoming_token(auth_token)
         .build();
     let server_secret = Bytes::from(&random_secret()[..]);
