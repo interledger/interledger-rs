@@ -340,7 +340,7 @@ impl RedisStore {
                     }
 
                     // Add route to routing table
-                    pipe.hset(ROUTES_KEY, account.ilp_address.to_vec(), account.id)
+                    pipe.hset(ROUTES_KEY, account.ilp_address.to_bytes().to_vec(), account.id)
                         .ignore();
 
                     pipe.query_async(connection)
