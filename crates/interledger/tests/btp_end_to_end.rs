@@ -11,6 +11,8 @@ use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
+use interledger_packet::Address;
+use std::str::FromStr;
 use tokio::runtime::Runtime;
 
 mod redis_helpers;
@@ -23,7 +25,7 @@ fn btp_end_to_end() {
     let btp_port = get_open_port(Some(7768));
     let http_port = get_open_port(Some(7770));
     let node = InterledgerNode {
-        ilp_address: "example.node".to_string(),
+        ilp_address: Address::from_str("example.node").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: context.get_client_connection_info(),
@@ -35,7 +37,7 @@ fn btp_end_to_end() {
         let spawn_connector = ok(tokio::spawn(node.serve())).and_then(move |_| {
             join_all(vec![
                 node.insert_account(AccountDetails {
-                    ilp_address: String::from("example.node.one"),
+                    ilp_address: Address::from_str("example.node.one").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-one".to_string()),
@@ -58,7 +60,7 @@ fn btp_end_to_end() {
                     settlement_engine_ilp_address: None,
                 }),
                 node.insert_account(AccountDetails {
-                    ilp_address: String::from("example.node.two"),
+                    ilp_address: Address::from_str("example.node.two").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-two".to_string()),

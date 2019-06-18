@@ -45,40 +45,6 @@ jobs:
       - run:
           name: Audit Dependencies
           command: cargo audit
-<<<<<<< HEAD
-      - run:
-          name: Generate Coverage Report
-          # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
-          # See discussion in https://github.com/travis-ci/travis-ci/issues/9061
-          sudo: required
-          command:
-            cargo kcov --all --verbose
-            # -- --verify
-            # --exclude-region="kcov-ignore-start:kcov-ignore-end"
-            # --exclude-pattern="$CARGO_HOME,**/tests/**"
-            # --exclude-line="^(\)*\}*,*)$"
-          environment:
-            # Configure the redis tests to use a unix socket instead of TCP
-            REDISRS_SERVER_TYPE: unix
-      - run:
-          name: Upload Code Coverage
-          command: "bash <(curl -s https://codecov.io/bash)"
-||||||| merged common ancestors
-      - run:
-          name: Generate Coverage Report
-          command:
-            cargo kcov --all --verbose
-            # -- --verify
-            # --exclude-region="kcov-ignore-start:kcov-ignore-end"
-            # --exclude-pattern="$CARGO_HOME,**/tests/**"
-            # --exclude-line="^(\)*\}*,*)$"
-          environment:
-            # Configure the redis tests to use a unix socket instead of TCP
-            REDISRS_SERVER_TYPE: unix
-      - run:
-          name: Upload Code Coverage
-          command: "bash <(curl -s https://codecov.io/bash)"
-=======
       # - run:
       #     name: Generate Coverage Report
       #     # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
@@ -96,7 +62,6 @@ jobs:
       # - run:
       #     name: Upload Code Coverage
       #     command: "bash <(curl -s https://codecov.io/bash)"
->>>>>>> master
       - save_cache:
           key: project-v4-{{ checksum "Cargo.toml" }}-{{ .Branch }}
           paths:

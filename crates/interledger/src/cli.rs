@@ -20,6 +20,7 @@ use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::{convert::TryFrom, net::SocketAddr, str, sync::Arc, u64};
 use url::Url;
+use std::str::FromStr;
 
 lazy_static! {
     pub static ref LOCAL_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
@@ -48,6 +49,7 @@ pub fn send_spsp_payment_btp(
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let btp_server = parse_btp_url(btp_server).unwrap();
+    println!("SENDING SPSP PAYMENT OVER BTP");
     let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
         .additional_routes(&[&b""[..]])
         .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
@@ -90,6 +92,7 @@ pub fn send_spsp_payment_btp(
         let service = ValidatorService::outgoing(service);
         let store = InMemoryStore::from_accounts(vec![account.clone()]);
         let router = Router::new(store, service);
+        println!("SENDING THE PAYMENT");
         pay(router, account, &receiver, amount)
             .map_err(|err| {
                 eprintln!("Error sending SPSP payment: {:?}", err);
@@ -135,11 +138,11 @@ pub fn send_spsp_payment_http(
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &format!(
-                    "No outgoing route for: {}",
-                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                    "No outgoing route for: {:?}",
+                    request.from.client_address()
                 )
                 .as_bytes(),
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build())
@@ -250,7 +253,7 @@ pub fn run_spsp_server_http(
     }
 
     let account: Account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
-        .http_incoming_authorization(format!("Bearer {}", auth_token))
+        .http_incoming_token(auth_token)
         .build();
     let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![account.clone()]);

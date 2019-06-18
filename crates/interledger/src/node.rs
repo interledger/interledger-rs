@@ -15,6 +15,7 @@ use interledger_service_util::{
 };
 use interledger_settlement::SettlementMessageService;
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
+use interledger_packet::Address;
 use interledger_stream::StreamReceiverService;
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
@@ -69,7 +70,7 @@ pub struct InterledgerNode {
     /// ILP address of the node
     // Rename this one because the env vars are prefixed with "ILP_"
     #[serde(alias = "address")]
-    pub ilp_address: String,
+    pub ilp_address: Address,
     /// Root secret used to derive encryption keys
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
     pub secret_seed: [u8; 32],
@@ -107,7 +108,7 @@ impl InterledgerNode {
         let secret_seed = Bytes::from(&self.secret_seed[..]);
         let btp_address = self.btp_address.clone();
         let http_address = self.http_address.clone();
-        let ilp_address = Bytes::from(self.ilp_address.as_str());
+        let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account.clone();
@@ -127,13 +128,12 @@ impl InterledgerNode {
                             Err(RejectBuilder {
                                 code: ErrorCode::F02_UNREACHABLE,
                                 message: &format!(
-                                    "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
+                                    "No outgoing route for account: {} (ILP address of the Prepare packet: {:?})",
                                     request.to.id(),
-                                    str::from_utf8(request.prepare.destination())
-                                        .unwrap_or("<not utf8>")
+                                    request.prepare.destination(),
                                 )
                                 .as_bytes(),
-                                triggered_by: ilp_address_clone.as_ref(),
+                                triggered_by: Some(&ilp_address_clone),
                                 data: &[],
                             }
                             .build())
@@ -176,6 +176,7 @@ impl InterledgerNode {
                                     let incoming_service =
                                         Router::new(store.clone(), outgoing_service.clone());
                                     let incoming_service = CcpRouteManagerBuilder::new(
+                                        ilp_address.clone(),
                                         store.clone(),
                                         outgoing_service.clone(),
                                         incoming_service,
