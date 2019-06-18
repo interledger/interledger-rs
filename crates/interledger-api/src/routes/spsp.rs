@@ -94,9 +94,8 @@ impl_web! {
                     Response::builder().status(404).body(()).unwrap()
                 }))
                 .and_then(move |accounts| {
-                    let ilp_address = Bytes::from(accounts[0].client_address());
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
-                    Ok(SpspResponder::new(ilp_address, server_secret)
+                    Ok(SpspResponder::new(accounts[0].client_address().clone(), server_secret)
                         .generate_http_response())
                     })
         }
