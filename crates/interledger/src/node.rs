@@ -106,12 +106,12 @@ impl InterledgerNode {
         );
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
-        let btp_address = self.btp_address.clone();
-        let http_address = self.http_address.clone();
+        let btp_address = self.btp_address;
+        let http_address = self.http_address;
         let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
-        let default_spsp_account = self.default_spsp_account.clone();
+        let default_spsp_account = self.default_spsp_account;
         let redis_addr = self.redis_connection.addr.clone();
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)

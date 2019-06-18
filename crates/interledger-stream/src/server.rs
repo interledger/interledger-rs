@@ -248,7 +248,6 @@ fn receive_money(
 #[cfg(test)]
 mod connection_generator {
     use super::*;
-    use regex::Regex;
     use std::str::FromStr;
 
     #[test]

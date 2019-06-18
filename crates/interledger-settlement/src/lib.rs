@@ -45,5 +45,5 @@ pub trait SettlementStore {
         &self,
         account_id: <Self::Account as Account>::AccountId,
         amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }

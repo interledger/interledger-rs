@@ -446,7 +446,7 @@ where
                     let incoming_tables = incoming_tables.read();
 
                     // Either check the given prefixes or check all of our local and configured routes
-                    let prefixes_to_check: Box<Iterator<Item = Bytes>> = if let Some(prefixes) = prefixes {
+                    let prefixes_to_check: Box<dyn Iterator<Item = Bytes>> = if let Some(prefixes) = prefixes {
                         Box::new(prefixes.into_iter())
                     } else {
                         let routes = configured_routes.iter().chain(local_routes.iter());

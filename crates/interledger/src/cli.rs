@@ -282,7 +282,7 @@ pub fn run_spsp_server_http(
             let mut spsp_responder = spsp_responder.clone();
             let mut http_service = http_service.clone();
             service_fn(
-                move |req: Request<Body>| -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
+                move |req: Request<Body>| -> Box<dyn Future<Item = Response<Body>, Error = Error> + Send> {
                     match (req.method(), req.uri().path(), req.headers().get(ACCEPT)) {
                         (&Method::GET, "/spsp", _) => Box::new(spsp_responder.call(req)),
                         (&Method::GET, "/.well-known/pay", _) => Box::new(spsp_responder.call(req)),

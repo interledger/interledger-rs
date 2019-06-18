@@ -9,7 +9,7 @@ use std::io::Cursor;
 use std::ops::Add;
 use std::str;
 
-static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
+static GENERALIZED_TIME_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
 
 pub trait Serializable<T> {
     fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;

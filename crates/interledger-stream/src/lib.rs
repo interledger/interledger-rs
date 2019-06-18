@@ -81,7 +81,7 @@ pub mod test_helpers {
         fn get_accounts(
             &self,
             _account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(vec![self.route.1.clone()]))
         }
     }

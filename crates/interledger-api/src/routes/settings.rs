@@ -49,7 +49,7 @@ impl_web! {
         }
 
         fn validate_admin(&self, authorization: String) -> impl Future<Item = T, Error = Response<()>> {
-            if &authorization[BEARER_TOKEN_START..] == self.admin_api_token {
+            if authorization[BEARER_TOKEN_START..] == self.admin_api_token {
                 ok(self.store.clone())
             } else {
                 error!("Admin API endpoint called with non-admin API key");

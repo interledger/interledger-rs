@@ -100,6 +100,8 @@ where
     }
 }
 
+// This needs to be pass by ref because serde expects this function to take a ref
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn routing_relation_to_string<S>(
     relation: &RoutingRelation,
     serializer: S,

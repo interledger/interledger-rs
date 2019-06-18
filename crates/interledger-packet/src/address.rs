@@ -297,7 +297,7 @@ mod test_address {
         assert_ne!(addr1, addr2);
         assert_eq!(addr1, addr1);
         assert_eq!(addr2, addr2);
-        assert!(addr1 == addr1);
+        assert!(addr1 == addr1.clone());
         assert!(addr1 != addr2);
         assert!(addr1.eq(&addr1));
         assert!(addr1.ne(&addr2));

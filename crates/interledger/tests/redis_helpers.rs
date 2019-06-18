@@ -104,10 +104,7 @@ impl RedisServer {
         };
 
         let process = cmd.spawn().unwrap();
-        RedisServer {
-            process: process,
-            addr: addr,
-        }
+        RedisServer { process, addr }
     }
 
     pub fn wait(&mut self) {
@@ -121,12 +118,15 @@ impl RedisServer {
     pub fn stop(&mut self) {
         let _ = self.process.kill();
         let _ = self.process.wait();
-        match *self.get_client_addr() {
-            redis::ConnectionAddr::Unix(ref path) => {
-                fs::remove_file(&path).ok();
-            }
-            _ => {}
+        if let redis::ConnectionAddr::Unix(ref path) = *self.get_client_addr() {
+            fs::remove_file(&path).ok();
         }
+    }
+}
+
+impl Default for RedisServer {
+    fn default() -> Self {
+        RedisServer::new()
     }
 }
 
@@ -171,10 +171,7 @@ impl TestContext {
         }
         redis::cmd("FLUSHALL").execute(&con);
 
-        TestContext {
-            server: server,
-            client: client,
-        }
+        TestContext { server, client }
     }
 
     // This one was added and not in the original file
@@ -204,5 +201,11 @@ impl TestContext {
         &self,
     ) -> impl Future<Item = redis::r#async::SharedConnection, Error = RedisError> {
         self.client.get_shared_async_connection()
+    }
+}
+
+impl Default for TestContext {
+    fn default() -> Self {
+        TestContext::new()
     }
 }

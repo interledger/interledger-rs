@@ -160,7 +160,7 @@ mod tests {
         fn get_accounts(
             &self,
             account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(account_ids.into_iter().map(TestAccount).collect()))
         }
     }

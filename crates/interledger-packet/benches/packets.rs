@@ -4,6 +4,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
+use std::convert::TryFrom;
 
 use ilp::Address;
 use ilp::{ErrorCode, Fulfill, Prepare, Reject};
@@ -38,10 +39,11 @@ lazy_static! {
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\
         ",
     };
+    static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
     static ref REJECT: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
-        triggered_by: Address::from_str("example.connector").unwrap(),
+        triggered_by: Some(&*EXAMPLE_CONNECTOR),
         data: b"\
             \x5d\xb3\x43\xfd\xc4\x18\x98\xf6\xdf\x42\x02\x32\x91\x39\xdc\x24\
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\
