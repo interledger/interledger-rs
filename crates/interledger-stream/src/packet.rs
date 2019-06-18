@@ -5,7 +5,7 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     PacketType as IlpPacketType, ParseError,
 };
-use std::{convert::TryFrom, fmt, str};
+use std::{fmt, str};
 
 const STREAM_VERSION: u8 = 1;
 

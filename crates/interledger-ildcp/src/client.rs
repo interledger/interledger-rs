@@ -1,7 +1,6 @@
 use super::packet::*;
 use futures::Future;
 use interledger_service::*;
-use std::convert::TryFrom;
 
 /// Get the ILP address and asset details for a given account.
 pub fn get_ildcp_info<S, A>(

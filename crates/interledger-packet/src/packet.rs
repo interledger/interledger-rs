@@ -1,5 +1,4 @@
 use hex;
-use std::convert::TryFrom;
 use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;
@@ -30,11 +29,9 @@ pub enum PacketType {
     Reject = 14,
 }
 
-impl TryFrom<u8> for PacketType {
-    type Error = ParseError;
-
+impl PacketType {
     #[inline]
-    fn try_from(byte: u8) -> Result<Self, Self::Error> {
+    pub fn try_from(byte: u8) -> Result<Self, ParseError> {
         match byte {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
@@ -54,10 +51,8 @@ pub enum Packet {
     Reject(Reject),
 }
 
-impl TryFrom<BytesMut> for Packet {
-    type Error = ParseError;
-
-    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
+impl Packet {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         match buffer.first() {
             Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
             Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
@@ -116,10 +111,9 @@ pub struct PrepareBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl TryFrom<BytesMut> for Prepare {
-    type Error = ParseError;
-
-    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
+impl Prepare {
+    // TODO change this to `TryFrom` when it is stabilized
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
@@ -148,9 +142,7 @@ impl TryFrom<BytesMut> for Prepare {
             data_offset,
         })
     }
-}
 
-impl Prepare {
     #[inline]
     pub fn amount(&self) -> u64 {
         self.amount
@@ -269,10 +261,8 @@ pub struct FulfillBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl TryFrom<BytesMut> for Fulfill {
-    type Error = ParseError;
-
-    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
+impl Fulfill {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Fulfill, &buffer)?;
 
         content.skip(FULFILLMENT_LEN)?;
@@ -283,9 +273,7 @@ impl TryFrom<BytesMut> for Fulfill {
             content_offset,
         })
     }
-}
 
-impl Fulfill {
     /// The returned value always has a length of 32.
     #[inline]
     pub fn fulfillment(&self) -> &[u8] {
@@ -362,10 +350,8 @@ pub struct RejectBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl TryFrom<BytesMut> for Reject {
-    type Error = ParseError;
-
-    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
+impl Reject {
+    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Reject, &buffer)?;
         let content_len = content.len();
 
@@ -390,9 +376,7 @@ impl TryFrom<BytesMut> for Reject {
             data_offset,
         })
     }
-}
 
-impl Reject {
     #[inline]
     pub fn code(&self) -> ErrorCode {
         self.code
@@ -506,7 +490,6 @@ impl MaxPacketAmountDetails {
         }
     }
 
-    // Convert to use TryFrom? Also probably should go to max_packet_amount.rs
     pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, std::io::Error> {
         let amount_received = bytes.read_u64::<BigEndian>()?;
         let max_amount = bytes.read_u64::<BigEndian>()?;

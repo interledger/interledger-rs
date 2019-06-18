@@ -12,21 +12,16 @@ use interledger_service::*;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::{
-    convert::TryFrom,
     io::{Error as IoError, ErrorKind},
     iter::IntoIterator,
     marker::PhantomData,
     sync::Arc,
-    time::Duration,
 };
-use stream_cancel::{Trigger, Valve};
+use stream_cancel::{Trigger, Valve, Valved};
 use tokio_executor::spawn;
 use tokio_tcp::TcpStream;
-use tokio_timer::Interval;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::{error::Error as WebSocketError, Message};
-
-const PING_INTERVAL: u64 = 30; // seconds
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
@@ -35,23 +30,23 @@ type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 /// A container for BTP/WebSocket connections that implements OutgoingService
 /// for sending outgoing ILP Prepare packets over one of the connected BTP connections.
 #[derive(Clone)]
-pub struct BtpOutgoingService<O, A: Account> {
+pub struct BtpOutgoingService<T, A: Account> {
     // TODO support multiple connections per account
     connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
     pending_outgoing: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
     incoming_sender: UnboundedSender<(A, u32, Prepare)>,
-    next: O,
+    next_outgoing: T,
     close_all_connections: Arc<Mutex<Option<Trigger>>>,
     stream_valve: Arc<Valve>,
 }
 
-impl<O, A> BtpOutgoingService<O, A>
+impl<T, A> BtpOutgoingService<T, A>
 where
-    O: OutgoingService<A> + Clone,
+    T: OutgoingService<A> + Clone,
     A: Account + 'static,
 {
-    pub fn new(next: O) -> Self {
+    pub fn new(next_outgoing: T) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
         let (close_all_connections, stream_valve) = Valve::new();
         BtpOutgoingService {
@@ -59,7 +54,7 @@ where
             pending_outgoing: Arc::new(Mutex::new(HashMap::new())),
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
             incoming_sender,
-            next,
+            next_outgoing,
             close_all_connections: Arc::new(Mutex::new(Some(close_all_connections))),
             stream_valve: Arc::new(stream_valve),
         }
@@ -83,8 +78,7 @@ where
         // Set up a channel to forward outgoing packets to the WebSocket connection
         let (tx, rx) = unbounded();
         let (sink, stream) = connection.split();
-        let (close_connection, valve) = Valve::new();
-        let stream = valve.wrap(stream);
+        let (close_connection, stream) = Valved::new(stream);
         let stream = self.stream_valve.wrap(stream);
         let forward_to_connection = sink
             .send_all(
@@ -93,82 +87,44 @@ where
                 }),
             )
             .then(move |_| {
-                debug!(
-                    "Finished forwarding to WebSocket stream for account: {}",
-                    account_id
-                );
+                debug!("Finished forwarding to WebSocket stream");
                 drop(close_connection);
                 Ok(())
             });
-
-        // Send pings every PING_INTERVAL until the connection closes or the Service is dropped
-        let tx_clone = tx.clone();
-        let send_pings = valve
-            .wrap(
-                self.stream_valve
-                    .wrap(Interval::new_interval(Duration::from_secs(PING_INTERVAL))),
-            )
-            .map_err(|err| {
-                warn!("Timer error on Ping interval: {:?}", err);
-            })
-            .for_each(move |_| {
-                if let Err(err) = tx_clone.unbounded_send(Message::Ping(Vec::with_capacity(0))) {
-                    warn!(
-                        "Error sending Ping on connection to account {}: {:?}",
-                        account_id, err
-                    );
-                }
-                Ok(())
-            });
-        spawn(send_pings);
 
         // Set up a listener to handle incoming packets from the WebSocket connection
         // TODO do we need all this cloning?
         let pending_requests = self.pending_outgoing.clone();
         let incoming_sender = self.incoming_sender.clone();
-        let tx_clone = tx.clone();
         let handle_incoming = stream.map_err(move |err| error!("Error reading from WebSocket stream for account {}: {:?}", account_id, err)).for_each(move |message| {
           // Handle the packets based on whether they are an incoming request or a response to something we sent
-          if message.is_binary() {
-              match parse_ilp_packet(message) {
-                Ok((request_id, Packet::Prepare(prepare))) => {
-                    trace!("Got incoming Prepare packet on request ID: {} {:?}", request_id, prepare);
-                    incoming_sender.clone().unbounded_send((account.clone(), request_id, prepare))
-                        .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
-                },
-                Ok((request_id, Packet::Fulfill(fulfill))) => {
-                  trace!("Got fulfill response to request id {}", request_id);
-                  if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
-                    channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill))
-                  } else {
-                    warn!("Got Fulfill packet that does not match an outgoing Prepare we sent: {:?}", fulfill);
-                    Ok(())
-                  }
-                }
-                Ok((request_id, Packet::Reject(reject))) => {
-                  trace!("Got reject response to request id {}", request_id);
-                  if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
-                    channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject))
-                  } else {
-                    warn!("Got Reject packet that does not match an outgoing Prepare we sent: {:?}", reject);
-                    Ok(())
-                  }
-                },
-                Err(_) => {
-                  debug!("Unable to parse ILP packet from BTP packet (if this is the first time this appears, the packet was probably the auth response)");
-                  // TODO Send error back
-                  Ok(())
-                }
+          match parse_ilp_packet(message) {
+            Ok((request_id, Packet::Prepare(prepare))) => {
+                incoming_sender.clone().unbounded_send((account.clone(), request_id, prepare))
+                    .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
+            },
+            Ok((request_id, Packet::Fulfill(fulfill))) => {
+              if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
+                channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill))
+              } else {
+                warn!("Got Fulfill packet that does not match an outgoing Prepare we sent: {:?}", fulfill);
+                Ok(())
               }
-          } else if message.is_ping() {
-              trace!("Responding to Ping message from account {}", account.id());
-              tx_clone.unbounded_send(Message::Pong(Vec::new())).map_err(|err| error!("Error sending Pong message back: {:?}", err))
-          } else {
+            }
+            Ok((request_id, Packet::Reject(reject))) => {
+              if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
+                channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject))
+              } else {
+                warn!("Got Reject packet that does not match an outgoing Prepare we sent: {:?}", reject);
+                Ok(())
+              }
+            },
+            Err(_) => {
+              debug!("Unable to parse ILP packet from BTP packet (if this is the first time this appears, the packet was probably the auth response)");
+              // TODO Send error back
               Ok(())
+            }
           }
-        }).then(move |result| {
-            debug!("Finished reading from WebSocket stream for account: {}", account_id);
-            result
         });
 
         let connections = self.connections.clone();
@@ -194,9 +150,9 @@ where
 
     /// Convert this BtpOutgoingService into a bidirectional BtpService by adding a handler for incoming requests.
     /// This will automatically pull all incoming Prepare packets from the channel buffer and call the IncomingService with them.
-    pub fn handle_incoming<I>(self, incoming_handler: I) -> BtpService<I, O, A>
+    pub fn handle_incoming<S>(self, incoming_handler: S) -> BtpService<S, T, A>
     where
-        I: IncomingService<A> + Clone + Send + 'static,
+        S: IncomingService<A> + Clone + Send + 'static,
     {
         // Any connections that were added to the BtpOutgoingService will just buffer
         // the incoming Prepare packets they get in self.pending_incoming
@@ -216,11 +172,7 @@ where
                     from: account,
                     prepare,
                 };
-                trace!(
-                    "Handling incoming request {} from account {}",
-                    request_id,
-                    request.from.id()
-                );
+                debug!("Handling incoming request: {:?}", &request);
                 incoming_handler_clone
                     .handle_request(request)
                     .then(move |result| {
@@ -237,7 +189,7 @@ where
                             )
                             .clone()
                             .unbounded_send(message)
-                            .map_err(move |err| {
+                            .map_err(|err| {
                                 error!(
                                     "Error sending response to account: {} {:?}",
                                     account_id, err
@@ -246,7 +198,7 @@ where
                     })
             })
             .then(move |_| {
-                trace!("Finished reading from pending_incoming buffer");
+                debug!("Finished reading from pending_incoming buffer");
                 Ok(())
             });
         spawn(handle_pending_incoming);
@@ -258,9 +210,9 @@ where
     }
 }
 
-impl<O, A> OutgoingService<A> for BtpOutgoingService<O, A>
+impl<T, A> OutgoingService<A> for BtpOutgoingService<T, A>
 where
-    O: OutgoingService<A> + Clone,
+    T: OutgoingService<A> + Clone,
     A: Account + 'static,
 {
     type Future = BoxedIlpFuture;
@@ -268,21 +220,16 @@ where
     /// Send an outgoing request to one of the open connections.
     ///
     /// If there is no open connection for the Account specified in `request.to`, the
-    /// request will be passed through to the `next` handler.
+    /// request will be passed through to the `next_outgoing` handler.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
-        let account_id = request.to.id();
-        if let Some(connection) = (*self.connections.read()).get(&account_id) {
+        if let Some(connection) = (*self.connections.read()).get(&request.to.id()) {
             let request_id = random::<u32>();
 
             // Clone the trigger so that the connections stay open until we've
             // gotten the response to our outgoing request
             let keep_connections_open = self.close_all_connections.clone();
 
-            trace!(
-                "Sending outgoing request {} to account {}",
-                request_id,
-                account_id
-            );
+            debug!("Sending outgoing request: {:?}", request);
 
             match connection.unbounded_send(ilp_packet_to_ws_message(
                 request_id,
@@ -300,11 +247,8 @@ where
                                 let _ = keep_connections_open;
                                 result
                             })
-                            .map_err(move |err| {
-                                error!(
-                                    "Sending request {} to account {} failed: {:?}",
-                                    request_id, account_id, err
-                                );
+                            .map_err(|err| {
+                                debug!("Sending request failed: {:?}", err);
                                 RejectBuilder {
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: &[],
@@ -320,10 +264,7 @@ where
                     )
                 }
                 Err(send_error) => {
-                    error!(
-                        "Error sending websocket message for request {} to account {}: {:?}",
-                        request_id, account_id, send_error
-                    );
+                    error!("Error sending websocket message: {:?}", send_error);
                     let reject = RejectBuilder {
                         code: ErrorCode::T00_INTERNAL_ERROR,
                         message: &[],
@@ -335,25 +276,25 @@ where
                 }
             }
         } else {
-            trace!(
+            debug!(
                 "No open connection for account: {}, forwarding request to the next service",
                 request.to.id()
             );
-            Box::new(self.next.send_request(request))
+            Box::new(self.next_outgoing.send_request(request))
         }
     }
 }
 
 #[derive(Clone)]
-pub struct BtpService<I, O, A: Account> {
-    outgoing: BtpOutgoingService<O, A>,
-    incoming_handler_type: PhantomData<I>,
+pub struct BtpService<S, T, A: Account> {
+    outgoing: BtpOutgoingService<T, A>,
+    incoming_handler_type: PhantomData<S>,
 }
 
-impl<I, O, A> BtpService<I, O, A>
+impl<S, T, A> BtpService<S, T, A>
 where
-    I: IncomingService<A> + Clone + Send + 'static,
-    O: OutgoingService<A> + Clone,
+    S: IncomingService<A> + Clone + Send + 'static,
+    T: OutgoingService<A> + Clone,
     A: Account + 'static,
 {
     /// Close all of the open WebSocket connections
@@ -362,9 +303,9 @@ where
     }
 }
 
-impl<I, O, A> OutgoingService<A> for BtpService<I, O, A>
+impl<S, T, A> OutgoingService<A> for BtpService<S, T, A>
 where
-    O: OutgoingService<A> + Clone + Send + 'static,
+    T: OutgoingService<A> + Clone + Send + 'static,
     A: Account + 'static,
 {
     type Future = BoxedIlpFuture;
@@ -372,7 +313,7 @@ where
     /// Send an outgoing request to one of the open connections.
     ///
     /// If there is no open connection for the Account specified in `request.to`, the
-    /// request will be passed through to the `next` handler.
+    /// request will be passed through to the `next_outgoing` handler.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         self.outgoing.send_request(request)
     }

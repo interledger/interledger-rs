@@ -10,19 +10,18 @@ repository = "https://github.com/emschwartz/interledger-rs"
 [dependencies]
 bytes = "0.4.12"
 futures = "0.1.25"
-http = "0.1.17"
-hyper = "0.12.28"
+http = "0.1.16"
+hyper = "0.12.25"
 interledger-http = { path = "../interledger-http", version = "0.2.1" }
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 interledger-router = { path = "../interledger-router", version = "0.2.1" }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
-interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
 interledger-spsp = { path = "../interledger-spsp", version = "0.2.1" }
 log = "0.4.6"
 serde = "1.0.89"
 serde_json = "1.0.39"
-tower-web = "0.3.7"
+tower-web = "0.3.6"
 
 [badges]
 circle-ci = { repository = "emschwartz/interledger-rs" }

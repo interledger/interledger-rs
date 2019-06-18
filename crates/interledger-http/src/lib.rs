@@ -21,7 +21,7 @@ pub use self::server::HttpServerService;
 
 pub trait HttpAccount: Account {
     fn get_http_url(&self) -> Option<&Url>;
-    fn get_http_auth_token(&self) -> Option<&str>;
+    fn get_http_auth_header(&self) -> Option<&str>;
 }
 
 /// The interface for Stores that can be used with the HttpServerService.
@@ -31,8 +31,8 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
 
     /// Load account details based on the full HTTP Authorization header
     /// received on the incoming HTTP request.
-    fn get_account_from_http_token(
+    fn get_account_from_http_auth(
         &self,
-        token: &str,
+        auth_header: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
 }
