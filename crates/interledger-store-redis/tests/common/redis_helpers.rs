@@ -3,6 +3,7 @@
 
 extern crate futures;
 extern crate net2;
+extern crate os_type;
 extern crate rand;
 
 use redis;
@@ -37,9 +38,9 @@ impl ServerType {
             .as_ref()
             .map(|x| &x[..])
         {
-            // Default to TCP unlike original version
-            Some("unix") => ServerType::Unix,
-            _ => ServerType::Tcp,
+            // Default to unix unlike original version
+            Some("tcp") => ServerType::Tcp,
+            _ => ServerType::Unix,
         }
     }
 }
@@ -48,6 +49,19 @@ impl RedisServer {
     pub fn new() -> RedisServer {
         let server_type = ServerType::get_intended();
         let mut cmd = process::Command::new("redis-server");
+
+        let fname = if os_type::current_platform().os_type == os_type::OSType::OSX {
+            "libredis_cell.dylib"
+        } else {
+            "libredis_cell.so"
+        };
+
+        // Load redis_cell
+        let mut cell_module: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        cell_module.push("external");
+        cell_module.push(fname);
+        cmd.arg("--loadmodule").arg(cell_module.as_os_str());
+
         cmd.stdout(process::Stdio::null())
             .stderr(process::Stdio::null());
 

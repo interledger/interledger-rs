@@ -29,30 +29,30 @@ enum EchoPacketType {
 }
 
 #[derive(Clone)]
-pub struct EchoService<S, A> {
+pub struct EchoService<I, A> {
     /// The ILP address which this ECHO service should respond for
     ilp_address: Address,
     next_incoming: S,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> EchoService<S, A>
+impl<I, A> EchoService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
     pub fn new(ilp_address: Address, next_incoming: S) -> Self {
         EchoService {
             ilp_address,
-            next_incoming,
+            next,
             account_type: PhantomData,
         }
     }
 }
 
-impl<S, A> IncomingService<A> for EchoService<S, A>
+impl<I, A> IncomingService<A> for EchoService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
     type Future = BoxedIlpFuture;
@@ -61,7 +61,7 @@ where
         let should_echo = request.prepare.destination() == self.ilp_address
             && request.prepare.data().starts_with(ECHO_PREFIX.as_bytes());
         if !should_echo {
-            return Box::new(self.next_incoming.handle_request(request));
+            return Box::new(self.next.handle_request(request));
         }
 
         // TODO Define EchoPacket struct and implement From<&p[u8]> for it
@@ -88,7 +88,7 @@ where
         if echo_packet_type == EchoPacketType::Response as u8 {
             // if the echo packet type is Response, just pass it to the next service
             // so that the initiator could handle this packet
-            return Box::new(self.next_incoming.handle_request(request));
+            return Box::new(self.next.handle_request(request));
         }
         if echo_packet_type != EchoPacketType::Request as u8 {
             eprintln!("The packet type is not acceptable: {}", echo_packet_type);
@@ -148,7 +148,7 @@ where
         }
         .build();
 
-        return Box::new(self.next_incoming.handle_request(request));
+        return Box::new(self.next.handle_request(request));
     }
 }
 

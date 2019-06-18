@@ -68,7 +68,7 @@ impl InMemoryStore {
         }));
 
         let http_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
-            if let Some(ref auth) = account.inner.http_incoming_authorization {
+            if let Some(ref auth) = account.inner.http_incoming_token {
                 Some((auth.to_string(), *account_id))
             } else {
                 None
@@ -97,7 +97,7 @@ impl InMemoryStore {
         if let Some(ref btp_auth) = account.inner.btp_incoming_token {
             self.btp_auth.write().insert(btp_auth.clone(), account.id());
         }
-        if let Some(ref http_auth) = account.inner.http_incoming_authorization {
+        if let Some(ref http_auth) = account.inner.http_incoming_token {
             self.http_auth
                 .write()
                 .insert(http_auth.clone(), account.id());
@@ -129,15 +129,16 @@ impl AccountStore for InMemoryStore {
 impl HttpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_http_auth(
+    fn get_account_from_http_token(
         &self,
         auth_header: &str,
     ) -> Box<Future<Item = Account, Error = ()> + Send> {
         if let Some(account_id) = self.http_auth.read().get(auth_header) {
-            Box::new(ok(self.accounts.read()[account_id].clone()))
-        } else {
-            Box::new(err(()))
+            if let Some(account) = self.accounts.read().get(account_id) {
+                return Box::new(ok(account.clone()));
+            }
         }
+        Box::new(err(()))
     }
 }
 
@@ -159,6 +160,18 @@ impl BtpStore for InMemoryStore {
         } else {
             Box::new(err(()))
         }
+    }
+
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        Box::new(ok(self
+            .accounts
+            .read()
+            .values()
+            .filter(|account| (**account).inner.btp_uri.is_some())
+            .cloned()
+            .collect()))
     }
 }
 
@@ -220,11 +233,11 @@ mod tests {
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_auth("Bearer test_token")
+            .get_account_from_http_token("test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_http_auth("Bearer bad_token")
+            .get_account_from_http_token("bad_token")
             .wait()
             .is_err());
     }

@@ -12,7 +12,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-// pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
+pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
 pub const PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
@@ -25,7 +25,7 @@ const FLAG_UTF8: u8 = 0x10;
 
 lazy_static! {
     pub static ref CCP_RESPONSE: Fulfill = FulfillBuilder {
-        fulfillment: &PEER_PROTOCOL_CONDITION,
+        fulfillment: &PEER_PROTOCOL_FULFILLMENT,
         data: &[],
     }
     .build();
@@ -42,8 +42,10 @@ pub enum Mode {
     Sync = 1,
 }
 
-impl Mode {
-    pub fn try_from(val: u8) -> Result<Self, ParseError> {
+impl TryFrom<u8> for Mode {
+    type Error = ParseError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
             0 => Ok(Mode::Idle),
             1 => Ok(Mode::Sync),
@@ -64,14 +66,18 @@ pub struct RouteControlRequest {
     pub(crate) features: Vec<String>,
 }
 
-impl RouteControlRequest {
-    pub fn try_from(prepare: &Prepare) -> Result<Self, ParseError> {
+impl TryFrom<&Prepare> for RouteControlRequest {
+    type Error = ParseError;
+
+    fn try_from(prepare: &Prepare) -> Result<Self, Self::Error> {
         if prepare.expires_at() < SystemTime::now() {
             return Err(ParseError::InvalidPacket("Packet expired".to_string()));
         }
         RouteControlRequest::try_from_without_expiry(prepare)
     }
+}
 
+impl RouteControlRequest {
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
         if prepare.destination() != *CCP_CONTROL_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(
@@ -140,9 +146,11 @@ pub struct RouteProp {
     pub(crate) value: Bytes,
 }
 
-impl RouteProp {
+impl TryFrom<&mut &[u8]> for RouteProp {
+    type Error = ParseError;
+
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
-    pub fn try_from(data: &mut &[u8]) -> Result<Self, ParseError> {
+    fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
         let meta = data.read_u8()?;
 
         let is_optional = meta & FLAG_OPTIONAL != 0;
@@ -162,7 +170,9 @@ impl RouteProp {
             value,
         })
     }
+}
 
+impl RouteProp {
     pub fn write_to<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -195,9 +205,11 @@ pub struct Route {
     pub(crate) props: Vec<RouteProp>,
 }
 
-impl Route {
+impl TryFrom<&mut &[u8]> for Route {
+    type Error = ParseError;
+
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
-    pub fn try_from(data: &mut &[u8]) -> Result<Self, ParseError> {
+    fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
         let prefix = Bytes::from(data.read_var_octet_string()?);
         let path_len = data.read_var_uint()? as usize;
         let mut path = Vec::with_capacity(path_len);
@@ -210,7 +222,13 @@ impl Route {
         let prop_len = data.read_var_uint()? as usize;
         let mut props = Vec::with_capacity(prop_len);
         for _i in 0..prop_len {
-            props.push(RouteProp::try_from(data)?);
+            // For some reason we need to cast `data to `&mut &[u8]` again, otherwise
+            // error[E0382]: use of moved value: `data`
+            // fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
+            // move occurs because `data` has type `&mut &[u8]`, which does not implement the `Copy` trait
+            // props.push(RouteProp::try_from(data /* as &mut &[u8] */)?);
+            //                                ^^^^ value moved here, in previous iteration of loop
+            props.push(RouteProp::try_from(data as &mut &[u8])?);
         }
 
         Ok(Route {
@@ -220,7 +238,9 @@ impl Route {
             props,
         })
     }
+}
 
+impl Route {
     pub fn write_to<B>(&self, buf: &mut B)
     where
         B: BufMut,
@@ -250,14 +270,18 @@ pub struct RouteUpdateRequest {
     pub(crate) withdrawn_routes: Vec<Bytes>,
 }
 
-impl RouteUpdateRequest {
-    pub fn try_from(prepare: &Prepare) -> Result<Self, ParseError> {
+impl TryFrom<&Prepare> for RouteUpdateRequest {
+    type Error = ParseError;
+
+    fn try_from(prepare: &Prepare) -> Result<Self, Self::Error> {
         if prepare.expires_at() < SystemTime::now() {
             return Err(ParseError::InvalidPacket("Packet expired".to_string()));
         }
         RouteUpdateRequest::try_from_without_expiry(prepare)
     }
+}
 
+impl RouteUpdateRequest {
     pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, ParseError> {
         if prepare.destination() != *CCP_UPDATE_DESTINATION {
             return Err(ParseError::InvalidPacket(format!(

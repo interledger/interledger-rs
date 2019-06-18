@@ -96,18 +96,18 @@ impl ConnectionGenerator {
 ///
 /// This does not currently support handling data sent via STREAM.
 #[derive(Clone)]
-pub struct StreamReceiverService<S: OutgoingService<A>, A: Account> {
+pub struct StreamReceiverService<O: OutgoingService<A>, A: Account> {
     connection_generator: ConnectionGenerator,
-    next: S,
+    next: O,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> StreamReceiverService<S, A>
+impl<O, A> StreamReceiverService<O, A>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(server_secret: Bytes, next: S) -> Self {
+    pub fn new(server_secret: Bytes, next: O) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         StreamReceiverService {
             connection_generator,
@@ -118,9 +118,9 @@ where
 }
 
 // TODO should this be an OutgoingService instead so the balance logic is applied before this is called?
-impl<S, A> OutgoingService<A> for StreamReceiverService<S, A>
+impl<O, A> OutgoingService<A> for StreamReceiverService<O, A>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: Account + IldcpAccount,
 {
     type Future = BoxedIlpFuture;
@@ -249,9 +249,10 @@ fn receive_money(
 mod connection_generator {
     use super::*;
     use std::str::FromStr;
+    use regex::Regex;
 
     #[test]
-    fn regenerates_the_shared_secret() {
+    fn generates_valid_ilp_address() {
         let server_secret = [9; 32];
         let receiver_address = Address::from_str("example.receiver").unwrap();
         let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
@@ -484,6 +485,7 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
+                original_amount: prepare.amount(),
                 prepare,
             })
             .wait();
@@ -534,6 +536,7 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
+                original_amount: prepare.amount(),
                 prepare,
             })
             .wait();
@@ -584,6 +587,7 @@ mod stream_receiver_service {
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
+                original_amount: prepare.amount(),
                 to: TestAccount {
                     id: 1,
                     ilp_address: client_address.clone(),

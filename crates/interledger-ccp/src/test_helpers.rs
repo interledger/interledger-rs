@@ -147,10 +147,25 @@ impl RouteManagerStore for TestStore {
         Box::new(ok(accounts))
     }
 
-    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (Bytes, TestAccount)>,
-    {
+    fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        let mut accounts: Vec<TestAccount> = self
+            .local
+            .values()
+            .chain(self.configured.values())
+            .chain(self.routes.lock().values())
+            .filter(|account| account.receive_routes)
+            .cloned()
+            .collect();
+        accounts.dedup_by_key(|a| a.id());
+        Box::new(ok(accounts))
+    }
+
+    fn set_routes(
+        &mut self,
+        routes: impl IntoIterator<Item = (Bytes, TestAccount)>,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
         *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Box::new(ok(()))
     }
@@ -162,8 +177,7 @@ pub fn test_service() -> CcpRouteManager<
     TestStore,
     TestAccount,
 > {
-    CcpRouteManager::with_spawn_bool(
-        TestAccount::new(0, "example.connector"),
+    CcpRouteManagerBuilder::new(
         TestStore::new(),
         outgoing_service_fn(|_request| {
             Box::new(err(RejectBuilder {
@@ -183,8 +197,10 @@ pub fn test_service() -> CcpRouteManager<
             }
             .build()))
         }),
-        false,
     )
+    .disable_spawn()
+    .ilp_address(Bytes::from_static(b"example.connector"))
+    .to_service()
 }
 
 pub fn test_service_with_routes() -> (
@@ -224,8 +240,7 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
-    let service = CcpRouteManager::with_spawn_bool(
-        TestAccount::new(0, "example.connector"),
+    let service = CcpRouteManagerBuilder::new(
         store,
         outgoing,
         incoming_service_fn(|_request| {
@@ -237,8 +252,10 @@ pub fn test_service_with_routes() -> (
             }
             .build()))
         }),
-        false,
-    );
+    )
+    .disable_spawn()
+    .ilp_address(Bytes::from_static(b"example.connector"))
+    .to_service();
     (service, outgoing_requests)
 }
 /* kcov-ignore-end */

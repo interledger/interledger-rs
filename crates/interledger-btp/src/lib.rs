@@ -32,6 +32,7 @@ use interledger_packet::Address;
 
 pub trait BtpAccount: Account {
     fn get_btp_uri(&self) -> Option<&Url>;
+    fn get_btp_token(&self) -> Option<&[u8]>;
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
@@ -43,6 +44,11 @@ pub trait BtpStore {
         &self,
         token: &str,
     ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+
+    /// Load accounts that have a btp_uri configured
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 pub struct BtpOpenSignupAccount<'a> {
@@ -85,6 +91,7 @@ mod client_server {
     pub struct TestAccount {
         pub id: u64,
         pub btp_incoming_token: Option<String>,
+        pub btp_outgoing_token: Option<String>,
         pub btp_uri: Option<Url>,
     }
 
@@ -99,6 +106,14 @@ mod client_server {
     impl BtpAccount for TestAccount {
         fn get_btp_uri(&self) -> Option<&Url> {
             self.btp_uri.as_ref()
+        }
+
+        fn get_btp_token(&self) -> Option<&[u8]> {
+            if let Some(ref token) = self.btp_outgoing_token {
+                Some(token.as_bytes())
+            } else {
+                None
+            }
         }
     }
 
@@ -154,6 +169,17 @@ mod client_server {
                     .ok_or(()),
             ))
         }
+
+        fn get_btp_outgoing_accounts(
+            &self,
+        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+            Box::new(ok(self
+                .accounts
+                .iter()
+                .filter(|account| account.btp_uri.is_some())
+                .cloned()
+                .collect()))
+        }
     }
 
     #[test]
@@ -164,6 +190,7 @@ mod client_server {
             accounts: Arc::new(vec![TestAccount {
                 id: 0,
                 btp_incoming_token: Some("test_auth_token".to_string()),
+                btp_outgoing_token: None,
                 btp_uri: None,
             }]),
         };
@@ -194,12 +221,14 @@ mod client_server {
 
         let account = TestAccount {
             id: 0,
-            btp_uri: Some(Url::parse("btp+ws://:test_auth_token@127.0.0.1:12345").unwrap()),
+            btp_uri: Some(Url::parse("btp+ws://127.0.0.1:12345").unwrap()),
+            btp_outgoing_token: Some("test_auth_token".to_string()),
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];
         let client = connect_client(
             accounts,
+            true,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
@@ -225,6 +254,7 @@ mod client_server {
                 .send_request(OutgoingRequest {
                     from: account.clone(),
                     to: account.clone(),
+                    original_amount: 100,
                     prepare: PrepareBuilder {
                         destination: Address::from_str("example.destination").unwrap(),
                         amount: 100,

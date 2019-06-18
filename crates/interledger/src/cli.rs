@@ -6,28 +6,19 @@ use hyper::{
     service::{service_fn, Service},
     Body, Error, Method, Request, Response, Server,
 };
-use interledger_api::{NodeApi, NodeStore};
-use interledger_btp::{connect_client, create_open_signup_server, create_server, parse_btp_url};
-use interledger_ccp::CcpRouteManager;
+use interledger_btp::{connect_client, create_open_signup_server, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, AccountStore, OutgoingRequest,
-};
-use interledger_service_util::{
-    ExchangeRateAndBalanceService, MaxPacketAmountService, ValidatorService,
-};
+use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
+use interledger_service_util::ValidatorService;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
-use interledger_store_redis::{connect as connect_redis_store, IntoConnectionInfo};
 use interledger_stream::StreamReceiverService;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
-use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, sync::Arc, u64};
-use tokio::{self, net::TcpListener};
-use tower_web::ServiceBuilder;
+use std::{convert::TryFrom, net::SocketAddr, str, sync::Arc, u64};
 use url::Url;
 
 lazy_static! {
@@ -56,12 +47,15 @@ pub fn send_spsp_payment_btp(
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
+    let btp_server = parse_btp_url(btp_server).unwrap();
     let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
         .additional_routes(&[&b""[..]])
-        .btp_uri(Url::parse(btp_server).unwrap())
+        .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
+        .btp_uri(btp_server)
         .build();
     connect_client(
         vec![account.clone()],
+        true,
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -122,25 +116,11 @@ pub fn send_spsp_payment_http(
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
-    let auth_header = if !url.username().is_empty() {
-        Some(format!(
-            "Basic {}",
-            base64::encode(&format!(
-                "{}:{}",
-                url.username(),
-                url.password().unwrap_or("")
-            ))
-        ))
-    } else if let Some(password) = url.password() {
-        Some(format!("Bearer {}", password))
-    } else {
-        None
-    };
-    let account = if let Some(auth_header) = auth_header {
+    let account = if let Some(token) = url.password() {
         AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
             .additional_routes(&[&b""[..]])
             .http_endpoint(Url::parse(http_server).unwrap())
-            .http_outgoing_authorization(auth_header)
+            .http_outgoing_token(token.to_string())
             .build()
     } else {
         AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
@@ -149,7 +129,22 @@ pub fn send_spsp_payment_http(
             .build()
     };
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
-    let service = HttpClientService::new(store.clone());
+    let service = HttpClientService::new(
+        store.clone(),
+        outgoing_service_fn(|request: OutgoingRequest<Account>| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &format!(
+                    "No outgoing route for: {}",
+                    str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
+                )
+                .as_bytes(),
+                triggered_by: &[],
+                data: &[],
+            }
+            .build())
+        }),
+    );
     let service = ValidatorService::outgoing(service);
     let service = Router::new(store, service);
     pay(service, account, &receiver, amount)
@@ -176,9 +171,11 @@ pub fn run_spsp_server_btp(
 ) -> impl Future<Item = (), Error = ()> {
     debug!("Starting SPSP server");
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
+    let btp_server = parse_btp_url(btp_server).unwrap();
     let incoming_account: Account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
         .additional_routes(&[b"peer."])
-        .btp_uri(parse_btp_url(btp_server).unwrap())
+        .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
+        .btp_uri(btp_server)
         .build();
     let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![incoming_account.clone()]);
@@ -187,6 +184,7 @@ pub fn run_spsp_server_btp(
     let ilp_addr = Address::try_from(&ilp_address.read()[..]).ok();
     connect_client(
         vec![incoming_account.clone()],
+        true,
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
@@ -251,7 +249,6 @@ pub fn run_spsp_server_http(
         println!("Creating SPSP server. ILP Address: {}", ilp_address)
     }
 
-    // HTTP Account created without ILP address
     let account: Account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
         .http_incoming_authorization(format!("Bearer {}", auth_token))
         .build();
@@ -340,103 +337,4 @@ pub fn run_moneyd_local(
             Ok(())
         },
     )
-}
-
-#[doc(hidden)]
-// TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
-// connector instances to forward packets for that account to us
-pub fn run_node_redis<R>(
-    redis_uri: R,
-    btp_address: SocketAddr,
-    http_address: SocketAddr,
-    server_secret: &[u8; 32],
-) -> impl Future<Item = (), Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    debug!("Starting Interledger node with Redis store");
-    let server_secret = Bytes::from(&server_secret[..]);
-    connect_redis_store(redis_uri)
-        .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
-        .and_then(move |store| {
-            store
-                .clone()
-                .get_accounts(vec![0])
-                .map_err(|_| {
-                    eprintln!("Must add account 0 (the default account) before running the node")
-                })
-                .and_then(move |accounts| {
-                    let default_account = accounts[0].clone();
-                    let outgoing_service = HttpClientService::new(store.clone());
-                    create_server(btp_address, store.clone(), outgoing_service).and_then(
-                        move |btp_service| {
-                            // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
-                            // service to others like the router and then call handle_incoming on it to set up the incoming handler
-                            let outgoing_service = btp_service.clone();
-                            let outgoing_service = ValidatorService::outgoing(outgoing_service);
-                            let outgoing_service =
-                                StreamReceiverService::new(server_secret.clone(), outgoing_service);
-                            let outgoing_service =
-                                ExchangeRateAndBalanceService::new(store.clone(), outgoing_service);
-
-                            // Set up the Router and Routing Manager
-                            let incoming_service =
-                                Router::new(store.clone(), outgoing_service.clone());
-                            let incoming_service = CcpRouteManager::new(
-                                default_account,
-                                store.clone(),
-                                outgoing_service,
-                                incoming_service,
-                            );
-
-                            let incoming_service = IldcpService::new(incoming_service);
-                            let incoming_service = MaxPacketAmountService::new(incoming_service);
-                            let incoming_service = ValidatorService::incoming(incoming_service);
-
-                            // Handle incoming packets sent via BTP
-                            btp_service.handle_incoming(incoming_service.clone());
-
-                            // TODO should this run the node api on a different port so it's easier to separate public/private?
-                            // Note the API also includes receiving ILP packets sent via HTTP
-                            let api = NodeApi::new(
-                                server_secret,
-                                store.clone(),
-                                incoming_service.clone(),
-                            );
-                            let listener = TcpListener::bind(&http_address)
-                                .expect("Unable to bind to HTTP address");
-                            println!("Interledger node listening on: {}", http_address);
-                            let server = ServiceBuilder::new()
-                                .resource(api)
-                                .serve(listener.incoming());
-                            tokio::spawn(server);
-                            Ok(())
-                        },
-                    )
-                })
-        })
-}
-
-#[doc(hidden)]
-pub use interledger_api::AccountDetails;
-#[doc(hidden)]
-pub fn insert_account_redis<R>(
-    redis_uri: R,
-    account: AccountDetails,
-) -> impl Future<Item = (), Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    connect_redis_store(redis_uri)
-        .map_err(|err| eprintln!("Error connecting to Redis: {:?}", err))
-        .and_then(move |store| {
-            store
-                .insert_account(account)
-                .map_err(|_| eprintln!("Unable to create account"))
-                .and_then(|account| {
-                    // TODO add quiet option
-                    println!("Created account: {:?}", account);
-                    Ok(())
-                })
-        })
 }

@@ -8,6 +8,7 @@ use std::convert::TryFrom;
 
 pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
     let server = payment_pointer_to_url(server);
+    trace!("Querying receiver: {}", server);
 
     let client = Client::new();
     client
@@ -34,7 +35,6 @@ where
     S: IncomingService<A> + Clone,
     A: Account,
 {
-    trace!("Querying receiver: {}", receiver);
     query(receiver).and_then(move |spsp| {
         let shared_secret = spsp.shared_secret;
         let dest = spsp.destination_account;
@@ -71,10 +71,29 @@ fn payment_pointer_to_url(payment_pointer: &str) -> String {
     };
 
     let num_slashes = url.matches('/').count();
-    if num_slashes == 0 {
+    if num_slashes == 2 {
         url.push_str("/.well-known/pay");
     } else if num_slashes == 1 && url.ends_with('/') {
         url.push_str(".well-known/pay");
     }
+    trace!(
+        "Converted payment pointer: {} to URL: {}",
+        payment_pointer,
+        url
+    );
     url
+}
+
+#[cfg(test)]
+mod payment_pointer {
+    use super::*;
+
+    #[test]
+    fn converts_pointer() {
+        let pointer = "$subdomain.domain.example";
+        assert_eq!(
+            payment_pointer_to_url(pointer),
+            "https://subdomain.domain.example/.well-known/pay"
+        );
+    }
 }

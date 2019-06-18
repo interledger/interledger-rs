@@ -23,6 +23,7 @@ pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
 /// BtpOutgoingService into a bidirectional handler.
 pub fn connect_client<A, S>(
     accounts: Vec<A>,
+    error_on_unavailable: bool,
     next_outgoing: S,
 ) -> impl Future<Item = BtpOutgoingService<S, A>, Error = ()>
 where
@@ -30,6 +31,7 @@ where
     A: BtpAccount + 'static,
 {
     join_all(accounts.into_iter().map(move |account| {
+        let account_id = account.id();
         let mut url = account
             .get_btp_uri()
             .expect("Accounts must have BTP URLs")
@@ -37,11 +39,24 @@ where
         if url.scheme().starts_with("btp+") {
             url.set_scheme(&url.scheme().replace("btp+", "")).unwrap();
         }
+        let token = account
+            .get_btp_token()
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
         debug!("Connecting to {}", url);
         connect_async(url.clone())
-            .map_err(|err| error!("Error connecting to WebSocket server: {:?}", err))
+            .map_err(move |err| {
+                error!(
+                    "Error connecting to WebSocket server for account: {} {:?}",
+                    account_id, err
+                )
+            })
             .and_then(move |(connection, _)| {
-                debug!("Connected to {}, sending auth packet", url);
+                trace!(
+                    "Connected to account {} (URI: {}), sending auth packet",
+                    account_id,
+                    url
+                );
                 // Send BTP authentication
                 let auth_packet = Message::Binary(
                     BtpPacket::Message(BtpMessage {
@@ -53,14 +68,9 @@ where
                                 data: vec![],
                             },
                             ProtocolData {
-                                protocol_name: String::from("auth_username"),
-                                content_type: ContentType::TextPlainUtf8,
-                                data: String::from(url.username()).into_bytes(),
-                            },
-                            ProtocolData {
                                 protocol_name: String::from("auth_token"),
                                 content_type: ContentType::TextPlainUtf8,
-                                data: String::from(url.password().unwrap()).into_bytes(),
+                                data: token,
                             },
                         ],
                     })
@@ -71,11 +81,24 @@ where
                     .send(auth_packet)
                     .map_err(move |_| error!("Error sending auth packet on connection: {}", url))
             })
-            .and_then(move |connection| Ok((account, connection)))
+            .then(move |result| match result {
+                Ok(connection) => {
+                    debug!("Connected to account {}'s server", account.id());
+                    Ok(Some((account, connection)))
+                }
+                Err(err) => {
+                    if error_on_unavailable {
+                        Err(err)
+                    } else {
+                        Ok(None)
+                    }
+                }
+            })
     }))
     .and_then(|connections| {
         let service = BtpOutgoingService::new(next_outgoing);
-        for (account, connection) in connections.into_iter() {
+        let connections = connections.into_iter().filter_map(|conn| conn);
+        for (account, connection) in connections {
             service.add_connection(account, connection);
         }
         Ok(service)

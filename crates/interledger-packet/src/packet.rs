@@ -1,3 +1,4 @@
+use hex;
 use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;
@@ -306,8 +307,10 @@ pub struct FulfillBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl Fulfill {
-    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
+impl TryFrom<BytesMut> for Fulfill {
+    type Error = ParseError;
+
+    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Fulfill, &buffer)?;
 
         content.skip(FULFILLMENT_LEN)?;
@@ -318,7 +321,9 @@ impl Fulfill {
             content_offset,
         })
     }
+}
 
+impl Fulfill {
     /// The returned value always has a length of 32.
     #[inline]
     pub fn fulfillment(&self) -> &[u8] {
@@ -401,8 +406,10 @@ pub struct RejectBuilder<'a> {
     pub data: &'a [u8],
 }
 
-impl Reject {
-    pub fn try_from(buffer: BytesMut) -> Result<Self, ParseError> {
+impl TryFrom<BytesMut> for Reject {
+    type Error = ParseError;
+
+    fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Reject, &buffer)?;
         let content_len = content.len();
 
@@ -427,7 +434,9 @@ impl Reject {
             data_offset,
         })
     }
+}
 
+impl Reject {
     #[inline]
     pub fn code(&self) -> ErrorCode {
         self.code
@@ -558,6 +567,7 @@ impl MaxPacketAmountDetails {
         }
     }
 
+    // Convert to use TryFrom? Also probably should go to max_packet_amount.rs
     pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, std::io::Error> {
         let amount_received = bytes.read_u64::<BigEndian>()?;
         let max_amount = bytes.read_u64::<BigEndian>()?;

@@ -7,18 +7,24 @@ use std::marker::PhantomData;
 use std::time::{Duration, SystemTime};
 use tokio::prelude::FutureExt;
 
+/// # Validator Service
+///
+/// Incoming or Outgoing Service responsible for rejecting timed out
+/// requests and checking that fulfillments received match the `execution_condition` from the original `Prepare` packets.
+/// Forwards everything else.
+///
 #[derive(Clone)]
-pub struct ValidatorService<S, A> {
-    next: S,
+pub struct ValidatorService<IO, A> {
+    next: IO,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> ValidatorService<S, A>
+impl<I, A> ValidatorService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
-    pub fn incoming(next: S) -> Self {
+    pub fn incoming(next: I) -> Self {
         ValidatorService {
             next,
             account_type: PhantomData,
@@ -26,12 +32,12 @@ where
     }
 }
 
-impl<S, A> ValidatorService<S, A>
+impl<O, A> ValidatorService<O, A>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: Account,
 {
-    pub fn outgoing(next: S) -> Self {
+    pub fn outgoing(next: O) -> Self {
         ValidatorService {
             next,
             account_type: PhantomData,
@@ -39,13 +45,15 @@ where
     }
 }
 
-impl<S, A> IncomingService<A> for ValidatorService<S, A>
+impl<I, A> IncomingService<A> for ValidatorService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: Account,
 {
     type Future = BoxedIlpFuture;
 
+    /// On receiving a request:
+    /// 1. If the prepare packet in the request is not expired, forward it, otherwise return a reject
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if request.prepare.expires_at() >= SystemTime::now() {
             Box::new(self.next.handle_request(request))
@@ -71,16 +79,24 @@ where
     }
 }
 
-impl<S, A> OutgoingService<A> for ValidatorService<S, A>
+impl<O, A> OutgoingService<A> for ValidatorService<O, A>
 where
-    S: OutgoingService<A>,
+    O: OutgoingService<A>,
     A: Account,
 {
     type Future = BoxedIlpFuture;
 
+    /// On sending a request:
+    /// 1. If the outgoing packet has expired, return a reject with the appropriate ErrorCode
+    /// 1. Tries to forward the request
+    ///     - If no response is received before the prepare packet's expiration, it assumes that the outgoing request has timed out.
+    ///     - If no timeout occurred, but still errored it will just return the reject
+    ///     - If the forwarding is successful, it should receive a fulfill packet. Depending on if the hash of the fulfillment condition inside the fulfill is a preimage of the condition of the prepare:
+    ///         - return the fulfill if it matches
+    ///         - otherwise reject
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let mut condition: [u8; 32] = [0; 32];
-        condition[..].copy_from_slice(request.prepare.execution_condition());
+        condition[..].copy_from_slice(request.prepare.execution_condition()); // why?
 
         if let Ok(time_left) = request
             .prepare
@@ -265,6 +281,7 @@ mod outgoing {
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
                 to: TestAccount(2),
+                original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -299,6 +316,7 @@ mod outgoing {
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
                 to: TestAccount(2),
+                original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,

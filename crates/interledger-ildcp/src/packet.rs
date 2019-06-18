@@ -78,8 +78,10 @@ impl From<IldcpResponse> for Fulfill {
     }
 }
 
-impl IldcpResponse {
-    pub fn try_from(buffer: Bytes) -> Result<Self, ParseError> {
+impl TryFrom<Bytes> for IldcpResponse {
+    type Error = ParseError;
+
+    fn try_from(buffer: Bytes) -> Result<Self, Self::Error> {
         let mut reader = &buffer[..];
         let buffer_len = reader.len();
 
@@ -98,6 +100,9 @@ impl IldcpResponse {
             ilp_address,
         })
     }
+}
+
+impl IldcpResponse {
 
     pub fn client_address(&self) -> Address {
         self.ilp_address.clone()
