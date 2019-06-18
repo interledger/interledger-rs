@@ -1,6 +1,9 @@
 use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{future::{err, result}, Future, Stream};
+use futures::{
+    future::{err, result},
+    Future, Stream,
+};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use reqwest::{
@@ -82,17 +85,7 @@ where
                     .and_then(parse_packet_from_response),
             )
         } else {
-            error!(
-                "Cannot send outgoing HTTP request to account with no HTTP details: {:?}",
-                request.to
-            );
-            Box::new(err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &[],
-                triggered_by: None,
-                data: &[],
-            }
-            .build()))
+            Box::new(self.next.send_request(request))
         }
     }
 }
