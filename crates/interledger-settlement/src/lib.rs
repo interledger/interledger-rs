@@ -5,9 +5,9 @@ extern crate log;
 #[macro_use]
 extern crate tower_web;
 
-use bytes::Bytes;
 use futures::Future;
 use interledger_service::Account;
+use interledger_packet::Address;
 use url::Url;
 
 mod api;
@@ -29,7 +29,7 @@ pub struct SettlementEngineDetails {
     pub asset_scale: u8,
     /// The ILP address of the settlement engine. For example, `peer.settle.xrp-paychan`.
     /// Note that both peers' settlement engines are expected to use the same address.
-    pub ilp_address: Bytes,
+    pub ilp_address: Address,
 }
 
 pub trait SettlementAccount: Account {
