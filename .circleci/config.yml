@@ -18,22 +18,16 @@ jobs:
           command: cargo install --quiet cargo-audit || true # cargo-kcov
       - run:
           name: Install rustfmt
-          command: rustup component add rustfmt || true
-      - run:
-          name: Install kcov
-          command: >-
-            kcov --version ||
-            (sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-            && cargo kcov --print-install-kcov-sh | sh)
+          command: rustup component add rustfmt clippy || true
       - run:
           name: Install Redis
           # Install from stretch-backports to get the latest version
           # The normal repository has version 3.2, which doesn't support redis modules
-          command: >-
+          command: |
             echo "deb http://deb.debian.org/debian stretch-backports main" | sudo tee -a /etc/apt/sources.list
-            && sudo apt-get update
-            && sudo apt-get -t stretch-backports install redis-server
-            && redis-server --version
+            sudo apt-get update
+            sudo apt-get -t stretch-backports install redis-server
+            redis-server --version
       - run:
           name: Check Style
           command: |
@@ -46,8 +40,19 @@ jobs:
             RUST_BACKTRACE: "1"
             RUST_LOG: interledger/.*
       - run:
+          name: Check Style
+          command: |
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --all-features -- -D warnings
+      - run:
           name: Audit Dependencies
           command: cargo audit
+      # - run:
+      #     name: Install kcov
+      #     command: >-
+      #       kcov --version ||
+      #       (sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
+      #       && cargo kcov --print-install-kcov-sh | sh)
       # - run:
       #     name: Generate Coverage Report
       #     # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
