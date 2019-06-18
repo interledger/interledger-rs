@@ -22,11 +22,12 @@ impl AccountBuilder {
             additional_routes: Vec::new(),
             asset_code: String::new(),
             asset_scale: 0,
+            http_incoming_token: None,
+            http_outgoing_token: None,
             http_endpoint: None,
-            http_incoming_authorization: None,
-            http_outgoing_authorization: None,
             btp_uri: None,
             btp_incoming_token: None,
+            btp_outgoing_token: None,
         };
         AccountBuilder { details }
     }
@@ -111,6 +112,7 @@ pub(crate) struct AccountDetails {
     pub(crate) btp_incoming_token: Option<String>,
     pub(crate) max_packet_amount: u64,
 }
+
 
 impl AccountDetails {
     pub(crate) fn build(self) -> Account {

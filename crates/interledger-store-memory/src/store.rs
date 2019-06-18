@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn query_by_http_auth() {
         let account = AccountBuilder::new(Address::from_str("example.zero").unwrap())
-            .http_incoming_authorization("Bearer test_token".to_string())
+            .http_incoming_token("test_token".to_string())
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
