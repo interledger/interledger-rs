@@ -228,21 +228,23 @@ where
                             Ok(fulfill) => Packet::Fulfill(fulfill),
                             Err(reject) => Packet::Reject(reject),
                         };
-                        let message = ilp_packet_to_ws_message(request_id, packet);
-                        connections_clone
+                        if let Some(connection) = connections_clone
                             .read()
-                            .get(&account_id)
-                            .expect(
-                                "No connection for account (something very strange has happened)",
-                            )
-                            .clone()
-                            .unbounded_send(message)
-                            .map_err(move |err| {
-                                error!(
-                                    "Error sending response to account: {} {:?}",
-                                    account_id, err
-                                )
-                            })
+                            .get(&account_id) {
+                            let message = ilp_packet_to_ws_message(request_id, packet);
+                            connection
+                                .clone()
+                                .unbounded_send(message)
+                                .map_err(move |err| {
+                                    error!(
+                                        "Error sending response to account: {} {:?}",
+                                        account_id, err
+                                    )
+                                })
+                            } else {
+                                error!("Error sending response to account: {}, connection was closed. {:?}", account_id, packet);
+                                Err(())
+                            }
                     })
             })
             .then(move |_| {
