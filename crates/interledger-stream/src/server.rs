@@ -598,7 +598,7 @@ mod stream_receiver_service {
             .wait();
         assert!(result.is_err());
         assert_eq!(
-            result.unwrap_err().triggered_by(),
+            result.unwrap_err().triggered_by().unwrap(),
             Address::from_str("example.other-receiver").unwrap(),
         );
     }

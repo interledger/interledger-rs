@@ -11,7 +11,6 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
 use super::{Address, ErrorCode, ParseError};
-use bytes::Bytes;
 use std::convert::TryFrom;
 
 const AMOUNT_LEN: usize = 8;
@@ -443,11 +442,11 @@ impl Reject {
     }
 
     #[inline]
-    pub fn triggered_by(&self) -> Address {
-        let address_bytes = (&self.buffer[self.triggered_by_offset..])
-            .peek_var_octet_string()
-            .unwrap(); // Can we unwrap safely here?
-        unsafe { Address::new_unchecked(Bytes::from(address_bytes)) }
+    pub fn triggered_by(&self) -> Option<Address> {
+        match (&self.buffer[self.triggered_by_offset..]).peek_var_octet_string() {
+            Ok(bytes) => Address::try_from(bytes).ok(),
+            Err(_) => None,
+        }
     }
 
     #[inline]
@@ -833,8 +832,8 @@ mod test_reject {
         assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
         assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
         assert_eq!(
-            with_junk_data.triggered_by(),
-            *REJECT_BUILDER.triggered_by.unwrap()
+            with_junk_data.triggered_by().as_ref(),
+            REJECT_BUILDER.triggered_by
         );
         assert_eq!(with_junk_data.data(), fixtures::DATA);
     }
@@ -856,7 +855,7 @@ mod test_reject {
 
     #[test]
     fn test_triggered_by() {
-        assert_eq!(REJECT.triggered_by(), *REJECT_BUILDER.triggered_by.unwrap());
+        assert_eq!(REJECT.triggered_by().as_ref(), REJECT_BUILDER.triggered_by);
     }
 
     #[test]
