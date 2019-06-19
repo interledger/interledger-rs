@@ -35,10 +35,8 @@ pub mod test_helpers {
     use std::str::FromStr;
 
     lazy_static! {
-        pub static ref EXAMPLE_CONNECTOR: Address =
-            Address::from_str("example.connector").unwrap();
-        pub static ref EXAMPLE_RECEIVER: Address =
-            Address::from_str("example.receiver").unwrap();
+        pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
+        pub static ref EXAMPLE_RECEIVER: Address = Address::from_str("example.receiver").unwrap();
     }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
