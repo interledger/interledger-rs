@@ -32,7 +32,7 @@ lazy_static! {
         relation: RoutingRelation::Child,
     };
     pub static ref EXAMPLE_CONNECTOR: Address =
-        unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
+        Address::from_str("example.connector").unwrap();
 }
 
 #[derive(Clone, Debug)]

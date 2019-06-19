@@ -32,12 +32,13 @@ pub mod test_helpers {
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore};
     use std::iter::FromIterator;
+    use std::str::FromStr;
 
     lazy_static! {
         pub static ref EXAMPLE_CONNECTOR: Address =
-            unsafe { Address::new_unchecked(Bytes::from("example.connector")) };
+            Address::from_str("example.connector").unwrap();
         pub static ref EXAMPLE_RECEIVER: Address =
-            unsafe { Address::new_unchecked(Bytes::from("example.receiver")) };
+            Address::from_str("example.receiver").unwrap();
     }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
