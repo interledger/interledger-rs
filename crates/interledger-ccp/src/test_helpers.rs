@@ -31,8 +31,7 @@ lazy_static! {
         receive_routes: false,
         relation: RoutingRelation::Child,
     };
-    pub static ref EXAMPLE_CONNECTOR: Address =
-        Address::from_str("example.connector").unwrap();
+    pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
 }
 
 #[derive(Clone, Debug)]

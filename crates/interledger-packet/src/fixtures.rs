@@ -87,8 +87,7 @@ pub static FULFILLMENT: [u8; 32] = *b"\
 
 lazy_static! {
     pub static ref REJECT: Reject = REJECT_BUILDER.build();
-    pub static ref EXAMPLE_CONNECTOR: Address =
-        Address::from_str("example.connector").unwrap();
+    pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
     pub static ref REJECT_BUILDER: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
