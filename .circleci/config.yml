@@ -15,10 +15,9 @@ jobs:
             - cargo-cache-1-
       - run:
           name: Install Cargo Extensions
-          command: cargo install --quiet cargo-audit || true # cargo-kcov
-      - run:
-          name: Install rustfmt
-          command: rustup component add rustfmt clippy || true
+          command: |
+            cargo install --quiet cargo-audit || true # cargo-kcov
+            rustup component add rustfmt clippy || true
       - run:
           name: Install Redis
           # Install from stretch-backports to get the latest version
@@ -29,12 +28,10 @@ jobs:
             sudo apt-get -t stretch-backports install redis-server
             redis-server --version
       - run:
-          name: Check Style
-          command: |
-            cargo fmt --all -- --check
-            cargo clippy --all-targets --all-features -- -D warnings
+          name: Build
+          command: cargo build --all-features --all-targets
       - run:
-          name: Build + Test
+          name: Test
           command: cargo test --all --all-features
           environment:
             RUST_BACKTRACE: "1"
