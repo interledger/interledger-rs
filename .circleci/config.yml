@@ -35,7 +35,6 @@ jobs:
           command: cargo test --all --all-features
           environment:
             RUST_BACKTRACE: "1"
-            RUST_LOG: interledger/.*
       - run:
           name: Check Style
           command: |
