@@ -259,7 +259,7 @@ where
     A: EthereumAccount + Send + Sync + 'static,
 {
     let chain_id = 1;
-    let poll_frequency = Duration::from_secs(1);
+    let poll_frequency = Duration::from_secs(5);
     EthereumLedgerSettlementEngine::new(
         "http://localhost:8545".to_string(),
         store,

@@ -1277,14 +1277,14 @@ impl EthereumStore for RedisStore {
                     let block = if let Some(block) = data.get("block") {
                         block
                     } else {
-                        return err(());
+                        &0 // return 0 if not found
                     };
                     let block = U256::from(*block);
 
                     let balance = if let Some(balance) = data.get("balance") {
                         balance
                     } else {
-                        return err(());
+                        &0
                     };
                     let balance = U256::from(*balance);
                     ok((block, balance))

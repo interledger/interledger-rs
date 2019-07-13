@@ -159,7 +159,7 @@ where
                 .block_number()
                 .map_err(|err| println!("Got error {:?}", err))
                 .and_then(move |current_block| {
-                    trace!("Current block {}", current_block);
+                    debug!("Current block {}", current_block);
                     let fetch_until = current_block - confirmations;
                     ok(fetch_until)
                 })
@@ -172,14 +172,14 @@ where
                         .and_then({let web3 = web3.clone(); move |new_balance| {
                             if new_balance > last_observed_balance {
                                 // iterate over all blocks 
-                                for block_num in last_observed_block.low_u64()..=fetch_until.low_u64() {
+                                for block_num in last_observed_block.low_u64()..fetch_until.low_u64() {
                                     let web3 = web3.clone();
                                     debug!("Getting block {}", block_num);
                                     let block_url = connector_url.clone();
                                     let get_blocks_future = web3.eth().block(BlockNumber::Number(block_num as u64).into())
                                     .map_err(move |err| error!("Got error while getting block {}: {:?}", block_num, err))
                                     .and_then({let store_clone = store_clone.clone(); move |block| {
-                                        // println!("Fetched block: {:?}", block_num);
+                                        debug!("Fetched block: {:?}", block_num);
                                         if let Some(block) = block {
                                             // iterate over all tx_hashes in the block
                                             // and spawn a future that will execute
@@ -209,7 +209,6 @@ where
                                                                     token_address: None,
                                                                 };
                                                                 let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
-                                                                    debug!("Got account {:?} {:?}", addr, id.clone());
                                                                     url.path_segments_mut()
                                                                         .expect("Invalid connector URL")
                                                                         .push("accounts")
@@ -217,14 +216,17 @@ where
                                                                         .push("settlement");
                                                                     let client = reqwest::r#async::Client::new();
                                                                     let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-                                                                    // this should be retried if it fails
+                                                                    // retry on fail - https://github.com/ihrwein/backoff
+                                                                    debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
+                                                                    let mut params = std::collections::HashMap::new();
+                                                                    params.insert("amount", tx.value.low_u64());
                                                                     client.post(url)
-                                                                        .header("Content-Type", "application/octet-stream")
                                                                         .header("Idempotency-Key", idempotency_uuid)
-                                                                        .body(tx.value.to_string())
+                                                                        .form(&params)
                                                                         .send()
                                                                         .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
                                                                         .and_then(move |response| {
+                                                                            debug!("Accounting system responded with {:?}", response);
                                                                             if response.status().is_success() {
                                                                                 Ok(())
                                                                             } else {
@@ -256,7 +258,7 @@ where
                             // block. We can implement retry logic for blocks/txs that
                             // are not fetched, OR process them serially, and on failure
                             // save the block and quit.
-                            store.save_recently_observed_data(fetch_until, new_balance)
+                            tokio::spawn(store.save_recently_observed_data(fetch_until, new_balance))
                         }})
                 })
         })
@@ -286,6 +288,7 @@ where
                 .and_then(move |nonce| {
                     let tx = make_tx(to, amount, nonce, token_address);
                     let signed_tx = signer.sign(tx, chain_id);
+                    debug!("Sending transaction: {:?}", signed_tx);
                     web3.eth()
                         .send_raw_transaction(signed_tx.clone().into())
                         .map_err(move |err| {
@@ -489,7 +492,6 @@ where
                                 .push("messages");
                             client
                                 .post(url)
-                                .header("Content-Type", "application/octet-stream")
                                 .header("Idempotency-Key", idempotency_uuid)
                                 .body(j)
                                 .send()
@@ -704,12 +706,10 @@ mod tests {
 
         let mut ganache_pid = start_ganache();
 
-        let bob_mock = mockito::mock("POST", "/accounts/42/settlement")
-            .match_header("content-type", "application/octet-stream")
-            .match_body("100")
+        let _bob_mock = mockito::mock("POST", "/accounts/42/settlement")
+            .match_body(mockito::Matcher::Regex(r"amount=\d*".to_string()))
             .with_status(200)
             .with_body("OK".to_string())
-            .expect(1)
             .create();
 
         let bob_connector_url = mockito::server_url();
@@ -726,7 +726,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             "http://127.0.0.1:9999".to_owned(), // url does not matter here
-            false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs
+            false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
 
         let ret: Response<_> = block_on(alice_engine.send_money(
@@ -795,9 +795,8 @@ mod tests {
         assert_eq!(cached_data.0, 200);
         assert_eq!(cached_data.1, "OK".to_string());
 
-        std::thread::sleep(Duration::from_secs(2)); // wait a few seconds so that the receiver's engine that does the polling
+        std::thread::sleep(Duration::from_millis(100)); // wait a few seconds so that the receiver's engine that does the polling
         ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
-        bob_mock.assert(); // ensure that the receive_money endpoint was called properly on the connector
     }
 
     #[test]
@@ -816,7 +815,6 @@ mod tests {
         // simulate our connector that accepts the request, forwards it to the
         // peer's connector and returns the peer's se addresses
         let m = mockito::mock("POST", MESSAGES_API.clone())
-            .match_header("content-type", "application/octet-stream")
             .with_status(200)
             .with_body(body_se_data)
             .expect(1) // only 1 request is made to the connector (idempotency works properly)
@@ -884,7 +882,6 @@ mod tests {
         .unwrap();
 
         let m = mockito::mock("POST", MESSAGES_API.clone())
-            .match_header("content-type", "application/octet-stream")
             .with_status(200)
             .with_body(body_se_data)
             .expect(1) // only 1 request is made to the connector (idempotency works properly)

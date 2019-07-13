@@ -81,6 +81,7 @@ impl_web! {
 
         #[post("/accounts/:account_id/settlement")]
         fn receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
+            debug!("Receive settlement called with {:?} {:?}", account_id, body);
             let amount = body.amount;
             let store = self.store.clone();
 

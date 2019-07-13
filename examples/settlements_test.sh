@@ -15,6 +15,8 @@ mkdir -p $LOGS
 
 echo "Initializing redis"
 bash $ILP_DIR/scripts/init.sh &
+redis-cli -p 6379 flushall
+redis-cli -p 6380 flushall
 
 sleep 1
 
@@ -25,31 +27,33 @@ BOB_KEY="cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e"
 
 
 echo "Initializing Alice SE"
-$ILP settlement-engine ethereum-ledger \
+RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --key $ALICE_KEY \
 --server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 --confirmations 0 \
---poll_frequency 1 \
+--poll_frequency 4 \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379 \
---port 3000 > $LOGS/engine_alice.log &
+--watch_incoming true \
+--port 3000 &> $LOGS/engine_alice.log &
 
 echo "Initializing Bob SE"
-$ILP settlement-engine ethereum-ledger \
+RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --key $BOB_KEY \
 --server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
 --confirmations 0 \
---poll_frequency 1 \
+--poll_frequency 3 \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6380 \
---port 3001 > $LOGS/engine_bob.log &
+--watch_incoming true \
+--port 3001 &> $LOGS/engine_bob.log &
 
 sleep 1
 
 echo "Initializing Alice Connector"
-$ILP node --config $ILP_DIR/configs/alice.yaml &> $LOGS/ilp_alice.log &
+RUST_LOG=interledger=debug $ILP node --config $ILP_DIR/configs/alice.yaml &> $LOGS/ilp_alice.log &
 echo "Initializing Bob Connector"
 $ILP node --config $ILP_DIR/configs/bob.yaml &> $LOGS/ilp_bob.log &
 
@@ -60,10 +64,6 @@ curl http://localhost:7770/accounts -X POST \
     -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice" \
     -H "Authorization: Bearer hi_alice"
 
-# PROBLEM: When inserting account 0 here, it tries to call account 0 on the
-# other connector/engine whcih obviously fails since it does not exist yet. can
-# we do some kind of handshakee that creates both atomically?
-
 sleep 1
 
 # # insert Alice's account details on Bob's connector
@@ -71,19 +71,14 @@ curl http://localhost:8770/accounts -X POST \
     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=9&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob" \
     -H "Authorization: Bearer hi_bob"
 
-# sleep 2
-
-# if we remove the POST request when creating an account above, alice/bob would
-# have to do setup their accounts manually. This should be a good enough
-# approach, it requires 1 more manual call, but alice can just make the call to
-# her engine and it'll autoconfigure.
+sleep 1
 
 # alice configures SE manually for bob's data, after knowing that bob has added her info to his store
 curl http://localhost:3000/accounts/0 -X POST
 # bob configures SE manually for alice's data, after knowing that alice has added his info to her store
 curl http://localhost:3001/accounts/0 -X POST
 
-# the proper keys should be set
+# addresses must be exchanged
 echo "Alice Store:"
 redis-cli -p 6379 hgetall "settlement:ledger:eth:0"
 echo "Bob Store:"
@@ -95,6 +90,11 @@ redis-cli -p 6380 hgetall "settlement:ledger:eth:0"
 echo 'simulating settlement where Bob pays Alice'
 curl localhost:3001/accounts/0/settlement -d "amount=123"
 
-# bob's engine must call receive_money on his connector and the prepaid amount
-# must be non 0 (still WIP for the ETH-SE) 
-redis-cli -p 6380 hgetall "accounts:0"
+sleep 8
+
+# alice's engine must call receive_money on her connector
+# the prepaid amount must be non zero.
+prepaid=$(redis-cli -p 6379 hget "accounts:0" "prepaid_amount")
+echo "\nAlice has been prepaid $prepaid by Bob."
+
+# todo: make this with stream/spsp and perform back and forth payments
