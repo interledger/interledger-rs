@@ -5,7 +5,8 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
-use std::collections::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet};
+use std::collections::HashMap as SlowHashMap;
 
 use ethereum_tx_sign::web3::types::Address as EthAddress;
 use http::StatusCode;
@@ -1179,7 +1180,7 @@ impl EthereumStore for RedisStore {
                     )
                 })
                 .and_then(
-                    move |(_conn, addresses): (_, Vec<HashMap<String, Vec<u8>>>)| {
+                    move |(_conn, addresses): (_, Vec<SlowHashMap<String, Vec<u8>>>)| {
                         let mut ret = Vec::with_capacity(addresses.len());
                         for addr in &addresses {
                             let own_address = if let Some(own_address) = addr.get("own_address") {
@@ -1259,7 +1260,7 @@ impl IdempotentStore for RedisStore {
                         idempotency_key_clone, err
                     )
                 })
-                .and_then(move |(_connection, ret): (_, HashMap<String, String>)| {
+                .and_then(move |(_connection, ret): (_, SlowHashMap<String, String>)| {
                     let data = if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
                         ret.get("status_code"),
                         ret.get("data"),
