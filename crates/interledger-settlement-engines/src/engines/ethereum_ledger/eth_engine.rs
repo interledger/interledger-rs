@@ -336,7 +336,7 @@ where
                     error!("{}", error_msg);
                     error_msg
                 })
-                .and_then(move |addresses| ok((account_id, addresses[0].clone())))
+                .and_then(move |addresses| ok((account_id, addresses[0])))
         })
     }
 
@@ -911,7 +911,7 @@ mod tests {
             token_address: None,
         };
         let data: PaymentDetailsResponse = serde_json::from_str(ret.body()).unwrap();
-        assert!(data.tag.len() > 0);
+        assert!(!data.tag.is_empty());
         assert_eq!(data.to, alice_addrs);
         m.assert();
     }
