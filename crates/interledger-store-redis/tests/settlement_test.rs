@@ -5,7 +5,7 @@ mod common;
 
 use bytes::Bytes;
 use common::*;
-use ethereum_tx_sign::web3::types::Address as EthAddress;
+use ethereum_tx_sign::web3::types::{Address as EthAddress, U256};
 use http::StatusCode;
 use interledger_settlement::{IdempotentStore, SettlementStore};
 use interledger_settlement_engines::EthereumAddresses;
@@ -45,7 +45,7 @@ fn credits_prepaid_amount() {
 #[test]
 fn saves_and_loads_ethereum_addreses_properly() {
     block_on(test_store().and_then(|(store, context)| {
-        let account_ids = vec![0, 1];
+        let account_ids = vec![30, 42];
         let account_addresses = vec![
             EthereumAddresses {
                 own_address: EthAddress::from_str("3cdb3d9e1b74692bb1e3bb5fc81938151ca64b02")
@@ -65,11 +65,48 @@ fn saves_and_loads_ethereum_addreses_properly() {
             .map_err(|err| eprintln!("Redis error: {:?}", err))
             .and_then(move |_| {
                 store
-                    .load_account_addresses(account_ids)
+                    .load_account_addresses(account_ids.clone())
                     .map_err(|err| eprintln!("Redis error: {:?}", err))
                     .and_then(move |data| {
                         assert_eq!(data[0], account_addresses[0]);
                         assert_eq!(data[1], account_addresses[1]);
+                        let _ = context;
+                        store
+                            .load_account_id_from_address(account_addresses[0])
+                            .map_err(|err| eprintln!("Redis error: {:?}", err))
+                            .and_then(move |acc_id| {
+                                assert_eq!(acc_id, account_ids[0]);
+                                let _ = context;
+                                store
+                                    .load_account_id_from_address(account_addresses[1])
+                                    .map_err(|err| eprintln!("Redis error: {:?}", err))
+                                    .and_then(move |acc_id| {
+                                        assert_eq!(acc_id, account_ids[1]);
+                                        let _ = context;
+                                        Ok(())
+                                    })
+                            })
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn saves_and_loads_last_observed_data_properly() {
+    block_on(test_store().and_then(|(store, context)| {
+        let block = U256::from(2);
+        let balance = U256::from(123);
+        store
+            .save_recently_observed_data(block, balance)
+            .map_err(|err| eprintln!("Redis error: {:?}", err))
+            .and_then(move |_| {
+                store
+                    .load_recently_observed_data()
+                    .map_err(|err| eprintln!("Redis error: {:?}", err))
+                    .and_then(move |data| {
+                        assert_eq!(data.0, block);
+                        assert_eq!(data.1, balance);
                         let _ = context;
                         Ok(())
                     })
