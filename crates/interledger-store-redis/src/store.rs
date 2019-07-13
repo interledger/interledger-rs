@@ -5,8 +5,9 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
-use hashbrown::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
+use ethereum_tx_sign::web3::types::Address as EthAddress;
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
@@ -16,14 +17,14 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{
-    IdempotentData, SettlementAccount, SettlementClient, SettlementStore,
+    IdempotentData, IdempotentStore, SettlementAccount, SettlementClient, SettlementStore,
 };
+use interledger_settlement_engines::{EthereumAddresses, EthereumStore};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
 };
 use ring::{aead, hmac};
-use std::collections::HashMap as SlowHashMap;
 use std::{
     iter::FromIterator,
     str,
@@ -141,6 +142,17 @@ static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
+
+static SETTLEMENT_ENGINES_KEY: &str = "settlement";
+static LEDGER_KEY: &str = "ledger";
+static ETHEREUM_KEY: &str = "eth";
+
+fn ethereum_ledger_key(account_id: u64) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        SETTLEMENT_ENGINES_KEY, LEDGER_KEY, ETHEREUM_KEY, account_id
+    )
+}
 
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
@@ -1147,9 +1159,91 @@ impl RateLimitStore for RedisStore {
     }
 }
 
-impl SettlementStore for RedisStore {
+impl EthereumStore for RedisStore {
     type Account = Account;
 
+    fn load_account_addresses(
+        &self,
+        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
+    ) -> Box<dyn Future<Item = Vec<EthereumAddresses>, Error = ()> + Send> {
+        let mut pipe = redis::pipe();
+        for account_id in account_ids.iter() {
+            pipe.hgetall(ethereum_ledger_key(*account_id));
+        }
+        Box::new(
+            pipe.query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error the addresses for accounts: {:?} {:?}",
+                        account_ids, err
+                    )
+                })
+                .and_then(
+                    move |(_conn, addresses): (_, Vec<HashMap<String, Vec<u8>>>)| {
+                        let mut ret = Vec::with_capacity(addresses.len());
+                        for addr in &addresses {
+                            let own_address = if let Some(own_address) = addr.get("own_address") {
+                                own_address
+                            } else {
+                                return err(());
+                            };
+                            let own_address = EthAddress::from(&own_address[..]);
+
+                            let token_address =
+                                if let Some(token_address) = addr.get("token_address") {
+                                    token_address
+                                } else {
+                                    return err(());
+                                };
+                            let token_address = if token_address.len() == 20 {
+                                Some(EthAddress::from(&token_address[..]))
+                            } else {
+                                None
+                            };
+                            ret.push(EthereumAddresses {
+                                own_address,
+                                token_address,
+                            });
+                        }
+                        ok(ret)
+                    },
+                ),
+        )
+    }
+
+    fn save_account_addresses(
+        &self,
+        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
+        data: Vec<EthereumAddresses>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let mut pipe = redis::pipe();
+        for (account_id, d) in account_ids.iter().zip(&data) {
+            let token_address = if let Some(token_address) = d.token_address {
+                token_address.to_vec()
+            } else {
+                vec![]
+            };
+            let key = ethereum_ledger_key(*account_id);
+            let value = &[
+                ("own_address", d.own_address.to_vec()),
+                ("token_address", token_address),
+            ];
+            pipe.hset_multiple(key, value).ignore();
+        }
+        Box::new(
+            pipe.query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error saving account data for accounts: {:?} {:?}",
+                        account_ids, err
+                    )
+                })
+                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
+        )
+    }
+}
+
+impl IdempotentStore for RedisStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
@@ -1165,31 +1259,25 @@ impl SettlementStore for RedisStore {
                         idempotency_key_clone, err
                     )
                 })
-                .and_then(
-                    move |(_connection, ret): (_, SlowHashMap<String, String>)| {
-                        let data = if let (
-                            Some(status_code),
-                            Some(data),
-                            Some(input_hash_slice),
-                        ) = (
-                            ret.get("status_code"),
-                            ret.get("data"),
-                            ret.get("input_hash"),
-                        ) {
-                            trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                            let mut input_hash: [u8; 32] = Default::default();
-                            input_hash.copy_from_slice(input_hash_slice.as_ref());
-                            Some((
-                                StatusCode::from_str(status_code).unwrap(),
-                                Bytes::from(data.clone()),
-                                input_hash,
-                            ))
-                        } else {
-                            None
-                        };
-                        Ok(data)
-                    },
-                ),
+                .and_then(move |(_connection, ret): (_, HashMap<String, String>)| {
+                    let data = if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
+                        ret.get("status_code"),
+                        ret.get("data"),
+                        ret.get("input_hash"),
+                    ) {
+                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
+                        let mut input_hash: [u8; 32] = Default::default();
+                        input_hash.copy_from_slice(input_hash_slice.as_ref());
+                        Some((
+                            StatusCode::from_str(status_code).unwrap(),
+                            Bytes::from(data.clone()),
+                            input_hash,
+                        ))
+                    } else {
+                        None
+                    };
+                    Ok(data)
+                }),
         )
     }
 
@@ -1227,6 +1315,10 @@ impl SettlementStore for RedisStore {
                 }),
         )
     }
+}
+
+impl SettlementStore for RedisStore {
+    type Account = Account;
 
     fn update_balance_for_incoming_settlement(
         &self,
