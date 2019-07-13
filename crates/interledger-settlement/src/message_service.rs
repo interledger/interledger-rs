@@ -60,8 +60,15 @@ where
                     .push("accounts")
                     .push(&request.from.id().to_string())
                     .push("messages"); // Maybe set the idempotency flag here in the headers
+                error!(
+                    "TRYING TO FORWARD MESSAGE TO ENGINE {:?} {:?}",
+                    settlement_engine_url.clone(),
+                    message.clone()
+                );
+                let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
                 return Box::new(self.http_client.post(settlement_engine_url)
                 .header("Content-Type", "application/octet-stream")
+                .header("Idempotency-Key", idempotency_uuid)
                 .body(message)
                 .send()
                 .map_err(move |error| {
@@ -74,6 +81,7 @@ where
                     }.build()
                 })
                 .and_then(move |response| {
+                    error!("GOT RESPONSE FROM ENGINE {:?}", response);
                     let status = response.status();
                     if status.is_success() {
                         Either::A(response.into_body().concat2().map_err(move |err| {

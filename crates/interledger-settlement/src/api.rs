@@ -1,4 +1,4 @@
-use super::{SettlementAccount, SettlementStore};
+use super::{IdempotentStore, SettlementAccount, SettlementStore};
 use bytes::Bytes;
 use futures::{
     future::{ok, result, Either},
@@ -23,8 +23,8 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
 ];
 
 #[derive(Debug, Clone, Extract)]
-struct SettlementData {
-    amount: u64,
+pub struct SettlementData {
+    pub amount: u64,
 }
 
 pub struct SettlementApi<S, O, A> {
@@ -36,7 +36,7 @@ pub struct SettlementApi<S, O, A> {
 impl_web! {
     impl<S, O, A> SettlementApi<S, O, A>
     where
-        S: SettlementStore<Account = A> + AccountStore<Account = A> + Clone + Send + Sync + 'static,
+        S: SettlementStore<Account = A> + IdempotentStore + AccountStore<Account = A> + Clone + Send + Sync + 'static,
         O: OutgoingService<A> + Clone + Send + Sync + 'static,
         A: SettlementAccount + IldcpAccount + Send + Sync + 'static,
     {

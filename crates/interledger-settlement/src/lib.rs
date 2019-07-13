@@ -23,7 +23,7 @@ mod message_service;
 #[cfg(test)]
 mod test_helpers;
 
-pub use api::SettlementApi;
+pub use api::{SettlementApi, SettlementData};
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
@@ -47,8 +47,6 @@ pub trait SettlementAccount: Account {
     }
 }
 
-pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
-
 pub trait SettlementStore {
     type Account: SettlementAccount;
 
@@ -58,7 +56,11 @@ pub trait SettlementStore {
         amount: u64,
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+}
 
+pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
+
+pub trait IdempotentStore {
     /// Returns the API response that was saved when the idempotency key was used
     /// Also returns a hash of the input data which resulted in the response
     fn load_idempotent_data(

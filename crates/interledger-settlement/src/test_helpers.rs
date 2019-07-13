@@ -84,7 +84,9 @@ impl SettlementStore for TestStore {
         let ret = if self.should_fail { err(()) } else { ok(()) };
         Box::new(ret)
     }
+}
 
+impl IdempotentStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
