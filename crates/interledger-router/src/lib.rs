@@ -16,8 +16,8 @@
 extern crate log;
 
 use bytes::Bytes;
-use hashbrown::HashMap;
 use interledger_service::{Account, AccountStore};
+use std::collections::HashMap;
 
 mod router;
 

@@ -4,13 +4,13 @@ use futures::{
     future::{err, join_all, ok, Either},
     Future, Stream,
 };
-use hashbrown::HashMap;
 use interledger_packet::*;
 use interledger_service::{
     Account, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
 };
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
+use std::collections::HashMap;
 use std::{
     cmp::min,
     convert::TryFrom,

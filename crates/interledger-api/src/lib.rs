@@ -12,9 +12,9 @@ use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, IncomingService, OutgoingService};
+use interledger_service::{Account as AccountTrait, IncomingService};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::{SettlementAccount, SettlementApi, SettlementStore};
+use interledger_settlement::{SettlementAccount, SettlementStore};
 use serde::Serialize;
 use std::str;
 use tower_web::{net::ConnectionStream, ServiceBuilder};
@@ -79,25 +79,23 @@ pub struct AccountDetails {
     pub settlement_engine_ilp_address: Option<Address>,
 }
 
-pub struct NodeApi<T, S, U> {
-    store: T,
+pub struct NodeApi<S, I> {
+    store: S,
     admin_api_token: String,
     default_spsp_account: Option<String>,
-    incoming_handler: S,
-    outgoing_handler: U,
+    incoming_handler: I,
     server_secret: Bytes,
 }
 
-impl<T, S, U, A> NodeApi<T, S, U>
+impl<S, I, A> NodeApi<S, I>
 where
-    T: NodeStore<Account = A>
+    S: NodeStore<Account = A>
         + HttpStore<Account = A>
         + BalanceStore<Account = A>
         + SettlementStore<Account = A>
         + RouterStore
         + ExchangeRateStore,
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    U: OutgoingService<A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
     A: AccountTrait
         + HttpAccount
         + IldcpAccount
@@ -110,9 +108,8 @@ where
     pub fn new(
         server_secret: Bytes,
         admin_api_token: String,
-        store: T,
-        outgoing_handler: U,
-        incoming_handler: S,
+        store: S,
+        incoming_handler: I,
     ) -> Self {
         NodeApi {
             store,
@@ -120,7 +117,6 @@ where
             default_spsp_account: None,
             incoming_handler,
             server_secret,
-            outgoing_handler,
         }
     }
 
@@ -129,10 +125,10 @@ where
         self
     }
 
-    pub fn serve<I>(&self, incoming: I) -> impl Future<Item = (), Error = ()>
+    pub fn serve<T>(&self, incoming: T) -> impl Future<Item = (), Error = ()>
     where
-        I: ConnectionStream,
-        I::Item: Send + 'static,
+        T: ConnectionStream,
+        T::Item: Send + 'static,
     {
         ServiceBuilder::new()
             .resource(IlpApi::new(
@@ -150,10 +146,6 @@ where
                 }
                 spsp
             })
-            .resource(SettlementApi::new(
-                self.store.clone(),
-                self.outgoing_handler.clone(),
-            ))
             .resource(AccountsApi::new(
                 self.admin_api_token.clone(),
                 self.store.clone(),
