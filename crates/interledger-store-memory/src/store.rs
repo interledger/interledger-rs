@@ -4,13 +4,13 @@ use futures::{
     future::{err, ok},
     Future,
 };
+use hashbrown::HashMap;
 use interledger_btp::{BtpOpenSignupAccount, BtpOpenSignupStore, BtpStore};
 use interledger_http::HttpStore;
 use interledger_ildcp::IldcpAccount;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
 use std::{
     cmp::max,
     iter::{empty, once, FromIterator, IntoIterator},

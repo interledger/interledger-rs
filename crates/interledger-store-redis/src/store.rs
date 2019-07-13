@@ -5,7 +5,7 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
-use std::collections::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet};
 
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
@@ -23,6 +23,7 @@ use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
 };
 use ring::{aead, hmac};
+use std::collections::HashMap as SlowHashMap;
 use std::{
     iter::FromIterator,
     str,
@@ -1164,25 +1165,31 @@ impl SettlementStore for RedisStore {
                         idempotency_key_clone, err
                     )
                 })
-                .and_then(move |(_connection, ret): (_, HashMap<String, String>)| {
-                    let data = if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
-                        ret.get("status_code"),
-                        ret.get("data"),
-                        ret.get("input_hash"),
-                    ) {
-                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                        let mut input_hash: [u8; 32] = Default::default();
-                        input_hash.copy_from_slice(input_hash_slice.as_ref());
-                        Some((
-                            StatusCode::from_str(status_code).unwrap(),
-                            Bytes::from(data.clone()),
-                            input_hash,
-                        ))
-                    } else {
-                        None
-                    };
-                    Ok(data)
-                }),
+                .and_then(
+                    move |(_connection, ret): (_, SlowHashMap<String, String>)| {
+                        let data = if let (
+                            Some(status_code),
+                            Some(data),
+                            Some(input_hash_slice),
+                        ) = (
+                            ret.get("status_code"),
+                            ret.get("data"),
+                            ret.get("input_hash"),
+                        ) {
+                            trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
+                            let mut input_hash: [u8; 32] = Default::default();
+                            input_hash.copy_from_slice(input_hash_slice.as_ref());
+                            Some((
+                                StatusCode::from_str(status_code).unwrap(),
+                                Bytes::from(data.clone()),
+                                input_hash,
+                            ))
+                        } else {
+                            None
+                        };
+                        Ok(data)
+                    },
+                ),
         )
     }
 

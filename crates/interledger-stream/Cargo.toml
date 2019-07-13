@@ -19,6 +19,7 @@ chrono = "0.4.6"
 csv = { version = "1.0.5", optional = true }
 failure = "0.1.5"
 futures = "0.1.25"
+hashbrown = "0.1.8"
 hex = "0.3.2"
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }

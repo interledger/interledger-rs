@@ -130,10 +130,10 @@ where
 mod tests {
     use super::*;
     use futures::future::ok;
+    use hashbrown::HashMap;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
     use parking_lot::Mutex;
-    use std::collections::HashMap;
     use std::iter::FromIterator;
     use std::str::FromStr;
     use std::sync::Arc;

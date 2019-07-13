@@ -16,9 +16,9 @@ extern crate lazy_static;
 
 use bytes::Bytes;
 use futures::Future;
+use hashbrown::HashMap;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account;
-use std::collections::HashMap;
 use std::{str::FromStr, string::ToString};
 
 #[cfg(test)]

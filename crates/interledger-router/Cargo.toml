@@ -10,6 +10,7 @@ repository = "https://github.com/emschwartz/interledger-rs"
 [dependencies]
 bytes = "0.4.12"
 futures = "0.1.25"
+hashbrown = "0.1.8"
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 log = "0.4.6"
