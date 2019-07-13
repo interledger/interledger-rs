@@ -15,7 +15,6 @@ path = "src/lib.rs"
 bytes = "0.4.12"
 clap = "2.32.0"
 futures = "0.1.25"
-hashbrown = "0.1.8"
 interledger-api = { path = "../interledger-api", version = "0.1.0" }
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-btp = { path = "../interledger-btp", version = "0.2.1" }
@@ -35,6 +34,8 @@ stream-cancel = "0.4.4"
 tokio-executor = "0.1.6"
 tokio-timer = "0.2.10"
 url = "1.7.2"
+http = "0.1.17"
+
 
 [dev-dependencies]
 env_logger = "0.6.1"

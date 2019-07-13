@@ -5,7 +5,9 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
-use hashbrown::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+
+use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
@@ -13,7 +15,9 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
+use interledger_settlement::{
+    IdempotentData, SettlementAccount, SettlementClient, SettlementStore,
+};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -22,6 +26,7 @@ use ring::{aead, hmac};
 use std::{
     iter::FromIterator,
     str,
+    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -47,7 +52,7 @@ local from_account = 'accounts:' .. ARGV[1]
 local from_amount = tonumber(ARGV[2])
 local min_balance, balance, prepaid_amount = unpack(redis.call('HMGET', from_account, 'min_balance', 'balance', 'prepaid_amount'))
 balance = tonumber(balance)
-prepaid_amount = tonumber(balance)
+prepaid_amount = tonumber(prepaid_amount)
 
 -- Check that the prepare wouldn't go under the account's minimum balance
 if min_balance then
@@ -105,7 +110,17 @@ return balance";
 static PROCESS_INCOMING_SETTLEMENT: &str = "
 local account = 'accounts:' .. ARGV[1]
 local amount = tonumber(ARGV[2])
+local idempotency_key = ARGV[3]
+
 local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
+
+-- If idempotency key has been used, then do not perform any operations
+if redis.call('EXISTS', idempotency_key) == 1 then
+    return balance + prepaid_amount
+end
+
+-- Otherwise, set it to true and make it expire after 24h (86400 sec)
+redis.call('SET', idempotency_key, 'true', 'EX', 86400)
 
 -- Credit the incoming settlement to the balance and/or prepaid amount,
 -- depending on whether that account currently owes money or not
@@ -1134,16 +1149,91 @@ impl RateLimitStore for RedisStore {
 impl SettlementStore for RedisStore {
     type Account = Account;
 
+    fn load_idempotent_data(
+        &self,
+        idempotency_key: String,
+    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+        let idempotency_key_clone = idempotency_key.clone();
+        Box::new(
+            cmd("HGETALL")
+                .arg(idempotency_key.clone())
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error loading idempotency key {}: {:?}",
+                        idempotency_key_clone, err
+                    )
+                })
+                .and_then(move |(_connection, ret): (_, HashMap<String, String>)| {
+                    let data = if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
+                        ret.get("status_code"),
+                        ret.get("data"),
+                        ret.get("input_hash"),
+                    ) {
+                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
+                        let mut input_hash: [u8; 32] = Default::default();
+                        input_hash.copy_from_slice(input_hash_slice.as_ref());
+                        Some((
+                            StatusCode::from_str(status_code).unwrap(),
+                            Bytes::from(data.clone()),
+                            input_hash,
+                        ))
+                    } else {
+                        None
+                    };
+                    Ok(data)
+                }),
+        )
+    }
+
+    fn save_idempotent_data(
+        &self,
+        idempotency_key: String,
+        input_hash: [u8; 32],
+        status_code: StatusCode,
+        data: Bytes,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
+            .arg(&idempotency_key)
+            .arg("status_code")
+            .arg(status_code.as_u16())
+            .arg("data")
+            .arg(data.as_ref())
+            .arg("input_hash")
+            .arg(&input_hash)
+            .ignore()
+            .expire(&idempotency_key, 86400)
+            .ignore();
+        Box::new(
+            pipe.query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error caching: {:?}", err))
+                .and_then(move |(_connection, _): (_, Vec<String>)| {
+                    trace!(
+                        "Cached {:?}: {:?}, {:?}",
+                        idempotency_key,
+                        status_code,
+                        data,
+                    );
+                    Ok(())
+                }),
+        )
+    }
+
     fn update_balance_for_incoming_settlement(
         &self,
         account_id: u64,
         amount: u64,
+        idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let idempotency_key = idempotency_key.unwrap();
         Box::new(cmd("EVAL")
             .arg(PROCESS_INCOMING_SETTLEMENT)
             .arg(0)
             .arg(account_id)
             .arg(amount)
+            .arg(idempotency_key)
             .query_async(self.connection.as_ref().clone())
             .map_err(move |err| error!("Error processing incoming settlement from account: {} for amount: {}: {:?}", account_id, amount, err))
             .and_then(move |(_connection, balance): (_, i64)| {
