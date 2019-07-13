@@ -34,9 +34,12 @@ fn three_nodes() {
     connection_info3.db = 3;
 
     let node1_http = get_open_port(Some(3010));
+    let node1_settlement = get_open_port(Some(3011));
     let node2_http = get_open_port(Some(3020));
-    let node2_btp = get_open_port(Some(3021));
+    let node2_settlement = get_open_port(Some(3021));
+    let node2_btp = get_open_port(Some(3022));
     let node3_http = get_open_port(Some(3030));
+    let node3_settlement = get_open_port(Some(3031));
 
     let mut runtime = RuntimeBuilder::new()
         .panic_handler(|_| panic!("Tokio worker panicked"))
@@ -50,6 +53,7 @@ fn three_nodes() {
         redis_connection: connection_info1,
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_address: ([127, 0, 0, 1], node1_http).into(),
+        settlement_address: ([127, 0, 0, 1], node1_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
     };
@@ -116,6 +120,7 @@ fn three_nodes() {
         redis_connection: connection_info2,
         btp_address: ([127, 0, 0, 1], node2_btp).into(),
         http_address: ([127, 0, 0, 1], node2_http).into(),
+        settlement_address: ([127, 0, 0, 1], node2_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
     };
@@ -192,6 +197,7 @@ fn three_nodes() {
         redis_connection: connection_info3,
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_address: ([127, 0, 0, 1], node3_http).into(),
+        settlement_address: ([127, 0, 0, 1], node3_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
     };

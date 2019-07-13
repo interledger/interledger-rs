@@ -33,7 +33,7 @@ fn decrypts_outgoing_tokens() {
                     "outgoing_auth_token"
                 );
                 assert_eq!(
-                    account.get_btp_token().unwrap().as_ref(),
+                    account.get_btp_token().unwrap(),
                     b"other_outgoing_btp_token"
                 );
                 let _ = context;

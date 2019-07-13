@@ -1,3 +1,4 @@
+use crate::{Convert, ConvertDetails};
 use futures::{future::err, Future};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
@@ -88,18 +89,12 @@ where
                 .build()));
             };
 
-            let scaled_rate = if request.to.asset_scale() >= request.from.asset_scale() {
-                rate * 10f64.powf(f64::from(
-                    request.to.asset_scale() - request.from.asset_scale(),
-                ))
-            } else {
-                rate / 10f64.powf(f64::from(
-                    request.from.asset_scale() - request.to.asset_scale(),
-                ))
-            };
-
-            let outgoing_amount = (request.prepare.amount() as f64 * scaled_rate) as u64;
-            request.prepare.set_amount(outgoing_amount);
+            let scaled_rate = rate.normalize_scale(ConvertDetails {
+                from: request.to.asset_scale(),
+                to: request.from.asset_scale(),
+            });
+            let outgoing_amount = (request.prepare.amount() as f64) * scaled_rate;
+            request.prepare.set_amount(outgoing_amount as u64);
             trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}", request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(), outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
         }
 

@@ -111,6 +111,7 @@ pub fn main() {
                     .arg(Arg::with_name("config")
                         .long("config")
                         .short("c")
+                        .takes_value(true)
                         .help("Name of config file (in JSON, TOML, YAML, or INI format)"))
                     .subcommand(SubCommand::with_name("accounts")
                         .subcommand(SubCommand::with_name("add")
