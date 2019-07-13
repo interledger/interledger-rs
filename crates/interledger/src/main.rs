@@ -156,6 +156,10 @@ pub fn main() {
                                 .long("poll_frequency")
                                 .help("The frequency in seconds at which the engine will check the blockchain about the confirmation status of a tx")
                                 .default_value("5"),
+                            Arg::with_name("watch_incoming")
+                                .long("watch_incoming")
+                                .help("Launch a blockchain watcher that listens for incoming transactions and notifies the connector upon sufficient confirmations")
+                                .default_value("true"),
                         ])
                     ),
                 SubCommand::with_name("node")
@@ -354,6 +358,7 @@ pub fn main() {
                 let confirmations = value_t!(matches, "confirmations", usize).unwrap();
                 let poll_frequency = value_t!(matches, "poll_frequency", u64).unwrap();
                 let poll_frequency = Duration::from_secs(poll_frequency);
+                let watch_incoming = value_t!(matches, "watch_incoming", bool).unwrap();
 
                 tokio::run(run_settlement_engine(
                     redis_uri,
@@ -366,6 +371,7 @@ pub fn main() {
                     poll_frequency,
                     Url::parse(&connector_url).unwrap(),
                     token_address,
+                    watch_incoming,
                 ));
             }
             _ => app.print_help().unwrap(),

@@ -203,7 +203,7 @@ where
                                                             // (accountId=>amount) across all transactions and blocks, and
                                                             // only makes 1 transaction per accountId with the
                                                             // appropriate amount.
-                                                            if to == our_address { 
+                                                            if to == our_address {
                                                                 let addr = Addresses {
                                                                     own_address: tx.from,
                                                                     token_address: None,

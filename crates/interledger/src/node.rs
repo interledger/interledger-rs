@@ -322,6 +322,7 @@ pub fn run_settlement_engine<R, Si>(
     poll_frequency: Duration,
     connector_url: Url,
     token_address: Option<EthAddress>,
+    watch_incoming: bool,
 ) -> impl Future<Item = (), Error = ()>
 where
     R: IntoConnectionInfo,
@@ -342,6 +343,7 @@ where
                 poll_frequency,
                 connector_url,
                 token_address,
+                watch_incoming,
             );
 
             let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
