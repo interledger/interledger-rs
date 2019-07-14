@@ -14,7 +14,7 @@ LOGS=`pwd`/settlement_test_logs
 mkdir -p $LOGS
 
 echo "Initializing redis"
-bash $ILP_DIR/scripts/init.sh &
+bash $ILP_DIR/examples/init.sh &
 redis-cli -p 6379 flushall
 redis-cli -p 6380 flushall
 
@@ -55,46 +55,55 @@ sleep 1
 echo "Initializing Alice Connector"
 RUST_LOG=interledger=debug $ILP node --config $ILP_DIR/configs/alice.yaml &> $LOGS/ilp_alice.log &
 echo "Initializing Bob Connector"
-$ILP node --config $ILP_DIR/configs/bob.yaml &> $LOGS/ilp_bob.log &
+RUST_LOG=interledger=debug $ILP node --config $ILP_DIR/configs/bob.yaml &> $LOGS/ilp_bob.log &
 
 sleep 2
 
-# insert Bob's account details on Alice's connector
+# insert alice's account details on Alice's connector
 curl http://localhost:7770/accounts -X POST \
-    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice" \
+    -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=1&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=default&outgoing_token=default" \
+    -H "Authorization: Bearer hi_alice"
+
+# insert Bob's account details on Alice's connector
+# alice should settle to bob whenever his balance is over 5
+curl http://localhost:7770/accounts -X POST \
+    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=5&min_balance=-10" \
     -H "Authorization: Bearer hi_alice"
 
 sleep 1
 
-# # insert Alice's account details on Bob's connector
+ curl http://localhost:8770/accounts -X POST \
+     -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=1&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=default&outgoing_token=default" \
+     -H "Authorization: Bearer hi_bob"
+ 
+# insert Alice's account details on Bob's connector
+# when setting up an account with another party makes senes to give them some slack if they do not prefund
 curl http://localhost:8770/accounts -X POST \
-    -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=9&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob" \
-    -H "Authorization: Bearer hi_bob"
+     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=9&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=5&min_balance=-10" \
+     -H "Authorization: Bearer hi_bob"
 
 sleep 1
 
 # alice configures SE manually for bob's data, after knowing that bob has added her info to his store
-curl http://localhost:3000/accounts/0 -X POST
+curl http://localhost:3000/accounts/1 -X POST
 # bob configures SE manually for alice's data, after knowing that alice has added his info to her store
-curl http://localhost:3001/accounts/0 -X POST
-
-# addresses must be exchanged
+curl http://localhost:3001/accounts/1 -X POST
+# 
+# # addresses must be exchanged
 echo "Alice Store:"
-redis-cli -p 6379 hgetall "settlement:ledger:eth:0"
+redis-cli -p 6379 hgetall "settlement:ledger:eth:1"
 echo "Bob Store:"
-redis-cli -p 6380 hgetall "settlement:ledger:eth:0"
+redis-cli -p 6380 hgetall "settlement:ledger:eth:1"
 
-# bob must pay alice
-# A /settlements request is made by Bob's connector for account 0 to Bob's engine
-# (todo: make this happen over spsp/stream, talk with evan about it)
-echo 'simulating settlement where Bob pays Alice'
-curl localhost:3001/accounts/0/settlement -d "amount=123"
+# Make an SPSP payment from Alice to Bob
+echo 'Alice pays Bob'
+curl localhost:7770/pay \
+    -d '{ "receiver" : "http://localhost:8770", "source_amount": 1  }' \
+    -H "Authorization: Bearer default" -H "Content-Type: application/json"
 
-sleep 8
+# TODO: Make this test keep running until a settlement actually happens. For that, amount_to_settle must be >0.
+bob_balance=$(redis-cli -p 6379 hget "accounts:1" "balance") # bob must have positive balance for alice
+echo "\nBob has $bob_balance from Alice's perspective."
 
-# alice's engine must call receive_money on her connector
-# the prepaid amount must be non zero.
-prepaid=$(redis-cli -p 6379 hget "accounts:0" "prepaid_amount")
-echo "\nAlice has been prepaid $prepaid by Bob."
-
-# todo: make this with stream/spsp and perform back and forth payments
+alice_balance=$(redis-cli -p 6380 hget "accounts:1" "balance") # alice must have positive balance for alice
+echo "\nAlice has $alice_balance from Bob's perspective"

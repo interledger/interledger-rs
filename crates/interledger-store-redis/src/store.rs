@@ -538,6 +538,7 @@ impl BalanceStore for RedisStore {
         let settlement_client = self.settlement_client.clone();
         let store = self.clone();
         if outgoing_amount > 0 {
+            debug!("From: {}, To: {}, Amount paid: {}", from_account.ilp_address, to_account.ilp_address, outgoing_amount);
             let from_account_id = from_account.id;
             let to_account_id = to_account.id;
             Box::new(
@@ -555,6 +556,7 @@ impl BalanceStore for RedisStore {
                     })
                     .and_then(
                         move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
+                            debug!("Receiver balance: {}, Amount to Settle: {}, Engine Details {:?}", balance, amount_to_settle, to_account.settlement_engine_details().is_some());
                             if amount_to_settle > 0 && to_account.settlement_engine_details().is_some() {
                                 trace!(
                                     "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
