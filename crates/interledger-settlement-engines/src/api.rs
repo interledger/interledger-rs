@@ -28,7 +28,7 @@ impl_web! {
             self.engine.send_money(account_id, body, idempotency_key)
         }
 
-        #[post("/accouaccount_id/messages")]
+        #[post("/accounts/:account_id/messages")]
         /// Forwards the data to the API engine's `receive_message` function.
         /// Endpoint: POST /accounts/:id/messages
         fn receive_message(&self, account_id: String, body: Vec<u8>, idempotency_key: Option<String>) -> impl Future<Item = Response<String>, Error = Response<String>> {
