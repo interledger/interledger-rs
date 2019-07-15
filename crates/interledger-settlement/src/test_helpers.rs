@@ -169,14 +169,12 @@ impl TestAccount {
 #[allow(dead_code)]
 pub fn mock_settlement(status_code: usize) -> mockito::Mock {
     mock("POST", SETTLEMENT_API.clone())
-        .match_header("content-type", "application/octet-stream")
         .with_status(status_code)
         .with_body(BODY)
 }
 
 pub fn mock_message(status_code: usize) -> mockito::Mock {
     mock("POST", MESSAGES_API.clone())
-        .match_header("content-type", "application/octet-stream")
         .with_status(status_code)
         .with_body(BODY)
 }

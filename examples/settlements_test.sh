@@ -31,7 +31,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --key $ALICE_KEY \
 --server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 --confirmations 0 \
---poll_frequency 4 \
+--poll_frequency 1 \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379 \
@@ -43,7 +43,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --key $BOB_KEY \
 --server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
 --confirmations 0 \
---poll_frequency 3 \
+--poll_frequency 1 \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6380 \
@@ -53,34 +53,33 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 sleep 1
 
 echo "Initializing Alice Connector"
-RUST_LOG=interledger=debug $ILP node --config $ILP_DIR/configs/alice.yaml &> $LOGS/ilp_alice.log &
+RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $ILP_DIR/configs/alice.yaml &> $LOGS/ilp_alice.log &
 echo "Initializing Bob Connector"
-RUST_LOG=interledger=debug $ILP node --config $ILP_DIR/configs/bob.yaml &> $LOGS/ilp_bob.log &
+RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $ILP_DIR/configs/bob.yaml &> $LOGS/ilp_bob.log &
 
 sleep 2
 
 # insert alice's account details on Alice's connector
 curl http://localhost:7770/accounts -X POST \
-    -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=5&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=in_alice&outgoing_token=out_alice" \
+    -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=in_alice&outgoing_token=out_alice&settle_to=-10" \
     -H "Authorization: Bearer hi_alice"
 
 # insert Bob's account details on Alice's connector
-# alice should settle to bob whenever his balance is over 5
 curl http://localhost:7770/accounts -X POST \
-    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=5&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=5&min_balance=-100" \
+    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10" \
     -H "Authorization: Bearer hi_alice"
 
 sleep 1
 
 # insert bob's account on bob's conncetor
  curl http://localhost:8770/accounts -X POST \
-     -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=1&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=in_bob&outgoing_token=out_bob" \
+     -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=in_bob&outgoing_token=out_bob&settle_to=-10" \
      -H "Authorization: Bearer hi_bob"
  
 # insert Alice's account details on Bob's connector
 # when setting up an account with another party makes senes to give them some slack if they do not prefund
 curl http://localhost:8770/accounts -X POST \
-     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=1&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=9&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=5&min_balance=-100" \
+     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
      -H "Authorization: Bearer hi_bob"
 
 sleep 1
@@ -95,27 +94,3 @@ echo "Alice Store:"
 redis-cli -p 6379 hgetall "settlement:ledger:eth:1"
 echo "Bob Store:"
 redis-cli -p 6380 hgetall "settlement:ledger:eth:1"
-
-# Make an SPSP payment from Alice to Bob
-# bearer for SPSP payments must be the sending account's incoming token
-
-echo 'Alice pays Bob'
-curl localhost:7770/pay \
-    -d '{ "receiver" : "http://localhost:8770", "source_amount": 1  }' \
-    -H "Authorization: Bearer in_alice" -H "Content-Type: application/json"
-
-echo 'Bob pays Alice'
-curl localhost:8770/pay \
-    -d '{ "receiver" : "http://localhost:7770", "source_amount": 2  }' \
-    -H "Authorization: Bearer in_bob" -H "Content-Type: application/json"
-
-# TODO: Make this test keep running until a settlement actually happens. For that, amount_to_settle must be >0.
-alice_balance=$(redis-cli -p 6379 hget "accounts:0" "balance")
-bob_balance=$(redis-cli -p 6379 hget "accounts:1" "balance") # bob must have negative balance for alice
-echo "\nAlice has $alice_balance from Alice's perspective"
-echo "\nBob has $bob_balance from Alice's perspective."
-
-bob_balance=$(redis-cli -p 6380 hget "accounts:0" "balance")
-alice_balance=$(redis-cli -p 6380 hget "accounts:1" "balance") # alice must have positive balance for bob
-echo "\nAlice has $alice_balance from Bob's perspective"
-echo "\nBob has $bob_balance from Bob's perspective."

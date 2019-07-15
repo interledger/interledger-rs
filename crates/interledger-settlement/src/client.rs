@@ -44,10 +44,12 @@ impl SettlementClient {
             );
             let settlement_engine_url_clone = settlement_engine_url.clone();
             let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
+            let mut params = std::collections::HashMap::new();
+            params.insert("amount", amount);
             return Either::A(self.http_client.post(settlement_engine_url.clone())
                 .header("Content-Type", "application/octet-stream")
                 .header("Idempotency-Key", idempotency_uuid)
-                .body(amount.to_string())
+                .form(&params)
                 .send()
                 .map_err(move |err| error!("Error sending settlement command to settlement engine {}: {:?}", settlement_engine_url, err))
                 .and_then(move |response| {

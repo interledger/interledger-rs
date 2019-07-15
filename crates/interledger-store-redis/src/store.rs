@@ -1172,6 +1172,7 @@ impl EthereumStore for RedisStore {
         &self,
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<EthereumAddresses>, Error = ()> + Send> {
+        debug!("Loading account addresses {:?}", account_ids);
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
             pipe.hgetall(ethereum_ledger_key(*account_id));
@@ -1186,6 +1187,7 @@ impl EthereumStore for RedisStore {
                 })
                 .and_then(
                     move |(_conn, addresses): (_, Vec<SlowHashMap<String, Vec<u8>>>)| {
+                        debug!("Loaded account addresses {:?}", addresses);
                         let mut ret = Vec::with_capacity(addresses.len());
                         for addr in &addresses {
                             let own_address = if let Some(own_address) = addr.get("own_address") {
