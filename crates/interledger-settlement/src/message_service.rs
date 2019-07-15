@@ -165,8 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn no_settlement_engine_configured_for_destination() {
-        // happy case
+    fn gets_forwarded_if_destination_not_engine_() {
         let m = mock_message(200).create().expect(0);
         let mut settlement = test_service();
         let destination = Address::from_str("example.some.address").unwrap();
@@ -188,15 +187,11 @@ mod tests {
         m.assert();
         assert_eq!(reject.code(), ErrorCode::F02_UNREACHABLE);
         assert_eq!(reject.triggered_by().unwrap(), SERVICE_ADDRESS.clone());
-        assert_eq!(
-            reject.message(),
-            b"Got settlement packet from account 0 but there is no settlement engine url configured for it" as &[u8],
-        );
+        assert_eq!(reject.message(), b"No other incoming handler!" as &[u8],);
     }
 
     #[test]
     fn account_does_not_have_settlement_engine() {
-        // happy case
         let m = mock_message(200).create().expect(0);
         let mut settlement = test_service();
         let mut acc = TEST_ACCOUNT_0.clone();

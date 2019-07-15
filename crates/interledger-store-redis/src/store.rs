@@ -538,7 +538,10 @@ impl BalanceStore for RedisStore {
         let settlement_client = self.settlement_client.clone();
         let store = self.clone();
         if outgoing_amount > 0 {
-            debug!("From: {}, To: {}, Amount paid: {}", from_account.ilp_address, to_account.ilp_address, outgoing_amount);
+            debug!(
+                "From: {}, To: {}, Amount paid: {}",
+                from_account.ilp_address, to_account.ilp_address, outgoing_amount
+            );
             let from_account_id = from_account.id;
             let to_account_id = to_account.id;
             Box::new(
