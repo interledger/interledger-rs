@@ -16,14 +16,22 @@ EXPOSE 7770
 
 VOLUME [ "/data" ]
 ENV REDIS_DIR=/data
+ENV DISABLE_LOCALTUNNEL=true
 
 # Install SSL certs and Redis
 RUN apk --no-cache add \
     ca-certificates \
-    redis
+    redis \
+    nano
+
+# Update the redis unix socket location
+RUN sed -i 's|unixsocket /run/redis/redis.sock|unixsocket /tmp/redis.sock|g' /etc/redis.conf
+
+# Start the Redis Server with specified conf
+RUN redis-server /etc/redis-conf &
 
 # Install localtunnel
-RUN npm install localtunnel request request-promise-native
+RUN npm install localtunnel request request-promise-native ip
 
 # Build run script
 WORKDIR /usr/src
