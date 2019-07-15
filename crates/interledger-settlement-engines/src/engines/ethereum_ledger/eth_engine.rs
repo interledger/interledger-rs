@@ -62,6 +62,19 @@ impl PaymentDetailsResponse {
     }
 }
 
+/// # Ethereum Ledger Settlement Engine
+///
+/// Settlement Engine compliant to [RFC536](https://github.com/interledger/rfcs/pull/536/)
+///
+/// The engine connects to an Ethereum node (over HTTP) as well as the connector. Its
+/// functions are exposed via the Settlement Engine API.
+///
+/// It requires a `confirmations` security parameter which is used to ensure
+/// that all transactions that get credited to the connector have sufficient
+/// confirmations (suggested value: >6)
+///
+/// All settlements made with this engine make on-chain Layer 1 Ethereum
+/// transactions. This engine DOES NOT support payment channels.
 #[derive(Debug, Clone)]
 pub struct EthereumLedgerSettlementEngine<S, Si, A> {
     store: S,
@@ -119,8 +132,9 @@ where
         engine
     }
 
-    /// Spawns a thread every `poll_frequency` that fetches all blocks and
-    /// notifies the connector about a settlement that occurred
+    /// Periodically spawns a job every `self.poll_frequency` that notifies the
+    /// Settlement Engine's connectors about transactions which are sent to the
+    /// engine's address.
     fn notify_connector_on_incoming_settlement(&self) {
         let _self = self.clone();
         let interval = self.poll_frequency;
@@ -145,6 +159,25 @@ where
         });
     }
 
+    /// Routine for notifying the connector about incoming transactions.
+    /// Algorithm (heavily unoptimized):
+    /// 1. Fetch the last observed block number and account balance from the store
+    /// 2. Fetch the current block number from Ethereum
+    /// 3. Check the current balance of the account
+    /// 4. If the balance is not larger than the last observed balance, terminate.
+    /// 5. Fetch all blocks since the last observed one,
+    ///    until $(current block number - confirmations), where $confirmations
+    ///    is a security parameter to be safe against block reorgs.
+    /// 6. For each block (in parallel):
+    ///     For each transaction (in parallel):
+    ///     1. Skip if it is not sent to our address or have 0 value.
+    ///     2. Fetch the id that matches its sender from the store
+    ///     3. Notify the connector about it by making a POST request to the connector's
+    ///        /accounts/$id/settlement endpoint with transaction's value as the
+    ///        body. This call is retried if it fails.
+    /// 7. Save the (current block number - confirmations) and current account
+    ///    balance to the store, to be used as last observed data for the next
+    ///    call of this function.
     fn notifier(&self) -> impl Future<Item = (), Error = ()> + Send {
         let confirmations = self.confirmations;
         let our_address = self.address.own_address;
@@ -196,46 +229,48 @@ where
                                                     let tx = tx.clone();
                                                     if let Some(tx) = tx {
                                                         if let Some(to) = tx.to {
-                                                            debug!("Forwarding transaction: {:?}", tx);
-                                                            // Optimization: This will make 1 settlement API request to
-                                                            // the connector per transaction that comes to us. Since
-                                                            // we're scanning across multiple blocks, we want to
-                                                            // optimize it so that: it gathers a mapping of
-                                                            // (accountId=>amount) across all transactions and blocks, and
-                                                            // only makes 1 transaction per accountId with the
-                                                            // appropriate amount.
-                                                            if to == our_address {
-                                                                let addr = Addresses {
-                                                                    own_address: tx.from,
-                                                                    token_address: None,
-                                                                };
-                                                                let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
-                                                                    url.path_segments_mut()
-                                                                        .expect("Invalid connector URL")
-                                                                        .push("accounts")
-                                                                        .push(&id.to_string())
-                                                                        .push("settlement");
-                                                                    let client = reqwest::r#async::Client::new();
-                                                                    let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-                                                                    // retry on fail - https://github.com/ihrwein/backoff
-                                                                    debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
-                                                                    let mut params = std::collections::HashMap::new();
-                                                                    params.insert("amount", tx.value.low_u64());
-                                                                    client.post(url)
-                                                                        .header("Idempotency-Key", idempotency_uuid)
-                                                                        .form(&params)
-                                                                        .send()
-                                                                        .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
-                                                                        .and_then(move |response| {
-                                                                            debug!("Accounting system responded with {:?}", response);
-                                                                            if response.status().is_success() {
-                                                                                Ok(())
-                                                                            } else {
-                                                                                Err(())
-                                                                            }
-                                                                        })
-                                                                });
-                                                                tokio::spawn(notify_connector_future);
+                                                            if tx.value > U256::from(0) {
+                                                                debug!("Forwarding transaction: {:?}", tx);
+                                                                // Optimization: This will make 1 settlement API request to
+                                                                // the connector per transaction that comes to us. Since
+                                                                // we're scanning across multiple blocks, we want to
+                                                                // optimize it so that: it gathers a mapping of
+                                                                // (accountId=>amount) across all transactions and blocks, and
+                                                                // only makes 1 transaction per accountId with the
+                                                                // appropriate amount.
+                                                                if to == our_address {
+                                                                    let addr = Addresses {
+                                                                        own_address: tx.from,
+                                                                        token_address: None,
+                                                                    };
+                                                                    let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
+                                                                        url.path_segments_mut()
+                                                                            .expect("Invalid connector URL")
+                                                                            .push("accounts")
+                                                                            .push(&id.to_string())
+                                                                            .push("settlement");
+                                                                        let client = reqwest::r#async::Client::new();
+                                                                        let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+                                                                        // retry on fail - https://github.com/ihrwein/backoff
+                                                                        debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
+                                                                        let mut params = std::collections::HashMap::new();
+                                                                        params.insert("amount", tx.value.low_u64());
+                                                                        client.post(url)
+                                                                            .header("Idempotency-Key", idempotency_uuid)
+                                                                            .form(&params)
+                                                                            .send()
+                                                                            .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
+                                                                            .and_then(move |response| {
+                                                                                debug!("Accounting system responded with {:?}", response);
+                                                                                if response.status().is_success() {
+                                                                                    Ok(())
+                                                                                } else {
+                                                                                    Err(())
+                                                                                }
+                                                                            })
+                                                                    });
+                                                                    tokio::spawn(notify_connector_future);
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -265,9 +300,15 @@ where
         })
     }
 
-    /// Submits a transaction to `to` the Ethereum blockchain for `amount`.
+    /// Helper function which submits an Ethereum ledger transaction to `to` for `amount`.
     /// If called with `token_address`, it makes an ERC20 transaction instead.
-    pub fn settle_to(
+    /// Due to the lack of an API to create and sign the transaction
+    /// automatically it has to be done manually as follows:
+    /// 1. fetch the account's nonce
+    /// 2. construct the raw transaction using the nonce and the provided parameters
+    /// 3. Sign the transaction (along with the chain id, due to EIP-155)
+    /// 4. Submit the RLP-encoded transaction to the network
+    fn settle_to(
         &self,
         to: Address,
         amount: U256,
@@ -279,7 +320,7 @@ where
         let signer = self.signer.clone();
         Box::new(
             web3.eth()
-                .transaction_count(own_address, None)
+                .transaction_count(own_address, None) // 1
                 .map_err(move |err| {
                     error!(
                         "Error when querying account {:?} nonce: {:?}",
@@ -287,10 +328,10 @@ where
                     )
                 })
                 .and_then(move |nonce| {
-                    let tx = make_tx(to, amount, nonce, token_address);
-                    let signed_tx = signer.sign(tx, chain_id);
+                    let tx = make_tx(to, amount, nonce, token_address); // 2
+                    let signed_tx = signer.sign(tx, chain_id); // 3
                     debug!("Sending transaction: {:?}", signed_tx);
-                    web3.eth()
+                    web3.eth() // 4
                         .send_raw_transaction(signed_tx.clone().into())
                         .map_err(move |err| {
                             error!("Error when sending transaction {:?}: {:?}", signed_tx, err)
@@ -311,12 +352,12 @@ where
                 Response::builder().status(400).body(error_msg).unwrap()
             })
             .and_then(move |(_account_id, addresses)| {
-                let j = serde_json::to_string(&addresses).unwrap();
-                Ok(Response::builder().status(200).body(j).unwrap())
+                let body = serde_json::to_string(&addresses).unwrap();
+                Ok(Response::builder().status(200).body(body).unwrap())
             })
     }
 
-    /// helper function that returns the addresses associated with an
+    /// Helper function that returns the addresses associated with an
     /// account from a given string account id
     fn load_account(
         &self,
@@ -341,6 +382,9 @@ where
         })
     }
 
+    /// Helper function that returns any idempotent data that corresponds to a
+    /// provided idempotency key. It fails if the hash of the input that
+    /// generated the idempotent data does not match the hash of the provided input.
     fn check_idempotency(
         &self,
         idempotency_key: Option<String>,
@@ -385,6 +429,12 @@ where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
+    /// Settlement Engine's function that corresponds to the
+    /// /accounts/:id/messages endpoint (POST). Responds depending on message type
+    /// which is parsed from the request's body:
+    /// - PaymentDetailsRequest: returns the SE's Ethereum & Token Addresses
+    /// - more request types to be potentially added in the future
+    /// Is idempotent.
     fn receive_message(
         &self,
         account_id: String,
@@ -395,9 +445,12 @@ where
         let input = format!("{}{:?}", account_id, body);
         let input_hash = get_hash_of(input.as_ref());
 
+        // 1. check idempotency
+        // 2. try parsing the body
+        // 3. return the engine's address
         Box::new(
             self_clone
-                .check_idempotency(idempotency_key.clone(), input_hash)
+                .check_idempotency(idempotency_key.clone(), input_hash) // 1
                 .map_err(|res| Response::builder().status(res.0).body(res.1).unwrap())
                 .and_then(move |ret: Option<(StatusCode, Bytes)>| {
                     if let Some(d) = ret {
@@ -407,7 +460,7 @@ where
                             .unwrap()));
                     }
                     Either::B(
-                        result(serde_json::from_slice(&body))
+                        result(serde_json::from_slice(&body)) // 2
                             .map_err(move |err| {
                                 let error_msg = format!("Could not parse message body: {:?}", err);
                                 error!("{}", error_msg);
@@ -419,6 +472,7 @@ where
                                 // provided account.
                                 let resp = match message.msg_type {
                                     MessageType::PaymentDetailsRequest => {
+                                        // 3
                                         let ret = PaymentDetailsResponse::new(self_clone.address);
                                         serde_json::to_string(&ret).unwrap()
                                     }
@@ -430,6 +484,15 @@ where
         )
     }
 
+    /// Settlement Engine's function that corresponds to the
+    /// /accounts/:id/ endpoint (POST). It queries the connector's
+    /// accounts/:id/messages with a "PaymentDetailsRequest" that gets forwarded
+    /// to the connector's peer that matches the provided account id, which
+    /// finally gets forwarded to the peer SE's receive_message endpoint which
+    /// responds with its Ethereum and Token addresses. Upon
+    /// receival of Ethereum and Token addresses from the peer, it saves them in
+    /// the store.
+    /// Is idempotent.
     fn create_account(
         &self,
         account_id: String,
@@ -483,7 +546,7 @@ where
                             // performing settlements.
                             let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
                             let req = ReceiveMessageDetails::new_payment_details_request();
-                            let j = serde_json::to_vec(&req).unwrap();
+                            let body = serde_json::to_vec(&req).unwrap();
                             let client = Client::new();
                             let mut url = self_clone.connector_url.clone();
                             url.path_segments_mut()
@@ -494,7 +557,7 @@ where
                             client
                                 .post(url)
                                 .header("Idempotency-Key", idempotency_uuid)
-                                .body(j)
+                                .body(body)
                                 .send()
                                 .map_err(move |err| {
                                     let err = format!("Couldn't notify connector {:?}", err);
@@ -543,6 +606,12 @@ where
         )
     }
 
+    /// Settlement Engine's function that corresponds to the
+    /// /accounts/:id/settlement endpoint (POST). It performs an Ethereum
+    /// onchain transaction to the Ethereum Address that corresponds to the
+    /// provided account id, for the amount specified in the message's body. If
+    /// the account is associated with an ERC20 token, it makes an ERC20 call instead.
+    /// Is idempotent.
     fn send_money(
         &self,
         account_id: String,

@@ -1,3 +1,12 @@
+//! # Interledger Settlement Engines
+//!
+//! Crate containing all the components for implementing the Settlement
+//! Architecture for the Interledger Protocol. The crate is structured such that
+//! an API is created by giving it an object which implements the
+//! SettlementEngine trait. All settlement engines must be implemented under the
+//! `engines` subdirectory, with a directory name describing their
+//! functionality, e.g. ethereum_ledger, ethereum_unidirectional_channel,
+//! xrp_ledger, etc.
 #![recursion_limit = "128"]
 
 #[macro_use]
@@ -19,7 +28,8 @@ pub use self::api::SettlementEngineApi;
 use hyper::Response;
 use interledger_settlement::SettlementData;
 
-/// TODO: Docs. Trait to abstract over engines at the top level HTTP rest api.
+/// Trait consumed by the Settlement Engine HTTP API. Every settlement engine
+/// MUST implement this trait, so that it can be then be exposed over the API.
 pub trait SettlementEngine {
     fn send_money(
         &self,
