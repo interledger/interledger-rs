@@ -1,21 +1,7 @@
 #![recursion_limit = "128"]
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-#[cfg(test)]
-extern crate lazy_static;
-
-#[cfg(test)]
-extern crate env_logger;
-
-#[cfg(test)]
-extern crate serde_json;
 
 #[macro_use]
 extern crate tower_web;
-
-extern crate ethabi;
 
 use futures::Future;
 

@@ -1,5 +1,6 @@
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
 use super::utils::make_tx;
+use log::{debug, error};
 
 use bytes::Bytes;
 use ethereum_tx_sign::web3::{
@@ -662,6 +663,7 @@ mod tests {
         block_on, start_ganache, test_engine, test_store, TestAccount,
     };
     use super::*;
+    use lazy_static::lazy_static;
     use mockito;
 
     static IDEMPOTENCY: &str = "AJKJNUjM0oyiAN46";
