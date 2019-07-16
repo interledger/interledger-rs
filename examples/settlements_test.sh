@@ -35,7 +35,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379 \
---watch_incoming true \
+--watch_incoming false \
 --port 3000 &> $LOGS/engine_alice.log &
 
 echo "Initializing Bob SE"
@@ -47,7 +47,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6380 \
---watch_incoming true \
+--watch_incoming false \
 --port 3001 &> $LOGS/engine_bob.log &
 
 sleep 1
@@ -82,14 +82,9 @@ curl http://localhost:8770/accounts -X POST \
      -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
      -H "Authorization: Bearer hi_bob"
 
-sleep 1
+sleep 1 # wait for Alice's engine to retry the configuration request to Bob
 
-# alice configures SE manually for bob's data, after knowing that bob has added her info to his store
-curl http://localhost:3000/accounts/1 -X POST
-# bob configures SE manually for alice's data, after knowing that alice has added his info to her store
-curl http://localhost:3001/accounts/1 -X POST
-
-# addresses must be exchanged
+# Their settlement engines should be configured automatically 
 echo "Alice Store:"
 redis-cli -p 6379 hgetall "settlement:ledger:eth:1"
 echo "Bob Store:"
