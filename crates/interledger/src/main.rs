@@ -2,7 +2,6 @@ extern crate interledger;
 #[macro_use]
 extern crate clap;
 
-use crate::interledger::node::run_settlement_engine;
 use base64;
 use clap::{App, Arg, ArgGroup, SubCommand};
 use config;
@@ -354,7 +353,7 @@ pub fn main() {
                     server_secret
                 };
                 let chain_id = value_t!(matches, "chain_id", u8).unwrap();
-                let confirmations = value_t!(matches, "confirmations", usize).unwrap();
+                let confirmations = value_t!(matches, "confirmations", u8).unwrap();
                 let poll_frequency = value_t!(matches, "poll_frequency", u64).unwrap();
                 let poll_frequency = Duration::from_secs(poll_frequency);
                 let watch_incoming = value_t!(matches, "watch_incoming", bool).unwrap();

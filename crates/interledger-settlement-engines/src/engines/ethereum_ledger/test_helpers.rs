@@ -262,7 +262,7 @@ impl TestAccount {
 pub fn test_engine<Si, S, A>(
     store: S,
     key: Si,
-    confs: usize,
+    confs: u8,
     connector_url: String,
     watch_incoming: bool,
 ) -> EthereumLedgerSettlementEngine<S, Si, A>

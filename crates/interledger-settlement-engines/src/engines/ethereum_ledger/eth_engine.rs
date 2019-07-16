@@ -86,7 +86,7 @@ pub struct EthereumLedgerSettlementEngine<S, Si, A> {
     web3: Web3<Http>,
     address: Addresses,
     chain_id: u8,
-    confirmations: usize,
+    confirmations: u8,
     poll_frequency: Duration,
     connector_url: Url,
 }
@@ -103,7 +103,7 @@ where
         store: S,
         signer: Si,
         chain_id: u8,
-        confirmations: usize,
+        confirmations: u8,
         poll_frequency: Duration,
         connector_url: Url,
         token_address: Option<Address>,
