@@ -67,6 +67,10 @@ pub trait EthereumStore {
         &self,
         eth_address: Addresses,
     ) -> Box<dyn Future<Item = <Self::Account as Account>::AccountId, Error = ()> + Send>;
+
+    /// Errors out if the transaction hash has already been stored before,
+    /// otherwise saves the transaction hash in the store.
+    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
 /// Implement this trait for datatypes which can be used to sign an Ethereum

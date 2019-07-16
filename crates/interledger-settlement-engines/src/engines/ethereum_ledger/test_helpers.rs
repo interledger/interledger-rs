@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use ethereum_tx_sign::web3::{
     futures::future::{err, ok, Future},
-    types::{Address, U256},
+    types::{Address, H256, U256},
 };
 
 use super::eth_engine::EthereumLedgerSettlementEngine;
@@ -60,6 +60,7 @@ pub struct TestStore {
     pub cache: Arc<RwLock<HashMap<String, (StatusCode, String, [u8; 32])>>>,
     pub last_observed_block: Arc<RwLock<U256>>,
     pub last_observed_balance: Arc<RwLock<U256>>,
+    pub saved_hashes: Arc<RwLock<HashMap<H256, bool>>>,
     pub cache_hits: Arc<RwLock<u64>>,
 }
 
@@ -133,6 +134,17 @@ impl EthereumStore for TestStore {
         };
 
         Box::new(ok(d))
+    }
+
+    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let mut hashes = self.saved_hashes.write();
+        // if hash exists error, else store it
+        if hashes.get(&tx_hash).is_some() {
+            Box::new(err(()))
+        } else {
+            (*hashes).insert(tx_hash, true);
+            Box::new(ok(()))
+        }
     }
 }
 
@@ -228,6 +240,7 @@ impl TestStore {
             cache_hits: Arc::new(RwLock::new(0)),
             last_observed_balance: Arc::new(RwLock::new(U256::from(0))),
             last_observed_block: Arc::new(RwLock::new(U256::from(0))),
+            saved_hashes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

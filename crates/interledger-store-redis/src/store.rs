@@ -8,7 +8,7 @@ use futures::{
 use hashbrown::{HashMap, HashSet};
 use std::collections::HashMap as SlowHashMap;
 
-use ethereum_tx_sign::web3::types::{Address as EthAddress, U256};
+use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
@@ -1309,6 +1309,25 @@ impl EthereumStore for RedisStore {
             pipe.query_async(self.connection.as_ref().clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
                 .and_then(move |(_conn, account_id): (_, Vec<u64>)| ok(account_id[0])),
+        )
+    }
+
+    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(
+            cmd("SETNX")
+                .arg(tx_hash.to_string())
+                .arg(true)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| error!("Error loading account data: {:?}", err))
+                .and_then(
+                    move |(_conn, ret): (_, u64)| {
+                        if ret == 1 {
+                            ok(())
+                        } else {
+                            err(())
+                        }
+                    },
+                ),
         )
     }
 }

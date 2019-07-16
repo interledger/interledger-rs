@@ -224,7 +224,11 @@ where
                                                 debug!("Got transactions {:?}", tx_hash);
                                                 let store_clone = store_clone.clone();
                                                 let mut url = block_url.clone();
-                                                let settle_tx_future = web3.eth().transaction(TransactionId::Hash(tx_hash))
+                                                let web3_clone = web3.clone();
+                                                let settle_tx_future = store_clone.check_tx_credited(tx_hash)
+                                                    .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
+                                                    .and_then(move |_| {
+                                                web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
                                                 .map_err(move |err| error!("Got error while getting transaction {}: {:?}", block_num, err))
                                                 .and_then(move |tx| {
                                                     let tx = tx.clone();
@@ -280,8 +284,7 @@ where
                                                         }
                                                     }
                                                     ok(())
-                                                });
-
+                                                })});
                                                 // spawn a future so that we can do
                                                 // process as many as possible in parallel
                                                 tokio::spawn(settle_tx_future);

@@ -27,7 +27,6 @@ tower-web = "0.3.7"
 reqwest = "0.9.18"
 url = "1.7.2"
 tokio-executor = "0.1.7"
-backoff = "0.1.5"
 tokio-retry = "0.2.0"
 
 [badges]

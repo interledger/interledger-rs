@@ -5,7 +5,7 @@ mod common;
 
 use bytes::Bytes;
 use common::*;
-use ethereum_tx_sign::web3::types::{Address as EthAddress, U256};
+use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use http::StatusCode;
 use interledger_settlement::{IdempotentStore, SettlementStore};
 use interledger_settlement_engines::EthereumAddresses;
@@ -113,6 +113,27 @@ fn saves_and_loads_last_observed_data_properly() {
             })
     }))
     .unwrap()
+}
+
+#[test]
+fn saves_tx_hashes_properly() {
+    block_on(test_store().and_then(|(store, context)| {
+        let tx_hash =
+            H256::from("0xb28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e");
+        store
+            .check_tx_credited(tx_hash)
+            .map_err(|err| eprintln!("Redis error: {:?}", err))
+            .and_then(move |_| {
+                store
+                    .check_tx_credited(tx_hash)
+                    .map_err(|err| eprintln!("Redis error: {:?}", err))
+                    .and_then(move |_| {
+                        let _ = context;
+                        Ok(())
+                    })
+            })
+    }))
+    .unwrap_err()
 }
 
 #[test]
