@@ -35,7 +35,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379 \
---watch_incoming false \
+--watch_incoming true \
 --port 3000 &> $LOGS/engine_alice.log &
 
 echo "Initializing Bob SE"
@@ -47,7 +47,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6380 \
---watch_incoming false \
+--watch_incoming true \
 --port 3001 &> $LOGS/engine_bob.log &
 
 sleep 1

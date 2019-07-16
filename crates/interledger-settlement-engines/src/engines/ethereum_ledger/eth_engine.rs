@@ -207,7 +207,7 @@ where
                         .and_then({let web3 = web3.clone(); move |new_balance| {
                             if new_balance > last_observed_balance {
                                 // iterate over all blocks 
-                                for block_num in last_observed_block.low_u64()..fetch_until.low_u64() {
+                                for block_num in last_observed_block.low_u64()..=fetch_until.low_u64() {
                                     let web3 = web3.clone();
                                     debug!("Getting block {}", block_num);
                                     let block_url = connector_url.clone();
