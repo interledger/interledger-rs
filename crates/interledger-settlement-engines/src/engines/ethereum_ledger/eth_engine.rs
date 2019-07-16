@@ -22,6 +22,7 @@ use std::{
 };
 use tokio::timer::Interval;
 use tokio_executor::spawn;
+use tokio_retry::{strategy::FixedInterval, Retry};
 use url::Url;
 use uuid::Uuid;
 
@@ -255,8 +256,9 @@ where
                                                                         debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
                                                                         let mut params = std::collections::HashMap::new();
                                                                         params.insert("amount", tx.value.low_u64());
-                                                                        client.post(url)
-                                                                            .header("Idempotency-Key", idempotency_uuid)
+                                                                        let action = move || {
+                                                                            client.post(url.clone())
+                                                                            .header("Idempotency-Key", idempotency_uuid.clone())
                                                                             .form(&params)
                                                                             .send()
                                                                             .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
@@ -268,6 +270,9 @@ where
                                                                                     Err(())
                                                                                 }
                                                                             })
+                                                                        };
+                                                                        tokio::spawn(Retry::spawn(FixedInterval::from_millis(100), action).map_err(|_| error!("Failed to keep retrying!")));
+                                                                        ok(())
                                                                     });
                                                                     tokio::spawn(notify_connector_future);
                                                                 }
