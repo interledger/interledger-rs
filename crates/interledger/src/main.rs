@@ -344,14 +344,6 @@ pub fn main() {
                 let redis_uri =
                     value_t!(matches, "redis_uri", String).expect("redis_uri is required");
                 let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
-                let server_secret: [u8; 32] = {
-                    let encoded: String = value_t!(matches, "server_secret", String).unwrap();
-                    let mut server_secret = [0; 32];
-                    let decoded = hex::decode(encoded).expect("server_secret must be hex-encoded");
-                    assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
-                    server_secret.clone_from_slice(&decoded);
-                    server_secret
-                };
                 let chain_id = value_t!(matches, "chain_id", u8).unwrap();
                 let confirmations = value_t!(matches, "confirmations", u8).unwrap();
                 let poll_frequency = value_t!(matches, "poll_frequency", u64).unwrap();
@@ -362,7 +354,6 @@ pub fn main() {
                     redis_uri,
                     ethereum_endpoint,
                     settlement_port,
-                    &server_secret,
                     private_key,
                     chain_id,
                     confirmations,

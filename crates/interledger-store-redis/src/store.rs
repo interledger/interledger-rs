@@ -8,7 +8,6 @@ use futures::{
 use hashbrown::{HashMap, HashSet};
 use std::collections::HashMap as SlowHashMap;
 
-use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
@@ -20,7 +19,6 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, 
 use interledger_settlement::{
     IdempotentData, IdempotentStore, SettlementAccount, SettlementClient, SettlementStore,
 };
-use interledger_settlement_engines::{EthereumAddresses, EthereumStore};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -143,17 +141,6 @@ static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
-static RECENTLY_OBSERVED_DATA_KEY: &str = "recently_observed_data";
-static SETTLEMENT_ENGINES_KEY: &str = "settlement";
-static LEDGER_KEY: &str = "ledger";
-static ETHEREUM_KEY: &str = "eth";
-
-fn ethereum_ledger_key(account_id: u64) -> String {
-    format!(
-        "{}:{}:{}:{}",
-        SETTLEMENT_ENGINES_KEY, LEDGER_KEY, ETHEREUM_KEY, account_id
-    )
-}
 
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
@@ -1163,182 +1150,6 @@ impl RateLimitStore for RedisStore {
             Box::new(ok(()))
         }
     }
-}
-
-impl EthereumStore for RedisStore {
-    type Account = Account;
-
-    fn load_account_addresses(
-        &self,
-        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
-    ) -> Box<dyn Future<Item = Vec<EthereumAddresses>, Error = ()> + Send> {
-        debug!("Loading account addresses {:?}", account_ids);
-        let mut pipe = redis::pipe();
-        for account_id in account_ids.iter() {
-            pipe.hgetall(ethereum_ledger_key(*account_id));
-        }
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error the addresses for accounts: {:?} {:?}",
-                        account_ids, err
-                    )
-                })
-                .and_then(
-                    move |(_conn, addresses): (_, Vec<SlowHashMap<String, Vec<u8>>>)| {
-                        debug!("Loaded account addresses {:?}", addresses);
-                        let mut ret = Vec::with_capacity(addresses.len());
-                        for addr in &addresses {
-                            let own_address = if let Some(own_address) = addr.get("own_address") {
-                                own_address
-                            } else {
-                                return err(());
-                            };
-                            let own_address = EthAddress::from(&own_address[..]);
-
-                            let token_address =
-                                if let Some(token_address) = addr.get("token_address") {
-                                    token_address
-                                } else {
-                                    return err(());
-                                };
-                            let token_address = if token_address.len() == 20 {
-                                Some(EthAddress::from(&token_address[..]))
-                            } else {
-                                None
-                            };
-                            ret.push(EthereumAddresses {
-                                own_address,
-                                token_address,
-                            });
-                        }
-                        ok(ret)
-                    },
-                ),
-        )
-    }
-    fn save_account_addresses(
-        &self,
-        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
-        data: Vec<EthereumAddresses>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        for (account_id, d) in account_ids.iter().zip(&data) {
-            let token_address = if let Some(token_address) = d.token_address {
-                token_address.to_vec()
-            } else {
-                vec![]
-            };
-            let acc_id = ethereum_ledger_key(*account_id);
-            let addrs = &[
-                ("own_address", d.own_address.to_vec()),
-                ("token_address", token_address),
-            ];
-            pipe.hset_multiple(acc_id, addrs).ignore();
-            pipe.set(addrs_to_key(*d), *account_id).ignore();
-        }
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error saving account data for accounts: {:?} {:?}",
-                        account_ids, err
-                    )
-                })
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
-    }
-
-    fn save_recently_observed_data(
-        &self,
-        block: U256,
-        balance: U256,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        let value = &[("block", block.low_u64()), ("balance", balance.low_u64())];
-        pipe.hset_multiple(RECENTLY_OBSERVED_DATA_KEY, value)
-            .ignore();
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error saving last observed block {:?} and balance {:?}: {:?}",
-                        block, balance, err
-                    )
-                })
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
-    }
-
-    fn load_recently_observed_data(
-        &self,
-    ) -> Box<dyn Future<Item = (U256, U256), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.hgetall(RECENTLY_OBSERVED_DATA_KEY);
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| error!("Error loading last observed block: {:?}", err))
-                .and_then(move |(_conn, data): (_, Vec<SlowHashMap<String, u64>>)| {
-                    let data = &data[0];
-                    let block = if let Some(block) = data.get("block") {
-                        block
-                    } else {
-                        &0 // return 0 if not found
-                    };
-                    let block = U256::from(*block);
-
-                    let balance = if let Some(balance) = data.get("balance") {
-                        balance
-                    } else {
-                        &0
-                    };
-                    let balance = U256::from(*balance);
-                    ok((block, balance))
-                }),
-        )
-    }
-
-    fn load_account_id_from_address(
-        &self,
-        eth_address: EthereumAddresses,
-    ) -> Box<dyn Future<Item = <Self::Account as AccountTrait>::AccountId, Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.get(addrs_to_key(eth_address));
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(move |(_conn, account_id): (_, Vec<u64>)| ok(account_id[0])),
-        )
-    }
-
-    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        Box::new(
-            cmd("SETNX")
-                .arg(tx_hash.to_string())
-                .arg(true)
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(
-                    move |(_conn, ret): (_, u64)| {
-                        if ret == 1 {
-                            ok(())
-                        } else {
-                            err(())
-                        }
-                    },
-                ),
-        )
-    }
-}
-
-fn addrs_to_key(address: EthereumAddresses) -> String {
-    let token_address = if let Some(token_address) = address.token_address {
-        token_address.to_string()
-    } else {
-        "".to_string()
-    };
-    format!("{}:{}", address.own_address.to_string(), token_address)
 }
 
 impl IdempotentStore for RedisStore {

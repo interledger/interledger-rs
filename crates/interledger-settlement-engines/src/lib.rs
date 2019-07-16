@@ -20,6 +20,10 @@ pub use self::engines::ethereum_ledger::{
     EthereumAccount, EthereumAddresses, EthereumLedgerSettlementEngine, EthereumLedgerTxSigner,
     EthereumStore,
 };
+mod stores;
+pub use self::stores::redis_ethereum_ledger::{
+    EthereumLedgerRedisStore, EthereumLedgerRedisStoreBuilder,
+};
 pub use ethereum_tx_sign::web3::types::Address as EthAddress;
 
 mod api;
