@@ -22,8 +22,6 @@ use std::{
     str::{self, FromStr},
 };
 
-use ethereum_tx_sign::web3::types::Address as EthAddress;
-use interledger_settlement_engines::EthereumAccount;
 use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
@@ -59,8 +57,6 @@ pub struct Account {
     pub(crate) settlement_engine_asset_scale: Option<u8>,
     #[serde(serialize_with = "optional_address_to_string")]
     pub(crate) settlement_engine_ilp_address: Option<Address>,
-    pub(crate) own_address: Option<EthAddress>,
-    pub(crate) token_address: Option<EthAddress>,
 }
 
 fn optional_address_to_string<S>(
@@ -168,8 +164,6 @@ impl Account {
             settlement_engine_url,
             settlement_engine_asset_scale: details.settlement_engine_asset_scale,
             settlement_engine_ilp_address: details.settlement_engine_ilp_address,
-            own_address: None,
-            token_address: None,
         })
     }
 
@@ -289,16 +283,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             rv.push(settlement_engine_ilp_address.to_bytes().to_vec());
         }
 
-        if let Some(own_address) = account.own_address {
-            "own_address".write_redis_args(&mut rv);
-            rv.push(own_address.to_vec());
-        }
-
-        if let Some(token_address) = account.token_address {
-            "token_address".write_redis_args(&mut rv);
-            rv.push(token_address.to_vec());
-        }
-
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
 
@@ -329,18 +313,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
             } else {
                 None
             };
-        let own_address: Option<String> = get_value_option("own_address", &hash)?;
-        let own_address = if let Some(ref own_address) = own_address {
-            EthAddress::from_str(own_address).ok()
-        } else {
-            None
-        };
-        let token_address: Option<String> = get_value_option("token_address", &hash)?;
-        let token_address = if let Some(ref token_address) = token_address {
-            EthAddress::from_str(token_address).ok()
-        } else {
-            None
-        };
 
         Ok(AccountWithEncryptedTokens {
             account: Account {
@@ -368,8 +340,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                     &hash,
                 )?,
                 settlement_engine_ilp_address,
-                own_address,
-                token_address,
             },
         })
     }
@@ -532,16 +502,6 @@ impl SettlementAccount for Account {
             }),
             _ => None,
         }
-    }
-}
-
-impl EthereumAccount for Account {
-    fn token_address(&self) -> Option<EthAddress> {
-        self.token_address
-    }
-
-    fn own_address(&self) -> EthAddress {
-        self.own_address.unwrap()
     }
 }
 

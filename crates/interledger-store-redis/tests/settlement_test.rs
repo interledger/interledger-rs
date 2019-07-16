@@ -5,13 +5,9 @@ mod common;
 
 use bytes::Bytes;
 use common::*;
-use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use http::StatusCode;
 use interledger_settlement::{IdempotentStore, SettlementStore};
-use interledger_settlement_engines::EthereumAddresses;
-use interledger_settlement_engines::EthereumStore;
 use redis::{cmd, r#async::SharedConnection};
-use std::str::FromStr;
 
 lazy_static! {
     static ref IDEMPOTENCY_KEY: String = String::from("AJKJNUjM0oyiAN46");
