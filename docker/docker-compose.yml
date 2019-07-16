@@ -1,0 +1,47 @@
+version: '3'
+
+services:
+  reverse-proxy:
+    image: traefik 
+    command: --api --docker 
+    ports:
+      - "80:80"     # The HTTP port
+      - "8080:8080" # The Traefik Web UI (enabled by --api)
+      - "7770:7770" # The ILP HTTP API port
+      - "7768:7768" # The ILP BTP port
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # So that Traefik can listen to the Docker events
+  
+  ilp-node-1:
+    image: neil/interledger-rs
+    env_file: 
+      - ilpnode1.conf
+    labels:
+      - "traefik.frontend.rule=Host: ilpnode1.local"
+      - "traefik.enable=true"
+      - "traefik.port=7770"
+      - "traefik.protocol=http"
+      - "traefik.backend=ilpnode1"
+    networks:
+      default:
+        ipv4_address: 172.25.0.3
+
+  ilp-node-2:
+    image: neil/interledger-rs
+    env_file: 
+      - ilpnode2.conf
+    labels:
+      - "traefik.frontend.rule=Host: ilpnode2.local"
+      - "traefik.enable=true"
+      - "traefik.port=7770"
+      - "traefik.protocol=http"
+      - "traefik.backend=ilpnode2"
+    networks:
+      default:
+        ipv4_address: 172.25.0.4
+
+# below only works with userdefined networks so define one:  docker network create --subnet=172.25.0.0/24 ilpnetwork  
+networks:
+  default:
+    external:
+      name: ilpnetwork

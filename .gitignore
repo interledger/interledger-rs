@@ -10,3 +10,4 @@ Cargo.lock
 *.rdb
 *.aof
 cmake-build-debug/
+node_modules
