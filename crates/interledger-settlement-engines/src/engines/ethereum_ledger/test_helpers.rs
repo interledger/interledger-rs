@@ -1,6 +1,6 @@
+use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use bytes::Bytes;
 use interledger_service::{Account, AccountStore};
-use interledger_settlement::{IdempotentData, IdempotentStore};
 use tokio::runtime::Runtime;
 
 use parking_lot::RwLock;
@@ -174,21 +174,19 @@ impl AccountStore for TestStore {
     }
 }
 
-impl IdempotentStore for TestStore {
+impl IdempotentEngineStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = IdempotentEngineData, Error = ()> + Send> {
         let cache = self.cache.read();
-        let d = if let Some(data) = cache.get(&idempotency_key) {
+        if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
             *guard += 1; // used to test how many times this branch gets executed
-            Some((data.0, Bytes::from(data.1.clone()), data.2))
+            Box::new(ok((data.0, Bytes::from(data.1.clone()), data.2)))
         } else {
-            None
-        };
-
-        Box::new(ok(d))
+            Box::new(err(()))
+        }
     }
 
     fn save_idempotent_data(
@@ -268,7 +266,7 @@ pub fn test_engine<Si, S, A>(
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
 where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    S: EthereumStore<Account = A> + IdempotentStore + Clone + Send + Sync + 'static,
+    S: EthereumStore<Account = A> + IdempotentEngineStore + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
     let chain_id = 1;

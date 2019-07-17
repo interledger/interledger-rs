@@ -20,17 +20,24 @@ pub use self::engines::ethereum_ledger::{
     EthereumAccount, EthereumAddresses, EthereumLedgerSettlementEngine, EthereumLedgerTxSigner,
     EthereumStore,
 };
-mod stores;
+pub mod stores;
 pub use self::stores::redis_ethereum_ledger::{
     EthereumLedgerRedisStore, EthereumLedgerRedisStoreBuilder,
 };
+use self::stores::redis_store;
 pub use ethereum_tx_sign::web3::types::Address as EthAddress;
 
 mod api;
 pub use self::api::SettlementEngineApi;
 
-use hyper::Response;
-use interledger_settlement::SettlementData;
+#[derive(Extract, Debug, Clone, Copy)]
+pub struct Quantity {
+    amount: u64,
+}
+
+use http::StatusCode;
+
+pub type ApiResponse = (StatusCode, String);
 
 /// Trait consumed by the Settlement Engine HTTP API. Every settlement engine
 /// MUST implement this trait, so that it can be then be exposed over the API.
@@ -38,20 +45,17 @@ pub trait SettlementEngine {
     fn send_money(
         &self,
         account_id: String,
-        money: SettlementData,
-        idempotency_key: Option<String>,
-    ) -> Box<dyn Future<Item = Response<String>, Error = Response<String>> + Send>;
+        money: Quantity,
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send>;
 
     fn receive_message(
         &self,
         account_id: String,
         message: Vec<u8>,
-        idempotency_key: Option<String>,
-    ) -> Box<dyn Future<Item = Response<String>, Error = Response<String>> + Send>;
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send>;
 
     fn create_account(
         &self,
         account_id: String,
-        idempotency_key: Option<String>,
-    ) -> Box<dyn Future<Item = Response<String>, Error = Response<String>> + Send>;
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send>;
 }

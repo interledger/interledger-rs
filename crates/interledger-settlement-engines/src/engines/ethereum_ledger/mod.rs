@@ -3,9 +3,9 @@ mod types;
 mod utils;
 
 #[cfg(test)]
-mod fixtures;
+pub mod fixtures;
 #[cfg(test)]
-mod test_helpers;
+pub mod test_helpers;
 
 // Only expose the engine and the ledger signer
 pub use eth_engine::EthereumLedgerSettlementEngine;

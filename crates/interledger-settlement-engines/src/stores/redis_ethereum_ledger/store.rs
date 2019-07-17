@@ -1,35 +1,24 @@
 use futures::{
-    future::{err, ok, result},
+    future::{err, ok},
     Future,
 };
-use std::collections::HashMap as SlowHashMap;
 
 use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use interledger_service::Account as AccountTrait;
+use std::collections::HashMap as SlowHashMap;
 
 use crate::{EthereumAccount, EthereumAddresses, EthereumStore};
-use bytes::Bytes;
-use http::StatusCode;
-use interledger_settlement::{IdempotentData, IdempotentStore};
-use redis::{
-    self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
-};
-use std::str::FromStr;
-use std::{str, sync::Arc};
+use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
+use std::sync::Arc;
 
-use log::{debug, error, trace};
+use log::{debug, error};
+
+use crate::redis_store::{EngineRedisStore, EngineRedisStoreBuilder};
 
 static RECENTLY_OBSERVED_DATA_KEY: &str = "recently_observed_data";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
 static ETHEREUM_KEY: &str = "eth";
-
-fn ethereum_ledger_key(account_id: u64) -> String {
-    format!(
-        "{}:{}:{}:{}",
-        SETTLEMENT_ENGINES_KEY, LEDGER_KEY, ETHEREUM_KEY, account_id
-    )
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -46,6 +35,13 @@ impl AccountTrait for Account {
     }
 }
 
+fn ethereum_ledger_key(account_id: u64) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        SETTLEMENT_ENGINES_KEY, LEDGER_KEY, ETHEREUM_KEY, account_id
+    )
+}
+
 impl EthereumAccount for Account {
     fn token_address(&self) -> Option<EthAddress> {
         self.token_address
@@ -57,28 +53,25 @@ impl EthereumAccount for Account {
 }
 
 pub struct EthereumLedgerRedisStoreBuilder {
-    redis_uri: ConnectionInfo,
+    redis_store_builder: EngineRedisStoreBuilder,
 }
 
 impl EthereumLedgerRedisStoreBuilder {
     pub fn new(redis_uri: ConnectionInfo) -> Self {
-        EthereumLedgerRedisStoreBuilder { redis_uri }
+        EthereumLedgerRedisStoreBuilder {
+            redis_store_builder: EngineRedisStoreBuilder::new(redis_uri),
+        }
     }
 
     pub fn connect(&self) -> impl Future<Item = EthereumLedgerRedisStore, Error = ()> {
-        result(Client::open(self.redis_uri.clone()))
-            .map_err(|err| error!("Error creating Redis client: {:?}", err))
-            .and_then(|client| {
-                debug!("Connected to redis: {:?}", client);
-                client
-                    .get_shared_async_connection()
-                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
-            })
-            .and_then(move |connection| {
-                let store = EthereumLedgerRedisStore {
-                    connection: Arc::new(connection),
-                };
-                Ok(store)
+        self.redis_store_builder
+            .connect()
+            .and_then(move |redis_store| {
+                let connection = redis_store.connection.clone();
+                Ok(EthereumLedgerRedisStore {
+                    redis_store,
+                    connection,
+                })
             })
     }
 }
@@ -88,7 +81,18 @@ impl EthereumLedgerRedisStoreBuilder {
 /// This store saves all Ethereum Ledger data for the Ethereum Settlement engine
 #[derive(Clone)]
 pub struct EthereumLedgerRedisStore {
+    redis_store: EngineRedisStore,
     connection: Arc<SharedConnection>,
+}
+
+impl EthereumLedgerRedisStore {
+    pub fn new(redis_store: EngineRedisStore) -> Self {
+        let connection = redis_store.connection.clone();
+        EthereumLedgerRedisStore {
+            redis_store,
+            connection,
+        }
+    }
 }
 
 impl EthereumStore for EthereumLedgerRedisStore {
@@ -144,6 +148,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
                 ),
         )
     }
+
     fn save_account_addresses(
         &self,
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
@@ -258,80 +263,6 @@ impl EthereumStore for EthereumLedgerRedisStore {
     }
 }
 
-impl IdempotentStore for EthereumLedgerRedisStore {
-    fn load_idempotent_data(
-        &self,
-        idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
-        let idempotency_key_clone = idempotency_key.clone();
-        Box::new(
-            cmd("HGETALL")
-                .arg(idempotency_key.clone())
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error loading idempotency key {}: {:?}",
-                        idempotency_key_clone, err
-                    )
-                })
-                .and_then(move |(_connection, ret): (_, SlowHashMap<String, String>)| {
-                    let data = if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
-                        ret.get("status_code"),
-                        ret.get("data"),
-                        ret.get("input_hash"),
-                    ) {
-                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                        let mut input_hash: [u8; 32] = Default::default();
-                        input_hash.copy_from_slice(input_hash_slice.as_ref());
-                        Some((
-                            StatusCode::from_str(status_code).unwrap(),
-                            Bytes::from(data.clone()),
-                            input_hash,
-                        ))
-                    } else {
-                        None
-                    };
-                    Ok(data)
-                }),
-        )
-    }
-
-    fn save_idempotent_data(
-        &self,
-        idempotency_key: String,
-        input_hash: [u8; 32],
-        status_code: StatusCode,
-        data: Bytes,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.atomic()
-            .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&idempotency_key)
-            .arg("status_code")
-            .arg(status_code.as_u16())
-            .arg("data")
-            .arg(data.as_ref())
-            .arg("input_hash")
-            .arg(&input_hash)
-            .ignore()
-            .expire(&idempotency_key, 86400)
-            .ignore();
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error caching: {:?}", err))
-                .and_then(move |(_connection, _): (_, Vec<String>)| {
-                    trace!(
-                        "Cached {:?}: {:?}, {:?}",
-                        idempotency_key,
-                        status_code,
-                        data,
-                    );
-                    Ok(())
-                }),
-        )
-    }
-}
-
 fn addrs_to_key(address: EthereumAddresses) -> String {
     let token_address = if let Some(token_address) = address.token_address {
         token_address.to_string()
@@ -343,32 +274,11 @@ fn addrs_to_key(address: EthereumAddresses) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::store_helpers::*;
+    use super::super::super::test_helpers::store_helpers::{
+        block_on, test_eth_store as test_store,
+    };
     use super::*;
-    use futures::future;
-    use redis::IntoConnectionInfo;
-    use tokio::runtime::Runtime;
-
-    #[test]
-    fn connect_fails_if_db_unavailable() {
-        let mut runtime = Runtime::new().unwrap();
-        runtime
-            .block_on(future::lazy(
-                || -> Box<dyn Future<Item = (), Error = ()> + Send> {
-                    Box::new(
-                        EthereumLedgerRedisStoreBuilder::new(
-                            "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
-                        )
-                        .connect()
-                        .then(|result| {
-                            assert!(result.is_err());
-                            Ok(())
-                        }),
-                    )
-                },
-            ))
-            .unwrap();
-    }
+    use std::str::FromStr;
 
     #[test]
     fn saves_and_loads_ethereum_addreses_properly() {
