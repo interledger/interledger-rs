@@ -45,6 +45,12 @@ impl ServerType {
     }
 }
 
+impl Default for RedisServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RedisServer {
     pub fn new() -> RedisServer {
         let server_type = ServerType::get_intended();
@@ -110,6 +116,12 @@ impl Drop for RedisServer {
 pub struct TestContext {
     pub server: RedisServer,
     pub client: redis::Client,
+}
+
+impl Default for TestContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TestContext {
