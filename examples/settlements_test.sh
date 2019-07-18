@@ -8,6 +8,7 @@ sleep 3 # wait for ganache to start
 ROOT=$HOME/projects/xpring-contract
 ILP_DIR=$ROOT/interledger-rs
 ILP=$ILP_DIR/target/debug/interledger
+CONFIGS=$ILP_DIR/examples
 
 
 LOGS=`pwd`/settlement_test_logs
@@ -53,9 +54,9 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 sleep 1
 
 echo "Initializing Alice Connector"
-RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $ILP_DIR/configs/alice.yaml &> $LOGS/ilp_alice.log &
+RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $CONFIGS/alice.yaml &> $LOGS/ilp_alice.log &
 echo "Initializing Bob Connector"
-RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $ILP_DIR/configs/bob.yaml &> $LOGS/ilp_bob.log &
+RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $CONFIGS/bob.yaml &> $LOGS/ilp_bob.log &
 
 sleep 2
 

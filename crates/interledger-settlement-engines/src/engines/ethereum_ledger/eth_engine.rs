@@ -1,6 +1,6 @@
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
 use super::utils::make_tx;
-use log::{debug, error};
+use log::{debug, error, trace};
 
 use ethereum_tx_sign::web3::{
     api::Web3,
@@ -18,11 +18,13 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::timer::Interval;
-use tokio_retry::{strategy::FixedInterval, Retry};
+use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 use uuid::Uuid;
 
 use crate::{ApiResponse, Quantity, SettlementEngine};
+
+const MAX_RETRIES: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum MessageType {
@@ -47,14 +49,14 @@ impl ReceiveMessageDetails {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PaymentDetailsResponse {
     to: Addresses,
-    tag: String,
+    tag: Uuid,
 }
 
 impl PaymentDetailsResponse {
     fn new(to: Addresses) -> Self {
         PaymentDetailsResponse {
             to,
-            tag: Uuid::new_v4().to_hyphenated().to_string(),
+            tag: Uuid::new_v4(),
         }
     }
 }
@@ -95,7 +97,7 @@ where
 {
     #[allow(clippy::all)]
     pub fn new(
-        endpoint: String,
+        ethereum_endpoint: String,
         store: S,
         signer: Si,
         chain_id: u8,
@@ -105,7 +107,7 @@ where
         token_address: Option<Address>,
         watch_incoming: bool, // If set to false, the engine will not poll for incoming transactions, and it's expeccted to be done out of process.
     ) -> Self {
-        let (eloop, transport) = Http::new(&endpoint).unwrap();
+        let (eloop, transport) = Http::new(&ethereum_endpoint).unwrap();
         eloop.into_remote();
         let web3 = Web3::new(transport);
         let address = Addresses {
@@ -137,7 +139,7 @@ where
         let interval = self.poll_frequency;
         let address = self.address;
         debug!(
-            "[{:?}]SE service for listening to incoming settlements. Interval: {:?}",
+            "[{:?}] settlement engine service for listening to incoming settlements. Interval: {:?}",
             address, interval,
         );
         std::thread::spawn(move || {
@@ -205,19 +207,20 @@ where
                                 // iterate over all blocks 
                                 for block_num in last_observed_block.low_u64()..=fetch_until.low_u64() {
                                     let web3 = web3.clone();
-                                    debug!("Getting block {}", block_num);
+                                    trace!("Getting block {}", block_num);
                                     let block_url = connector_url.clone();
                                     let get_blocks_future = web3.eth().block(BlockNumber::Number(block_num as u64).into())
                                     .map_err(move |err| error!("Got error while getting block {}: {:?}", block_num, err))
                                     .and_then({let store_clone = store_clone.clone(); move |block| {
-                                        debug!("Fetched block: {:?}", block_num);
+                                        trace!("Fetched block: {:?}", block_num);
                                         if let Some(block) = block {
                                             // iterate over all tx_hashes in the block
                                             // and spawn a future that will execute
                                             // the settlement request if the
-                                            // transaction
+                                            // transaction is sent to us and has
+                                            // >0 value
                                             for tx_hash in block.transactions {
-                                                debug!("Got transactions {:?}", tx_hash);
+                                                trace!("Got transactions {:?}", tx_hash);
                                                 let store_clone = store_clone.clone();
                                                 let mut url = block_url.clone();
                                                 let web3_clone = web3.clone();
@@ -225,13 +228,13 @@ where
                                                     .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
                                                     .and_then(move |_| {
                                                 web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
-                                                .map_err(move |err| error!("Got error while getting transaction {}: {:?}", block_num, err))
+                                                .map_err(move |err| error!("Transaction {} was not submitted to the connector. Please submit it manually. Got error: {:?}", tx_hash, err))
                                                 .and_then(move |tx| {
                                                     let tx = tx.clone();
                                                     if let Some(tx) = tx {
                                                         if let Some(to) = tx.to {
                                                             if tx.value > U256::from(0) {
-                                                                debug!("Forwarding transaction: {:?}", tx);
+                                                                trace!("Forwarding transaction: {:?}", tx);
                                                                 // Optimization: This will make 1 settlement API request to
                                                                 // the connector per transaction that comes to us. Since
                                                                 // we're scanning across multiple blocks, we want to
@@ -250,7 +253,7 @@ where
                                                                             .push("accounts")
                                                                             .push(&id.to_string())
                                                                             .push("settlement");
-                                                                        let client = reqwest::r#async::Client::new();
+                                                                        let client = Client::new();
                                                                         let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
                                                                         // retry on fail - https://github.com/ihrwein/backoff
                                                                         debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
@@ -263,7 +266,7 @@ where
                                                                             .send()
                                                                             .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
                                                                             .and_then(move |response| {
-                                                                                debug!("Accounting system responded with {:?}", response);
+                                                                                trace!("Accounting system responded with {:?}", response);
                                                                                 if response.status().is_success() {
                                                                                     Ok(())
                                                                                 } else {
@@ -271,7 +274,7 @@ where
                                                                                 }
                                                                             })
                                                                         };
-                                                                        tokio::spawn(Retry::spawn(FixedInterval::from_millis(100), action).map_err(|_| error!("Failed to keep retrying!")));
+                                                                        tokio::spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Failed to keep retrying!")));
                                                                         ok(())
                                                                     });
                                                                     tokio::spawn(notify_connector_future);
@@ -281,7 +284,7 @@ where
                                                     }
                                                     ok(())
                                                 })});
-                                                // spawn a future so that we can do
+                                                // spawn a future so that we can
                                                 // process as many as possible in parallel
                                                 tokio::spawn(settle_tx_future);
                                             }
@@ -648,7 +651,7 @@ mod tests {
                 own_address: bob.address,
                 token_address: None,
             },
-            tag: "some_tag".to_string(),
+            tag: Uuid::new_v4(),
         })
         .unwrap();
 
@@ -682,7 +685,7 @@ mod tests {
                 own_address: bob.address,
                 token_address: Some(bob.token_address),
             },
-            tag: "some_tag".to_string(),
+            tag: Uuid::new_v4(),
         })
         .unwrap();
 
@@ -711,7 +714,6 @@ mod tests {
             token_address: None,
         };
         let data: PaymentDetailsResponse = serde_json::from_str(&ret.1).unwrap();
-        assert!(!data.tag.is_empty());
         assert_eq!(data.to, alice_addrs);
         m.assert();
     }

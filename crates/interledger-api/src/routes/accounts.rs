@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::str::FromStr;
 use tokio_executor::spawn;
-use tokio_retry::{strategy::FixedInterval, Retry};
+use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 
 #[derive(Serialize, Response, Debug)]
@@ -35,6 +35,8 @@ pub struct AccountsApi<T> {
     store: T,
     admin_api_token: String,
 }
+
+const MAX_RETRIES: usize = 10;
 
 impl_web! {
     impl<T, A> AccountsApi<T>
@@ -102,7 +104,7 @@ impl_web! {
                                 }
                             })
                         };
-                        spawn(Retry::spawn(FixedInterval::from_millis(100), action).map_err(|_| error!("Failed to keep retrying!")));
+                        spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Failed to keep retrying!")));
                     }
                     Ok(json!(account))
                 })
