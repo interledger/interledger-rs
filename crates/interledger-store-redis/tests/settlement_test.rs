@@ -1,12 +1,10 @@
-#[macro_use]
-extern crate lazy_static;
-
 mod common;
 
 use bytes::Bytes;
 use common::*;
 use http::StatusCode;
 use interledger_settlement::SettlementStore;
+use lazy_static::lazy_static;
 use redis::{cmd, r#async::SharedConnection};
 
 lazy_static! {

@@ -12,9 +12,6 @@
 //! store can either be configured or populated using the `CcpRouteManager`
 //! (see the `interledger-ccp` crate for more details).
 
-#[macro_use]
-extern crate log;
-
 use bytes::Bytes;
 use hashbrown::HashMap;
 use interledger_service::{Account, AccountStore};

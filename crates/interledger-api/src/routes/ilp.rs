@@ -2,6 +2,7 @@ use futures::Future;
 use hyper::{Body, Error, Request, Response};
 use interledger_http::{HttpServerService, HttpStore};
 use interledger_service::IncomingService;
+use tower_web::impl_web;
 
 pub struct IlpApi<S, T> {
     http_server_service: HttpServerService<S, T>,

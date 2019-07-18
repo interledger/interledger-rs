@@ -3,6 +3,7 @@ use futures::{future::result, Future};
 use interledger_packet::Address;
 use interledger_service::{Account, IncomingService};
 use interledger_stream::send_money;
+use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use std::convert::TryFrom;
 

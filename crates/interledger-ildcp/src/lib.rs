@@ -4,11 +4,6 @@
 //!
 //! This is used by clients to query for their ILP address and asset details such as asset code and scale.
 
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-
 use interledger_packet::Address;
 use interledger_service::Account;
 

@@ -1,8 +1,5 @@
-extern crate interledger;
-#[macro_use]
-extern crate clap;
-
 use base64;
+use clap::value_t;
 use clap::{App, Arg, ArgGroup, SubCommand};
 use config;
 use hex;

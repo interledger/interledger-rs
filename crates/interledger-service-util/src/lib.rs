@@ -2,9 +2,6 @@
 //!
 //! Miscellaneous, small Interledger Services.
 
-#[macro_use]
-extern crate log;
-
 mod balance_service;
 mod echo_service;
 mod exchange_rates_service;

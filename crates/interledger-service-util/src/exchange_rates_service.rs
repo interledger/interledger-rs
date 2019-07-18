@@ -3,6 +3,7 @@ use futures::{future::err, Future};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
+use log::{error, trace};
 use std::marker::PhantomData;
 
 pub trait ExchangeRateStore {

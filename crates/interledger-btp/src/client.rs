@@ -3,6 +3,7 @@ use super::service::BtpOutgoingService;
 use super::BtpAccount;
 use futures::{future::join_all, Future, Sink};
 use interledger_service::*;
+use log::{debug, error, trace};
 use rand::random;
 use std::iter::IntoIterator;
 use tokio_tungstenite::connect_async;

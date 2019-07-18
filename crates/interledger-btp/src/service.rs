@@ -9,6 +9,7 @@ use futures::{
 use hashbrown::HashMap;
 use interledger_packet::{ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
 use interledger_service::*;
+use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::{

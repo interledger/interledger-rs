@@ -3,6 +3,8 @@ use super::oer::{MutBufOerExt, ReadOerExt};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use chrono::{DateTime, TimeZone, Utc};
+#[cfg(test)]
+use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use std::io::prelude::*;
 use std::io::Cursor;

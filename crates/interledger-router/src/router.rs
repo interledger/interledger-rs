@@ -3,6 +3,7 @@ use bytes::Bytes;
 use futures::{future::err, Future};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
+use log::{error, trace};
 use std::str;
 
 /// # Interledger Router
