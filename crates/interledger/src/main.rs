@@ -9,7 +9,7 @@ use hex;
 use interledger::{cli::*, node::*};
 use interledger_ildcp::IldcpResponseBuilder;
 use interledger_packet::Address;
-use interledger_settlement_engines::EthAddress;
+use interledger_settlement_engines::engines::ethereum_ledger::EthAddress;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio;

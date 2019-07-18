@@ -7,7 +7,9 @@ testnet/mainnet you want. To install `ganache-cli`, run
 `npm install -g ganache-cli`. You also need to have `redis-server` and
 `redis-cli` available in your PATH. In Ubuntu, you can obtain these by running `sudo apt-get install redis-server`
 
-We will need **7** terminal windows in total for this tutorial.
+We will need **7** terminal windows in total to follow this tutorial in depth. You can run the
+provided `settlement_test.sh` script instead to see how the full process works.
+
 
 1. Ethereum Network (ganache-cli)
 2. Alice's
@@ -18,9 +20,6 @@ We will need **7** terminal windows in total for this tutorial.
     1. Connector
     2. Settlement Engine
     3. Redis Store
-
-> Note: In order to run this whole tutorial automatically, you can also run
-> `./settlement_test.sh`
 
 For ease, you may want to set these environment variables to save you some
 typing:
@@ -63,7 +62,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 ```
 
 4. Configure Alice's connector by putting the following data inside a config
-   file, let's call that $ALICE_CONFIG. 
+   file, let's call that `alice.yml`. 
 
 ```yaml 
 ilp_address: "example.alice"
@@ -79,7 +78,7 @@ default_spsp_account: "0"
 5. Launch Alice's connector in a new terminal by running:
 
 ```bash
-RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $ALICE_CONFIG
+RUST_LOG="interledger=debug,interledger=trace" $ILP node --config alice.yml
 ```
 
 6. Insert Alice's account into her connector. 
@@ -128,7 +127,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 ```
 
 4. Configure Bob's connector by putting the following data inside a config
-   file, let's call that $BOB_CONFIG. 
+   file, let's call that `bob.yml`. 
 
 ```yaml 
 ilp_address: "example.bob"
@@ -144,7 +143,7 @@ default_spsp_account: "0"
 5. Launch Bob's connector in a new terminal by running:
 
 ```bash
-RUST_LOG="interledger=debug,interledger=trace" $ILP node --config $BOB_CONFIG
+RUST_LOG="interledger=debug,interledger=trace" $ILP node --config bob.yml
 ```
 
 6. Insert Bob's account into his connector. 
@@ -191,21 +190,12 @@ curl http://localhost:8770/accounts -X POST \
      -H "Authorization: Bearer hi_bob"
 ```
 
-
-## 5. Sync each other's settlement engines
-
-Alice's settlement engine asks for Bob's address: `curl http://localhost:3000/accounts/1 -X POST`
-Bob's settlement engine asks for Alice's address: `curl http://localhost:3001/accounts/1 -X POST`
-
-> Note: This will happen automatically in the future.
-
-## 6. Verify that addresses have been exchanged
+## 5. Verify that addresses have been exchanged
 
 Bob's address in Alice's store: `redis-cli -p 6379 hgetall "settlement:ledger:eth:1"`
-Alice's address in Bob's store: `redis-cli -p 6380 hgetall
-"settlement:ledger:eth:1"`
+Alice's address in Bob's store: `redis-cli -p 6380 hgetall "settlement:ledger:eth:1"`
 
-## 7. Make some payments!
+## 6. Make some payments!
 
 A `pay_dump.sh` script is provided which you can use to make [SPSP
 payments](https://interledger.org/rfcs/0009-simple-payment-setup-protocol/)

@@ -257,7 +257,7 @@ where
                                                     .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
                                                     .and_then(move |credited| {
                                                         if credited {
-                                                            return Either::A(ok(()))
+                                                            Either::A(ok(()))
                                                         } else {
                                                 Either::B(web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
                                                 .map_err(move |err| error!("Transaction {} was not submitted to the connector. Please submit it manually. Got error: {:?}", tx_hash, err))

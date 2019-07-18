@@ -5,7 +5,6 @@ use http::StatusCode;
 use redis::{self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands};
 use std::collections::HashMap as SlowHashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use log::{debug, error, trace};
 
@@ -27,11 +26,7 @@ impl EngineRedisStoreBuilder {
                     .get_shared_async_connection()
                     .map_err(|err| error!("Error connecting to Redis: {:?}", err))
             })
-            .and_then(move |connection| {
-                Ok(EngineRedisStore {
-                    connection: Arc::new(connection),
-                })
-            })
+            .and_then(move |connection| Ok(EngineRedisStore { connection }))
     }
 }
 
@@ -41,7 +36,7 @@ impl EngineRedisStoreBuilder {
 /// composed in the stores of other Settlement Engines.
 #[derive(Clone)]
 pub struct EngineRedisStore {
-    pub connection: Arc<SharedConnection>,
+    pub connection: SharedConnection,
 }
 
 impl IdempotentEngineStore for EngineRedisStore {
@@ -53,7 +48,7 @@ impl IdempotentEngineStore for EngineRedisStore {
         Box::new(
             cmd("HGETALL")
                 .arg(idempotency_key.clone())
-                .query_async(self.connection.as_ref().clone())
+                .query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error loading idempotency key {}: {:?}",
@@ -104,7 +99,7 @@ impl IdempotentEngineStore for EngineRedisStore {
             .expire(&idempotency_key, 86400)
             .ignore();
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.clone())
                 .map_err(|err| error!("Error caching: {:?}", err))
                 .and_then(move |(_connection, _): (_, Vec<String>)| {
                     trace!(

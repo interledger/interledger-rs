@@ -7,14 +7,16 @@ use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use interledger_service::Account as AccountTrait;
 use std::collections::HashMap as SlowHashMap;
 
-use crate::{EthereumAccount, EthereumAddresses, EthereumStore};
+use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
-use std::sync::Arc;
 
 use log::{debug, error};
 
 use crate::redis_store::{EngineRedisStore, EngineRedisStoreBuilder};
 
+// Key for the latest observed block and balance. The data is stored in order to
+// avoid double crediting transactions which have already been processed, and in
+// order to resume watching from the last observed point.
 static RECENTLY_OBSERVED_DATA_KEY: &str = "recently_observed_data";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
@@ -82,7 +84,7 @@ impl EthereumLedgerRedisStoreBuilder {
 #[derive(Clone)]
 pub struct EthereumLedgerRedisStore {
     redis_store: EngineRedisStore,
-    connection: Arc<SharedConnection>,
+    connection: SharedConnection,
 }
 
 impl EthereumLedgerRedisStore {
@@ -108,7 +110,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
             pipe.hgetall(ethereum_ledger_key(*account_id));
         }
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error the addresses for accounts: {:?} {:?}",
@@ -170,7 +172,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
             pipe.set(addrs_to_key(*d), *account_id).ignore();
         }
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error saving account data for accounts: {:?} {:?}",
@@ -191,7 +193,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
         pipe.hset_multiple(RECENTLY_OBSERVED_DATA_KEY, value)
             .ignore();
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error saving last observed block {:?} and balance {:?}: {:?}",
@@ -208,7 +210,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
         let mut pipe = redis::pipe();
         pipe.hgetall(RECENTLY_OBSERVED_DATA_KEY);
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
                 .and_then(move |(_conn, data): (_, Vec<SlowHashMap<String, u64>>)| {
                     let data = &data[0];
@@ -237,7 +239,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
         let mut pipe = redis::pipe();
         pipe.get(addrs_to_key(eth_address));
         Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
+            pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
                 .and_then(move |(_conn, account_id): (_, Vec<u64>)| ok(account_id[0])),
         )
@@ -248,7 +250,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
             cmd("SETNX")
                 .arg(tx_hash.to_string())
                 .arg(true)
-                .query_async(self.connection.as_ref().clone())
+                .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
                 .and_then(move |(_conn, ret): (_, u64)| {
                     // 1 if the key was set - tx was not there before --> not credited

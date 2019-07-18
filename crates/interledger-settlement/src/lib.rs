@@ -23,7 +23,7 @@ mod message_service;
 #[cfg(test)]
 mod test_helpers;
 
-pub use api::{SettlementApi, SettlementData};
+pub use api::SettlementApi;
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
