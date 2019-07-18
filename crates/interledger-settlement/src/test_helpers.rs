@@ -109,7 +109,6 @@ impl IdempotentStore for TestStore {
         data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut cache = self.cache.write();
-        println!("SAVED IDEMPOTENT DATA {:?}", data.clone());
         cache.insert(idempotency_key, (status_code, data, input_hash));
         Box::new(ok(()))
     }

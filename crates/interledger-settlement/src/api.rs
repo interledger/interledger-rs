@@ -60,7 +60,6 @@ impl_web! {
             self.store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
-                        println!("NO IDFEMPOTENT DATA");
                     let error_msg = "Couldn' load idempotent data".to_owned();
                     error!("{}", error_msg);
                     error_msg
@@ -77,7 +76,6 @@ impl_web! {
         fn make_idempotent_call<F>(&self, f: F, input_hash: [u8; 32], idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>>
         where F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
             let store = self.store.clone();
-            println!("GOT IDEMPOTENCY KEY {:?}", idempotency_key);
             if let Some(idempotency_key) = idempotency_key {
                 // If there an idempotency key was provided, check idempotency
                 // and the key was not present or conflicting with an existing
@@ -85,7 +83,6 @@ impl_web! {
                 Either::A(
                     self.check_idempotency(idempotency_key.clone(), input_hash)
                     .then(move |ret: Result<(StatusCode, Bytes), String>| {
-                        println!("IDEMPOTENCY CHECK RETURNED: {:?}", ret);
                         if let Ok(ret) = ret {
                             if ret.0.is_success() {
                                 let resp = Response::builder().status(ret.0).body(ret.1).unwrap();
@@ -99,7 +96,6 @@ impl_web! {
                             Either::B(
                                 f()
                                 .map_err({let store = store.clone(); let idempotency_key = idempotency_key.clone(); move |ret: (StatusCode, String)| {
-                                    // println!("F ERRORED OUT");
                                     let status_code = ret.0;
                                     let data = Bytes::from(ret.1.clone());
                                     store.save_idempotent_data(idempotency_key, input_hash, status_code, data);
@@ -115,7 +111,6 @@ impl_web! {
                                     .map_err({let ret = ret.clone(); move |_| {
                                         Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap()
                                     }}).and_then(move |_| {
-                                        println!("SAVED IDEMPOTENT DATA");
                                         Ok(Response::builder().status(ret.0).body(ret.1).unwrap())
                                     })
                                 })

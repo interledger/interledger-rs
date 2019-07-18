@@ -15,13 +15,11 @@ use interledger_router::Router;
 use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
 use interledger_service_util::ValidatorService;
 use interledger_settlement_engines::{
-    SettlementEngineApi,
     engines::ethereum_ledger::{
-        EthAddress,
-        EthereumLedgerSettlementEngine,
-        EthereumLedgerTxSigner,
+        EthAddress, EthereumLedgerSettlementEngine, EthereumLedgerTxSigner,
     },
     stores::redis_ethereum_ledger::EthereumLedgerRedisStoreBuilder,
+    SettlementEngineApi,
 };
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};

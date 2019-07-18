@@ -455,29 +455,36 @@ where
                     .push("accounts")
                     .push(&account_id.to_string())
                     .push("messages");
-                client
-                    .post(url)
-                    .header("Idempotency-Key", idempotency_uuid)
-                    .body(body)
-                    .send()
-                    .map_err(move |err| {
-                        let err = format!("Couldn't notify connector {:?}", err);
-                        error!("{}", err);
-                        (StatusCode::from_u16(500).unwrap(), err)
+                let action = move || {
+                    client
+                        .post(url.clone())
+                        .header("Idempotency-Key", idempotency_uuid.clone())
+                        .body(body.clone())
+                        .send()
+                };
+
+                Retry::spawn(
+                    ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                    action,
+                )
+                .map_err(move |err| {
+                    let err = format!("Couldn't notify connector {:?}", err);
+                    error!("{}", err);
+                    (StatusCode::from_u16(500).unwrap(), err)
+                })
+                .and_then(move |resp| {
+                    parse_body_into_payment_details(resp).and_then(move |payment_details| {
+                        store
+                            .save_account_addresses(vec![account_id], vec![payment_details.to])
+                            .map_err(move |err| {
+                                let err = format!("Couldn't connect to store {:?}", err);
+                                error!("{}", err);
+                                (StatusCode::from_u16(500).unwrap(), err)
+                            })
                     })
-                    .and_then(move |resp| {
-                        parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                            store
-                                .save_account_addresses(vec![account_id], vec![payment_details.to])
-                                .map_err(move |err| {
-                                    let err = format!("Couldn't connect to store {:?}", err);
-                                    error!("{}", err);
-                                    (StatusCode::from_u16(500).unwrap(), err)
-                                })
-                        })
-                    })
-            })
-            .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned()))),
+                })
+                .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned())))
+            }),
         )
     }
 

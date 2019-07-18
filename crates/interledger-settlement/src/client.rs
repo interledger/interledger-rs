@@ -91,7 +91,6 @@ mod tests {
 
         m.assert();
         assert!(ret.is_ok());
-        println!("{:?} RET", ret.unwrap());
     }
 
     #[test]
