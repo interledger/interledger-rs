@@ -107,7 +107,7 @@ impl SpeculativeNonceMiddleware {
     }
 
     fn next_nonce(&self) -> impl Future<Item = U256, Error = ()> {
-        // TODO: Implement speculative logic. 
+        // TODO: Implement speculative logic.
         self.web3
             .eth()
             .transaction_count(self.own_address, None)
@@ -431,7 +431,6 @@ where
     /// which is parsed from the request's body:
     /// - PaymentDetailsRequest: returns the SE's Ethereum & Token Addresses
     /// - more request types to be potentially added in the future
-    /// Is idempotent.
     fn receive_message(
         &self,
         account_id: String,
@@ -472,7 +471,6 @@ where
     /// responds with its Ethereum and Token addresses. Upon
     /// receival of Ethereum and Token addresses from the peer, it saves them in
     /// the store.
-    /// Is idempotent.
     fn create_account(
         &self,
         account_id: String,
@@ -537,7 +535,6 @@ where
     /// onchain transaction to the Ethereum Address that corresponds to the
     /// provided account id, for the amount specified in the message's body. If
     /// the account is associated with an ERC20 token, it makes an ERC20 call instead.
-    /// Is idempotent.
     fn send_money(
         &self,
         account_id: String,

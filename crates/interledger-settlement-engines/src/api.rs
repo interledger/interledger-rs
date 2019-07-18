@@ -1,15 +1,13 @@
 use crate::ApiResponse;
+use crate::Quantity;
 use crate::SettlementEngine;
-use crate::{
-    stores::{IdempotentEngineData, IdempotentEngineStore},
-    Quantity,
-};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, Either},
     Future,
 };
 use hyper::{Response, StatusCode};
+use interledger_settlement::{IdempotentData, IdempotentStore};
 use log::error;
 use ring::digest::{digest, SHA256};
 use tower_web::{net::ConnectionStream, ServiceBuilder};
@@ -28,7 +26,7 @@ impl_web! {
     impl<E, S> SettlementEngineApi<E, S>
     where
         E: SettlementEngine + Clone + Send + Sync + 'static,
-        S: IdempotentEngineStore + Clone + Send + Sync + 'static,
+        S: IdempotentStore + Clone + Send + Sync + 'static,
     {
         /// Create a new API service by providing it with a field that
         /// implements the `SettlementEngine` trait
@@ -86,7 +84,7 @@ impl_web! {
                     error!("{}", error_msg);
                     error_msg
                 })
-                .and_then(move |ret: IdempotentEngineData| {
+                .and_then(move |ret: IdempotentData| {
                     if ret.2 == input_hash {
                         Ok((ret.0, ret.1))
                     } else {
@@ -156,7 +154,7 @@ fn get_hash_of(preimage: &[u8]) -> [u8; 32] {
 impl<E, S> SettlementEngineApi<E, S>
 where
     E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentEngineStore + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
 {
     /// Serves the API
     /// Example:

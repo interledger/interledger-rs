@@ -1,7 +1,7 @@
-use super::{IdempotentStore, SettlementAccount, SettlementStore};
+use super::{IdempotentData, IdempotentStore, SettlementAccount, SettlementStore};
 use bytes::Bytes;
 use futures::{
-    future::{ok, result, Either},
+    future::{err, ok, result, Either},
     Future,
 };
 use hyper::{Response, StatusCode};
@@ -27,6 +27,7 @@ pub struct SettlementData {
     pub amount: u64,
 }
 
+#[derive(Clone)]
 pub struct SettlementApi<S, O, A> {
     outgoing_handler: O,
     store: S,
@@ -48,238 +49,228 @@ impl_web! {
             }
         }
 
+        // Helper function that returns any idempotent data that corresponds to a
+        // provided idempotency key. It fails if the hash of the input that
+        // generated the idempotent data does not match the hash of the provided input.
         fn check_idempotency(
             &self,
-            idempotency_key: Option<String>,
+            idempotency_key: String,
             input_hash: [u8; 32],
-        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = (StatusCode, String)> {
-            if let Some(idempotency_key) = idempotency_key {
-                Either::A(self.store.load_idempotent_data(idempotency_key.clone())
-                .map_err(move |err| {
-                    let err = format!("Couldn't connect to store {:?}", err);
-                    error!("{}", err);
-                    (StatusCode::from_u16(500).unwrap(), err)
-                }).and_then(move |ret: Option<(StatusCode, Bytes, [u8; 32])>| {
-                        if let Some(d) = ret {
-                            if d.2 != input_hash {
-                                // Stripe CONFLICT status code
-                                return Err((StatusCode::from_u16(409).unwrap(), "Provided idempotency key is tied to other input".to_string()))
-                            }
-                            if d.0.is_success() {
-                                return Ok(Some((d.0, d.1)))
-                            } else {
-                                return Err((d.0, String::from_utf8_lossy(&d.1).to_string()))
-                            }
-                        }
-                        Ok(None)
+        ) -> impl Future<Item = (StatusCode, Bytes), Error = String> {
+            self.store
+                .load_idempotent_data(idempotency_key.clone())
+                .map_err(move |_| {
+                        println!("NO IDFEMPOTENT DATA");
+                    let error_msg = "Couldn' load idempotent data".to_owned();
+                    error!("{}", error_msg);
+                    error_msg
+                })
+                .and_then(move |ret: IdempotentData| {
+                    if ret.2 == input_hash {
+                        Ok((ret.0, ret.1))
+                    } else {
+                        Ok((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..])))
                     }
-                ))
+                })
+        }
+
+        fn make_idempotent_call<F>(&self, f: F, input_hash: [u8; 32], idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>>
+        where F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
+            let store = self.store.clone();
+            println!("GOT IDEMPOTENCY KEY {:?}", idempotency_key);
+            if let Some(idempotency_key) = idempotency_key {
+                // If there an idempotency key was provided, check idempotency
+                // and the key was not present or conflicting with an existing
+                // key, perform the call and save the idempotent return data
+                Either::A(
+                    self.check_idempotency(idempotency_key.clone(), input_hash)
+                    .then(move |ret: Result<(StatusCode, Bytes), String>| {
+                        println!("IDEMPOTENCY CHECK RETURNED: {:?}", ret);
+                        if let Ok(ret) = ret {
+                            if ret.0.is_success() {
+                                let resp = Response::builder().status(ret.0).body(ret.1).unwrap();
+                                return Either::A(Either::A(ok(resp)))
+                            } else {
+                                let resp = Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap();
+                                return Either::A(Either::B(err(resp)))
+
+                            }
+                        } else {
+                            Either::B(
+                                f()
+                                .map_err({let store = store.clone(); let idempotency_key = idempotency_key.clone(); move |ret: (StatusCode, String)| {
+                                    // println!("F ERRORED OUT");
+                                    let status_code = ret.0;
+                                    let data = Bytes::from(ret.1.clone());
+                                    store.save_idempotent_data(idempotency_key, input_hash, status_code, data);
+                                    // .map_err({let ret = ret.clone(); move |_| {
+                                    //     Response::builder().status(ret.0).body(Bytes::from(ret.1)).unwrap()
+                                    // }}).and_then(move |_| {
+                                    //     Err(Response::builder().status(ret.0).body(ret.1).unwrap())
+                                    // })
+                                    Response::builder().status(status_code).body(ret.1).unwrap()
+                                }})
+                                .and_then(move |ret: (StatusCode, Bytes)| {
+                                    store.save_idempotent_data(idempotency_key, input_hash, ret.0, ret.1.clone())
+                                    .map_err({let ret = ret.clone(); move |_| {
+                                        Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap()
+                                    }}).and_then(move |_| {
+                                        println!("SAVED IDEMPOTENT DATA");
+                                        Ok(Response::builder().status(ret.0).body(ret.1).unwrap())
+                                    })
+                                })
+                            )
+                        }
+                    })
+                )
             } else {
-                Either::B(ok(None))
+                // otherwise just make the call w/o any idempotency saves
+                Either::B(
+                    f()
+                    .map_err(move |ret: (StatusCode, String)| {
+                        Response::builder().status(ret.0).body(ret.1).unwrap()
+                    })
+                    .and_then(move |ret: (StatusCode, Bytes)| {
+                        Ok(Response::builder().status(ret.0).body(ret.1).unwrap())
+                    })
+                )
             }
         }
 
         #[post("/accounts/:account_id/settlement")]
         fn receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
             debug!("Receive settlement called with {:?} {:?}", account_id, body);
-            let amount = body.amount;
-            let store = self.store.clone();
 
             let input = format!("{}{:?}", account_id, body);
             let input_hash = get_hash_of(input.as_ref());
 
-            self.check_idempotency(idempotency_key.clone(), input_hash).map_err(|res| {
-                Response::builder().status(res.0).body(res.1).unwrap()
-            })
-            .and_then(move |ret: Option<(StatusCode, Bytes)>| {
-                if let Some(d) = ret {
-                    return Either::A(ok(Response::builder().status(d.0).body(d.1).unwrap()));
-                }
-                Either::B(
-                    result(A::AccountId::from_str(&account_id)
-                    .map_err({
-                        let store = store.clone();
-                        let idempotency_key = idempotency_key.clone();
-                        move |_err| {
-                        let error_msg = format!("Unable to parse account id: {}", account_id);
-                        error!("{}", error_msg);
-                        let status_code = StatusCode::from_u16(400).unwrap();
-                        let data = Bytes::from(error_msg.clone());
-                        if let Some(idempotency_key) = idempotency_key {
-                            store.save_idempotent_data(idempotency_key, input_hash, status_code, data);
-                        }
-                        Response::builder().status(400).body(error_msg).unwrap()
-                    }}))
-                    .and_then({
-                        let store = store.clone();
-                        let idempotency_key = idempotency_key.clone();
-                        move |account_id| {
-                        store.get_accounts(vec![account_id])
-                        .map_err({
-                            let store = store.clone();
-                            let idempotency_key = idempotency_key.clone();
-                            move |_err| {
-                            let error_msg = format!("Error getting account: {}", account_id);
-                            error!("{}", error_msg);
+            let self_clone = self.clone();
+            let idempotency_key_clone = idempotency_key.clone();
+            let f = move || self_clone.do_receive_settlement(account_id, body, idempotency_key_clone);
+            self.make_idempotent_call(f, input_hash, idempotency_key)
+        }
 
-                            let status_code = StatusCode::from_u16(404).unwrap();
-                            let data = Bytes::from(error_msg.clone());
-                            if let Some(idempotency_key) = idempotency_key {
-                                store.save_idempotent_data(idempotency_key.clone(), input_hash, status_code, data);
-                            }
-                            Response::builder().status(404).body(error_msg).unwrap()
-                        }})
-                    }})
-                    .and_then({
-                        let store = store.clone();
-                        let idempotency_key = idempotency_key.clone();
-                        move |accounts| {
-                        let account = &accounts[0];
-                        if let Some(settlement_engine) = account.settlement_engine_details() {
-                            Ok((account.clone(), settlement_engine))
-                        } else {
-                            let error_msg = format!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
-                            error!("{}", error_msg);
-                            if let Some(idempotency_key) = idempotency_key {
-                                store.save_idempotent_data(idempotency_key, input_hash, StatusCode::from_u16(404).unwrap(), Bytes::from(error_msg.clone()));
-                            }
-                            Err(Response::builder().status(404).body(error_msg).unwrap())
-                        }
-                    }})
-                    .and_then({
-                        let store = store.clone();
-                        let idempotency_key = idempotency_key.clone();
-                        move |(account, settlement_engine)| {
-                        let account_id = account.id();
-                        let amount = amount.normalize_scale(ConvertDetails {
-                            from: account.asset_scale(),
-                            to: settlement_engine.asset_scale
-                        });
-                        store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
-                            .map_err(move |_| {
-                                let err = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
-                                error!("{}", err);
-                                Response::builder().status(500).body(err).unwrap()
-                        })
-                    }}).and_then({
-                        let store = store.clone();
-                        let idempotency_key = idempotency_key.clone();
-                        move |_| {
-                        let ret = Bytes::from("Success");
-                        if let Some(idempotency_key) = idempotency_key {
-                            store.save_idempotent_data(idempotency_key, input_hash, StatusCode::OK, ret.clone());
-                        }
-                        ok(())
-                        .and_then(|_| Ok(Response::builder().status(StatusCode::OK).body(ret).unwrap()))
-                    }}))
+        fn do_receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
+            let amount = body.amount;
+            let store = self.store.clone();
+            Box::new(result(A::AccountId::from_str(&account_id)
+            .map_err(move |_err| {
+                let error_msg = format!("Unable to parse account id: {}", account_id);
+                error!("{}", error_msg);
+                (StatusCode::from_u16(400).unwrap(), error_msg)
+            }))
+            .and_then({
+                let store = store.clone();
+                move |account_id| {
+                store.get_accounts(vec![account_id])
+                .map_err(move |_err| {
+                    let error_msg = format!("Error getting account: {}", account_id);
+                    error!("{}", error_msg);
+                    (StatusCode::from_u16(404).unwrap(), error_msg)
                 })
+            }})
+            .and_then(move |accounts| {
+                let account = &accounts[0];
+                if let Some(settlement_engine) = account.settlement_engine_details() {
+                    Ok((account.clone(), settlement_engine))
+                } else {
+                    let error_msg = format!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
+                    error!("{}", error_msg);
+                    Err((StatusCode::from_u16(404).unwrap(), error_msg))
+                }
+            })
+            .and_then(move |(account, settlement_engine)| {
+                let account_id = account.id();
+                let amount = amount.normalize_scale(ConvertDetails {
+                    from: account.asset_scale(),
+                    to: settlement_engine.asset_scale
+                });
+                store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+                .map_err(move |_| {
+                    let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                    error!("{}", error_msg);
+                    (StatusCode::from_u16(500).unwrap(), error_msg)
+                })
+            }).and_then(move |_| {
+                let ret = Bytes::from("Success");
+                Ok((StatusCode::OK, ret))
+            }))
         }
 
         // Gets called by our settlement engine, forwards the request outwards
         // until it reaches the peer's settlement engine. Extract is not
         // implemented for Bytes unfortunately.
-        #[post("/accounts/:account_id/messages")]
-        fn send_outgoing_message(&self, account_id: String, body: Vec<u8>, idempotency_key: Option<String>)-> impl Future<Item = Response<Bytes>, Error = Response<String>> {
+       #[post("/accounts/:account_id/messages")]
+       fn send_outgoing_message(&self, account_id: String, body: Vec<u8>, idempotency_key: Option<String>)-> impl Future<Item = Response<Bytes>, Error = Response<String>> {
+
+           let input = format!("{}{:?}", account_id, body);
+           let input_hash = get_hash_of(input.as_ref());
+
+            let self_clone = self.clone();
+            let f = move || self_clone.do_send_outgoing_message(account_id, body);
+            self.make_idempotent_call(f, input_hash, idempotency_key)
+       }
+
+        fn do_send_outgoing_message(&self, account_id: String, body: Vec<u8>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
             let store = self.store.clone();
             let mut outgoing_handler = self.outgoing_handler.clone();
-
-            let input = format!("{}{:?}", account_id, body);
-            let input_hash = get_hash_of(input.as_ref());
-
-            self.check_idempotency(idempotency_key.clone(), input_hash).map_err(|res| {
-                Response::builder().status(res.0).body(res.1).unwrap()
-            })
-            .and_then(move |ret: Option<(StatusCode, Bytes)>| {
-                if let Some(d) = ret {
-                    return Either::A(ok(Response::builder().status(d.0).body(d.1).unwrap()));
-                }
-                Either::B(
-                result(A::AccountId::from_str(&account_id)
-                .map_err({
-                    let store = store.clone();
-                    let idempotency_key = idempotency_key.clone();
-                    move |_err| {
-                    let error_msg = format!("Unable to parse account id: {}", account_id);
-                    error!("{}", error_msg);
-                    let status_code = StatusCode::from_u16(400).unwrap();
-                    let data = Bytes::from(error_msg.clone());
-                    if let Some(idempotency_key) = idempotency_key {
-                        store.save_idempotent_data(idempotency_key, input_hash, status_code, data);
-                    }
-                    Response::builder().status(400).body(error_msg).unwrap()
-                }}))
-                .and_then({
-                    let store = store.clone();
-                    let idempotency_key = idempotency_key.clone();
-                    move |account_id|
-                store.get_accounts(vec![account_id])
-                .map_err({
-                    move |_| {
-                    let error_msg = format!("Error getting account: {}", account_id);
-                    error!("{}", error_msg);
-                    let status_code = StatusCode::from_u16(404).unwrap();
-                    let data = Bytes::from(error_msg.clone());
-                    if let Some(idempotency_key) = idempotency_key {
-                        store.save_idempotent_data(idempotency_key, input_hash, status_code, data);
-                    }
-                    Response::builder().status(404).body(error_msg).unwrap()
-                }})})
-                .and_then(|accounts| {
-                    let account = &accounts[0];
-                    if let Some(settlement_engine) = account.settlement_engine_details() {
-                        Ok((account.clone(), settlement_engine))
-                    } else {
-                        let err = format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id());
-                        error!("{}", err);
-                        Err(Response::builder().status(404).body(err).unwrap())
-                    }
-                })
-                .and_then({
-                    let store = store.clone();
-                    let idempotency_key = idempotency_key.clone();
-                    move |(account, settlement_engine)| {
-                    // Send the message to the peer's settlement engine.
-                    // Note that we use dummy values for the `from` and `original_amount`
-                    // because this `OutgoingRequest` will bypass the router and thus will not
-                    // use either of these values. Including dummy values in the rare case where
-                    // we do not need them seems easier than using
-                    // `Option`s all over the place.
-                    outgoing_handler.send_request(OutgoingRequest {
-                        from: account.clone(),
-                        to: account.clone(),
-                        original_amount: 0,
-                        prepare: PrepareBuilder {
-                            destination: settlement_engine.ilp_address,
-                            amount: 0,
-                            expires_at: SystemTime::now() + Duration::from_secs(30),
-                            data: &body,
-                            execution_condition: &PEER_PROTOCOL_CONDITION,
-                        }.build()
-                    })
-                    .map_err({
-                        move |reject| {
-                        let error_msg = format!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());
+               Box::new(result(A::AccountId::from_str(&account_id)
+               .map_err(move |_err| {
+                   let error_msg = format!("Unable to parse account id: {}", account_id);
+                   error!("{}", error_msg);
+                   let status_code = StatusCode::from_u16(400).unwrap();
+                   (status_code, error_msg)
+               }))
+               .and_then(move |account_id| {
+                    store.get_accounts(vec![account_id])
+                    .map_err(move |_| {
+                        let error_msg = format!("Error getting account: {}", account_id);
                         error!("{}", error_msg);
-                        if let Some(idempotency_key) = idempotency_key {
-                            store.save_idempotent_data(idempotency_key, input_hash, StatusCode::from_u16(502).unwrap(), Bytes::from(error_msg.clone()));
-                        }
-                        Response::builder().status(502).body(error_msg).unwrap()
-                    }})
-                }})
-                .and_then({
-                    move |fulfill| {
-                    let data = Bytes::from(fulfill.data());
-                    if let Some(idempotency_key) = idempotency_key {
-                        store.save_idempotent_data(idempotency_key, input_hash, StatusCode::OK, data.clone());
-                    }
-                    ok(())
-                    .and_then(|_| Ok(
-                        Response::builder().status(200).body(data).unwrap()
-                    ))
-                }})
-            )})
+                        let status_code = StatusCode::from_u16(404).unwrap();
+                        (status_code, error_msg)
+                    })
+                })
+               .and_then(|accounts| {
+                   let account = &accounts[0];
+                   if let Some(settlement_engine) = account.settlement_engine_details() {
+                       Ok((account.clone(), settlement_engine))
+                   } else {
+                       let error_msg = format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id());
+                       error!("{}", error_msg);
+                       Err((StatusCode::from_u16(404).unwrap(), error_msg))
+                   }
+               })
+               .and_then(move |(account, settlement_engine)| {
+                   // Send the message to the peer's settlement engine.
+                   // Note that we use dummy values for the `from` and `original_amount`
+                   // because this `OutgoingRequest` will bypass the router and thus will not
+                   // use either of these values. Including dummy values in the rare case where
+                   // we do not need them seems easier than using
+                   // `Option`s all over the place.
+                   outgoing_handler.send_request(OutgoingRequest {
+                       from: account.clone(),
+                       to: account.clone(),
+                       original_amount: 0,
+                       prepare: PrepareBuilder {
+                           destination: settlement_engine.ilp_address,
+                           amount: 0,
+                           expires_at: SystemTime::now() + Duration::from_secs(30),
+                           data: &body,
+                           execution_condition: &PEER_PROTOCOL_CONDITION,
+                       }.build()
+                   })
+                   .map_err(move |reject| {
+                       let error_msg = format!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());
+                       error!("{}", error_msg);
+                       (StatusCode::from_u16(502).unwrap(), error_msg)
+                   })
+               })
+               .and_then(move |fulfill| {
+                   let data = Bytes::from(fulfill.data());
+                   Ok((StatusCode::OK, data))
+               })
+               )
         }
-
         pub fn serve<I>(self, incoming: I) -> impl Future<Item = (), Error = ()>
         where
             I: ConnectionStream,

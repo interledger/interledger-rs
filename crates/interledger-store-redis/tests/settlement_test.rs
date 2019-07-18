@@ -55,24 +55,20 @@ fn saves_and_loads_idempotency_key_data_properly() {
                     .load_idempotent_data(IDEMPOTENCY_KEY.clone())
                     .map_err(|err| eprintln!("Redis error: {:?}", err))
                     .and_then(move |data1| {
-                        assert_eq!(
-                            data1.unwrap(),
-                            (StatusCode::OK, Bytes::from("TEST"), input_hash)
-                        );
+                        assert_eq!(data1, (StatusCode::OK, Bytes::from("TEST"), input_hash));
                         let _ = context;
 
                         store
                             .load_idempotent_data("asdf".to_string())
                             .map_err(|err| eprintln!("Redis error: {:?}", err))
-                            .and_then(move |data2| {
-                                assert!(data2.is_none());
+                            .and_then(move |_data2| {
                                 let _ = context;
                                 Ok(())
                             })
                     })
             })
     }))
-    .unwrap()
+    .unwrap_err() // second idempotent load fails
 }
 
 #[test]

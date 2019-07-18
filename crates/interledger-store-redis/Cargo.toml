@@ -26,8 +26,6 @@ interledger-router = { path = "../interledger-router", version = "0.2.1" }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
 interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
-interledger-settlement-engines = { path = "../interledger-settlement-engines", version = "0.1.0" }
-ethereum-tx-sign = { git = "https://github.com/gakonst/ethereum-tx-sign" }
 log = "0.4.6"
 parking_lot = "0.7.1"
 redis = { version = "0.10.0", features = [ "with-unix-sockets" ] }

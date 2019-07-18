@@ -19,7 +19,6 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, 
 use interledger_settlement::{
     IdempotentData, IdempotentStore, SettlementAccount, SettlementClient, SettlementStore,
 };
-use interledger_settlement_engines::stores::{IdempotentEngineData, IdempotentEngineStore};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -1161,84 +1160,7 @@ impl IdempotentStore for RedisStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
-        let idempotency_key_clone = idempotency_key.clone();
-        Box::new(
-            cmd("HGETALL")
-                .arg(prefixed_idempotency_key(idempotency_key.clone()))
-                .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error loading idempotency key {}: {:?}",
-                        idempotency_key_clone, err
-                    )
-                })
-                .and_then(move |(_connection, ret): (_, SlowHashMap<String, String>)| {
-                    let data = if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
-                        ret.get("status_code"),
-                        ret.get("data"),
-                        ret.get("input_hash"),
-                    ) {
-                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                        let mut input_hash: [u8; 32] = Default::default();
-                        input_hash.copy_from_slice(input_hash_slice.as_ref());
-                        Some((
-                            StatusCode::from_str(status_code).unwrap(),
-                            Bytes::from(data.clone()),
-                            input_hash,
-                        ))
-                    } else {
-                        None
-                    };
-                    Ok(data)
-                }),
-        )
-    }
-
-    fn save_idempotent_data(
-        &self,
-        idempotency_key: String,
-        input_hash: [u8; 32],
-        status_code: StatusCode,
-        data: Bytes,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.atomic()
-            .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&prefixed_idempotency_key(idempotency_key.clone()))
-            .arg("status_code")
-            .arg(status_code.as_u16())
-            .arg("data")
-            .arg(data.as_ref())
-            .arg("input_hash")
-            .arg(&input_hash)
-            .ignore()
-            .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
-            .ignore();
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error caching: {:?}", err))
-                .and_then(move |(_connection, _): (_, Vec<String>)| {
-                    trace!(
-                        "Cached {:?}: {:?}, {:?}",
-                        idempotency_key,
-                        status_code,
-                        data,
-                    );
-                    Ok(())
-                }),
-        )
-    }
-}
-
-// Note this is a store that's idempotent for the engine.
-// Duplicate implementation from the above.
-// TODO: Is there a better way to do this?
-impl IdempotentEngineStore for RedisStore {
-    fn load_idempotent_data(
-        &self,
-        idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentEngineData, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
         let idempotency_key_clone = idempotency_key.clone();
         Box::new(
             cmd("HGETALL")

@@ -66,7 +66,7 @@ pub trait IdempotentStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send>;
 
     /// Saves the data that was passed along with the api request for later
     /// The store MUST also save a hash of the input, so that it errors out on requests

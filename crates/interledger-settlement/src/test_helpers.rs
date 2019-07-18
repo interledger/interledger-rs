@@ -90,17 +90,15 @@ impl IdempotentStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
         let cache = self.cache.read();
-        let d = if let Some(data) = cache.get(&idempotency_key) {
+        if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
             *guard += 1; // used to test how many times this branch gets executed
-            Some((data.0, data.1.clone(), data.2))
+            Box::new(ok((data.0, data.1.clone(), data.2)))
         } else {
-            None
-        };
-
-        Box::new(ok(d))
+            Box::new(err(()))
+        }
     }
 
     fn save_idempotent_data(
@@ -111,6 +109,7 @@ impl IdempotentStore for TestStore {
         data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut cache = self.cache.write();
+        println!("SAVED IDEMPOTENT DATA {:?}", data.clone());
         cache.insert(idempotency_key, (status_code, data, input_hash));
         Box::new(ok(()))
     }

@@ -1,4 +1,3 @@
-use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use bytes::Bytes;
 use interledger_service::{Account, AccountStore};
 use tokio::runtime::Runtime;
@@ -20,6 +19,7 @@ use ethereum_tx_sign::web3::{
 
 use super::eth_engine::EthereumLedgerSettlementEngine;
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
+use interledger_settlement::{IdempotentData, IdempotentStore};
 
 #[derive(Debug, Clone)]
 pub struct TestAccount {
@@ -174,11 +174,11 @@ impl AccountStore for TestStore {
     }
 }
 
-impl IdempotentEngineStore for TestStore {
+impl IdempotentStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentEngineData, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
         let cache = self.cache.read();
         if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
@@ -266,7 +266,7 @@ pub fn test_engine<Si, S, A>(
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
 where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    S: EthereumStore<Account = A> + IdempotentEngineStore + Clone + Send + Sync + 'static,
+    S: EthereumStore<Account = A> + IdempotentStore + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
     let chain_id = 1;
