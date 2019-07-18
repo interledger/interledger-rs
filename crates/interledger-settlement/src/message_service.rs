@@ -109,21 +109,6 @@ where
                     }
                 }));
             }
-            // This else branch seems to be wrong and shouldn't be required. If
-            // B has an account set up for A with a settlement engine and A
-            // sends a payment to B, then the SE will be non-null - but it will
-            // hit this els branch hence error out. We do not want that.
-            // else {
-            //     let error_msg = format!("Got settlement packet from account {} with destination: {:?}, which did not match our engine: {:?}", request.from.id(), request.prepare.destination(), settlement_engine_details.ilp_address);
-            //     error!("{}", error_msg);
-            //     return Box::new(err(RejectBuilder {
-            //         code: ErrorCode::F02_UNREACHABLE,
-            //         message: error_msg.as_str().as_ref(),
-            //         data: &[],
-            //         triggered_by: Some(&ilp_address),
-            //     }
-            //     .build()));
-            // }
         }
         Box::new(self.next.handle_request(request))
     }

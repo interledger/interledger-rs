@@ -44,7 +44,7 @@ dinner depart evoke puzzle" -i 1
    Alice.
 2. Set Alice's key and address:
 ```bash
-ALICE_ADDRESS="3cdb3d9e1b74692bb1e3bb5fc81938151ca64b02" # This is the address that corresponds to the key
+ALICE_ADDRESS="3cdb3d9e1b74692bb1e3bb5fc81938151ca64b02"
 ALICE_KEY="380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc" 
 ```
 3. Launch Alice's settlement engine in a new terminal by running:
@@ -52,13 +52,13 @@ ALICE_KEY="380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc"
 ```bash
 RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --key $ALICE_KEY \
---server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \ # some secret for redis
---confirmations 0 \ # zero confirmations (security parameter which we set to 0 for the example. For Ethereum to have the same security guarantees as 6 bitcoin confirmations this must be set to 35).
---poll_frequency 1 \ # how often the settlement engine will poll for new blocks
---ethereum_endpoint http://127.0.0.1:8545 \ # the ethereum endpoint
---connector_url http://127.0.0.1:7771 \ # your connector's URL (this is the default value)
---redis_uri redis://127.0.0.1:6379 \ # redis' url 
---watch_incoming true \ # enable watching for incoming transactions
+--server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+--confirmations 0 \
+--poll_frequency 1 \
+--ethereum_endpoint http://127.0.0.1:8545 \
+--connector_url http://127.0.0.1:7771 \
+--redis_uri redis://127.0.0.1:6379 \
+--watch_incoming true \
 --port 3000
 ```
 
@@ -117,14 +117,14 @@ BOB_KEY="cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e"
 ```bash
 RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --key $BOB_KEY \
---server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \ # some secret for redis
---confirmations 0 \ # zero confirmations (security parameter which we set to 0 for the example. For Ethereum to have the same security guarantees as 6 bitcoin confirmations this must be set to 35).
---poll_frequency 1 \ # how often the settlement engine will poll for new blocks
---ethereum_endpoint http://127.0.0.1:8545 \ # the ethereum endpoint
---connector_url http://127.0.0.1:8771 \ # Bob's connector URL is not the default one
---redis_uri redis://127.0.0.1:6380 \ # redis' url 
---watch_incoming true \ # enable watching for incoming transactions
---port 3001 # note: alice's engine is run on a different port than bob's
+--server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+--confirmations 0 \
+--poll_frequency 1 \
+--ethereum_endpoint http://127.0.0.1:8545 \
+--connector_url http://127.0.0.1:8771 \
+--redis_uri redis://127.0.0.1:6380 \
+--watch_incoming true \
+--port 3001
 ```
 
 4. Configure Bob's connector by putting the following data inside a config
@@ -172,7 +172,7 @@ Now we have both Alice and Bob up and running.
 ### Insert Bob's account to Alice's connector
 ```bash
 curl http://localhost:7770/accounts -X POST \
-    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10" \
+    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10" \
     -H "Authorization: Bearer hi_alice
 ```
 
@@ -187,7 +187,7 @@ often settlement is made, which is tracked in [issue 121](https://github.com/ems
 
 ```bash
 curl http://localhost:8770/accounts -X POST \
-     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle.ethl&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
+     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
      -H "Authorization: Bearer hi_bob"
 ```
 

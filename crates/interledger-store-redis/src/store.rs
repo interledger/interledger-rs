@@ -143,6 +143,10 @@ static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 
+fn prefixed_idempotency_key(idempotency_key: String) -> String {
+    format!("idempotency-key:{}", idempotency_key)
+}
+
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
 }
@@ -1161,7 +1165,7 @@ impl IdempotentStore for RedisStore {
         let idempotency_key_clone = idempotency_key.clone();
         Box::new(
             cmd("HGETALL")
-                .arg(idempotency_key.clone())
+                .arg(prefixed_idempotency_key(idempotency_key.clone()))
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -1201,7 +1205,7 @@ impl IdempotentStore for RedisStore {
         let mut pipe = redis::pipe();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&idempotency_key)
+            .arg(&prefixed_idempotency_key(idempotency_key.clone()))
             .arg("status_code")
             .arg(status_code.as_u16())
             .arg("data")
@@ -1209,7 +1213,7 @@ impl IdempotentStore for RedisStore {
             .arg("input_hash")
             .arg(&input_hash)
             .ignore()
-            .expire(&idempotency_key, 86400)
+            .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
             .ignore();
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
@@ -1238,7 +1242,7 @@ impl IdempotentEngineStore for RedisStore {
         let idempotency_key_clone = idempotency_key.clone();
         Box::new(
             cmd("HGETALL")
-                .arg(idempotency_key.clone())
+                .arg(prefixed_idempotency_key(idempotency_key.clone()))
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -1279,7 +1283,7 @@ impl IdempotentEngineStore for RedisStore {
         let mut pipe = redis::pipe();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&idempotency_key)
+            .arg(&prefixed_idempotency_key(idempotency_key.clone()))
             .arg("status_code")
             .arg(status_code.as_u16())
             .arg("data")
@@ -1287,7 +1291,7 @@ impl IdempotentEngineStore for RedisStore {
             .arg("input_hash")
             .arg(&input_hash)
             .ignore()
-            .expire(&idempotency_key, 86400)
+            .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
             .ignore();
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
