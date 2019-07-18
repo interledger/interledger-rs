@@ -4,12 +4,12 @@ use log::{debug, error, trace};
 
 use ethereum_tx_sign::web3::{
     api::Web3,
-    futures::future::{ok, result, Future},
+    futures::future::{ok, result, Either, Future},
     futures::stream::Stream,
     transports::Http,
     types::{Address, BlockNumber, TransactionId, H256, U256},
 };
-use hyper::{Response, StatusCode};
+use hyper::StatusCode;
 use reqwest::r#async::{Client, Response as HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -255,8 +255,11 @@ where
                                                 let web3_clone = web3.clone();
                                                 let settle_tx_future = store_clone.check_tx_credited(tx_hash)
                                                     .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
-                                                    .and_then(move |_| {
-                                                web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
+                                                    .and_then(move |credited| {
+                                                        if credited {
+                                                            return Either::A(ok(()))
+                                                        } else {
+                                                Either::B(web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
                                                 .map_err(move |err| error!("Transaction {} was not submitted to the connector. Please submit it manually. Got error: {:?}", tx_hash, err))
                                                 .and_then(move |tx| {
                                                     let tx = tx.clone();
@@ -312,7 +315,9 @@ where
                                                         }
                                                     }
                                                     ok(())
-                                                })});
+                                                }))
+                                                        }
+                                            });
                                                 // spawn a future so that we can
                                                 // process as many as possible in parallel
                                                 tokio::spawn(settle_tx_future);
@@ -680,8 +685,6 @@ mod tests {
         assert_eq!(ret.0.as_u16(), 201);
         assert_eq!(ret.1, "CREATED");
 
-        let ret: Response<_> = engine.get_account(bob.id.to_string()).wait().unwrap();
-        assert_eq!(ret.status().as_u16(), 200);
         m.assert();
     }
 

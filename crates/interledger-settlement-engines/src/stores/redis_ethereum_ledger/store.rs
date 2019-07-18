@@ -243,22 +243,22 @@ impl EthereumStore for EthereumLedgerRedisStore {
         )
     }
 
-    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
         Box::new(
             cmd("SETNX")
                 .arg(tx_hash.to_string())
                 .arg(true)
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(
-                    move |(_conn, ret): (_, u64)| {
-                        if ret == 1 {
-                            ok(())
-                        } else {
-                            err(())
-                        }
-                    },
-                ),
+                .and_then(move |(_conn, ret): (_, u64)| {
+                    // 1 if the key was set - tx was not there before --> not credited
+                    // 0 if the key was not set -- ie tx was there before --> credited
+                    if ret == 0 {
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
+                }),
         )
     }
 }
@@ -361,16 +361,18 @@ mod tests {
             store
                 .check_tx_credited(tx_hash)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
-                .and_then(move |_| {
+                .and_then(move |seen| {
+                    assert_eq!(seen, false);
                     store
                         .check_tx_credited(tx_hash)
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
-                        .and_then(move |_| {
+                        .and_then(move |seen2| {
+                            assert_eq!(seen2, true);
                             let _ = context;
                             Ok(())
                         })
                 })
         }))
-        .unwrap_err()
+        .unwrap()
     }
 }
