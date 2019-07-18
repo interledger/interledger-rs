@@ -377,23 +377,6 @@ where
         )
     }
 
-    #[allow(unused)]
-    fn get_account(
-        &self,
-        account_id: String,
-    ) -> impl Future<Item = Response<String>, Error = Response<String>> {
-        self.load_account(account_id)
-            .map_err(|err| {
-                let error_msg = format!("Error loading account {:?}", err);
-                error!("{}", error_msg);
-                Response::builder().status(400).body(error_msg).unwrap()
-            })
-            .and_then(move |(_account_id, addresses)| {
-                let body = serde_json::to_string(&addresses).unwrap();
-                Ok(Response::builder().status(200).body(body).unwrap())
-            })
-    }
-
     /// Helper function that returns the addresses associated with an
     /// account from a given string account id
     fn load_account(
@@ -426,43 +409,6 @@ where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
-    /// Settlement Engine's function that corresponds to the
-    /// /accounts/:id/messages endpoint (POST). Responds depending on message type
-    /// which is parsed from the request's body:
-    /// - PaymentDetailsRequest: returns the SE's Ethereum & Token Addresses
-    /// - more request types to be potentially added in the future
-    fn receive_message(
-        &self,
-        account_id: String,
-        body: Vec<u8>,
-    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
-        let address = self.address;
-        Box::new(
-            result(serde_json::from_slice(&body))
-                .map_err(move |err| {
-                    let error_msg = format!("Could not parse message body: {:?}", err);
-                    error!("{}", error_msg);
-                    (StatusCode::from_u16(400).unwrap(), error_msg)
-                })
-                .and_then(move |message: ReceiveMessageDetails| {
-                    // We are only returning our information, so
-                    // there is no need to return any data about the
-                    // provided account.
-                    debug!(
-                        "Responding with our account's details {} {:?}",
-                        account_id, address
-                    );
-                    let resp = match message.msg_type {
-                        MessageType::PaymentDetailsRequest => {
-                            let ret = PaymentDetailsResponse::new(address);
-                            serde_json::to_string(&ret).unwrap()
-                        }
-                    };
-                    Ok((StatusCode::from_u16(200).unwrap(), resp))
-                }),
-        )
-    }
-
     /// Settlement Engine's function that corresponds to the
     /// /accounts/:id/ endpoint (POST). It queries the connector's
     /// accounts/:id/messages with a "PaymentDetailsRequest" that gets forwarded
@@ -530,6 +476,42 @@ where
         )
     }
 
+    /// Settlement Engine's function that corresponds to the
+    /// /accounts/:id/messages endpoint (POST). Responds depending on message type
+    /// which is parsed from the request's body:
+    /// - PaymentDetailsRequest: returns the SE's Ethereum & Token Addresses
+    /// - more request types to be potentially added in the future
+    fn receive_message(
+        &self,
+        account_id: String,
+        body: Vec<u8>,
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
+        let address = self.address;
+        Box::new(
+            result(serde_json::from_slice(&body))
+                .map_err(move |err| {
+                    let error_msg = format!("Could not parse message body: {:?}", err);
+                    error!("{}", error_msg);
+                    (StatusCode::from_u16(400).unwrap(), error_msg)
+                })
+                .and_then(move |message: ReceiveMessageDetails| {
+                    // We are only returning our information, so
+                    // there is no need to return any data about the
+                    // provided account.
+                    debug!(
+                        "Responding with our account's details {} {:?}",
+                        account_id, address
+                    );
+                    let resp = match message.msg_type {
+                        MessageType::PaymentDetailsRequest => {
+                            let ret = PaymentDetailsResponse::new(address);
+                            serde_json::to_string(&ret).unwrap()
+                        }
+                    };
+                    Ok((StatusCode::from_u16(200).unwrap(), resp))
+                }),
+        )
+    }
     /// Settlement Engine's function that corresponds to the
     /// /accounts/:id/settlement endpoint (POST). It performs an Ethereum
     /// onchain transaction to the Ethereum Address that corresponds to the
