@@ -7,6 +7,7 @@ use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{BoxedIlpFuture, IncomingRequest, IncomingService};
 use reqwest::r#async::Client;
 use std::marker::PhantomData;
+use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 
@@ -35,7 +36,7 @@ where
 
 impl<I, A> IncomingService<A> for SettlementMessageService<I, A>
 where
-    I: IncomingService<A>,
+    I: IncomingService<A> + Send,
     A: SettlementAccount,
 {
     type Future = BoxedIlpFuture;
@@ -61,11 +62,17 @@ where
                     .push(&request.from.id().to_string())
                     .push("messages");
                 let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-                return Box::new(self.http_client.post(settlement_engine_url)
-                .header("Content-Type", "application/octet-stream")
-                .header("Idempotency-Key", idempotency_uuid)
-                .body(message)
-                .send()
+                let http_client = self.http_client.clone();
+                let action = move || {
+                    http_client
+                        .post(settlement_engine_url.clone())
+                        .header("Content-Type", "application/octet-stream")
+                        .header("Idempotency-Key", idempotency_uuid.clone())
+                        .body(message.clone())
+                        .send()
+                };
+
+                return Box::new(Retry::spawn(ExponentialBackoff::from_millis(10).take(10), action)
                 .map_err(move |error| {
                     error!("Error sending message to settlement engine: {:?}", error);
                     RejectBuilder {
