@@ -1,4 +1,6 @@
 use interledger_packet::Address;
+#[cfg(test)]
+use lazy_static::lazy_static;
 use mockito::Matcher;
 use std::str::FromStr;
 

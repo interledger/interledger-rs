@@ -1,7 +1,3 @@
-extern crate interledger;
-#[macro_use]
-extern crate log;
-
 use env_logger;
 use futures::{
     future::{join_all, ok},
@@ -12,6 +8,7 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use log::debug;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 

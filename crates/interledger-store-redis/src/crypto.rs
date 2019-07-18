@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use log::error;
 use ring::{
     aead, digest, hmac,
     rand::{SecureRandom, SystemRandom},

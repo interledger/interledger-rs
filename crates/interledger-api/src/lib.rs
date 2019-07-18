@@ -1,10 +1,6 @@
 #![recursion_limit = "128"]
 #[macro_use]
 extern crate tower_web;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde_json;
 
 use bytes::Bytes;
 use futures::Future;
@@ -17,7 +13,7 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use serde::Serialize;
 use std::str;
-use tower_web::{net::ConnectionStream, ServiceBuilder};
+use tower_web::{net::ConnectionStream, Extract, Response, ServiceBuilder};
 
 mod routes;
 use self::routes::*;

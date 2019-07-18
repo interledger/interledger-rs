@@ -4,6 +4,7 @@ use env_logger;
 use futures::Future;
 use interledger_api::NodeStore;
 use interledger_store_redis::{RedisStore, RedisStoreBuilder};
+use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use tokio::runtime::Runtime;
 

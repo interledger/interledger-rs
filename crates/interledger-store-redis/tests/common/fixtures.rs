@@ -1,5 +1,6 @@
 use interledger_api::AccountDetails;
 use interledger_packet::Address;
+use lazy_static::lazy_static;
 use std::str::FromStr;
 
 lazy_static! {

@@ -17,6 +17,7 @@ use interledger_service_util::{
 use interledger_settlement::{SettlementApi, SettlementMessageService};
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
+use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str};

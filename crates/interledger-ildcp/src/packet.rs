@@ -4,6 +4,7 @@ use interledger_packet::{
     oer::{predict_var_octet_string, BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
+use lazy_static::lazy_static;
 use std::{
     convert::TryFrom,
     fmt, str,

@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use futures::{future::result, Future, Stream};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
+use log::{error, trace};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},

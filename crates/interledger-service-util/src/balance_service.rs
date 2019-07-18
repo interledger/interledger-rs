@@ -1,6 +1,7 @@
 use futures::Future;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
+use log::{debug, error};
 use std::marker::PhantomData;
 use tokio_executor::spawn;
 

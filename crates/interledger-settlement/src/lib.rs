@@ -1,12 +1,7 @@
 #![recursion_limit = "128"]
 
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate tower_web;
-#[macro_use]
-#[cfg(test)]
-extern crate lazy_static;
 
 use bytes::Bytes;
 use futures::Future;

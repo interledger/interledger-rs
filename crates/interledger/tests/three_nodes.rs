@@ -1,10 +1,5 @@
 #![recursion_limit = "128"]
 
-extern crate interledger;
-extern crate reqwest;
-#[macro_use]
-extern crate serde_json;
-
 use env_logger;
 use futures::{future::join_all, Future, Stream};
 use interledger::{
@@ -12,6 +7,7 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use serde_json::json;
 use std::str;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
