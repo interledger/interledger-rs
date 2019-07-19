@@ -254,7 +254,7 @@ where
     /// Periodically spawns a job every `self.poll_frequency` that notifies the
     /// Settlement Engine's connectors about transactions which are sent to the
     /// engine's address.
-    fn notify_connector_on_incoming_settlement(&self) {
+    pub fn notify_connector_on_incoming_settlement(&self) {
         let _self = self.clone();
         let interval = self.poll_frequency;
         let address = self.address;
@@ -297,7 +297,7 @@ where
     /// 7. Save the (current block number - confirmations) and current account
     ///    balance to the store, to be used as last observed data for the next
     ///    call of this function.
-    fn notifier(&self) -> impl Future<Item = (), Error = ()> + Send {
+    pub fn notifier(&self) -> impl Future<Item = (), Error = ()> + Send {
         let confirmations = self.confirmations;
         let our_address = self.address.own_address;
         let connector_url = self.connector_url.clone();

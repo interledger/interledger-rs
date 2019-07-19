@@ -97,8 +97,7 @@ pub fn main() {
             // TODO make compatible with
             // https://github.com/tendermint/signatory to have HSM sigs
             let private_key: String = value_t!(matches, "key", String).unwrap();
-            let ethereum_endpoint: String =
-                value_t!(matches, "ethereum_endpoint", String).unwrap();
+            let ethereum_endpoint: String = value_t!(matches, "ethereum_endpoint", String).unwrap();
             let token_address = value_t!(matches, "token_address", String).unwrap();
             let token_address = if token_address.len() == 20 {
                 Some(EthAddress::from_str(&token_address).unwrap())
@@ -106,8 +105,7 @@ pub fn main() {
                 None
             };
             let connector_url: String = value_t!(matches, "connector_url", String).unwrap();
-            let redis_uri =
-                value_t!(matches, "redis_uri", String).expect("redis_uri is required");
+            let redis_uri = value_t!(matches, "redis_uri", String).expect("redis_uri is required");
             let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
             let server_secret: [u8; 32] = {
                 let encoded: String = value_t!(matches, "server_secret", String).unwrap();
