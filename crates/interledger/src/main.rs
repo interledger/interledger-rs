@@ -148,8 +148,8 @@ pub fn main() {
                                 .default_value("6"),
                             Arg::with_name("poll_frequency")
                                 .long("poll_frequency")
-                                .help("The frequency in seconds at which the engine will check the blockchain about the confirmation status of a tx")
-                                .default_value("5"),
+                                .help("The frequency in milliseconds at which the engine will check the blockchain about the confirmation status of a tx")
+                                .default_value("5000"),
                             Arg::with_name("watch_incoming")
                                 .long("watch_incoming")
                                 .help("Launch a blockchain watcher that listens for incoming transactions and notifies the connector upon sufficient confirmations")

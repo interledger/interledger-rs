@@ -166,12 +166,16 @@ impl TestAccount {
 #[allow(dead_code)]
 pub fn mock_settlement(status_code: usize) -> mockito::Mock {
     mock("POST", SETTLEMENT_API.clone())
+        // The settlement API receives json data
+        .match_header("Content-Type", "application/json")
         .with_status(status_code)
         .with_body(BODY)
 }
 
 pub fn mock_message(status_code: usize) -> mockito::Mock {
     mock("POST", MESSAGES_API.clone())
+        // The messages API receives raw data
+        .match_header("Content-Type", "application/octet-stream")
         .with_status(status_code)
         .with_body(BODY)
 }

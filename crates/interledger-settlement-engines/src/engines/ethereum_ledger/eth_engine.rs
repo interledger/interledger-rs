@@ -14,6 +14,7 @@ use ethereum_tx_sign::web3::{
 use hyper::StatusCode;
 use reqwest::r#async::{Client, Response as HttpResponse};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     marker::PhantomData,
     str::FromStr,
@@ -379,12 +380,10 @@ where
                                                                         let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
                                                                         // retry on fail - https://github.com/ihrwein/backoff
                                                                         debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
-                                                                        let mut params = std::collections::HashMap::new();
-                                                                        params.insert("amount", tx.value.low_u64());
                                                                         let action = move || {
                                                                             client.post(url.clone())
                                                                             .header("Idempotency-Key", idempotency_uuid.clone())
-                                                                            .form(&params)
+                                                                            .json(&json!({"amount" : tx.value.low_u64()}))
                                                                             .send()
                                                                             .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
                                                                             .and_then(move |response| {
@@ -548,6 +547,7 @@ where
                 let action = move || {
                     client
                         .post(url.clone())
+                        .header("Content-Type", "application/octet-stream")
                         .header("Idempotency-Key", idempotency_uuid.clone())
                         .body(body.clone())
                         .send()
