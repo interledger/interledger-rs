@@ -15,6 +15,7 @@ futures = "0.1.25"
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
+interledger-store-redis = { path = "../interledger-store-redis", version = "0.2.1" }
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 ethabi = "6.1.0"
 serde = "1.0.91"
@@ -33,7 +34,7 @@ tokio-retry = "0.2.0"
 redis = { version = "0.10.0", features = [ "with-unix-sockets" ] }
 hashbrown = "0.5.0"
 http = "0.1.17"
-
+clap = "2.32.0"
 
 [dev-dependencies]
 lazy_static = "1.3"

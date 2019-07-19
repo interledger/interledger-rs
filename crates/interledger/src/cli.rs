@@ -1,4 +1,3 @@
-use crate::node::generate_redis_secret;
 use base64;
 use bytes::Bytes;
 use futures::{future::ok, Future};
@@ -14,24 +13,15 @@ use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_router::Router;
 use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
 use interledger_service_util::ValidatorService;
-use interledger_settlement_engines::{
-    engines::ethereum_ledger::{
-        EthAddress, EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner,
-    },
-    stores::redis_ethereum_ledger::EthereumLedgerRedisStoreBuilder,
-    SettlementEngineApi,
-};
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
-use interledger_store_redis::{IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
 use lazy_static::lazy_static;
-use log::{debug, info};
+use log::debug;
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::str::FromStr;
 use std::{convert::TryFrom, net::SocketAddr, str, sync::Arc, u64};
-use tokio::net::TcpListener;
 use url::Url;
 
 lazy_static! {
@@ -347,54 +337,4 @@ pub fn run_moneyd_local(
             Ok(())
         },
     )
-}
-
-#[doc(hidden)]
-#[allow(clippy::all)]
-pub fn run_settlement_engine<R, Si>(
-    redis_uri: R,
-    ethereum_endpoint: String,
-    settlement_port: u16,
-    secret_seed: &[u8; 32],
-    private_key: Si,
-    chain_id: u8,
-    confirmations: u8,
-    poll_frequency: u64,
-    connector_url: String,
-    token_address: Option<EthAddress>,
-    watch_incoming: bool,
-) -> impl Future<Item = (), Error = ()>
-where
-    R: IntoConnectionInfo,
-    Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-{
-    let redis_secret = generate_redis_secret(secret_seed);
-    let redis_uri = redis_uri.into_connection_info().unwrap();
-
-    EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
-        .connect()
-        .and_then(move |ethereum_store| {
-            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store, private_key)
-                .ethereum_endpoint(&ethereum_endpoint)
-                .chain_id(chain_id)
-                .connector_url(&connector_url)
-                .confirmations(confirmations)
-                .poll_frequency(poll_frequency)
-                .watch_incoming(watch_incoming)
-                .token_address(token_address)
-                .connect();
-
-            RedisStoreBuilder::new(redis_uri, redis_secret)
-                .connect()
-                .and_then(move |store| {
-                    let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
-                    let listener = TcpListener::bind(&addr)
-                        .expect("Unable to bind to Settlement Engine address");
-                    info!("Ethereum Settlement Engine listening on: {}", addr);
-
-                    let api = SettlementEngineApi::new(engine, store);
-                    tokio::spawn(api.serve(listener.incoming()));
-                    Ok(())
-                })
-        })
 }

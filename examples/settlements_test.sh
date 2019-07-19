@@ -8,6 +8,7 @@ sleep 3 # wait for ganache to start
 ROOT=$HOME/projects/xpring-contract
 ILP_DIR=$ROOT/interledger-rs
 ILP=$ILP_DIR/target/debug/interledger
+ILP_ENGINE=$ILP_DIR/target/debug/interledger-settlement-engines
 CONFIGS=$ILP_DIR/examples
 
 
@@ -28,7 +29,7 @@ BOB_KEY="cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e"
 
 
 echo "Initializing Alice SE"
-RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
+RUST_LOG=interledger=debug $ILP_ENGINE ethereum-ledger \
 --key $ALICE_KEY \
 --server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 --confirmations 0 \
@@ -40,7 +41,7 @@ RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
 --port 3000 &> $LOGS/engine_alice.log &
 
 echo "Initializing Bob SE"
-RUST_LOG=interledger=debug $ILP settlement-engine ethereum-ledger \
+RUST_LOG=interledger=debug $ILP_ENGINE ethereum-ledger \
 --key $BOB_KEY \
 --server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
 --confirmations 0 \
