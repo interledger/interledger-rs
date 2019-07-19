@@ -469,13 +469,19 @@ where
                 })
                 .and_then(move |nonce| {
                     let tx = make_tx(to, amount, nonce, token_address); // 2
-                    let signed_tx = signer.sign(tx, chain_id); // 3
+                    let signed_tx = signer.sign(tx.clone(), chain_id); // 3
                     debug!("Sending transaction: {:?}", signed_tx);
-                    web3.eth() // 4
+                    let action = move || { 
+                        web3.eth() // 4
                         .send_raw_transaction(signed_tx.clone().into())
-                        .map_err(move |err| {
-                            error!("Error when sending transaction {:?}: {:?}", signed_tx, err)
-                        })
+                    };
+                    Retry::spawn(
+                        ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                        action,
+                    )
+                    .map_err(move |err| {
+                        error!("Error when sending transaction {:?}: {:?}", tx, err)
+                    })
                 }),
         )
     }
