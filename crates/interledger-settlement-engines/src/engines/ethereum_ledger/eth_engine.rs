@@ -115,37 +115,118 @@ impl SpeculativeNonceMiddleware {
     }
 }
 
-impl<S, Si, A> EthereumLedgerSettlementEngine<S, Si, A>
+pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
+    store: S,
+    signer: Si,
+
+    /// Ethereum Endpoint, default localhost:8545
+    ethereum_endpoint: Option<&'a str>,
+    chain_id: Option<u8>,
+    confirmations: Option<u8>,
+    poll_frequency: Option<Duration>,
+    connector_url: Option<Url>,
+    token_address: Option<Address>,
+    watch_incoming: bool,
+    account_type: PhantomData<A>,
+}
+
+impl<'a, S, Si, A> EthereumLedgerSettlementEngineBuilder<'a, S, Si, A>
 where
     S: EthereumStore<Account = A> + Clone + Send + Sync + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
-    #[allow(clippy::all)]
-    pub fn new(
-        ethereum_endpoint: String,
-        store: S,
-        signer: Si,
-        chain_id: u8,
-        confirmations: u8,
-        poll_frequency: Duration,
-        connector_url: Url,
-        token_address: Option<Address>,
-        watch_incoming: bool, // If set to false, the engine will not poll for incoming transactions, and it's expeccted to be done out of process.
-    ) -> Self {
-        let (eloop, transport) = Http::new(&ethereum_endpoint).unwrap();
+    pub fn new(store: S, signer: Si) -> Self {
+        Self {
+            store,
+            signer,
+            ethereum_endpoint: None,
+            chain_id: None,
+            confirmations: None,
+            poll_frequency: None,
+            connector_url: None,
+            token_address: None,
+            watch_incoming: false,
+            account_type: PhantomData,
+        }
+    }
+
+    pub fn token_address(&mut self, token_address: Option<Address>) -> &mut Self {
+        self.token_address = token_address;
+        self
+    }
+
+    pub fn ethereum_endpoint(&mut self, endpoint: &'a str) -> &mut Self {
+        self.ethereum_endpoint = Some(endpoint);
+        self
+    }
+
+    pub fn chain_id(&mut self, chain_id: u8) -> &mut Self {
+        self.chain_id = Some(chain_id);
+        self
+    }
+
+    pub fn confirmations(&mut self, confirmations: u8) -> &mut Self {
+        self.confirmations = Some(confirmations);
+        self
+    }
+
+    pub fn poll_frequency(&mut self, poll_frequency: u64) -> &mut Self {
+        self.poll_frequency = Some(Duration::from_millis(poll_frequency));
+        self
+    }
+
+    pub fn watch_incoming(&mut self, watch_incoming: bool) -> &mut Self {
+        self.watch_incoming = watch_incoming;
+        self
+    }
+
+    pub fn connector_url(&mut self, connector_url: &'a str) -> &mut Self {
+        self.connector_url = Some(connector_url.parse().unwrap());
+        self
+    }
+
+    pub fn connect(&self) -> EthereumLedgerSettlementEngine<S, Si, A> {
+        let ethereum_endpoint = if let Some(ref ethereum_endpoint) = self.ethereum_endpoint {
+            &ethereum_endpoint
+        } else {
+            "http://localhost:8545"
+        };
+        let chain_id = if let Some(chain_id) = self.chain_id {
+            chain_id
+        } else {
+            1
+        };
+        let connector_url = if let Some(connector_url) = self.connector_url.clone() {
+            connector_url
+        } else {
+            "http://localhost:7771".parse().unwrap()
+        };
+        let confirmations = if let Some(confirmations) = self.confirmations {
+            confirmations
+        } else {
+            6
+        };
+        let poll_frequency = if let Some(poll_frequency) = self.poll_frequency {
+            poll_frequency
+        } else {
+            Duration::from_secs(5)
+        };
+
+        let (eloop, transport) = Http::new(ethereum_endpoint).unwrap();
         eloop.into_remote();
         let web3 = Web3::new(transport);
         let address = Addresses {
-            own_address: signer.address(),
-            token_address,
+            own_address: self.signer.address(),
+            token_address: self.token_address,
         };
         let speculative_nonce_middleware =
             SpeculativeNonceMiddleware::new(web3.clone(), address.own_address);
+
         let engine = EthereumLedgerSettlementEngine {
             web3,
-            store,
-            signer,
+            store: self.store.clone(),
+            signer: self.signer.clone(),
             address,
             chain_id,
             confirmations,
@@ -154,12 +235,19 @@ where
             speculative_nonce_middleware,
             account_type: PhantomData,
         };
-        if watch_incoming {
+        if self.watch_incoming {
             engine.notify_connector_on_incoming_settlement();
         }
         engine
     }
+}
 
+impl<S, Si, A> EthereumLedgerSettlementEngine<S, Si, A>
+where
+    S: EthereumStore<Account = A> + Clone + Send + Sync + 'static,
+    Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
+    A: EthereumAccount + Send + Sync + 'static,
+{
     /// Periodically spawns a job every `self.poll_frequency` that notifies the
     /// Settlement Engine's connectors about transactions which are sent to the
     /// engine's address.
@@ -642,7 +730,7 @@ mod tests {
             bob_store.clone(),
             BOB_PK.clone(),
             0,
-            bob_connector_url,
+            &bob_connector_url,
             true,
         );
 
@@ -650,7 +738,7 @@ mod tests {
             alice_store.clone(),
             ALICE_PK.clone(),
             0,
-            "http://127.0.0.1:9999".to_owned(), // url does not matter here
+            "http://127.0.0.1:9999",
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
 
@@ -686,7 +774,7 @@ mod tests {
         let connector_url = mockito::server_url();
 
         let store = test_store(bob.clone(), false, false, false);
-        let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, connector_url, false);
+        let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, &connector_url, false);
 
         let ret = block_on(engine.create_account(bob.id.to_string())).unwrap();
         assert_eq!(ret.0.as_u16(), 201);
@@ -716,7 +804,7 @@ mod tests {
         let connector_url = mockito::server_url();
 
         let store = test_store(ALICE.clone(), false, false, false);
-        let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, connector_url, false);
+        let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, &connector_url, false);
 
         let ret = block_on(engine.create_account(bob.id.to_string())).unwrap();
         assert_eq!(ret.0.as_u16(), 201);

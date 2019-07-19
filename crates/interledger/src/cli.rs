@@ -16,7 +16,7 @@ use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequ
 use interledger_service_util::ValidatorService;
 use interledger_settlement_engines::{
     engines::ethereum_ledger::{
-        EthAddress, EthereumLedgerSettlementEngine, EthereumLedgerTxSigner,
+        EthAddress, EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner,
     },
     stores::redis_ethereum_ledger::EthereumLedgerRedisStoreBuilder,
     SettlementEngineApi,
@@ -30,7 +30,6 @@ use log::{debug, info};
 use parking_lot::RwLock;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::str::FromStr;
-use std::time::Duration;
 use std::{convert::TryFrom, net::SocketAddr, str, sync::Arc, u64};
 use tokio::net::TcpListener;
 use url::Url;
@@ -360,8 +359,8 @@ pub fn run_settlement_engine<R, Si>(
     private_key: Si,
     chain_id: u8,
     confirmations: u8,
-    poll_frequency: Duration,
-    connector_url: Url,
+    poll_frequency: u64,
+    connector_url: String,
     token_address: Option<EthAddress>,
     watch_incoming: bool,
 ) -> impl Future<Item = (), Error = ()>
@@ -375,17 +374,15 @@ where
     EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
         .connect()
         .and_then(move |ethereum_store| {
-            let engine = EthereumLedgerSettlementEngine::new(
-                ethereum_endpoint,
-                ethereum_store,
-                private_key,
-                chain_id,
-                confirmations,
-                poll_frequency,
-                connector_url,
-                token_address,
-                watch_incoming,
-            );
+            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store, private_key)
+                .ethereum_endpoint(&ethereum_endpoint)
+                .chain_id(chain_id)
+                .connector_url(&connector_url)
+                .confirmations(confirmations)
+                .poll_frequency(poll_frequency)
+                .watch_incoming(watch_incoming)
+                .token_address(token_address)
+                .connect();
 
             RedisStoreBuilder::new(redis_uri, redis_secret)
                 .connect()

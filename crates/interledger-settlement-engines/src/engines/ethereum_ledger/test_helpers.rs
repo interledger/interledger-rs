@@ -17,7 +17,7 @@ use ethereum_tx_sign::web3::{
     types::{Address, H256, U256},
 };
 
-use super::eth_engine::EthereumLedgerSettlementEngine;
+use super::eth_engine::{EthereumLedgerSettlementEngine, EthereumLedgerSettlementEngineBuilder};
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
 use interledger_settlement::{IdempotentData, IdempotentStore};
 
@@ -261,7 +261,7 @@ pub fn test_engine<Si, S, A>(
     store: S,
     key: Si,
     confs: u8,
-    connector_url: String,
+    connector_url: &str,
     watch_incoming: bool,
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
 where
@@ -269,19 +269,12 @@ where
     S: EthereumStore<Account = A> + IdempotentStore + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
-    let chain_id = 1;
-    let poll_frequency = Duration::from_secs(5);
-    EthereumLedgerSettlementEngine::new(
-        "http://localhost:8545".to_string(),
-        store,
-        key,
-        chain_id,
-        confs,
-        poll_frequency,
-        connector_url.parse().unwrap(),
-        None,
-        watch_incoming,
-    )
+    EthereumLedgerSettlementEngineBuilder::new(store, key)
+        .connector_url(connector_url)
+        .confirmations(confs)
+        .watch_incoming(watch_incoming)
+        .poll_frequency(5)
+        .connect()
 }
 
 pub fn start_ganache() -> std::process::Child {

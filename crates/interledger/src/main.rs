@@ -8,7 +8,6 @@ use interledger_ildcp::IldcpResponseBuilder;
 use interledger_packet::Address;
 use interledger_settlement_engines::engines::ethereum_ledger::EthAddress;
 use std::str::FromStr;
-use std::time::Duration;
 use tokio;
 use url::Url;
 
@@ -352,7 +351,6 @@ pub fn main() {
                 let chain_id = value_t!(matches, "chain_id", u8).unwrap();
                 let confirmations = value_t!(matches, "confirmations", u8).unwrap();
                 let poll_frequency = value_t!(matches, "poll_frequency", u64).unwrap();
-                let poll_frequency = Duration::from_secs(poll_frequency);
                 let watch_incoming = value_t!(matches, "watch_incoming", bool).unwrap();
 
                 tokio::run(run_settlement_engine(
@@ -364,7 +362,7 @@ pub fn main() {
                     chain_id,
                     confirmations,
                     poll_frequency,
-                    Url::parse(&connector_url).unwrap(),
+                    connector_url,
                     token_address,
                     watch_incoming,
                 ));

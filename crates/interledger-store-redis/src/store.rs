@@ -6,8 +6,8 @@ use futures::{
     Future, Stream,
 };
 use hashbrown::{HashMap, HashSet};
-use std::collections::HashMap as SlowHashMap;
 use log::{debug, error, trace, warn};
+use std::collections::HashMap as SlowHashMap;
 
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};

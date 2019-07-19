@@ -8,7 +8,7 @@ pub mod fixtures;
 pub mod test_helpers;
 
 // Only expose the engine and the ledger signer
-pub use eth_engine::EthereumLedgerSettlementEngine;
+pub use eth_engine::{EthereumLedgerSettlementEngine, EthereumLedgerSettlementEngineBuilder};
 pub use ethereum_tx_sign::web3::types::Address as EthAddress;
 pub use types::{
     Addresses as EthereumAddresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore,
