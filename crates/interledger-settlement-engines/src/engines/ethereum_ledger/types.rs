@@ -60,9 +60,9 @@ pub trait EthereumStore {
     ) -> Box<dyn Future<Item = (U256, U256), Error = ()> + Send>;
 
     /// Retrieves the account id associated with the provided addresses pair.
-    /// Note that an account with Addresses(0x1, None) must have different id
-    /// from an account with Addresses(0x1, 0x2), since the first is 0x1 on
-    /// Ether, while the second one is 0x1 on some ERC20 token.
+    /// Note that an account with the same `own_address` but different ERC20
+    /// `token_address` can exist multiple times since each occurence represents
+    /// a different token.
     fn load_account_id_from_address(
         &self,
         eth_address: Addresses,

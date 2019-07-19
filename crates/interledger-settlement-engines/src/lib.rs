@@ -15,10 +15,9 @@ extern crate tower_web;
 use futures::Future;
 
 // Export all the engines
+mod api;
 pub mod engines;
 pub mod stores;
-use self::stores::redis_store;
-mod api;
 pub use self::api::SettlementEngineApi;
 
 #[derive(Extract, Debug, Clone, Copy)]

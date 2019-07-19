@@ -12,7 +12,7 @@ use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineComman
 
 use log::{debug, error};
 
-use crate::redis_store::{EngineRedisStore, EngineRedisStoreBuilder};
+use crate::stores::redis_store::{EngineRedisStore, EngineRedisStoreBuilder};
 
 // Key for the latest observed block and balance. The data is stored in order to
 // avoid double crediting transactions which have already been processed, and in

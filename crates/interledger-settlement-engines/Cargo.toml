@@ -27,7 +27,7 @@ tokio-executor = "0.1.8"
 url = "1.7.2"
 reqwest = "0.9.18"
 env_logger = "0.6.2"
-ethkey = { git = "https://github.com/paritytech/parity-ethereum" }
+ethkey = { git = "https://github.com/paritytech/parity-ethereum", rev = "fa1f81b5a32c6264a2f5a9c097cd15a0a928cea2" }
 parity-crypto = "0.4.0"
 uuid = { version = "0.7.4", features = ["serde", "v4"]  }
 tokio-retry = "0.2.0"
