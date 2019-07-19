@@ -69,12 +69,11 @@ impl EthereumStore for TestStore {
 
     fn save_account_addresses(
         &self,
-        account_ids: Vec<u64>,
-        data: Vec<Addresses>,
+        data: HashMap<u64, Addresses>,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let mut guard = self.addresses.write();
         let mut guard2 = self.address_to_id.write();
-        for (acc, d) in account_ids.into_iter().zip(data.into_iter()) {
+        for (acc, d) in data {
             (*guard).insert(acc, d);
             (*guard2).insert(d, acc);
         }

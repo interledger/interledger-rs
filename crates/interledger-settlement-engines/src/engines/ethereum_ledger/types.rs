@@ -7,6 +7,7 @@ use futures::Future;
 use interledger_service::Account;
 use parity_crypto::Keccak256;
 use std::str::FromStr;
+use std::collections::HashMap;
 
 /// An Ethereum account is associated with an address. We additionally require
 /// that an optional `token_address` is implemented. If the `token_address` of an
@@ -36,8 +37,7 @@ pub trait EthereumStore {
     /// called when creating an account on the API.
     fn save_account_addresses(
         &self,
-        account_ids: Vec<<Self::Account as Account>::AccountId>,
-        data: Vec<Addresses>,
+        data: HashMap<<Self::Account as Account>::AccountId, Addresses>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Loads the Ethereum address associated with this account

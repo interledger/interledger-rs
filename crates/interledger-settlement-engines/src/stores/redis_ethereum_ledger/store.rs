@@ -5,7 +5,7 @@ use futures::{
 
 use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use interledger_service::Account as AccountTrait;
-use std::collections::HashMap as SlowHashMap;
+use std::collections::HashMap;
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
@@ -118,7 +118,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
                     )
                 })
                 .and_then(
-                    move |(_conn, addresses): (_, Vec<SlowHashMap<String, Vec<u8>>>)| {
+                    move |(_conn, addresses): (_, Vec<HashMap<String, Vec<u8>>>)| {
                         debug!("Loaded account addresses {:?}", addresses);
                         let mut ret = Vec::with_capacity(addresses.len());
                         for addr in &addresses {
@@ -153,32 +153,26 @@ impl EthereumStore for EthereumLedgerRedisStore {
 
     fn save_account_addresses(
         &self,
-        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
-        data: Vec<EthereumAddresses>,
+        data: HashMap<<Self::Account as AccountTrait>::AccountId, EthereumAddresses>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        for (account_id, d) in account_ids.iter().zip(&data) {
+        for (account_id, d) in data {
             let token_address = if let Some(token_address) = d.token_address {
                 token_address.to_vec()
             } else {
                 vec![]
             };
-            let acc_id = ethereum_ledger_key(*account_id);
+            let acc_id = ethereum_ledger_key(account_id);
             let addrs = &[
                 ("own_address", d.own_address.to_vec()),
                 ("token_address", token_address),
             ];
             pipe.hset_multiple(acc_id, addrs).ignore();
-            pipe.set(addrs_to_key(*d), *account_id).ignore();
+            pipe.set(addrs_to_key(d), account_id).ignore();
         }
         Box::new(
             pipe.query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error saving account data for accounts: {:?} {:?}",
-                        account_ids, err
-                    )
-                })
+                .map_err(move |err| error!("Error saving account data: {:?}", err))
                 .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
         )
     }
@@ -212,7 +206,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
-                .and_then(move |(_conn, data): (_, Vec<SlowHashMap<String, u64>>)| {
+                .and_then(move |(_conn, data): (_, Vec<HashMap<String, u64>>)| {
                     let data = &data[0];
                     let block = if let Some(block) = data.get("block") {
                         block
@@ -280,6 +274,7 @@ mod tests {
         block_on, test_eth_store as test_store,
     };
     use super::*;
+    use std::iter::FromIterator;
     use std::str::FromStr;
 
     #[test]
@@ -300,8 +295,12 @@ mod tests {
                     token_address: None,
                 },
             ];
+            let input = HashMap::from_iter(vec![
+                (account_ids[0], account_addresses[0]),
+                (account_ids[1], account_addresses[1]),
+            ]);
             store
-                .save_account_addresses(account_ids.clone(), account_addresses.clone())
+                .save_account_addresses(input)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
                 .and_then(move |_| {
                     store

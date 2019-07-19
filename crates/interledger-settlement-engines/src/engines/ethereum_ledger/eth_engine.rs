@@ -1,6 +1,8 @@
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
 use super::utils::make_tx;
 use log::{debug, error, trace};
+use std::collections::HashMap;
+use std::iter::FromIterator;
 
 use ethereum_tx_sign::web3::{
     api::Web3,
@@ -562,13 +564,12 @@ where
                 })
                 .and_then(move |resp| {
                     parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        store
-                            .save_account_addresses(vec![account_id], vec![payment_details.to])
-                            .map_err(move |err| {
-                                let err = format!("Couldn't connect to store {:?}", err);
-                                error!("{}", err);
-                                (StatusCode::from_u16(500).unwrap(), err)
-                            })
+                        let data = HashMap::from_iter(vec![(account_id, payment_details.to)]);
+                        store.save_account_addresses(data).map_err(move |err| {
+                            let err = format!("Couldn't connect to store {:?}", err);
+                            error!("{}", err);
+                            (StatusCode::from_u16(500).unwrap(), err)
+                        })
                     })
                 })
                 .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned())))
@@ -695,25 +696,25 @@ mod tests {
 
         let alice_store = test_store(ALICE.clone(), false, false, true);
         alice_store
-            .save_account_addresses(
-                vec![0],
-                vec![Addresses {
+            .save_account_addresses(HashMap::from_iter(vec![(
+                0,
+                Addresses {
                     own_address: bob.address,
                     token_address: None,
-                }],
-            )
+                },
+            )]))
             .wait()
             .unwrap();
 
         let bob_store = test_store(bob.clone(), false, false, true);
         bob_store
-            .save_account_addresses(
-                vec![42],
-                vec![Addresses {
+            .save_account_addresses(HashMap::from_iter(vec![(
+                42,
+                Addresses {
                     own_address: alice.address,
                     token_address: None,
-                }],
-            )
+                },
+            )]))
             .wait()
             .unwrap();
 
