@@ -3,10 +3,8 @@ use ethereum_tx_sign::{
     web3::types::{Address, H256, U256},
     RawTransaction,
 };
-use ethkey::KeyPair;
 use futures::Future;
 use interledger_service::Account;
-use parity_crypto::Keccak256;
 use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -99,16 +97,14 @@ impl EthereumLedgerTxSigner for String {
     fn sign_message(&self, message: &[u8]) -> Signature {
         let private_key: PrivateKey = self.parse().unwrap();
         let hash = Sha3::digest(message);
-        let sig = private_key.sign_hash(&hash);
-        println!("SIGNED HASH {:?} sig: {:?}", hash, sig);
-        sig
+        private_key.sign_hash(&hash)
     }
 
     fn address(&self) -> Address {
-        let keypair = KeyPair::from_secret(self.parse().unwrap()).unwrap();
-        let public = keypair.public();
-        let hash = public.keccak256();
-        Address::from(&hash[12..])
+        let private_key: PrivateKey = self.parse().unwrap();
+        let address = private_key.to_public_key().unwrap();
+        // Address type from clarity library must convert to web3 Address
+        Address::from(address.as_bytes())
     }
 }
 
