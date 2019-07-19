@@ -1,6 +1,6 @@
 use ethabi::Token;
 use ethereum_tx_sign::{
-    web3::types::{Address, U256},
+    web3::types::{Address, Transaction, U256},
     RawTransaction,
 };
 
@@ -47,6 +47,19 @@ pub fn make_tx(
             value,
         }
     }
+}
+
+// TODO: Extend this function to inspect the data field of a
+// transaction, so that it supports contract wallets such as the Gnosis Multisig
+// etc. There is no need to implement any ERC20 functionality here since these
+// transfers can be quickly found by filtering for the `Transfer` ERC20 event.
+pub fn sent_to_us(tx: Transaction, our_address: Address) -> (Address, U256, Option<Address>) {
+    if let Some(to) = tx.to {
+        if tx.value > U256::from(0) && to == our_address {
+            return (tx.from, tx.value, None);
+        }
+    }
+    (tx.from, U256::from(0), None) // if it's not for us the amount is 0
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
-use super::utils::make_tx;
+use super::utils::{make_tx, sent_to_us};
 use log::{debug, error, trace};
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -362,56 +362,54 @@ where
                                                         web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
                                                         .map_err(move |err| error!("Could not fetch transaction data from transaction hash: {:?}. Got error: {:?}", tx_hash, err))
                                                         .and_then(move |tx| {
+                                                            // Optimization: This will make 1 settlement API request to
+                                                            // the connector per transaction that comes to us. Since
+                                                            // we're scanning across multiple blocks, we want to
+                                                            // optimize it so that: it gathers a mapping of
+                                                            // (accountId=>amount) across all transactions and blocks, and
+                                                            // only makes 1 transaction per accountId with the
+                                                            // appropriate amount.
                                                             let tx = tx.clone();
                                                             if let Some(tx) = tx {
-                                                                if let Some(to) = tx.to {
-                                                                    if tx.value > U256::from(0) {
-                                                                        trace!("Forwarding transaction: {:?}", tx);
-                                                                        // Optimization: This will make 1 settlement API request to
-                                                                        // the connector per transaction that comes to us. Since
-                                                                        // we're scanning across multiple blocks, we want to
-                                                                        // optimize it so that: it gathers a mapping of
-                                                                        // (accountId=>amount) across all transactions and blocks, and
-                                                                        // only makes 1 transaction per accountId with the
-                                                                        // appropriate amount.
-                                                                        if to == our_address {
-                                                                            let addr = Addresses {
-                                                                                own_address: tx.from,
-                                                                                token_address: None,
-                                                                            };
-                                                                            let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
-                                                                                url.path_segments_mut()
-                                                                                    .expect("Invalid connector URL")
-                                                                                    .push("accounts")
-                                                                                    .push(&id.to_string())
-                                                                                    .push("settlement");
-                                                                                let client = Client::new();
-                                                                                let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-                                                                                // retry on fail - https://github.com/ihrwein/backoff
-                                                                                debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
-                                                                                let action = move || {
-                                                                                    client.post(url.clone())
-                                                                                    .header("Idempotency-Key", idempotency_uuid.clone())
-                                                                                    .json(&json!({"amount" : tx.value.low_u64()}))
-                                                                                    .send()
-                                                                                    .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
-                                                                                    .and_then(move |response| {
-                                                                                        trace!("Accounting system responded with {:?}", response);
-                                                                                        if response.status().is_success() {
-                                                                                            Ok(())
-                                                                                        } else {
-                                                                                            Err(())
-                                                                                        }
-                                                                                    })
-                                                                                };
-                                                                                tokio::spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Exceeded max retries when notifying connector. Please check your API.")));
-                                                                                ok(())
-                                                                            });
-                                                                            tokio::spawn(notify_connector_future);
-                                                                        }
-                                                                    }
+                                                                trace!("Inspecting transaction: {:?}", tx);
+                                                                let (from, amount, token_address) = sent_to_us(tx, our_address);
+                                                                if amount > U256::from(0) {
+                                                                    let addr = Addresses {
+                                                                        own_address: from,
+                                                                        token_address,
+                                                                    };
+                                                                    let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
+                                                                        url.path_segments_mut()
+                                                                            .expect("Invalid connector URL")
+                                                                            .push("accounts")
+                                                                            .push(&id.to_string())
+                                                                            .push("settlement");
+                                                                        let client = Client::new();
+                                                                        let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+                                                                        // retry on fail - https://github.com/ihrwein/backoff
+                                                                        debug!("Making POST to {:?} {:?} {:?}", url, amount.to_string(), idempotency_uuid);
+                                                                        let action = move || {
+                                                                            client.post(url.clone())
+                                                                            .header("Idempotency-Key", idempotency_uuid.clone())
+                                                                            .json(&json!({"amount" : amount.low_u64()}))
+                                                                            .send()
+                                                                            .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
+                                                                            .and_then(move |response| {
+                                                                                trace!("Accounting system responded with {:?}", response);
+                                                                                if response.status().is_success() {
+                                                                                    Ok(())
+                                                                                } else {
+                                                                                    Err(())
+                                                                                }
+                                                                            })
+                                                                        };
+                                                                        tokio::spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Exceeded max retries when notifying connector. Please check your API.")));
+                                                                        ok(())
+                                                                    });
+                                                                    tokio::spawn(notify_connector_future);
                                                                 }
                                                             }
+
                                                             ok(())
                                                         }))
                                                     }
@@ -471,9 +469,9 @@ where
                     let tx = make_tx(to, amount, nonce, token_address); // 2
                     let signed_tx = signer.sign(tx.clone(), chain_id); // 3
                     debug!("Sending transaction: {:?}", signed_tx);
-                    let action = move || { 
+                    let action = move || {
                         web3.eth() // 4
-                        .send_raw_transaction(signed_tx.clone().into())
+                            .send_raw_transaction(signed_tx.clone().into())
                     };
                     Retry::spawn(
                         ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
@@ -735,8 +733,10 @@ mod tests {
 
         let mut ganache_pid = start_ganache();
 
-        let _bob_mock = mockito::mock("POST", "/accounts/42/settlement")
-            .match_body(mockito::Matcher::Regex(r"amount=\d*".to_string()))
+        let bob_mock = mockito::mock("POST", "/accounts/42/settlement")
+            .match_body(mockito::Matcher::JsonString(
+                "{\"amount\": 100 }".to_string(),
+            ))
             .with_status(200)
             .with_body("OK".to_string())
             .create();
@@ -763,8 +763,10 @@ mod tests {
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
 
-        std::thread::sleep(Duration::from_millis(100)); // wait a few seconds so that the receiver's engine that does the polling
+        std::thread::sleep(Duration::from_millis(2000)); // wait a few seconds so that the receiver's engine that does the polling
+
         ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
+        bob_mock.assert();
     }
 
     #[test]

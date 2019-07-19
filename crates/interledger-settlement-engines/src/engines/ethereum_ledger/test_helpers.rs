@@ -272,7 +272,7 @@ where
         .connector_url(connector_url)
         .confirmations(confs)
         .watch_incoming(watch_incoming)
-        .poll_frequency(5)
+        .poll_frequency(1000)
         .connect()
 }
 
