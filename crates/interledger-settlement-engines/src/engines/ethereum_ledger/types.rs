@@ -1,3 +1,4 @@
+use clarity::{PrivateKey, Signature};
 use ethereum_tx_sign::{
     web3::types::{Address, H256, U256},
     RawTransaction,
@@ -6,6 +7,7 @@ use ethkey::KeyPair;
 use futures::Future;
 use interledger_service::Account;
 use parity_crypto::Keccak256;
+use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -80,15 +82,26 @@ pub trait EthereumStore {
 /// connection is asynchronous
 pub trait EthereumLedgerTxSigner {
     /// Takes a transaction and returns an RLP encoded signed version of it
-    fn sign(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8>;
+    fn sign_raw_tx(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8>;
+
+    /// Takes a message and returns a signature on it
+    fn sign_message(&self, message: &[u8]) -> Signature;
 
     /// Returns the Ethereum address associated with the signer
     fn address(&self) -> Address;
 }
 
 impl EthereumLedgerTxSigner for String {
-    fn sign(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8> {
+    fn sign_raw_tx(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8> {
         tx.sign(&H256::from_str(self).unwrap(), &chain_id)
+    }
+
+    fn sign_message(&self, message: &[u8]) -> Signature {
+        let private_key: PrivateKey = self.parse().unwrap();
+        let hash = Sha3::digest(message);
+        let sig = private_key.sign_hash(&hash);
+        println!("SIGNED HASH {:?} sig: {:?}", hash, sig);
+        sig
     }
 
     fn address(&self) -> Address {

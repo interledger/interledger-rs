@@ -37,7 +37,7 @@ RUST_LOG=interledger=debug $ILP_ENGINE ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379 \
---watch_incoming false \
+--watch_incoming true \
 --port 3000 &> $LOGS/engine_alice.log &
 
 echo "Initializing Bob SE"
@@ -49,7 +49,7 @@ RUST_LOG=interledger=debug $ILP_ENGINE ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6380 \
---watch_incoming false \
+--watch_incoming true \
 --port 3001 &> $LOGS/engine_bob.log &
 
 sleep 1
@@ -64,7 +64,7 @@ sleep 2
 # insert alice's account details on Alice's connector
 curl http://localhost:7770/accounts -X POST \
     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=in_alice&outgoing_token=out_alice&settle_to=-10" \
-    -H "Authorization: Bearer hi_alice" &
+    -H "Authorization: Bearer hi_alice"
 
 # insert Bob's account details on Alice's connector
 curl http://localhost:7770/accounts -X POST \
@@ -76,7 +76,7 @@ sleep 1
 # insert bob's account on bob's conncetor
  curl http://localhost:8770/accounts -X POST \
      -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=in_bob&outgoing_token=out_bob&settle_to=-10" \
-     -H "Authorization: Bearer hi_bob" &
+     -H "Authorization: Bearer hi_bob"
  
 # insert Alice's account details on Bob's connector
 # when setting up an account with another party makes senes to give them some slack if they do not prefund
@@ -84,7 +84,7 @@ curl http://localhost:8770/accounts -X POST \
      -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
      -H "Authorization: Bearer hi_bob" &
 
-sleep 3 # wait for Alice's engine to retry the configuration request to Bob
+sleep 5 # wait for Alice's engine to retry the configuration request to Bob
 
 # Their settlement engines should be configured automatically 
 echo "Alice Store:"

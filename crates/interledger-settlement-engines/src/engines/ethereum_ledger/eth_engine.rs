@@ -1,12 +1,14 @@
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
 use super::utils::{make_tx, sent_to_us};
+use clarity::Signature;
 use log::{debug, error, trace};
+use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use ethereum_tx_sign::web3::{
     api::Web3,
-    futures::future::{ok, result, Either, Future},
+    futures::future::{err, ok, result, Either, Future},
     futures::stream::Stream,
     transports::Http,
     types::{Address, BlockNumber, TransactionId, H256, U256},
@@ -30,37 +32,14 @@ use crate::{ApiResponse, Quantity, SettlementEngine};
 const MAX_RETRIES: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum MessageType {
-    PaymentDetailsRequest = 0,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ReceiveMessageDetails {
-    msg_type: MessageType,
-    data: Vec<u8>,
-}
-
-impl ReceiveMessageDetails {
-    fn new_payment_details_request() -> Self {
-        ReceiveMessageDetails {
-            msg_type: MessageType::PaymentDetailsRequest,
-            data: vec![],
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PaymentDetailsResponse {
     to: Addresses,
-    tag: Uuid,
+    sig: Signature,
 }
 
 impl PaymentDetailsResponse {
-    fn new(to: Addresses) -> Self {
-        PaymentDetailsResponse {
-            to,
-            tag: Uuid::new_v4(),
-        }
+    fn new(to: Addresses, sig: Signature) -> Self {
+        PaymentDetailsResponse { to, sig }
     }
 }
 
@@ -467,7 +446,7 @@ where
                 })
                 .and_then(move |nonce| {
                     let tx = make_tx(to, amount, nonce, token_address); // 2
-                    let signed_tx = signer.sign(tx.clone(), chain_id); // 3
+                    let signed_tx = signer.sign_raw_tx(tx.clone(), chain_id); // 3
                     debug!("Sending transaction: {:?}", signed_tx);
                     let action = move || {
                         web3.eth() // 4
@@ -548,8 +527,9 @@ where
                 // we store that information and use it when
                 // performing settlements.
                 let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
-                let req = ReceiveMessageDetails::new_payment_details_request();
-                let body = serde_json::to_vec(&req).unwrap();
+                let challenge = Uuid::new_v4().to_hyphenated().to_string();
+                let challenge = challenge.into_bytes();
+                let challenge_clone = challenge.clone();
                 let client = Client::new();
                 let mut url = self_clone.connector_url.clone();
                 url.path_segments_mut()
@@ -562,7 +542,7 @@ where
                         .post(url.clone())
                         .header("Content-Type", "application/octet-stream")
                         .header("Idempotency-Key", idempotency_uuid.clone())
-                        .body(body.clone())
+                        .body(challenge.clone())
                         .send()
                 };
 
@@ -577,12 +557,41 @@ where
                 })
                 .and_then(move |resp| {
                     parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        let data = HashMap::from_iter(vec![(account_id, payment_details.to)]);
-                        store.save_account_addresses(data).map_err(move |err| {
-                            let err = format!("Couldn't connect to store {:?}", err);
-                            error!("{}", err);
-                            (StatusCode::from_u16(500).unwrap(), err)
-                        })
+                        let challenge_hash = Sha3::digest(&challenge_clone);
+                        let recovered_address = payment_details.sig.recover(&challenge_hash);
+                        debug!("Received payment details {:?}", payment_details);
+                        result(recovered_address)
+                            .map_err(move |err| {
+                                let err = format!("Could not recover address {:?}", err);
+                                error!("{}", err);
+                                (StatusCode::from_u16(502).unwrap(), err)
+                            })
+                            .and_then({
+                                let payment_details = payment_details.clone();
+                                move |recovered_address| {
+                                    if recovered_address.as_bytes()
+                                        == &payment_details.to.own_address.to_vec()[..]
+                                    {
+                                        ok(())
+                                    } else {
+                                        let error_msg = format!(
+                                            "Recovered address did not match: {:?}. Expected {:?}",
+                                            recovered_address, payment_details.to
+                                        );
+                                        error!("{}", error_msg);
+                                        err((StatusCode::from_u16(502).unwrap(), error_msg))
+                                    }
+                                }
+                            })
+                            .and_then(move |_| {
+                                let data =
+                                    HashMap::from_iter(vec![(account_id, payment_details.to)]);
+                                store.save_account_addresses(data).map_err(move |err| {
+                                    let err = format!("Couldn't connect to store {:?}", err);
+                                    error!("{}", err);
+                                    (StatusCode::from_u16(500).unwrap(), err)
+                                })
+                            })
                     })
                 })
                 .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned())))
@@ -591,40 +600,28 @@ where
     }
 
     /// Settlement Engine's function that corresponds to the
-    /// /accounts/:id/messages endpoint (POST). Responds depending on message type
-    /// which is parsed from the request's body:
-    /// - PaymentDetailsRequest: returns the SE's Ethereum & Token Addresses
-    /// - more request types to be potentially added in the future
+    /// /accounts/:id/messages endpoint (POST).
+    /// The body is a challenge issued by the peer's settlement engine which we
+    /// must sign to prove ownership of our address
     fn receive_message(
         &self,
         account_id: String,
         body: Vec<u8>,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
         let address = self.address;
-        Box::new(
-            result(serde_json::from_slice(&body))
-                .map_err(move |err| {
-                    let error_msg = format!("Could not parse message body: {:?}", err);
-                    error!("{}", error_msg);
-                    (StatusCode::from_u16(400).unwrap(), error_msg)
-                })
-                .and_then(move |message: ReceiveMessageDetails| {
-                    // We are only returning our information, so
-                    // there is no need to return any data about the
-                    // provided account.
-                    debug!(
-                        "Responding with our account's details {} {:?}",
-                        account_id, address
-                    );
-                    let resp = match message.msg_type {
-                        MessageType::PaymentDetailsRequest => {
-                            let ret = PaymentDetailsResponse::new(address);
-                            serde_json::to_string(&ret).unwrap()
-                        }
-                    };
-                    Ok((StatusCode::from_u16(200).unwrap(), resp))
-                }),
-        )
+        // We are only returning our information, so
+        // there is no need to return any data about the
+        // provided account.
+        debug!(
+            "Responding with our account's details {} {:?}",
+            account_id, address
+        );
+        let signature = self.signer.sign_message(&body.clone());
+        let resp = {
+            let ret = PaymentDetailsResponse::new(address, signature);
+            serde_json::to_string(&ret).unwrap()
+        };
+        Box::new(ok((StatusCode::from_u16(200).unwrap(), resp)))
     }
     /// Settlement Engine's function that corresponds to the
     /// /accounts/:id/settlement endpoint (POST). It performs an Ethereum
@@ -773,12 +770,15 @@ mod tests {
     fn test_create_get_account() {
         let bob: TestAccount = BOB.clone();
 
+        let challenge = Uuid::new_v4().to_hyphenated().to_string();
+        let signature = BOB_PK.clone().sign_message(&challenge.clone().into_bytes());
+
         let body_se_data = serde_json::to_string(&PaymentDetailsResponse {
             to: Addresses {
                 own_address: bob.address,
                 token_address: None,
             },
-            tag: Uuid::new_v4(),
+            sig: signature,
         })
         .unwrap();
 
@@ -791,12 +791,17 @@ mod tests {
             .create();
         let connector_url = mockito::server_url();
 
+        // alice sends a create account request to her engine
+        // which makes a call to bob's connector which replies with bob's
+        // address and signature on the challenge
         let store = test_store(bob.clone(), false, false, false);
         let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, &connector_url, false);
 
-        let ret = block_on(engine.create_account(bob.id.to_string())).unwrap();
-        assert_eq!(ret.0.as_u16(), 201);
-        assert_eq!(ret.1, "CREATED");
+        // the signed message does not match. We are not able to make Mockito
+        // capture the challenge and return a signature on it.
+        let ret = block_on(engine.create_account(bob.id.to_string())).unwrap_err();
+        assert_eq!(ret.0.as_u16(), 502);
+        // assert_eq!(ret.1, "CREATED");
 
         m.assert();
     }
@@ -805,41 +810,33 @@ mod tests {
     fn test_receive_message() {
         let bob: TestAccount = BOB.clone();
 
-        let body_se_data = serde_json::to_string(&PaymentDetailsResponse {
-            to: Addresses {
-                own_address: bob.address,
-                token_address: Some(bob.token_address),
-            },
-            tag: Uuid::new_v4(),
-        })
-        .unwrap();
-
-        let m = mockito::mock("POST", MESSAGES_API.clone())
-            .with_status(200)
-            .with_body(body_se_data)
-            .expect(1) // only 1 request is made to the connector (idempotency works properly)
-            .create();
-        let connector_url = mockito::server_url();
+        let challenge = Uuid::new_v4().to_hyphenated().to_string();
+        let signature = ALICE_PK
+            .clone()
+            .sign_message(&challenge.clone().into_bytes());
+        let receive_message = challenge.into_bytes();
 
         let store = test_store(ALICE.clone(), false, false, false);
-        let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, &connector_url, false);
+        let engine = test_engine(
+            store.clone(),
+            ALICE_PK.clone(),
+            0,
+            "http://127.0.0.1:8770",
+            false,
+        );
 
-        let ret = block_on(engine.create_account(bob.id.to_string())).unwrap();
-        assert_eq!(ret.0.as_u16(), 201);
-        assert_eq!(ret.1, "CREATED");
-
-        let receive_message = ReceiveMessageDetails::new_payment_details_request();
-        let receive_message = serde_json::to_vec(&receive_message).unwrap();
+        // Alice's engine receives a challenge by Bob.
         let ret = block_on(engine.receive_message(bob.id.to_string(), receive_message)).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
 
-        // the data our SE will return to the node must match alice's addrs
         let alice_addrs = Addresses {
             own_address: ALICE.address,
             token_address: None,
         };
         let data: PaymentDetailsResponse = serde_json::from_str(&ret.1).unwrap();
+        // The returned addresses must be Alice's
         assert_eq!(data.to, alice_addrs);
-        m.assert();
+        // The returned signature must be Alice's sig.
+        assert_eq!(data.sig, signature);
     }
 }

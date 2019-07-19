@@ -35,6 +35,8 @@ redis = { version = "0.10.0", features = [ "with-unix-sockets" ] }
 hashbrown = "0.5.0"
 http = "0.1.17"
 clap = "2.32.0"
+clarity = { git =  "https://github.com/althea-net/clarity" }
+sha3 = "0.8.2"
 
 [dev-dependencies]
 lazy_static = "1.3"
