@@ -1,4 +1,7 @@
 use bytes::BytesMut;
+#[cfg(test)]
+use lazy_static::lazy_static;
+use log::error;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
 

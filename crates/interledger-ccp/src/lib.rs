@@ -9,11 +9,6 @@
 //! updates are used by the `Router` to forward incoming packets to the best next hop
 //! we know about.
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate lazy_static;
-
 use bytes::Bytes;
 use futures::Future;
 use hashbrown::HashMap;

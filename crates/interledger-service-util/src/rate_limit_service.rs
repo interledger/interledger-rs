@@ -4,6 +4,7 @@ use futures::{
 };
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
+use log::{error, warn};
 use std::marker::PhantomData;
 
 pub trait RateLimitAccount: Account {

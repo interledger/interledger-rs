@@ -11,10 +11,11 @@ use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
-
+use log::error;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 
 use ring::aead;
+use serde::Serialize;
 use serde::Serializer;
 use std::{
     collections::HashMap,
@@ -508,6 +509,7 @@ impl SettlementAccount for Account {
 #[cfg(test)]
 mod redis_account {
     use super::*;
+    use lazy_static::lazy_static;
 
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {

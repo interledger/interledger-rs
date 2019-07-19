@@ -5,6 +5,7 @@ use base64;
 use futures::{future::result, Future, Sink, Stream};
 use interledger_ildcp::IldcpResponse;
 use interledger_service::*;
+use log::{debug, error, warn};
 use ring::digest::{digest, SHA256};
 use std::{net::SocketAddr, str};
 use tokio_executor::spawn;

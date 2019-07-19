@@ -9,6 +9,9 @@ use interledger_packet::*;
 use interledger_service::{
     Account, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
 };
+#[cfg(test)]
+use lazy_static::lazy_static;
+use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::{

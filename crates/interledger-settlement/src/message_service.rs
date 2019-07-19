@@ -5,6 +5,7 @@ use futures::{
 };
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{BoxedIlpFuture, IncomingRequest, IncomingService};
+use log::error;
 use reqwest::r#async::Client;
 use std::marker::PhantomData;
 use tokio_retry::{strategy::ExponentialBackoff, Retry};
