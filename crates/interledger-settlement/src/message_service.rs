@@ -1,4 +1,4 @@
-use super::SettlementAccount;
+use super::{SettlementAccount, SE_ILP_ADDRESS};
 use futures::{
     future::{err, Either},
     Future, Stream,
@@ -47,7 +47,7 @@ where
         // of the settlement engine being used for this account
         let ilp_address = self.ilp_address.clone();
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
-            if request.prepare.destination() == settlement_engine_details.ilp_address {
+            if request.prepare.destination() == SE_ILP_ADDRESS.clone() {
                 let ilp_address_clone = self.ilp_address.clone();
                 let mut settlement_engine_url = settlement_engine_details.url;
                 // The `Prepare` packet's data was sent by the peer's settlement
@@ -136,14 +136,13 @@ mod tests {
         // happy case
         let m = mock_message(200).create();
         let mut settlement = test_service();
-        let destination = TEST_ACCOUNT_0.clone().ilp_address;
         let fulfill: Fulfill = block_on(
             settlement.handle_request(IncomingRequest {
                 from: TEST_ACCOUNT_0.clone(),
                 prepare: PrepareBuilder {
                     amount: 0,
                     expires_at: SystemTime::now(),
-                    destination,
+                    destination: SE_ILP_ADDRESS.clone(),
                     data: DATA.as_bytes(),
                     execution_condition: &[0; 32],
                 }
@@ -216,7 +215,6 @@ mod tests {
         let error_code = 500;
         let error_str = "Internal Server Error";
         let m = mock_message(error_code).create();
-        let destination = TEST_ACCOUNT_0.clone().ilp_address;
         let mut settlement = test_service();
         let reject: Reject = block_on(
             settlement.handle_request(IncomingRequest {
@@ -224,7 +222,7 @@ mod tests {
                 prepare: PrepareBuilder {
                     amount: 0,
                     expires_at: SystemTime::now(),
-                    destination: destination.clone(),
+                    destination: SE_ILP_ADDRESS.clone(),
                     data: DATA.as_bytes(),
                     execution_condition: &[0; 32],
                 }

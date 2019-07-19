@@ -1,4 +1,4 @@
-use super::{IdempotentData, IdempotentStore, SettlementAccount, SettlementStore};
+use super::{IdempotentData, IdempotentStore, SettlementAccount, SettlementStore, SE_ILP_ADDRESS};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -228,15 +228,15 @@ impl_web! {
                 })
                .and_then(|accounts| {
                    let account = &accounts[0];
-                   if let Some(settlement_engine) = account.settlement_engine_details() {
-                       Ok((account.clone(), settlement_engine))
+                   if account.settlement_engine_details().is_some() {
+                       Ok(account.clone())
                    } else {
                        let error_msg = format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id());
                        error!("{}", error_msg);
                        Err((StatusCode::from_u16(404).unwrap(), error_msg))
                    }
                })
-               .and_then(move |(account, settlement_engine)| {
+               .and_then(move |account| {
                    // Send the message to the peer's settlement engine.
                    // Note that we use dummy values for the `from` and `original_amount`
                    // because this `OutgoingRequest` will bypass the router and thus will not
@@ -248,7 +248,7 @@ impl_web! {
                        to: account.clone(),
                        original_amount: 0,
                        prepare: PrepareBuilder {
-                           destination: settlement_engine.ilp_address,
+                           destination: SE_ILP_ADDRESS.clone(),
                            amount: 0,
                            expires_at: SystemTime::now() + Duration::from_secs(30),
                            data: &body,

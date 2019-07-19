@@ -6,8 +6,8 @@ use ethkey::KeyPair;
 use futures::Future;
 use interledger_service::Account;
 use parity_crypto::Keccak256;
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 /// An Ethereum account is associated with an address. We additionally require
 /// that an optional `token_address` is implemented. If the `token_address` of an

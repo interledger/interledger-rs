@@ -25,7 +25,6 @@ lazy_static! {
         packets_per_minute_limit: Some(2),
         settlement_engine_url: None,
         settlement_engine_asset_scale: None,
-        settlement_engine_ilp_address: None,
     };
     pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.bob").unwrap(),
@@ -48,7 +47,6 @@ lazy_static! {
         packets_per_minute_limit: Some(20),
         settlement_engine_url: None,
         settlement_engine_asset_scale: None,
-        settlement_engine_ilp_address: None,
     };
     pub static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.charlie").unwrap(),
@@ -71,6 +69,5 @@ lazy_static! {
         packets_per_minute_limit: None,
         settlement_engine_url: None,
         settlement_engine_asset_scale: None,
-        settlement_engine_ilp_address: None,
     };
 }

@@ -171,7 +171,7 @@ Now we have both Alice and Bob up and running.
 ### Insert Bob's account to Alice's connector
 ```bash
 curl http://localhost:7770/accounts -X POST \
-    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10" \
+    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=18&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10" \
     -H "Authorization: Bearer hi_alice
 ```
 
@@ -186,7 +186,7 @@ often settlement is made, which is tracked in [issue 121](https://github.com/ems
 
 ```bash
 curl http://localhost:8770/accounts -X POST \
-     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&settlement_engine_ilp_address=peer.settle&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
+     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=18&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=18&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10" \
      -H "Authorization: Bearer hi_bob"
 ```
 

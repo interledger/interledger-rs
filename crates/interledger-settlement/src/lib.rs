@@ -8,6 +8,8 @@ use futures::Future;
 use hyper::StatusCode;
 use interledger_packet::Address;
 use interledger_service::Account;
+use lazy_static::lazy_static;
+use std::str::FromStr;
 use url::Url;
 
 mod api;
@@ -22,6 +24,10 @@ pub use api::SettlementApi;
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
+lazy_static! {
+    pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
+}
+
 pub struct SettlementEngineDetails {
     /// Base URL of the settlement engine
     pub url: Url,
@@ -31,9 +37,6 @@ pub struct SettlementEngineDetails {
     /// The SettlementClient translates the amounts used for each account internally within
     /// Interledger.rs into the correct scale used by the settlement engine.
     pub asset_scale: u8,
-    /// The ILP address of the settlement engine. For example, `peer.settle.xrp-paychan`.
-    /// Note that both peers' settlement engines are expected to use the same address.
-    pub ilp_address: Address,
 }
 
 pub trait SettlementAccount: Account {
