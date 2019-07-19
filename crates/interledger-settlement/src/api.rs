@@ -9,7 +9,7 @@ use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
 use interledger_service_util::{Convert, ConvertDetails};
-use log::error;
+use log::{error, debug};
 use ring::digest::{digest, SHA256};
 use std::{
     marker::PhantomData,
