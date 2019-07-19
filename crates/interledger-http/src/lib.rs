@@ -3,9 +3,6 @@
 //! Client and server implementations of the [ILP-Over-HTTP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md) bilateral communication protocol.
 //! This protocol is intended primarily for server-to-server communication between peers on the Interledger network.
 
-#[macro_use]
-extern crate log;
-
 use futures::Future;
 use interledger_service::Account;
 use url::Url;

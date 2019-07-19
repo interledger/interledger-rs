@@ -10,6 +10,7 @@ use interledger_packet::{
     PrepareBuilder, Reject,
 };
 use interledger_service::*;
+use log::{debug, error, warn};
 use std::{
     cell::Cell,
     cmp::min,

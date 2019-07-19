@@ -1,7 +1,3 @@
-extern crate interledger;
-#[macro_use]
-extern crate log;
-
 use env_logger;
 use futures::{
     future::{join_all, ok},
@@ -12,6 +8,7 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use log::debug;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 
@@ -24,6 +21,7 @@ fn btp_end_to_end() {
     let context = TestContext::new();
     let btp_port = get_open_port(Some(7768));
     let http_port = get_open_port(Some(7770));
+    let settlement_port = get_open_port(Some(7771));
     let node = InterledgerNode {
         ilp_address: Address::from_str("example.node").unwrap(),
         default_spsp_account: None,
@@ -31,6 +29,7 @@ fn btp_end_to_end() {
         redis_connection: context.get_client_connection_info(),
         btp_address: ([127, 0, 0, 1], btp_port).into(),
         http_address: ([127, 0, 0, 1], http_port).into(),
+        settlement_address: ([127, 0, 0, 1], settlement_port).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
     };

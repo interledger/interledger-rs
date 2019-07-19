@@ -5,6 +5,9 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, PacketType as IlpPacketType, ParseError,
 };
+#[cfg(test)]
+use lazy_static::lazy_static;
+use log::warn;
 use std::{convert::TryFrom, fmt, str};
 
 const STREAM_VERSION: u8 = 1;

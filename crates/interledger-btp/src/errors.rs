@@ -1,4 +1,5 @@
 use chrono;
+use quick_error::quick_error;
 use std;
 use std::str::Utf8Error;
 use std::string::FromUtf8Error;

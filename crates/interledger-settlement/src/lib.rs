@@ -1,18 +1,22 @@
 #![recursion_limit = "128"]
 
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate tower_web;
 
+use bytes::Bytes;
 use futures::Future;
+use hyper::StatusCode;
 use interledger_packet::Address;
 use interledger_service::Account;
 use url::Url;
 
 mod api;
 mod client;
+#[cfg(test)]
+mod fixtures;
 mod message_service;
+#[cfg(test)]
+mod test_helpers;
 
 pub use api::SettlementApi;
 pub use client::SettlementClient;
@@ -38,6 +42,8 @@ pub trait SettlementAccount: Account {
     }
 }
 
+pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
+
 pub trait SettlementStore {
     type Account: SettlementAccount;
 
@@ -45,5 +51,23 @@ pub trait SettlementStore {
         &self,
         account_id: <Self::Account as Account>::AccountId,
         amount: u64,
+        idempotency_key: Option<String>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    /// Returns the API response that was saved when the idempotency key was used
+    /// Also returns a hash of the input data which resulted in the response
+    fn load_idempotent_data(
+        &self,
+        idempotency_key: String,
+    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send>;
+
+    /// Saves the data that was passed along with the api request for later
+    /// The store MUST also save a hash of the input, so that it errors out on requests
+    fn save_idempotent_data(
+        &self,
+        idempotency_key: String,
+        input_hash: [u8; 32],
+        status_code: StatusCode,
+        data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }

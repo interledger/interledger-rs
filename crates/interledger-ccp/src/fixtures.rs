@@ -3,6 +3,8 @@ use crate::packet::*;
 use bytes::Bytes;
 use hex;
 use interledger_packet::Address;
+#[cfg(test)]
+use lazy_static::lazy_static;
 use std::str::FromStr;
 
 lazy_static! {
