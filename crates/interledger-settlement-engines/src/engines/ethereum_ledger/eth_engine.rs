@@ -305,6 +305,13 @@ where
         let store = self.store.clone();
         let store_clone = self.store.clone();
 
+        // TODO: Remove the spawn calls from all of the following futures, and
+        // make a join_all over all the transactions per block, and then a
+        // join_all over all the blocks. The last_observed_data must only be
+        // saved if all join_all's are successful. If not, the next call to the
+        // `notifier` function will iterate over the same blocks again and try
+        // to settle any transactions which failed (the `check_tx_credited`
+        // function ensures that no transaction will be double credited)
         store.load_recently_observed_data()
         .and_then(move |(last_observed_block, last_observed_balance)| {
             web3
@@ -323,6 +330,7 @@ where
                         .balance(our_address, None)
                         .map_err(|err| error!("Got error while getting balance {:?}", err))
                         .and_then({let web3 = web3.clone(); move |new_balance| {
+                            // TODO: Reduce nested callbacks
                             if new_balance > last_observed_balance {
                                 // iterate over all blocks 
                                 for block_num in last_observed_block.low_u64()..=fetch_until.low_u64() {
@@ -345,68 +353,69 @@ where
                                                 let mut url = block_url.clone();
                                                 let web3_clone = web3.clone();
                                                 let settle_tx_future = store_clone.check_tx_credited(tx_hash)
-                                                    .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
-                                                    .and_then(move |credited| {
-                                                        if credited {
-                                                            Either::A(ok(()))
-                                                        } else {
-                                                Either::B(web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
-                                                .map_err(move |err| error!("Transaction {} was not submitted to the connector. Please submit it manually. Got error: {:?}", tx_hash, err))
-                                                .and_then(move |tx| {
-                                                    let tx = tx.clone();
-                                                    if let Some(tx) = tx {
-                                                        if let Some(to) = tx.to {
-                                                            if tx.value > U256::from(0) {
-                                                                trace!("Forwarding transaction: {:?}", tx);
-                                                                // Optimization: This will make 1 settlement API request to
-                                                                // the connector per transaction that comes to us. Since
-                                                                // we're scanning across multiple blocks, we want to
-                                                                // optimize it so that: it gathers a mapping of
-                                                                // (accountId=>amount) across all transactions and blocks, and
-                                                                // only makes 1 transaction per accountId with the
-                                                                // appropriate amount.
-                                                                if to == our_address {
-                                                                    let addr = Addresses {
-                                                                        own_address: tx.from,
-                                                                        token_address: None,
-                                                                    };
-                                                                    let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
-                                                                        url.path_segments_mut()
-                                                                            .expect("Invalid connector URL")
-                                                                            .push("accounts")
-                                                                            .push(&id.to_string())
-                                                                            .push("settlement");
-                                                                        let client = Client::new();
-                                                                        let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-                                                                        // retry on fail - https://github.com/ihrwein/backoff
-                                                                        debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
-                                                                        let action = move || {
-                                                                            client.post(url.clone())
-                                                                            .header("Idempotency-Key", idempotency_uuid.clone())
-                                                                            .json(&json!({"amount" : tx.value.low_u64()}))
-                                                                            .send()
-                                                                            .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
-                                                                            .and_then(move |response| {
-                                                                                trace!("Accounting system responded with {:?}", response);
-                                                                                if response.status().is_success() {
-                                                                                    Ok(())
-                                                                                } else {
-                                                                                    Err(())
-                                                                                }
-                                                                            })
-                                                                        };
-                                                                        tokio::spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Failed to keep retrying!")));
-                                                                        ok(())
-                                                                    });
-                                                                    tokio::spawn(notify_connector_future);
+                                                .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
+                                                .and_then(move |credited| {
+                                                    if credited {
+                                                        Either::A(ok(()))
+                                                    } else {
+                                                        Either::B(
+                                                        web3_clone.eth().transaction(TransactionId::Hash(tx_hash))
+                                                        .map_err(move |err| error!("Could not fetch transaction data from transaction hash: {:?}. Got error: {:?}", tx_hash, err))
+                                                        .and_then(move |tx| {
+                                                            let tx = tx.clone();
+                                                            if let Some(tx) = tx {
+                                                                if let Some(to) = tx.to {
+                                                                    if tx.value > U256::from(0) {
+                                                                        trace!("Forwarding transaction: {:?}", tx);
+                                                                        // Optimization: This will make 1 settlement API request to
+                                                                        // the connector per transaction that comes to us. Since
+                                                                        // we're scanning across multiple blocks, we want to
+                                                                        // optimize it so that: it gathers a mapping of
+                                                                        // (accountId=>amount) across all transactions and blocks, and
+                                                                        // only makes 1 transaction per accountId with the
+                                                                        // appropriate amount.
+                                                                        if to == our_address {
+                                                                            let addr = Addresses {
+                                                                                own_address: tx.from,
+                                                                                token_address: None,
+                                                                            };
+                                                                            let notify_connector_future = store_clone.load_account_id_from_address(addr).and_then(move |id| {
+                                                                                url.path_segments_mut()
+                                                                                    .expect("Invalid connector URL")
+                                                                                    .push("accounts")
+                                                                                    .push(&id.to_string())
+                                                                                    .push("settlement");
+                                                                                let client = Client::new();
+                                                                                let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+                                                                                // retry on fail - https://github.com/ihrwein/backoff
+                                                                                debug!("Making POST to {:?} {:?} {:?}", url, tx.value.to_string(), idempotency_uuid);
+                                                                                let action = move || {
+                                                                                    client.post(url.clone())
+                                                                                    .header("Idempotency-Key", idempotency_uuid.clone())
+                                                                                    .json(&json!({"amount" : tx.value.low_u64()}))
+                                                                                    .send()
+                                                                                    .map_err(move |err| println!("Error notifying accounting system about transaction {:?}: {:?}", tx_hash, err))
+                                                                                    .and_then(move |response| {
+                                                                                        trace!("Accounting system responded with {:?}", response);
+                                                                                        if response.status().is_success() {
+                                                                                            Ok(())
+                                                                                        } else {
+                                                                                            Err(())
+                                                                                        }
+                                                                                    })
+                                                                                };
+                                                                                tokio::spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Exceeded max retries when notifying connector. Please check your API.")));
+                                                                                ok(())
+                                                                            });
+                                                                            tokio::spawn(notify_connector_future);
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
-                                                        }
+                                                            ok(())
+                                                        }))
                                                     }
-                                                    ok(())
-                                                }))
-                                                        }
-                                            });
+                                                });
                                                 // spawn a future so that we can
                                                 // process as many as possible in parallel
                                                 tokio::spawn(settle_tx_future);
