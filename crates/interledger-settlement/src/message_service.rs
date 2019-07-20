@@ -45,10 +45,8 @@ where
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         // Only handle the request if the destination address matches the ILP address
         // of the settlement engine being used for this account
-        let ilp_address = self.ilp_address.clone();
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
             if request.prepare.destination() == SE_ILP_ADDRESS.clone() {
-                let ilp_address_clone = self.ilp_address.clone();
                 let mut settlement_engine_url = settlement_engine_details.url;
                 // The `Prepare` packet's data was sent by the peer's settlement
                 // engine so we assume it is in a format that our settlement engine
@@ -80,7 +78,7 @@ where
                         code: ErrorCode::T00_INTERNAL_ERROR,
                         message: b"Error sending message to settlement engine",
                         data: &[],
-                        triggered_by: Some(&ilp_address_clone),
+                        triggered_by: Some(&SE_ILP_ADDRESS),
                     }.build()
                 })
                 .and_then(move |response| {
@@ -92,7 +90,7 @@ where
                                 code: ErrorCode::T00_INTERNAL_ERROR,
                                 message: b"Error getting settlement engine response",
                                 data: &[],
-                                triggered_by: Some(&ilp_address),
+                                triggered_by: Some(&SE_ILP_ADDRESS),
                             }.build()
                         })
                         .and_then(|body| {
@@ -112,7 +110,7 @@ where
                             code,
                             message: format!("Settlement engine rejected request with error code: {}", response.status()).as_str().as_ref(),
                             data: &[],
-                            triggered_by: Some(&ilp_address),
+                            triggered_by: Some(&SE_ILP_ADDRESS),
                         }.build()))
                     }
                 }));
@@ -235,7 +233,7 @@ mod tests {
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
         // The engine rejected the message, not the connector's service,
         // so the triggered by should be the ilp address of th engine - I think.
-        assert_eq!(reject.triggered_by().unwrap(), SERVICE_ADDRESS.clone());
+        assert_eq!(reject.triggered_by().unwrap(), SE_ILP_ADDRESS.clone());
         assert_eq!(
             reject.message(),
             format!(
