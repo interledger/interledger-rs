@@ -69,32 +69,6 @@ pub struct EthereumLedgerSettlementEngine<S, Si, A> {
     confirmations: u8,
     poll_frequency: Duration,
     connector_url: Url,
-    speculative_nonce_middleware: SpeculativeNonceMiddleware,
-}
-
-#[derive(Clone, Debug)]
-struct SpeculativeNonceMiddleware {
-    web3: Web3<Http>,
-    own_address: Address,
-    latest_confirmed_nonce: u64,
-}
-
-impl SpeculativeNonceMiddleware {
-    fn new(web3: Web3<Http>, own_address: Address) -> Self {
-        Self {
-            web3,
-            own_address,
-            latest_confirmed_nonce: 0,
-        }
-    }
-
-    fn next_nonce(&self) -> impl Future<Item = U256, Error = ()> {
-        // TODO: Implement speculative logic.
-        self.web3
-            .eth()
-            .transaction_count(self.own_address, None)
-            .map_err(|err| error!("Couldn't fetch nonce: {:?}", err))
-    }
 }
 
 pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
@@ -202,8 +176,6 @@ where
             own_address: self.signer.address(),
             token_address: self.token_address,
         };
-        let speculative_nonce_middleware =
-            SpeculativeNonceMiddleware::new(web3.clone(), address.own_address);
 
         let engine = EthereumLedgerSettlementEngine {
             web3,
@@ -214,7 +186,6 @@ where
             confirmations,
             poll_frequency,
             connector_url,
-            speculative_nonce_middleware,
             account_type: PhantomData,
         };
         if self.watch_incoming {
@@ -468,13 +439,13 @@ where
         token_address: Option<Address>,
     ) -> Box<dyn Future<Item = H256, Error = ()> + Send> {
         let web3 = self.web3.clone();
-        let nonce_middleware = self.speculative_nonce_middleware.clone();
         let own_address = self.address.own_address;
         let chain_id = self.chain_id;
         let signer = self.signer.clone();
         Box::new(
-            nonce_middleware
-                .next_nonce()
+            self.web3
+                .eth()
+                .transaction_count(own_address, Some(BlockNumber::Pending))
                 .map_err(move |err| {
                     error!(
                         "Error when querying account {:?} nonce: {:?}",
