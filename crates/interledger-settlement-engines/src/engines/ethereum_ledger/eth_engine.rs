@@ -1,5 +1,5 @@
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
-use super::utils::{make_tx, sent_to_us};
+use super::utils::{make_tx, sent_to_us, transfer_logs, ERC20Transfer};
 use clarity::Signature;
 use log::{debug, error, trace};
 use sha3::{Digest, Keccak256 as Sha3};
@@ -257,6 +257,9 @@ where
         let store = self.store.clone();
         let store_clone = self.store.clone();
         let self_clone = self.clone();
+        let self_clone2 = self.clone();
+        let our_address = self.address.own_address;
+        let token_address = self.address.token_address;
 
         // get the current block number
         web3.eth()
@@ -275,23 +278,89 @@ where
                     "Will fetch txs from block {} until {}",
                     last_observed_block, fetch_until
                 );
-                let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
-                // for each block create a future which will notify the
-                // connector about all the transactions in that block that are sent to our account
-                let submit_all_txs_fut =
-                    checked_blocks.map(move |block_num| self_clone.submit_txs_in_block(block_num));
 
-                // combine all the futures for that range of blocks
-                (Ok(fetch_until), join_all(submit_all_txs_fut))
+                let submit_all_txs_fut = if let Some(token_address) = token_address {
+                    debug!("Settling for ERC20 transactions");
+                    // get all erc20 transactions
+                    let submit_all_erc20_txs_fut = transfer_logs(
+                        web3.clone(),
+                        token_address,
+                        None,
+                        Some(our_address),
+                        BlockNumber::Number(last_observed_block.low_u64()),
+                        BlockNumber::Number(fetch_until.low_u64()),
+                    )
+                    .and_then(move |transfers: Vec<ERC20Transfer>| {
+                        // map each incoming erc20 transactions to an outgoing
+                        // notification to the connector
+                        join_all(transfers.into_iter().map(move |transfer| {
+                            self_clone2.submit_erc20_transfer(transfer, token_address)
+                        }))
+                    });
+
+                    // combine all erc20 futures for that range of blocks
+                    Either::A(submit_all_erc20_txs_fut)
+                } else {
+                    debug!("Settling for ETH transactions");
+                    let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
+                    // for each block create a future which will notify the
+                    // connector about all the transactions in that block that are sent to our account
+                    let submit_eth_txs_fut = checked_blocks
+                        .map(move |block_num| self_clone.submit_txs_in_block(block_num));
+
+                    // combine all the futures for that range of blocks
+                    Either::B(join_all(submit_eth_txs_fut))
+                };
+
+                submit_all_txs_fut.and_then(move |ret| {
+                    debug!("Transactions settled {:?}", ret);
+                    // now that all transactions have been processed successfully, we
+                    // can save `fetch_until` as the latest observed block
+                    store_clone.save_recently_observed_data(fetch_until)
+                })
             })
-            .and_then(move |(fetch_until, _res)| {
-                // now that all transactions have been processed successfully, we
-                // can save `fetch_until` as the latest observed block
-                store_clone.save_recently_observed_data(fetch_until)
+    }
+
+    /// Submits an ERC20 transfer object's data to the connector
+    // todo: Try combining the body of this function with `submit_tx_to_connector`
+    fn submit_erc20_transfer(
+        &self,
+        transfer: ERC20Transfer,
+        token_address: Address,
+    ) -> impl Future<Item = (), Error = ()> {
+        let store = self.store.clone();
+        let tx_hash = transfer.tx_hash;
+        let self_clone = self.clone();
+        let addr = Addresses {
+            own_address: transfer.from,
+            token_address: Some(token_address),
+        };
+        let amount = transfer.amount;
+        store
+            .check_tx_credited(transfer.tx_hash)
+            .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
+            .and_then(move |credited| {
+                if !credited {
+                    Either::A(
+                        store
+                            .load_account_id_from_address(addr)
+                            .and_then(move |id| {
+                                self_clone.notify_connector(id.to_string(), amount.low_u64())
+                            })
+                            .and_then(move |_| {
+                                // only save the transaction hash if the connector
+                                // was successfully notified
+                                store.credit_tx(tx_hash)
+                            }),
+                    )
+                } else {
+                    Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
+                }
             })
     }
 
     fn submit_txs_in_block(&self, block_number: u64) -> impl Future<Item = (), Error = ()> {
+        debug!("Getting txs for block {}", block_number);
         let self_clone = self.clone();
         // Get the block at `block_number`
         self.web3

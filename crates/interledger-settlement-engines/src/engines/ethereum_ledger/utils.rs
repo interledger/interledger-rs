@@ -50,7 +50,7 @@ pub fn make_tx(to: Address, value: U256, token_address: Option<Address>) -> RawT
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ERC20Transfer {
     pub tx_hash: H256,
     pub from: Address,
