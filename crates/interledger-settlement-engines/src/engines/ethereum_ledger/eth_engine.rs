@@ -334,7 +334,7 @@ where
         let self_clone = self.clone();
         // Skip transactions which have already been credited to the connector
         store.check_tx_credited(tx_hash)
-        .map_err(move |_| error!("Transaction {} has already been credited!", tx_hash))
+        .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
         .and_then(move |credited| {
             if !credited {
                 Either::A(
@@ -362,6 +362,8 @@ where
                             self_clone.notify_connector(id.to_string(), amount.low_u64())
                         })
                         .and_then(move |_| {
+                            // only save the transaction hash if the connector
+                            // was successfully notified
                             store.credit_tx(tx_hash)
                         }))
                     } else {

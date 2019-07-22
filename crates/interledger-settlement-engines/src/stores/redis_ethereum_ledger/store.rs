@@ -18,6 +18,7 @@ use crate::stores::redis_store::{EngineRedisStore, EngineRedisStoreBuilder};
 // avoid double crediting transactions which have already been processed, and in
 // order to resume watching from the last observed point.
 static RECENTLY_OBSERVED_DATA_KEY: &str = "recently_observed_data";
+static SAVED_TRANSACTIONS_KEY: &str = "transactions";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
 static ETHEREUM_KEY: &str = "eth";
@@ -37,10 +38,17 @@ impl AccountTrait for Account {
     }
 }
 
+fn ethereum_transactions_key(tx_hash: H256) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        ETHEREUM_KEY, LEDGER_KEY, SAVED_TRANSACTIONS_KEY, tx_hash,
+    )
+}
+
 fn ethereum_ledger_key(account_id: u64) -> String {
     format!(
         "{}:{}:{}:{}",
-        SETTLEMENT_ENGINES_KEY, LEDGER_KEY, ETHEREUM_KEY, account_id
+        ETHEREUM_KEY, LEDGER_KEY, SETTLEMENT_ENGINES_KEY, account_id
     )
 }
 
@@ -226,7 +234,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
     fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
         Box::new(
             cmd("EXISTS")
-                .arg(tx_hash.to_string())
+                .arg(ethereum_transactions_key(tx_hash))
                 .arg(true)
                 .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
@@ -245,7 +253,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
     fn credit_tx(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         Box::new(
             cmd("SETNX")
-                .arg(tx_hash.to_string())
+                .arg(ethereum_transactions_key(tx_hash))
                 .arg(true)
                 .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
