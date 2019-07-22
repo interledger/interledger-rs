@@ -180,48 +180,28 @@ impl EthereumStore for EthereumLedgerRedisStore {
     fn save_recently_observed_data(
         &self,
         block: U256,
-        balance: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        let value = &[("block", block.low_u64()), ("balance", balance.low_u64())];
-        pipe.hset_multiple(RECENTLY_OBSERVED_DATA_KEY, value)
+        pipe.set(RECENTLY_OBSERVED_DATA_KEY, block.low_u64())
             .ignore();
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| {
-                    error!(
-                        "Error saving last observed block {:?} and balance {:?}: {:?}",
-                        block, balance, err
-                    )
+                    error!("Error saving last observed block {:?}: {:?}", block, err)
                 })
                 .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
         )
     }
 
-    fn load_recently_observed_data(
-        &self,
-    ) -> Box<dyn Future<Item = (U256, U256), Error = ()> + Send> {
+    fn load_recently_observed_data(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.hgetall(RECENTLY_OBSERVED_DATA_KEY);
+        pipe.get(RECENTLY_OBSERVED_DATA_KEY);
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
-                .and_then(move |(_conn, data): (_, Vec<HashMap<String, u64>>)| {
-                    let data = &data[0];
-                    let block = if let Some(block) = data.get("block") {
-                        block
-                    } else {
-                        &0 // return 0 if not found
-                    };
-                    let block = U256::from(*block);
-
-                    let balance = if let Some(balance) = data.get("balance") {
-                        balance
-                    } else {
-                        &0
-                    };
-                    let balance = U256::from(*balance);
-                    ok((block, balance))
+                .and_then(move |(_conn, block): (_, Vec<u64>)| {
+                    let block = U256::from(block[0]);
+                    ok(block)
                 }),
         )
     }
@@ -335,17 +315,15 @@ mod tests {
     fn saves_and_loads_last_observed_data_properly() {
         block_on(test_store().and_then(|(store, context)| {
             let block = U256::from(2);
-            let balance = U256::from(123);
             store
-                .save_recently_observed_data(block, balance)
+                .save_recently_observed_data(block)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
                 .and_then(move |_| {
                     store
                         .load_recently_observed_data()
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
                         .and_then(move |data| {
-                            assert_eq!(data.0, block);
-                            assert_eq!(data.1, balance);
+                            assert_eq!(data, block);
                             let _ = context;
                             Ok(())
                         })

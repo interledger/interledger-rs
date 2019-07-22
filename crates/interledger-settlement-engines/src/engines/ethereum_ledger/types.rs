@@ -46,18 +46,15 @@ pub trait EthereumStore {
         account_ids: Vec<<Self::Account as Account>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Addresses>, Error = ()> + Send>;
 
-    /// Saves the latest block number and account balance, up to which all
+    /// Saves the latest block number, up to which all
     /// transactions have been communicated to the connector
     fn save_recently_observed_data(
         &self,
         block: U256,
-        balance: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
-    /// Loads the latest saved block number and account balance
-    fn load_recently_observed_data(
-        &self,
-    ) -> Box<dyn Future<Item = (U256, U256), Error = ()> + Send>;
+    /// Loads the latest saved block number
+    fn load_recently_observed_data(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send>;
 
     /// Retrieves the account id associated with the provided addresses pair.
     /// Note that an account with the same `own_address` but different ERC20
