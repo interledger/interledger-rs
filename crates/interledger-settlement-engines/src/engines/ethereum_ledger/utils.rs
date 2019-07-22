@@ -50,6 +50,14 @@ pub fn make_tx(to: Address, value: U256, token_address: Option<Address>) -> RawT
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct ERC20Transfer {
+    pub tx_hash: H256,
+    pub from: Address,
+    pub to: Address,
+    pub amount: U256,
+}
+
 /// Filters out transactions where the `from` and `to` fields match the provides
 /// addreses.
 pub fn transfer_logs(
@@ -59,7 +67,7 @@ pub fn transfer_logs(
     to: Option<Address>,
     from_block: BlockNumber,
     to_block: BlockNumber,
-) -> impl Future<Item = Vec<(Address, Address, U256)>, Error = ()> {
+) -> impl Future<Item = Vec<ERC20Transfer>, Error = ()> {
     let from = if let Some(from) = from {
         Some(vec![H256::from(from)])
     } else {
@@ -102,7 +110,12 @@ pub fn transfer_logs(
                 let to = H160::from(indexed[2]);
                 let data = l.data;
                 let amount = U256::from_str(&hex::encode(data.0)).unwrap();
-                ret.push((from, to, amount));
+                ret.push(ERC20Transfer {
+                    tx_hash: l.transaction_hash.unwrap(),
+                    from,
+                    to,
+                    amount,
+                });
             }
             Ok(ret)
         })
