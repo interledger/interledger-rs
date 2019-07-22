@@ -1,9 +1,15 @@
 use ethabi::Token;
 use ethereum_tx_sign::{
-    web3::types::{Address, Transaction, U256},
+    web3::{
+        api::Web3,
+        futures::future::Future,
+        transports::Http,
+        types::{Address, BlockNumber, FilterBuilder, Transaction, H160, H256, U256},
+    },
     RawTransaction,
 };
-
+use log::error;
+use std::str::FromStr;
 // Helper function which is used to construct an Ethereum transaction sending
 // `value` tokens to `to`. The account's nonce is required since Ethereum uses
 // an account based model with nonces for replay protection. If a
@@ -42,6 +48,64 @@ pub fn make_tx(to: Address, value: U256, token_address: Option<Address>) -> RawT
             value,
         }
     }
+}
+
+/// Filters out transactions where the `from` and `to` fields match the provides
+/// addreses.
+pub fn transfer_logs(
+    web3: Web3<Http>,
+    contract_address: Address,
+    from: Option<Address>,
+    to: Option<Address>,
+    from_block: BlockNumber,
+    to_block: BlockNumber,
+) -> impl Future<Item = Vec<(Address, Address, U256)>, Error = ()> {
+    let from = if let Some(from) = from {
+        Some(vec![H256::from(from)])
+    } else {
+        None
+    };
+    let to = if let Some(to) = to {
+        Some(vec![H256::from(to)])
+    } else {
+        None
+    };
+
+    // create a filter for Transfer events from `from_block` until `to_block
+    // that filters all events indexed by `from` and `to`.
+    let filter = FilterBuilder::default()
+        .from_block(from_block)
+        .to_block(to_block)
+        .address(vec![contract_address])
+        .topics(
+            Some(vec![H256::from(
+                // keccak256("transfer(address,address,to)")
+                "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+            )]),
+            from,
+            to,
+            None,
+        )
+        .build();
+
+    // Make an eth_getLogs call to the Ethereum node
+    web3.eth()
+        .logs(filter)
+        .map_err(move |err| error!("Got error when fetching transfer logs{:?}", err))
+        .and_then(move |logs| {
+            let mut ret = Vec::new();
+            for l in logs {
+                // NOTE: From/to are indexed events.
+                // Amount is parsed directly from the data field.
+                let indexed = l.topics;
+                let from = H160::from(indexed[1]);
+                let to = H160::from(indexed[2]);
+                let data = l.data;
+                let amount = U256::from_str(&hex::encode(data.0)).unwrap();
+                ret.push((from, to, amount));
+            }
+            Ok(ret)
+        })
 }
 
 // TODO: Extend this function to inspect the data field of a
