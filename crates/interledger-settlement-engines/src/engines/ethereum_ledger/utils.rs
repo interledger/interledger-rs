@@ -12,12 +12,7 @@ use ethereum_tx_sign::{
 // cost at most 70k (can tighten the gas limit, but 70k is safe if the address
 // is indeed an ERC20 token.
 // TODO: pass it gas_price as a parameter which is calculated from `web3.eth().gas_price()`
-pub fn make_tx(
-    to: Address,
-    value: U256,
-    nonce: U256,
-    token_address: Option<Address>,
-) -> RawTransaction {
+pub fn make_tx(to: Address, value: U256, token_address: Option<Address>) -> RawTransaction {
     if let Some(token_address) = token_address {
         // Ethereum contract transactions format:
         // [transfer function selector][`to` padded ][`value` padded]
@@ -29,10 +24,10 @@ pub fn make_tx(
         data.extend(ethabi::encode(&[Token::Address(to), Token::Uint(value)]));
         RawTransaction {
             to: Some(token_address),
-            nonce,
+            nonce: U256::from(0),
             data,
-            gas: 70000.into(), // ERC20 transactions cost approximately 40k gas.
-            gas_price: 20000.into(),
+            gas: U256::from(0),
+            gas_price: U256::from(0),
             value: U256::zero(),
         }
     } else {
@@ -40,10 +35,10 @@ pub fn make_tx(
         // The receiver is `to`, and the data field is left empty.
         RawTransaction {
             to: Some(to),
-            nonce,
+            nonce: U256::from(0),
             data: vec![],
-            gas: 21000.into(),
-            gas_price: 20000.into(),
+            gas: U256::from(0),
+            gas_price: U256::from(0),
             value,
         }
     }
@@ -71,9 +66,8 @@ mod tests {
         // https://etherscan.io/tx/0x6fd1b68f02f4201a38662647b7f09170b159faec6af4825ae509beefeb8e8130
         let to = "c92be489639a9c61f517bd3b955840fa19bc9b7c".parse().unwrap();
         let value = "16345785d8a0000".into();
-        let nonce = 1.into();
         let token_address = Some("B8c77482e45F1F44dE1745F52C74426C631bDD52".into());
-        let tx = make_tx(to, value, nonce, token_address);
+        let tx = make_tx(to, value, token_address);
         assert_eq!(tx.to, token_address);
         assert_eq!(tx.value, U256::from(0));
         assert_eq!(hex::encode(tx.data), "a9059cbb000000000000000000000000c92be489639a9c61f517bd3b955840fa19bc9b7c000000000000000000000000000000000000000000000000016345785d8a0000")
@@ -83,9 +77,8 @@ mod tests {
     fn test_eth_make_tx() {
         let to = "c92be489639a9c61f517bd3b955840fa19bc9b7c".parse().unwrap();
         let value = "16345785d8a0000".into();
-        let nonce = 1.into();
         let token_address = None;
-        let tx = make_tx(to, value, nonce, token_address);
+        let tx = make_tx(to, value, token_address);
         assert_eq!(tx.to, Some(to));
         assert_eq!(tx.value, value);
         let empty: Vec<u8> = Vec::new();

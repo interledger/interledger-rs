@@ -11,7 +11,7 @@ use ethereum_tx_sign::web3::{
     futures::future::{err, join_all, ok, result, Either, Future},
     futures::stream::Stream,
     transports::Http,
-    types::{Address, BlockNumber, TransactionId, H256, U256},
+    types::{Address, BlockNumber, CallRequest, TransactionId, H256, U256},
 };
 use hyper::StatusCode;
 use reqwest::r#async::{Client, Response as HttpResponse};
@@ -278,9 +278,8 @@ where
                 let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
                 // for each block create a future which will notify the
                 // connector about all the transactions in that block that are sent to our account
-                let submit_all_txs_fut = checked_blocks
-                    .into_iter()
-                    .map(move |block_num| self_clone.submit_txs_in_block(block_num));
+                let submit_all_txs_fut =
+                    checked_blocks.map(move |block_num| self_clone.submit_txs_in_block(block_num));
 
                 // combine all the futures for that range of blocks
                 (Ok(fetch_until), join_all(submit_all_txs_fut))
@@ -442,18 +441,31 @@ where
         let own_address = self.address.own_address;
         let chain_id = self.chain_id;
         let signer = self.signer.clone();
+
+        let mut tx = make_tx(to, amount, token_address);
+        let gas_amount_fut = web3.eth().estimate_gas(
+            CallRequest {
+                to,
+                from: None,
+                gas: None,
+                gas_price: None,
+                value: Some(tx.value),
+                data: Some(tx.data.clone().into()),
+            },
+            None,
+        );
+        let gas_price_fut = web3.eth().gas_price();
+        let nonce_fut = web3
+            .eth()
+            .transaction_count(own_address, Some(BlockNumber::Pending));
         Box::new(
-            self.web3
-                .eth()
-                .transaction_count(own_address, Some(BlockNumber::Pending))
-                .map_err(move |err| {
-                    error!(
-                        "Error when querying account {:?} nonce: {:?}",
-                        own_address, err
-                    )
-                })
-                .and_then(move |nonce| {
-                    let tx = make_tx(to, amount, nonce, token_address); // 2
+            join_all(vec![gas_price_fut, gas_amount_fut, nonce_fut])
+                .map_err(|err| error!("Error when querying gas price / nonce: {:?}", err))
+                .and_then(move |data| {
+                    tx.gas_price = data[0];
+                    tx.gas = data[1];
+                    tx.nonce = data[2];
+
                     let signed_tx = signer.sign_raw_tx(tx.clone(), chain_id); // 3
                     debug!("Sending transaction: {:?}", signed_tx);
                     let action = move || {

@@ -200,7 +200,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
                 .and_then(move |(_conn, block): (_, Vec<u64>)| {
-                    if block.len() > 0 {
+                    if !block.is_empty() {
                         let block = U256::from(block[0]);
                         ok(block)
                     } else {
