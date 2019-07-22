@@ -200,8 +200,12 @@ impl EthereumStore for EthereumLedgerRedisStore {
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
                 .and_then(move |(_conn, block): (_, Vec<u64>)| {
-                    let block = U256::from(block[0]);
-                    ok(block)
+                    if block.len() > 0 {
+                        let block = U256::from(block[0]);
+                        ok(block)
+                    } else {
+                        ok(U256::from(0))
+                    }
                 }),
         )
     }
@@ -221,20 +225,39 @@ impl EthereumStore for EthereumLedgerRedisStore {
 
     fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
         Box::new(
+            cmd("EXISTS")
+                .arg(tx_hash.to_string())
+                .arg(true)
+                .query_async(self.connection.clone())
+                .map_err(move |err| error!("Error loading account data: {:?}", err))
+                .and_then(
+                    move |(_conn, ret): (_, u64)| {
+                        if ret == 1 {
+                            Ok(true)
+                        } else {
+                            Ok(false)
+                        }
+                    },
+                ),
+        )
+    }
+
+    fn credit_tx(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(
             cmd("SETNX")
                 .arg(tx_hash.to_string())
                 .arg(true)
                 .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(move |(_conn, ret): (_, u64)| {
-                    // 1 if the key was set - tx was not there before --> not credited
-                    // 0 if the key was not set -- ie tx was there before --> credited
-                    if ret == 0 {
-                        Ok(true)
-                    } else {
-                        Ok(false)
-                    }
-                }),
+                .and_then(
+                    move |(_conn, ret): (_, bool)| {
+                        if ret {
+                            ok(())
+                        } else {
+                            err(())
+                        }
+                    },
+                ),
         )
     }
 }
@@ -338,10 +361,9 @@ mod tests {
             let tx_hash =
                 H256::from("0xb28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e");
             store
-                .check_tx_credited(tx_hash)
+                .credit_tx(tx_hash)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
-                .and_then(move |seen| {
-                    assert_eq!(seen, false);
+                .and_then(move |_| {
                     store
                         .check_tx_credited(tx_hash)
                         .map_err(|err| eprintln!("Redis error: {:?}", err))

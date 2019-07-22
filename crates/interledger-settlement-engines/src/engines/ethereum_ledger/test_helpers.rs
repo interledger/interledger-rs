@@ -127,14 +127,19 @@ impl EthereumStore for TestStore {
     }
 
     fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
-        let mut hashes = self.saved_hashes.write();
-        // if hash exists error, else store it
+        let hashes = self.saved_hashes.read();
+        // if hash exists then return error
         if hashes.get(&tx_hash).is_some() {
             Box::new(ok(true))
         } else {
-            (*hashes).insert(tx_hash, true);
             Box::new(ok(false))
         }
+    }
+
+    fn credit_tx(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let mut hashes = self.saved_hashes.write();
+        (*hashes).insert(tx_hash, true);
+        Box::new(ok(()))
     }
 }
 
