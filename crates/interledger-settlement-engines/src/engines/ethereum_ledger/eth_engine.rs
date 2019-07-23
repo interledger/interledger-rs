@@ -471,7 +471,7 @@ where
                 .json(&json!({ "amount": amount }))
                 .send()
                 .map_err(move |err| {
-                    println!(
+                    error!(
                         "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
                         account_id, amount, err
                     )
@@ -648,7 +648,9 @@ where
                 })
                 .and_then(move |resp| {
                     parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        let challenge_hash = Sha3::digest(&challenge_clone);
+                        let mut data = challenge_clone.clone();
+                        data.extend(payment_details.to.own_address.iter());
+                        let challenge_hash = Sha3::digest(&data);
                         let recovered_address = payment_details.sig.recover(&challenge_hash);
                         debug!("Received payment details {:?}", payment_details);
                         result(recovered_address)
@@ -707,7 +709,9 @@ where
             "Responding with our account's details {} {:?}",
             account_id, address
         );
-        let signature = self.signer.sign_message(&body.clone());
+        let mut data = body.clone();
+        data.extend(address.own_address.iter());
+        let signature = self.signer.sign_message(&data);
         let resp = {
             let ret = PaymentDetailsResponse::new(address, signature);
             serde_json::to_string(&ret).unwrap()
@@ -901,11 +905,13 @@ mod tests {
     fn test_receive_message() {
         let bob: TestAccount = BOB.clone();
 
-        let challenge = Uuid::new_v4().to_hyphenated().to_string();
+        let challenge = Uuid::new_v4().to_hyphenated().to_string().into_bytes();
+        let mut signed_challenge = challenge.clone();
+        signed_challenge.extend(ALICE.address.iter());
+
         let signature = ALICE_PK
             .clone()
-            .sign_message(&challenge.clone().into_bytes());
-        let receive_message = challenge.into_bytes();
+            .sign_message(&signed_challenge);
 
         let store = test_store(ALICE.clone(), false, false, false);
         let engine = test_engine(
@@ -917,7 +923,7 @@ mod tests {
         );
 
         // Alice's engine receives a challenge by Bob.
-        let ret = block_on(engine.receive_message(bob.id.to_string(), receive_message)).unwrap();
+        let ret = block_on(engine.receive_message(bob.id.to_string(), challenge)).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
 
         let alice_addrs = Addresses {
