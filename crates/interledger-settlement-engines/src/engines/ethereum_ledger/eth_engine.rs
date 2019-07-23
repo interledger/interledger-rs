@@ -51,7 +51,7 @@ impl PaymentDetailsResponse {
 /// functions are exposed via the Settlement Engine API.
 ///
 /// It requires a `confirmations` security parameter which is used to ensure
-/// that all transactions that get credited to the connector have sufficient
+/// that all transactions that get sent to the connector have sufficient
 /// confirmations (suggested value: >6)
 ///
 /// All settlements made with this engine make on-chain Layer 1 Ethereum
@@ -270,7 +270,7 @@ where
                 // get the safe number of blocks to avoid reorgs
                 let fetch_until = current_block - confirmations;
                 // U256 does not implement IntoFuture so we must wrap it
-                Ok((Ok(fetch_until), store.load_recently_observed_data()))
+                Ok((Ok(fetch_until), store.load_recently_observed_block()))
             })
             .flatten()
             .and_then(move |(fetch_until, last_observed_block)| {
@@ -316,7 +316,7 @@ where
                     debug!("Transactions settled {:?}", ret);
                     // now that all transactions have been processed successfully, we
                     // can save `fetch_until` as the latest observed block
-                    store_clone.save_recently_observed_data(fetch_until)
+                    store_clone.save_recently_observed_block(fetch_until)
                 })
             })
     }
@@ -337,10 +337,10 @@ where
         };
         let amount = transfer.amount;
         store
-            .check_tx_credited(transfer.tx_hash)
+            .check_if_tx_processed(transfer.tx_hash)
             .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
-            .and_then(move |credited| {
-                if !credited {
+            .and_then(move |processed| {
+                if !processed {
                     Either::A(
                         store
                             .load_account_id_from_address(addr)
@@ -350,7 +350,7 @@ where
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
                                 // was successfully notified
-                                store.credit_tx(tx_hash)
+                                store.mark_tx_processed(tx_hash)
                             }),
                     )
                 } else {
@@ -401,11 +401,11 @@ where
         let web3 = self.web3.clone();
         let store = self.store.clone();
         let self_clone = self.clone();
-        // Skip transactions which have already been credited to the connector
-        store.check_tx_credited(tx_hash)
+        // Skip transactions which have already been processed by the connector
+        store.check_if_tx_processed(tx_hash)
         .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
-        .and_then(move |credited| {
-            if !credited {
+        .and_then(move |processed| {
+            if !processed {
                 Either::A(
                 web3.eth().transaction(TransactionId::Hash(tx_hash))
                 .map_err(move |err| error!("Could not fetch transaction data from transaction hash: {:?}. Got error: {:?}", tx_hash, err))
@@ -433,7 +433,7 @@ where
                         .and_then(move |_| {
                             // only save the transaction hash if the connector
                             // was successfully notified
-                            store.credit_tx(tx_hash)
+                            store.mark_tx_processed(tx_hash)
                         }))
                     } else {
                         // otherwise return an empty future

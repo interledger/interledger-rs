@@ -99,7 +99,7 @@ impl EthereumStore for TestStore {
         Box::new(ok(v))
     }
 
-    fn save_recently_observed_data(
+    fn save_recently_observed_block(
         &self,
         block: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -108,7 +108,7 @@ impl EthereumStore for TestStore {
         Box::new(ok(()))
     }
 
-    fn load_recently_observed_data(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send> {
+    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send> {
         Box::new(ok(*self.last_observed_block.read()))
     }
 
@@ -126,7 +126,10 @@ impl EthereumStore for TestStore {
         Box::new(ok(d))
     }
 
-    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
+    fn check_if_tx_processed(
+        &self,
+        tx_hash: H256,
+    ) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
         let hashes = self.saved_hashes.read();
         // if hash exists then return error
         if hashes.get(&tx_hash).is_some() {
@@ -136,7 +139,7 @@ impl EthereumStore for TestStore {
         }
     }
 
-    fn credit_tx(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    fn mark_tx_processed(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut hashes = self.saved_hashes.write();
         (*hashes).insert(tx_hash, true);
         Box::new(ok(()))

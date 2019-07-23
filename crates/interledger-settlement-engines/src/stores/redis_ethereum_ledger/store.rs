@@ -17,7 +17,7 @@ use crate::stores::redis_store::{EngineRedisStore, EngineRedisStoreBuilder};
 // Key for the latest observed block and balance. The data is stored in order to
 // avoid double crediting transactions which have already been processed, and in
 // order to resume watching from the last observed point.
-static RECENTLY_OBSERVED_DATA_KEY: &str = "recently_observed_data";
+static RECENTLY_OBSERVED_BLOCK_KEY: &str = "recently_observed_block";
 static SAVED_TRANSACTIONS_KEY: &str = "transactions";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
@@ -185,12 +185,12 @@ impl EthereumStore for EthereumLedgerRedisStore {
         )
     }
 
-    fn save_recently_observed_data(
+    fn save_recently_observed_block(
         &self,
         block: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.set(RECENTLY_OBSERVED_DATA_KEY, block.low_u64())
+        pipe.set(RECENTLY_OBSERVED_BLOCK_KEY, block.low_u64())
             .ignore();
         Box::new(
             pipe.query_async(self.connection.clone())
@@ -201,9 +201,9 @@ impl EthereumStore for EthereumLedgerRedisStore {
         )
     }
 
-    fn load_recently_observed_data(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send> {
+    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.get(RECENTLY_OBSERVED_DATA_KEY);
+        pipe.get(RECENTLY_OBSERVED_BLOCK_KEY);
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
@@ -231,26 +231,20 @@ impl EthereumStore for EthereumLedgerRedisStore {
         )
     }
 
-    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
+    fn check_if_tx_processed(
+        &self,
+        tx_hash: H256,
+    ) -> Box<dyn Future<Item = bool, Error = ()> + Send> {
         Box::new(
             cmd("EXISTS")
                 .arg(ethereum_transactions_key(tx_hash))
-                .arg(true)
                 .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(
-                    move |(_conn, ret): (_, u64)| {
-                        if ret == 1 {
-                            Ok(true)
-                        } else {
-                            Ok(false)
-                        }
-                    },
-                ),
+                .and_then(move |(_conn, ret): (_, bool)| Ok(ret)),
         )
     }
 
-    fn credit_tx(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    fn mark_tx_processed(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         Box::new(
             cmd("SETNX")
                 .arg(ethereum_transactions_key(tx_hash))
@@ -274,9 +268,13 @@ fn addrs_to_key(address: EthereumAddresses) -> String {
     let token_address = if let Some(token_address) = address.token_address {
         token_address.to_string()
     } else {
-        "".to_string()
+        "null".to_string()
     };
-    format!("{}:{}", address.own_address.to_string(), token_address)
+    format!(
+        "account:{}:{}",
+        address.own_address.to_string(),
+        token_address
+    )
 }
 
 #[cfg(test)]
@@ -347,11 +345,11 @@ mod tests {
         block_on(test_store().and_then(|(store, context)| {
             let block = U256::from(2);
             store
-                .save_recently_observed_data(block)
+                .save_recently_observed_block(block)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
                 .and_then(move |_| {
                     store
-                        .load_recently_observed_data()
+                        .load_recently_observed_block()
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
                         .and_then(move |data| {
                             assert_eq!(data, block);
@@ -369,11 +367,11 @@ mod tests {
             let tx_hash =
                 H256::from("0xb28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e");
             store
-                .credit_tx(tx_hash)
+                .mark_tx_processed(tx_hash)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
                 .and_then(move |_| {
                     store
-                        .check_tx_credited(tx_hash)
+                        .check_if_tx_processed(tx_hash)
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
                         .and_then(move |seen2| {
                             assert_eq!(seen2, true);

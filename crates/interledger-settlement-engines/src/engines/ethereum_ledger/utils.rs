@@ -11,13 +11,11 @@ use ethereum_tx_sign::{
 use log::error;
 use std::str::FromStr;
 // Helper function which is used to construct an Ethereum transaction sending
-// `value` tokens to `to`. The account's nonce is required since Ethereum uses
-// an account based model with nonces for replay protection. If a
-// `token_address` is provided, then an ERC20 transaction is created instead for
-// that token. Ethereum transactions cost 21000 Gas, while ERC20 transactions
-// cost at most 70k (can tighten the gas limit, but 70k is safe if the address
-// is indeed an ERC20 token.
-// TODO: pass it gas_price as a parameter which is calculated from `web3.eth().gas_price()`
+// `value` tokens to `to`. If a `token_address` is provided, then an ERC20
+// transaction  is created instead for that token. The `nonce`, `gas` and
+// `gas_price` fields are set to 0 and are expected to be set with the values
+// returned by the corresponding `eth_getTransactionCount`, `eth_estimateGas`,
+// `eth_gasPrice` calls to an Ethereum node.
 pub fn make_tx(to: Address, value: U256, token_address: Option<Address>) -> RawTransaction {
     if let Some(token_address) = token_address {
         // Ethereum contract transactions format:

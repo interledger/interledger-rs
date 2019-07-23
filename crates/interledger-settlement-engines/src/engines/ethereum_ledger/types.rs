@@ -48,13 +48,13 @@ pub trait EthereumStore {
 
     /// Saves the latest block number, up to which all
     /// transactions have been communicated to the connector
-    fn save_recently_observed_data(
+    fn save_recently_observed_block(
         &self,
         block: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Loads the latest saved block number
-    fn load_recently_observed_data(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send>;
+    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send>;
 
     /// Retrieves the account id associated with the provided addresses pair.
     /// Note that an account with the same `own_address` but different ERC20
@@ -65,11 +65,15 @@ pub trait EthereumStore {
         eth_address: Addresses,
     ) -> Box<dyn Future<Item = <Self::Account as Account>::AccountId, Error = ()> + Send>;
 
-    /// Errors out if the transaction hash has already been stored before
-    fn check_tx_credited(&self, tx_hash: H256) -> Box<dyn Future<Item = bool, Error = ()> + Send>;
+    /// Returns true if the transaction has already been processed and saved in
+    /// the store.
+    fn check_if_tx_processed(
+        &self,
+        tx_hash: H256,
+    ) -> Box<dyn Future<Item = bool, Error = ()> + Send>;
 
     /// Saves the transaction hash in the store.
-    fn credit_tx(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    fn mark_tx_processed(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
 /// Implement this trait for datatypes which can be used to sign an Ethereum
