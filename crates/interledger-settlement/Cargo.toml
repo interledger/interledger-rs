@@ -26,9 +26,9 @@ uuid = "0.7.4"
 rand = "0.6.5"
 ring = "0.14.6"
 tokio-retry = "0.2.0"
+tokio = "0.1.20"
 
 [dev-dependencies]
 parking_lot = "0.8.0"
 mockito = "0.17.1"
-tokio = "0.1.20"
 env_logger = "0.6.1"

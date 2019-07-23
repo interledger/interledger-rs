@@ -10,6 +10,7 @@ use hyper::{Response, StatusCode};
 use interledger_settlement::{IdempotentData, IdempotentStore};
 use log::error;
 use ring::digest::{digest, SHA256};
+use tokio::executor::spawn;
 use tower_web::{net::ConnectionStream, ServiceBuilder};
 
 /// # Settlement Engine API
@@ -114,9 +115,10 @@ impl_web! {
                         } else {
                             Either::B(
                                 f()
-                                .map_err(move |ret: (StatusCode, String)| {
+                                .map_err({let store = store.clone(); let idempotency_key = idempotency_key.clone(); move |ret: (StatusCode, String)| {
+                                    spawn(store.save_idempotent_data(idempotency_key, input_hash, ret.0, Bytes::from(ret.1.clone())));
                                     Response::builder().status(ret.0).body(ret.1).unwrap()
-                                })
+                                }})
                                 .and_then(move |ret: (StatusCode, String)| {
                                     store.save_idempotent_data(idempotency_key, input_hash, ret.0, Bytes::from(ret.1.clone()))
                                     .map_err({let ret = ret.clone(); move |_| {

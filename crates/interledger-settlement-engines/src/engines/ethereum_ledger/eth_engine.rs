@@ -249,7 +249,7 @@ where
                             "[{:?}] Getting settlement data from the blockchain; instant={:?}",
                             address, instant
                         );
-                        tokio::spawn(_self.notifier());
+                        tokio::spawn(_self.notify());
                         Ok(())
                     })
                     .map_err(|e| panic!("interval errored; err={:?}", e)),
@@ -276,7 +276,7 @@ where
     /// 7. Save the (current block number - confirmations) and current account
     ///    balance to the store, to be used as last observed data for the next
     ///    call of this function.
-    pub fn notifier(&self) -> impl Future<Item = (), Error = ()> + Send {
+    pub fn notify(&self) -> impl Future<Item = (), Error = ()> + Send {
         let confirmations = self.confirmations;
         let our_address = self.address.own_address;
         let connector_url = self.connector_url.clone();

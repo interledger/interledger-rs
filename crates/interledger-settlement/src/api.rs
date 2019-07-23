@@ -16,6 +16,7 @@ use std::{
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
+use tokio::executor::spawn;
 use tower_web::{net::ConnectionStream, ServiceBuilder};
 
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
@@ -99,12 +100,7 @@ impl_web! {
                                 .map_err({let store = store.clone(); let idempotency_key = idempotency_key.clone(); move |ret: (StatusCode, String)| {
                                     let status_code = ret.0;
                                     let data = Bytes::from(ret.1.clone());
-                                    store.save_idempotent_data(idempotency_key, input_hash, status_code, data);
-                                    // .map_err({let ret = ret.clone(); move |_| {
-                                    //     Response::builder().status(ret.0).body(Bytes::from(ret.1)).unwrap()
-                                    // }}).and_then(move |_| {
-                                    //     Err(Response::builder().status(ret.0).body(ret.1).unwrap())
-                                    // })
+                                    spawn(store.save_idempotent_data(idempotency_key, input_hash, status_code, data));
                                     Response::builder().status(status_code).body(ret.1).unwrap()
                                 }})
                                 .and_then(move |ret: (StatusCode, Bytes)| {
@@ -379,30 +375,26 @@ mod tests {
             let store = test_store(false, false);
             let api = test_api(store.clone(), false);
 
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id.clone(),
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id.clone(),
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
             // check that it's idempotent
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id,
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id,
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
@@ -422,16 +414,14 @@ mod tests {
             let store = test_store(true, true);
             let api = test_api(store, false);
 
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id,
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id,
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 500);
         }
 
@@ -443,43 +433,37 @@ mod tests {
             let store = test_store(false, true);
             let api = test_api(store.clone(), false);
 
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id.clone(),
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id.clone(),
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 400);
             assert_eq!(ret.body(), "Unable to parse account id: a");
 
             // check that it's idempotent
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id.clone(),
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id.clone(),
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 400);
             assert_eq!(ret.body(), "Unable to parse account id: a");
 
-            let _ret: Response<_> = api
-                .receive_settlement(
-                    id,
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let _ret: Response<_> = block_on(api.receive_settlement(
+                id,
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -497,29 +481,25 @@ mod tests {
             let store = TestStore::new(vec![], false);
             let api = test_api(store.clone(), false);
 
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id.clone(),
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id.clone(),
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Error getting account: 0");
 
-            let ret: Response<_> = api
-                .receive_settlement(
-                    id,
-                    SettlementData {
-                        amount: SETTLEMENT_BODY,
-                    },
-                    IDEMPOTENCY.clone(),
-                )
-                .wait()
-                .unwrap_err(); // Bug that returns Result::OK
+            let ret: Response<_> = block_on(api.receive_settlement(
+                id,
+                SettlementData {
+                    amount: SETTLEMENT_BODY,
+                },
+                IDEMPOTENCY.clone(),
+            ))
+            .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Error getting account: 0");
 
@@ -542,27 +522,24 @@ mod tests {
             let store = test_store(false, true);
             let api = test_api(store.clone(), true);
 
-            let ret: Response<_> = api
-                .send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone()))
+                    .unwrap();
             assert_eq!(ret.status(), StatusCode::OK);
             assert_eq!(ret.body(), &Bytes::from("hello!"));
 
-            let ret: Response<_> = api
-                .send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone()))
+                    .unwrap();
             assert_eq!(ret.status(), StatusCode::OK);
             assert_eq!(ret.body(), &Bytes::from("hello!"));
 
             // Using the same idempotency key with different arguments MUST
             // fail.
             let id2 = "1".to_string();
-            let ret: Response<_> = api
-                .send_outgoing_message(id2.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id2.clone(), vec![], IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
             assert_eq!(
                 ret.body(),
@@ -571,10 +548,9 @@ mod tests {
 
             let data = vec![0, 1, 2];
             // fails with different account id and data
-            let ret: Response<_> = api
-                .send_outgoing_message(id2, data.clone(), IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id2, data.clone(), IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
             assert_eq!(
                 ret.body(),
@@ -582,10 +558,8 @@ mod tests {
             );
 
             // fails for same account id but different data
-            let ret: Response<_> = api
-                .send_outgoing_message(id, data, IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id, data, IDEMPOTENCY.clone())).unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
             assert_eq!(
                 ret.body(),
@@ -607,16 +581,12 @@ mod tests {
             let store = test_store(false, true);
             let api = test_api(store.clone(), false);
 
-            let ret = api
-                .send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
+            let ret = block_on(api.send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone()))
                 .unwrap_err();
             assert_eq!(ret.status().as_u16(), 502);
 
-            let ret = api
-                .send_outgoing_message(id, vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret =
+                block_on(api.send_outgoing_message(id, vec![], IDEMPOTENCY.clone())).unwrap_err();
             assert_eq!(ret.status().as_u16(), 502);
 
             let s = store.clone();
@@ -636,22 +606,18 @@ mod tests {
             let store = test_store(false, true);
             let api = test_api(store.clone(), true);
 
-            let ret: Response<_> = api
-                .send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status().as_u16(), 400);
 
-            let ret: Response<_> = api
-                .send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status().as_u16(), 400);
 
-            let _ret: Response<_> = api
-                .send_outgoing_message(id, vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let _ret: Response<_> =
+                block_on(api.send_outgoing_message(id, vec![], IDEMPOTENCY.clone())).unwrap_err();
             assert_eq!(ret.status().as_u16(), 400);
 
             let s = store.clone();
@@ -670,16 +636,13 @@ mod tests {
             let store = TestStore::new(vec![], false);
             let api = test_api(store.clone(), true);
 
-            let ret: Response<_> = api
-                .send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id.clone(), vec![], IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
 
-            let ret: Response<_> = api
-                .send_outgoing_message(id, vec![], IDEMPOTENCY.clone())
-                .wait()
-                .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.send_outgoing_message(id, vec![], IDEMPOTENCY.clone())).unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
 
             let s = store.clone();

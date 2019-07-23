@@ -55,7 +55,7 @@ pub fn main() {
                             .default_value("http://127.0.0.1:8545"),
                         Arg::with_name("token_address")
                             .long("token_address")
-                            .help("The address of the ERC20 token to be used for settlement")
+                            .help("The address of the ERC20 token to be used for settlement (defaults to sending ETH if no token address is provided)")
                             .default_value(""),
                         Arg::with_name("connector_url")
                             .long("connector_url")

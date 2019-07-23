@@ -109,7 +109,7 @@ local settle_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
 return balance";
-static APPLY_SETTLEMENT: &str = "
+static APPLY_OUTGOING_SETTLEMENT: &str = "
 local account = 'accounts:' .. ARGV[1]
 local settle_amount = tonumber(ARGV[2])
 
@@ -394,7 +394,7 @@ impl RedisStore {
         )
     }
 
-    fn apply_settlement(
+    fn apply_outgoing_settlement(
         &self,
         account_id: u64,
         settle_amount: u64,
@@ -405,7 +405,7 @@ impl RedisStore {
             settle_amount
         );
         cmd("EVAL")
-            .arg(APPLY_SETTLEMENT)
+            .arg(APPLY_OUTGOING_SETTLEMENT)
             .arg(0)
             .arg(account_id)
             .arg(settle_amount)
@@ -611,7 +611,7 @@ impl BalanceStore for RedisStore {
                                 let store_clone = store.clone();
                                 spawn(settlement_client
                                     .send_settlement(to_account, amount_to_settle)
-                                    .and_then(move |_| { store_clone.apply_settlement(to_account_id, amount_to_settle) })
+                                    .and_then(move |_| { store_clone.apply_outgoing_settlement(to_account_id, amount_to_settle) })
                                     .or_else(move |_| store.refund_settlement(to_account_id, amount_to_settle)));
                             } else {
                                 trace!(
