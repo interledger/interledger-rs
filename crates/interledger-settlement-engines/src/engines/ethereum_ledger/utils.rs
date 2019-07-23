@@ -10,6 +10,12 @@ use ethereum_tx_sign::{
 };
 use log::error;
 use std::str::FromStr;
+
+/// This is the result of keccak256("Transfer(address,address,to)"), which is
+/// used to filter through Ethereum ERC20 Transfer events in transaction receipts.
+const TRANSFER_EVENT_FILTER: &str =
+    "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
 // Helper function which is used to construct an Ethereum transaction sending
 // `value` tokens to `to`. If a `token_address` is provided, then an ERC20
 // transaction  is created instead for that token. The `nonce`, `gas` and
@@ -86,7 +92,7 @@ pub fn transfer_logs(
         .topics(
             Some(vec![H256::from(
                 // keccak256("transfer(address,address,to)")
-                "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                TRANSFER_EVENT_FILTER,
             )]),
             from,
             to,
@@ -100,16 +106,16 @@ pub fn transfer_logs(
         .map_err(move |err| error!("Got error when fetching transfer logs{:?}", err))
         .and_then(move |logs| {
             let mut ret = Vec::new();
-            for l in logs {
+            for log in logs {
                 // NOTE: From/to are indexed events.
                 // Amount is parsed directly from the data field.
-                let indexed = l.topics;
+                let indexed = log.topics;
                 let from = H160::from(indexed[1]);
                 let to = H160::from(indexed[2]);
-                let data = l.data;
+                let data = log.data;
                 let amount = U256::from_str(&hex::encode(data.0)).unwrap();
                 ret.push(ERC20Transfer {
-                    tx_hash: l.transaction_hash.unwrap(),
+                    tx_hash: log.transaction_hash.unwrap(),
                     from,
                     to,
                     amount,
