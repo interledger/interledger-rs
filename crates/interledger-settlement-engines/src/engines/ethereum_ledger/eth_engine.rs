@@ -30,6 +30,7 @@ use uuid::Uuid;
 use crate::{ApiResponse, Quantity, SettlementEngine};
 
 const MAX_RETRIES: usize = 10;
+const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PaymentDetailsResponse {
@@ -294,7 +295,7 @@ where
                         // map each incoming erc20 transactions to an outgoing
                         // notification to the connector
                         join_all(transfers.into_iter().map(move |transfer| {
-                            self_clone2.submit_erc20_transfer(transfer, token_address)
+                            self_clone2.notify_erc20_transfer(transfer, token_address)
                         }))
                     });
 
@@ -322,8 +323,8 @@ where
     }
 
     /// Submits an ERC20 transfer object's data to the connector
-    // todo: Try combining the body of this function with `submit_tx_to_connector`
-    fn submit_erc20_transfer(
+    // todo: Try combining the body of this function with `notify_eth_transfer`
+    fn notify_erc20_transfer(
         &self,
         transfer: ERC20Transfer,
         token_address: Address,
@@ -382,7 +383,7 @@ where
                 let submit_txs_to_connector_future = block
                     .transactions
                     .into_iter()
-                    .map(move |tx_hash| self_clone.submit_tx_to_connector(tx_hash));
+                    .map(move |tx_hash| self_clone.notify_eth_transfer(tx_hash));
 
                 // combine all the futures for that block's transactions
                 join_all(submit_txs_to_connector_future)
@@ -396,7 +397,7 @@ where
             })
     }
 
-    fn submit_tx_to_connector(&self, tx_hash: H256) -> impl Future<Item = (), Error = ()> {
+    fn notify_eth_transfer(&self, tx_hash: H256) -> impl Future<Item = (), Error = ()> {
         let our_address = self.address.own_address;
         let web3 = self.web3.clone();
         let store = self.store.clone();
@@ -648,8 +649,10 @@ where
                 })
                 .and_then(move |resp| {
                     parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        let mut data = challenge_clone.clone();
-                        data.extend(payment_details.to.own_address.iter());
+                        let data = prefixed_mesage(
+                            payment_details.to.own_address.to_vec(),
+                            challenge_clone,
+                        );
                         let challenge_hash = Sha3::digest(&data);
                         let recovered_address = payment_details.sig.recover(&challenge_hash);
                         debug!("Received payment details {:?}", payment_details);
@@ -709,8 +712,7 @@ where
             "Responding with our account's details {} {:?}",
             account_id, address
         );
-        let mut data = body.clone();
-        data.extend(address.own_address.iter());
+        let data = prefixed_mesage(address.own_address.to_vec(), body.clone());
         let signature = self.signer.sign_message(&data);
         let resp = {
             let ret = PaymentDetailsResponse::new(address, signature);
@@ -773,6 +775,13 @@ fn parse_body_into_payment_details(
                 (StatusCode::from_u16(500).unwrap(), err)
             })
         })
+}
+
+fn prefixed_mesage(data: Vec<u8>, challenge: Vec<u8>) -> Vec<u8> {
+    let mut ret = ETH_CREATE_ACCOUNT_PREFIX.to_vec();
+    ret.extend(data);
+    ret.extend(challenge);
+    ret
 }
 
 #[cfg(test)]
@@ -906,12 +915,9 @@ mod tests {
         let bob: TestAccount = BOB.clone();
 
         let challenge = Uuid::new_v4().to_hyphenated().to_string().into_bytes();
-        let mut signed_challenge = challenge.clone();
-        signed_challenge.extend(ALICE.address.iter());
+        let signed_challenge = prefixed_mesage(ALICE.address.to_vec(), challenge.clone());
 
-        let signature = ALICE_PK
-            .clone()
-            .sign_message(&signed_challenge);
+        let signature = ALICE_PK.clone().sign_message(&signed_challenge);
 
         let store = test_store(ALICE.clone(), false, false, false);
         let engine = test_engine(
