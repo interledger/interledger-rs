@@ -12,7 +12,7 @@ use reqwest::r#async::Client;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
-use tokio_retry::{strategy::ExponentialBackoff, Retry};
+use tokio_retry::{strategy::FixedInterval, Retry};
 use tower_web::{impl_web, Response};
 use url::Url;
 
@@ -108,7 +108,7 @@ impl_web! {
                                     }
                                 })
                             };
-                            Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action)
+                            Retry::spawn(FixedInterval::from_millis(2000).take(MAX_RETRIES), action)
                             .map_err(|_| Response::builder().status(500).body(()).unwrap())
                             .and_then(move |_| {
                                 Ok(json!(account))
