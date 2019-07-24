@@ -454,6 +454,7 @@ where
         tx_hash: H256,
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
+        let account_id_clone = account_id.clone();
         url.path_segments_mut()
             .expect("Invalid connector URL")
             .push("accounts")
@@ -490,8 +491,8 @@ where
             ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
             action,
         )
-        .map_err(|_| {
-            error!("Exceeded max retries when notifying connector. Please check your API.")
+        .map_err(move |_| {
+            error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, amount, tx_hash)
         })
     }
 
@@ -649,10 +650,7 @@ where
                 })
                 .and_then(move |resp| {
                     parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        let data = prefixed_mesage(
-                            payment_details.to.own_address.to_vec(),
-                            challenge_clone,
-                        );
+                        let data = prefixed_mesage(challenge_clone);
                         let challenge_hash = Sha3::digest(&data);
                         let recovered_address = payment_details.sig.recover(&challenge_hash);
                         debug!("Received payment details {:?}", payment_details);
@@ -712,7 +710,7 @@ where
             "Responding with our account's details {} {:?}",
             account_id, address
         );
-        let data = prefixed_mesage(address.own_address.to_vec(), body.clone());
+        let data = prefixed_mesage(body.clone());
         let signature = self.signer.sign_message(&data);
         let resp = {
             let ret = PaymentDetailsResponse::new(address, signature);
@@ -777,9 +775,8 @@ fn parse_body_into_payment_details(
         })
 }
 
-fn prefixed_mesage(data: Vec<u8>, challenge: Vec<u8>) -> Vec<u8> {
+fn prefixed_mesage(challenge: Vec<u8>) -> Vec<u8> {
     let mut ret = ETH_CREATE_ACCOUNT_PREFIX.to_vec();
-    ret.extend(data);
     ret.extend(challenge);
     ret
 }
@@ -915,7 +912,7 @@ mod tests {
         let bob: TestAccount = BOB.clone();
 
         let challenge = Uuid::new_v4().to_hyphenated().to_string().into_bytes();
-        let signed_challenge = prefixed_mesage(ALICE.address.to_vec(), challenge.clone());
+        let signed_challenge = prefixed_mesage(challenge.clone());
 
         let signature = ALICE_PK.clone().sign_message(&signed_challenge);
 
