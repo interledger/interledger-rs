@@ -221,7 +221,7 @@ where
                             "[{:?}] Getting settlement data from the blockchain; instant={:?}",
                             address, instant
                         );
-                        tokio::spawn(_self.notify());
+                        tokio::spawn(_self.handle_received_transactions());
                         Ok(())
                     })
                     .map_err(|e| panic!("interval errored; err={:?}", e)),
@@ -252,7 +252,7 @@ where
     // (accountId=>amount) across all transactions and blocks, and
     // only makes 1 transaction per accountId with the
     // appropriate amount.
-    pub fn notify(&self) -> impl Future<Item = (), Error = ()> + Send {
+    pub fn handle_received_transactions(&self) -> impl Future<Item = (), Error = ()> + Send {
         let confirmations = self.confirmations;
         let web3 = self.web3.clone();
         let store = self.store.clone();
@@ -280,10 +280,10 @@ where
                     last_observed_block, fetch_until
                 );
 
-                let submit_all_txs_fut = if let Some(token_address) = token_address {
+                let notify_all_txs_fut = if let Some(token_address) = token_address {
                     debug!("Settling for ERC20 transactions");
                     // get all erc20 transactions
-                    let submit_all_erc20_txs_fut = transfer_logs(
+                    let notify_all_erc20_txs_fut = transfer_logs(
                         web3.clone(),
                         token_address,
                         None,
@@ -300,20 +300,20 @@ where
                     });
 
                     // combine all erc20 futures for that range of blocks
-                    Either::A(submit_all_erc20_txs_fut)
+                    Either::A(notify_all_erc20_txs_fut)
                 } else {
                     debug!("Settling for ETH transactions");
                     let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
                     // for each block create a future which will notify the
                     // connector about all the transactions in that block that are sent to our account
-                    let submit_eth_txs_fut = checked_blocks
-                        .map(move |block_num| self_clone.submit_txs_in_block(block_num));
+                    let notify_eth_txs_fut = checked_blocks
+                        .map(move |block_num| self_clone.notify_eth_txs_in_block(block_num));
 
                     // combine all the futures for that range of blocks
-                    Either::B(join_all(submit_eth_txs_fut))
+                    Either::B(join_all(notify_eth_txs_fut))
                 };
 
-                submit_all_txs_fut.and_then(move |ret| {
+                notify_all_txs_fut.and_then(move |ret| {
                     debug!("Transactions settled {:?}", ret);
                     // now that all transactions have been processed successfully, we
                     // can save `fetch_until` as the latest observed block
@@ -338,7 +338,7 @@ where
         };
         let amount = transfer.amount;
         store
-            .check_if_tx_processed(transfer.tx_hash)
+            .check_if_tx_processed(tx_hash)
             .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
             .and_then(move |processed| {
                 if !processed {
@@ -346,7 +346,7 @@ where
                         store
                             .load_account_id_from_address(addr)
                             .and_then(move |id| {
-                                self_clone.notify_connector(id.to_string(), amount.low_u64())
+                                self_clone.notify_connector(id.to_string(), amount.low_u64(), tx_hash)
                             })
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
@@ -360,7 +360,7 @@ where
             })
     }
 
-    fn submit_txs_in_block(&self, block_number: u64) -> impl Future<Item = (), Error = ()> {
+    fn notify_eth_txs_in_block(&self, block_number: u64) -> impl Future<Item = (), Error = ()> {
         debug!("Getting txs for block {}", block_number);
         let self_clone = self.clone();
         // Get the block at `block_number`
@@ -429,7 +429,7 @@ where
                         Either::A(
                         store.load_account_id_from_address(addr)
                         .and_then(move |id| {
-                            self_clone.notify_connector(id.to_string(), amount.low_u64())
+                            self_clone.notify_connector(id.to_string(), amount.low_u64(), tx_hash)
                         })
                         .and_then(move |_| {
                             // only save the transaction hash if the connector
@@ -451,6 +451,7 @@ where
         &self,
         account_id: String,
         amount: u64,
+        tx_hash: H256,
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
         url.path_segments_mut()
@@ -459,16 +460,15 @@ where
             .push(&account_id.clone())
             .push("settlement");
         let client = Client::new();
-        let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
         debug!(
-            "Making POST to {:?} {:?} {:?}",
-            url, amount, idempotency_uuid
+            "Making POST to {:?} {:?} about {:?}",
+            url, amount, tx_hash
         );
         let action = move || {
             let account_id = account_id.clone();
             client
                 .post(url.clone())
-                .header("Idempotency-Key", idempotency_uuid.clone())
+                .header("Idempotency-Key", tx_hash.to_string())
                 .json(&json!({ "amount": amount }))
                 .send()
                 .map_err(move |err| {
