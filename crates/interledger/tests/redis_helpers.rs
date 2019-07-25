@@ -99,7 +99,10 @@ impl RedisServer {
             }
         };
 
-        let process = cmd.spawn().unwrap();
+        let process = cmd.spawn().expect(
+            "Could not spawn redis-server process, please ensure \
+             that all redis components are installed",
+        );
         RedisServer { process, addr }
     }
 
