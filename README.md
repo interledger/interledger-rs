@@ -16,7 +16,7 @@
 - [Interledger.rs Architecture](./docs/architecture.md)
 - [Interledger Forum](https://forum.interledger.org) for general questions about the Interledger Protocol and Project
 
-### Installation
+## Installation
 
 Prerequisites:
 - Git
@@ -27,6 +27,10 @@ Install and Run:
 1. `git clone https://github.com/emschwartz/interledger-rs && cd interledger-rs`
 2. `cargo build` (add `--release` to compile the release version, which is slower to compile but faster to run)
 2. `cargo run --package interledger` (append command line options after a `--` to use the CLI)
+
+## Running the Examples
+
+See the [examples](./examples/README.md) for demos of Interledger functionality and how to use the Interledger.rs implementation.
 
 ## Contributing
 
