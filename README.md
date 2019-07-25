@@ -8,7 +8,7 @@
 [![crates.io](https://img.shields.io/crates/v/interledger.svg)](https://crates.io/crates/interledger)
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 [![CircleCI](https://circleci.com/gh/emschwartz/interledger-rs.svg?style=shield)](https://circleci.com/gh/emschwartz/interledger-rs)
-[![Docker Image](https://img.shields.io/docker/pulls/emschwartz/interledger-rs.svg?maxAge=2592000)](https://hub.docker.com/r/emschwartz/interledger-rs/)
+<!-- [![Docker Image](https://img.shields.io/docker/pulls/emschwartz/interledger-rs.svg?maxAge=2592000)](https://hub.docker.com/r/emschwartz/interledger-rs/) -->
 
 ## Understanding Interledger.rs
 - [HTTP API](./docs/api.md)
@@ -16,31 +16,11 @@
 - [Interledger.rs Architecture](./docs/architecture.md)
 - [Interledger Forum](https://forum.interledger.org) for general questions about the Interledger Protocol and Project
 
-## Quickstart
-
-### Docker Install
-
-Prerequisites:
-- Docker
-
-Install and run:
-
-1. Get the docker image:
-
-    `docker pull emschwartz/interledger-rs`
-
-2. Run the Interledger node
-
-    `docker run --init -i -t -v interledger-node-data:/data emschwartz/interledger-rs`
-
-3. Follow the instructions written to the terminal to try sending an SPSP payment
-
-
-### Manual Install
+### Installation
 
 Prerequisites:
 - Git
-- Rust (using [`rustup`](https://rustup.rs/) is recommended)
+- Rust, latest stable version (using [`rustup`](https://rustup.rs/) is recommended)
 
 Install and Run:
 
@@ -50,4 +30,4 @@ Install and Run:
 
 ## Contributing
 
-Contributions are very welcome and if you're interested in getting involved, see [CONTRIBUTING.md](docs/CONTRIBUTING.md).
+Contributions are very welcome and if you're interested in getting involved, see [CONTRIBUTING.md](docs/CONTRIBUTING.md). We're more than happy to answer questions and mentor you in making your first contributions to Interledger.rs!
