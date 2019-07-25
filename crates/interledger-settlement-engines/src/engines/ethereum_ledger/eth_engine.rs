@@ -346,7 +346,11 @@ where
                         store
                             .load_account_id_from_address(addr)
                             .and_then(move |id| {
-                                self_clone.notify_connector(id.to_string(), amount.low_u64(), tx_hash)
+                                self_clone.notify_connector(
+                                    id.to_string(),
+                                    amount.low_u64(),
+                                    tx_hash,
+                                )
                             })
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
@@ -461,10 +465,7 @@ where
             .push(&account_id.clone())
             .push("settlement");
         let client = Client::new();
-        debug!(
-            "Making POST to {:?} {:?} about {:?}",
-            url, amount, tx_hash
-        );
+        debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
         let action = move || {
             let account_id = account_id.clone();
             client

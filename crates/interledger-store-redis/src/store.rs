@@ -109,12 +109,6 @@ local settle_amount = tonumber(ARGV[2])
 
 local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
 return balance";
-static APPLY_OUTGOING_SETTLEMENT: &str = "
-local account = 'accounts:' .. ARGV[1]
-local settle_amount = tonumber(ARGV[2])
-
-local balance = redis.call('HINCRBY', account, 'balance', 0 - settle_amount)
-return balance";
 static PROCESS_INCOMING_SETTLEMENT: &str = "
 local account = 'accounts:' .. ARGV[1]
 local amount = tonumber(ARGV[2])
@@ -394,39 +388,6 @@ impl RedisStore {
         )
     }
 
-    fn apply_outgoing_settlement(
-        &self,
-        account_id: u64,
-        settle_amount: u64,
-    ) -> impl Future<Item = (), Error = ()> {
-        trace!(
-            "Applying settlement for account: {}, amount: {}",
-            account_id,
-            settle_amount
-        );
-        cmd("EVAL")
-            .arg(APPLY_OUTGOING_SETTLEMENT)
-            .arg(0)
-            .arg(account_id)
-            .arg(settle_amount)
-            .query_async(self.connection.as_ref().clone())
-            .map_err(move |err| {
-                error!(
-                    "Error applying settlement for account: {}, amount: {}: {:?}",
-                    account_id, settle_amount, err
-                )
-            })
-            .and_then(move |(_connection, balance): (_, i64)| {
-                trace!(
-                    "Applied settlement for account: {}, amount: {}. Balance is now: {}",
-                    account_id,
-                    settle_amount,
-                    balance
-                );
-                Ok(())
-            })
-    }
-
     fn refund_settlement(
         &self,
         account_id: u64,
@@ -608,10 +569,8 @@ impl BalanceStore for RedisStore {
                                 // settlement engine for the status of each
                                 // outgoing settlement and putting unnecessary
                                 // load on the settlement engine.
-                                let store_clone = store.clone();
                                 spawn(settlement_client
                                     .send_settlement(to_account, amount_to_settle)
-                                    .and_then(move |_| { store_clone.apply_outgoing_settlement(to_account_id, amount_to_settle) })
                                     .or_else(move |_| store.refund_settlement(to_account_id, amount_to_settle)));
                             } else {
                                 trace!(
