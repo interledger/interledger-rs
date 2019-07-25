@@ -8,6 +8,7 @@
 [![crates.io](https://img.shields.io/crates/v/interledger.svg)](https://crates.io/crates/interledger)
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 [![CircleCI](https://circleci.com/gh/emschwartz/interledger-rs.svg?style=shield)](https://circleci.com/gh/emschwartz/interledger-rs)
+![Rust Version](https://img.shields.io/badge/rust-stable-Success)
 <!-- [![Docker Image](https://img.shields.io/docker/pulls/emschwartz/interledger-rs.svg?maxAge=2592000)](https://hub.docker.com/r/emschwartz/interledger-rs/) -->
 
 ## Understanding Interledger.rs
@@ -20,7 +21,7 @@
 
 Prerequisites:
 - Git
-- Rust, latest stable version (using [`rustup`](https://rustup.rs/) is recommended)
+- [Rust](https://www.rust-lang.org/tools/install) - latest stable version
 
 Install and Run:
 
