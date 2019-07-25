@@ -26,6 +26,21 @@ pub fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()>
         })
 }
 
+// same as test_store, but uses an account without `settle_to` for netting tests.
+pub fn test_other_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
+    let context = TestContext::new();
+    RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+        .connect()
+        .and_then(|store| {
+            let store_clone = store.clone();
+            store
+                .clone()
+                .insert_account(ACCOUNT_DETAILS_0.clone())
+                .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_3.clone()))
+                .and_then(|_| Ok((store, context)))
+        })
+}
+
 pub fn block_on<F>(f: F) -> Result<F::Item, F::Error>
 where
     F: Future + Send + 'static,

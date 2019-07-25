@@ -34,7 +34,7 @@ fn get_balance() {
 }
 
 #[test]
-fn prepare_then_fulfill() {
+fn prepare_then_fulfill_with_settlement() {
     block_on(test_store().and_then(|(store, context)| {
         let store_clone_1 = store.clone();
         let store_clone_2 = store.clone();
@@ -46,7 +46,8 @@ fn prepare_then_fulfill() {
                 let account0 = accounts[0].clone();
                 let account1 = accounts[1].clone();
                 store
-                    .update_balances_for_prepare(accounts[0].clone(), 100, accounts[1].clone(), 500)
+                    // nothing happens with the outgoing amount for prepare
+                    .update_balances_for_prepare(accounts[0].clone(), 100, accounts[1].clone(), 0)
                     .and_then(move |_| {
                         store_clone_1
                             .clone()
@@ -61,12 +62,8 @@ fn prepare_then_fulfill() {
                     .and_then(move |_| {
                         store_clone_2
                             .clone()
-                            .update_balances_for_fulfill(
-                                account0.clone(),
-                                100,
-                                account1.clone(),
-                                500,
-                            )
+                            // nothing happens with the incoming amount for fulfill
+                            .update_balances_for_fulfill(account0.clone(), 0, account1.clone(), 100)
                             .and_then(move |_| {
                                 store_clone_2
                                     .clone()
@@ -74,7 +71,7 @@ fn prepare_then_fulfill() {
                                     .join(store_clone_2.clone().get_balance(account1.clone()))
                                     .and_then(move |(balance0, balance1)| {
                                         assert_eq!(balance0, -100);
-                                        assert_eq!(balance1, 500);
+                                        assert_eq!(balance1, -1000); // the account must be settled down to -1000
                                         let _ = context;
                                         Ok(())
                                     })
@@ -164,7 +161,7 @@ fn enforces_minimum_balance() {
 
 #[test]
 fn netting_fulfilled_balances() {
-    block_on(test_store().and_then(|(store, context)| {
+    block_on(test_other_store().and_then(|(store, context)| {
         let store_clone1 = store.clone();
         let store_clone2 = store.clone();
         store
@@ -179,28 +176,28 @@ fn netting_fulfilled_balances() {
                 future::join_all(vec![
                     store.clone().update_balances_for_prepare(
                         account0.clone(),
-                        100,
-                        account1.clone(),
-                        500,
+                        100,              // decrement account0 by 100
+                        account1.clone(), // unused
+                        0,                // outgoing amount is not used in prepare
                     ),
                     store.clone().update_balances_for_fulfill(
-                        account0.clone(),
+                        account0.clone(), // unused
+                        0,                // incoming amount is not used for prepare
+                        account1.clone(), // increment account 0 by 100
                         100,
-                        account1.clone(),
-                        500,
-                    ),
+                    ), //
                 ])
                 .and_then(move |_| {
                     future::join_all(vec![
                         store_clone1.clone().update_balances_for_prepare(
                             account1.clone(),
-                            400,
-                            account0.clone(),
                             80,
+                            account0.clone(),
+                            0, // outgoing amount is not used in prepare
                         ),
                         store_clone1.clone().update_balances_for_fulfill(
                             account1.clone(),
-                            400,
+                            0, // incoming amount is not used for prepare
                             account0.clone(),
                             80,
                         ),
@@ -213,7 +210,7 @@ fn netting_fulfilled_balances() {
                         .join(store_clone2.get_balance(account1_clone))
                         .and_then(move |(balance0, balance1)| {
                             assert_eq!(balance0, -20);
-                            assert_eq!(balance1, 100);
+                            assert_eq!(balance1, 20);
                             let _ = context;
                             Ok(())
                         })

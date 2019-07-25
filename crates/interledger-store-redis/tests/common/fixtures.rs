@@ -70,4 +70,9 @@ lazy_static! {
         settlement_engine_url: None,
         settlement_engine_asset_scale: None,
     };
+    pub static ref ACCOUNT_DETAILS_3: AccountDetails = {
+        let mut acc = ACCOUNT_DETAILS_1.clone();
+        acc.settle_to = None;
+        acc
+    };
 }
