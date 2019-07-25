@@ -1,0 +1,33 @@
+{
+  "name": "interledger-rs",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">   <img src=\"interledger-rs.svg\" width=\"700\" alt=\"Interledger.rs\"> </p>",
+  "main": "run-interledger-node.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "commitizen": "^3.1.1",
+    "cz-conventional-changelog": "^2.1.0"
+  },
+  "scripts": {
+    "commit": "git-cz",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Neil-Jubinville/interledger-rs.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Neil-Jubinville/interledger-rs/issues"
+  },
+  "homepage": "https://github.com/Neil-Jubinville/interledger-rs#readme",
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}
