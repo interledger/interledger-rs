@@ -14,9 +14,10 @@ use interledger_service_util::{
     BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
     RateLimitService, ValidatorService,
 };
-use interledger_settlement::SettlementMessageService;
+use interledger_settlement::{SettlementApi, SettlementMessageService};
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
+use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str};
@@ -26,6 +27,9 @@ use url::Url;
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 
+fn default_settlement_address() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 7771))
+}
 fn default_http_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7770))
 }
@@ -34,6 +38,15 @@ fn default_btp_address() -> SocketAddr {
 }
 fn default_redis_uri() -> ConnectionInfo {
     DEFAULT_REDIS_URL.into_connection_info().unwrap()
+}
+
+use std::str::FromStr;
+fn deserialize_string_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Address::from_str(&String::deserialize(deserializer)?)
+        .map_err(|err| DeserializeError::custom(format!("Invalid address: {:?}", err)))
 }
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
@@ -70,6 +83,7 @@ pub struct InterledgerNode {
     /// ILP address of the node
     // Rename this one because the env vars are prefixed with "ILP_"
     #[serde(alias = "address")]
+    #[serde(deserialize_with = "deserialize_string_to_address")]
     pub ilp_address: Address,
     /// Root secret used to derive encryption keys
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
@@ -82,11 +96,14 @@ pub struct InterledgerNode {
         default = "default_redis_uri"
     )]
     pub redis_connection: ConnectionInfo,
-    /// IP address and port to listen for HTTP connections on
+    /// IP address and port to listen for HTTP connections
     /// This is used for both the API and ILP over HTTP packets
     #[serde(default = "default_http_address")]
     pub http_address: SocketAddr,
-    /// IP address and port to listen for BTP connections on
+    /// IP address and port to listen for the Settlement Engine API
+    #[serde(default = "default_settlement_address")]
+    pub settlement_address: SocketAddr,
+    /// IP address and port to listen for BTP connections
     #[serde(default = "default_btp_address")]
     pub btp_address: SocketAddr,
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
@@ -111,6 +128,7 @@ impl InterledgerNode {
         let secret_seed = Bytes::from(&self.secret_seed[..]);
         let btp_address = self.btp_address;
         let http_address = self.http_address;
+        let settlement_address = self.settlement_address;
         let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
@@ -213,7 +231,6 @@ impl InterledgerNode {
                                         secret_seed,
                                         admin_auth_token,
                                         store.clone(),
-                                        outgoing_service.clone(),
                                         incoming_service.clone(),
                                     );
                                     if let Some(account_id) = default_spsp_account {
@@ -223,6 +240,16 @@ impl InterledgerNode {
                                         .expect("Unable to bind to HTTP address");
                                     info!("Interledger node listening on: {}", http_address);
                                     tokio::spawn(api.serve(listener.incoming()));
+
+                                    let settlement_api = SettlementApi::new(
+                                        store.clone(),
+                                        outgoing_service.clone(),
+                                    );
+                                    let listener = TcpListener::bind(&settlement_address)
+                                        .expect("Unable to bind to Settlement API address");
+                                    info!("Settlement API listening on: {}", settlement_address);
+                                    tokio::spawn(settlement_api.serve(listener.incoming()));
+
                                     Ok(())
                                 },
                             )

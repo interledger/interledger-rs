@@ -2,6 +2,8 @@ use crate::packet::{Route, RouteUpdateRequest};
 use bytes::Bytes;
 use hashbrown::HashMap;
 use hex;
+use lazy_static::lazy_static;
+use log::{debug, trace};
 use ring::rand::{SecureRandom, SystemRandom};
 use std::iter::FromIterator;
 

@@ -3,6 +3,7 @@ use super::IldcpAccount;
 use futures::future::ok;
 use interledger_packet::*;
 use interledger_service::*;
+use log::debug;
 use std::marker::PhantomData;
 
 /// A simple service that intercepts incoming ILDCP requests

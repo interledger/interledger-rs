@@ -2,6 +2,7 @@ use futures::{future::err, Future};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
+use log::error;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
 use std::time::{Duration, SystemTime};

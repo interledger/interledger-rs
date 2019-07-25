@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
-
 mod common;
 
 use common::*;
@@ -124,7 +121,7 @@ fn decrypts_outgoing_tokens() {
                 account.get_http_auth_token().unwrap(),
                 "outgoing_auth_token"
             );
-            assert_eq!(account.get_btp_token().unwrap().as_ref(), b"btp_token");
+            assert_eq!(account.get_btp_token().unwrap(), b"btp_token");
             let _ = context;
             Ok(())
         })

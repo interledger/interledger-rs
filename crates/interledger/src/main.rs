@@ -1,8 +1,5 @@
-extern crate interledger;
-#[macro_use]
-extern crate clap;
-
 use base64;
+use clap::value_t;
 use clap::{App, Arg, ArgGroup, SubCommand};
 use config;
 use hex;
@@ -111,6 +108,7 @@ pub fn main() {
                     .arg(Arg::with_name("config")
                         .long("config")
                         .short("c")
+                        .takes_value(true)
                         .help("Name of config file (in JSON, TOML, YAML, or INI format)"))
                     .subcommand(SubCommand::with_name("accounts")
                         .subcommand(SubCommand::with_name("add")

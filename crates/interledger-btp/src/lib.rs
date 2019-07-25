@@ -6,14 +6,6 @@
 //! Because this protocol uses WebSockets, only one party needs to have a publicly-accessible HTTPS
 //! endpoint but both sides can send and receive ILP packets.
 
-#[macro_use]
-extern crate quick_error;
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-
 use futures::Future;
 use interledger_service::Account;
 use url::Url;

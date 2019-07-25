@@ -1,7 +1,7 @@
 use interledger_service::{Account, OutgoingRequest, OutgoingService};
 use std::time::Duration;
 
-pub const DEFAULT_ROUND_TRIP_TIME: u64 = 500; // milliseconds?
+pub const DEFAULT_ROUND_TRIP_TIME: u64 = 500;
 
 pub trait RoundTripTimeAccount: Account {
     fn round_trip_time(&self) -> u64 {
@@ -36,7 +36,7 @@ where
     type Future = O::Future;
 
     /// On send request:
-    /// 1. Get the sender and receiver's roundtrip time (default 500ms)
+    /// 1. Get the sender and receiver's roundtrip time (default 1000ms)
     /// 2. Reduce the packet's expiry by that amount
     /// 3. Forward the request
     fn send_request(&mut self, mut request: OutgoingRequest<A>) -> Self::Future {

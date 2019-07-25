@@ -1,3 +1,5 @@
+use failure::Fail;
+
 #[derive(Fail, Debug)]
 pub enum Error {
     #[fail(display = "Error connecting: {}", _0)]
