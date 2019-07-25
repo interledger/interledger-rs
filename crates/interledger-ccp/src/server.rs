@@ -576,12 +576,13 @@ where
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    let account_list: Vec<String> =
-                        accounts.iter().map(|a| a.id().to_string()).collect();
-                    trace!(
-                        "Sending route updates to accounts: {}",
+                    trace!("Sending route updates to accounts: {}", {
+                        let account_list: Vec<String> = accounts
+                            .iter()
+                            .map(|a| format!("{} ({})", a.id(), a.client_address()))
+                            .collect();
                         account_list.join(", ")
-                    );
+                    });
                     Either::A(
                         join_all(accounts.into_iter().map(move |account| {
                             let account_id = account.id();

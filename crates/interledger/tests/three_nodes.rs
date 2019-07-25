@@ -104,7 +104,7 @@ fn three_nodes() {
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
                 settlement_engine_asset_scale: None,
-                                settlement_engine_ilp_address: None,
+                settlement_engine_ilp_address: None,
             }))
             .and_then(move |_| node1.serve()),
     );

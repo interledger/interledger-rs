@@ -76,13 +76,14 @@ impl_web! {
         fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             if self.is_admin(&authorization) {
-                    Either::A(store.get_all_accounts()
-                        .map_err(|_| Response::builder().status(500).body(()).unwrap())
-                .and_then(|accounts| Ok(json!(accounts))))
+                Either::A(store.get_all_accounts()
+                    .map_err(|_| Response::builder().status(500).body(()).unwrap())
+                    .and_then(|accounts| Ok(json!(accounts))))
             } else {
-                    Either::B(store.get_account_from_http_token(authorization.as_str())
-                        .map_err(|_| Response::builder().status(404).body(()).unwrap())
-                        .and_then(|account| Ok(json!(vec![account]))))
+                // Only allow the user to see their own account
+                Either::B(store.get_account_from_http_token(authorization.as_str())
+                    .map_err(|_| Response::builder().status(404).body(()).unwrap())
+                    .and_then(|account| Ok(json!(vec![account]))))
             }
         }
 
@@ -90,25 +91,32 @@ impl_web! {
         #[content_type("application/json")]
         fn get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
-            let store_clone = store.clone();
             let is_admin = self.is_admin(&authorization);
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
-                    store.clone().get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                        .and_then(move |account|
-                            if account.id() == id {
-                                Either::A(ok(json!(account)))
-                            } else if is_admin {
-                                Either::B(store_clone.get_accounts(vec![id]).and_then(|accounts| Ok(json!(accounts[0].clone()))))
-                            } else {
-                                Either::A(err(()))
+                    if is_admin  {
+                        Either::A(store.get_accounts(vec![id])
+                            .map_err(move |_| {
+                                debug!("Account not found: {}", id);
+                                Response::builder().status(404).body(()).unwrap()
                             })
-                        .map_err(move |_| {
-                            debug!("No account found with auth: {}", authorization);
-                            Response::builder().status(401).body(()).unwrap()
-                        })
+                            .and_then(|mut accounts| Ok(json!(accounts.pop().unwrap()))))
+                    } else {
+                        Either::B(store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
+                            .map_err(move |_| {
+                                debug!("No account found with auth: {}", authorization);
+                                Response::builder().status(401).body(()).unwrap()
+                            })
+                            .and_then(move |account| {
+                                if account.id() == id {
+                                    Ok(json!(account))
+                                } else {
+                                    Err(Response::builder().status(401).body(()).unwrap())
+                                }
+                            }))
+                    }
                 })
         }
 
@@ -117,31 +125,39 @@ impl_web! {
         #[content_type("application/json")]
         fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
             let store = self.store.clone();
-            let store_clone = store.clone();
-            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
+            let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
+            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
             result(parsed_id)
                 .map_err(|_| Response::builder().status(400).body(()).unwrap())
                 .and_then(move |id| {
-                    store.clone().get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                        .and_then(move |account|
-                            if account.id() == id {
-                                Either::A(ok(account))
-                            } else if is_admin {
-                                Either::B(store_clone.get_accounts(vec![id]).and_then(|accounts| Ok(accounts[0].clone())))
-                            } else {
-                                Either::A(err(()))
+                    if is_admin  {
+                        Either::A(store.get_accounts(vec![id])
+                            .map_err(move |_| {
+                                debug!("Account not found: {}", id);
+                                Response::builder().status(404).body(()).unwrap()
                             })
-                        .map_err(move |_| {
-                            debug!("No account found with auth: {}", authorization);
-                            Response::builder().status(401).body(()).unwrap()
-                        })
-                        .and_then(move |account| store.get_balance(account)
-                        .and_then(|balance| Ok(BalanceResponse {
-                            balance: balance.to_string(),
-                        }))
-                        .map_err(|_| Response::builder().status(404).body(()).unwrap()))
+                            .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
+                    } else {
+                        Either::B(store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
+                            .map_err(move |_| {
+                                debug!("No account found with auth: {}", authorization);
+                                Response::builder().status(401).body(()).unwrap()
+                            })
+                            .and_then(move |account| {
+                                if account.id() == id {
+                                    Ok(account)
+                                } else {
+                                    Err(Response::builder().status(401).body(()).unwrap())
+                                }
+                            }))
+                    }
                 })
+                .and_then(move |account| store_clone.get_balance(account)
+                .map_err(|_| Response::builder().status(500).body(()).unwrap()))
+                .and_then(|balance| Ok(BalanceResponse {
+                    balance: balance.to_string(),
+                }))
         }
     }
 }
