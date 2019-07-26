@@ -19,12 +19,12 @@ pub use server::{ConnectionGenerator, StreamReceiverService};
 pub mod test_helpers {
     use bytes::Bytes;
     use futures::{future::ok, Future};
-    use hashbrown::HashMap;
     use interledger_ildcp::IldcpAccount;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore};
     use lazy_static::lazy_static;
+    use std::collections::HashMap;
     use std::iter::FromIterator;
     use std::str::FromStr;
 
