@@ -11,3 +11,5 @@ Cargo.lock
 *.aof
 cmake-build-debug/
 *.log
+.DS_Store
+
