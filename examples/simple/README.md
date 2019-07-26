@@ -2,9 +2,11 @@
 
 This example sets up two Interledger.rs nodes, connects them together, and sends a payment from one to the other.
 
-To run the full example, use the [`run-all.sh`](./run-all.sh) script. Otherwise, you can walk through each step below.
+To run the full example, install [Redis](https://redis.io/) and then use the [`run-all.sh`](./run-all.sh) script. Otherwise, you can walk through each step below.
 
 Each of the services write their logs to files found under the `logs` directory. You can run `tail -f logs/node-a.log`, for example, to watch the logs of Node A.
+
+![overview](images/overview.svg)
 
 ## Running and Configuring the Nodes
 
