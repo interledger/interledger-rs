@@ -13,8 +13,8 @@
 //! (see the `interledger-ccp` crate for more details).
 
 use bytes::Bytes;
-use hashbrown::HashMap;
 use interledger_service::{Account, AccountStore};
+use std::collections::HashMap;
 
 mod router;
 

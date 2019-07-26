@@ -6,7 +6,6 @@ use futures::{
     future::{err, ok},
     Future,
 };
-use hashbrown::HashMap;
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
@@ -15,6 +14,7 @@ use interledger_service::{
 #[cfg(test)]
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::{iter::FromIterator, sync::Arc};
 

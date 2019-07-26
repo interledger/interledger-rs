@@ -1,11 +1,21 @@
-use crate::{packet::*, routing_table::RoutingTable, CcpRoutingAccount, RouteManagerStore};
+#[cfg(test)]
+use crate::packet::PEER_PROTOCOL_CONDITION;
+use crate::{
+    packet::{
+        Mode, Route, RouteControlRequest, RouteUpdateRequest, CCP_CONTROL_DESTINATION,
+        CCP_RESPONSE, CCP_UPDATE_DESTINATION,
+    },
+    routing_table::RoutingTable,
+    CcpRoutingAccount, RouteManagerStore,
+};
 use bytes::Bytes;
 use futures::{
     future::{err, join_all, ok, Either},
     Future, Stream,
 };
-use hashbrown::HashMap;
-use interledger_packet::*;
+#[cfg(test)]
+use interledger_packet::PrepareBuilder;
+use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::{
     Account, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
 };
@@ -14,6 +24,7 @@ use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
+use std::collections::HashMap;
 use std::{
     cmp::min,
     convert::TryFrom,
@@ -34,7 +45,7 @@ fn hash(preimage: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
+type NewAndWithdrawnRoutes = (Vec<Route>, Vec<Bytes>);
 
 pub struct CcpRouteManagerBuilder<I, O, S> {
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
@@ -102,7 +113,7 @@ where
             store: self.store.clone(),
             spawn_tasks: self.spawn_tasks,
             forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
-            forwarding_table_updates: Arc::new(RwLock::new(HashMap::new())),
+            forwarding_table_updates: Arc::new(RwLock::new(Vec::new())),
             last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
             local_table: Arc::new(RwLock::new(RoutingTable::default())),
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
@@ -137,7 +148,7 @@ pub struct CcpRouteManager<I, O, S, A: Account> {
     forwarding_table: Arc<RwLock<RoutingTable<A>>>,
     last_epoch_updates_sent_for: Arc<Mutex<u32>>,
     /// These updates are stored such that index 0 is the transition from epoch 0 to epoch 1
-    forwarding_table_updates: Arc<RwLock<HashMap<u32, NewAndWithDrawnRoutes>>>,
+    forwarding_table_updates: Arc<RwLock<Vec<NewAndWithdrawnRoutes>>>,
     /// This is the routing table we have compile from configuration and
     /// broadcasts we have received from our peers. It is saved to the Store so that
     /// the Router services forwards packets according to what it says.
@@ -536,7 +547,8 @@ where
                     }
 
                     let epoch = forwarding_table.increment_epoch();
-                    forwarding_table_updates.insert(epoch, (new_routes, withdrawn_routes));
+                    forwarding_table_updates.push((new_routes, withdrawn_routes));
+                    debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
 
                     Either::A(store.set_routes(local_table.get_simplified_table()))
                 } else {
@@ -619,24 +631,21 @@ where
         from_epoch_index: u32,
         to_epoch_index: u32,
     ) -> RouteUpdateRequest {
+        let (start, end) = (from_epoch_index as usize, to_epoch_index as usize);
         let (routing_table_id, current_epoch_index) = {
             let table = self.forwarding_table.read();
             (table.id(), table.epoch())
         };
         let forwarding_table_updates = self.forwarding_table_updates.read();
-        let epochs_to_take: usize = if to_epoch_index > from_epoch_index {
-            (to_epoch_index - from_epoch_index) as usize
-        } else {
-            0
-        };
+        let epochs_to_take = end.saturating_sub(start);
 
         // Merge the new routes and withdrawn routes from all of the given epochs
         let mut new_routes: Vec<Route> = Vec::with_capacity(epochs_to_take);
         let mut withdrawn_routes: Vec<Bytes> = Vec::new();
         // Iterate through each of the given epochs
         for (new, withdrawn) in forwarding_table_updates
-            .values()
-            .skip(from_epoch_index as usize)
+            .iter()
+            .skip(start)
             .take(epochs_to_take)
         {
             for new_route in new {
@@ -1402,7 +1411,6 @@ mod handle_route_update_request {
 mod create_route_update {
     use super::*;
     use crate::test_helpers::*;
-    use std::iter::FromIterator;
 
     #[test]
     fn heartbeat_message_for_empty_table() {
@@ -1419,56 +1427,44 @@ mod create_route_update {
     fn includes_the_given_range_of_epochs() {
         let service = test_service();
         (*service.forwarding_table.write()).set_epoch(4);
-        *service.forwarding_table_updates.write() = HashMap::from_iter(vec![
+        *service.forwarding_table_updates.write() = vec![
             (
-                0,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.a"),
-                        path: vec![Bytes::from("example.x")],
-                        auth: [1; 32],
-                        props: Vec::new(),
-                    }],
-                    Vec::new(),
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.a"),
+                    path: vec![Bytes::from("example.x")],
+                    auth: [1; 32],
+                    props: Vec::new(),
+                }],
+                Vec::new(),
             ),
             (
-                1,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.b"),
-                        path: vec![Bytes::from("example.x")],
-                        auth: [2; 32],
-                        props: Vec::new(),
-                    }],
-                    Vec::new(),
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.b"),
+                    path: vec![Bytes::from("example.x")],
+                    auth: [2; 32],
+                    props: Vec::new(),
+                }],
+                Vec::new(),
             ),
             (
-                2,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.c"),
-                        path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
-                        auth: [3; 32],
-                        props: Vec::new(),
-                    }],
-                    vec![Bytes::from("example.m")],
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.c"),
+                    path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                    auth: [3; 32],
+                    props: Vec::new(),
+                }],
+                vec![Bytes::from("example.m")],
             ),
             (
-                3,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.d"),
-                        path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
-                        auth: [4; 32],
-                        props: Vec::new(),
-                    }],
-                    vec![Bytes::from("example.n")],
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.d"),
+                    path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                    auth: [4; 32],
+                    props: Vec::new(),
+                }],
+                vec![Bytes::from("example.n")],
             ),
-        ]);
+        ];
         let update = service.create_route_update(1, 3);
         assert_eq!(update.from_epoch_index, 1);
         assert_eq!(update.to_epoch_index, 3);

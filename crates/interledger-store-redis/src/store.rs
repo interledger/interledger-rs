@@ -5,8 +5,8 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
-use hashbrown::{HashMap, HashSet};
 use log::{debug, error, trace, warn};
+use std::collections::{HashMap, HashSet};
 
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
