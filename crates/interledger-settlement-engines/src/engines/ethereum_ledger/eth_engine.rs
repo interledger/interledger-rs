@@ -14,7 +14,11 @@ use ethereum_tx_sign::web3::{
     types::{Address, BlockNumber, CallRequest, TransactionId, H256, U256},
 };
 use hyper::StatusCode;
+use interledger_store_redis::RedisStoreBuilder;
+use log::info;
+use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
+use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -22,12 +26,16 @@ use std::{
     str::FromStr,
     time::{Duration, Instant},
 };
+use std::{net::SocketAddr, str, u64};
+use tokio::net::TcpListener;
 use tokio::timer::Interval;
 use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{ApiResponse, Quantity, SettlementEngine};
+use crate::stores::redis_ethereum_ledger::*;
+
+use crate::{ApiResponse, Quantity, SettlementEngine, SettlementEngineApi};
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -128,6 +136,7 @@ where
         self
     }
 
+    /// The frequency to check for new blocks for in milliseconds
     pub fn poll_frequency(&mut self, poll_frequency: u64) -> &mut Self {
         self.poll_frequency = Some(Duration::from_millis(poll_frequency));
         self
@@ -541,7 +550,6 @@ where
                     tx.nonce = data[2];
 
                     let signed_tx = signer.sign_raw_tx(tx.clone(), chain_id); // 3
-                    debug!("Sending transaction: {:?}", signed_tx);
                     let action = move || {
                         web3.eth() // 4
                             .send_raw_transaction(signed_tx.clone().into())
@@ -552,6 +560,10 @@ where
                     )
                     .map_err(move |err| {
                         error!("Error when sending transaction {:?}: {:?}", tx, err)
+                    })
+                    .and_then(move |tx_hash| {
+                        debug!("Transaction submitted. Hash: {:?}", tx_hash);
+                        Ok(tx_hash)
                     })
                 }),
         )
@@ -780,6 +792,67 @@ fn prefixed_mesage(challenge: Vec<u8>) -> Vec<u8> {
     let mut ret = ETH_CREATE_ACCOUNT_PREFIX.to_vec();
     ret.extend(challenge);
     ret
+}
+
+#[doc(hidden)]
+#[allow(clippy::all)]
+pub fn run_ethereum_engine<R, Si>(
+    redis_uri: R,
+    ethereum_endpoint: String,
+    settlement_port: u16,
+    secret_seed: &[u8; 32],
+    private_key: Si,
+    chain_id: u8,
+    confirmations: u8,
+    poll_frequency: u64,
+    connector_url: String,
+    token_address: Option<Address>,
+    watch_incoming: bool,
+) -> impl Future<Item = (), Error = ()>
+where
+    R: IntoConnectionInfo,
+    Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
+{
+    let redis_secret = generate_redis_secret(secret_seed);
+    let redis_uri = redis_uri.into_connection_info().unwrap();
+
+    EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
+        .connect()
+        .and_then(move |ethereum_store| {
+            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store, private_key)
+                .ethereum_endpoint(&ethereum_endpoint)
+                .chain_id(chain_id)
+                .connector_url(&connector_url)
+                .confirmations(confirmations)
+                .poll_frequency(poll_frequency)
+                .watch_incoming(watch_incoming)
+                .token_address(token_address)
+                .connect();
+
+            RedisStoreBuilder::new(redis_uri, redis_secret)
+                .connect()
+                .and_then(move |store| {
+                    let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
+                    let listener = TcpListener::bind(&addr)
+                        .expect("Unable to bind to Settlement Engine address");
+                    info!("Ethereum Settlement Engine listening on: {}", addr);
+
+                    let api = SettlementEngineApi::new(engine, store);
+                    tokio::spawn(api.serve(listener.incoming()));
+                    Ok(())
+                })
+        })
+}
+
+static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
+fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
+    let mut redis_secret: [u8; 32] = [0; 32];
+    let sig = hmac::sign(
+        &hmac::SigningKey::new(&digest::SHA256, secret_seed),
+        REDIS_SECRET_GENERATION_STRING.as_bytes(),
+    );
+    redis_secret.copy_from_slice(sig.as_ref());
+    redis_secret
 }
 
 #[cfg(test)]
