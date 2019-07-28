@@ -296,7 +296,7 @@ where
         })
 }
 
-fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
+pub fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
     let mut redis_secret: [u8; 32] = [0; 32];
     let sig = hmac::sign(
         &hmac::SigningKey::new(&digest::SHA256, secret_seed),
