@@ -1,4 +1,4 @@
-use super::SettlementAccount;
+use super::{SettlementAccount, SE_ILP_ADDRESS};
 use futures::{
     future::{err, Either},
     Future, Stream,
@@ -8,6 +8,7 @@ use interledger_service::{BoxedIlpFuture, IncomingRequest, IncomingService};
 use log::error;
 use reqwest::r#async::Client;
 use std::marker::PhantomData;
+use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 
@@ -36,7 +37,7 @@ where
 
 impl<I, A> IncomingService<A> for SettlementMessageService<I, A>
 where
-    I: IncomingService<A>,
+    I: IncomingService<A> + Send,
     A: SettlementAccount,
 {
     type Future = BoxedIlpFuture;
@@ -44,10 +45,8 @@ where
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         // Only handle the request if the destination address matches the ILP address
         // of the settlement engine being used for this account
-        let ilp_address = self.ilp_address.clone();
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
-            if request.prepare.destination() == settlement_engine_details.ilp_address {
-                let ilp_address_clone = self.ilp_address.clone();
+            if request.prepare.destination() == SE_ILP_ADDRESS.clone() {
                 let mut settlement_engine_url = settlement_engine_details.url;
                 // The `Prepare` packet's data was sent by the peer's settlement
                 // engine so we assume it is in a format that our settlement engine
@@ -60,18 +59,26 @@ where
                     .expect("Invalid settlement engine URL")
                     .push("accounts")
                     .push(&request.from.id().to_string())
-                    .push("messages"); // Maybe set the idempotency flag here in the headers
-                return Box::new(self.http_client.post(settlement_engine_url)
-                .header("Content-Type", "application/octet-stream")
-                .body(message)
-                .send()
+                    .push("messages");
+                let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+                let http_client = self.http_client.clone();
+                let action = move || {
+                    http_client
+                        .post(settlement_engine_url.clone())
+                        .header("Content-Type", "application/octet-stream")
+                        .header("Idempotency-Key", idempotency_uuid.clone())
+                        .body(message.clone())
+                        .send()
+                };
+
+                return Box::new(Retry::spawn(ExponentialBackoff::from_millis(10).take(10), action)
                 .map_err(move |error| {
                     error!("Error sending message to settlement engine: {:?}", error);
                     RejectBuilder {
                         code: ErrorCode::T00_INTERNAL_ERROR,
                         message: b"Error sending message to settlement engine",
                         data: &[],
-                        triggered_by: Some(&ilp_address_clone),
+                        triggered_by: Some(&SE_ILP_ADDRESS),
                     }.build()
                 })
                 .and_then(move |response| {
@@ -83,7 +90,7 @@ where
                                 code: ErrorCode::T00_INTERNAL_ERROR,
                                 message: b"Error getting settlement engine response",
                                 data: &[],
-                                triggered_by: Some(&ilp_address),
+                                triggered_by: Some(&SE_ILP_ADDRESS),
                             }.build()
                         })
                         .and_then(|body| {
@@ -103,19 +110,10 @@ where
                             code,
                             message: format!("Settlement engine rejected request with error code: {}", response.status()).as_str().as_ref(),
                             data: &[],
-                            triggered_by: Some(&ilp_address),
+                            triggered_by: Some(&SE_ILP_ADDRESS),
                         }.build()))
                     }
                 }));
-            } else {
-                error!("Got settlement packet from account {} but there is no settlement engine url configured for it", request.from.id());
-                return Box::new(err(RejectBuilder {
-                    code: ErrorCode::F02_UNREACHABLE,
-                    message: format!("Got settlement packet from account {} but there is no settlement engine url configured for it", request.from.id()).as_str().as_ref(),
-                    data: &[],
-                    triggered_by: Some(&ilp_address),
-                }
-                .build()));
             }
         }
         Box::new(self.next.handle_request(request))
@@ -136,14 +134,13 @@ mod tests {
         // happy case
         let m = mock_message(200).create();
         let mut settlement = test_service();
-        let destination = TEST_ACCOUNT_0.clone().ilp_address;
         let fulfill: Fulfill = block_on(
             settlement.handle_request(IncomingRequest {
                 from: TEST_ACCOUNT_0.clone(),
                 prepare: PrepareBuilder {
                     amount: 0,
                     expires_at: SystemTime::now(),
-                    destination,
+                    destination: SE_ILP_ADDRESS.clone(),
                     data: DATA.as_bytes(),
                     execution_condition: &[0; 32],
                 }
@@ -158,8 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn no_settlement_engine_configured_for_destination() {
-        // happy case
+    fn gets_forwarded_if_destination_not_engine_() {
         let m = mock_message(200).create().expect(0);
         let mut settlement = test_service();
         let destination = Address::from_str("example.some.address").unwrap();
@@ -181,15 +177,11 @@ mod tests {
         m.assert();
         assert_eq!(reject.code(), ErrorCode::F02_UNREACHABLE);
         assert_eq!(reject.triggered_by().unwrap(), SERVICE_ADDRESS.clone());
-        assert_eq!(
-            reject.message(),
-            b"Got settlement packet from account 0 but there is no settlement engine url configured for it" as &[u8],
-        );
+        assert_eq!(reject.message(), b"No other incoming handler!" as &[u8],);
     }
 
     #[test]
     fn account_does_not_have_settlement_engine() {
-        // happy case
         let m = mock_message(200).create().expect(0);
         let mut settlement = test_service();
         let mut acc = TEST_ACCOUNT_0.clone();
@@ -221,7 +213,6 @@ mod tests {
         let error_code = 500;
         let error_str = "Internal Server Error";
         let m = mock_message(error_code).create();
-        let destination = TEST_ACCOUNT_0.clone().ilp_address;
         let mut settlement = test_service();
         let reject: Reject = block_on(
             settlement.handle_request(IncomingRequest {
@@ -229,7 +220,7 @@ mod tests {
                 prepare: PrepareBuilder {
                     amount: 0,
                     expires_at: SystemTime::now(),
-                    destination: destination.clone(),
+                    destination: SE_ILP_ADDRESS.clone(),
                     data: DATA.as_bytes(),
                     execution_condition: &[0; 32],
                 }
@@ -242,7 +233,7 @@ mod tests {
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
         // The engine rejected the message, not the connector's service,
         // so the triggered by should be the ilp address of th engine - I think.
-        assert_eq!(reject.triggered_by().unwrap(), SERVICE_ADDRESS.clone());
+        assert_eq!(reject.triggered_by().unwrap(), SE_ILP_ADDRESS.clone());
         assert_eq!(
             reject.message(),
             format!(

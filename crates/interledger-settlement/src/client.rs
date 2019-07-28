@@ -7,6 +7,7 @@ use interledger_ildcp::IldcpAccount;
 use interledger_service_util::{Convert, ConvertDetails};
 use log::{error, trace};
 use reqwest::r#async::Client;
+use serde_json::json;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -46,9 +47,8 @@ impl SettlementClient {
             let settlement_engine_url_clone = settlement_engine_url.clone();
             let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
             return Either::A(self.http_client.post(settlement_engine_url.clone())
-                .header("Content-Type", "application/octet-stream")
                 .header("Idempotency-Key", idempotency_uuid)
-                .body(amount.to_string())
+                .json(&json!({"amount": amount}))
                 .send()
                 .map_err(move |err| error!("Error sending settlement command to settlement engine {}: {:?}", settlement_engine_url, err))
                 .and_then(move |response| {
@@ -90,7 +90,6 @@ mod tests {
 
         m.assert();
         assert!(ret.is_ok());
-        println!("{:?} RET", ret.unwrap());
     }
 
     #[test]

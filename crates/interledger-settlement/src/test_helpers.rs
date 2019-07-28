@@ -43,7 +43,6 @@ impl SettlementAccount for TestAccount {
         }
         Some(SettlementEngineDetails {
             url: self.url.clone(),
-            ilp_address: self.ilp_address.clone(),
             asset_scale: 9,
         })
     }
@@ -84,21 +83,21 @@ impl SettlementStore for TestStore {
         let ret = if self.should_fail { err(()) } else { ok(()) };
         Box::new(ret)
     }
+}
 
+impl IdempotentStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
         let cache = self.cache.read();
-        let d = if let Some(data) = cache.get(&idempotency_key) {
+        if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
             *guard += 1; // used to test how many times this branch gets executed
-            Some((data.0, data.1.clone(), data.2))
+            Box::new(ok((data.0, data.1.clone(), data.2)))
         } else {
-            None
-        };
-
-        Box::new(ok(d))
+            Box::new(err(()))
+        }
     }
 
     fn save_idempotent_data(
@@ -167,14 +166,16 @@ impl TestAccount {
 #[allow(dead_code)]
 pub fn mock_settlement(status_code: usize) -> mockito::Mock {
     mock("POST", SETTLEMENT_API.clone())
-        .match_header("content-type", "application/octet-stream")
+        // The settlement API receives json data
+        .match_header("Content-Type", "application/json")
         .with_status(status_code)
         .with_body(BODY)
 }
 
 pub fn mock_message(status_code: usize) -> mockito::Mock {
     mock("POST", MESSAGES_API.clone())
-        .match_header("content-type", "application/octet-stream")
+        // The messages API receives raw data
+        .match_header("Content-Type", "application/octet-stream")
         .with_status(status_code)
         .with_body(BODY)
 }

@@ -8,6 +8,8 @@ use futures::Future;
 use hyper::StatusCode;
 use interledger_packet::Address;
 use interledger_service::Account;
+use lazy_static::lazy_static;
+use std::str::FromStr;
 use url::Url;
 
 mod api;
@@ -22,6 +24,10 @@ pub use api::SettlementApi;
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
+lazy_static! {
+    pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
+}
+
 pub struct SettlementEngineDetails {
     /// Base URL of the settlement engine
     pub url: Url,
@@ -31,9 +37,6 @@ pub struct SettlementEngineDetails {
     /// The SettlementClient translates the amounts used for each account internally within
     /// Interledger.rs into the correct scale used by the settlement engine.
     pub asset_scale: u8,
-    /// The ILP address of the settlement engine. For example, `peer.settle.xrp-paychan`.
-    /// Note that both peers' settlement engines are expected to use the same address.
-    pub ilp_address: Address,
 }
 
 pub trait SettlementAccount: Account {
@@ -41,8 +44,6 @@ pub trait SettlementAccount: Account {
         None
     }
 }
-
-pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
 
 pub trait SettlementStore {
     type Account: SettlementAccount;
@@ -53,13 +54,17 @@ pub trait SettlementStore {
         amount: u64,
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+}
 
+pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
+
+pub trait IdempotentStore {
     /// Returns the API response that was saved when the idempotency key was used
     /// Also returns a hash of the input data which resulted in the response
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send>;
 
     /// Saves the data that was passed along with the api request for later
     /// The store MUST also save a hash of the input, so that it errors out on requests
