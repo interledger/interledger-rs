@@ -24,6 +24,9 @@ log = "0.4.6"
 serde = "1.0.89"
 serde_json = "1.0.39"
 tower-web = "0.3.7"
+reqwest = "0.9.18"
+url = "1.7.2"
+tokio-retry = "0.2.0"
 
 [badges]
 circle-ci = { repository = "emschwartz/interledger-rs" }

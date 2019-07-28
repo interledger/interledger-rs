@@ -60,7 +60,6 @@ pub fn main() {
                             Arg::with_name("btp_server")
                                 .long("btp_server")
                                 .takes_value(true)
-                                .default_value(&moneyd_uri)
                                 .help("URI of a moneyd or BTP Server to pay from"),
                             Arg::with_name("http_server")
                                 .long("http_server")
@@ -338,7 +337,6 @@ pub fn main() {
                             .ok(),
                         settlement_engine_url: None,
                         settlement_engine_asset_scale: None,
-                        settlement_engine_ilp_address: None,
                     };
                     tokio::run(insert_account_redis(redis_uri, &server_secret, account));
                 }

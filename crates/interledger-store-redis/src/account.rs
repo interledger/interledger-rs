@@ -11,10 +11,9 @@ use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
-#[cfg(test)]
-use lazy_static::lazy_static;
 use log::error;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
+
 use ring::aead;
 use serde::Serialize;
 use serde::Serializer;
@@ -23,8 +22,8 @@ use std::{
     convert::TryFrom,
     str::{self, FromStr},
 };
-use url::Url;
 
+use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
 #[derive(Clone, Debug, Serialize)]
@@ -57,22 +56,6 @@ pub struct Account {
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) settlement_engine_url: Option<Url>,
     pub(crate) settlement_engine_asset_scale: Option<u8>,
-    #[serde(serialize_with = "optional_address_to_string")]
-    pub(crate) settlement_engine_ilp_address: Option<Address>,
-}
-
-fn optional_address_to_string<S>(
-    address: &Option<Address>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if let Some(address) = address {
-        serializer.serialize_str(str::from_utf8(address.as_ref()).unwrap_or(""))
-    } else {
-        serializer.serialize_none()
-    }
 }
 
 fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
@@ -165,7 +148,6 @@ impl Account {
             amount_per_minute_limit: details.amount_per_minute_limit,
             settlement_engine_url,
             settlement_engine_asset_scale: details.settlement_engine_asset_scale,
-            settlement_engine_ilp_address: details.settlement_engine_ilp_address,
         })
     }
 
@@ -280,10 +262,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "settlement_engine_asset_scale".write_redis_args(&mut rv);
             settlement_engine_asset_scale.write_redis_args(&mut rv);
         }
-        if let Some(ref settlement_engine_ilp_address) = account.settlement_engine_ilp_address {
-            "settlement_engine_ilp_address".write_redis_args(&mut rv);
-            rv.push(settlement_engine_ilp_address.to_bytes().to_vec());
-        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -307,14 +285,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         };
         let round_trip_time: Option<u64> = get_value_option("round_trip_time", &hash)?;
         let round_trip_time: u64 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
-        let settlement_engine_ilp_address: Option<String> =
-            get_value_option("settlement_engine_ilp_address", &hash)?;
-        let settlement_engine_ilp_address =
-            if let Some(ref settlement_engine_ilp_address) = settlement_engine_ilp_address {
-                Address::from_str(settlement_engine_ilp_address).ok()
-            } else {
-                None
-            };
+
         Ok(AccountWithEncryptedTokens {
             account: Account {
                 id: get_value("id", &hash)?,
@@ -340,7 +311,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                     "settlement_engine_asset_scale",
                     &hash,
                 )?,
-                settlement_engine_ilp_address,
             },
         })
     }
@@ -494,12 +464,10 @@ impl SettlementAccount for Account {
         match (
             &self.settlement_engine_url,
             self.settlement_engine_asset_scale,
-            &self.settlement_engine_ilp_address,
         ) {
-            (Some(url), Some(asset_scale), Some(ilp_address)) => Some(SettlementEngineDetails {
+            (Some(url), Some(asset_scale)) => Some(SettlementEngineDetails {
                 url: url.clone(),
                 asset_scale,
-                ilp_address: ilp_address.clone(),
             }),
             _ => None,
         }
@@ -509,6 +477,7 @@ impl SettlementAccount for Account {
 #[cfg(test)]
 mod redis_account {
     use super::*;
+    use lazy_static::lazy_static;
 
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
@@ -532,7 +501,6 @@ mod redis_account {
             packets_per_minute_limit: None,
             settlement_engine_asset_scale: None,
             settlement_engine_url: None,
-            settlement_engine_ilp_address: None,
         };
     }
 

@@ -36,6 +36,8 @@ use std::{
     str::FromStr,
 };
 
+use serde::Serialize;
+
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
 ///
@@ -43,7 +45,7 @@ use std::{
 /// Store implementations will implement these Account traits for a concrete type that
 /// they will load from the database.
 pub trait Account: Clone + Send + Sized + Debug {
-    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy;
+    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy + Serialize;
 
     fn id(&self) -> Self::AccountId;
 }

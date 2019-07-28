@@ -28,11 +28,20 @@ jobs:
             sudo apt-get -t stretch-backports install redis-server
             redis-server --version
       - run:
+          name: Install node and ganache
+          command: |
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+              source ~/.nvm/nvm.sh
+              nvm install node
+              npm install -g ganache-cli
+      - run:
           name: Build
           command: cargo build --all-features --all-targets
       - run:
           name: Test
-          command: cargo test --all --all-features
+          command: |
+              source ~/.nvm/nvm.sh # load node paths for ganache-cli
+              cargo test --all --all-features
           environment:
             RUST_BACKTRACE: "1"
       - run:
