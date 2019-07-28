@@ -17,14 +17,13 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{
-    IdempotentData, SettlementAccount, SettlementClient, SettlementStore,
+    IdempotentData, IdempotentStore, SettlementAccount, SettlementClient, SettlementStore,
 };
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
 };
 use ring::{aead, hmac};
-use std::collections::HashMap as SlowHashMap;
 use std::{
     iter::FromIterator,
     str,
@@ -142,6 +141,10 @@ static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
 static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
+
+fn prefixed_idempotency_key(idempotency_key: String) -> String {
+    format!("idempotency-key:{}", idempotency_key)
+}
 
 fn account_details_key(account_id: u64) -> String {
     format!("accounts:{}", account_id)
@@ -526,6 +529,10 @@ impl BalanceStore for RedisStore {
         let settlement_client = self.settlement_client.clone();
         let store = self.clone();
         if outgoing_amount > 0 {
+            debug!(
+                "From: {}, To: {}, Amount paid: {}",
+                from_account.ilp_address, to_account.ilp_address, outgoing_amount
+            );
             let from_account_id = from_account.id;
             let to_account_id = to_account.id;
             Box::new(
@@ -543,6 +550,7 @@ impl BalanceStore for RedisStore {
                     })
                     .and_then(
                         move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
+                            debug!("Receiver balance: {}, Amount to Settle: {}, Engine Details {:?}", balance, amount_to_settle, to_account.settlement_engine_details().is_some());
                             if amount_to_settle > 0 && to_account.settlement_engine_details().is_some() {
                                 trace!(
                                     "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
@@ -557,7 +565,9 @@ impl BalanceStore for RedisStore {
                                 // No other instance will know that it was trying to send an outgoing settlement. We could
                                 // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
                                 // but then we would also need to prevent a situation where every connector instance is polling the
-                                // settlement engine for the status of each outgoing settlement and putting unnecessary load on the settlement engine.
+                                // settlement engine for the status of each
+                                // outgoing settlement and putting unnecessary
+                                // load on the settlement engine.
                                 spawn(settlement_client
                                     .send_settlement(to_account, amount_to_settle)
                                     .or_else(move |_| store.refund_settlement(to_account_id, amount_to_settle)));
@@ -1148,17 +1158,15 @@ impl RateLimitStore for RedisStore {
     }
 }
 
-impl SettlementStore for RedisStore {
-    type Account = Account;
-
+impl IdempotentStore for RedisStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
         let idempotency_key_clone = idempotency_key.clone();
         Box::new(
             cmd("HGETALL")
-                .arg(idempotency_key.clone())
+                .arg(prefixed_idempotency_key(idempotency_key.clone()))
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -1166,31 +1174,24 @@ impl SettlementStore for RedisStore {
                         idempotency_key_clone, err
                     )
                 })
-                .and_then(
-                    move |(_connection, ret): (_, SlowHashMap<String, String>)| {
-                        let data = if let (
-                            Some(status_code),
-                            Some(data),
-                            Some(input_hash_slice),
-                        ) = (
-                            ret.get("status_code"),
-                            ret.get("data"),
-                            ret.get("input_hash"),
-                        ) {
-                            trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                            let mut input_hash: [u8; 32] = Default::default();
-                            input_hash.copy_from_slice(input_hash_slice.as_ref());
-                            Some((
-                                StatusCode::from_str(status_code).unwrap(),
-                                Bytes::from(data.clone()),
-                                input_hash,
-                            ))
-                        } else {
-                            None
-                        };
-                        Ok(data)
-                    },
-                ),
+                .and_then(move |(_connection, ret): (_, HashMap<String, String>)| {
+                    if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
+                        ret.get("status_code"),
+                        ret.get("data"),
+                        ret.get("input_hash"),
+                    ) {
+                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
+                        let mut input_hash: [u8; 32] = Default::default();
+                        input_hash.copy_from_slice(input_hash_slice.as_ref());
+                        Ok((
+                            StatusCode::from_str(status_code).unwrap(),
+                            Bytes::from(data.clone()),
+                            input_hash,
+                        ))
+                    } else {
+                        Err(())
+                    }
+                }),
         )
     }
 
@@ -1204,7 +1205,7 @@ impl SettlementStore for RedisStore {
         let mut pipe = redis::pipe();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&idempotency_key)
+            .arg(&prefixed_idempotency_key(idempotency_key.clone()))
             .arg("status_code")
             .arg(status_code.as_u16())
             .arg("data")
@@ -1212,7 +1213,7 @@ impl SettlementStore for RedisStore {
             .arg("input_hash")
             .arg(&input_hash)
             .ignore()
-            .expire(&idempotency_key, 86400)
+            .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
             .ignore();
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
@@ -1228,6 +1229,10 @@ impl SettlementStore for RedisStore {
                 }),
         )
     }
+}
+
+impl SettlementStore for RedisStore {
+    type Account = Account;
 
     fn update_balance_for_incoming_settlement(
         &self,
