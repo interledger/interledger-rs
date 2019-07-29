@@ -14,14 +14,10 @@ pub trait BalanceStore: AccountStore {
         &self,
         from_account: Self::Account,
         incoming_amount: u64,
-        to_account: Self::Account,
-        outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn update_balances_for_fulfill(
         &self,
-        from_account: Self::Account,
-        incoming_amount: u64,
         to_account: Self::Account,
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
@@ -30,8 +26,6 @@ pub trait BalanceStore: AccountStore {
         &self,
         from_account: Self::Account,
         incoming_amount: u64,
-        to_account: Self::Account,
-        outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
@@ -100,8 +94,6 @@ where
                 .update_balances_for_prepare(
                     from.clone(),
                     incoming_amount,
-                    to.clone(),
-                    outgoing_amount,
                 )
                 .map_err(move |_| {
                     debug!("Rejecting packet because it would exceed a balance limit");
@@ -125,8 +117,6 @@ where
                             // for the packet we forwarded. Note this means that we will
                             // relay the fulfillment _even if saving to the DB fails._
                             let fulfill_balance_update = store.update_balances_for_fulfill(
-                                from.clone(),
-                                incoming_amount,
                                 to.clone(),
                                 outgoing_amount,
                             ).map_err(move |_| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}", from.id(), to.id(), incoming_amount, outgoing_amount));
@@ -147,8 +137,6 @@ where
                             let reject_balance_update = store_clone.update_balances_for_reject(
                                 from_clone.clone(),
                                 incoming_amount,
-                                to_clone.clone(),
-                                outgoing_amount,
                             ).map_err(move |_| error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from_clone.id(), to_clone.id(), incoming_amount, outgoing_amount));
                             spawn(reject_balance_update);
 

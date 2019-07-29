@@ -488,12 +488,9 @@ impl BalanceStore for RedisStore {
         &self,
         from_account: Account,
         incoming_amount: u64,
-        to_account: Account,
-        _outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
             let from_account_id = from_account.id;
-            let to_account_id = to_account.id;
             Box::new(
                 cmd("EVAL")
                     .arg(PROCESS_PREPARE)
@@ -503,8 +500,8 @@ impl BalanceStore for RedisStore {
                     .query_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         warn!(
-                            "Error handling prepare from account: {} to account: {}: {:?}",
-                            from_account_id, to_account_id, err
+                            "Error handling prepare from account: {}:  {:?}",
+                            from_account_id, err
                         )
                     })
                     .and_then(move |(_connection, balance): (_, i64)| {
@@ -522,8 +519,6 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_fulfill(
         &self,
-        from_account: Account,
-        _incoming_amount: u64,
         to_account: Account,
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -531,10 +526,9 @@ impl BalanceStore for RedisStore {
         let store = self.clone();
         if outgoing_amount > 0 {
             debug!(
-                "From: {}, To: {}, Amount paid: {}",
-                from_account.ilp_address, to_account.ilp_address, outgoing_amount
+                "To: {}, Amount paid: {}",
+                to_account.ilp_address, outgoing_amount
             );
-            let from_account_id = from_account.id;
             let to_account_id = to_account.id;
             Box::new(
                 cmd("EVAL")
@@ -545,8 +539,8 @@ impl BalanceStore for RedisStore {
                     .query_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         error!(
-                            "Error handling fulfill from account: {} to account: {}: {:?}",
-                            from_account_id, to_account_id, err
+                            "Error handling fulfill to account: {}: {:?}",
+                            to_account_id, err
                         )
                     })
                     .and_then(
@@ -593,12 +587,9 @@ impl BalanceStore for RedisStore {
         &self,
         from_account: Account,
         incoming_amount: u64,
-        to_account: Account,
-        _outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
             let from_account_id = from_account.id;
-            let to_account_id = to_account.id;
             Box::new(
                 cmd("EVAL")
                     .arg(PROCESS_REJECT)
@@ -608,8 +599,8 @@ impl BalanceStore for RedisStore {
                     .query_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         warn!(
-                            "Error handling reject for packet from account: {} to account: {}: {:?}",
-                            from_account_id, to_account_id, err
+                            "Error handling reject for packet from account: {}: {:?}",
+                            from_account_id, err
                         )
                     })
                     .and_then(move |(_connection, balance): (_, i64)| {

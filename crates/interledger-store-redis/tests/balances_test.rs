@@ -47,7 +47,7 @@ fn prepare_then_fulfill_with_settlement() {
                 let account1 = accounts[1].clone();
                 store
                     // nothing happens with the outgoing amount for prepare
-                    .update_balances_for_prepare(accounts[0].clone(), 100, accounts[1].clone(), 0)
+                    .update_balances_for_prepare(accounts[0].clone(), 100)
                     .and_then(move |_| {
                         store_clone_1
                             .clone()
@@ -62,8 +62,7 @@ fn prepare_then_fulfill_with_settlement() {
                     .and_then(move |_| {
                         store_clone_2
                             .clone()
-                            // nothing happens with the incoming amount for fulfill
-                            .update_balances_for_fulfill(account0.clone(), 0, account1.clone(), 100)
+                            .update_balances_for_fulfill(account1.clone(), 100)
                             .and_then(move |_| {
                                 store_clone_2
                                     .clone()
@@ -95,7 +94,7 @@ fn prepare_then_reject() {
                 let account0 = accounts[0].clone();
                 let account1 = accounts[1].clone();
                 store
-                    .update_balances_for_prepare(accounts[0].clone(), 100, accounts[1].clone(), 500)
+                    .update_balances_for_prepare(accounts[0].clone(), 100)
                     .and_then(move |_| {
                         store_clone_1
                             .clone()
@@ -113,8 +112,6 @@ fn prepare_then_reject() {
                             .update_balances_for_reject(
                                 account0.clone(),
                                 100,
-                                account1.clone(),
-                                500,
                             )
                             .and_then(move |_| {
                                 store_clone_2
@@ -146,8 +143,6 @@ fn enforces_minimum_balance() {
                     .update_balances_for_prepare(
                         accounts[0].clone(),
                         10000,
-                        accounts[1].clone(),
-                        500,
                     )
                     .then(move |result| {
                         assert!(result.is_err());
@@ -177,13 +172,9 @@ fn netting_fulfilled_balances() {
                     store.clone().update_balances_for_prepare(
                         account0.clone(),
                         100,              // decrement account0 by 100
-                        account1.clone(), // unused
-                        0,                // outgoing amount is not used in prepare
                     ),
                     store.clone().update_balances_for_fulfill(
-                        account0.clone(), // unused
-                        0,                // incoming amount is not used for prepare
-                        account1.clone(), // increment account 0 by 100
+                        account1.clone(), // increment account 1 by 100
                         100,
                     ), //
                 ])
@@ -192,12 +183,8 @@ fn netting_fulfilled_balances() {
                         store_clone1.clone().update_balances_for_prepare(
                             account1.clone(),
                             80,
-                            account0.clone(),
-                            0, // outgoing amount is not used in prepare
                         ),
                         store_clone1.clone().update_balances_for_fulfill(
-                            account1.clone(),
-                            0, // incoming amount is not used for prepare
                             account0.clone(),
                             80,
                         ),
