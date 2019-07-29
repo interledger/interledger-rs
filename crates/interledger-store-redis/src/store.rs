@@ -86,7 +86,7 @@ local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', t
 
 -- The logic for trigerring settlement is as follows:
 --  1. settle_threshold must be non-nil (if it's nil, then settlement was perhaps disabled on the account).
---  2. clearing_balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
+--  2. balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
 --  3. settle_threshold must be greater than settle_to (e.g., settleTo=5, settleThreshold=6)
 local settle_amount = 0
 if (settle_threshold and settle_to) and (balance > tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
