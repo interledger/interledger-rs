@@ -109,10 +109,7 @@ fn prepare_then_reject() {
                     .and_then(move |_| {
                         store_clone_2
                             .clone()
-                            .update_balances_for_reject(
-                                account0.clone(),
-                                100,
-                            )
+                            .update_balances_for_reject(account0.clone(), 100)
                             .and_then(move |_| {
                                 store_clone_2
                                     .clone()
@@ -140,10 +137,7 @@ fn enforces_minimum_balance() {
             .map_err(|_err| panic!("Unable to get accounts"))
             .and_then(move |accounts| {
                 store
-                    .update_balances_for_prepare(
-                        accounts[0].clone(),
-                        10000,
-                    )
+                    .update_balances_for_prepare(accounts[0].clone(), 10000)
                     .then(move |result| {
                         assert!(result.is_err());
                         let _ = context;
@@ -171,7 +165,7 @@ fn netting_fulfilled_balances() {
                 future::join_all(vec![
                     store.clone().update_balances_for_prepare(
                         account0.clone(),
-                        100,              // decrement account0 by 100
+                        100, // decrement account0 by 100
                     ),
                     store.clone().update_balances_for_fulfill(
                         account1.clone(), // increment account 1 by 100
@@ -180,14 +174,12 @@ fn netting_fulfilled_balances() {
                 ])
                 .and_then(move |_| {
                     future::join_all(vec![
-                        store_clone1.clone().update_balances_for_prepare(
-                            account1.clone(),
-                            80,
-                        ),
-                        store_clone1.clone().update_balances_for_fulfill(
-                            account0.clone(),
-                            80,
-                        ),
+                        store_clone1
+                            .clone()
+                            .update_balances_for_prepare(account1.clone(), 80),
+                        store_clone1
+                            .clone()
+                            .update_balances_for_fulfill(account0.clone(), 80),
                     ])
                 })
                 .and_then(move |_| {

@@ -89,6 +89,16 @@ where
         let outgoing_amount = request.prepare.amount();
         let ilp_address = self.ilp_address.clone();
 
+        // Update the balance _before_ sending the settlement so that we don't accidentally send
+        // multiple settlements for the same balance. While there will be a small moment of time (the delta
+        // between this balance change and the moment that the settlement-engine accepts the request for
+        // settlement payment) where the actual balance in Redis is less than it should be, this is tolerable
+        // because this amount of time will always be small. This is because the design of the settlement
+        // engine API is asynchronous, meaning when a request is made to the settlement engine, it will
+        // accept the request and return (milliseconds) with a guarantee that the settlement payment will
+        //  _eventually_ be completed. Because of this settlement_engine guarantee, the Connector can
+        // operate as-if the settlement engine has completed. Finally, if the request to the settlement-engine
+        // fails, this amount will be re-added back to balance.
         Box::new(
             self.store
                 .update_balances_for_prepare(
