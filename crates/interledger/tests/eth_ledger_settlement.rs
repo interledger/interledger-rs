@@ -36,6 +36,13 @@ struct DeliveryData {
 }
 
 #[test]
+/// In this test we have Alice and Bob who have peered with each other and run
+/// Ethereum ledger settlement engines. Alice proceeds to make SPSP payments to
+/// Bob, until she eventually reaches Bob's `settle_threshold`. Once that's
+/// exceeded, her engine makes a settlement request to Bob. Alice's connector
+/// immediately applies the balance change. Bob's engine listens for incoming
+/// transactions, and once the transaction has sufficient confirmations it
+/// lets Bob's connector know about it, so that it adjusts their credit.
 fn eth_ledger_settlement() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
@@ -276,38 +283,78 @@ fn eth_ledger_settlement() {
                     let create1 = create_account(node1_engine, 1);
                     let create2 = create_account(node2_engine, 1);
 
+                    // Make 4 subsequent payments (we could also do a 71 payment
+                    // directly)
                     let send1 = send_money(node1_http, node2_http, 10);
                     let send2 = send_money(node1_http, node2_http, 20);
                     let send3 = send_money(node1_http, node2_http, 40);
                     let send4 = send_money(node1_http, node2_http, 1);
 
+                    let get_balance = |account_id, node_port, admin_token| {
+                        let client = reqwest::r#async::Client::new();
+                        client
+                            .get(&format!(
+                                "http://localhost:{}/accounts/{}/balance",
+                                node_port, account_id
+                            ))
+                            .header("Authorization", format!("Bearer {}", admin_token))
+                            .send()
+                            .map_err(|err| {
+                                eprintln!("Error getting account data: {:?}", err);
+                                err
+                            })
+                            .and_then(|res| res.error_for_status())
+                            .and_then(|res| res.into_body().concat2())
+                    };
+
                     create1
                         .and_then(move |_| create2)
                         .and_then(move |_| send1)
+                        .and_then(move |_| {
+                            get_balance(1, node1_http, "bob").and_then(move |ret| {
+                                let ret = str::from_utf8(&ret).unwrap();
+                                assert_eq!(ret, "{\"balance\":\"10\"}");
+                                get_balance(1, node2_http, "alice").and_then(move |ret| {
+                                    let ret = str::from_utf8(&ret).unwrap();
+                                    assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                    Ok(())
+                                })
+                            })
+                        })
                         .and_then(move |_| send2)
+                        .and_then(move |_| {
+                            get_balance(1, node1_http, "bob").and_then(move |ret| {
+                                let ret = str::from_utf8(&ret).unwrap();
+                                assert_eq!(ret, "{\"balance\":\"30\"}");
+                                get_balance(1, node2_http, "alice").and_then(move |ret| {
+                                    let ret = str::from_utf8(&ret).unwrap();
+                                    assert_eq!(ret, "{\"balance\":\"-30\"}");
+                                    Ok(())
+                                })
+                            })
+                        })
                         .and_then(move |_| send3)
+                        .and_then(move |_| {
+                            get_balance(1, node1_http, "bob").and_then(move |ret| {
+                                let ret = str::from_utf8(&ret).unwrap();
+                                assert_eq!(ret, "{\"balance\":\"70\"}");
+                                get_balance(1, node2_http, "alice").and_then(move |ret| {
+                                    let ret = str::from_utf8(&ret).unwrap();
+                                    assert_eq!(ret, "{\"balance\":\"-70\"}");
+                                    Ok(())
+                                })
+                            })
+                        })
+                        // Up to here, Alice's balance should be -70 and Bob's
+                        // balance should be 70. Once we make 1 more payment, we
+                        // exceed the settle_threshold and thus a settlement is made
                         .and_then(move |_| send4)
                         .and_then(move |_| {
                             // Wait a few seconds so that the receiver's engine
                             // gets the data
                             sleep(Duration::from_secs(5));
-                            let get_balance = |account_id, node_port, admin_token| {
-                                let client = reqwest::r#async::Client::new();
-                                client
-                                    .get(&format!(
-                                        "http://localhost:{}/accounts/{}/balance",
-                                        node_port, account_id
-                                    ))
-                                    .header("Authorization", format!("Bearer {}", admin_token))
-                                    .send()
-                                    .map_err(|err| {
-                                        eprintln!("Error getting account data: {:?}", err);
-                                        err
-                                    })
-                                    .and_then(|res| res.error_for_status())
-                                    .and_then(|res| res.into_body().concat2())
-                            };
-
+                            // Since the credit connection reached -71, and the
+                            // settle_to is -10, a 61 Wei transaction is made.
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
                                 let ret = str::from_utf8(&ret).unwrap();
                                 assert_eq!(ret, "{\"balance\":\"10\"}");
