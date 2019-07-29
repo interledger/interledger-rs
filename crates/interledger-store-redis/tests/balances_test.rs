@@ -149,6 +149,8 @@ fn enforces_minimum_balance() {
 }
 
 #[test]
+// Prepare and Fulfill a packet for 100 units from Account 0 to Account 1
+// Then, Prepare and Fulfill a packet for 80 units from Account 1 to Account 0
 fn netting_fulfilled_balances() {
     block_on(test_other_store().and_then(|(store, context)| {
         let store_clone1 = store.clone();
