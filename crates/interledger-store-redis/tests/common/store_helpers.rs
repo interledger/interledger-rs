@@ -26,7 +26,9 @@ pub fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()>
         })
 }
 
-// same as test_store, but uses an account without `settle_to` for netting tests.
+// same as test_store, but uses an account without `settle_to` for netting
+// tests.
+#[allow(dead_code)]
 pub fn test_other_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
     let context = TestContext::new();
     RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
