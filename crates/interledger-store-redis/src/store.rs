@@ -16,9 +16,7 @@ use interledger_http::HttpStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::{
-    IdempotentData, IdempotentStore, SettlementAccount, SettlementClient, SettlementStore,
-};
+use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
 use parking_lot::RwLock;
 use redis::{
     self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
@@ -159,7 +157,6 @@ pub struct RedisStoreBuilder {
     redis_uri: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
-    settlement_client: Option<SettlementClient>,
 }
 
 impl RedisStoreBuilder {
@@ -168,7 +165,6 @@ impl RedisStoreBuilder {
             redis_uri,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
-            settlement_client: None,
         }
     }
 
@@ -177,18 +173,9 @@ impl RedisStoreBuilder {
         self
     }
 
-    pub fn settlement_client(&mut self, settlement_client: SettlementClient) -> &mut Self {
-        self.settlement_client = Some(settlement_client);
-        self
-    }
-
     pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
         let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         let poll_interval = self.poll_interval;
-        let settlement_client = self
-            .settlement_client
-            .clone()
-            .unwrap_or_else(SettlementClient::new);
 
         result(Client::open(self.redis_uri.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -206,7 +193,6 @@ impl RedisStoreBuilder {
                     hmac_key: Arc::new(hmac_key),
                     encryption_key: Arc::new(encryption_key),
                     decryption_key: Arc::new(decryption_key),
-                    settlement_client,
                 };
 
                 // Start polling for rate updates
@@ -270,7 +256,6 @@ pub struct RedisStore {
     hmac_key: Arc<hmac::SigningKey>, // redisstore stores a key, this must be protected
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
-    settlement_client: SettlementClient,
 }
 
 impl RedisStore {
@@ -391,39 +376,6 @@ impl RedisStore {
                 }),
         )
     }
-
-    fn refund_settlement(
-        &self,
-        account_id: u64,
-        settle_amount: u64,
-    ) -> impl Future<Item = (), Error = ()> {
-        trace!(
-            "Refunding settlement for account: {} of amount: {}",
-            account_id,
-            settle_amount
-        );
-        cmd("EVAL")
-            .arg(REFUND_SETTLEMENT)
-            .arg(0)
-            .arg(account_id)
-            .arg(settle_amount)
-            .query_async(self.connection.as_ref().clone())
-            .map_err(move |err| {
-                error!(
-                    "Error refunding settlement for account: {} of amount: {}: {:?}",
-                    account_id, settle_amount, err
-                )
-            })
-            .and_then(move |(_connection, balance): (_, i64)| {
-                trace!(
-                    "Refunded settlement for account: {} of amount: {}. Balance is now: {}",
-                    account_id,
-                    settle_amount,
-                    balance
-                );
-                Ok(())
-            })
-    }
 }
 
 impl AccountStore for RedisStore {
@@ -525,9 +477,7 @@ impl BalanceStore for RedisStore {
         &self,
         to_account: Account,
         outgoing_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let settlement_client = self.settlement_client.clone();
-        let store = self.clone();
+    ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
         if outgoing_amount > 0 {
             debug!(
                 "To: {}, Amount paid: {}",
@@ -547,43 +497,18 @@ impl BalanceStore for RedisStore {
                             to_account_id, err
                         )
                     })
-                    .and_then(
-                        move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
-                            debug!("Receiver balance: {}, Amount to Settle: {}, Engine Details {:?}", balance, amount_to_settle, to_account.settlement_engine_details().is_some());
-                            if amount_to_settle > 0 && to_account.settlement_engine_details().is_some() {
-                                trace!(
-                                    "Processed fulfill for outgoing amount {}. After triggering a settlement for: {}, account {} has balance: {}",
-                                    outgoing_amount,
-                                    amount_to_settle,
-                                    to_account_id,
-                                    balance,
-                                );
-
-                                // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
-                                // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
-                                // No other instance will know that it was trying to send an outgoing settlement. We could
-                                // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
-                                // but then we would also need to prevent a situation where every connector instance is polling the
-                                // settlement engine for the status of each
-                                // outgoing settlement and putting unnecessary
-                                // load on the settlement engine.
-                                spawn(settlement_client
-                                    .send_settlement(to_account, amount_to_settle)
-                                    .or_else(move |_| store.refund_settlement(to_account_id, amount_to_settle)));
-                            } else {
-                                trace!(
-                                    "Processed fulfill for outgoing amount {}. Account {} has balance: {}",
-                                    outgoing_amount,
-                                    to_account_id,
-                                    balance,
-                                );
-                            }
-                            Ok(())
-                        },
-                    ),
+                    .and_then(move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
+                        trace!("Processed fulfill for account {} for outgoing amount {}. Fulfill call result: {} {}",
+                            to_account_id,
+                            outgoing_amount,
+                            balance,
+                            amount_to_settle,
+                        );
+                        Ok((balance, amount_to_settle))
+                    })
             )
         } else {
-            Box::new(ok(()))
+            Box::new(ok((0, 0)))
         }
     }
 
@@ -1249,6 +1174,41 @@ impl SettlementStore for RedisStore {
                 trace!("Processed incoming settlement from account: {} for amount: {}. Balance is now: {}", account_id, amount, balance);
                 Ok(())
             }))
+    }
+
+    fn refund_settlement(
+        &self,
+        account_id: u64,
+        settle_amount: u64,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        trace!(
+            "Refunding settlement for account: {} of amount: {}",
+            account_id,
+            settle_amount
+        );
+        Box::new(
+            cmd("EVAL")
+                .arg(REFUND_SETTLEMENT)
+                .arg(0)
+                .arg(account_id)
+                .arg(settle_amount)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error refunding settlement for account: {} of amount: {}: {:?}",
+                        account_id, settle_amount, err
+                    )
+                })
+                .and_then(move |(_connection, balance): (_, i64)| {
+                    trace!(
+                        "Refunded settlement for account: {} of amount: {}. Balance is now: {}",
+                        account_id,
+                        settle_amount,
+                        balance
+                    );
+                    Ok(())
+                }),
+        )
     }
 }
 

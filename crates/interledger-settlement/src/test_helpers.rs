@@ -83,6 +83,15 @@ impl SettlementStore for TestStore {
         let ret = if self.should_fail { err(()) } else { ok(()) };
         Box::new(ret)
     }
+
+    fn refund_settlement(
+        &self,
+        _account_id: <Self::Account as Account>::AccountId,
+        _settle_amount: u64,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let ret = if self.should_fail { err(()) } else { ok(()) };
+        Box::new(ret)
+    }
 }
 
 impl IdempotentStore for TestStore {

@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use futures::future;
+use futures::future::{self, Either};
 use interledger_service::AccountStore;
 use interledger_service_util::BalanceStore;
 
@@ -165,23 +165,33 @@ fn netting_fulfilled_balances() {
                 let account0_clone = account0.clone();
                 let account1_clone = account1.clone();
                 future::join_all(vec![
-                    store.clone().update_balances_for_prepare(
+                    Either::A(store.clone().update_balances_for_prepare(
                         account0.clone(),
-                        100, // decrement account0 by 100
+                        100, // decrement account 0 by 100
+                    )),
+                    Either::B(
+                        store
+                            .clone()
+                            .update_balances_for_fulfill(
+                                account1.clone(), // increment account 1 by 100
+                                100,
+                            )
+                            .and_then(|_| Ok(())),
                     ),
-                    store.clone().update_balances_for_fulfill(
-                        account1.clone(), // increment account 1 by 100
-                        100,
-                    ), //
                 ])
                 .and_then(move |_| {
                     future::join_all(vec![
-                        store_clone1
-                            .clone()
-                            .update_balances_for_prepare(account1.clone(), 80),
-                        store_clone1
-                            .clone()
-                            .update_balances_for_fulfill(account0.clone(), 80),
+                        Either::A(
+                            store_clone1
+                                .clone()
+                                .update_balances_for_prepare(account1.clone(), 80),
+                        ),
+                        Either::B(
+                            store_clone1
+                                .clone()
+                                .update_balances_for_fulfill(account0.clone(), 80)
+                                .and_then(|_| Ok(())),
+                        ),
                     ])
                 })
                 .and_then(move |_| {
