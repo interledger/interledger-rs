@@ -250,7 +250,7 @@ where
     ///     1. Skip if it is not sent to our address or have 0 value.
     ///     2. Fetch the id that matches its sender from the store
     ///     3. Notify the connector about it by making a POST request to the connector's
-    ///        /accounts/$id/settlement endpoint with transaction's value as the
+    ///        /accounts/$id/settlements endpoint with transaction's value as the
     ///        body. This call is retried if it fails.
     /// 5. Save (current block number - confirmations) to be used as
     ///    last observed data for the next call of this function.
@@ -472,7 +472,7 @@ where
             .expect("Invalid connector URL")
             .push("accounts")
             .push(&account_id.clone())
-            .push("settlement");
+            .push("settlements");
         let client = Client::new();
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
         let action = move || {
@@ -732,7 +732,7 @@ where
         Box::new(ok((StatusCode::from_u16(200).unwrap(), resp)))
     }
     /// Settlement Engine's function that corresponds to the
-    /// /accounts/:id/settlement endpoint (POST). It performs an Ethereum
+    /// /accounts/:id/settlements endpoint (POST). It performs an Ethereum
     /// onchain transaction to the Ethereum Address that corresponds to the
     /// provided account id, for the amount specified in the message's body. If
     /// the account is associated with an ERC20 token, it makes an ERC20 call instead.
@@ -905,7 +905,7 @@ mod tests {
 
         let mut ganache_pid = start_ganache();
 
-        let bob_mock = mockito::mock("POST", "/accounts/42/settlement")
+        let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
                 "{\"amount\": 100 }".to_string(),
             ))

@@ -131,7 +131,7 @@ impl_web! {
             }
         }
 
-        #[post("/accounts/:account_id/settlement")]
+        #[post("/accounts/:account_id/settlements")]
         fn receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
             debug!("Receive settlement called with {:?} {:?}", account_id, body);
 

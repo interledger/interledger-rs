@@ -37,7 +37,7 @@ impl SettlementClient {
                 .expect("Invalid settlement engine URL")
                 .push("accounts")
                 .push(&account.id().to_string())
-                .push("settlement");
+                .push("settlements");
             trace!(
                 "Sending settlement of amount {} to settlement engine: {}",
                 amount,

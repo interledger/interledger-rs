@@ -18,6 +18,7 @@ pub trait BalanceStore: AccountStore {
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
+    /// Increases the account's balance, and returns the updated balance along with the amount which should be settled
     fn update_balances_for_fulfill(
         &self,
         to_account: Self::Account,
@@ -139,7 +140,8 @@ where
                                 outgoing_amount,
                             )
                             .map_err(move |_| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}", from_id, to_id, incoming_amount, outgoing_amount))
-                            .and_then(move |(_balance, amount_to_settle)| {
+                            .and_then(move |(balance, amount_to_settle)| {
+                                debug!("Account balance after fulfill: {}. Amount that needs to be settled: {}", balance, amount_to_settle);
                                 if amount_to_settle > 0 && to_has_engine {
                                     // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
                                     // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
