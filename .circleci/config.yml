@@ -39,9 +39,13 @@ jobs:
           command: cargo build --all-features --all-targets
       - run:
           name: Test
+          # Note the timeout is included to make sure that they 
+          # do not run for more than 10 minutes under any circumstances
+          # (We have had issues with bugs causing the tests to "run"
+          # for 5 hours, wasting a ton of compute credits)
           command: |
-              source ~/.nvm/nvm.sh # load node paths for ganache-cli
-              cargo test --all --all-features
+            source ~/.nvm/nvm.sh
+            timeout 10m cargo test --all --all-features
           environment:
             RUST_BACKTRACE: "1"
       - run:
