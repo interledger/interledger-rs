@@ -18,7 +18,7 @@ fn insert_accounts() {
         store
             .insert_account(ACCOUNT_DETAILS_2.clone())
             .and_then(move |account| {
-                assert_eq!(account.id(), 4);
+                assert_eq!(account.id(), 2);
                 let _ = context;
                 Ok(())
             })
@@ -69,7 +69,7 @@ fn fails_on_duplicate_btp_incoming_auth() {
 fn get_all_accounts() {
     block_on(test_store().and_then(|(store, context)| {
         store.get_all_accounts().and_then(move |accounts| {
-            assert_eq!(accounts.len(), 4);
+            assert_eq!(accounts.len(), 2);
             let _ = context;
             Ok(())
         })
@@ -132,7 +132,7 @@ fn decrypts_outgoing_tokens() {
 #[test]
 fn errors_for_unknown_accounts() {
     let result = block_on(test_store().and_then(|(store, context)| {
-        store.get_accounts(vec![0, 4]).then(move |result| {
+        store.get_accounts(vec![0, 5]).then(move |result| {
             let _ = context;
             result
         })

@@ -60,7 +60,7 @@ lazy_static! {
         btp_uri: None,
         btp_incoming_token: None,
         settle_threshold: Some(0),
-        settle_to: Some(-1000),
+        settle_to: None,
         send_routes: false,
         receive_routes: false,
         routing_relation: None,
@@ -69,14 +69,5 @@ lazy_static! {
         packets_per_minute_limit: None,
         settlement_engine_url: None,
         settlement_engine_asset_scale: None,
-    };
-    pub static ref ACCOUNT_DETAILS_3: AccountDetails = {
-        let mut acc = ACCOUNT_DETAILS_1.clone();
-        acc.ilp_address = Address::from_str("example.dylan").unwrap();
-        acc.settle_to = None;
-        acc.http_incoming_token = None;
-        acc.http_outgoing_token = None;
-        acc.btp_incoming_token = None;
-        acc
     };
 }

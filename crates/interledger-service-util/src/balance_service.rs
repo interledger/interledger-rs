@@ -18,7 +18,8 @@ pub trait BalanceStore: AccountStore {
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
-    /// Increases the account's balance, and returns the updated balance along with the amount which should be settled
+    /// Increases the account's balance, and returns the updated balance
+    /// along with the amount which should be settled
     fn update_balances_for_fulfill(
         &self,
         to_account: Self::Account,

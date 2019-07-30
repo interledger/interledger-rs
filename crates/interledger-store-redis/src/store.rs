@@ -493,7 +493,7 @@ impl BalanceStore for RedisStore {
                     .query_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         error!(
-                            "Error handling fulfill to account: {}: {:?}",
+                            "Error handling Fulfill received from account: {}: {:?}",
                             to_account_id, err
                         )
                     })

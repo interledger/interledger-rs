@@ -106,7 +106,7 @@ fn gets_accounts_to_send_routes_to() {
             .get_accounts_to_send_routes_to()
             .and_then(move |accounts| {
                 assert_eq!(accounts[0].id(), 1);
-                assert_eq!(accounts.len(), 2);
+                assert_eq!(accounts.len(), 1);
                 let _ = context;
                 Ok(())
             })
@@ -135,7 +135,7 @@ fn gets_local_and_configured_routes() {
         store
             .get_local_and_configured_routes()
             .and_then(move |(local, configured)| {
-                assert_eq!(local.len(), 4);
+                assert_eq!(local.len(), 2);
                 assert!(configured.is_empty());
                 let _ = context;
                 Ok(())
