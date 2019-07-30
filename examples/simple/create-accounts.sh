@@ -2,6 +2,8 @@
 
 # Insert accounts on Node A
 # One account represents Alice and the other represents Node B's account with Node A
+printf "Creating accounts:\n\n"
+
 printf "Alice's account:\n"
 curl \
     -H "Content-Type: application/json" \
@@ -32,6 +34,4 @@ curl \
     -d @./node-b/node-a.json \
     http://localhost:8770/accounts
 
-sleep 1
-
-printf "\n\n"
+printf "\n\nCreated accounts on both nodes\n\n"
