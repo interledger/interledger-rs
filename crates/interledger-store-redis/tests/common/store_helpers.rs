@@ -18,27 +18,15 @@ pub fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()>
         .connect()
         .and_then(|store| {
             let store_clone = store.clone();
+            let store_clone2 = store.clone();
+            let store_clone3 = store.clone();
+
             store
                 .clone()
                 .insert_account(ACCOUNT_DETAILS_0.clone())
                 .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_1.clone()))
-                .and_then(|_| Ok((store, context)))
-        })
-}
-
-// same as test_store, but uses an account without `settle_to` for netting
-// tests.
-#[allow(dead_code)]
-pub fn test_other_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
-    let context = TestContext::new();
-    RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
-        .connect()
-        .and_then(|store| {
-            let store_clone = store.clone();
-            store
-                .clone()
-                .insert_account(ACCOUNT_DETAILS_0.clone())
-                .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_3.clone()))
+                .and_then(move |_| store_clone2.insert_account(ACCOUNT_DETAILS_2.clone()))
+                .and_then(move |_| store_clone3.insert_account(ACCOUNT_DETAILS_3.clone()))
                 .and_then(|_| Ok((store, context)))
         })
 }

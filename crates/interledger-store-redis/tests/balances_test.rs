@@ -152,12 +152,12 @@ fn enforces_minimum_balance() {
 // Prepare and Fulfill a packet for 100 units from Account 0 to Account 1
 // Then, Prepare and Fulfill a packet for 80 units from Account 1 to Account 0
 fn netting_fulfilled_balances() {
-    block_on(test_other_store().and_then(|(store, context)| {
+    block_on(test_store().and_then(|(store, context)| {
         let store_clone1 = store.clone();
         let store_clone2 = store.clone();
         store
             .clone()
-            .get_accounts(vec![0, 1])
+            .get_accounts(vec![0, 3])
             .map_err(|_err| panic!("Unable to get accounts"))
             .and_then(move |accounts| {
                 let account0 = accounts[0].clone();

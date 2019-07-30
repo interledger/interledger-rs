@@ -72,7 +72,11 @@ lazy_static! {
     };
     pub static ref ACCOUNT_DETAILS_3: AccountDetails = {
         let mut acc = ACCOUNT_DETAILS_1.clone();
+        acc.ilp_address = Address::from_str("example.dylan").unwrap();
         acc.settle_to = None;
+        acc.http_incoming_token = None;
+        acc.http_outgoing_token = None;
+        acc.btp_incoming_token = None;
         acc
     };
 }
