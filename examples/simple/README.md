@@ -1,12 +1,16 @@
 # Simple Two-Node Payment
 
-This example sets up two Interledger.rs nodes, connects them together, and sends a payment from one to the other.
+This example sets up two local Interledger.rs nodes, peers them together, and sends a payment from one to the other. This example does not involve any remote nodes or networks. 
 
-To run the full example, install [Redis](https://redis.io/) and then use the [`run-all.sh`](./run-all.sh) script. Otherwise, you can walk through each step below.
+To run the full example, you can use the [`run-all.sh`](./run-all.sh) script. Otherwise, you can walk through each step below.
 
 Each of the services write their logs to files found under the `logs` directory. You can run `tail -f logs/node-a.log`, for example, to watch the logs of Node A.
 
 ![overview](images/overview.svg)
+
+## Prerequisites
+
+- [Redis](https://redis.io/download)
 
 ## Running and Configuring the Nodes
 
