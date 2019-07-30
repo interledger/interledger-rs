@@ -99,7 +99,7 @@ fn process_fulfill_no_settle_to() {
     block_on(test_store().and_then(|(store, context)| {
         let store_clone = store.clone();
         store.clone().insert_account(acc).and_then(move |_| {
-            store_clone.get_accounts(vec![3]).and_then(move |accounts| {
+            store_clone.get_accounts(vec![2]).and_then(move |accounts| {
                 let acc = accounts[0].clone();
                 store_clone
                     .clone()
@@ -132,7 +132,7 @@ fn process_fulfill_settle_to_over_threshold() {
     block_on(test_store().and_then(|(store, context)| {
         let store_clone = store.clone();
         store.clone().insert_account(acc).and_then(move |_| {
-            store_clone.get_accounts(vec![3]).and_then(move |accounts| {
+            store_clone.get_accounts(vec![2]).and_then(move |accounts| {
                 let acc = accounts[0].clone();
                 store_clone
                     .clone()
@@ -165,7 +165,7 @@ fn process_fulfill_ok() {
     block_on(test_store().and_then(|(store, context)| {
         let store_clone = store.clone();
         store.clone().insert_account(acc).and_then(move |_| {
-            store_clone.get_accounts(vec![3]).and_then(move |accounts| {
+            store_clone.get_accounts(vec![2]).and_then(move |accounts| {
                 let acc = accounts[0].clone();
                 store_clone
                     .clone()
