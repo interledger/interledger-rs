@@ -1,5 +1,5 @@
 use super::{
-    Convert, ConvertDetails, IdempotentData, IdempotentStore, SettlementAccount, SettlementStore,
+    Convert, ConvertDetails, IdempotentData, IdempotentStore, SettlementAccount, SettlementStore, Quantity,
     SE_ILP_ADDRESS,
 };
 use bytes::Bytes;
@@ -25,11 +25,6 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
-
-#[derive(Debug, Clone, Extract)]
-struct SettlementData {
-    amount: u64,
-}
 
 #[derive(Clone)]
 pub struct SettlementApi<S, O, A> {
@@ -132,7 +127,7 @@ impl_web! {
         }
 
         #[post("/accounts/:account_id/settlements")]
-        fn receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
+        fn receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
             debug!("Receive settlement called with {:?} {:?}", account_id, body);
 
             let input = format!("{}{:?}", account_id, body);
@@ -144,8 +139,7 @@ impl_web! {
             self.make_idempotent_call(f, input_hash, idempotency_key)
         }
 
-        fn do_receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
-            let amount = body.amount;
+        fn do_receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
             let store = self.store.clone();
             Box::new(result(A::AccountId::from_str(&account_id)
             .map_err(move |_err| {
@@ -175,7 +169,10 @@ impl_web! {
             })
             .and_then(move |(account, settlement_engine)| {
                 let account_id = account.id();
+                let amount: u64 = body.amount.parse().unwrap();
                 let amount = amount.normalize_scale(ConvertDetails {
+                    // We have account, engine and request asset scale.
+                    // Which one is not required? Still not clear from all the spec discussions.
                     from: account.asset_scale(),
                     to: settlement_engine.asset_scale
                 });
@@ -303,7 +300,7 @@ mod tests {
             let ret: Response<_> = api
                 .receive_settlement(
                     id.clone(),
-                    SettlementData { amount: 200 },
+                    Quantity::new(200, 18),
                     IDEMPOTENCY.clone(),
                 )
                 .wait()
@@ -315,7 +312,7 @@ mod tests {
             let ret: Response<_> = api
                 .receive_settlement(
                     id.clone(),
-                    SettlementData { amount: 200 },
+                    Quantity::new(200, 18),
                     IDEMPOTENCY.clone(),
                 )
                 .wait()
@@ -328,7 +325,7 @@ mod tests {
             let ret: Response<_> = api
                 .receive_settlement(
                     id2.clone(),
-                    SettlementData { amount: 200 },
+                    Quantity::new(200, 18),
                     IDEMPOTENCY.clone(),
                 )
                 .wait()
@@ -341,7 +338,7 @@ mod tests {
 
             // fails with different settlement data and account id
             let ret: Response<_> = api
-                .receive_settlement(id2, SettlementData { amount: 42 }, IDEMPOTENCY.clone())
+                .receive_settlement(id2, Quantity::new(42, 18), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
@@ -352,7 +349,7 @@ mod tests {
 
             // fails with different settlement data and same account id
             let ret: Response<_> = api
-                .receive_settlement(id, SettlementData { amount: 42 }, IDEMPOTENCY.clone())
+                .receive_settlement(id, Quantity::new(42, 18), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
@@ -379,9 +376,7 @@ mod tests {
 
             let ret: Response<_> = block_on(api.receive_settlement(
                 id.clone(),
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -391,9 +386,7 @@ mod tests {
             // check that it's idempotent
             let ret: Response<_> = block_on(api.receive_settlement(
                 id,
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -418,9 +411,7 @@ mod tests {
 
             let ret: Response<_> = block_on(api.receive_settlement(
                 id,
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -437,9 +428,7 @@ mod tests {
 
             let ret: Response<_> = block_on(api.receive_settlement(
                 id.clone(),
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -449,9 +438,7 @@ mod tests {
             // check that it's idempotent
             let ret: Response<_> = block_on(api.receive_settlement(
                 id.clone(),
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -460,9 +447,7 @@ mod tests {
 
             let _ret: Response<_> = block_on(api.receive_settlement(
                 id,
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -485,9 +470,7 @@ mod tests {
 
             let ret: Response<_> = block_on(api.receive_settlement(
                 id.clone(),
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
@@ -496,9 +479,7 @@ mod tests {
 
             let ret: Response<_> = block_on(api.receive_settlement(
                 id,
-                SettlementData {
-                    amount: SETTLEMENT_BODY,
-                },
+                SETTLEMENT_DATA.clone(),
                 IDEMPOTENCY.clone(),
             ))
             .unwrap_err();
