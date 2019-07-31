@@ -11,14 +11,10 @@ ILP=$ILP_DIR/target/debug/interledger
 ILP_ENGINE=$ILP_DIR/target/debug/interledger-settlement-engines
 CONFIGS=$ILP_DIR/examples
 
-
-LOGS=`pwd`/settlement_test_logs
+LOGS=$CONFIGS/eth-settlement/settlement_test_logs
 rm -rf $LOGS && mkdir -p $LOGS
-
 echo "Initializing redis"
 bash $ILP_DIR/examples/init.sh &
-redis-cli -p 6379 flushall
-redis-cli -p 6380 flushall
 
 sleep 1
 
