@@ -233,7 +233,7 @@ mod tests {
 
         let ret: Response<_> = block_on(api.execute_settlement(
             "1".to_owned(),
-            Quantity { amount: 100 },
+            Quantity::new(100, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap();
@@ -243,7 +243,7 @@ mod tests {
         // is idempotent
         let ret: Response<_> = block_on(api.execute_settlement(
             "1".to_owned(),
-            Quantity { amount: 100 },
+            Quantity::new(100, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap();
@@ -253,7 +253,7 @@ mod tests {
         // // fails with different id and same data
         let ret: Response<_> = block_on(api.execute_settlement(
             "42".to_owned(),
-            Quantity { amount: 100 },
+            Quantity::new(100, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap_err();
@@ -266,7 +266,7 @@ mod tests {
         // fails with same id and different data
         let ret: Response<_> = block_on(api.execute_settlement(
             "1".to_string(),
-            Quantity { amount: 42 },
+            Quantity::new(42, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap_err();
@@ -279,7 +279,7 @@ mod tests {
         // fails with different id and different data
         let ret: Response<_> = block_on(api.execute_settlement(
             "42".to_string(),
-            Quantity { amount: 42 },
+            Quantity::new(42, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap_err();

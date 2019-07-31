@@ -931,7 +931,7 @@ mod tests {
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
 
-        let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity { amount: 100 }))
+        let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 6)))
             .unwrap();
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
