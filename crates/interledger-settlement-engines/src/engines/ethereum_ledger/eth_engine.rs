@@ -34,8 +34,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::stores::redis_ethereum_ledger::*;
-
-use crate::{ApiResponse, CreateAccount, Quantity, SettlementEngine, SettlementEngineApi};
+use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};
+use interledger_settlement::Quantity;
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -355,11 +355,7 @@ where
                         store
                             .load_account_id_from_address(addr)
                             .and_then(move |id| {
-                                self_clone.notify_connector(
-                                    id.to_string(),
-                                    amount.low_u64(),
-                                    tx_hash,
-                                )
+                                self_clone.notify_connector(id.to_string(), amount, tx_hash)
                             })
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
@@ -442,7 +438,7 @@ where
                         Either::A(
                         store.load_account_id_from_address(addr)
                         .and_then(move |id| {
-                            self_clone.notify_connector(id.to_string(), amount.low_u64(), tx_hash)
+                            self_clone.notify_connector(id.to_string(), amount, tx_hash)
                         })
                         .and_then(move |_| {
                             // only save the transaction hash if the connector
@@ -463,7 +459,7 @@ where
     fn notify_connector(
         &self,
         account_id: String,
-        amount: u64,
+        amount: U256,
         tx_hash: H256,
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
@@ -480,7 +476,7 @@ where
             client
                 .post(url.clone())
                 .header("Idempotency-Key", tx_hash.to_string())
-                .json(&json!({ "amount": amount }))
+                .json(&json!({ "amount": amount.to_string(), "scale" : 18 }))
                 .send()
                 .map_err(move |err| {
                     error!(
@@ -742,7 +738,9 @@ where
         account_id: String,
         body: Quantity,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
-        let amount = U256::from(body.amount);
+        // should we handle the error here? It comes from the connector client
+        // so this conversion should never fail
+        let amount = U256::from_dec_str(&body.amount).unwrap();
         let self_clone = self.clone();
 
         Box::new(
@@ -908,7 +906,7 @@ mod tests {
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
-                "{\"amount\": 100 }".to_string(),
+                "{\"amount\": \"100\", \"scale\": 18 }".to_string(),
             ))
             .with_status(200)
             .with_body("OK".to_string())

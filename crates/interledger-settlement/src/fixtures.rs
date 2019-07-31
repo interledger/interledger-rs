@@ -1,9 +1,9 @@
+use crate::Quantity;
 use interledger_packet::Address;
 #[cfg(test)]
 use lazy_static::lazy_static;
 use mockito::Matcher;
 use std::str::FromStr;
-use crate::Quantity;
 
 use crate::test_helpers::TestAccount;
 

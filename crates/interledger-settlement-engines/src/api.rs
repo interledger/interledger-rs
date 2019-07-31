@@ -1,10 +1,11 @@
-use crate::{ApiResponse, CreateAccount, Quantity, SettlementEngine};
+use crate::{ApiResponse, CreateAccount, SettlementEngine};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, Either},
     Future,
 };
 use hyper::{Response, StatusCode};
+use interledger_settlement::Quantity;
 use interledger_settlement::{IdempotentData, IdempotentStore};
 use log::error;
 use ring::digest::{digest, SHA256};

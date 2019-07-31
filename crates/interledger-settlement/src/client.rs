@@ -1,4 +1,4 @@
-use super::{Convert, ConvertDetails, SettlementAccount};
+use super::{Convert, ConvertDetails, Quantity, SettlementAccount};
 use futures::{
     future::{err, Either},
     Future,
@@ -48,7 +48,7 @@ impl SettlementClient {
             let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
             return Either::A(self.http_client.post(settlement_engine_url.clone())
                 .header("Idempotency-Key", idempotency_uuid)
-                .json(&json!({"amount": amount.to_string(), "scale": asset_scale }))
+                .json(&json!(Quantity::new(amount, asset_scale)))
                 .send()
                 .map_err(move |err| error!("Error sending settlement command to settlement engine {}: {:?}", settlement_engine_url, err))
                 .and_then(move |response| {

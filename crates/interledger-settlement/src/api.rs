@@ -1,6 +1,6 @@
 use super::{
-    Convert, ConvertDetails, IdempotentData, IdempotentStore, SettlementAccount, SettlementStore, Quantity,
-    SE_ILP_ADDRESS,
+    Convert, ConvertDetails, IdempotentData, IdempotentStore, Quantity, SettlementAccount,
+    SettlementStore, SE_ILP_ADDRESS,
 };
 use bytes::Bytes;
 use futures::{
@@ -298,11 +298,7 @@ mod tests {
             let api = test_api(store.clone(), false);
 
             let ret: Response<_> = api
-                .receive_settlement(
-                    id.clone(),
-                    Quantity::new(200, 18),
-                    IDEMPOTENCY.clone(),
-                )
+                .receive_settlement(id.clone(), Quantity::new(200, 18), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap();
             assert_eq!(ret.status(), 200);
@@ -310,11 +306,7 @@ mod tests {
 
             // check that it's idempotent
             let ret: Response<_> = api
-                .receive_settlement(
-                    id.clone(),
-                    Quantity::new(200, 18),
-                    IDEMPOTENCY.clone(),
-                )
+                .receive_settlement(id.clone(), Quantity::new(200, 18), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap();
             assert_eq!(ret.status(), 200);
@@ -323,11 +315,7 @@ mod tests {
             // fails with different account id
             let id2 = "2".to_string();
             let ret: Response<_> = api
-                .receive_settlement(
-                    id2.clone(),
-                    Quantity::new(200, 18),
-                    IDEMPOTENCY.clone(),
-                )
+                .receive_settlement(id2.clone(), Quantity::new(200, 18), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
@@ -384,12 +372,9 @@ mod tests {
             assert_eq!(ret.body(), "Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
             // check that it's idempotent
-            let ret: Response<_> = block_on(api.receive_settlement(
-                id,
-                SETTLEMENT_DATA.clone(),
-                IDEMPOTENCY.clone(),
-            ))
-            .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.receive_settlement(id, SETTLEMENT_DATA.clone(), IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
@@ -409,12 +394,9 @@ mod tests {
             let store = test_store(true, true);
             let api = test_api(store, false);
 
-            let ret: Response<_> = block_on(api.receive_settlement(
-                id,
-                SETTLEMENT_DATA.clone(),
-                IDEMPOTENCY.clone(),
-            ))
-            .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.receive_settlement(id, SETTLEMENT_DATA.clone(), IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status().as_u16(), 500);
         }
 
@@ -445,12 +427,9 @@ mod tests {
             assert_eq!(ret.status().as_u16(), 400);
             assert_eq!(ret.body(), "Unable to parse account id: a");
 
-            let _ret: Response<_> = block_on(api.receive_settlement(
-                id,
-                SETTLEMENT_DATA.clone(),
-                IDEMPOTENCY.clone(),
-            ))
-            .unwrap_err();
+            let _ret: Response<_> =
+                block_on(api.receive_settlement(id, SETTLEMENT_DATA.clone(), IDEMPOTENCY.clone()))
+                    .unwrap_err();
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -477,12 +456,9 @@ mod tests {
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Error getting account: 0");
 
-            let ret: Response<_> = block_on(api.receive_settlement(
-                id,
-                SETTLEMENT_DATA.clone(),
-                IDEMPOTENCY.clone(),
-            ))
-            .unwrap_err();
+            let ret: Response<_> =
+                block_on(api.receive_settlement(id, SETTLEMENT_DATA.clone(), IDEMPOTENCY.clone()))
+                    .unwrap_err();
             assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Error getting account: 0");
 
