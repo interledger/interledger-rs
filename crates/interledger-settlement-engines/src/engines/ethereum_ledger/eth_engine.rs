@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 use crate::stores::redis_ethereum_ledger::*;
 
-use crate::{ApiResponse, Quantity, CreateAccount, SettlementEngine, SettlementEngineApi};
+use crate::{ApiResponse, CreateAccount, Quantity, SettlementEngine, SettlementEngineApi};
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -931,8 +931,8 @@ mod tests {
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
 
-        let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 6)))
-            .unwrap();
+        let ret =
+            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 6))).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
 

@@ -246,11 +246,8 @@ fn eth_ledger_settlement() {
 
                     let create_account = |engine_port, account_id| {
                         client
-                            .post(&format!(
-                                "http://localhost:{}/accounts",
-                                engine_port
-                            ))
-                            .json(&json!({"id" : account_id}))
+                            .post(&format!("http://localhost:{}/accounts", engine_port))
+                            .json(&json!({ "id": account_id }))
                             .send()
                             .map_err(|err| {
                                 eprintln!("Error creating account: {:?}", err);

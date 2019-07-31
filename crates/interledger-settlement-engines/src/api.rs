@@ -1,4 +1,4 @@
-use crate::{ApiResponse, Quantity, CreateAccount, SettlementEngine};
+use crate::{ApiResponse, CreateAccount, Quantity, SettlementEngine};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, Either},
@@ -369,19 +369,22 @@ mod tests {
         };
 
         let ret: Response<_> =
-            block_on(api.create_account(CreateAccount::new("1"), Some(IDEMPOTENCY.clone()))).unwrap();
+            block_on(api.create_account(CreateAccount::new("1"), Some(IDEMPOTENCY.clone())))
+                .unwrap();
         assert_eq!(ret.status().as_u16(), 201);
         assert_eq!(ret.body(), "CREATED");
 
         // is idempotent
         let ret: Response<_> =
-            block_on(api.create_account(CreateAccount::new("1"), Some(IDEMPOTENCY.clone()))).unwrap();
+            block_on(api.create_account(CreateAccount::new("1"), Some(IDEMPOTENCY.clone())))
+                .unwrap();
         assert_eq!(ret.status().as_u16(), 201);
         assert_eq!(ret.body(), "CREATED");
 
         // fails with different id
         let ret: Response<_> =
-            block_on(api.create_account(CreateAccount::new("42"), Some(IDEMPOTENCY.clone()))).unwrap_err();
+            block_on(api.create_account(CreateAccount::new("42"), Some(IDEMPOTENCY.clone())))
+                .unwrap_err();
         assert_eq!(ret.status().as_u16(), 409);
         assert_eq!(
             ret.body(),
