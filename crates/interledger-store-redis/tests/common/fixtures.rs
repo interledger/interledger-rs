@@ -60,7 +60,7 @@ lazy_static! {
         btp_uri: None,
         btp_incoming_token: None,
         settle_threshold: Some(0),
-        settle_to: Some(-1000),
+        settle_to: None,
         send_routes: false,
         receive_routes: false,
         routing_relation: None,

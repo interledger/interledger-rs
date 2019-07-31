@@ -35,9 +35,9 @@ impl_web! {
             Self { engine, store }
         }
 
-        #[post("/accounts/:account_id/settlement")]
+        #[post("/accounts/:account_id/settlements")]
         /// Forwards the data to the API engine's `send_money` function.
-        /// Endpoint: POST /accounts/:id/settlement
+        /// Endpoint: POST /accounts/:id/settlements
         fn execute_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> impl Future<Item = Response<String>, Error = Response<String>> {
             // check idempotency
             let input = format!("{}{:?}", account_id, body);

@@ -132,7 +132,7 @@ fn decrypts_outgoing_tokens() {
 #[test]
 fn errors_for_unknown_accounts() {
     let result = block_on(test_store().and_then(|(store, context)| {
-        store.get_accounts(vec![0, 2]).then(move |result| {
+        store.get_accounts(vec![0, 5]).then(move |result| {
             let _ = context;
             result
         })

@@ -1,4 +1,7 @@
-use super::{IdempotentData, IdempotentStore, SettlementAccount, SettlementStore, SE_ILP_ADDRESS};
+use super::{
+    Convert, ConvertDetails, IdempotentData, IdempotentStore, SettlementAccount, SettlementStore,
+    SE_ILP_ADDRESS,
+};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -8,7 +11,6 @@ use hyper::{Response, StatusCode};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
-use interledger_service_util::{Convert, ConvertDetails};
 use log::{debug, error};
 use ring::digest::{digest, SHA256};
 use std::{
@@ -129,7 +131,7 @@ impl_web! {
             }
         }
 
-        #[post("/accounts/:account_id/settlement")]
+        #[post("/accounts/:account_id/settlements")]
         fn receive_settlement(&self, account_id: String, body: SettlementData, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
             debug!("Receive settlement called with {:?} {:?}", account_id, body);
 

@@ -2,33 +2,9 @@ use clap::{value_t, App, Arg, SubCommand};
 use hex;
 use std::str::FromStr;
 use tokio;
-
-use futures::Future;
-use interledger_settlement_engines::{
-    engines::ethereum_ledger::{
-        EthAddress, EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner,
-    },
-    stores::redis_ethereum_ledger::EthereumLedgerRedisStoreBuilder,
-    SettlementEngineApi,
-};
-use interledger_store_redis::RedisStoreBuilder;
-use log::info;
-use redis::IntoConnectionInfo;
-use ring::{digest, hmac};
-use std::{net::SocketAddr, str, u64};
-use tokio::net::TcpListener;
 use url::Url;
 
-static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
-pub fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
-    let mut redis_secret: [u8; 32] = [0; 32];
-    let sig = hmac::sign(
-        &hmac::SigningKey::new(&digest::SHA256, secret_seed),
-        REDIS_SECRET_GENERATION_STRING.as_bytes(),
-    );
-    redis_secret.copy_from_slice(sig.as_ref());
-    redis_secret
-}
+use interledger_settlement_engines::engines::ethereum_ledger::{run_ethereum_engine, EthAddress};
 
 #[allow(clippy::cognitive_complexity)]
 pub fn main() {
@@ -120,7 +96,7 @@ pub fn main() {
             let poll_frequency = value_t!(matches, "poll_frequency", u64).unwrap();
             let watch_incoming = value_t!(matches, "watch_incoming", bool).unwrap();
 
-            tokio::run(run_settlement_engine(
+            tokio::run(run_ethereum_engine(
                 redis_uri,
                 ethereum_endpoint,
                 settlement_port,
@@ -136,54 +112,4 @@ pub fn main() {
         }
         _ => app.print_help().unwrap(),
     }
-}
-
-#[doc(hidden)]
-#[allow(clippy::all)]
-pub fn run_settlement_engine<R, Si>(
-    redis_uri: R,
-    ethereum_endpoint: String,
-    settlement_port: u16,
-    secret_seed: &[u8; 32],
-    private_key: Si,
-    chain_id: u8,
-    confirmations: u8,
-    poll_frequency: u64,
-    connector_url: String,
-    token_address: Option<EthAddress>,
-    watch_incoming: bool,
-) -> impl Future<Item = (), Error = ()>
-where
-    R: IntoConnectionInfo,
-    Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-{
-    let redis_secret = generate_redis_secret(secret_seed);
-    let redis_uri = redis_uri.into_connection_info().unwrap();
-
-    EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
-        .connect()
-        .and_then(move |ethereum_store| {
-            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store, private_key)
-                .ethereum_endpoint(&ethereum_endpoint)
-                .chain_id(chain_id)
-                .connector_url(&connector_url)
-                .confirmations(confirmations)
-                .poll_frequency(poll_frequency)
-                .watch_incoming(watch_incoming)
-                .token_address(token_address)
-                .connect();
-
-            RedisStoreBuilder::new(redis_uri, redis_secret)
-                .connect()
-                .and_then(move |store| {
-                    let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
-                    let listener = TcpListener::bind(&addr)
-                        .expect("Unable to bind to Settlement Engine address");
-                    info!("Ethereum Settlement Engine listening on: {}", addr);
-
-                    let api = SettlementEngineApi::new(engine, store);
-                    tokio::spawn(api.serve(listener.incoming()));
-                    Ok(())
-                })
-        })
 }

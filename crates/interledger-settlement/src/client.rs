@@ -1,10 +1,9 @@
-use super::SettlementAccount;
+use super::{Convert, ConvertDetails, SettlementAccount};
 use futures::{
     future::{err, Either},
     Future,
 };
 use interledger_ildcp::IldcpAccount;
-use interledger_service_util::{Convert, ConvertDetails};
 use log::{error, trace};
 use reqwest::r#async::Client;
 use serde_json::json;
@@ -38,7 +37,7 @@ impl SettlementClient {
                 .expect("Invalid settlement engine URL")
                 .push("accounts")
                 .push(&account.id().to_string())
-                .push("settlement");
+                .push("settlements");
             trace!(
                 "Sending settlement of amount {} to settlement engine: {}",
                 amount,
