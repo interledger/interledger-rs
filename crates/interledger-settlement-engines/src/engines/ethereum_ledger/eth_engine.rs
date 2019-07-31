@@ -738,29 +738,32 @@ where
         account_id: String,
         body: Quantity,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
-        // should we handle the error here? It comes from the connector client
-        // so this conversion should never fail
-        let amount = U256::from_dec_str(&body.amount).unwrap();
         let self_clone = self.clone();
-
         Box::new(
-            self_clone
-                .load_account(account_id)
-                .map_err(move |err| {
-                    let error_msg = format!("Error loading account {:?}", err);
-                    error!("{}", error_msg);
-                    (StatusCode::from_u16(400).unwrap(), error_msg)
-                })
-                .and_then(move |(_account_id, addresses)| {
-                    self_clone
-                        .settle_to(addresses.own_address, amount, addresses.token_address)
-                        .map_err(move |_| {
-                            let error_msg = "Error connecting to the blockchain.".to_string();
-                            error!("{}", error_msg);
-                            (StatusCode::from_u16(502).unwrap(), error_msg)
-                        })
-                })
-                .and_then(move |_| Ok((StatusCode::OK, "OK".to_string()))),
+            result(U256::from_dec_str(&body.amount).map_err(move |err| {
+                let error_msg = format!("Error converting to U256 {:?}", err);
+                error!("{:?}", error_msg);
+                (StatusCode::from_u16(400).unwrap(), error_msg)
+            }))
+            .and_then(move |amount| {
+                self_clone
+                    .load_account(account_id)
+                    .map_err(move |err| {
+                        let error_msg = format!("Error loading account {:?}", err);
+                        error!("{}", error_msg);
+                        (StatusCode::from_u16(400).unwrap(), error_msg)
+                    })
+                    .and_then(move |(_account_id, addresses)| {
+                        self_clone
+                            .settle_to(addresses.own_address, amount, addresses.token_address)
+                            .map_err(move |_| {
+                                let error_msg = "Error connecting to the blockchain.".to_string();
+                                error!("{}", error_msg);
+                                (StatusCode::from_u16(502).unwrap(), error_msg)
+                            })
+                    })
+                    .and_then(move |_| Ok((StatusCode::OK, "OK".to_string())))
+            }),
         )
     }
 }
