@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 use crate::stores::redis_ethereum_ledger::*;
 
-use crate::{ApiResponse, Quantity, SettlementEngine, SettlementEngineApi};
+use crate::{ApiResponse, Quantity, CreateAccount, SettlementEngine, SettlementEngineApi};
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -611,10 +611,11 @@ where
     /// the store.
     fn create_account(
         &self,
-        account_id: String,
+        account_id: CreateAccount,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
         let self_clone = self.clone();
         let store: S = self.store.clone();
+        let account_id = account_id.id;
 
         Box::new(
             result(A::AccountId::from_str(&account_id).map_err({
@@ -974,7 +975,7 @@ mod tests {
 
         // the signed message does not match. We are not able to make Mockito
         // capture the challenge and return a signature on it.
-        let ret = block_on(engine.create_account(bob.id.to_string())).unwrap_err();
+        let ret = block_on(engine.create_account(CreateAccount::new(bob.id))).unwrap_err();
         assert_eq!(ret.0.as_u16(), 502);
         // assert_eq!(ret.1, "CREATED");
 

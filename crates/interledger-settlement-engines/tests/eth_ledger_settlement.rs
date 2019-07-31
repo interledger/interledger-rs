@@ -247,9 +247,10 @@ fn eth_ledger_settlement() {
                     let create_account = |engine_port, account_id| {
                         client
                             .post(&format!(
-                                "http://localhost:{}/accounts/{}",
-                                engine_port, account_id
+                                "http://localhost:{}/accounts",
+                                engine_port
                             ))
+                            .json(&json!({"id" : account_id}))
                             .send()
                             .map_err(|err| {
                                 eprintln!("Error creating account: {:?}", err);
@@ -280,8 +281,8 @@ fn eth_ledger_settlement() {
                             })
                     };
 
-                    let create1 = create_account(node1_engine, 1);
-                    let create2 = create_account(node2_engine, 1);
+                    let create1 = create_account(node1_engine, "1");
+                    let create2 = create_account(node2_engine, "1");
 
                     // Make 4 subsequent payments (we could also do a 71 payment
                     // directly)

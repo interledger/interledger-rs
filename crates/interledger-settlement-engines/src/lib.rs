@@ -23,6 +23,24 @@ pub use self::api::SettlementEngineApi;
 #[derive(Extract, Debug, Clone, Copy)]
 pub struct Quantity {
     amount: u64,
+    scale: u8,
+}
+
+impl Quantity {
+    pub fn new(amount: u64, scale: u8) -> Self {
+        Quantity { amount, scale }
+    }
+}
+
+#[derive(Extract, Debug, Clone, Hash)]
+pub struct CreateAccount {
+    id: String,
+}
+
+impl CreateAccount {
+    pub fn new<T: ToString>(id: T) -> Self {
+        CreateAccount { id: id.to_string() }
+    }
 }
 
 use http::StatusCode;
@@ -46,6 +64,6 @@ pub trait SettlementEngine {
 
     fn create_account(
         &self,
-        account_id: String,
+        account_id: CreateAccount,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send>;
 }
