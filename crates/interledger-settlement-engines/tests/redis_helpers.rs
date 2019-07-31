@@ -75,11 +75,10 @@ impl RedisServer {
             .arg("--bind")
             .arg("127.0.0.1");
 
-        let pid = cmd.spawn().expect(
+        cmd.spawn().expect(
             "Could not spawn redis-server process, please ensure \
              that all redis components are installed",
-        );
-        pid
+        )
     }
 
     pub fn new() -> RedisServer {
