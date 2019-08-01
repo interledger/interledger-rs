@@ -9,8 +9,9 @@ use lazy_static::lazy_static;
 use log::error;
 use std::{
     convert::TryFrom,
+    fmt::{self, Debug},
     io::Read,
-    str::FromStr,
+    str::{self, FromStr},
     time::{Duration, SystemTime},
 };
 
@@ -59,13 +60,27 @@ impl TryFrom<u8> for Mode {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq)]
 pub struct RouteControlRequest {
     pub(crate) mode: Mode,
     // TODO change debug to format this as hex
     pub(crate) last_known_routing_table_id: [u8; 16],
     pub(crate) last_known_epoch: u32,
     pub(crate) features: Vec<String>,
+}
+
+impl Debug for RouteControlRequest {
+    fn fmt<'a>(&self, fmt: &mut fmt::Formatter<'a>) -> Result<(), fmt::Error> {
+        fmt.debug_struct("RouteControlRequest")
+            .field("mode", &self.mode)
+            .field(
+                "last_known_routing_table_id",
+                &hex::encode(self.last_known_routing_table_id),
+            )
+            .field("last_known_epoch", &self.last_known_epoch)
+            .field("features", &self.features)
+            .finish()
+    }
 }
 
 impl TryFrom<&Prepare> for RouteControlRequest {
@@ -199,12 +214,34 @@ impl RouteProp {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq)]
 pub struct Route {
+    // TODO switch this to use the Address type so we don't need separate parsing logic when implementing Debug
     pub(crate) prefix: Bytes,
     pub(crate) path: Vec<Bytes>,
     pub(crate) auth: [u8; 32],
     pub(crate) props: Vec<RouteProp>,
+}
+
+impl Debug for Route {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt.debug_struct("Route")
+            .field(
+                "prefix",
+                &str::from_utf8(&self.prefix).unwrap_or("<invalid utf8>"),
+            )
+            .field("path", &{
+                let path: Vec<&str> = self
+                    .path
+                    .iter()
+                    .map(|address| str::from_utf8(address).unwrap_or("<invalid utf8>"))
+                    .collect();
+                path
+            })
+            .field("auth", &hex::encode(self.auth))
+            .field("props", &self.props)
+            .finish()
+    }
 }
 
 impl TryFrom<&mut &[u8]> for Route {
@@ -260,7 +297,7 @@ impl Route {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq)]
 pub struct RouteUpdateRequest {
     pub(crate) routing_table_id: [u8; 16],
     pub(crate) current_epoch_index: u32,
@@ -270,6 +307,28 @@ pub struct RouteUpdateRequest {
     pub(crate) speaker: Address,
     pub(crate) new_routes: Vec<Route>,
     pub(crate) withdrawn_routes: Vec<Bytes>,
+}
+
+impl Debug for RouteUpdateRequest {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt.debug_struct("RouteUpdateRequest")
+            .field("routing_table_id", &hex::encode(self.routing_table_id))
+            .field("current_epoch_index", &self.current_epoch_index)
+            .field("from_epoch_index", &self.from_epoch_index)
+            .field("to_epoch_index", &self.to_epoch_index)
+            .field("hold_down_time", &self.hold_down_time)
+            .field("speaker", &self.speaker)
+            .field("new_routes", &self.new_routes)
+            .field("withdrawn_routes", &{
+                let routes: Vec<&str> = self
+                    .withdrawn_routes
+                    .iter()
+                    .map(|address| str::from_utf8(address).unwrap_or("<invalid utf8>"))
+                    .collect();
+                routes
+            })
+            .finish()
+    }
 }
 
 impl TryFrom<&Prepare> for RouteUpdateRequest {
