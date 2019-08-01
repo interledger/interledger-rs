@@ -4,11 +4,14 @@ You need to download the XRP Engine from the upstream
 [repository](https://github.com/interledgerjs/settlement-xrp/). You also need to
 have `redis-server` and `redis-cli` available in your PATH. In
 Ubuntu, you can obtain these by running `sudo apt-get install redis-server`. We
-use the XRP testnet for all settlement transactions
+use the XRP testnet for all settlement transactions. 
 
 We will need **7** terminal windows in total to follow this tutorial in depth. You can run the
 provided `settlement_test.sh` script instead to see how the full process works.
 
+Advanced: Instead of using the `LEDGER_ADDRESS` and `LEDGER_SECRET` from the
+examples below, you can generate your own XRPL credentials at the [official
+faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
 1. Alice's
     1. Connector
@@ -152,10 +155,16 @@ curl http://localhost:7770/accounts -X POST \
 
 Notice how we use Alice's settlement engine endpoint while registering Bob. This
 means that whenever Alice interacts with Bob's account, she'll use that
-Settlement Engine.
+settlement engine.
 
-`settle_threshold`, `min_balance` and `settle_to` are parameters related to how
-often settlement is made, which is tracked in [issue 121](https://github.com/emschwartz/interledger-rs/issues/121).
+__Parameter Explanation:__
+- `settle_threshold`: Once an account's balance exceeds this value, it triggers
+  a settlement
+- `settle_to`: Once a settlement is triggered, the amount which should be paid
+  is `current_balance - settle_to` (`settle_to` can also be negative,
+  `current_balance` is the  account's current balance with the other party).
+- `min_balance`: An account's balance cannot be less than this value (if
+  positive this means that we require for the counterparty to pre-pay payments)
 
 ### Insert Alice's account to Bob's connector
 
@@ -165,12 +174,7 @@ curl http://localhost:8770/accounts -X POST \
      -H "Authorization: Bearer hi_bob"
 ```
 
-## 5. Verify that addresses have been exchanged
-
-Bob's address in Alice's store: `redis-cli -p 6379 hgetall "settlement:ledger:eth:1"`
-Alice's address in Bob's store: `redis-cli -p 6380 hgetall "settlement:ledger:eth:1"`
-
-## 6. Make some payments!
+## 5. Make some payments!
 
 A `pay_dump.sh` script is provided which you can use to make [SPSP
 payments](https://interledger.org/rfcs/0009-simple-payment-setup-protocol/)
@@ -194,15 +198,15 @@ curl localhost:8770/pay \
 ```
 
 The net after this should be that Alice's store shows positive 2 balance on her
-account (`accounts:0`), and negative 2 for Bob. Bob's store should show the
+account and negative 2 for Bob. Bob's store should show the
 opposite:
 
 ```bash
-echo "Alice:Alice $(redis-cli hmget accounts:0 balance prepaid_amount)"
-echo "Alice:Bob $(redis-cli hmget accounts:1 balance prepaid_amount)"
+echo "Bob's balance on Alice's store"
+curl localhost:7770/accounts/1/balance -H "Authorization: Bearer bob"
 
-echo "Bob:Bob $(redis-cli -p 6380 hmget accounts:0 balance prepaid_amount)"
-echo "Bib:Alice $(redis-cli -p 6380 hmget accounts:1 balance prepaid_amount)"
+echo "Alice's balance on Bob's store"
+curl localhost:8770/accounts/1/balance -H "Authorization: Bearer alice"
 ```
 
 Done! Full E2E test between 2 users over SPSP utilizing the new settlement

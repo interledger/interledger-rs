@@ -345,7 +345,7 @@ fn xrp_ledger_settlement() {
                         .and_then(move |_| send4)
                         .and_then(move |_| {
                             // Since the credit connection reached -71, and the
-                            // settle_to is -10, a 61 Wei transaction is made.
+                            // settle_to is -10, a 61 drops transaction is made.
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
                                 let ret = str::from_utf8(&ret).unwrap();
                                 assert_eq!(ret, "{\"balance\":\"10\"}");
