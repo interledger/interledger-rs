@@ -76,7 +76,7 @@ fn xrp_ledger_settlement() {
 
     // spawn 2 redis servers for the XRP engines
     let alice_redis_port = get_open_port(Some(6379));
-    let bob_redis_port = get_open_port(Some(6379));
+    let bob_redis_port = get_open_port(Some(6380));
     let mut alice_engine_redis = RedisServer::spawn_with_port(alice_redis_port);
     let mut bob_engine_redis = RedisServer::spawn_with_port(bob_redis_port);
     let mut engine_alice = start_xrp_engine(
