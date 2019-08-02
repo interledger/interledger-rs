@@ -34,8 +34,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::stores::redis_ethereum_ledger::*;
-
-use crate::{ApiResponse, Quantity, SettlementEngine, SettlementEngineApi};
+use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};
+use interledger_settlement::Quantity;
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -78,6 +78,7 @@ pub struct EthereumLedgerSettlementEngine<S, Si, A> {
     confirmations: u8,
     poll_frequency: Duration,
     connector_url: Url,
+    asset_scale: u8,
 }
 
 pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
@@ -91,6 +92,7 @@ pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
     poll_frequency: Option<Duration>,
     connector_url: Option<Url>,
     token_address: Option<Address>,
+    asset_scale: Option<u8>,
     watch_incoming: bool,
     account_type: PhantomData<A>,
 }
@@ -111,6 +113,7 @@ where
             poll_frequency: None,
             connector_url: None,
             token_address: None,
+            asset_scale: None,
             watch_incoming: false,
             account_type: PhantomData,
         }
@@ -123,6 +126,11 @@ where
 
     pub fn ethereum_endpoint(&mut self, endpoint: &'a str) -> &mut Self {
         self.ethereum_endpoint = Some(endpoint);
+        self
+    }
+
+    pub fn asset_scale(&mut self, asset_scale: u8) -> &mut Self {
+        self.asset_scale = Some(asset_scale);
         self
     }
 
@@ -178,6 +186,11 @@ where
         } else {
             Duration::from_secs(5)
         };
+        let asset_scale = if let Some(asset_scale) = self.asset_scale {
+            asset_scale
+        } else {
+            18
+        };
 
         let (eloop, transport) = Http::new(ethereum_endpoint).unwrap();
         eloop.into_remote();
@@ -196,6 +209,7 @@ where
             confirmations,
             poll_frequency,
             connector_url,
+            asset_scale,
             account_type: PhantomData,
         };
         if self.watch_incoming {
@@ -355,11 +369,7 @@ where
                         store
                             .load_account_id_from_address(addr)
                             .and_then(move |id| {
-                                self_clone.notify_connector(
-                                    id.to_string(),
-                                    amount.low_u64(),
-                                    tx_hash,
-                                )
+                                self_clone.notify_connector(id.to_string(), amount, tx_hash)
                             })
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
@@ -442,7 +452,7 @@ where
                         Either::A(
                         store.load_account_id_from_address(addr)
                         .and_then(move |id| {
-                            self_clone.notify_connector(id.to_string(), amount.low_u64(), tx_hash)
+                            self_clone.notify_connector(id.to_string(), amount, tx_hash)
                         })
                         .and_then(move |_| {
                             // only save the transaction hash if the connector
@@ -463,11 +473,12 @@ where
     fn notify_connector(
         &self,
         account_id: String,
-        amount: u64,
+        amount: U256,
         tx_hash: H256,
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
         let account_id_clone = account_id.clone();
+        let asset_scale = self.asset_scale;
         url.path_segments_mut()
             .expect("Invalid connector URL")
             .push("accounts")
@@ -480,7 +491,7 @@ where
             client
                 .post(url.clone())
                 .header("Idempotency-Key", tx_hash.to_string())
-                .json(&json!({ "amount": amount }))
+                .json(&json!({ "amount": amount.to_string(), "scale" : asset_scale }))
                 .send()
                 .map_err(move |err| {
                     error!(
@@ -611,10 +622,11 @@ where
     /// the store.
     fn create_account(
         &self,
-        account_id: String,
+        account_id: CreateAccount,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
         let self_clone = self.clone();
         let store: S = self.store.clone();
+        let account_id = account_id.id;
 
         Box::new(
             result(A::AccountId::from_str(&account_id).map_err({
@@ -741,27 +753,32 @@ where
         account_id: String,
         body: Quantity,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
-        let amount = U256::from(body.amount);
         let self_clone = self.clone();
-
         Box::new(
-            self_clone
-                .load_account(account_id)
-                .map_err(move |err| {
-                    let error_msg = format!("Error loading account {:?}", err);
-                    error!("{}", error_msg);
-                    (StatusCode::from_u16(400).unwrap(), error_msg)
-                })
-                .and_then(move |(_account_id, addresses)| {
-                    self_clone
-                        .settle_to(addresses.own_address, amount, addresses.token_address)
-                        .map_err(move |_| {
-                            let error_msg = "Error connecting to the blockchain.".to_string();
-                            error!("{}", error_msg);
-                            (StatusCode::from_u16(502).unwrap(), error_msg)
-                        })
-                })
-                .and_then(move |_| Ok((StatusCode::OK, "OK".to_string()))),
+            result(U256::from_dec_str(&body.amount).map_err(move |err| {
+                let error_msg = format!("Error converting to U256 {:?}", err);
+                error!("{:?}", error_msg);
+                (StatusCode::from_u16(400).unwrap(), error_msg)
+            }))
+            .and_then(move |amount| {
+                self_clone
+                    .load_account(account_id)
+                    .map_err(move |err| {
+                        let error_msg = format!("Error loading account {:?}", err);
+                        error!("{}", error_msg);
+                        (StatusCode::from_u16(400).unwrap(), error_msg)
+                    })
+                    .and_then(move |(_account_id, addresses)| {
+                        self_clone
+                            .settle_to(addresses.own_address, amount, addresses.token_address)
+                            .map_err(move |_| {
+                                let error_msg = "Error connecting to the blockchain.".to_string();
+                                error!("{}", error_msg);
+                                (StatusCode::from_u16(502).unwrap(), error_msg)
+                            })
+                    })
+                    .and_then(move |_| Ok((StatusCode::OK, "OK".to_string())))
+            }),
         )
     }
 }
@@ -804,6 +821,7 @@ pub fn run_ethereum_engine<R, Si>(
     private_key: Si,
     chain_id: u8,
     confirmations: u8,
+    asset_scale: u8,
     poll_frequency: u64,
     connector_url: String,
     token_address: Option<Address>,
@@ -824,6 +842,7 @@ where
                 .chain_id(chain_id)
                 .connector_url(&connector_url)
                 .confirmations(confirmations)
+                .asset_scale(asset_scale)
                 .poll_frequency(poll_frequency)
                 .watch_incoming(watch_incoming)
                 .token_address(token_address)
@@ -907,7 +926,7 @@ mod tests {
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
-                "{\"amount\": 100 }".to_string(),
+                "{\"amount\": \"100\", \"scale\": 18 }".to_string(),
             ))
             .with_status(200)
             .with_body("OK".to_string())
@@ -930,8 +949,8 @@ mod tests {
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
 
-        let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity { amount: 100 }))
-            .unwrap();
+        let ret =
+            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 6))).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
 
@@ -974,7 +993,7 @@ mod tests {
 
         // the signed message does not match. We are not able to make Mockito
         // capture the challenge and return a signature on it.
-        let ret = block_on(engine.create_account(bob.id.to_string())).unwrap_err();
+        let ret = block_on(engine.create_account(CreateAccount::new(bob.id))).unwrap_err();
         assert_eq!(ret.0.as_u16(), 502);
         // assert_eq!(ret.1, "CREATED");
 

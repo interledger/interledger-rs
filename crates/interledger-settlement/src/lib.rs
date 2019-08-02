@@ -28,6 +28,21 @@ lazy_static! {
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
 
+#[derive(Extract, Debug, Clone, Serialize, Deserialize)]
+pub struct Quantity {
+    pub amount: String,
+    pub scale: u8,
+}
+
+impl Quantity {
+    pub fn new(amount: impl ToString, scale: u8) -> Self {
+        Quantity {
+            amount: amount.to_string(),
+            scale,
+        }
+    }
+}
+
 pub struct SettlementEngineDetails {
     /// Base URL of the settlement engine
     pub url: Url,

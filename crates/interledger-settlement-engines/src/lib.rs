@@ -20,12 +20,19 @@ pub mod engines;
 pub mod stores;
 pub use self::api::SettlementEngineApi;
 
-#[derive(Extract, Debug, Clone, Copy)]
-pub struct Quantity {
-    amount: u64,
+#[derive(Extract, Debug, Clone, Hash)]
+pub struct CreateAccount {
+    id: String,
+}
+
+impl CreateAccount {
+    pub fn new<T: ToString>(id: T) -> Self {
+        CreateAccount { id: id.to_string() }
+    }
 }
 
 use http::StatusCode;
+use interledger_settlement::Quantity;
 
 pub type ApiResponse = (StatusCode, String);
 
@@ -46,6 +53,6 @@ pub trait SettlementEngine {
 
     fn create_account(
         &self,
-        account_id: String,
+        account_id: CreateAccount,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send>;
 }

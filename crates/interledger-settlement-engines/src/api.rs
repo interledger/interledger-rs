@@ -1,12 +1,11 @@
-use crate::ApiResponse;
-use crate::Quantity;
-use crate::SettlementEngine;
+use crate::{ApiResponse, CreateAccount, SettlementEngine};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, Either},
     Future,
 };
 use hyper::{Response, StatusCode};
+use interledger_settlement::Quantity;
 use interledger_settlement::{IdempotentData, IdempotentStore};
 use log::error;
 use ring::digest::{digest, SHA256};
@@ -60,13 +59,14 @@ impl_web! {
             self.make_idempotent_call(f, input_hash, idempotency_key)
         }
 
-        #[post("/accounts/:account_id")]
+        #[post("/accounts")]
         /// Forwards the data to the API engine's `create_account` function.
-        /// Endpoint: POST /accounts/:id/
-        fn create_account(&self, account_id: String, idempotency_key: Option<String>) -> impl Future<Item = Response<String>, Error = Response<String>> {
-            let input_hash = get_hash_of(account_id.as_ref());
+        /// Endpoint: POST /accounts/
+        fn create_account(&self, body: CreateAccount, idempotency_key: Option<String>) -> impl Future<Item = Response<String>, Error = Response<String>> {
+            let input = format!("{:?}", body);
+            let input_hash = get_hash_of(input.as_ref());
             let engine = self.engine.clone();
-            let f = move || engine.create_account(account_id);
+            let f = move || engine.create_account(body);
             self.make_idempotent_call(f, input_hash, idempotency_key)
         }
 
@@ -214,7 +214,7 @@ mod tests {
 
         fn create_account(
             &self,
-            _account_id: String,
+            _account_id: CreateAccount,
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
             Box::new(ok((
                 StatusCode::from_u16(201).unwrap(),
@@ -234,7 +234,7 @@ mod tests {
 
         let ret: Response<_> = block_on(api.execute_settlement(
             "1".to_owned(),
-            Quantity { amount: 100 },
+            Quantity::new(100, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap();
@@ -244,7 +244,7 @@ mod tests {
         // is idempotent
         let ret: Response<_> = block_on(api.execute_settlement(
             "1".to_owned(),
-            Quantity { amount: 100 },
+            Quantity::new(100, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap();
@@ -254,7 +254,7 @@ mod tests {
         // // fails with different id and same data
         let ret: Response<_> = block_on(api.execute_settlement(
             "42".to_owned(),
-            Quantity { amount: 100 },
+            Quantity::new(100, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap_err();
@@ -267,7 +267,7 @@ mod tests {
         // fails with same id and different data
         let ret: Response<_> = block_on(api.execute_settlement(
             "1".to_string(),
-            Quantity { amount: 42 },
+            Quantity::new(42, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap_err();
@@ -280,7 +280,7 @@ mod tests {
         // fails with different id and different data
         let ret: Response<_> = block_on(api.execute_settlement(
             "42".to_string(),
-            Quantity { amount: 42 },
+            Quantity::new(42, 6),
             Some(IDEMPOTENCY.clone()),
         ))
         .unwrap_err();
@@ -370,19 +370,22 @@ mod tests {
         };
 
         let ret: Response<_> =
-            block_on(api.create_account("1".to_owned(), Some(IDEMPOTENCY.clone()))).unwrap();
+            block_on(api.create_account(CreateAccount::new("1"), Some(IDEMPOTENCY.clone())))
+                .unwrap();
         assert_eq!(ret.status().as_u16(), 201);
         assert_eq!(ret.body(), "CREATED");
 
         // is idempotent
         let ret: Response<_> =
-            block_on(api.create_account("1".to_owned(), Some(IDEMPOTENCY.clone()))).unwrap();
+            block_on(api.create_account(CreateAccount::new("1"), Some(IDEMPOTENCY.clone())))
+                .unwrap();
         assert_eq!(ret.status().as_u16(), 201);
         assert_eq!(ret.body(), "CREATED");
 
         // fails with different id
         let ret: Response<_> =
-            block_on(api.create_account("42".to_owned(), Some(IDEMPOTENCY.clone()))).unwrap_err();
+            block_on(api.create_account(CreateAccount::new("42"), Some(IDEMPOTENCY.clone())))
+                .unwrap_err();
         assert_eq!(ret.status().as_u16(), 409);
         assert_eq!(
             ret.body(),

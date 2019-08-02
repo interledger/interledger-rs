@@ -85,8 +85,7 @@ impl_web! {
                             se_url
                                 .path_segments_mut()
                                 .expect("Invalid settlement engine URL")
-                                .push("accounts")
-                                .push(&id.to_string());
+                                .push("accounts");
                             trace!(
                                 "Sending account {} creation request to settlement engine: {:?}",
                                 id,
@@ -94,6 +93,7 @@ impl_web! {
                             );
                             let action = move || {
                                 Client::new().post(se_url.clone())
+                                .json(&json!({"id" : id.to_string()}))
                                 .send()
                                 .map_err(move |err| {
                                     error!("Error sending account creation command to the settlement engine: {:?}", err)

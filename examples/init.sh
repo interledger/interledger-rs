@@ -6,9 +6,11 @@
 if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
     redis-cli -p 6379 shutdown
 fi
-redis-server --port 6379 --daemonize yes &> logs/redis-6379.log 
+redis-server --port 6379 --daemonize yes &> /dev/null
+redis-cli -p 6379 flushall
 
 if lsof -Pi :6380 -sTCP:LISTEN -t >/dev/null ; then
     redis-cli -p 6380 shutdown
 fi
-redis-server --port 6380 --daemonize yes &> logs/redis-6380.log 
+redis-server --port 6380 --daemonize yes &> /dev/null
+redis-cli -p 6380 flushall
