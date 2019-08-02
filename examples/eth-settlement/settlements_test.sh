@@ -30,6 +30,7 @@ RUST_LOG=interledger=debug $ILP_ENGINE ethereum-ledger \
 --server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 --confirmations 0 \
 --poll_frequency 1000 \
+--asset_scale 18 \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379 \
@@ -42,6 +43,7 @@ RUST_LOG=interledger=debug $ILP_ENGINE ethereum-ledger \
 --server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
 --confirmations 0 \
 --poll_frequency 1000 \
+--asset_scale 18 \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6380 \

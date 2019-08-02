@@ -10,7 +10,7 @@ ILP=$ILP_DIR/target/debug/interledger
 ILP_ENGINE=$ILP_DIR/target/debug/interledger-settlement-engines
 CONFIGS=$ILP_DIR/examples
 
-LOGS=$CONFIGS/eth-settlement/settlement_test_logs
+LOGS=$CONFIGS/eth_xrp_three_nodes/settlement_test_logs
 rm -rf $LOGS && mkdir -p $LOGS
 echo "Initializing redis"
 bash $ILP_DIR/examples/init.sh &
@@ -105,7 +105,7 @@ read -p "Press [Enter] key to continue..."
 echo "Initializing Alice's account on Bob's connector (Alice has already added Bob as a peer so they should exchange SE addreses)"
 curl http://localhost:8770/accounts -X POST \
      -d "ilp_address=example.alice&asset_code=ETH&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=6&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10&routing_relation=Peer&receive_routes=true&send_routes=true" \
-     -H "Authorization: Bearer hi_bob" &
+     -H "Authorization: Bearer hi_bob"
 
 # insert Charlie's account details on Bob's connector (XRP Child Relation)
 echo "Initializing Charlie's account on Bob's connector (this will not return until Charlie adds Bob in his connector)"
