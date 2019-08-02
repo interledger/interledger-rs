@@ -54,6 +54,10 @@ pub fn main() {
                             .long("confirmations")
                             .help("The number of confirmations the engine will wait for a transaction's inclusion before it notifies the node of its success")
                             .default_value("6"),
+                        Arg::with_name("asset_scale")
+                            .long("asset_scale")
+                            .help("The asset scale you want to use for your payments (default: 18)")
+                            .default_value("18"),
                         Arg::with_name("poll_frequency")
                             .long("poll_frequency")
                             .help("The frequency in milliseconds at which the engine will check the blockchain about the confirmation status of a tx")
@@ -93,6 +97,7 @@ pub fn main() {
             };
             let chain_id = value_t!(matches, "chain_id", u8).unwrap();
             let confirmations = value_t!(matches, "confirmations", u8).unwrap();
+            let asset_scale = value_t!(matches, "asset_scale", u8).unwrap();
             let poll_frequency = value_t!(matches, "poll_frequency", u64).unwrap();
             let watch_incoming = value_t!(matches, "watch_incoming", bool).unwrap();
 
@@ -104,6 +109,7 @@ pub fn main() {
                 private_key,
                 chain_id,
                 confirmations,
+                asset_scale,
                 poll_frequency,
                 connector_url,
                 token_address,

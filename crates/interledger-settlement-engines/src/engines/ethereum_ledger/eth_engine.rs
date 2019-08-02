@@ -78,6 +78,7 @@ pub struct EthereumLedgerSettlementEngine<S, Si, A> {
     confirmations: u8,
     poll_frequency: Duration,
     connector_url: Url,
+    asset_scale: u8,
 }
 
 pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
@@ -91,6 +92,7 @@ pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
     poll_frequency: Option<Duration>,
     connector_url: Option<Url>,
     token_address: Option<Address>,
+    asset_scale: Option<u8>,
     watch_incoming: bool,
     account_type: PhantomData<A>,
 }
@@ -111,6 +113,7 @@ where
             poll_frequency: None,
             connector_url: None,
             token_address: None,
+            asset_scale: None,
             watch_incoming: false,
             account_type: PhantomData,
         }
@@ -123,6 +126,11 @@ where
 
     pub fn ethereum_endpoint(&mut self, endpoint: &'a str) -> &mut Self {
         self.ethereum_endpoint = Some(endpoint);
+        self
+    }
+
+    pub fn asset_scale(&mut self, asset_scale: u8) -> &mut Self {
+        self.asset_scale = Some(asset_scale);
         self
     }
 
@@ -178,6 +186,11 @@ where
         } else {
             Duration::from_secs(5)
         };
+        let asset_scale = if let Some(asset_scale) = self.asset_scale {
+            asset_scale
+        } else {
+            18
+        };
 
         let (eloop, transport) = Http::new(ethereum_endpoint).unwrap();
         eloop.into_remote();
@@ -196,6 +209,7 @@ where
             confirmations,
             poll_frequency,
             connector_url,
+            asset_scale,
             account_type: PhantomData,
         };
         if self.watch_incoming {
@@ -464,6 +478,7 @@ where
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
         let account_id_clone = account_id.clone();
+        let asset_scale = self.asset_scale;
         url.path_segments_mut()
             .expect("Invalid connector URL")
             .push("accounts")
@@ -476,7 +491,7 @@ where
             client
                 .post(url.clone())
                 .header("Idempotency-Key", tx_hash.to_string())
-                .json(&json!({ "amount": amount.to_string(), "scale" : 18 }))
+                .json(&json!({ "amount": amount.to_string(), "scale" : asset_scale }))
                 .send()
                 .map_err(move |err| {
                     error!(
@@ -806,6 +821,7 @@ pub fn run_ethereum_engine<R, Si>(
     private_key: Si,
     chain_id: u8,
     confirmations: u8,
+    asset_scale: u8,
     poll_frequency: u64,
     connector_url: String,
     token_address: Option<Address>,
@@ -826,6 +842,7 @@ where
                 .chain_id(chain_id)
                 .connector_url(&connector_url)
                 .confirmations(confirmations)
+                .asset_scale(asset_scale)
                 .poll_frequency(poll_frequency)
                 .watch_incoming(watch_incoming)
                 .token_address(token_address)
