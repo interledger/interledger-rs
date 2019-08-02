@@ -6,10 +6,16 @@ then
     PORT=7770
     RECEIVER=8770
     AUTH=in_alice
-else
+elif [[ $1 == bob ]]
+then
     PORT=8770
     RECEIVER=7770
     AUTH=in_bob
+elif [[ $1 == charlie ]]
+then # alice to charlie
+    PORT=7770
+    RECEIVER=9770
+    AUTH=in_alice
 fi
 
 if [ ! -z "$2"  ]
