@@ -213,7 +213,7 @@ fn eth_xrp_interoperable() {
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
                             settle_threshold: Some(70),
-                            settle_to: Some(10),
+                            settle_to: Some(-10),
                             send_routes: false,
                             receive_routes: true,
                             routing_relation: Some("Child".to_string()),
@@ -298,7 +298,7 @@ fn eth_xrp_interoperable() {
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
                             settle_threshold: Some(70),
-                            settle_to: Some(10),
+                            settle_to: Some(-10),
                             send_routes: true,
                             receive_routes: false,
                             routing_relation: Some("Parent".to_string()),
@@ -329,12 +329,27 @@ fn eth_xrp_interoperable() {
                         .and_then(move |_| create_account(node2_xrp_engine_port, "1"))
                         .and_then(move |_| create_account(node3_xrp_engine_port, "1"))
                         .and_then(move |_| send_money(node1_http, node3_http, 70, "in_alice"))
+                        // node 3 updates account 1,
                         .and_then(move |_| send_money(node1_http, node3_http, 1, "in_alice"))
                         .and_then(move |_| {
-                            get_balance(0, node1_http, "admin").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"-10\"}");
-                                get_balance(0, node3_http, "admin").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"10\"}");
+                            // wait for the settlements
+                            delay(10000).map_err(|err| panic!(err)).and_then(move |_| {
+                                futures::future::join_all(vec![
+                                    get_balance(0, node1_http, "admin"),
+                                    get_balance(1, node1_http, "admin"),
+                                    get_balance(0, node2_http, "admin"),
+                                    get_balance(1, node2_http, "admin"),
+                                    get_balance(0, node3_http, "admin"),
+                                    get_balance(1, node3_http, "admin"),
+                                ])
+                                .and_then(move |balances| {
+                                    assert_eq!(balances[0], "{\"balance\":\"-71\"}"); // alice has in total paid 71
+                                    assert_eq!(balances[1], "{\"balance\":\"-10\"}"); // alice owes bob 10
+                                    assert_eq!(balances[2], "{\"balance\":\"-71\"}"); // alice has in total paid 71
+                                    assert_eq!(balances[3], "{\"balance\":\"-10\"}"); // bob owes 10 to bob.charlie
+                                    assert_eq!(balances[4], "{\"balance\":\"71\"}"); // bob.charlie has been paid 71
+                                    assert_eq!(balances[5], "{\"balance\":\"10\"}"); // bob.charlie is owed 10 by bob
+
                                     node2_engine_redis.kill().unwrap();
                                     node3_engine_redis.kill().unwrap();
                                     node2_xrp_engine.kill().unwrap();
