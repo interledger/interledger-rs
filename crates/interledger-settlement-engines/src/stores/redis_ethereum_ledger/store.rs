@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
 
-use log::{debug, error};
+use log::{trace, error};
 
 use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
 
@@ -112,7 +112,6 @@ impl EthereumStore for EthereumLedgerRedisStore {
         &self,
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<EthereumAddresses>, Error = ()> + Send> {
-        debug!("Loading account addresses {:?}", account_ids);
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
             pipe.hgetall(ethereum_ledger_key(*account_id));
@@ -127,7 +126,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
                 })
                 .and_then(
                     move |(_conn, addresses): (_, Vec<HashMap<String, Vec<u8>>>)| {
-                        debug!("Loaded account addresses {:?}", addresses);
+                        trace!("Loaded account addresses {:?}", addresses);
                         let mut ret = Vec::with_capacity(addresses.len());
                         for addr in &addresses {
                             let own_address = if let Some(own_address) = addr.get("own_address") {

@@ -7,7 +7,7 @@ use futures::{
 use hyper::{Response, StatusCode};
 use interledger_settlement::Quantity;
 use interledger_settlement::{IdempotentData, IdempotentStore};
-use log::error;
+use log::trace;
 use ring::digest::{digest, SHA256};
 use tokio::executor::spawn;
 use tower_web::{net::ConnectionStream, ServiceBuilder};
@@ -82,7 +82,7 @@ impl_web! {
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
                     let error_msg = "Couldn't load idempotent data".to_owned();
-                    error!("{}", error_msg);
+                    trace!("{}", error_msg);
                     error_msg
                 })
                 .and_then(move |ret: IdempotentData| {

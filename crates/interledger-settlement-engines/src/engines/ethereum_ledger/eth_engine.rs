@@ -242,7 +242,8 @@ where
                     .for_each(move |instant| {
                         trace!(
                             "[{:?}] Getting settlement data from the blockchain; instant={:?}",
-                            address, instant
+                            address,
+                            instant
                         );
                         tokio::spawn(_self.handle_received_transactions());
                         Ok(())
@@ -290,7 +291,7 @@ where
             .block_number()
             .map_err(move |err| error!("Could not fetch current block number {:?}", err))
             .and_then(move |current_block| {
-                debug!("Current block {}", current_block);
+                trace!("Current block {}", current_block);
                 // get the safe number of blocks to avoid reorgs
                 let fetch_until = current_block - confirmations;
                 // U256 does not implement IntoFuture so we must wrap it
@@ -298,13 +299,14 @@ where
             })
             .flatten()
             .and_then(move |(fetch_until, last_observed_block)| {
-                debug!(
+                trace!(
                     "Will fetch txs from block {} until {}",
-                    last_observed_block, fetch_until
+                    last_observed_block,
+                    fetch_until
                 );
 
                 let notify_all_txs_fut = if let Some(token_address) = token_address {
-                    debug!("Settling for ERC20 transactions");
+                    trace!("Settling for ERC20 transactions");
                     // get all erc20 transactions
                     let notify_all_erc20_txs_fut = filter_transfer_logs(
                         web3.clone(),
@@ -325,7 +327,7 @@ where
                     // combine all erc20 futures for that range of blocks
                     Either::A(notify_all_erc20_txs_fut)
                 } else {
-                    debug!("Settling for ETH transactions");
+                    trace!("Settling for ETH transactions");
                     let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
                     // for each block create a future which will notify the
                     // connector about all the transactions in that block that are sent to our account
@@ -337,7 +339,7 @@ where
                 };
 
                 notify_all_txs_fut.and_then(move |ret| {
-                    debug!("Transactions settled {:?}", ret);
+                    trace!("Transactions settled {:?}", ret);
                     // now that all transactions have been processed successfully, we
                     // can save `fetch_until` as the latest observed block
                     store_clone.save_recently_observed_block(fetch_until)
@@ -384,7 +386,7 @@ where
     }
 
     fn notify_eth_txs_in_block(&self, block_number: u64) -> impl Future<Item = (), Error = ()> {
-        debug!("Getting txs for block {}", block_number);
+        trace!("Getting txs for block {}", block_number);
         let self_clone = self.clone();
         // Get the block at `block_number`
         self.web3
@@ -412,7 +414,7 @@ where
                 join_all(submit_txs_to_connector_future)
             })
             .and_then(move |_res| {
-                debug!(
+                trace!(
                     "Successfully logged transactions in block: {:?}",
                     block_number
                 );
@@ -678,7 +680,7 @@ where
                         let data = prefixed_mesage(challenge_clone);
                         let challenge_hash = Sha3::digest(&data);
                         let recovered_address = payment_details.sig.recover(&challenge_hash);
-                        debug!("Received payment details {:?}", payment_details);
+                        trace!("Received payment details {:?}", payment_details);
                         result(recovered_address)
                             .map_err(move |err| {
                                 let err = format!("Could not recover address {:?}", err);
@@ -695,7 +697,8 @@ where
                                     } else {
                                         let error_msg = format!(
                                             "Recovered address did not match: {:?}. Expected {:?}",
-                                            recovered_address, payment_details.to
+                                            recovered_address.to_string(),
+                                            payment_details.to
                                         );
                                         error!("{}", error_msg);
                                         err((StatusCode::from_u16(502).unwrap(), error_msg))
