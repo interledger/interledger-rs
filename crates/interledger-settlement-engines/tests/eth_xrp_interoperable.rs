@@ -173,56 +173,58 @@ fn eth_xrp_interoperable() {
     };
     let node2_clone = node2.clone();
     runtime.spawn(
-        node2_eth_engine_fut.and_then(move |_| {
-                node2_clone.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.alice").unwrap(),
-                    asset_code: "ETH".to_string(),
-                    asset_scale: ETH_DECIMALS,
-                    btp_incoming_token: None,
-                    btp_uri: None,
-                    http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
-                    http_incoming_token: Some("alice".to_string()),
-                    http_outgoing_token: Some("bob".to_string()),
-                    max_packet_amount: u64::max_value(),
-                    min_balance: Some(-100),
-                    settle_threshold: Some(70),
-                    settle_to: Some(-10),
-                    send_routes: true,
-                    receive_routes: true,
-                    routing_relation: Some("Peer".to_string()),
-                    round_trip_time: None,
-                    packets_per_minute_limit: None,
-                    amount_per_minute_limit: None,
-                    settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
-                    settlement_engine_asset_scale: Some(ETH_DECIMALS),
-                })
-                .and_then(move |_| {
-                    node2_clone.insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.bob.charlie").unwrap(),
-                        asset_code: "XRP".to_string(),
-                        asset_scale: XRP_DECIMALS,
+        node2_eth_engine_fut
+            .and_then(move |_| {
+                node2_clone
+                    .insert_account(AccountDetails {
+                        ilp_address: Address::from_str("example.alice").unwrap(),
+                        asset_code: "ETH".to_string(),
+                        asset_scale: ETH_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
-                        http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
-                        http_incoming_token: Some("charlie".to_string()),
+                        http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
+                        http_incoming_token: Some("alice".to_string()),
                         http_outgoing_token: Some("bob".to_string()),
                         max_packet_amount: u64::max_value(),
                         min_balance: Some(-100),
                         settle_threshold: Some(70),
-                        settle_to: Some(10),
-                        send_routes: false,
+                        settle_to: Some(-10),
+                        send_routes: true,
                         receive_routes: true,
-                        routing_relation: Some("Child".to_string()),
+                        routing_relation: Some("Peer".to_string()),
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
-                        settlement_engine_url: Some(format!(
-                            "http://localhost:{}",
-                            node2_xrp_engine_port
-                        )),
-                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
+                        settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
+                        settlement_engine_asset_scale: Some(ETH_DECIMALS),
                     })
-                })
+                    .and_then(move |_| {
+                        node2_clone.insert_account(AccountDetails {
+                            ilp_address: Address::from_str("example.bob.charlie").unwrap(),
+                            asset_code: "XRP".to_string(),
+                            asset_scale: XRP_DECIMALS,
+                            btp_incoming_token: None,
+                            btp_uri: None,
+                            http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
+                            http_incoming_token: Some("charlie".to_string()),
+                            http_outgoing_token: Some("bob".to_string()),
+                            max_packet_amount: u64::max_value(),
+                            min_balance: Some(-100),
+                            settle_threshold: Some(70),
+                            settle_to: Some(10),
+                            send_routes: false,
+                            receive_routes: true,
+                            routing_relation: Some("Child".to_string()),
+                            round_trip_time: None,
+                            packets_per_minute_limit: None,
+                            amount_per_minute_limit: None,
+                            settlement_engine_url: Some(format!(
+                                "http://localhost:{}",
+                                node2_xrp_engine_port
+                            )),
+                            settlement_engine_asset_scale: Some(XRP_DECIMALS),
+                        })
+                    })
             })
             .and_then(move |_| node2.serve())
             .and_then(move |_| {
@@ -255,56 +257,59 @@ fn eth_xrp_interoperable() {
     let node3_clone = node3.clone();
     runtime.spawn(
         // Wait a bit to make sure the other node's BTP server is listening
-        delay(50).map_err(|err| panic!(err)).and_then(move |_| {
-                node3_clone.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.bob.charlie").unwrap(),
-                    asset_code: "XRP".to_string(),
-                    asset_scale: XRP_DECIMALS,
-                    btp_incoming_token: None,
-                    btp_uri: None,
-                    http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
-                    http_incoming_token: Some("in_charlie".to_string()),
-                    http_outgoing_token: Some("out_charlie".to_string()),
-                    max_packet_amount: u64::max_value(),
-                    min_balance: None,
-                    settle_threshold: None,
-                    settle_to: Some(-10),
-                    send_routes: false,
-                    receive_routes: false,
-                    routing_relation: None,
-                    round_trip_time: None,
-                    packets_per_minute_limit: None,
-                    amount_per_minute_limit: None,
-                    settlement_engine_url: None,
-                    settlement_engine_asset_scale: None,
-                })
-                .and_then(move |_| {
-                    node3_clone.insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.bob").unwrap(),
+        delay(50)
+            .map_err(|err| panic!(err))
+            .and_then(move |_| {
+                node3_clone
+                    .insert_account(AccountDetails {
+                        ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                         asset_code: "XRP".to_string(),
                         asset_scale: XRP_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
-                        http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                        http_incoming_token: Some("bob".to_string()),
-                        http_outgoing_token: Some("charlie".to_string()),
+                        http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
+                        http_incoming_token: Some("in_charlie".to_string()),
+                        http_outgoing_token: Some("out_charlie".to_string()),
                         max_packet_amount: u64::max_value(),
-                        min_balance: Some(-100),
-                        settle_threshold: Some(70),
-                        settle_to: Some(10),
-                        send_routes: true,
+                        min_balance: None,
+                        settle_threshold: None,
+                        settle_to: Some(-10),
+                        send_routes: false,
                         receive_routes: false,
-                        routing_relation: Some("Parent".to_string()),
+                        routing_relation: None,
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
-                        settlement_engine_url: Some(format!(
-                            "http://localhost:{}",
-                            node3_xrp_engine_port
-                        )),
-                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
+                        settlement_engine_url: None,
+                        settlement_engine_asset_scale: None,
                     })
-                })
+                    .and_then(move |_| {
+                        node3_clone.insert_account(AccountDetails {
+                            ilp_address: Address::from_str("example.bob").unwrap(),
+                            asset_code: "XRP".to_string(),
+                            asset_scale: XRP_DECIMALS,
+                            btp_incoming_token: None,
+                            btp_uri: None,
+                            http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
+                            http_incoming_token: Some("bob".to_string()),
+                            http_outgoing_token: Some("charlie".to_string()),
+                            max_packet_amount: u64::max_value(),
+                            min_balance: Some(-100),
+                            settle_threshold: Some(70),
+                            settle_to: Some(10),
+                            send_routes: true,
+                            receive_routes: false,
+                            routing_relation: Some("Parent".to_string()),
+                            round_trip_time: None,
+                            packets_per_minute_limit: None,
+                            amount_per_minute_limit: None,
+                            settlement_engine_url: Some(format!(
+                                "http://localhost:{}",
+                                node3_xrp_engine_port
+                            )),
+                            settlement_engine_asset_scale: Some(XRP_DECIMALS),
+                        })
+                    })
             })
             .and_then(move |_| node3.serve()),
     );
@@ -318,25 +323,25 @@ fn eth_xrp_interoperable() {
                     // Insert accounts for the 3 nodes (4 total since node2 has
                     // eth & xrp)
                     create_account(node1_engine, "1")
-                    .and_then(move |_| create_account(node2_engine, "0"))
-                    .and_then(move |_| create_account(node2_xrp_engine_port, "1"))
-                    .and_then(move |_| create_account(node3_xrp_engine_port, "1"))
-                    .and_then(move |_| send_money(node1_http, node3_http, 70, "in_alice"))
-                    .and_then(move |_| send_money(node1_http, node3_http, 1, "in_alice"))
-                    .and_then(move |_| {
-                        get_balance(0, node1_http, "admin").and_then(move |ret| {
-                            assert_eq!(ret, "{\"balance\":\"-10\"}");
-                            get_balance(0, node3_http, "admin").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"10\"}");
-                                node2_engine_redis.kill().unwrap();
-                                node3_engine_redis.kill().unwrap();
-                                node2_xrp_engine.kill().unwrap();
-                                node3_xrp_engine.kill().unwrap();
-                                ganache_pid.kill().unwrap();
-                                Ok(())
+                        .and_then(move |_| create_account(node2_engine, "0"))
+                        .and_then(move |_| create_account(node2_xrp_engine_port, "1"))
+                        .and_then(move |_| create_account(node3_xrp_engine_port, "1"))
+                        .and_then(move |_| send_money(node1_http, node3_http, 70, "in_alice"))
+                        .and_then(move |_| send_money(node1_http, node3_http, 1, "in_alice"))
+                        .and_then(move |_| {
+                            get_balance(0, node1_http, "admin").and_then(move |ret| {
+                                assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                get_balance(0, node3_http, "admin").and_then(move |ret| {
+                                    assert_eq!(ret, "{\"balance\":\"10\"}");
+                                    node2_engine_redis.kill().unwrap();
+                                    node3_engine_redis.kill().unwrap();
+                                    node2_xrp_engine.kill().unwrap();
+                                    node3_xrp_engine.kill().unwrap();
+                                    ganache_pid.kill().unwrap();
+                                    Ok(())
+                                })
                             })
                         })
-                    })
                 }),
         )
         .unwrap();

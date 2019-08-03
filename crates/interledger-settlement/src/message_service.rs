@@ -60,7 +60,11 @@ where
                     .push("accounts")
                     .push(&request.from.id().to_string())
                     .push("messages");
-                error!("FORWARDING DATA TO {:?}. Data {:?}", settlement_engine_url.clone(), message.clone());
+                error!(
+                    "FORWARDING DATA TO {:?}. Data {:?}",
+                    settlement_engine_url.clone(),
+                    message.clone()
+                );
                 let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
                 let http_client = self.http_client.clone();
                 let action = move || {
