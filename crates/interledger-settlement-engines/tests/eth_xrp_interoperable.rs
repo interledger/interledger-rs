@@ -1,64 +1,24 @@
 #![recursion_limit = "128"]
 
 use env_logger;
-use futures::{future::join_all, Future, Stream};
+use futures::Future;
 use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
 use serde_json::json;
-use std::str;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
-use std::time::Duration;
-use std::thread::sleep;
 
 mod redis_helpers;
 use redis_helpers::*;
-use std::process::Command;
-use interledger_settlement_engines::engines::ethereum_ledger::run_ethereum_engine;
 
-#[derive(serde::Deserialize)]
-struct DeliveryData {
-    delivered_amount: u64,
-}
-
-fn start_ganache() -> std::process::Child {
-    let mut ganache = Command::new("ganache-cli");
-    let ganache = ganache.stdout(std::process::Stdio::null()).arg("-m").arg(
-        "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle",
-    );
-    let ganache_pid = ganache.spawn().expect("couldnt start ganache-cli");
-    // wait a couple of seconds for ganache to boot up
-    sleep(Duration::from_secs(5));
-    ganache_pid
-}
-
-fn start_xrp_engine(
-    connector_url: &str,
-    redis_port: u16,
-    engine_port: u16,
-    xrp_address: &str,
-    xrp_secret: &str,
-) -> std::process::Child {
-    let mut engine = Command::new("ilp-settlement-xrp");
-    engine
-        .env("DEBUG", "ilp-settlement-xrp")
-        .env("CONNECTOR_URL", connector_url)
-        .env("REDIS_PORT", redis_port.to_string())
-        .env("ENGINE_PORT", engine_port.to_string())
-        .env("LEDGER_ADDRESS", xrp_address)
-        .env("LEDGER_SECRET", xrp_secret);
-    let engine_pid = engine
-        // .stderr(std::process::Stdio::null())
-        // .stdout(std::process::Stdio::null())
-        .spawn()
-        .expect("couldnt start xrp engine");
-    sleep(Duration::from_secs(2));
-    engine_pid
-}
-
+mod test_helpers;
+use test_helpers::{
+    create_account, get_balance, send_money, start_eth_engine, start_ganache, start_xrp_engine,
+    ETH_DECIMALS, XRP_DECIMALS,
+};
 
 #[test]
 fn eth_xrp_interoperable() {
@@ -76,7 +36,6 @@ fn eth_xrp_interoperable() {
     let mut connection_info3 = context.get_client_connection_info();
     connection_info3.db = 3;
 
-
     let node1_http = get_open_port(Some(3010));
     let node1_settlement = get_open_port(Some(3011));
     let node1_engine = get_open_port(Some(3012));
@@ -89,7 +48,7 @@ fn eth_xrp_interoperable() {
 
     let node3_http = get_open_port(Some(3030));
     let node3_settlement = get_open_port(Some(3031));
-    let node3_engine = get_open_port(Some(3032));
+    let _node3_engine = get_open_port(Some(3032)); // unused engine
     let node3_xrp_engine_port = get_open_port(Some(3033));
 
     // spawn 2 redis servers for the XRP engines
@@ -112,42 +71,21 @@ fn eth_xrp_interoperable() {
         "ssnYUDNeNQrNij2EVJG6dDw258jA6",
     );
 
-    let node1_eth_key = "380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc".to_string();
-    let node2_eth_key = "cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e".to_string();
-    let eth_asset_scale = 6;
-    let xrp_asset_scale = 6;
-    let poll_frequency = 1000; // ms
-    let confirmations = 0; // set this to something higher in production
-    let chain_id = 1;
-    let ganache_url = "http://localhost:8545".to_string();
-    let node1_eth_engine_fut = run_ethereum_engine(
+    let node1_eth_key =
+        "380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc".to_string();
+    let node2_eth_key =
+        "cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e".to_string();
+    let node1_eth_engine_fut = start_eth_engine(
         connection_info1.clone(),
-        ganache_url.clone(),
         node1_engine,
-        &cli::random_secret(),
         node1_eth_key,
-        chain_id,
-        confirmations,
-        eth_asset_scale,
-        poll_frequency,
-        format!("http://127.0.0.1:{}", node1_settlement),
-        None,
-        true,
+        node1_settlement,
     );
-
-    let node2_eth_engine_fut = run_ethereum_engine(
+    let node2_eth_engine_fut = start_eth_engine(
         connection_info2.clone(),
-        ganache_url.clone(),
         node2_engine,
-        &cli::random_secret(),
         node2_eth_key,
-        chain_id,
-        confirmations,
-        eth_asset_scale,
-        poll_frequency,
-        format!("http://127.0.0.1:{}", node2_settlement),
-        None,
-        true,
+        node2_settlement,
     );
 
     let mut runtime = RuntimeBuilder::new()
@@ -169,13 +107,12 @@ fn eth_xrp_interoperable() {
     let node1_clone = node1.clone();
     runtime.spawn(
         // TODO insert the accounts via HTTP request
-        node1_eth_engine_fut
-        .and_then(move |_| {
+        node1_eth_engine_fut.and_then(move |_| {
             node1_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.alice").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: eth_asset_scale,
+                    asset_scale: ETH_DECIMALS,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -200,7 +137,7 @@ fn eth_xrp_interoperable() {
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: eth_asset_scale,
+                    asset_scale: ETH_DECIMALS,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
@@ -220,7 +157,7 @@ fn eth_xrp_interoperable() {
                     settlement_engine_asset_scale: Some(18),
                 }))
                 .and_then(move |_| node1.serve())
-        })
+        }),
     );
 
     let node2 = InterledgerNode {
@@ -374,62 +311,6 @@ fn eth_xrp_interoperable() {
             delay(500)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
-                    let create_account = |engine_port, account_id| {
-                        let client = reqwest::r#async::Client::new();
-                        client
-                            .post(&format!("http://localhost:{}/accounts", engine_port))
-                            .header("Content-Type", "application/json")
-                            .json(&json!({ "id": account_id }))
-                            .send()
-                            .map_err(|err| {
-                                eprintln!("Error creating account: {:?}", err);
-                                err
-                            })
-                            .and_then(|res| res.error_for_status())
-                            .and_then(|res| res.into_body().concat2())
-                            .and_then(move |res| { println!("GOT RES {} {} {:?}", engine_port, account_id, res); Ok(res)})
-                    };
-
-                    let send_money = |from, to, amount, auth| {
-                        let client = reqwest::r#async::Client::new();
-                        client
-                            .post(&format!("http://localhost:{}/pay", from))
-                            .header("Authorization", format!("Bearer {}", auth))
-                            .json(&json!({
-                                "receiver": format!("http://localhost:{}/.well-known/pay", to),
-                                "source_amount": amount,
-                            }))
-                            .send()
-                            .map_err(|err| {
-                                eprintln!("Error sending SPSP payment: {:?}", err);
-                                err
-                            })
-                            .and_then(|res| res.error_for_status())
-                            .and_then(|res| res.into_body().concat2())
-                            .and_then(move |body| {
-                                let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
-                                assert_eq!(ret.delivered_amount, amount);
-                                Ok(())
-                            })
-                    };
-
-                    let get_balance = |account_id, node_port, admin_token| {
-                        let client = reqwest::r#async::Client::new();
-                        client
-                            .get(&format!(
-                                "http://localhost:{}/accounts/{}/balance",
-                                node_port, account_id
-                            ))
-                            .header("Authorization", format!("Bearer {}", admin_token))
-                            .send()
-                            .map_err(|err| {
-                                eprintln!("Error getting account data: {:?}", err);
-                                err
-                            })
-                            .and_then(|res| res.error_for_status())
-                            .and_then(|res| res.into_body().concat2())
-                    };
-
                     // Insert accounts for the 3 nodes (4 total since node2 has
                     // eth & xrp)
                     create_account(node1_engine, "1")
@@ -440,10 +321,8 @@ fn eth_xrp_interoperable() {
                     .and_then(move |_| send_money(node1_http, node3_http, 1, "in_alice"))
                     .and_then(move |_| {
                         get_balance(0, node1_http, "admin").and_then(move |ret| {
-                            let ret = str::from_utf8(&ret).unwrap();
                             assert_eq!(ret, "{\"balance\":\"-10\"}");
                             get_balance(0, node3_http, "admin").and_then(move |ret| {
-                                let ret = str::from_utf8(&ret).unwrap();
                                 assert_eq!(ret, "{\"balance\":\"10\"}");
                                 node2_engine_redis.kill().unwrap();
                                 node3_engine_redis.kill().unwrap();
@@ -454,7 +333,7 @@ fn eth_xrp_interoperable() {
                             })
                         })
                     })
-                })
+                }),
         )
         .unwrap();
 }
