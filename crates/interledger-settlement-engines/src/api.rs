@@ -81,7 +81,7 @@ impl_web! {
             self.store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
-                    let error_msg = "Couldn' load idempotent data".to_owned();
+                    let error_msg = "Couldn't load idempotent data".to_owned();
                     error!("{}", error_msg);
                     error_msg
                 })

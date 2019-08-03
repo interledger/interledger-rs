@@ -240,7 +240,7 @@ where
             tokio::run(
                 Interval::new(Instant::now(), interval)
                     .for_each(move |instant| {
-                        debug!(
+                        trace!(
                             "[{:?}] Getting settlement data from the blockchain; instant={:?}",
                             address, instant
                         );

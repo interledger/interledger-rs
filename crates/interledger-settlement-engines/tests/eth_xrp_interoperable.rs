@@ -17,8 +17,10 @@ use redis_helpers::*;
 mod test_helpers;
 use test_helpers::{
     create_account, get_balance, send_money, start_eth_engine, start_ganache, start_xrp_engine,
-    ETH_DECIMALS, XRP_DECIMALS,
+    XRP_DECIMALS,
 };
+
+const ETH_DECIMALS: u8 = 6;
 
 #[test]
 fn eth_xrp_interoperable() {
@@ -57,14 +59,14 @@ fn eth_xrp_interoperable() {
     let mut node2_engine_redis = RedisServer::spawn_with_port(node2_redis_port);
     let mut node3_engine_redis = RedisServer::spawn_with_port(node3_redis_port);
     let mut node2_xrp_engine = start_xrp_engine(
-        &format!("http://localhost:{}", node2_http),
+        &format!("http://localhost:{}", node2_settlement),
         node2_redis_port,
         node2_xrp_engine_port,
         "rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV",
         "sahVoeg97nuitefnzL9GHjp2Z6kpj",
     );
     let mut node3_xrp_engine = start_xrp_engine(
-        &format!("http://localhost:{}", node3_http),
+        &format!("http://localhost:{}", node3_settlement),
         node3_redis_port,
         node3_xrp_engine_port,
         "r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K",
