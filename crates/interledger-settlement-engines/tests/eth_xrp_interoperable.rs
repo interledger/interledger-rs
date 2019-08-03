@@ -177,7 +177,7 @@ fn eth_xrp_interoperable() {
                 node2_clone.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.alice").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: eth_asset_scale,
+                    asset_scale: ETH_DECIMALS,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -193,17 +193,14 @@ fn eth_xrp_interoperable() {
                     round_trip_time: None,
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
-                    settlement_engine_url: Some(format!(
-                        "http://localhost:{}",
-                        node2_engine
-                    )),
-                    settlement_engine_asset_scale: Some(eth_asset_scale),
+                    settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
+                    settlement_engine_asset_scale: Some(ETH_DECIMALS),
                 })
                 .and_then(move |_| {
                     node2_clone.insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                         asset_code: "XRP".to_string(),
-                        asset_scale: xrp_asset_scale,
+                        asset_scale: XRP_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
@@ -219,8 +216,11 @@ fn eth_xrp_interoperable() {
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
-                        settlement_engine_url: Some(format!("http://localhost:{}", node2_xrp_engine_port)),
-                        settlement_engine_asset_scale: Some(xrp_asset_scale),
+                        settlement_engine_url: Some(format!(
+                            "http://localhost:{}",
+                            node2_xrp_engine_port
+                        )),
+                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
                     })
                 })
             })
@@ -238,7 +238,7 @@ fn eth_xrp_interoperable() {
                             .expect("Error setting exchange rates");
                         Ok(())
                     })
-            })
+            }),
     );
 
     let node3 = InterledgerNode {
@@ -259,7 +259,7 @@ fn eth_xrp_interoperable() {
                 node3_clone.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                     asset_code: "XRP".to_string(),
-                    asset_scale: xrp_asset_scale,
+                    asset_scale: XRP_DECIMALS,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
@@ -277,11 +277,12 @@ fn eth_xrp_interoperable() {
                     amount_per_minute_limit: None,
                     settlement_engine_url: None,
                     settlement_engine_asset_scale: None,
-                }).and_then(move |_| {
+                })
+                .and_then(move |_| {
                     node3_clone.insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob").unwrap(),
                         asset_code: "XRP".to_string(),
-                        asset_scale: xrp_asset_scale,
+                        asset_scale: XRP_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
@@ -297,12 +298,15 @@ fn eth_xrp_interoperable() {
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
-                        settlement_engine_url: Some(format!("http://localhost:{}", node3_xrp_engine_port)),
-                        settlement_engine_asset_scale: Some(xrp_asset_scale),
+                        settlement_engine_url: Some(format!(
+                            "http://localhost:{}",
+                            node3_xrp_engine_port
+                        )),
+                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
                     })
                 })
             })
-            .and_then(move |_| node3.serve())
+            .and_then(move |_| node3.serve()),
     );
 
     runtime
