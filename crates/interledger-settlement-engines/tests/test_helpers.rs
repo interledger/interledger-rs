@@ -11,6 +11,7 @@ use std::time::Duration;
 const CONFIRMATIONS: u8 = 0;
 const CHAIN_ID: u8 = 1;
 pub const ETH_DECIMALS: u8 = 18;
+#[allow(unused)]
 pub const XRP_DECIMALS: u8 = 6;
 
 #[derive(serde::Deserialize)]
@@ -18,6 +19,7 @@ pub struct DeliveryData {
     pub delivered_amount: u64,
 }
 
+#[allow(unused)]
 pub fn start_ganache() -> std::process::Child {
     let mut ganache = Command::new("ganache-cli");
     let ganache = ganache.stdout(std::process::Stdio::null()).arg("-m").arg(
@@ -29,6 +31,7 @@ pub fn start_ganache() -> std::process::Child {
     ganache_pid
 }
 
+#[allow(unused)]
 pub fn start_xrp_engine(
     connector_url: &str,
     redis_port: u16,
@@ -53,6 +56,7 @@ pub fn start_xrp_engine(
     engine_pid
 }
 
+#[allow(unused)]
 pub fn start_eth_engine(
     db: ConnectionInfo,
     engine_port: u16,
@@ -74,6 +78,7 @@ pub fn start_eth_engine(
         true,
     )
 }
+
 pub fn create_account(
     engine_port: u16,
     account_id: &'static str,

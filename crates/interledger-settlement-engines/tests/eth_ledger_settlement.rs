@@ -1,14 +1,12 @@
 #![recursion_limit = "128"]
 
 use env_logger;
-use futures::{Future, Stream};
+use futures::Future;
 use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
-use serde_json::json;
-use std::str;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
@@ -16,7 +14,6 @@ use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
 use redis_helpers::*;
-use std::process::Command;
 
 mod test_helpers;
 use test_helpers::{
@@ -79,7 +76,7 @@ fn eth_ledger_settlement() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
                         asset_code: "ETH".to_string(),
-                        asset_scale: 18,
+                        asset_scale: ETH_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: None,
@@ -102,7 +99,7 @@ fn eth_ledger_settlement() {
                         node1_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
                             asset_code: "ETH".to_string(),
-                            asset_scale: 18,
+                            asset_scale: ETH_DECIMALS,
                             btp_incoming_token: None,
                             btp_uri: None,
                             http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
@@ -122,7 +119,7 @@ fn eth_ledger_settlement() {
                                 "http://localhost:{}",
                                 node1_engine
                             )),
-                            settlement_engine_asset_scale: Some(18),
+                            settlement_engine_asset_scale: Some(ETH_DECIMALS),
                         })
                     })
                     .and_then(move |_| node1.serve())
@@ -149,7 +146,7 @@ fn eth_ledger_settlement() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob").unwrap(),
                         asset_code: "ETH".to_string(),
-                        asset_scale: 18,
+                        asset_scale: ETH_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: None,
@@ -173,7 +170,7 @@ fn eth_ledger_settlement() {
                             .insert_account(AccountDetails {
                                 ilp_address: Address::from_str("example.alice").unwrap(),
                                 asset_code: "ETH".to_string(),
-                                asset_scale: 18,
+                                asset_scale: ETH_DECIMALS,
                                 btp_incoming_token: None,
                                 btp_uri: None,
                                 http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -193,7 +190,7 @@ fn eth_ledger_settlement() {
                                     "http://localhost:{}",
                                     node2_engine
                                 )),
-                                settlement_engine_asset_scale: Some(18),
+                                settlement_engine_asset_scale: Some(ETH_DECIMALS),
                             })
                             .and_then(move |_| node2.serve())
                     })
