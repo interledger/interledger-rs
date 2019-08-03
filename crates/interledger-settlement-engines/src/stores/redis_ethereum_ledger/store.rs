@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
 
-use log::{trace, error};
+use log::{error, trace};
 
 use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
 
