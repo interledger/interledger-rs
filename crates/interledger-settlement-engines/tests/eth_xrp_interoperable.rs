@@ -17,10 +17,8 @@ use redis_helpers::*;
 mod test_helpers;
 use test_helpers::{
     create_account, get_balance, send_money, start_eth_engine, start_ganache, start_xrp_engine,
-    XRP_DECIMALS,
+    ETH_DECIMALS, XRP_DECIMALS,
 };
-
-const ETH_DECIMALS: u8 = 6;
 
 #[test]
 fn eth_xrp_interoperable() {
@@ -146,9 +144,9 @@ fn eth_xrp_interoperable() {
                     http_incoming_token: Some("bob".to_string()),
                     http_outgoing_token: Some("alice".to_string()),
                     max_packet_amount: u64::max_value(),
-                    min_balance: Some(-100),
-                    settle_threshold: Some(70),
-                    settle_to: Some(-10),
+                    min_balance: Some(-100000),
+                    settle_threshold: Some(70000),
+                    settle_to: Some(-1000),
                     send_routes: true,
                     receive_routes: true,
                     routing_relation: Some("Peer".to_string()),
@@ -188,9 +186,9 @@ fn eth_xrp_interoperable() {
                         http_incoming_token: Some("alice".to_string()),
                         http_outgoing_token: Some("bob".to_string()),
                         max_packet_amount: u64::max_value(),
-                        min_balance: Some(-100),
-                        settle_threshold: Some(70),
-                        settle_to: Some(-10),
+                        min_balance: Some(-100000),
+                        settle_threshold: None,
+                        settle_to: None,
                         send_routes: true,
                         receive_routes: true,
                         routing_relation: Some("Peer".to_string()),
@@ -213,7 +211,7 @@ fn eth_xrp_interoperable() {
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
                             settle_threshold: Some(70),
-                            settle_to: Some(-10),
+                            settle_to: Some(-5),
                             send_routes: false,
                             receive_routes: true,
                             routing_relation: Some("Child".to_string()),
@@ -275,7 +273,7 @@ fn eth_xrp_interoperable() {
                         max_packet_amount: u64::max_value(),
                         min_balance: None,
                         settle_threshold: None,
-                        settle_to: Some(-10),
+                        settle_to: None,
                         send_routes: false,
                         receive_routes: false,
                         routing_relation: None,
@@ -297,8 +295,8 @@ fn eth_xrp_interoperable() {
                             http_outgoing_token: Some("charlie".to_string()),
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
-                            settle_threshold: Some(70),
-                            settle_to: Some(-10),
+                            settle_threshold: None,
+                            settle_to: None,
                             send_routes: true,
                             receive_routes: false,
                             routing_relation: Some("Parent".to_string()),
@@ -328,9 +326,11 @@ fn eth_xrp_interoperable() {
                         .and_then(move |_| create_account(node2_engine, "0"))
                         .and_then(move |_| create_account(node2_xrp_engine_port, "1"))
                         .and_then(move |_| create_account(node3_xrp_engine_port, "1"))
-                        .and_then(move |_| send_money(node1_http, node3_http, 70, "in_alice"))
-                        // node 3 updates account 1,
-                        .and_then(move |_| send_money(node1_http, node3_http, 1, "in_alice"))
+                        // Pay 70k Gwei --> 70 drops
+                        .and_then(move |_| send_money(node1_http, node3_http, 70000, "in_alice"))
+                        // Pay 1k Gwei --> 1 drop
+                        // This will trigger a 71 Gwei settlement from Alice to Bob.
+                        .and_then(move |_| send_money(node1_http, node3_http, 1000, "in_alice"))
                         .and_then(move |_| {
                             // wait for the settlements
                             delay(10000).map_err(|err| panic!(err)).and_then(move |_| {
@@ -343,12 +343,12 @@ fn eth_xrp_interoperable() {
                                     get_balance(1, node3_http, "admin"),
                                 ])
                                 .and_then(move |balances| {
-                                    assert_eq!(balances[0], -71); // alice has in total paid 71
-                                    assert_eq!(balances[1], -10); // alice owes bob 10
-                                    assert_eq!(balances[2], -71); // alice has in total paid 71
-                                    assert_eq!(balances[3], -10); // bob owes 10 to bob.charlie
+                                    assert_eq!(balances[0], -71000); // alice has in total paid 71k
+                                    assert_eq!(balances[1], -1000); // alice owes bob 1k
+                                    assert_eq!(balances[2], 1000); // bob is owed 1k by alice
+                                    assert_eq!(balances[3], -5); // bob owes 5 to bob.charlie
                                     assert_eq!(balances[4], 71); // bob.charlie has been paid 71
-                                    assert_eq!(balances[5], 10); // bob.charlie is owed 10 by bob
+                                    assert_eq!(balances[5], 5); // bob.charlie is owed 10 by bob
 
                                     node2_engine_redis.kill().unwrap();
                                     node3_engine_redis.kill().unwrap();

@@ -10,7 +10,8 @@ use std::time::Duration;
 
 const CONFIRMATIONS: u8 = 0;
 const CHAIN_ID: u8 = 1;
-pub const ETH_DECIMALS: u8 = 18;
+#[allow(unused)]
+pub const ETH_DECIMALS: u8 = 9;
 #[allow(unused)]
 pub const XRP_DECIMALS: u8 = 6;
 
@@ -76,7 +77,7 @@ pub fn start_eth_engine(
         key,
         CHAIN_ID,
         CONFIRMATIONS,
-        ETH_DECIMALS,
+        18,
         1000,
         format!("http://127.0.0.1:{}", settlement_port),
         None,
@@ -110,7 +111,7 @@ pub fn send_money(
     to: u16,
     amount: u64,
     auth: &str,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = u64, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .post(&format!("http://localhost:{}/pay", from))
@@ -127,9 +128,7 @@ pub fn send_money(
         })
         .and_then(move |body| {
             let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
-            // this does not work if they have different scales
-            // assert_eq!(ret.delivered_amount, amount);
-            Ok(())
+            Ok(ret.delivered_amount)
         })
 }
 

@@ -945,7 +945,7 @@ mod tests {
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
-                "{\"amount\": \"100\", \"scale\": 18 }".to_string(),
+                "{\"amount\": \"100000000000\", \"scale\": 18 }".to_string(),
             ))
             .with_status(200)
             .with_body("OK".to_string())
@@ -969,7 +969,7 @@ mod tests {
         );
 
         let ret =
-            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 6))).unwrap();
+            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 9))).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
 
