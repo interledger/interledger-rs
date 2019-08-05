@@ -1,4 +1,4 @@
-use super::{Convert, ConvertDetails, Quantity, SettlementAccount};
+use super::{Quantity, SettlementAccount};
 use futures::{
     future::{err, Either},
     Future,
@@ -28,10 +28,6 @@ impl SettlementClient {
     ) -> impl Future<Item = (), Error = ()> {
         if let Some(settlement_engine) = account.settlement_engine_details() {
             let mut settlement_engine_url = settlement_engine.url;
-            let amount = amount.normalize_scale(ConvertDetails {
-                from: account.asset_scale(),
-                to: settlement_engine.asset_scale,
-            });
             settlement_engine_url
                 .path_segments_mut()
                 .expect("Invalid settlement engine URL")
@@ -43,11 +39,10 @@ impl SettlementClient {
                 amount, settlement_engine_url
             );
             let settlement_engine_url_clone = settlement_engine_url.clone();
-            let asset_scale = settlement_engine.asset_scale;
             let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
             return Either::A(self.http_client.post(settlement_engine_url.clone())
                 .header("Idempotency-Key", idempotency_uuid)
-                .json(&json!(Quantity::new(amount, asset_scale)))
+                .json(&json!(Quantity::new(amount, account.asset_scale())))
                 .send()
                 .map_err(move |err| error!("Error sending settlement command to settlement engine {}: {:?}", settlement_engine_url, err))
                 .and_then(move |response| {
