@@ -100,10 +100,7 @@ pub fn create_account(
         .map_err(|err| {
             eprintln!("Error creating account: {:?}", err);
         })
-        .and_then(move |chunk| {
-            println!("GOT RES {} {} {:?}", engine_port, account_id, chunk);
-            Ok(str::from_utf8(&chunk).unwrap().to_string())
-        })
+        .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
 }
 
 pub fn send_money(

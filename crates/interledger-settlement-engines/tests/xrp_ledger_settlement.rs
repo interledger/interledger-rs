@@ -104,7 +104,6 @@ fn xrp_ledger_settlement() {
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
-                settlement_engine_asset_scale: None,
             })
             .and_then(move |_| {
                 node1_clone.insert_account(AccountDetails {
@@ -127,7 +126,6 @@ fn xrp_ledger_settlement() {
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: Some(format!("http://localhost:{}", node1_engine)),
-                    settlement_engine_asset_scale: Some(XRP_DECIMALS),
                 })
             })
             .and_then(move |_| node1.serve()),
@@ -167,7 +165,6 @@ fn xrp_ledger_settlement() {
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
-                settlement_engine_asset_scale: None,
             })
             .and_then(move |_| {
                 node2
@@ -191,7 +188,6 @@ fn xrp_ledger_settlement() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
-                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
                     })
                     .and_then(move |_| node2.serve())
             }),

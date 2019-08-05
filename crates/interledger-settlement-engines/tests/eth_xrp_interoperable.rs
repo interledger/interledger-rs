@@ -129,7 +129,6 @@ fn eth_xrp_interoperable() {
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: None,
-                    settlement_engine_asset_scale: None,
                 })
                 .and_then(move |_|
             // TODO insert the accounts via HTTP request
@@ -154,7 +153,6 @@ fn eth_xrp_interoperable() {
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: Some(format!("http://localhost:{}", node1_engine)),
-                    settlement_engine_asset_scale: Some(18),
                 }))
                 .and_then(move |_| node1.serve())
         }),
@@ -196,7 +194,6 @@ fn eth_xrp_interoperable() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
-                        settlement_engine_asset_scale: Some(ETH_DECIMALS),
                     })
                     .and_then(move |_| {
                         node2_clone.insert_account(AccountDetails {
@@ -222,7 +219,6 @@ fn eth_xrp_interoperable() {
                                 "http://localhost:{}",
                                 node2_xrp_engine_port
                             )),
-                            settlement_engine_asset_scale: Some(XRP_DECIMALS),
                         })
                     })
             })
@@ -282,7 +278,6 @@ fn eth_xrp_interoperable() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
                     })
                     .and_then(move |_| {
                         node3_clone.insert_account(AccountDetails {
@@ -308,7 +303,6 @@ fn eth_xrp_interoperable() {
                                 "http://localhost:{}",
                                 node3_xrp_engine_port
                             )),
-                            settlement_engine_asset_scale: Some(XRP_DECIMALS),
                         })
                     })
             })

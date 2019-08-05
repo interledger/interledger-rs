@@ -53,7 +53,6 @@ fn polls_for_route_updates() {
                             amount_per_minute_limit: None,
                             packets_per_minute_limit: None,
                             settlement_engine_url: None,
-                            settlement_engine_asset_scale: None,
                         })
                     })
                     .and_then(move |_| {

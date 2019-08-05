@@ -55,7 +55,6 @@ pub struct Account {
     pub(crate) amount_per_minute_limit: Option<u64>,
     #[serde(serialize_with = "optional_url_to_string")]
     pub(crate) settlement_engine_url: Option<Url>,
-    pub(crate) settlement_engine_asset_scale: Option<u8>,
 }
 
 fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
@@ -147,7 +146,6 @@ impl Account {
             packets_per_minute_limit: details.packets_per_minute_limit,
             amount_per_minute_limit: details.amount_per_minute_limit,
             settlement_engine_url,
-            settlement_engine_asset_scale: details.settlement_engine_asset_scale,
         })
     }
 
@@ -258,10 +256,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "settlement_engine_url".write_redis_args(&mut rv);
             settlement_engine_url.as_str().write_redis_args(&mut rv);
         }
-        if let Some(settlement_engine_asset_scale) = account.settlement_engine_asset_scale {
-            "settlement_engine_asset_scale".write_redis_args(&mut rv);
-            settlement_engine_asset_scale.write_redis_args(&mut rv);
-        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -307,10 +301,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 packets_per_minute_limit: get_value_option("packets_per_minute_limit", &hash)?,
                 amount_per_minute_limit: get_value_option("amount_per_minute_limit", &hash)?,
                 settlement_engine_url: get_url_option("settlement_engine_url", &hash)?,
-                settlement_engine_asset_scale: get_value_option(
-                    "settlement_engine_asset_scale",
-                    &hash,
-                )?,
             },
         })
     }
@@ -461,14 +451,8 @@ impl RateLimitAccount for Account {
 
 impl SettlementAccount for Account {
     fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
-        match (
-            &self.settlement_engine_url,
-            self.settlement_engine_asset_scale,
-        ) {
-            (Some(url), Some(asset_scale)) => Some(SettlementEngineDetails {
-                url: url.clone(),
-                asset_scale,
-            }),
+        match &self.settlement_engine_url {
+            Some(url) => Some(SettlementEngineDetails { url: url.clone() }),
             _ => None,
         }
     }
@@ -499,7 +483,6 @@ mod redis_account {
             round_trip_time: Some(600),
             amount_per_minute_limit: None,
             packets_per_minute_limit: None,
-            settlement_engine_asset_scale: None,
             settlement_engine_url: None,
         };
     }

@@ -48,12 +48,6 @@ impl Quantity {
 pub struct SettlementEngineDetails {
     /// Base URL of the settlement engine
     pub url: Url,
-    /// Asset scale that the settlement engine is configured to use.
-    /// For example, sending a settlement for amount 1000 to a settlement engine
-    /// that uses as scale of 3 would mean that it should send 1 whole unit of that asset.
-    /// The SettlementClient translates the amounts used for each account internally within
-    /// Interledger.rs into the correct scale used by the settlement engine.
-    pub asset_scale: u8,
 }
 
 pub trait SettlementAccount: Account {

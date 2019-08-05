@@ -93,7 +93,6 @@ fn eth_ledger_settlement() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
                     })
                     .and_then(move |_| {
                         node1_clone.insert_account(AccountDetails {
@@ -119,7 +118,6 @@ fn eth_ledger_settlement() {
                                 "http://localhost:{}",
                                 node1_engine
                             )),
-                            settlement_engine_asset_scale: Some(ETH_DECIMALS),
                         })
                     })
                     .and_then(move |_| node1.serve())
@@ -163,7 +161,6 @@ fn eth_ledger_settlement() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
                     })
                     .and_then(move |_| {
                         node2
@@ -190,7 +187,6 @@ fn eth_ledger_settlement() {
                                     "http://localhost:{}",
                                     node2_engine
                                 )),
-                                settlement_engine_asset_scale: Some(ETH_DECIMALS),
                             })
                             .and_then(move |_| node2.serve())
                     })

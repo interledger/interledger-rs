@@ -43,7 +43,6 @@ impl SettlementAccount for TestAccount {
         }
         Some(SettlementEngineDetails {
             url: self.url.clone(),
-            asset_scale: 9,
         })
     }
 }
