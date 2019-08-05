@@ -6,6 +6,7 @@ use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
+use bigint::uint::U256 as BigU256;
 use ethereum_tx_sign::web3::{
     api::Web3,
     futures::future::{err, join_all, ok, result, Either, Future},
@@ -21,6 +22,7 @@ use reqwest::r#async::{Client, Response as HttpResponse};
 use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::mem;
 use std::{
     marker::PhantomData,
     str::FromStr,
@@ -35,7 +37,7 @@ use uuid::Uuid;
 
 use crate::stores::redis_ethereum_ledger::*;
 use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};
-use interledger_settlement::Quantity;
+use interledger_settlement::{Convert, ConvertDetails, Quantity};
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -480,7 +482,7 @@ where
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
         let account_id_clone = account_id.clone();
-        let asset_scale = self.asset_scale;
+        let engine_scale = self.asset_scale;
         url.path_segments_mut()
             .expect("Invalid connector URL")
             .push("accounts")
@@ -493,7 +495,7 @@ where
             client
                 .post(url.clone())
                 .header("Idempotency-Key", tx_hash.to_string())
-                .json(&json!({ "amount": amount.to_string(), "scale" : asset_scale }))
+                .json(&json!({ "amount": amount.to_string(), "scale" : engine_scale }))
                 .send()
                 .map_err(move |err| {
                     error!(
@@ -757,13 +759,27 @@ where
         body: Quantity,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
         let self_clone = self.clone();
+        let engine_scale = self.asset_scale;
         Box::new(
-            result(U256::from_dec_str(&body.amount).map_err(move |err| {
+            result(BigU256::from_dec_str(&body.amount).map_err(move |err| {
                 let error_msg = format!("Error converting to U256 {:?}", err);
                 error!("{:?}", error_msg);
                 (StatusCode::from_u16(400).unwrap(), error_msg)
             }))
             .and_then(move |amount| {
+                // If we receive a Quantity { amount: "1", scale: 9},
+                // we must normalize it to our engine's scale (typically 18
+                // for ETH/ERC20).
+                // Slightly counter-intuitive that `body.scale` is set as `to`.
+                let amount = amount.normalize_scale(ConvertDetails {
+                    from: engine_scale,
+                    to: body.scale,
+                });
+                // Typecast to use the Convert trait implemented for
+                // bigint::uint::U256 while we're using ethereum_types::U256
+                // from rust-web3 which just re-exports it. Should be safe.
+                let amount: U256 = unsafe { mem::transmute(amount) };
+
                 self_clone
                     .load_account(account_id)
                     .map_err(move |err| {
