@@ -210,8 +210,8 @@ fn eth_xrp_interoperable() {
                             http_outgoing_token: Some("bob".to_string()),
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
-                            settle_threshold: Some(70),
-                            settle_to: Some(-5),
+                            settle_threshold: Some(70000),
+                            settle_to: Some(-5000),
                             send_routes: false,
                             receive_routes: true,
                             routing_relation: Some("Child".to_string()),
@@ -232,7 +232,8 @@ fn eth_xrp_interoperable() {
                 client
                     .put(&format!("http://localhost:{}/rates", node2_http))
                     .header("Authorization", "Bearer admin")
-                    .json(&json!({"XRP": 1, "ETH": 1}))
+                    // Let's say 1 ETH = 0.001 XRP for this example
+                    .json(&json!({"XRP": 1000, "ETH": 1}))
                     .send()
                     .map_err(|err| panic!(err))
                     .and_then(|res| {
@@ -294,7 +295,7 @@ fn eth_xrp_interoperable() {
                             http_incoming_token: Some("bob".to_string()),
                             http_outgoing_token: Some("charlie".to_string()),
                             max_packet_amount: u64::max_value(),
-                            min_balance: Some(-100),
+                            min_balance: Some(-100000),
                             settle_threshold: None,
                             settle_to: None,
                             send_routes: true,
@@ -343,12 +344,12 @@ fn eth_xrp_interoperable() {
                                     get_balance(1, node3_http, "admin"),
                                 ])
                                 .and_then(move |balances| {
-                                    assert_eq!(balances[0], -71000); // alice has in total paid 71k
-                                    assert_eq!(balances[1], -1000); // alice owes bob 1k
-                                    assert_eq!(balances[2], 1000); // bob is owed 1k by alice
-                                    assert_eq!(balances[3], -5); // bob owes 5 to bob.charlie
-                                    assert_eq!(balances[4], 71); // bob.charlie has been paid 71
-                                    assert_eq!(balances[5], 5); // bob.charlie is owed 10 by bob
+                                    assert_eq!(balances[0], -71000); // alice has in total paid 71k Gwei
+                                    assert_eq!(balances[1], -1000); // alice owes bob 1k Gwei
+                                    assert_eq!(balances[2], 1000); // bob is owed 1k Gwei by alice
+                                    assert_eq!(balances[3], -5000); // bob owes 5k drops to bob.charlie
+                                    assert_eq!(balances[4], 71000); // bob.charlie has been paid 71k drops
+                                    assert_eq!(balances[5], 5000); // bob.charlie is owed 5k drops by bob
 
                                     node2_engine_redis.kill().unwrap();
                                     node3_engine_redis.kill().unwrap();
