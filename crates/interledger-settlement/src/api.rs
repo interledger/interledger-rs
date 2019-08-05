@@ -7,6 +7,7 @@ use futures::{
     future::{err, ok, result, Either},
     Future,
 };
+use bigint::uint::U256 as BigU256;
 use hyper::{Response, StatusCode};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
@@ -139,6 +140,8 @@ impl_web! {
 
         fn do_receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
             let store = self.store.clone();
+            let amount = body.amount;
+            let engine_scale = body.scale;
             Box::new(result(A::AccountId::from_str(&account_id)
             .map_err(move |_err| {
                 let error_msg = format!("Unable to parse account id: {}", account_id);
@@ -157,28 +160,37 @@ impl_web! {
             }})
             .and_then(move |accounts| {
                 let account = &accounts[0];
-                if let Some(settlement_engine) = account.settlement_engine_details() {
-                    Ok((account.clone(), settlement_engine))
+                if account.settlement_engine_details().is_some() {
+                    Ok(account.clone())
                 } else {
                     let error_msg = format!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
                     error!("{}", error_msg);
                     Err((StatusCode::from_u16(404).unwrap(), error_msg))
                 }
             })
-            .and_then(move |(account, settlement_engine)| {
-                let account_id = account.id();
-                let amount: u64 = body.amount.parse().unwrap();
-                let amount = amount.normalize_scale(ConvertDetails {
-                    // We have account, engine and request asset scale.
-                    // Which one is not required? Still not clear from all the spec discussions.
-                    from: account.asset_scale(),
-                    to: settlement_engine.asset_scale
-                });
-                store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+            .and_then(move |account| {
+                result(BigU256::from_dec_str(&amount))
                 .map_err(move |_| {
-                    let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                    let error_msg = format!("Could not convert amount: {:?}", amount);
                     error!("{}", error_msg);
                     (StatusCode::from_u16(500).unwrap(), error_msg)
+                })
+                .and_then(move |amount| {
+                    let account_id = account.id();
+                    let amount = amount.normalize_scale(ConvertDetails {
+                        // scale it down so that it fits in the connector
+                        from: account.asset_scale(),
+                        to: engine_scale,
+                    });
+                    // after downscaling it, hopefully we can convert to u64 without
+                    // loss of precision
+                    let amount = amount.low_u64();
+                    store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+                    .map_err(move |_| {
+                        let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                        error!("{}", error_msg);
+                        (StatusCode::from_u16(500).unwrap(), error_msg)
+                    })
                 })
             }).and_then(move |_| {
                 let ret = Bytes::from("Success");
