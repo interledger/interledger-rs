@@ -19,6 +19,11 @@ pub struct DeliveryData {
     pub delivered_amount: u64,
 }
 
+#[derive(serde::Deserialize)]
+pub struct BalanceData {
+    pub balance: String,
+}
+
 #[allow(unused)]
 pub fn start_ganache() -> std::process::Child {
     let mut ganache = Command::new("ganache-cli");
@@ -122,7 +127,8 @@ pub fn send_money(
         })
         .and_then(move |body| {
             let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
-            assert_eq!(ret.delivered_amount, amount);
+            // this does not work if they have different scales
+            // assert_eq!(ret.delivered_amount, amount);
             Ok(())
         })
 }
@@ -131,7 +137,7 @@ pub fn get_balance(
     account_id: u64,
     node_port: u16,
     admin_token: &str,
-) -> impl Future<Item = String, Error = ()> {
+) -> impl Future<Item = i64, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .get(&format!(
@@ -145,5 +151,8 @@ pub fn get_balance(
         .map_err(|err| {
             eprintln!("Error getting account data: {:?}", err);
         })
-        .and_then(|chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
+        .and_then(|body| {
+            let ret: BalanceData = serde_json::from_slice(&body).unwrap();
+            Ok(ret.balance.parse().unwrap())
+        })
 }

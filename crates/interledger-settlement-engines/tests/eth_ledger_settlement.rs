@@ -223,9 +223,9 @@ fn eth_ledger_settlement() {
                         .and_then(move |_| send1)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"10\"}");
+                                assert_eq!(ret, 10);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                    assert_eq!(ret, -10);
                                     Ok(())
                                 })
                             })
@@ -233,9 +233,9 @@ fn eth_ledger_settlement() {
                         .and_then(move |_| send2)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"30\"}");
+                                assert_eq!(ret, 30);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-30\"}");
+                                    assert_eq!(ret, -30);
                                     Ok(())
                                 })
                             })
@@ -243,9 +243,9 @@ fn eth_ledger_settlement() {
                         .and_then(move |_| send3)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"70\"}");
+                                assert_eq!(ret, 70);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-70\"}");
+                                    assert_eq!(ret, -70);
                                     Ok(())
                                 })
                             })
@@ -261,9 +261,9 @@ fn eth_ledger_settlement() {
                             // Since the credit connection reached -71, and the
                             // settle_to is -10, a 61 Wei transaction is made.
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"10\"}");
+                                assert_eq!(ret, 10);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                    assert_eq!(ret, -10);
                                     ganache_pid.kill().unwrap();
                                     Ok(())
                                 })

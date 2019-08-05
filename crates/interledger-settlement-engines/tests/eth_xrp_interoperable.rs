@@ -343,12 +343,12 @@ fn eth_xrp_interoperable() {
                                     get_balance(1, node3_http, "admin"),
                                 ])
                                 .and_then(move |balances| {
-                                    assert_eq!(balances[0], "{\"balance\":\"-71\"}"); // alice has in total paid 71
-                                    assert_eq!(balances[1], "{\"balance\":\"-10\"}"); // alice owes bob 10
-                                    assert_eq!(balances[2], "{\"balance\":\"-71\"}"); // alice has in total paid 71
-                                    assert_eq!(balances[3], "{\"balance\":\"-10\"}"); // bob owes 10 to bob.charlie
-                                    assert_eq!(balances[4], "{\"balance\":\"71\"}"); // bob.charlie has been paid 71
-                                    assert_eq!(balances[5], "{\"balance\":\"10\"}"); // bob.charlie is owed 10 by bob
+                                    assert_eq!(balances[0], -71); // alice has in total paid 71
+                                    assert_eq!(balances[1], -10); // alice owes bob 10
+                                    assert_eq!(balances[2], -71); // alice has in total paid 71
+                                    assert_eq!(balances[3], -10); // bob owes 10 to bob.charlie
+                                    assert_eq!(balances[4], 71); // bob.charlie has been paid 71
+                                    assert_eq!(balances[5], 10); // bob.charlie is owed 10 by bob
 
                                     node2_engine_redis.kill().unwrap();
                                     node3_engine_redis.kill().unwrap();
