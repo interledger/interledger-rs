@@ -17,11 +17,12 @@ use redis_helpers::*;
 mod test_helpers;
 use test_helpers::{
     create_account, get_balance, send_money, start_eth_engine, start_ganache, start_xrp_engine,
-    ETH_DECIMALS, XRP_DECIMALS,
 };
 
 #[test]
 fn eth_xrp_interoperable() {
+    let eth_decimals = 9;
+    let xrp_decimals = 6;
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
     let context = TestContext::new();
@@ -112,7 +113,7 @@ fn eth_xrp_interoperable() {
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.alice").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: ETH_DECIMALS,
+                    asset_scale: eth_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -136,7 +137,7 @@ fn eth_xrp_interoperable() {
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: ETH_DECIMALS,
+                    asset_scale: eth_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
@@ -177,7 +178,7 @@ fn eth_xrp_interoperable() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
                         asset_code: "ETH".to_string(),
-                        asset_scale: ETH_DECIMALS,
+                        asset_scale: eth_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -199,7 +200,7 @@ fn eth_xrp_interoperable() {
                         node2_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                             asset_code: "XRP".to_string(),
-                            asset_scale: XRP_DECIMALS,
+                            asset_scale: xrp_decimals,
                             btp_incoming_token: Some("charlie".to_string()),
                             btp_uri: None,
                             http_endpoint: None,
@@ -228,7 +229,7 @@ fn eth_xrp_interoperable() {
                 client
                     .put(&format!("http://localhost:{}/rates", node2_http))
                     .header("Authorization", "Bearer admin")
-                    // Let's say 1 ETH = 0.001 XRP for this example
+                    // Let's say 0.001 ETH = 1 XRP for this example
                     .json(&json!({"XRP": 1000, "ETH": 1}))
                     .send()
                     .map_err(|err| panic!(err))
@@ -261,7 +262,7 @@ fn eth_xrp_interoperable() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                         asset_code: "XRP".to_string(),
-                        asset_scale: XRP_DECIMALS,
+                        asset_scale: xrp_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: None,
@@ -283,7 +284,7 @@ fn eth_xrp_interoperable() {
                         node3_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
                             asset_code: "XRP".to_string(),
-                            asset_scale: XRP_DECIMALS,
+                            asset_scale: xrp_decimals,
                             btp_incoming_token: None,
                             btp_uri: Some(format!("btp+ws://:charlie@localhost:{}", node2_btp)),
                             http_endpoint: None,

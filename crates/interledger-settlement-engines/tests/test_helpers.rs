@@ -8,13 +8,6 @@ use std::str;
 use std::thread::sleep;
 use std::time::Duration;
 
-const CONFIRMATIONS: u8 = 0;
-const CHAIN_ID: u8 = 1;
-#[allow(unused)]
-pub const ETH_DECIMALS: u8 = 9;
-#[allow(unused)]
-pub const XRP_DECIMALS: u8 = 6;
-
 #[derive(serde::Deserialize)]
 pub struct DeliveryData {
     pub delivered_amount: u64,
@@ -75,8 +68,8 @@ pub fn start_eth_engine(
         engine_port,
         &cli::random_secret(),
         key,
-        CHAIN_ID,
-        CONFIRMATIONS,
+        1,
+        0,
         18,
         1000,
         format!("http://127.0.0.1:{}", settlement_port),

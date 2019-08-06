@@ -14,7 +14,7 @@ mod redis_helpers;
 use redis_helpers::*;
 
 mod test_helpers;
-use test_helpers::{create_account, get_balance, send_money, start_xrp_engine, XRP_DECIMALS};
+use test_helpers::{create_account, get_balance, send_money, start_xrp_engine};
 
 #[test]
 /// In this test we have Alice and Bob who have peered with each other and run
@@ -25,6 +25,7 @@ use test_helpers::{create_account, get_balance, send_money, start_xrp_engine, XR
 /// transactions, and once the transaction has sufficient confirmations it
 /// lets Bob's connector know about it, so that it adjusts their credit.
 fn xrp_ledger_settlement() {
+    let xrp_decimals = 6;
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
     let context = TestContext::new();
@@ -87,7 +88,7 @@ fn xrp_ledger_settlement() {
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.alice").unwrap(),
                 asset_code: "XRP".to_string(),
-                asset_scale: XRP_DECIMALS,
+                asset_scale: xrp_decimals,
                 btp_incoming_token: None,
                 btp_uri: None,
                 http_endpoint: None,
@@ -109,7 +110,7 @@ fn xrp_ledger_settlement() {
                 node1_clone.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
                     asset_code: "XRP".to_string(),
-                    asset_scale: XRP_DECIMALS,
+                    asset_scale: xrp_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
@@ -148,7 +149,7 @@ fn xrp_ledger_settlement() {
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.bob").unwrap(),
                 asset_code: "XRP".to_string(),
-                asset_scale: XRP_DECIMALS,
+                asset_scale: xrp_decimals,
                 btp_incoming_token: None,
                 btp_uri: None,
                 http_endpoint: None,
@@ -171,7 +172,7 @@ fn xrp_ledger_settlement() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
                         asset_code: "XRP".to_string(),
-                        asset_scale: XRP_DECIMALS,
+                        asset_scale: xrp_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
