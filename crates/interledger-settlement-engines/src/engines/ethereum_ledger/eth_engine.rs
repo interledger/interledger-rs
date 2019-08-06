@@ -769,7 +769,6 @@ where
                 // If we receive a Quantity { amount: "1", scale: 9},
                 // we must normalize it to our engine's scale (typically 18
                 // for ETH/ERC20).
-                // Slightly counter-intuitive that `body.scale` is set as `to`.
                 let amount = amount_from_connector.normalize_scale(ConvertDetails {
                     from: body.scale,
                     to: engine_scale,
