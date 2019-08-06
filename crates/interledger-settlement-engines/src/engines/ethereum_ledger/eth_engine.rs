@@ -765,14 +765,14 @@ where
                 error!("{:?}", error_msg);
                 (StatusCode::from_u16(400).unwrap(), error_msg)
             }))
-            .and_then(move |amount| {
+            .and_then(move |amount_from_connector| {
                 // If we receive a Quantity { amount: "1", scale: 9},
                 // we must normalize it to our engine's scale (typically 18
                 // for ETH/ERC20).
                 // Slightly counter-intuitive that `body.scale` is set as `to`.
-                let amount = amount.normalize_scale(ConvertDetails {
-                    from: engine_scale,
-                    to: body.scale,
+                let amount = amount_from_connector.normalize_scale(ConvertDetails {
+                    from: body.scale,
+                    to: engine_scale,
                 });
 
                 // Typecast from num_bigint::BigUInt because we're using

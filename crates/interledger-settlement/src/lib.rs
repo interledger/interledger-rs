@@ -106,36 +106,36 @@ pub trait Convert {
 
 impl Convert for u64 {
     fn normalize_scale(&self, details: ConvertDetails) -> Self {
-        let from_scale = details.from;
-        let to_scale = details.to;
-        if from_scale >= to_scale {
-            self * 10u64.pow(u32::from(from_scale - to_scale))
+        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
+        let scale = 10u64.pow(scale_diff.into());
+        if details.to >= details.from {
+            self * scale
         } else {
-            self / 10u64.pow(u32::from(to_scale - from_scale))
+            self / scale
         }
     }
 }
 
 impl Convert for f64 {
     fn normalize_scale(&self, details: ConvertDetails) -> Self {
-        let from_scale = details.from;
-        let to_scale = details.to;
-        if from_scale >= to_scale {
-            self * 10f64.powi(i32::from(from_scale - to_scale))
+        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
+        let scale = 10f64.powi(scale_diff.into());
+        if details.to >= details.from {
+            self * scale
         } else {
-            self / 10f64.powi(i32::from(to_scale - from_scale))
+            self / scale
         }
     }
 }
 
 impl Convert for BigUint {
     fn normalize_scale(&self, details: ConvertDetails) -> Self {
-        let from_scale = details.from;
-        let to_scale = details.to;
-        if from_scale >= to_scale {
-            self.mul(10u64.pow(u32::from(from_scale - to_scale)))
+        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
+        let scale = 10u64.pow(scale_diff.into());
+        if details.to >= details.from {
+            self.mul(scale)
         } else {
-            self.div(10u64.pow(u32::from(to_scale - from_scale)))
+            self.div(scale)
         }
     }
 }
@@ -147,45 +147,40 @@ mod tests {
 
     #[test]
     fn u64_test() {
-        // 1 unit with base 1, is 1 unit with base 1
+        // 1 unit with scale 1, is 1 unit with scale 1
         assert_eq!(1u64.normalize_scale(ConvertDetails { from: 1, to: 1 }), 1);
-        // 1 unit with base 10, is 10 units with base 1
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 2, to: 1 }), 10);
-        // 1 wei is 1e9 sats (multiplied by rate)
+        // there's leftovers for all number slots which do not increase in
+        // increments of 10^abs(to_scale-from_scale)
+        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 2, to: 1 }), 0);
+        // 1 unit with scale 1, is 10 units with scale 2
+        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 10);
+        // 1 gwei (scale 9) is 1e9 wei (scale 18)
         assert_eq!(
-            1u64.normalize_scale(ConvertDetails { from: 18, to: 9 }),
+            1u64.normalize_scale(ConvertDetails { from: 9, to: 18 }),
             1_000_000_000
         );
-
-        // there's leftovers for all number slots which do not increase in
-        // increments of 10^{to_scale-from_scale}
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 0);
-        assert_eq!(10u64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 1);
-        // 100 units with base 2 is 10 units with base 3
+        // 1_000_000_000 wei is 1gwei
         assert_eq!(
-            100u64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
-            10
+            1_000_000_000u64.normalize_scale(ConvertDetails { from: 18, to: 9 }),
+            1,
         );
-        // 299 units with base 2 is 10 units with base 3 plus 99 leftovers
+        // 10 units with base 2 is 100 units with base 3
         assert_eq!(
-            100u64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
-            10
+            10u64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
+            100
         );
-
-        assert_eq!(999u64.normalize_scale(ConvertDetails { from: 6, to: 9 }), 0);
+        // 299 units with base 3 is 29 units with base 2 (0.9 leftovers)
         assert_eq!(
-            1000u64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            299u64.normalize_scale(ConvertDetails { from: 3, to: 2 }),
+            29
+        );
+        assert_eq!(999u64.normalize_scale(ConvertDetails { from: 9, to: 6 }), 0);
+        assert_eq!(
+            1000u64.normalize_scale(ConvertDetails { from: 9, to: 6 }),
             1
         );
         assert_eq!(
-            1999u64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
-            1
-        ); // 5 is leftovers, maybe we should return it?
-
-        // allow making sub-sat micropayments
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 9, to: 18 }), 0);
-        assert_eq!(
-            1_000_000_000u64.normalize_scale(ConvertDetails { from: 9, to: 18 }),
+            1999u64.normalize_scale(ConvertDetails { from: 9, to: 6 }),
             1
         );
     }
@@ -197,42 +192,42 @@ mod tests {
         assert_eq!(1f64.normalize_scale(ConvertDetails { from: 1, to: 1 }), 1.0);
         // 1 unit with base 10, is 10 units with base 1
         assert_eq!(
-            1f64.normalize_scale(ConvertDetails { from: 2, to: 1 }),
+            1f64.normalize_scale(ConvertDetails { from: 1, to: 2 }),
             10.0
         );
-        // 1 wei is 1e9 sats (multiplied by rate)
+        // 1 sat is 1e9 wei (multiplied by rate)
         assert_eq!(
-            1f64.normalize_scale(ConvertDetails { from: 18, to: 9 }),
+            1f64.normalize_scale(ConvertDetails { from: 9, to: 18 }),
             1_000_000_000.0
         );
 
-        // 1.0 unit with base 1 is 0.1 unit with base 2
-        assert_eq!(1f64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 0.1);
+        // 1.0 unit with base 2 is 0.1 unit with base 1
+        assert_eq!(1f64.normalize_scale(ConvertDetails { from: 2, to: 1 }), 0.1);
         assert_eq!(
-            10f64.normalize_scale(ConvertDetails { from: 1, to: 2 }),
-            1.0
+            10.5f64.normalize_scale(ConvertDetails { from: 2, to: 1 }),
+            1.05
         );
-        // 100 units with base 2 is 10 units with base 3
+        // 100 units with base 3 is 10 units with base 2
         assert_eq!(
-            100f64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
+            100f64.normalize_scale(ConvertDetails { from: 3, to: 2 }),
             10.0
         );
-        // 299 units with base 2 is 10 units with base 3 plus 99 leftovers
+        // 299 units with base 3 is 29.9 with base 2
         assert_eq!(
-            100f64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
-            10.0
+            299f64.normalize_scale(ConvertDetails { from: 3, to: 2 }),
+            29.9
         );
 
         assert_eq!(
-            999f64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            999f64.normalize_scale(ConvertDetails { from: 9, to: 6 }),
             0.999
         );
         assert_eq!(
-            1000f64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            1000f64.normalize_scale(ConvertDetails { from: 9, to: 6 }),
             1.0
         );
         assert_eq!(
-            1999f64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            1999f64.normalize_scale(ConvertDetails { from: 9, to: 6 }),
             1.999
         );
     }

@@ -91,8 +91,8 @@ where
             };
 
             let scaled_rate = rate.normalize_scale(ConvertDetails {
-                from: request.to.asset_scale(),
-                to: request.from.asset_scale(),
+                from: request.from.asset_scale(),
+                to: request.to.asset_scale(),
             });
             let outgoing_amount = (request.prepare.amount() as f64) * scaled_rate;
             request.prepare.set_amount(outgoing_amount as u64);

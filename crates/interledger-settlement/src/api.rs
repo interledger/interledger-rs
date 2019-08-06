@@ -176,12 +176,11 @@ impl_web! {
                     error!("{}", error_msg);
                     (StatusCode::from_u16(500).unwrap(), error_msg)
                 })
-                .and_then(move |amount| {
+                .and_then(move |amount_from_engine| {
                     let account_id = account.id();
-                    let amount = amount.normalize_scale(ConvertDetails {
-                        // scale it down so that it fits in the connector
-                        from: account.asset_scale(),
-                        to: engine_scale,
+                    let amount = amount_from_engine.normalize_scale(ConvertDetails {
+                        from: engine_scale,
+                        to: account.asset_scale(),
                     });
                     // If we'd overflow, settle for the maximum u64 value
                     let safe_amount = if let Some(amount) = amount.to_u64() {
