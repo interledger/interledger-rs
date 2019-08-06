@@ -19,13 +19,13 @@ mod fixtures;
 mod message_service;
 #[cfg(test)]
 mod test_helpers;
-use bigint::uint::U256;
+use num_bigint::BigUint;
+use std::ops::{Div, Mul};
 
 pub use api::SettlementApi;
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
-use std::ops::Div;
 lazy_static! {
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
@@ -128,15 +128,14 @@ impl Convert for f64 {
     }
 }
 
-impl Convert for U256 {
-    fn normalize_scale(&self, details: ConvertDetails) -> U256 {
+impl Convert for BigUint {
+    fn normalize_scale(&self, details: ConvertDetails) -> Self {
         let from_scale = details.from;
         let to_scale = details.to;
         if from_scale >= to_scale {
-            self.overflowing_mul(U256::from(10u64.pow(u32::from(from_scale - to_scale))))
-                .0
+            self.mul(10u64.pow(u32::from(from_scale - to_scale)))
         } else {
-            self.div(U256::from(10u64.pow(u32::from(to_scale - from_scale))))
+            self.div(10u64.pow(u32::from(to_scale - from_scale)))
         }
     }
 }

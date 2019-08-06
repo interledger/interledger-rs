@@ -6,7 +6,6 @@ use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use bigint::uint::U256 as BigU256;
 use ethereum_tx_sign::web3::{
     api::Web3,
     futures::future::{err, join_all, ok, result, Either, Future},
@@ -17,12 +16,12 @@ use ethereum_tx_sign::web3::{
 use hyper::StatusCode;
 use interledger_store_redis::RedisStoreBuilder;
 use log::info;
+use num_bigint::BigUint;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
 use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::mem;
 use std::{
     marker::PhantomData,
     str::FromStr,
@@ -761,7 +760,7 @@ where
         let self_clone = self.clone();
         let engine_scale = self.asset_scale;
         Box::new(
-            result(BigU256::from_dec_str(&body.amount).map_err(move |err| {
+            result(BigUint::from_str(&body.amount).map_err(move |err| {
                 let error_msg = format!("Error converting to U256 {:?}", err);
                 error!("{:?}", error_msg);
                 (StatusCode::from_u16(400).unwrap(), error_msg)
@@ -775,11 +774,16 @@ where
                     from: engine_scale,
                     to: body.scale,
                 });
-                // Typecast to use the Convert trait implemented for
-                // bigint::uint::U256 while we're using ethereum_types::U256
-                // from rust-web3 which just re-exports it. Should be safe.
-                let amount: U256 = unsafe { mem::transmute(amount) };
 
+                // Typecast from num_bigint::BigUInt because we're using
+                // ethereum_types::U256 for all rust-web3 related functionality
+                result(U256::from_dec_str(&amount.to_string()).map_err(move |err| {
+                    let error_msg = format!("Error converting to U256 {:?}", err);
+                    error!("{:?}", error_msg);
+                    (StatusCode::from_u16(400).unwrap(), error_msg)
+                }))
+            })
+            .and_then(move |amount| {
                 self_clone
                     .load_account(account_id)
                     .map_err(move |err| {

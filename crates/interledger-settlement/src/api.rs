@@ -2,7 +2,6 @@ use super::{
     Convert, ConvertDetails, IdempotentData, IdempotentStore, Quantity, SettlementAccount,
     SettlementStore, SE_ILP_ADDRESS,
 };
-use bigint::uint::U256 as BigU256;
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -13,6 +12,8 @@ use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
+use num_bigint::BigUint;
+use num_traits::cast::ToPrimitive;
 use ring::digest::{digest, SHA256};
 use std::{
     marker::PhantomData,
@@ -169,7 +170,7 @@ impl_web! {
                 }
             })
             .and_then(move |account| {
-                result(BigU256::from_dec_str(&amount))
+                result(BigUint::from_str(&amount))
                 .map_err(move |_| {
                     let error_msg = format!("Could not convert amount: {:?}", amount);
                     error!("{}", error_msg);
@@ -182,19 +183,24 @@ impl_web! {
                         from: account.asset_scale(),
                         to: engine_scale,
                     });
-                    // after downscaling it, hopefully we can convert to u64 without
-                    // loss of precision
-                    let amount = amount.low_u64();
-                    store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+                    // If we'd overflow, settle for the maximum u64 value
+                    let safe_amount = if let Some(amount) = amount.to_u64() {
+                        amount
+                    } else {
+                        std::u64::MAX
+                    };
+                    store.update_balance_for_incoming_settlement(account_id, safe_amount, idempotency_key)
                     .map_err(move |_| {
                         let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
                         error!("{}", error_msg);
                         (StatusCode::from_u16(500).unwrap(), error_msg)
                     })
+                    .and_then(move |_| {
+                        // TODO: Return a Quantity of safe_amount and account.asset_scale()
+                        let ret = Bytes::from("Success");
+                        Ok((StatusCode::OK, ret))
+                    })
                 })
-            }).and_then(move |_| {
-                let ret = Bytes::from("Success");
-                Ok((StatusCode::OK, ret))
             }))
         }
 

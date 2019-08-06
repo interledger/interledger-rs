@@ -26,7 +26,8 @@ rand = "0.6.5"
 ring = "0.14.6"
 tokio-retry = "0.2.0"
 tokio = "0.1.20"
-bigint = "4.4.1"
+num-bigint = "0.2.2"
+num-traits = "0.2.8"
 
 [dev-dependencies]
 parking_lot = "0.8.0"
