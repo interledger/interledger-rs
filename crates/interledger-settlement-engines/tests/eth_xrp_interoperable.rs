@@ -146,7 +146,7 @@ fn eth_xrp_interoperable() {
                     max_packet_amount: u64::max_value(),
                     min_balance: Some(-100_000),
                     settle_threshold: Some(70000),
-                    settle_to: Some(-1000),
+                    settle_to: Some(10000),
                     send_routes: true,
                     receive_routes: true,
                     routing_relation: Some("Peer".to_string()),
@@ -209,7 +209,7 @@ fn eth_xrp_interoperable() {
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
                             settle_threshold: Some(70000),
-                            settle_to: Some(-5000),
+                            settle_to: Some(5000),
                             send_routes: false,
                             receive_routes: true,
                             routing_relation: Some("Child".to_string()),
@@ -339,12 +339,33 @@ fn eth_xrp_interoperable() {
                                     get_balance(1, node3_http, "admin"),
                                 ])
                                 .and_then(move |balances| {
-                                    assert_eq!(balances[0], -71000); // alice has in total paid 71k Gwei
-                                    assert_eq!(balances[1], -1000); // alice owes bob 1k Gwei
-                                    assert_eq!(balances[2], 1000); // bob is owed 1k Gwei by alice
-                                    assert_eq!(balances[3], -5000); // bob owes 5k drops to bob.charlie
-                                    assert_eq!(balances[4], 71000); // bob.charlie has been paid 71k drops
-                                    assert_eq!(balances[5], 5000); // bob.charlie is owed 5k drops by bob
+                                    // Alice has paid Charlie in total 71k Gwei through Bob.
+                                    assert_eq!(balances[0], -71000);
+                                    // Since Alice has configured Bob's
+                                    // `settle_threshold` and `settle_to` to be
+                                    // 70k and -10k respectively, once she
+                                    // exceeded the 70k threshold, she made a 61k
+                                    // Gwei settlement to Bob so that their debt
+                                    // settles down to 10k.
+                                    // From her perspective, Bob's account has a
+                                    // positive 10k balance since she owes him money.
+                                    assert_eq!(balances[1], 10000);
+                                    // From Bob's perspective, Alice's account
+                                    // has a negative sign since he is owed money.
+                                    assert_eq!(balances[2], -10000);
+                                    // As Bob forwards money to Charlie, he also
+                                    // eventually exceeds the `settle_threshold`
+                                    // which incidentally is set to 70k. As a
+                                    // result, he must make a XRP ledger
+                                    // settlement of 66k Drops to get his debt
+                                    // back to the `settle_to` value of charlie,
+                                    // which is 5k (71k - 5k = 66k).
+                                    assert_eq!(balances[3], 5000);
+                                    // Charlie's balance indicates that he's
+                                    // received 71k drops from Alice
+                                    assert_eq!(balances[4], 71000);
+                                    // And he sees is owed 5k by Bob.
+                                    assert_eq!(balances[5], -5000);
 
                                     node2_engine_redis.kill().unwrap();
                                     node3_engine_redis.kill().unwrap();
