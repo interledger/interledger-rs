@@ -11,7 +11,7 @@ use hyper::{Response, StatusCode};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
-use log::{debug, error};
+use log::error;
 use ring::digest::{digest, SHA256};
 use std::{
     marker::PhantomData,
@@ -59,7 +59,7 @@ impl_web! {
             self.store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
-                    let error_msg = "Couldn' load idempotent data".to_owned();
+                    let error_msg = "Couldn't load idempotent data".to_owned();
                     error!("{}", error_msg);
                     error_msg
                 })
@@ -128,8 +128,6 @@ impl_web! {
 
         #[post("/accounts/:account_id/settlements")]
         fn receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
-            debug!("Receive settlement called with {:?} {:?}", account_id, body);
-
             let input = format!("{}{:?}", account_id, body);
             let input_hash = get_hash_of(input.as_ref());
 
