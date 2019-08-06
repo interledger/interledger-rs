@@ -1083,7 +1083,7 @@ impl IdempotentStore for RedisStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
         let idempotency_key_clone = idempotency_key.clone();
         Box::new(
             cmd("HGETALL")
@@ -1104,13 +1104,13 @@ impl IdempotentStore for RedisStore {
                         trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
                         let mut input_hash: [u8; 32] = Default::default();
                         input_hash.copy_from_slice(input_hash_slice.as_ref());
-                        Ok((
+                        Ok(Some((
                             StatusCode::from_str(status_code).unwrap(),
                             Bytes::from(data.clone()),
                             input_hash,
-                        ))
+                        )))
                     } else {
-                        Err(())
+                        Ok(None)
                     }
                 }),
         )

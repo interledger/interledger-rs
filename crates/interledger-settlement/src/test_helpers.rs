@@ -97,14 +97,14 @@ impl IdempotentStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
         let cache = self.cache.read();
         if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
             *guard += 1; // used to test how many times this branch gets executed
-            Box::new(ok((data.0, data.1.clone(), data.2)))
+            Box::new(ok(Some((data.0, data.1.clone(), data.2))))
         } else {
-            Box::new(err(()))
+            Box::new(ok(None))
         }
     }
 

@@ -57,7 +57,7 @@ impl_web! {
             &self,
             idempotency_key: String,
             input_hash: [u8; 32],
-        ) -> impl Future<Item = (StatusCode, Bytes), Error = String> {
+        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String> {
             self.store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
@@ -65,11 +65,15 @@ impl_web! {
                     error!("{}", error_msg);
                     error_msg
                 })
-                .and_then(move |ret: IdempotentData| {
-                    if ret.2 == input_hash {
-                        Ok((ret.0, ret.1))
+                .and_then(move |ret: Option<IdempotentData>| {
+                    if let Some(ret) = ret {
+                        if ret.2 == input_hash {
+                            Ok(Some((ret.0, ret.1)))
+                        } else {
+                            Ok(Some((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..]))))
+                        }
                     } else {
-                        Ok((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..])))
+                        Ok(None)
                     }
                 })
         }
@@ -83,8 +87,12 @@ impl_web! {
                 // key, perform the call and save the idempotent return data
                 Either::A(
                     self.check_idempotency(idempotency_key.clone(), input_hash)
-                    .then(move |ret: Result<(StatusCode, Bytes), String>| {
-                        if let Ok(ret) = ret {
+                    .map_err(move |err| {
+                        let status_code = StatusCode::from_u16(500).unwrap();
+                        Response::builder().status(status_code).body(err).unwrap()
+                    })
+                    .and_then(move |ret: Option<(StatusCode, Bytes)>| {
+                        if let Some(ret) = ret {
                             if ret.0.is_success() {
                                 let resp = Response::builder().status(ret.0).body(ret.1).unwrap();
                                 return Either::A(Either::A(ok(resp)))

@@ -43,7 +43,7 @@ impl IdempotentEngineStore for EngineRedisStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentEngineData, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Option<IdempotentEngineData>, Error = ()> + Send> {
         let idempotency_key_clone = idempotency_key.clone();
         Box::new(
             cmd("HGETALL")
@@ -65,13 +65,13 @@ impl IdempotentEngineStore for EngineRedisStore {
                             trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
                             let mut input_hash: [u8; 32] = Default::default();
                             input_hash.copy_from_slice(input_hash_slice.as_ref());
-                            Ok((
+                            Ok(Some((
                                 StatusCode::from_str(status_code).unwrap(),
                                 Bytes::from(data.clone()),
                                 input_hash,
-                            ))
+                            )))
                         } else {
-                            Err(())
+                            Ok(None)
                         }
                     },
                 ),
@@ -137,20 +137,23 @@ mod tests {
                         .load_idempotent_data(IDEMPOTENCY_KEY.clone())
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
                         .and_then(move |data1| {
-                            assert_eq!(data1, (StatusCode::OK, Bytes::from("TEST"), input_hash));
+                            assert_eq!(
+                                data1.unwrap(),
+                                (StatusCode::OK, Bytes::from("TEST"), input_hash)
+                            );
                             let _ = context;
 
                             store
                                 .load_idempotent_data("asdf".to_string())
                                 .map_err(|err| eprintln!("Redis error: {:?}", err))
-                                .and_then(move |_data2| {
-                                    assert_eq!(_data2.0, StatusCode::OK);
+                                .and_then(move |data2| {
+                                    assert!(data2.is_none());
                                     let _ = context;
                                     Ok(())
                                 })
                         })
                 })
         }))
-        .unwrap_err() // the second idempotent load fails
+        .unwrap()
     }
 }
