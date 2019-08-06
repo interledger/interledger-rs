@@ -35,6 +35,15 @@ jobs:
               nvm install node
               npm install -g ganache-cli
       - run:
+          name: Install the XRP Engine
+          command: |
+              sudo apt-get install git
+              git clone https://github.com/interledgerjs/settlement-xrp
+              # make the engine globally available
+              source ~/.nvm/nvm.sh
+              cd settlement-xrp && npm install
+              ./node_modules/typescript/bin/tsc && npm link && cd ../
+      - run:
           name: Build
           command: cargo build --all-features --all-targets
       - run:

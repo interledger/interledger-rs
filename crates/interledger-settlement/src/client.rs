@@ -4,7 +4,7 @@ use futures::{
     Future,
 };
 use interledger_ildcp::IldcpAccount;
-use log::{error, trace};
+use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use serde_json::json;
 use uuid::Uuid;
@@ -38,10 +38,9 @@ impl SettlementClient {
                 .push("accounts")
                 .push(&account.id().to_string())
                 .push("settlements");
-            trace!(
+            debug!(
                 "Sending settlement of amount {} to settlement engine: {}",
-                amount,
-                settlement_engine_url
+                amount, settlement_engine_url
             );
             let settlement_engine_url_clone = settlement_engine_url.clone();
             let asset_scale = settlement_engine.asset_scale;

@@ -8,32 +8,26 @@ use interledger::{
 };
 use interledger_packet::Address;
 use std::str::FromStr;
-use std::thread::sleep;
-use std::time::Duration;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
 use redis_helpers::*;
 
 mod test_helpers;
-use test_helpers::{
-    create_account, get_balance, send_money, start_eth_engine, start_ganache, ETH_DECIMALS,
-};
+use test_helpers::{create_account, get_balance, send_money, start_xrp_engine, XRP_DECIMALS};
 
 #[test]
 /// In this test we have Alice and Bob who have peered with each other and run
-/// Ethereum ledger settlement engines. Alice proceeds to make SPSP payments to
+/// XRP ledger settlement engines. Alice proceeds to make SPSP payments to
 /// Bob, until she eventually reaches Bob's `settle_threshold`. Once that's
 /// exceeded, her engine makes a settlement request to Bob. Alice's connector
 /// immediately applies the balance change. Bob's engine listens for incoming
 /// transactions, and once the transaction has sufficient confirmations it
 /// lets Bob's connector know about it, so that it adjusts their credit.
-fn eth_ledger_settlement() {
+fn xrp_ledger_settlement() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
     let context = TestContext::new();
-
-    let mut ganache_pid = start_ganache();
 
     // Each node will use its own DB within the redis instance
     let mut connection_info1 = context.get_client_connection_info();
@@ -44,11 +38,30 @@ fn eth_ledger_settlement() {
     let node1_http = get_open_port(Some(3010));
     let node1_settlement = get_open_port(Some(3011));
     let node1_engine = get_open_port(Some(3012));
-    let alice_key = "380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc".to_string();
+
     let node2_http = get_open_port(Some(3020));
     let node2_settlement = get_open_port(Some(3021));
     let node2_engine = get_open_port(Some(3022));
-    let bob_key = "cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e".to_string();
+
+    // spawn 2 redis servers for the XRP engines
+    let alice_redis_port = get_open_port(Some(6379));
+    let bob_redis_port = get_open_port(Some(6380));
+    let mut alice_engine_redis = RedisServer::spawn_with_port(alice_redis_port);
+    let mut bob_engine_redis = RedisServer::spawn_with_port(bob_redis_port);
+    let mut engine_alice = start_xrp_engine(
+        "http://localhost:3011",
+        alice_redis_port,
+        node1_engine,
+        "rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV",
+        "sahVoeg97nuitefnzL9GHjp2Z6kpj",
+    );
+    let mut engine_bob = start_xrp_engine(
+        "http://localhost:3021",
+        bob_redis_port,
+        node2_engine,
+        "r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K",
+        "ssnYUDNeNQrNij2EVJG6dDw258jA6",
+    );
 
     let mut runtime = RuntimeBuilder::new()
         .panic_handler(|_| panic!("Tokio worker panicked"))
@@ -69,62 +82,55 @@ fn eth_ledger_settlement() {
     };
     let node1_clone = node1.clone();
     runtime.spawn(
-        start_eth_engine(connection_info1, node1_engine, alice_key, node1_settlement).and_then(
-            move |_| {
-                // TODO insert the accounts via HTTP request
-                node1_clone
-                    .insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.alice").unwrap(),
-                        asset_code: "ETH".to_string(),
-                        asset_scale: ETH_DECIMALS,
-                        btp_incoming_token: None,
-                        btp_uri: None,
-                        http_endpoint: None,
-                        http_incoming_token: Some("in_alice".to_string()),
-                        http_outgoing_token: Some("out_alice".to_string()),
-                        max_packet_amount: 10,
-                        min_balance: None,
-                        settle_threshold: None,
-                        settle_to: Some(-10),
-                        send_routes: false,
-                        receive_routes: false,
-                        routing_relation: None,
-                        round_trip_time: None,
-                        packets_per_minute_limit: None,
-                        amount_per_minute_limit: None,
-                        settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
-                    })
-                    .and_then(move |_| {
-                        node1_clone.insert_account(AccountDetails {
-                            ilp_address: Address::from_str("example.bob").unwrap(),
-                            asset_code: "ETH".to_string(),
-                            asset_scale: ETH_DECIMALS,
-                            btp_incoming_token: None,
-                            btp_uri: None,
-                            http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                            http_incoming_token: Some("bob".to_string()),
-                            http_outgoing_token: Some("alice".to_string()),
-                            max_packet_amount: 10,
-                            min_balance: Some(-100),
-                            settle_threshold: Some(70),
-                            settle_to: Some(10),
-                            send_routes: false,
-                            receive_routes: false,
-                            routing_relation: None,
-                            round_trip_time: None,
-                            packets_per_minute_limit: None,
-                            amount_per_minute_limit: None,
-                            settlement_engine_url: Some(format!(
-                                "http://localhost:{}",
-                                node1_engine
-                            )),
-                            settlement_engine_asset_scale: Some(ETH_DECIMALS),
-                        })
-                    })
-                    .and_then(move |_| node1.serve())
-            },
-        ),
+        // TODO insert the accounts via HTTP request
+        node1_clone
+            .insert_account(AccountDetails {
+                ilp_address: Address::from_str("example.alice").unwrap(),
+                asset_code: "XRP".to_string(),
+                asset_scale: XRP_DECIMALS,
+                btp_incoming_token: None,
+                btp_uri: None,
+                http_endpoint: None,
+                http_incoming_token: Some("in_alice".to_string()),
+                http_outgoing_token: Some("out_alice".to_string()),
+                max_packet_amount: 10,
+                min_balance: None,
+                settle_threshold: None,
+                settle_to: Some(-10),
+                send_routes: false,
+                receive_routes: false,
+                routing_relation: None,
+                round_trip_time: None,
+                packets_per_minute_limit: None,
+                amount_per_minute_limit: None,
+                settlement_engine_url: None,
+                settlement_engine_asset_scale: None,
+            })
+            .and_then(move |_| {
+                node1_clone.insert_account(AccountDetails {
+                    ilp_address: Address::from_str("example.bob").unwrap(),
+                    asset_code: "XRP".to_string(),
+                    asset_scale: XRP_DECIMALS,
+                    btp_incoming_token: None,
+                    btp_uri: None,
+                    http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
+                    http_incoming_token: Some("bob".to_string()),
+                    http_outgoing_token: Some("alice".to_string()),
+                    max_packet_amount: 10,
+                    min_balance: Some(-100),
+                    settle_threshold: Some(70),
+                    settle_to: Some(10),
+                    send_routes: false,
+                    receive_routes: false,
+                    routing_relation: None,
+                    round_trip_time: None,
+                    packets_per_minute_limit: None,
+                    amount_per_minute_limit: None,
+                    settlement_engine_url: Some(format!("http://localhost:{}", node1_engine)),
+                    settlement_engine_asset_scale: Some(XRP_DECIMALS),
+                })
+            })
+            .and_then(move |_| node1.serve()),
     );
 
     let node2_secret = cli::random_secret();
@@ -140,62 +146,55 @@ fn eth_ledger_settlement() {
         route_broadcast_interval: Some(200),
     };
     runtime.spawn(
-        start_eth_engine(connection_info2, node2_engine, bob_key, node2_settlement).and_then(
-            move |_| {
+        node2
+            .insert_account(AccountDetails {
+                ilp_address: Address::from_str("example.bob").unwrap(),
+                asset_code: "XRP".to_string(),
+                asset_scale: XRP_DECIMALS,
+                btp_incoming_token: None,
+                btp_uri: None,
+                http_endpoint: None,
+                http_incoming_token: Some("in_bob".to_string()),
+                http_outgoing_token: Some("out_bob".to_string()),
+                max_packet_amount: 10,
+                min_balance: None,
+                settle_threshold: None,
+                settle_to: None,
+                send_routes: false,
+                receive_routes: false,
+                routing_relation: None,
+                round_trip_time: None,
+                packets_per_minute_limit: None,
+                amount_per_minute_limit: None,
+                settlement_engine_url: None,
+                settlement_engine_asset_scale: None,
+            })
+            .and_then(move |_| {
                 node2
                     .insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.bob").unwrap(),
-                        asset_code: "ETH".to_string(),
-                        asset_scale: ETH_DECIMALS,
+                        ilp_address: Address::from_str("example.alice").unwrap(),
+                        asset_code: "XRP".to_string(),
+                        asset_scale: XRP_DECIMALS,
                         btp_incoming_token: None,
                         btp_uri: None,
-                        http_endpoint: None,
-                        http_incoming_token: Some("in_bob".to_string()),
-                        http_outgoing_token: Some("out_bob".to_string()),
+                        http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
+                        http_incoming_token: Some("alice".to_string()),
+                        http_outgoing_token: Some("bob".to_string()),
                         max_packet_amount: 10,
-                        min_balance: None,
-                        settle_threshold: None,
-                        settle_to: None,
+                        min_balance: Some(-100),
+                        settle_threshold: Some(70),
+                        settle_to: Some(-10),
                         send_routes: false,
                         receive_routes: false,
                         routing_relation: None,
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
-                        settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
+                        settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
+                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
                     })
-                    .and_then(move |_| {
-                        node2
-                            .insert_account(AccountDetails {
-                                ilp_address: Address::from_str("example.alice").unwrap(),
-                                asset_code: "ETH".to_string(),
-                                asset_scale: ETH_DECIMALS,
-                                btp_incoming_token: None,
-                                btp_uri: None,
-                                http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
-                                http_incoming_token: Some("alice".to_string()),
-                                http_outgoing_token: Some("bob".to_string()),
-                                max_packet_amount: 10,
-                                min_balance: Some(-100),
-                                settle_threshold: Some(70),
-                                settle_to: Some(-10),
-                                send_routes: false,
-                                receive_routes: false,
-                                routing_relation: None,
-                                round_trip_time: None,
-                                packets_per_minute_limit: None,
-                                amount_per_minute_limit: None,
-                                settlement_engine_url: Some(format!(
-                                    "http://localhost:{}",
-                                    node2_engine
-                                )),
-                                settlement_engine_asset_scale: Some(ETH_DECIMALS),
-                            })
-                            .and_then(move |_| node2.serve())
-                    })
-            },
-        ),
+                    .and_then(move |_| node2.serve())
+            }),
     );
 
     runtime
@@ -255,18 +254,26 @@ fn eth_ledger_settlement() {
                         // exceed the settle_threshold and thus a settlement is made
                         .and_then(move |_| send4)
                         .and_then(move |_| {
-                            // Wait a few seconds so that the receiver's engine
-                            // gets the data
-                            sleep(Duration::from_secs(5));
                             // Since the credit connection reached -71, and the
-                            // settle_to is -10, a 61 Wei transaction is made.
+                            // settle_to is -10, a 61 drops transaction is made.
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
                                 assert_eq!(ret, "{\"balance\":\"10\"}");
-                                get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-10\"}");
-                                    ganache_pid.kill().unwrap();
-                                    Ok(())
-                                })
+                                // Wait a few seconds so that the receiver's engine
+                                // gets the data and applies it (longer than the
+                                // Ethereum engine since we're using a public
+                                // testnet here)
+                                delay(10000)
+                                    .map_err(move |_| panic!("Weird error."))
+                                    .and_then(move |_| {
+                                        get_balance(1, node2_http, "alice").and_then(move |ret| {
+                                            assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                            alice_engine_redis.kill().unwrap();
+                                            engine_alice.kill().unwrap();
+                                            bob_engine_redis.kill().unwrap();
+                                            engine_bob.kill().unwrap();
+                                            Ok(())
+                                        })
+                                    })
                             })
                         })
                 }),

@@ -66,6 +66,21 @@ impl ServerType {
 }
 
 impl RedisServer {
+    pub fn spawn_with_port(port: u16) -> std::process::Child {
+        let mut cmd = process::Command::new("redis-server");
+        cmd.stdout(process::Stdio::null())
+            .stderr(process::Stdio::null())
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--bind")
+            .arg("127.0.0.1");
+
+        cmd.spawn().expect(
+            "Could not spawn redis-server process, please ensure \
+             that all redis components are installed",
+        )
+    }
+
     pub fn new() -> RedisServer {
         let server_type = ServerType::get_intended();
         let mut cmd = process::Command::new("redis-server");

@@ -6,10 +6,16 @@ then
     PORT=7770
     RECEIVER=8770
     AUTH=in_alice
-else
+elif [[ $1 == bob ]]
+then
     PORT=8770
     RECEIVER=7770
     AUTH=in_bob
+elif [[ $1 == charlie ]]
+then # alice to charlie
+    PORT=7770
+    RECEIVER=9770
+    AUTH=in_alice
 fi
 
 if [ ! -z "$2"  ]
@@ -30,9 +36,3 @@ printf "\n----\n"
 
 echo "Alice's balance on Bob's store"
 curl localhost:8770/accounts/1/balance -H "Authorization: Bearer alice"
-
-printf "\n----\n"
-
-# dump the settlement transactions
-geth --exec "eth.getTransaction(eth.getBlock(eth.blockNumber-1).transactions[0])" attach http://localhost:8545
-geth --exec "eth.getTransaction(eth.getBlock(eth.blockNumber).transactions[0])" attach http://localhost:8545
