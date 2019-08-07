@@ -15,8 +15,8 @@ path = "src/lib.rs"
 bytes = "0.4.12"
 clap = "2.32.0"
 futures = "0.1.25"
-hashbrown = "0.1.8"
 interledger-api = { path = "../interledger-api", version = "0.1.0" }
+interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-btp = { path = "../interledger-btp", version = "0.2.1" }
 interledger-ccp = { path = "../interledger-ccp", version = "0.1.0" }
 interledger-http = { path = "../interledger-http", version = "0.2.1" }
@@ -24,14 +24,18 @@ interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 interledger-router = { path = "../interledger-router", version = "0.2.1" }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
+interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
 log = "0.4.6"
 parking_lot = "0.7.1"
 redis = { version = "0.10.0", features = [ "with-unix-sockets" ] }
+ring = "0.14.6"
 serde = { version = "1.0.89", features = ["derive"] }
 stream-cancel = "0.4.4"
 tokio-executor = "0.1.6"
 tokio-timer = "0.2.10"
 url = "1.7.2"
+http = "0.1.17"
+
 
 [dev-dependencies]
 env_logger = "0.6.1"
@@ -39,3 +43,4 @@ lazy_static = "1.3.0"
 net2 = "0.2.33"
 rand = "0.6.5"
 tokio = "0.1.18"
+os_type="2.2"

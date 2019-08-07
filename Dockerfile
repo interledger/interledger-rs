@@ -1,73 +1,53 @@
-# Build Node.js into standalone binaries
-FROM node:11 as node
-
-RUN npm install -g nexe@^3.0.0-beta.15
-
-ENV PLATFORM alpine
-ENV ARCH x64
-ENV NODE 10.15.3
-
-# Build settlement engine
-WORKDIR /usr/src/settlement-engines/xrp
-COPY ./settlement-engines /usr/src/settlement-engines
-RUN npm install
-RUN npm run build
-RUN nexe \
-    --target ${PLATFORM}-${ARCH}-${NODE} \
-    ./build/cli.js \
-    --output \
-    /usr/local/bin/xrp-settlement-engine \
-    --resource \
-    "./scripts/*.lua"
-
-# Build run script
-WORKDIR /usr/src
-COPY ./run-interledger-node.js ./run-interledger-node.js
-RUN nexe \
-    --target ${PLATFORM}-${ARCH}-${NODE} \
-    ./run-interledger-node.js \
-    --output \
-    /usr/local/bin/run-interledger-node
-
 # Build Interledger node into standalone binary
-FROM clux/muslrust as rust
+FROM clux/muslrust:stable as rust
 
 WORKDIR /usr/src
 COPY ./Cargo.toml /usr/src/Cargo.toml
 COPY ./crates /usr/src/crates
 
-# TODO build release
-RUN cargo build --package interledger
+# TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
+# to ensure that the dependencies are cached so the build doesn't take as long
+RUN cargo build --release --package interledger
+# RUN cargo build --package interledger
 
-
-# Copy the binaries into the final stage
-FROM alpine:latest
+FROM alpine
 
 # Expose ports for HTTP and BTP
 EXPOSE 7768
 EXPOSE 7770
 
-VOLUME [ "/data" ]
-ENV REDIS_DIR=/data
+# To save the node's data across runs, mount a volume called "/data".
+# You can do this by adding the option `-v data-volume-name:/data`
+# when calling `docker run`.
 
-WORKDIR /usr/local/bin
+VOLUME [ "/data" ]
 
 # Install SSL certs and Redis
 RUN apk --no-cache add \
     ca-certificates \
     redis
 
-# Copy in Node.js bundles
-COPY --from=node \
-    /usr/local/bin/xrp-settlement-engine \
-    /usr/local/bin/xrp-settlement-engine
-COPY --from=node \
-    /usr/local/bin/run-interledger-node \
-    /usr/local/bin/run-interledger-node
-
 # Copy Interledger binary
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/debug/interledger \
+    /usr/src/target/x86_64-unknown-linux-musl/release/interledger \
     /usr/local/bin/interledger
+# COPY --from=rust \
+#     /usr/src/target/x86_64-unknown-linux-musl/debug/interledger \
+#     /usr/local/bin/interledger
 
-CMD ["run-interledger-node"]
+WORKDIR /opt/app
+
+COPY redis.conf redis.conf
+COPY run-node-and-redis.sh run-node-and-redis.sh
+
+# ENV RUST_BACKTRACE=1
+ENV RUST_LOG=interledger/.*
+
+# In order for the node to access the config file, you need to mount
+# the directory with the node's config.yml file as a Docker volume
+# called "/config". You can do this by adding the option
+# `-v /path/to/config.yml:/config` when calling `docker run`.
+VOLUME [ "/config" ]
+
+ENTRYPOINT [ "/bin/sh", "./run-node-and-redis.sh" ]
+CMD [ "-c", "/config/config.yml" ]

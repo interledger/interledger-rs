@@ -6,36 +6,40 @@ use futures::{
     future::{err, ok},
     Future,
 };
-use hashbrown::HashMap;
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
     OutgoingService,
 };
+#[cfg(test)]
+use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::str::FromStr;
 use std::{iter::FromIterator, sync::Arc};
 
 lazy_static! {
     pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 1,
-        ilp_address: Bytes::from("example.peer"),
+        ilp_address: Address::from_str("example.peer").unwrap(),
         send_routes: true,
         receive_routes: true,
         relation: RoutingRelation::Peer,
     };
     pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 2,
-        ilp_address: Bytes::from("example.me.child"),
+        ilp_address: Address::from_str("example.me.child").unwrap(),
         send_routes: false,
         receive_routes: false,
         relation: RoutingRelation::Child,
     };
+    pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
 }
 
 #[derive(Clone, Debug)]
 pub struct TestAccount {
     pub id: u64,
-    pub ilp_address: Bytes,
+    pub ilp_address: Address,
     pub receive_routes: bool,
     pub send_routes: bool,
     pub relation: RoutingRelation,
@@ -45,7 +49,7 @@ impl TestAccount {
     pub fn new(id: u64, ilp_address: &str) -> TestAccount {
         TestAccount {
             id,
-            ilp_address: Bytes::from(ilp_address),
+            ilp_address: Address::from_str(ilp_address).unwrap(),
             receive_routes: true,
             send_routes: true,
             relation: RoutingRelation::Peer,
@@ -70,8 +74,8 @@ impl IldcpAccount for TestAccount {
         9
     }
 
-    fn client_address(&self) -> &[u8] {
-        self.ilp_address.as_ref()
+    fn client_address(&self) -> &Address {
+        &self.ilp_address
     }
 }
 
@@ -110,12 +114,14 @@ impl TestStore {
         configured: HashMap<Bytes, TestAccount>,
     ) -> TestStore {
         TestStore {
-            local: local,
-            configured: configured,
+            local,
+            configured,
             routes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
+
+type RoutingTable<A> = HashMap<Bytes, A>;
 
 impl RouteManagerStore for TestStore {
     type Account = TestAccount;
@@ -123,7 +129,7 @@ impl RouteManagerStore for TestStore {
     fn get_local_and_configured_routes(
         &self,
     ) -> Box<
-        Future<Item = (HashMap<Bytes, TestAccount>, HashMap<Bytes, TestAccount>), Error = ()>
+        dyn Future<Item = (RoutingTable<TestAccount>, RoutingTable<TestAccount>), Error = ()>
             + Send,
     > {
         Box::new(ok((self.local.clone(), self.configured.clone())))
@@ -131,7 +137,7 @@ impl RouteManagerStore for TestStore {
 
     fn get_accounts_to_send_routes_to(
         &self,
-    ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
         let mut accounts: Vec<TestAccount> = self
             .local
             .values()
@@ -144,10 +150,25 @@ impl RouteManagerStore for TestStore {
         Box::new(ok(accounts))
     }
 
-    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (Bytes, TestAccount)>,
-    {
+    fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        let mut accounts: Vec<TestAccount> = self
+            .local
+            .values()
+            .chain(self.configured.values())
+            .chain(self.routes.lock().values())
+            .filter(|account| account.receive_routes)
+            .cloned()
+            .collect();
+        accounts.dedup_by_key(|a| a.id());
+        Box::new(ok(accounts))
+    }
+
+    fn set_routes(
+        &mut self,
+        routes: impl IntoIterator<Item = (Bytes, TestAccount)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Box::new(ok(()))
     }
@@ -159,15 +180,16 @@ pub fn test_service() -> CcpRouteManager<
     TestStore,
     TestAccount,
 > {
-    CcpRouteManager::with_spawn_bool(
-        TestAccount::new(0, "example.connector"),
+    let addr = Address::from_str("example.connector").unwrap();
+    CcpRouteManagerBuilder::new(
+        addr.clone(),
         TestStore::new(),
         outgoing_service_fn(|_request| {
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other outgoing handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
@@ -176,13 +198,17 @@ pub fn test_service() -> CcpRouteManager<
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
-        false,
     )
+    .disable_spawn()
+    .ilp_address(addr)
+    .to_service()
 }
+
+type OutgoingRequests = Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>>;
 
 pub fn test_service_with_routes() -> (
     CcpRouteManager<
@@ -191,7 +217,7 @@ pub fn test_service_with_routes() -> (
         TestStore,
         TestAccount,
     >,
-    Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>>,
+    OutgoingRequests,
 ) {
     let local_routes = HashMap::from_iter(vec![
         (
@@ -202,7 +228,7 @@ pub fn test_service_with_routes() -> (
             Bytes::from("example.connector.other-local"),
             TestAccount {
                 id: 3,
-                ilp_address: Bytes::from("example.connector.other-local"),
+                ilp_address: Address::from_str("example.connector.other-local").unwrap(),
                 send_routes: false,
                 receive_routes: false,
                 relation: RoutingRelation::Child,
@@ -221,8 +247,9 @@ pub fn test_service_with_routes() -> (
         (*outgoing_requests_clone.lock()).push(request);
         Ok(CCP_RESPONSE.clone())
     });
-    let service = CcpRouteManager::with_spawn_bool(
-        TestAccount::new(0, "example.connector"),
+    let addr = Address::from_str("example.connector").unwrap();
+    let service = CcpRouteManagerBuilder::new(
+        addr.clone(),
         store,
         outgoing,
         incoming_service_fn(|_request| {
@@ -230,12 +257,14 @@ pub fn test_service_with_routes() -> (
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"No other incoming handler!",
                 data: &[],
-                triggered_by: b"example.connector",
+                triggered_by: Some(&EXAMPLE_CONNECTOR),
             }
             .build()))
         }),
-        false,
-    );
+    )
+    .disable_spawn()
+    .ilp_address(addr)
+    .to_service();
     (service, outgoing_requests)
 }
 /* kcov-ignore-end */

@@ -1,4 +1,5 @@
 use chrono;
+use quick_error::quick_error;
 use std;
 use std::str::Utf8Error;
 use std::string::FromUtf8Error;
@@ -34,7 +35,7 @@ quick_error! {
             description(descr)
             display("Invalid Packet {}", descr)
         }
-        Other(err: Box<std::error::Error>) {
+        Other(err: Box<dyn std::error::Error>) {
             cause(&**err)
             description(err.description())
             display("Error {}", err.description())

@@ -1,23 +1,44 @@
 // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
 #![allow(dead_code)]
 
-extern crate futures;
-extern crate net2;
-extern crate rand;
-
 use redis;
 
 use std::env;
 use std::fs;
 use std::process;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use std::path::PathBuf;
 
-use self::futures::Future;
+use futures::Future;
 
 use redis::RedisError;
+
+use tokio::timer::Delay;
+
+pub fn get_open_port(try_port: Option<u16>) -> u16 {
+    if let Some(port) = try_port {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind(&format!("127.0.0.1:{}", port)) {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+
+    for _i in 0..1000 {
+        let listener = net2::TcpBuilder::new_v4().unwrap();
+        listener.reuse_address(true).unwrap();
+        if let Ok(listener) = listener.bind("127.0.0.1:0") {
+            return listener.listen(1).unwrap().local_addr().unwrap().port();
+        }
+    }
+    panic!("Cannot find open port!");
+}
+
+pub fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
+    Delay::new(Instant::now() + Duration::from_millis(ms)).map_err(|err| panic!(err))
+}
 
 #[derive(PartialEq)]
 enum ServerType {
@@ -37,9 +58,9 @@ impl ServerType {
             .as_ref()
             .map(|x| &x[..])
         {
-            // Default to TCP unlike original version
-            Some("unix") => ServerType::Unix,
-            _ => ServerType::Tcp,
+            // Default to unix socket unlike original version
+            Some("tcp") => ServerType::Tcp,
+            _ => ServerType::Unix,
         }
     }
 }
@@ -78,11 +99,11 @@ impl RedisServer {
             }
         };
 
-        let process = cmd.spawn().unwrap();
-        RedisServer {
-            process: process,
-            addr: addr,
-        }
+        let process = cmd.spawn().expect(
+            "Could not spawn redis-server process, please ensure \
+             that all redis components are installed",
+        );
+        RedisServer { process, addr }
     }
 
     pub fn wait(&mut self) {
@@ -96,12 +117,15 @@ impl RedisServer {
     pub fn stop(&mut self) {
         let _ = self.process.kill();
         let _ = self.process.wait();
-        match *self.get_client_addr() {
-            redis::ConnectionAddr::Unix(ref path) => {
-                fs::remove_file(&path).ok();
-            }
-            _ => {}
+        if let redis::ConnectionAddr::Unix(ref path) = *self.get_client_addr() {
+            fs::remove_file(&path).ok();
         }
+    }
+}
+
+impl Default for RedisServer {
+    fn default() -> Self {
+        RedisServer::new()
     }
 }
 
@@ -144,12 +168,9 @@ impl TestContext {
                 }
             }
         }
-        redis::cmd("FLUSHDB").execute(&con);
+        redis::cmd("FLUSHALL").execute(&con);
 
-        TestContext {
-            server: server,
-            client: client,
-        }
+        TestContext { server, client }
     }
 
     // This one was added and not in the original file
@@ -179,5 +200,11 @@ impl TestContext {
         &self,
     ) -> impl Future<Item = redis::r#async::SharedConnection, Error = RedisError> {
         self.client.get_shared_async_connection()
+    }
+}
+
+impl Default for TestContext {
+    fn default() -> Self {
+        TestContext::new()
     }
 }

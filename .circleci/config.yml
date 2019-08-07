@@ -5,55 +5,90 @@ jobs:
       - image: circleci/rust
         environment:
           CARGO_HOME: /home/circleci/.cargo
+    resource_class: medium+
     steps:
       - checkout
       - restore_cache:
           keys:
-            - project-v4-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-            - project-v4-{{ checksum "Cargo.toml" }}
-            - project-v4-
+            - cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+            - cargo-cache-1-{{ checksum "Cargo.toml" }}
+            - cargo-cache-1-
       - run:
           name: Install Cargo Extensions
-          command: cargo install --quiet cargo-kcov cargo-audit || true
+          command: |
+            cargo install --quiet cargo-audit || true # cargo-kcov
+            rustup component add rustfmt clippy || true
       - run:
-          name: Install rustfmt
-          command: rustup component add rustfmt || true
+          name: Install Redis
+          # Install from stretch-backports to get the latest version
+          # The normal repository has version 3.2, which doesn't support redis modules
+          command: |
+            echo "deb http://deb.debian.org/debian stretch-backports main" | sudo tee -a /etc/apt/sources.list
+            sudo apt-get update
+            sudo apt-get -t stretch-backports install redis-server
+            redis-server --version
       - run:
-          name: Install kcov
-          command: >-
-            sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-            && cargo kcov --print-install-kcov-sh | sh
+          name: Install node and ganache
+          command: |
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+              source ~/.nvm/nvm.sh
+              nvm install node
+              npm install -g ganache-cli
       - run:
-          name: Install Redis (for end-to-end test)
-          command: sudo apt-get install redis-server
+          name: Install the XRP Engine
+          command: |
+              sudo apt-get install git
+              git clone https://github.com/interledgerjs/settlement-xrp
+              # make the engine globally available
+              source ~/.nvm/nvm.sh
+              cd settlement-xrp && npm install
+              ./node_modules/typescript/bin/tsc && npm link && cd ../
       - run:
-          name: Build + Test
-          command: cargo test --all --all-features
+          name: Build
+          command: cargo build --all-features --all-targets
+      - run:
+          name: Test
+          # Note the timeout is included to make sure that they 
+          # do not run for more than 10 minutes under any circumstances
+          # (We have had issues with bugs causing the tests to "run"
+          # for 5 hours, wasting a ton of compute credits)
+          command: |
+            source ~/.nvm/nvm.sh
+            timeout 10m cargo test --all --all-features
           environment:
-            # Configure the redis tests to use a unix socket instead of TCP
-            REDISRS_SERVER_TYPE: unix
+            RUST_BACKTRACE: "1"
       - run:
-          name: Check Formatting
-          command: cargo fmt --all -- --check
+          name: Check Style
+          command: |
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --all-features -- -D warnings
       - run:
           name: Audit Dependencies
           command: cargo audit
-      - run:
-          name: Generate Coverage Report
-          command:
-            cargo kcov --all --verbose
-            # -- --verify
-            # --exclude-region="kcov-ignore-start:kcov-ignore-end"
-            # --exclude-pattern="$CARGO_HOME,**/tests/**"
-            # --exclude-line="^(\)*\}*,*)$"
-          environment:
-            # Configure the redis tests to use a unix socket instead of TCP
-            REDISRS_SERVER_TYPE: unix
-      - run:
-          name: Upload Code Coverage
-          command: "bash <(curl -s https://codecov.io/bash)"
+      # - run:
+      #     name: Install kcov
+      #     command: >-
+      #       kcov --version ||
+      #       (sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
+      #       && cargo kcov --print-install-kcov-sh | sh)
+      # - run:
+      #     name: Generate Coverage Report
+      #     # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
+      #     # See discussion in https://github.com/travis-ci/travis-ci/issues/9061
+      #     sudo: required
+      #     command:
+      #       cargo kcov --all --verbose
+      #       # -- --verify
+      #       # --exclude-region="kcov-ignore-start:kcov-ignore-end"
+      #       # --exclude-pattern="$CARGO_HOME,**/tests/**"
+      #       # --exclude-line="^(\)*\}*,*)$"
+      #     environment:
+      #       # Configure the redis tests to use a unix socket instead of TCP
+      #       REDISRS_SERVER_TYPE: unix
+      # - run:
+      #     name: Upload Code Coverage
+      #     command: "bash <(curl -s https://codecov.io/bash)"
       - save_cache:
-          key: project-v4-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+          key: cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
           paths:
-            - ./target
             - /home/circleci/.cargo

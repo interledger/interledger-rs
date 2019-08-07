@@ -3,8 +3,16 @@ use bytes::Bytes;
 use futures::{future::err, Future};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
+use log::{error, trace};
 use std::str;
 
+/// # Interledger Router
+///
+/// The `Router` implements an incoming service and includes an outgoing service.
+/// It determines the next account to forward to and passes it on.
+/// Both incoming and outgoing services can respond to requests but many just pass the request on.
+/// The `Router` requires a `RouterStore`, which keeps track of the entire routing table. Once the `Router` receives a Prepare, it checks its destination and if it finds it in the routing table
+///
 /// The router implements the IncomingService trait and uses the routing table
 /// to determine the `to` (or "next hop") Account for the given request.
 ///
@@ -12,39 +20,49 @@ use std::str;
 ///   - apply exchange rates or fees to the Prepare packet
 ///   - adjust account balances
 ///   - reduce the Prepare packet's expiry
+///
+/// That is done by OutgoingServices.
+
 #[derive(Clone)]
-pub struct Router<T, S> {
-    store: T,
-    next: S,
+pub struct Router<S, O> {
+    store: S,
+    next: O,
 }
 
-impl<T, S> Router<T, S>
+impl<S, O> Router<S, O>
 where
-    T: RouterStore,
-    S: OutgoingService<T::Account>,
+    S: RouterStore,
+    O: OutgoingService<S::Account>,
 {
-    pub fn new(store: T, next: S) -> Self {
-        Router { next, store }
+    pub fn new(store: S, next: O) -> Self {
+        Router { store, next }
     }
 }
 
-impl<T, S> IncomingService<T::Account> for Router<T, S>
+impl<S, O> IncomingService<S::Account> for Router<S, O>
 where
-    T: RouterStore,
-    S: OutgoingService<T::Account> + Clone + Send + 'static,
+    S: RouterStore,
+    O: OutgoingService<S::Account> + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest<T::Account>) -> Self::Future {
-        let destination = Bytes::from(request.prepare.destination());
-        let mut next_hop: Option<<T::Account as Account>::AccountId> = None;
+    /// Figures out the next node to pass the received Prepare packet to.
+    ///
+    /// Firstly, it checks if there is a direct path for that account and use that.
+    /// If not it scans through the routing table and checks if the route prefix matches
+    /// the prepare packet's destination or if it's a catch-all address (i.e. empty prefix)
+    fn handle_request(&mut self, request: IncomingRequest<S::Account>) -> Self::Future {
+        let destination = request.prepare.destination();
+        let mut next_hop = None;
         let routing_table = self.store.routing_table();
 
-        // Check if we have a direct path for that account or if we need to scan through the routing table
-        if let Some(account_id) = routing_table.get(&destination) {
-            debug!(
+        // Check if we have a direct path for that account or if we need to scan
+        // through the routing table
+        let dest: &[u8] = destination.as_ref();
+        if let Some(account_id) = routing_table.get(dest) {
+            trace!(
                 "Found direct route for address: \"{}\". Account: {}",
-                str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
+                destination,
                 account_id
             );
             next_hop = Some(*account_id);
@@ -57,23 +75,23 @@ where
                     route.1
                 );
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
-                if (route.0.is_empty() || destination.starts_with(&route.0[..]))
+                if (route.0.is_empty() || dest.starts_with(&route.0[..]))
                     && route.0.len() >= matching_prefix.len()
                 {
                     next_hop.replace(route.1);
-                    matching_prefix = route.0.clone();
+                    matching_prefix = route.0;
                 }
             }
             if let Some(account_id) = next_hop {
-                debug!(
+                trace!(
                     "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
-                    str::from_utf8(&destination[..]).unwrap_or("<not utf8>"),
+                    destination,
                     str::from_utf8(&matching_prefix[..]).unwrap_or("<not utf8>"),
                     account_id,
                 );
             }
         } else {
-            warn!("Unable to route request because routing table is empty");
+            error!("Unable to route request because routing table is empty");
         }
 
         if let Some(account_id) = next_hop {
@@ -86,7 +104,7 @@ where
                         RejectBuilder {
                             code: ErrorCode::F02_UNREACHABLE,
                             message: &[],
-                            triggered_by: &[],
+                            triggered_by: None,
                             data: &[],
                         }
                         .build()
@@ -97,11 +115,11 @@ where
                     }),
             )
         } else {
-            debug!("No route found for request: {:?}", request);
+            error!("No route found for request: {:?}", request);
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &[],
             }
             .build()))
@@ -113,11 +131,12 @@ where
 mod tests {
     use super::*;
     use futures::future::ok;
-    use hashbrown::HashMap;
-    use interledger_packet::{FulfillBuilder, PrepareBuilder};
+    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
     use parking_lot::Mutex;
+    use std::collections::HashMap;
     use std::iter::FromIterator;
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::time::UNIX_EPOCH;
 
@@ -142,7 +161,7 @@ mod tests {
         fn get_accounts(
             &self,
             account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-        ) -> Box<Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(account_ids.into_iter().map(TestAccount).collect()))
         }
     }
@@ -172,7 +191,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -203,7 +222,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -236,7 +255,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -267,7 +286,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -298,7 +317,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,
@@ -340,7 +359,7 @@ mod tests {
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
                 prepare: PrepareBuilder {
-                    destination: b"example.destination",
+                    destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
                     execution_condition: &[1; 32],
                     expires_at: UNIX_EPOCH,

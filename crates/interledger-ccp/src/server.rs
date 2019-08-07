@@ -1,18 +1,33 @@
-use crate::{packet::*, routing_table::RoutingTable, CcpRoutingAccount, RouteManagerStore};
+#[cfg(test)]
+use crate::packet::PEER_PROTOCOL_CONDITION;
+use crate::{
+    packet::{
+        Mode, Route, RouteControlRequest, RouteUpdateRequest, CCP_CONTROL_DESTINATION,
+        CCP_RESPONSE, CCP_UPDATE_DESTINATION,
+    },
+    routing_table::RoutingTable,
+    CcpRoutingAccount, RouteManagerStore,
+};
 use bytes::Bytes;
 use futures::{
     future::{err, join_all, ok, Either},
     Future, Stream,
 };
-use hashbrown::HashMap;
-use interledger_packet::*;
+#[cfg(test)]
+use interledger_packet::PrepareBuilder;
+use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::{
     Account, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
 };
+#[cfg(test)]
+use lazy_static::lazy_static;
+use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
+use std::collections::HashMap;
 use std::{
     cmp::min,
+    convert::TryFrom,
     str,
     sync::Arc,
     time::{Duration, Instant},
@@ -22,6 +37,7 @@ use tokio_timer::Interval;
 
 const DEFAULT_ROUTE_EXPIRY_TIME: u32 = 45000;
 const DEFAULT_BROADCAST_INTERVAL: u64 = 30000;
+const DUMMY_ROUTING_TABLE_ID: [u8; 16] = [0; 16];
 
 fn hash(preimage: &[u8; 32]) -> [u8; 32] {
     let mut out = [0; 32];
@@ -29,7 +45,86 @@ fn hash(preimage: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
+type NewAndWithdrawnRoutes = (Vec<Route>, Vec<Bytes>);
+
+pub struct CcpRouteManagerBuilder<I, O, S> {
+    /// The next request handler that will be used both to pass on requests that are not CCP messages.
+    next_incoming: I,
+    /// The outgoing request handler that will be used to send outgoing CCP messages.
+    /// Note that this service bypasses the Router because the Route Manager needs to be able to
+    /// send messages directly to specific peers.
+    outgoing: O,
+    /// This represents the routing table we will forward to our peers.
+    /// It is the same as the local_table with our own address added to the path of each route.
+    store: S,
+    ilp_address: Address,
+    global_prefix: Bytes,
+    spawn_tasks: bool,
+    broadcast_interval: u64,
+}
+
+impl<I, O, S, A> CcpRouteManagerBuilder<I, O, S>
+where
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    A: CcpRoutingAccount + Send + Sync + 'static,
+{
+    pub fn new(ilp_address: Address, store: S, outgoing: O, next_incoming: I) -> Self {
+        CcpRouteManagerBuilder {
+            ilp_address,
+            global_prefix: Bytes::from_static(b"g."),
+            next_incoming,
+            outgoing,
+            store,
+            spawn_tasks: true,
+            broadcast_interval: DEFAULT_BROADCAST_INTERVAL,
+        }
+    }
+
+    pub fn ilp_address(&mut self, ilp_address: Address) -> &mut Self {
+        self.global_prefix = ilp_address
+            .to_bytes()
+            .iter()
+            .position(|c| c == &b'.')
+            .map(|index| ilp_address.to_bytes().slice_to(index + 1))
+            .unwrap_or_else(|| ilp_address.to_bytes().clone());
+        self.ilp_address = ilp_address;
+        self
+    }
+
+    pub fn disable_spawn(&mut self) -> &mut Self {
+        self.spawn_tasks = false;
+        self
+    }
+
+    /// Set the broadcast interval (in milliseconds)
+    pub fn broadcast_interval(&mut self, ms: u64) -> &mut Self {
+        self.broadcast_interval = ms;
+        self
+    }
+
+    pub fn to_service(&self) -> CcpRouteManager<I, O, S, A> {
+        let service = CcpRouteManager {
+            ilp_address: self.ilp_address.clone(),
+            global_prefix: self.global_prefix.clone(),
+            next_incoming: self.next_incoming.clone(),
+            outgoing: self.outgoing.clone(),
+            store: self.store.clone(),
+            spawn_tasks: self.spawn_tasks,
+            forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
+            forwarding_table_updates: Arc::new(RwLock::new(Vec::new())),
+            last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
+            local_table: Arc::new(RwLock::new(RoutingTable::default())),
+            incoming_tables: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        if self.spawn_tasks {
+            spawn(service.start_broadcast_interval(self.broadcast_interval));
+        }
+        service
+    }
+}
 
 /// The Routing Manager Service.
 ///
@@ -39,22 +134,21 @@ type NewAndWithDrawnRoutes = (Vec<Route>, Vec<Bytes>);
 /// with the best routes determined by per-account configuration and the broadcasts we have
 /// received from peers.
 #[derive(Clone)]
-pub struct CcpRouteManager<S, T, U, A: Account> {
-    account: A,
-    ilp_address: Bytes,
+pub struct CcpRouteManager<I, O, S, A: Account> {
+    ilp_address: Address,
     global_prefix: Bytes,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
-    next_incoming: S,
+    next_incoming: I,
     /// The outgoing request handler that will be used to send outgoing CCP messages.
     /// Note that this service bypasses the Router because the Route Manager needs to be able to
     /// send messages directly to specific peers.
-    outgoing: T,
+    outgoing: O,
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     forwarding_table: Arc<RwLock<RoutingTable<A>>>,
     last_epoch_updates_sent_for: Arc<Mutex<u32>>,
     /// These updates are stored such that index 0 is the transition from epoch 0 to epoch 1
-    forwarding_table_updates: Arc<RwLock<HashMap<u32, NewAndWithDrawnRoutes>>>,
+    forwarding_table_updates: Arc<RwLock<Vec<NewAndWithdrawnRoutes>>>,
     /// This is the routing table we have compile from configuration and
     /// broadcasts we have received from our peers. It is saved to the Store so that
     /// the Router services forwards packets according to what it says.
@@ -64,7 +158,7 @@ pub struct CcpRouteManager<S, T, U, A: Account> {
     /// Updates from peers are applied to our local_table if they are better than the
     /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
-    store: U,
+    store: S,
     /// If true, tasks will be spawned to process Route Update Requests and respond
     /// to Route Control Requests. If false, the response to the incoming request
     /// will wait until the outgoing messages have been sent out.
@@ -74,77 +168,43 @@ pub struct CcpRouteManager<S, T, U, A: Account> {
     spawn_tasks: bool,
 }
 
-impl<S, T, U, A> CcpRouteManager<S, T, U, A>
+impl<I, O, S, A> CcpRouteManager<I, O, S, A>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: OutgoingService<A> + Clone + Send + Sync + 'static,
-    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
-    /// Create a new Route Manager service and spawn a task to broadcast the routes
-    /// to peers every 30 seconds.
-    pub fn new(account: A, store: U, outgoing: T, next_incoming: S) -> Self {
-        let service =
-            CcpRouteManager::with_spawn_bool(account, store, outgoing, next_incoming, true);
-        spawn(service.broadcast_routes(DEFAULT_BROADCAST_INTERVAL));
-        service
-    }
-
-    /// Create a new Route Manager Service but don't spawn a task to broadcast routes.
-    /// The `broadcast_routes` method must be called directly to start broadcasting.
-    pub fn new_without_spawn_broadcast(
-        account: A,
-        store: U,
-        outgoing: T,
-        next_incoming: S,
-    ) -> Self {
-        CcpRouteManager::with_spawn_bool(account, store, outgoing, next_incoming, false)
-    }
-
-    pub(crate) fn with_spawn_bool(
-        account: A,
-        store: U,
-        outgoing: T,
-        next_incoming: S,
-        spawn_tasks: bool,
-    ) -> Self {
-        // The global prefix is the first part of the address (for example "g." for the global address space, "example", "test", etc)
-        let ilp_address = Bytes::from(account.client_address());
-        let global_prefix: Bytes = ilp_address
-            .iter()
-            .position(|c| c == &b'.')
-            .map(|index| ilp_address.slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.clone());
-
-        CcpRouteManager {
-            account,
-            ilp_address,
-            global_prefix,
-            next_incoming,
-            outgoing,
-            forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
-            forwarding_table_updates: Arc::new(RwLock::new(HashMap::new())),
-            last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
-            local_table: Arc::new(RwLock::new(RoutingTable::default())),
-            incoming_tables: Arc::new(RwLock::new(HashMap::new())),
-            store,
-            spawn_tasks,
-        }
-    }
-
     /// Returns a future that will trigger this service to update its routes and broadcast
     /// updates to peers on the given interval.
-    pub fn broadcast_routes(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
+    pub fn start_broadcast_interval(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
         let clone = self.clone();
-        Interval::new(Instant::now(), Duration::from_millis(interval))
-            .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-            .for_each(move |_| {
-                let clone = clone.clone();
-                clone
-                    .clone()
-                    .update_best_routes(None)
-                    .and_then(move |_| clone.send_route_updates())
+        self.request_all_routes().and_then(move |_| {
+            Interval::new(Instant::now(), Duration::from_millis(interval))
+                .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
+                .for_each(move |_| clone.broadcast_routes())
+        })
+    }
+
+    pub fn broadcast_routes(&self) -> impl Future<Item = (), Error = ()> {
+        let clone = self.clone();
+        self.update_best_routes(None)
+            .and_then(move |_| clone.send_route_updates())
+    }
+
+    /// Request routes from all the peers we are willing to receive routes from.
+    /// This is mostly intended for when the CCP server starts up and doesn't have any routes from peers.
+    fn request_all_routes(&self) -> impl Future<Item = (), Error = ()> {
+        let clone = self.clone();
+        self.store
+            .get_accounts_to_receive_routes_from()
+            .then(|result| {
+                let accounts = result.unwrap_or_else(|_| Vec::new());
+                join_all(accounts.into_iter().map(move |account| {
+                    clone.send_route_control_request(account, DUMMY_ROUTING_TABLE_ID, 0)
+                }))
             })
+            .then(|_| Ok(()))
     }
 
     /// Handle a CCP Route Control Request. If this is from an account that we broadcast routes to,
@@ -157,7 +217,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -168,7 +228,7 @@ where
             return Either::A(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -194,8 +254,8 @@ where
                 (from_epoch_index, to_epoch_index)
             };
 
+            let ilp_address = self.ilp_address.clone();
             if !self.spawn_tasks {
-                let ilp_address = self.ilp_address.clone();
                 return Either::B(
                     self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
                         .map_err(move |_| {
@@ -203,7 +263,7 @@ where
                                 code: ErrorCode::T01_PEER_UNREACHABLE,
                                 message: b"Error sending route update request",
                                 data: &[],
-                                triggered_by: &ilp_address[..],
+                                triggered_by: Some(&ilp_address),
                             }
                             .build()
                         })
@@ -233,7 +293,7 @@ where
                 } else if route.prefix.len() <= self.global_prefix.len() {
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
-                } else if route.path.contains(&self.ilp_address) {
+                } else if route.path.contains(self.ilp_address.as_ref()) {
                     error!(
                         "Got route broadcast with a routing loop (path includes us): {:?}",
                         route
@@ -256,7 +316,7 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -267,13 +327,13 @@ where
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
-                triggered_by: &self.ilp_address[..],
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
         }
         let update = update.unwrap();
-        debug!(
+        trace!(
             "Got route update request from account {}: {:?}",
             request.from.id(),
             update
@@ -288,7 +348,7 @@ where
                 RoutingTable::new(update.routing_table_id),
             );
         }
-        let ilp_address = self.ilp_address.clone();
+
         match (*incoming_tables)
             .get_mut(&request.from.id())
             .expect("Should have inserted a routing table for this account")
@@ -308,7 +368,7 @@ where
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: b"Error processing route update",
                                     data: &[],
-                                    triggered_by: &ilp_address[..],
+                                    triggered_by: Some(&ilp_address),
                                 }
                                 .build()
                             })
@@ -321,7 +381,7 @@ where
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
                     data: &[],
-                    triggered_by: &ilp_address[..],
+                    triggered_by: Some(&self.ilp_address),
                 }
                 .build();
                 let table = &incoming_tables[&request.from.id()];
@@ -344,34 +404,39 @@ where
     /// a Route Update Request from them with a gap in the epochs since the last one we saw.
     fn send_route_control_request(
         &self,
-        to: A,
+        account: A,
         last_known_routing_table_id: [u8; 16],
         last_known_epoch: u32,
     ) -> impl Future<Item = (), Error = ()> {
-        let to_id = to.id();
+        let account_id = account.id();
         let control = RouteControlRequest {
             mode: Mode::Sync,
             last_known_routing_table_id,
             last_known_epoch,
             features: Vec::new(),
         };
-        debug!("Sending Route Control Request to account: {}, last known table id: {}, last known epoch: {}", to.id(), hex::encode(&last_known_routing_table_id[..]), last_known_epoch);
+        debug!("Sending Route Control Request to account: {}, last known table id: {}, last known epoch: {}", account_id, hex::encode(&last_known_routing_table_id[..]), last_known_epoch);
         let prepare = control.to_prepare();
         self.clone()
             .outgoing
             .send_request(OutgoingRequest {
-                from: self.account.clone(),
-                to,
+                // TODO If we start charging or paying for CCP broadcasts we'll need to
+                // have a separate account that we send from, but for now it's fine to
+                // set the peer's account as the from account as well as the to account
+                from: account.clone(),
+                to: account,
+                original_amount: prepare.amount(),
                 prepare,
             })
-            .map_err(move |reject| {
-                error!(
-                    "Error sending Route Control Request to account {}: {:?}",
-                    to_id, reject
-                )
-            })
-            .and_then(move |_| {
-                trace!("Sent Route Control Request to account: {}", to_id);
+            .then(move |result| {
+                if let Err(err) = result {
+                    warn!(
+                        "Error sending Route Control Request to account {}: {:?}",
+                        account_id, err
+                    )
+                } else {
+                    trace!("Sent Route Control Request to account: {}", account_id);
+                }
                 Ok(())
             })
     }
@@ -401,7 +466,7 @@ where
                     let incoming_tables = incoming_tables.read();
 
                     // Either check the given prefixes or check all of our local and configured routes
-                    let prefixes_to_check: Box<Iterator<Item = Bytes>> = if let Some(prefixes) = prefixes {
+                    let prefixes_to_check: Box<dyn Iterator<Item = Bytes>> = if let Some(prefixes) = prefixes {
                         Box::new(prefixes.into_iter())
                     } else {
                         let routes = configured_routes.iter().chain(local_routes.iter());
@@ -460,13 +525,13 @@ where
                             && route.prefix != global_prefix
                             // Don't advertise completely local routes because advertising our own
                             // prefix will make sure we get packets sent to them
-                            && !(route.prefix.starts_with(&ilp_address[..]) && route.path.is_empty())
+                            && !(route.prefix.starts_with(ilp_address.as_ref()) && route.path.is_empty())
                             // Don't include routes we're also withdrawing
                             && !withdrawn_routes.contains(&prefix) {
 
                                 let old_route = forwarding_table.get_route(&prefix);
                                 if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                                    route.path.insert(0, ilp_address.clone());
+                                    route.path.insert(0, ilp_address.to_bytes());
                                     // Each hop hashes the auth before forwarding
                                     route.auth = hash(&route.auth);
                                     forwarding_table.set_route(prefix.clone(), account.clone(), route.clone());
@@ -482,7 +547,8 @@ where
                     }
 
                     let epoch = forwarding_table.increment_epoch();
-                    forwarding_table_updates.insert(epoch, (new_routes, withdrawn_routes));
+                    forwarding_table_updates.push((new_routes, withdrawn_routes));
+                    debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
 
                     Either::A(store.set_routes(local_table.get_simplified_table()))
                 } else {
@@ -496,7 +562,6 @@ where
     /// Send RouteUpdateRequests to all peers that we send routing messages to
     fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
         let mut outgoing = self.outgoing.clone();
-        let account = self.account.clone();
         let to_epoch_index = self.forwarding_table.read().epoch();
 
         let from_epoch_index: u32 = {
@@ -506,14 +571,15 @@ where
             epoch
         };
 
-        debug!(
-            "Sending route udpates for epochs: {} - {}",
-            from_epoch_index, to_epoch_index
+        let route_update_request = self.create_route_update(from_epoch_index, to_epoch_index);
+        trace!(
+            "Sending route udpates for epochs {} - {}: {:?}",
+            from_epoch_index,
+            to_epoch_index,
+            route_update_request,
         );
 
-        let prepare = self
-            .create_route_update(from_epoch_index, to_epoch_index)
-            .to_prepare();
+        let prepare = route_update_request.to_prepare();
         self.store
             .get_accounts_to_send_routes_to()
             .and_then(move |mut accounts| {
@@ -522,25 +588,27 @@ where
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    let account_list: Vec<String> =
-                        accounts.iter().map(|a| a.id().to_string()).collect();
-                    trace!(
-                        "Sending route updates to accounts: {}",
+                    trace!("Sending route updates to accounts: {}", {
+                        let account_list: Vec<String> = accounts
+                            .iter()
+                            .map(|a| format!("{} ({})", a.id(), a.client_address()))
+                            .collect();
                         account_list.join(", ")
-                    );
+                    });
                     Either::A(
-                        join_all(accounts.into_iter().map(move |to| {
-                            let to_id = to.id();
+                        join_all(accounts.into_iter().map(move |account| {
+                            let account_id = account.id();
                             outgoing
                                 .send_request(OutgoingRequest {
                                     from: account.clone(),
-                                    to,
+                                    to: account,
+                                    original_amount: prepare.amount(),
                                     prepare: prepare.clone(),
                                 })
                                 .map_err(move |err| {
-                                    error!(
+                                    warn!(
                                         "Error sending route update to account {}: {:?}",
-                                        to_id, err
+                                        account_id, err
                                     )
                                 })
                                 .and_then(|_| Ok(()))
@@ -564,24 +632,21 @@ where
         from_epoch_index: u32,
         to_epoch_index: u32,
     ) -> RouteUpdateRequest {
+        let (start, end) = (from_epoch_index as usize, to_epoch_index as usize);
         let (routing_table_id, current_epoch_index) = {
             let table = self.forwarding_table.read();
             (table.id(), table.epoch())
         };
         let forwarding_table_updates = self.forwarding_table_updates.read();
-        let epochs_to_take: usize = if to_epoch_index > from_epoch_index {
-            (to_epoch_index - from_epoch_index) as usize
-        } else {
-            0
-        };
+        let epochs_to_take = end.saturating_sub(start);
 
         // Merge the new routes and withdrawn routes from all of the given epochs
         let mut new_routes: Vec<Route> = Vec::with_capacity(epochs_to_take);
         let mut withdrawn_routes: Vec<Bytes> = Vec::new();
         // Iterate through each of the given epochs
         for (new, withdrawn) in forwarding_table_updates
-            .values()
-            .skip(from_epoch_index as usize)
+            .iter()
+            .skip(start)
             .take(epochs_to_take)
         {
             for new_route in new {
@@ -626,30 +691,35 @@ where
     /// This is used when the peer has fallen behind and has requested a specific range of updates.
     fn send_route_update(
         &self,
-        to: A,
+        account: A,
         from_epoch_index: u32,
         to_epoch_index: u32,
     ) -> impl Future<Item = (), Error = ()> {
         let prepare = self
             .create_route_update(from_epoch_index, to_epoch_index)
             .to_prepare();
-        let to_id = to.id();
+        let account_id = account.id();
         debug!(
             "Sending individual route update to account: {} for epochs from: {} to: {}",
-            to.id(),
-            from_epoch_index,
-            to_epoch_index
+            account_id, from_epoch_index, to_epoch_index
         );
         self.outgoing
             .clone()
             .send_request(OutgoingRequest {
-                to,
-                from: self.account.clone(),
+                from: account.clone(),
+                to: account,
+                original_amount: prepare.amount(),
                 prepare,
             })
             .and_then(|_| Ok(()))
-            .map_err(move |err| {
-                error!("Error sending route update to account {}: {:?}", to_id, err)
+            .then(move |result| {
+                if let Err(err) = result {
+                    error!(
+                        "Error sending route update to account {}: {:?}",
+                        account_id, err
+                    )
+                }
+                Ok(())
             })
     }
 }
@@ -664,8 +734,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                // TODO the Address type should let us avoid this copy
-                prefix: Bytes::from(account.client_address()),
+                prefix: account.client_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -676,7 +745,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: Bytes::from(account.client_address()),
+                prefix: account.client_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -719,11 +788,11 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     }
 }
 
-impl<S, T, U, A> IncomingService<A> for CcpRouteManager<S, T, U, A>
+impl<I, O, S, A> IncomingService<A> for CcpRouteManager<I, O, S, A>
 where
-    S: IncomingService<A> + Clone + Send + Sync + 'static,
-    T: OutgoingService<A> + Clone + Send + Sync + 'static,
-    U: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
@@ -732,9 +801,9 @@ where
     /// pass it on to the next handler if not
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         let destination = request.prepare.destination();
-        if destination == CCP_CONTROL_DESTINATION {
+        if destination == *CCP_CONTROL_DESTINATION {
             Box::new(self.handle_route_control_request(request))
-        } else if destination == CCP_UPDATE_DESTINATION {
+        } else if destination == *CCP_UPDATE_DESTINATION {
             Box::new(self.handle_route_update_request(request))
         } else {
             Box::new(self.next_incoming.handle_request(request))
@@ -892,7 +961,7 @@ mod handle_route_control_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: CCP_CONTROL_DESTINATION,
+                    destination: CCP_CONTROL_DESTINATION.clone(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],
@@ -1012,7 +1081,7 @@ mod handle_route_update_request {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
-                    destination: CCP_UPDATE_DESTINATION,
+                    destination: CCP_UPDATE_DESTINATION.clone(),
                     amount: 0,
                     expires_at: SystemTime::now() + Duration::from_secs(30),
                     data: &[],
@@ -1096,7 +1165,7 @@ mod handle_route_update_request {
             prefix: Bytes::from("example.valid"),
             path: vec![
                 Bytes::from("example.a"),
-                service.ilp_address.clone(),
+                service.ilp_address.to_bytes(),
                 Bytes::from("example.b"),
             ],
             auth: [0; 32],
@@ -1343,7 +1412,6 @@ mod handle_route_update_request {
 mod create_route_update {
     use super::*;
     use crate::test_helpers::*;
-    use std::iter::FromIterator;
 
     #[test]
     fn heartbeat_message_for_empty_table() {
@@ -1360,56 +1428,44 @@ mod create_route_update {
     fn includes_the_given_range_of_epochs() {
         let service = test_service();
         (*service.forwarding_table.write()).set_epoch(4);
-        *service.forwarding_table_updates.write() = HashMap::from_iter(vec![
+        *service.forwarding_table_updates.write() = vec![
             (
-                0,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.a"),
-                        path: vec![Bytes::from("example.x")],
-                        auth: [1; 32],
-                        props: Vec::new(),
-                    }],
-                    Vec::new(),
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.a"),
+                    path: vec![Bytes::from("example.x")],
+                    auth: [1; 32],
+                    props: Vec::new(),
+                }],
+                Vec::new(),
             ),
             (
-                1,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.b"),
-                        path: vec![Bytes::from("example.x")],
-                        auth: [2; 32],
-                        props: Vec::new(),
-                    }],
-                    Vec::new(),
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.b"),
+                    path: vec![Bytes::from("example.x")],
+                    auth: [2; 32],
+                    props: Vec::new(),
+                }],
+                Vec::new(),
             ),
             (
-                2,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.c"),
-                        path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
-                        auth: [3; 32],
-                        props: Vec::new(),
-                    }],
-                    vec![Bytes::from("example.m")],
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.c"),
+                    path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                    auth: [3; 32],
+                    props: Vec::new(),
+                }],
+                vec![Bytes::from("example.m")],
             ),
             (
-                3,
-                (
-                    vec![Route {
-                        prefix: Bytes::from("example.d"),
-                        path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
-                        auth: [4; 32],
-                        props: Vec::new(),
-                    }],
-                    vec![Bytes::from("example.n")],
-                ),
+                vec![Route {
+                    prefix: Bytes::from("example.d"),
+                    path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                    auth: [4; 32],
+                    props: Vec::new(),
+                }],
+                vec![Bytes::from("example.n")],
             ),
-        ]);
+        ];
         let update = service.create_route_update(1, 3);
         assert_eq!(update.from_epoch_index, 1);
         assert_eq!(update.to_epoch_index, 3);
@@ -1432,6 +1488,7 @@ mod create_route_update {
 mod send_route_updates {
     use super::*;
     use crate::test_helpers::*;
+    use std::str::FromStr;
 
     #[test]
     fn broadcasts_to_all_accounts_we_send_updates_to() {
@@ -1481,7 +1538,7 @@ mod send_route_updates {
                     from_epoch_index: 0,
                     to_epoch_index: 1,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
                         prefix: Bytes::from("example.remote"),
                         path: vec![Bytes::from("example.peer")],
@@ -1524,7 +1581,7 @@ mod send_route_updates {
                     from_epoch_index: 0,
                     to_epoch_index: 1,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
                         prefix: Bytes::from("example.remote"),
                         path: vec![Bytes::from("example.peer")],
@@ -1546,7 +1603,7 @@ mod send_route_updates {
                     from_epoch_index: 1,
                     to_epoch_index: 4,
                     hold_down_time: 30000,
-                    speaker: Bytes::from("example.remote"),
+                    speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: Vec::new(),
                     withdrawn_routes: vec![Bytes::from("example.remote")],
                 }

@@ -36,6 +36,8 @@ use std::{
     str::FromStr,
 };
 
+use serde::Serialize;
+
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
 ///
@@ -43,7 +45,7 @@ use std::{
 /// Store implementations will implement these Account traits for a concrete type that
 /// they will load from the database.
 pub trait Account: Clone + Send + Sized + Debug {
-    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy;
+    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy + Serialize;
 
     fn id(&self) -> Self::AccountId;
 }
@@ -60,6 +62,7 @@ pub struct IncomingRequest<A: Account> {
 pub struct OutgoingRequest<A: Account> {
     pub from: A,
     pub to: A,
+    pub original_amount: u64,
     pub prepare: Prepare,
 }
 
@@ -71,6 +74,7 @@ where
     pub fn into_outgoing(self, to: A) -> OutgoingRequest<A> {
         OutgoingRequest {
             from: self.from,
+            original_amount: self.prepare.amount(),
             prepare: self.prepare,
             to,
         }
@@ -92,7 +96,7 @@ pub trait OutgoingService<A: Account> {
 }
 
 /// A future that returns an ILP Fulfill or Reject packet.
-pub type BoxedIlpFuture = Box<Future<Item = Fulfill, Error = Reject> + Send + 'static>;
+pub type BoxedIlpFuture = Box<dyn Future<Item = Fulfill, Error = Reject> + Send + 'static>;
 
 /// The base Store trait that can load a given account based on the ID.
 pub trait AccountStore {
@@ -101,7 +105,7 @@ pub trait AccountStore {
     fn get_accounts(
         &self,
         account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 /// Create an IncomingService that calls the given handler for each request.

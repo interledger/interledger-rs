@@ -4,10 +4,13 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
+use std::convert::TryFrom;
 
+use ilp::Address;
 use ilp::{ErrorCode, Fulfill, Prepare, Reject};
 use ilp::{FulfillBuilder, PrepareBuilder, RejectBuilder};
 use interledger_packet as ilp;
+use std::str::FromStr;
 
 lazy_static! {
     static ref PREPARE: PrepareBuilder<'static> = PrepareBuilder {
@@ -20,7 +23,7 @@ lazy_static! {
             \x74\xe1\x13\x6d\xc7\x1c\x9e\x5f\x28\x3b\xec\x83\x46\x1c\xbf\x12\
             \x61\xc4\x01\x4f\x72\xd4\x8f\x8d\xd6\x54\x53\xa0\xb8\x4e\x7d\xe1\
         ",
-        destination: b"example.alice",
+        destination: Address::from_str("example.alice").unwrap(),
         data: b"\
             \x5d\xb3\x43\xfd\xc4\x18\x98\xf6\xdf\x42\x02\x32\x91\x39\xdc\x24\
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\
@@ -36,10 +39,11 @@ lazy_static! {
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\
         ",
     };
+    static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
     static ref REJECT: RejectBuilder<'static> = RejectBuilder {
         code: ErrorCode::F99_APPLICATION_ERROR,
         message: b"Some error",
-        triggered_by: b"example.connector",
+        triggered_by: Some(&*EXAMPLE_CONNECTOR),
         data: b"\
             \x5d\xb3\x43\xfd\xc4\x18\x98\xf6\xdf\x42\x02\x32\x91\x39\xdc\x24\
             \x2d\xd0\xf5\x58\xa8\x11\xb4\x6b\x28\x91\x8f\xda\xb3\x7c\x6c\xb0\

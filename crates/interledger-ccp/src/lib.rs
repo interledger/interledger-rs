@@ -9,16 +9,11 @@
 //! updates are used by the `Router` to forward incoming packets to the best next hop
 //! we know about.
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate lazy_static;
-
 use bytes::Bytes;
 use futures::Future;
-use hashbrown::HashMap;
 use interledger_ildcp::IldcpAccount;
 use interledger_service::Account;
+use std::collections::HashMap;
 use std::{str::FromStr, string::ToString};
 
 #[cfg(test)]
@@ -29,7 +24,7 @@ mod server;
 #[cfg(test)]
 mod test_helpers;
 
-pub use server::CcpRouteManager;
+pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
@@ -78,22 +73,28 @@ pub trait CcpRoutingAccount: Account + IldcpAccount {
     }
 }
 
+// key = Bytes, key should be Address -- TODO
+type Route<T> = HashMap<Bytes, T>;
+type LocalAndConfiguredRoutes<T> = (Route<T>, Route<T>);
+
 pub trait RouteManagerStore: Clone {
     type Account: CcpRoutingAccount;
 
     // TODO should we have a way to only get the details for specific routes?
     fn get_local_and_configured_routes(
         &self,
-    ) -> Box<
-        Future<Item = (HashMap<Bytes, Self::Account>, HashMap<Bytes, Self::Account>), Error = ()>
-            + Send,
-    >;
+    ) -> Box<dyn Future<Item = LocalAndConfiguredRoutes<Self::Account>, Error = ()> + Send>;
 
     fn get_accounts_to_send_routes_to(
         &self,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
-    fn set_routes<R>(&mut self, routes: R) -> Box<Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (Bytes, Self::Account)>;
+    fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+
+    fn set_routes(
+        &mut self,
+        routes: impl IntoIterator<Item = (Bytes, Self::Account)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }

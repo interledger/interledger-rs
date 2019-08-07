@@ -2,17 +2,22 @@
 //!
 //! Miscellaneous, small Interledger Services.
 
-#[macro_use]
-extern crate log;
+mod balance_service;
+mod echo_service;
+mod exchange_rates_service;
+mod expiry_shortener_service;
+mod max_packet_amount_service;
+mod rate_limit_service;
+mod validator_service;
 
-mod echo;
-mod max_packet_amount;
-mod rates_and_balances;
-mod validator;
-
-pub use self::echo::EchoService;
-pub use self::max_packet_amount::{MaxPacketAmountAccount, MaxPacketAmountService};
-pub use self::rates_and_balances::{
-    BalanceStore, ExchangeRateAndBalanceService, ExchangeRateStore,
+pub use self::balance_service::{BalanceService, BalanceStore};
+pub use self::echo_service::EchoService;
+pub use self::exchange_rates_service::{ExchangeRateService, ExchangeRateStore};
+pub use self::expiry_shortener_service::{
+    ExpiryShortenerService, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
-pub use self::validator::ValidatorService;
+pub use self::max_packet_amount_service::{MaxPacketAmountAccount, MaxPacketAmountService};
+pub use self::rate_limit_service::{
+    RateLimitAccount, RateLimitError, RateLimitService, RateLimitStore,
+};
+pub use self::validator_service::ValidatorService;

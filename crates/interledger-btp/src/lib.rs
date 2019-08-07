@@ -6,14 +6,6 @@
 //! Because this protocol uses WebSockets, only one party needs to have a publicly-accessible HTTPS
 //! endpoint but both sides can send and receive ILP packets.
 
-#[macro_use]
-extern crate quick_error;
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-
 use futures::Future;
 use interledger_service::Account;
 use url::Url;
@@ -28,9 +20,11 @@ mod service;
 pub use self::client::{connect_client, parse_btp_url};
 pub use self::server::{create_open_signup_server, create_server};
 pub use self::service::{BtpOutgoingService, BtpService};
+use interledger_packet::Address;
 
 pub trait BtpAccount: Account {
     fn get_btp_uri(&self) -> Option<&Url>;
+    fn get_btp_token(&self) -> Option<&[u8]>;
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
@@ -41,17 +35,22 @@ pub trait BtpStore {
     fn get_account_from_btp_token(
         &self,
         token: &str,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+
+    /// Load accounts that have a btp_uri configured
+    fn get_btp_outgoing_accounts(
+        &self,
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 }
 
 pub struct BtpOpenSignupAccount<'a> {
     pub auth_token: &'a str,
-    pub ilp_address: &'a [u8],
+    pub ilp_address: &'a Address,
     pub asset_code: &'a str,
     pub asset_scale: u8,
 }
 
-/// The interface for Store implementatoins that allow open BTP signups.
+/// The interface for Store implementations that allow open BTP signups.
 /// Every incoming WebSocket connection will automatically have a BtpOpenSignupAccount
 /// created and added to the store.
 ///
@@ -64,15 +63,16 @@ pub trait BtpOpenSignupStore {
     fn create_btp_account<'a>(
         &self,
         account: BtpOpenSignupAccount<'a>,
-    ) -> Box<Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 }
 
 #[cfg(test)]
 mod client_server {
     use super::*;
     use futures::future::{err, ok, result};
-    use interledger_packet::{ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
+    use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
+    use std::str::FromStr;
     use std::{
         sync::Arc,
         time::{Duration, SystemTime},
@@ -83,6 +83,7 @@ mod client_server {
     pub struct TestAccount {
         pub id: u64,
         pub btp_incoming_token: Option<String>,
+        pub btp_outgoing_token: Option<String>,
         pub btp_uri: Option<Url>,
     }
 
@@ -98,6 +99,14 @@ mod client_server {
         fn get_btp_uri(&self) -> Option<&Url> {
             self.btp_uri.as_ref()
         }
+
+        fn get_btp_token(&self) -> Option<&[u8]> {
+            if let Some(ref token) = self.btp_outgoing_token {
+                Some(token.as_bytes())
+            } else {
+                None
+            }
+        }
     }
 
     #[derive(Clone)]
@@ -111,7 +120,7 @@ mod client_server {
         fn get_accounts(
             &self,
             account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-        ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
             let accounts: Vec<TestAccount> = self
                 .accounts
                 .iter()
@@ -137,7 +146,7 @@ mod client_server {
         fn get_account_from_btp_token(
             &self,
             token: &str,
-        ) -> Box<Future<Item = Self::Account, Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
             Box::new(result(
                 self.accounts
                     .iter()
@@ -152,6 +161,17 @@ mod client_server {
                     .ok_or(()),
             ))
         }
+
+        fn get_btp_outgoing_accounts(
+            &self,
+        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
+            Box::new(ok(self
+                .accounts
+                .iter()
+                .filter(|account| account.btp_uri.is_some())
+                .cloned()
+                .collect()))
+        }
     }
 
     #[test]
@@ -162,6 +182,7 @@ mod client_server {
             accounts: Arc::new(vec![TestAccount {
                 id: 0,
                 btp_incoming_token: Some("test_auth_token".to_string()),
+                btp_outgoing_token: None,
                 btp_uri: None,
             }]),
         };
@@ -172,7 +193,7 @@ mod client_server {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other outgoing handler",
-                    triggered_by: &[],
+                    triggered_by: None,
                     data: &[],
                 }
                 .build())
@@ -192,18 +213,20 @@ mod client_server {
 
         let account = TestAccount {
             id: 0,
-            btp_uri: Some(Url::parse("btp+ws://:test_auth_token@127.0.0.1:12345").unwrap()),
+            btp_uri: Some(Url::parse("btp+ws://127.0.0.1:12345").unwrap()),
+            btp_outgoing_token: Some("test_auth_token".to_string()),
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];
         let client = connect_client(
             accounts,
+            true,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: &[],
+                    triggered_by: None,
                 }
                 .build())
             }),
@@ -214,7 +237,7 @@ mod client_server {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: &[],
+                    triggered_by: None,
                 }
                 .build())
             }));
@@ -223,8 +246,9 @@ mod client_server {
                 .send_request(OutgoingRequest {
                     from: account.clone(),
                     to: account.clone(),
+                    original_amount: 100,
                     prepare: PrepareBuilder {
-                        destination: b"example.destination",
+                        destination: Address::from_str("example.destination").unwrap(),
                         amount: 100,
                         execution_condition: &[0; 32],
                         expires_at: SystemTime::now() + Duration::from_secs(30),

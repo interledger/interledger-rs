@@ -3,22 +3,23 @@ use super::IldcpAccount;
 use futures::future::ok;
 use interledger_packet::*;
 use interledger_service::*;
-use std::{marker::PhantomData, str};
+use log::debug;
+use std::marker::PhantomData;
 
 /// A simple service that intercepts incoming ILDCP requests
 /// and responds using the information in the Account struct.
 #[derive(Clone)]
-pub struct IldcpService<S, A> {
-    next: S,
+pub struct IldcpService<I, A> {
+    next: I,
     account_type: PhantomData<A>,
 }
 
-impl<S, A> IldcpService<S, A>
+impl<I, A> IldcpService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: IldcpAccount,
 {
-    pub fn new(next: S) -> Self {
+    pub fn new(next: I) -> Self {
         IldcpService {
             next,
             account_type: PhantomData,
@@ -26,24 +27,22 @@ where
     }
 }
 
-impl<S, A> IncomingService<A> for IldcpService<S, A>
+impl<I, A> IncomingService<A> for IldcpService<I, A>
 where
-    S: IncomingService<A>,
+    I: IncomingService<A>,
     A: IldcpAccount,
 {
     type Future = BoxedIlpFuture;
 
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
         if is_ildcp_request(&request.prepare) {
+            let from = request.from.client_address();
             let builder = IldcpResponseBuilder {
-                client_address: &request.from.client_address(),
+                client_address: &from,
                 asset_code: request.from.asset_code(),
                 asset_scale: request.from.asset_scale(),
             };
-            debug!(
-                "Responding to query for ILDCP info by account: {:?}",
-                str::from_utf8(&request.from.client_address()[..]).unwrap_or("<not utf8>")
-            );
+            debug!("Responding to query for ildcp info by account: {:?}", from);
             let response = builder.build();
             let fulfill = Fulfill::from(response);
             Box::new(ok(fulfill))

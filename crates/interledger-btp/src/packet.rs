@@ -3,13 +3,15 @@ use super::oer::{MutBufOerExt, ReadOerExt};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use chrono::{DateTime, TimeZone, Utc};
+#[cfg(test)]
+use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::ops::Add;
 use std::str;
 
-static GENERALIZED_TIME_FORMAT: &'static str = "%Y%m%d%H%M%S%.3fZ";
+static GENERALIZED_TIME_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
 
 pub trait Serializable<T> {
     fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
@@ -96,7 +98,7 @@ where
     let num_entries = reader.read_var_uint()?;
     let mut i = BigUint::from(0 as u32);
     while i < num_entries {
-        i = i.add(BigUint::from(1 as u8));
+        i = i.add(BigUint::from(1 as u8)); // this is probably slow
         let protocol_name = String::from_utf8(reader.read_var_octet_string()?)?;
         let content_type = ContentType::from(reader.read_u8()?);
         let data = reader.read_var_octet_string()?;

@@ -50,7 +50,7 @@ where
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let item = self.stream.poll()?;
 
-        if self.is_limited == false {
+        if !self.is_limited {
             return Ok(item);
         }
 
@@ -141,7 +141,7 @@ mod test_limit_stream {
         LimitStream::new(limit, stream)
             .concat2()
             .wait()
-            .map(|chunk| Bytes::from(chunk))
+            .map(Bytes::from)
     }
 
     impl<E: Error> LimitStreamError<E> {

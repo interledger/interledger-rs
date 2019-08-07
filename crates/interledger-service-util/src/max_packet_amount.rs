@@ -34,7 +34,7 @@ where
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                 message: &[],
-                triggered_by: &[],
+                triggered_by: None,
                 data: &details[..],
             }
             .build()))

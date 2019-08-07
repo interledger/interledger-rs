@@ -14,7 +14,9 @@ futures = "0.1.25"
 hex = "0.3.2"
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-service = { path = "../interledger-service", version = "0.2.1" }
+interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 log = "0.4.6"
 ring = "0.14.6"
 tokio = "0.1.16"
+tokio-executor = "0.1.7"

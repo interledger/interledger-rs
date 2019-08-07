@@ -10,3 +10,6 @@ Cargo.lock
 *.rdb
 *.aof
 cmake-build-debug/
+**/*.log
+.DS_Store
+

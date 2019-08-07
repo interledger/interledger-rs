@@ -5,14 +5,10 @@
 //! This uses a simple HTTPS request to establish a shared key between the sender and receiver that is used to
 //! authenticate ILP packets sent between them. SPSP uses the STREAM transport protocol for sending money and data over ILP.
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate failure;
-
+use failure::Fail;
+use interledger_packet::Address;
 use interledger_stream::Error as StreamError;
+use serde::{Deserialize, Serialize};
 
 mod client;
 mod server;
@@ -38,7 +34,7 @@ pub enum Error {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SpspResponse {
-    destination_account: String,
+    destination_account: Address,
     #[serde(with = "serde_base64")]
     shared_secret: Vec<u8>,
 }
