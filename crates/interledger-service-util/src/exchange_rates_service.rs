@@ -90,18 +90,29 @@ where
                 .build()));
             };
 
-            // Note that this is not an overflow safe operation. Given realistic
-            // assumptions, the asset scale will be <=18 and >=1.
-            // It is doubtful that the exchange rate between two assets,
-            // multiplied by 18 would exceed std::f64::MAX
-            let scaled_rate = rate.normalize_scale(ConvertDetails {
+            // Can we overflow here?
+            let outgoing_amount = (request.prepare.amount() as f64) * rate;
+            let outgoing_amount = outgoing_amount.normalize_scale(ConvertDetails {
                 from: request.from.asset_scale(),
                 to: request.to.asset_scale(),
             });
 
-            match scaled_rate {
-                Ok(scaled_rate) => {
-                    let outgoing_amount = (request.prepare.amount() as f64) * scaled_rate;
+            match outgoing_amount {
+                Ok(outgoing_amount) => {
+                    // f64 which cannot fit in u64 gets cast as 0
+                    if outgoing_amount != 0.0 && outgoing_amount as u64 == 0 {
+                        return Box::new(err(RejectBuilder {
+                            code: ErrorCode::F08_AMOUNT_TOO_LARGE,
+                            message: format!(
+                                "Could not cast outgoing amount to u64 {}",
+                                outgoing_amount,
+                            )
+                            .as_bytes(),
+                            triggered_by: Some(&self.ilp_address),
+                            data: &[],
+                        }
+                        .build()));
+                    }
                     request.prepare.set_amount(outgoing_amount as u64);
                     trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}",
                         request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(),
@@ -109,13 +120,14 @@ where
                 }
                 Err(_) => {
                     return Box::new(err(RejectBuilder {
-                        code: ErrorCode::F02_UNREACHABLE,
+                        code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                         message: format!(
-                            "Could not convert exchange rate from {}:{} to: {}:{}",
+                            "Could not convert exchange rate from {}:{} to: {}:{}. Got incoming amount: {}",
                             request.from.asset_code(),
                             request.from.asset_scale(),
                             request.to.asset_code(),
                             request.to.asset_scale(),
+                            request.prepare.amount(),
                         )
                         .as_bytes(),
                         triggered_by: Some(&self.ilp_address),
