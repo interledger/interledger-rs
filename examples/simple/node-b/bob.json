@@ -1,7 +1,0 @@
-{
-    "ilp_address": "example.node-b.bob",
-    "asset_code": "ABC",
-    "asset_scale": 9,
-    "max_packet_amount": 100,
-    "http_incoming_token": "bob"
-}

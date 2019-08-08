@@ -48,6 +48,8 @@ Please follow the instruction below when making pull requests.
 - Make pull requests against `master` branch of this repository (emschwartz/interledger-rs) from your repository.
 - If reviewers request some changes, please follow the instruction or make discussions if you have any constructive opinions on the PRs you made.
     - Then if you want to make some changes on your PRs, `push -f` is allowed to renew your branch after squashing your new commits. You don't need to open new PRs.
+- For our [examples](../examples/README.md), we adopted a [literate programming](https://en.wikipedia.org/wiki/Literate_programming) approach. The examples are described in Markdown with shell commands included. The [`run-md.sh`](../scripts/run-md.sh) script parses the commands out of the Markdown file and runs them. If you want to add examples, please make sure your instruction file can be parsed and run by that script.
+    - You can check if it is correct with running `../../scripts/run-md.sh README.md` (in your example directory).
     
 ### Signing-off
 By using `-s` or `--signoff` option, you agree to the following agreement ([Developer Certificate of Origin](https://developercertificate.org/)) which assures that your commits consist of your own code and/or code which you have rights to submit.
