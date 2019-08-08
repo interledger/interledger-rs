@@ -190,23 +190,31 @@ impl_web! {
                         from: engine_scale,
                         to: account.asset_scale(),
                     });
-                    // If we'd overflow, settle for the maximum u64 value
-                    let safe_amount = if let Some(amount_u64) = amount.to_u64() {
-                        amount_u64
-                    } else {
-                        debug!("Amount settled from engine overflowed during conversion to connector scale: {}. Settling for u64::MAX", amount);
-                        std::u64::MAX
-                    };
-                    store.update_balance_for_incoming_settlement(account_id, safe_amount, idempotency_key)
+                    result(amount.clone())
                     .map_err(move |_| {
-                        let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                        let error_msg = format!("Could not convert amount: {:?}", amount);
                         error!("{}", error_msg);
                         (StatusCode::from_u16(500).unwrap(), error_msg)
                     })
-                    .and_then(move |_| {
-                        // TODO: Return a Quantity of safe_amount and account.asset_scale()
-                        let ret = Bytes::from("Success");
-                        Ok((StatusCode::OK, ret))
+                    .and_then(move |amount| {
+                        // If we'd overflow, settle for the maximum u64 value
+                        let amount = if let Some(amount_u64) = amount.to_u64() {
+                            amount_u64
+                        } else {
+                            debug!("Amount settled from engine overflowed during conversion to connector scale: {:?}. Settling for u64::MAX", amount);
+                            std::u64::MAX
+                        };
+                        store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+                        .map_err(move |_| {
+                            let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                            error!("{}", error_msg);
+                            (StatusCode::from_u16(500).unwrap(), error_msg)
+                        })
+                        .and_then(move |_| {
+                            // TODO: Return a Quantity of amount and account.asset_scale()
+                            let ret = Bytes::from("Success");
+                            Ok((StatusCode::OK, ret))
+                        })
                     })
                 })
             }))

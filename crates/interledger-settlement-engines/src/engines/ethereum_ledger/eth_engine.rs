@@ -761,7 +761,7 @@ where
         let engine_scale = self.asset_scale;
         Box::new(
             result(BigUint::from_str(&body.amount).map_err(move |err| {
-                let error_msg = format!("Error converting to U256 {:?}", err);
+                let error_msg = format!("Error converting to BigUint {:?}", err);
                 error!("{:?}", error_msg);
                 (StatusCode::from_u16(400).unwrap(), error_msg)
             }))
@@ -773,13 +773,21 @@ where
                     to: engine_scale,
                 });
 
-                // Typecast from num_bigint::BigUInt because we're using
-                // ethereum_types::U256 for all rust-web3 related functionality
-                result(U256::from_dec_str(&amount.to_string()).map_err(move |err| {
-                    let error_msg = format!("Error converting to U256 {:?}", err);
-                    error!("{:?}", error_msg);
-                    (StatusCode::from_u16(400).unwrap(), error_msg)
-                }))
+                result(amount)
+                    .map_err(move |err| {
+                        let error_msg = format!("Error scaling amount: {:?}", err);
+                        error!("{:?}", error_msg);
+                        (StatusCode::from_u16(400).unwrap(), error_msg)
+                    })
+                    .and_then(move |amount| {
+                        // Typecast from num_bigint::BigUInt because we're using
+                        // ethereum_types::U256 for all rust-web3 related functionality
+                        result(U256::from_dec_str(&amount.to_string()).map_err(move |err| {
+                            let error_msg = format!("Error converting to U256 {:?}", err);
+                            error!("{:?}", error_msg);
+                            (StatusCode::from_u16(400).unwrap(), error_msg)
+                        }))
+                    })
             })
             .and_then(move |amount| {
                 self_clone

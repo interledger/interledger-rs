@@ -98,9 +98,32 @@ where
                 from: request.from.asset_scale(),
                 to: request.to.asset_scale(),
             });
-            let outgoing_amount = (request.prepare.amount() as f64) * scaled_rate;
-            request.prepare.set_amount(outgoing_amount as u64);
-            trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}", request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(), outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
+
+            match scaled_rate {
+                Ok(scaled_rate) => {
+                    let outgoing_amount = (request.prepare.amount() as f64) * scaled_rate;
+                    request.prepare.set_amount(outgoing_amount as u64);
+                    trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}",
+                        request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(),
+                        outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
+                }
+                Err(_) => {
+                    return Box::new(err(RejectBuilder {
+                        code: ErrorCode::F02_UNREACHABLE,
+                        message: format!(
+                            "Could not convert exchange rate from {}:{} to: {}:{}",
+                            request.from.asset_code(),
+                            request.from.asset_scale(),
+                            request.to.asset_code(),
+                            request.to.asset_scale(),
+                        )
+                        .as_bytes(),
+                        triggered_by: Some(&self.ilp_address),
+                        data: &[],
+                    }
+                    .build()));
+                }
+            }
         }
 
         Box::new(self.next.send_request(request))
