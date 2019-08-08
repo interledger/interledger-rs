@@ -122,7 +122,7 @@ fn eth_xrp_interoperable() {
                     max_packet_amount: u64::max_value(),
                     min_balance: None,
                     settle_threshold: None,
-                    settle_to: Some(-10),
+                    settle_to: None,
                     send_routes: false,
                     receive_routes: false,
                     routing_relation: None,
@@ -343,7 +343,7 @@ fn eth_xrp_interoperable() {
                                     assert_eq!(balances[0], -71000);
                                     // Since Alice has configured Bob's
                                     // `settle_threshold` and `settle_to` to be
-                                    // 70k and -10k respectively, once she
+                                    // 70k and 10k respectively, once she
                                     // exceeded the 70k threshold, she made a 61k
                                     // Gwei settlement to Bob so that their debt
                                     // settles down to 10k.
@@ -362,7 +362,7 @@ fn eth_xrp_interoperable() {
                                     // which is 5k (71k - 5k = 66k).
                                     assert_eq!(balances[3], 5000);
                                     // Charlie's balance indicates that he's
-                                    // received 71k drops from Alice
+                                    // received 71k drops (the total amount Alice sent him)
                                     assert_eq!(balances[4], 71000);
                                     // And he sees is owed 5k by Bob.
                                     assert_eq!(balances[5], -5000);
