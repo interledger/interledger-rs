@@ -19,7 +19,9 @@ mod fixtures;
 mod message_service;
 #[cfg(test)]
 mod test_helpers;
+use log::debug;
 use num_bigint::BigUint;
+use num_traits::cast::ToPrimitive;
 use std::ops::{Div, Mul};
 
 pub use api::SettlementApi;
@@ -94,6 +96,7 @@ pub trait IdempotentStore {
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
+#[derive(Debug)]
 pub struct ConvertDetails {
     pub from: u8,
     pub to: u8,
@@ -108,15 +111,27 @@ impl Convert for u64 {
     fn normalize_scale(&self, details: ConvertDetails) -> Self {
         let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
         let scale = 10u64.pow(scale_diff.into());
-        if details.to >= details.from {
-            self * scale
+        let num = BigUint::from(*self);
+        let num = if details.to >= details.from {
+            num.mul(scale)
         } else {
-            self / scale
+            num.div(scale)
+        };
+        if let Some(num_u64) = num.to_u64() {
+            num_u64
+        } else {
+            debug!(
+                "Overflow during conversion from {} {:?}. Using u64::MAX",
+                num, details
+            );
+            std::u64::MAX
         }
     }
 }
 
 impl Convert for f64 {
+    // Not overflow safe. Would require using a package for Big floating point
+    // numbers such as BigDecimal
     fn normalize_scale(&self, details: ConvertDetails) -> Self {
         let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
         let scale = 10f64.powi(scale_diff.into());
@@ -147,6 +162,12 @@ mod tests {
 
     #[test]
     fn u64_test() {
+        // does not overflow
+        let huge_number = std::u64::MAX / 10;
+        assert_eq!(
+            huge_number.normalize_scale(ConvertDetails { from: 1, to: 18 }),
+            std::u64::MAX
+        );
         // 1 unit with scale 1, is 1 unit with scale 1
         assert_eq!(1u64.normalize_scale(ConvertDetails { from: 1, to: 1 }), 1);
         // there's leftovers for all number slots which do not increase in

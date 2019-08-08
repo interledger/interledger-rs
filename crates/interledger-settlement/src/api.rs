@@ -11,7 +11,7 @@ use hyper::{Response, StatusCode};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
-use log::error;
+use log::{debug, error};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use ring::digest::{digest, SHA256};
@@ -191,9 +191,10 @@ impl_web! {
                         to: account.asset_scale(),
                     });
                     // If we'd overflow, settle for the maximum u64 value
-                    let safe_amount = if let Some(amount) = amount.to_u64() {
-                        amount
+                    let safe_amount = if let Some(amount_u64) = amount.to_u64() {
+                        amount_u64
                     } else {
+                        debug!("Amount settled from engine overflowed during conversion to connector scale: {}. Settling for u64::MAX", amount);
                         std::u64::MAX
                     };
                     store.update_balance_for_incoming_settlement(account_id, safe_amount, idempotency_key)

@@ -90,6 +90,10 @@ where
                 .build()));
             };
 
+            // Note that this is not an overflow safe operation. Given realistic
+            // assumptions, the asset scale will be <=18 and >=1.
+            // It is doubtful that the exchange rate between two assets,
+            // multiplied by 18 would exceed std::f64::MAX
             let scaled_rate = rate.normalize_scale(ConvertDetails {
                 from: request.from.asset_scale(),
                 to: request.to.asset_scale(),
