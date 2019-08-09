@@ -61,6 +61,22 @@ pub struct TestStore {
     pub last_observed_block: Arc<RwLock<U256>>,
     pub saved_hashes: Arc<RwLock<HashMap<H256, bool>>>,
     pub cache_hits: Arc<RwLock<u64>>,
+    pub leftovers: Arc<RwLock<HashMap<String, String>>>,
+}
+
+use crate::stores::LeftoversStore;
+use num_bigint::BigUint;
+
+impl LeftoversStore for TestStore {
+    fn save_leftovers(
+        &self,
+        account_id: String,
+        leftovers: BigUint,
+    ) -> Box<Future<Item = (), Error = ()> + Send> {
+        let mut guard = self.leftovers.write();
+        (*guard).insert(account_id, leftovers.to_string());
+        Box::new(ok(()))
+    }
 }
 
 impl EthereumStore for TestStore {

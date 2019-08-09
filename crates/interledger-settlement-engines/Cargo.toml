@@ -35,6 +35,7 @@ clap = "2.32.0"
 clarity = { git =  "https://github.com/gakonst/clarity" }
 sha3 = "0.8.2"
 num-bigint = "0.2.2"
+num-traits = "0.2.8"
 
 [dev-dependencies]
 lazy_static = "1.3"

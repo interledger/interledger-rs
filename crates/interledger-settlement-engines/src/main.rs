@@ -1,3 +1,5 @@
+#![type_length_limit = "1739269"]
+
 use clap::{value_t, App, Arg, SubCommand};
 use hex;
 use std::str::FromStr;

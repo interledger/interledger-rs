@@ -105,6 +105,23 @@ impl EthereumLedgerRedisStore {
     }
 }
 
+impl LeftoversStore for EthereumLedgerRedisStore {
+    fn save_leftovers(
+        &self,
+        account_id: String,
+        leftovers: BigUint,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let mut pipe = redis::pipe();
+        pipe.set(format!("leftovers:{}", account_id), leftovers.to_string())
+            .ignore();
+        Box::new(
+            pipe.query_async(self.connection.clone())
+                .map_err(move |err| error!("Error saving leftovers {:?}: {:?}", leftovers, err))
+                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
+        )
+    }
+}
+
 impl EthereumStore for EthereumLedgerRedisStore {
     type Account = Account;
 

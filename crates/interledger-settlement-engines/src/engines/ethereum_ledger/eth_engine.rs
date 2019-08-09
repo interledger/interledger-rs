@@ -17,6 +17,7 @@ use hyper::StatusCode;
 use interledger_store_redis::RedisStoreBuilder;
 use log::info;
 use num_bigint::BigUint;
+use num_traits::Zero;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
 use ring::{digest, hmac};
@@ -489,7 +490,11 @@ where
             .push("settlements");
         let client = Client::new();
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
+        let self_clone = self.clone();
         let action = move || {
+            // need to make 2 clones, one to own the variables in the function
+            // and one for the retry closure..
+            let self_clone = self_clone.clone();
             let account_id = account_id.clone();
             client
                 .post(url.clone())
@@ -504,11 +509,7 @@ where
                 })
                 .and_then(move |response| {
                     trace!("Accounting system responded with {:?}", response);
-                    if response.status().is_success() {
-                        Ok(())
-                    } else {
-                        Err(())
-                    }
+                    self_clone.process_connector_response(account_id_clone2, response, amount)
                 })
         };
         Retry::spawn(
@@ -518,6 +519,68 @@ where
         .map_err(move |_| {
             error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, amount, tx_hash)
         })
+    }
+
+    fn process_connector_response(
+        &self,
+        account_id: String,
+        response: HttpResponse,
+        amount: U256,
+    ) -> impl Future<Item = (), Error = ()> {
+        let engine_scale = self.asset_scale;
+        let store = self.store.clone();
+        if !response.status().is_success() {
+            return Either::A(err(()));
+        }
+        Either::B(
+            response
+                .into_body()
+                .concat2()
+                .map_err(|err| {
+                    let err = format!("Couldn't retrieve body {:?}", err);
+                    error!("{}", err);
+                })
+                .and_then(move |body| {
+                    // Get the amount stored by the connector and
+                    // check for any precision loss / overflow
+                    serde_json::from_slice::<Quantity>(&body).map_err(|err| {
+                        let err = format!("Couldn't parse body {:?} into Quantity {:?}", body, err);
+                        error!("{}", err);
+                    })
+                })
+                .and_then(move |quantity: Quantity| {
+                    // Convert both to BigUInts so we can do arithmetic
+                    join_all(vec![
+                        result(BigUint::from_str(&quantity.amount)),
+                        result(BigUint::from_str(&amount.to_string())),
+                    ])
+                    .map_err(|err| {
+                        let error_msg = format!("Error converting to BigUints {:?}", err);
+                        error!("{:?}", error_msg);
+                    })
+                    .and_then(move |amounts: Vec<BigUint>| {
+                        let connector_amount = amounts[0].clone();
+                        let engine_amount = amounts[1].clone();
+                        // Scale the amount settled by the
+                        // connector back up to our scale
+                        result(connector_amount.normalize_scale(ConvertDetails {
+                            from: quantity.scale,
+                            to: engine_scale,
+                        }))
+                        .and_then(move |scaled_connector_amount| {
+                            let diff: BigUint = engine_amount - scaled_connector_amount;
+                            if diff > Zero::zero() {
+                                // connector settled less than we
+                                // instructed it to, so we must save
+                                // the difference for the leftovers
+                                Either::A(store.save_leftovers(account_id, diff))
+                            } else {
+                                Either::B(ok(()))
+                            }
+                        })
+                    })
+                }),
+        )
     }
 
     /// Helper function which submits an Ethereum ledger transaction to `to` for `amount`.
