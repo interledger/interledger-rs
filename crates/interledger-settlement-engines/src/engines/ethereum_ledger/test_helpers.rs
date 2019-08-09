@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use hyper::StatusCode;
+use num_traits::Zero;
 use std::process::Command;
 use std::str::FromStr;
 use std::thread::sleep;
@@ -80,12 +81,14 @@ impl LeftoversStore for TestStore {
         Box::new(ok(()))
     }
 
-    fn load_leftovers(
+    fn pop_leftovers(
         &self,
         account_id: String,
     ) -> Box<Future<Item = Self::AssetType, Error = ()> + Send> {
-        let guard = self.leftovers.read();
+        let mut guard = self.leftovers.write();
         if let Some(l) = guard.get(&account_id) {
+            let l = l.clone();
+            (*guard).insert(account_id, Zero::zero());
             Box::new(ok(l.clone()))
         } else {
             Box::new(err(()))

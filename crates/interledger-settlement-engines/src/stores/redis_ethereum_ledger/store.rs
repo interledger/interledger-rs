@@ -126,17 +126,19 @@ impl LeftoversStore for EthereumLedgerRedisStore {
         )
     }
 
-    fn load_leftovers(
+    fn pop_leftovers(
         &self,
         account_id: String,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.get(format!("leftovers:{}", account_id)).ignore();
+        // Loads the value and resets it to 0
+        pipe.getset(format!("leftovers:{}", account_id), 0);
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading leftovers {:?}: ", err))
-                .and_then(move |(_conn, leftovers): (_, String)| {
-                    if let Ok(leftovers) = BigUint::from_str(&leftovers) {
+                .and_then(move |(_conn, leftovers): (_, Vec<String>)| {
+                    // redis.rs returns a bulk value for some reason, length is always 1
+                    if let Ok(leftovers) = BigUint::from_str(&leftovers[0]) {
                         Box::new(ok(leftovers))
                     } else {
                         Box::new(err(()))
@@ -325,6 +327,28 @@ mod tests {
     use super::*;
     use std::iter::FromIterator;
     use std::str::FromStr;
+
+    #[test]
+    fn saves_and_pops_leftovers_properly() {
+        let amount = BigUint::from(100u64);
+        let acc = "0".to_string();
+        block_on(test_store().and_then(|(store, context)| {
+            store
+                .save_leftovers(acc.clone(), amount.clone())
+                .map_err(|err| eprintln!("Redis error: {:?}", err))
+                .and_then(move |_| {
+                    store
+                        .pop_leftovers(acc)
+                        .map_err(|err| eprintln!("Redis error: {:?}", err))
+                        .and_then(move |ret| {
+                            assert_eq!(amount, ret);
+                            let _ = context;
+                            Ok(())
+                        })
+                })
+        }))
+        .unwrap()
+    }
 
     #[test]
     fn saves_and_loads_ethereum_addreses_properly() {

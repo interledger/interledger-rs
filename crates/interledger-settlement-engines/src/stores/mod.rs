@@ -39,8 +39,8 @@ pub trait LeftoversStore {
         leftovers: Self::AssetType,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
-    /// Saves the leftover data
-    fn load_leftovers(
+    /// Clears the leftover data in the database and returns the cleared value
+    fn pop_leftovers(
         &self,
         account_id: String,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;

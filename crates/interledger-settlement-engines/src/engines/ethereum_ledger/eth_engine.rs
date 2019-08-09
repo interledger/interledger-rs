@@ -517,7 +517,7 @@ where
             let url = url.clone();
 
             // settle for amount + leftovers
-            store.load_leftovers(account_id.clone())
+            store.pop_leftovers(account_id.clone())
             .and_then(move |leftovers| {
                 result(BigUint::from_str(&amount.clone()).map_err(move |err| {
                     let error_msg = format!("Error converting to BigUint {:?}", err);
@@ -543,7 +543,8 @@ where
                     })
                     .and_then(move |response| {
                         trace!("Accounting system responded with {:?}", response);
-                        self_clone.process_connector_response(account_id_clone2, response, full_amount.clone())
+                        Ok(()) // This call causes the type_length_error
+                        // self_clone.process_connector_response(account_id_clone2, response, full_amount.clone())
                     })
             })
         };
