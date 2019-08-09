@@ -293,9 +293,12 @@ where
                 } else if route.prefix.len() <= self.global_prefix.len() {
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
+                } else if route.prefix.starts_with(self.ilp_address.as_ref()) {
+                    trace!("Ignoring route broadcast for a prefix that starts with our own address: {:?}", route);
+                    false
                 } else if route.path.contains(self.ilp_address.as_ref()) {
-                    error!(
-                        "Got route broadcast with a routing loop (path includes us): {:?}",
+                    trace!(
+                        "Ignoring route broadcast for a route that includes us: {:?}",
                         route
                     );
                     false
@@ -1198,6 +1201,27 @@ mod handle_route_update_request {
                 service.ilp_address.to_bytes(),
                 Bytes::from("example.b"),
             ],
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.valid"),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        let request = service.filter_routes(request);
+        assert_eq!(request.new_routes.len(), 1);
+        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+    }
+
+    #[test]
+    fn filters_own_prefix_routes() {
+        let service = test_service();
+        let mut request = UPDATE_REQUEST_SIMPLE.clone();
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.connector.invalid-route"),
+            path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
