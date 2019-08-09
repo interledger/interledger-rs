@@ -312,6 +312,7 @@ where
     /// then check whether those routes are better than the current best ones we have in the
     /// Local Routing Table.
     fn handle_route_update_request(&self, request: IncomingRequest<A>) -> BoxedIlpFuture {
+        // Ignore the request if we don't accept routes from them
         if !request.from.should_receive_routes() {
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
@@ -339,6 +340,7 @@ where
             update
         );
 
+        // Filter out routes that don't make sense or that we won't accept
         let update = self.filter_routes(update);
 
         let mut incoming_tables = self.incoming_tables.write();
@@ -730,17 +732,28 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     incoming_tables: &HashMap<A::AccountId, RoutingTable<A>>,
     prefix: &[u8],
 ) -> Option<(A, Route)> {
-    if let Some(account) = configured_routes.get(prefix) {
-        return Some((
-            account.clone(),
-            Route {
-                prefix: account.client_address().to_bytes(),
-                auth: [0; 32],
-                path: Vec::new(),
-                props: Vec::new(),
-            },
-        ));
+    // Check if we have a configured route for that specific prefix
+    // or any shorter prefix
+    // TODO: should we match results that don't line up with the dot-separated segments?
+    // (for example, should "example.a" match for the prefix "example.abc"?)
+    // note: we could also implement this by looking through a sorted list to find the longest
+    // matching prefix instead of using a HashMap lookup
+    let segments: Vec<&[u8]> = prefix.split(|c| c == &b'.').collect();
+    for i in 0..segments.len() {
+        let prefix = &segments[0..segments.len() - i].join(&b'.');
+        if let Some(account) = configured_routes.get(prefix.as_ref() as &[u8]) {
+            return Some((
+                account.clone(),
+                Route {
+                    prefix: account.client_address().to_bytes(),
+                    auth: [0; 32],
+                    path: Vec::new(),
+                    props: Vec::new(),
+                },
+            ));
+        }
     }
+
     if let Some(account) = local_routes.get(prefix) {
         return Some((
             account.clone(),
@@ -876,6 +889,16 @@ mod ranking_routes {
                     props: Vec::new(),
                 },
             );
+            peer_table_1.add_route(
+                peer_1.clone(),
+                Route {
+                    // This route should be overridden by the configured "example.a" route
+                    prefix: Bytes::from("example.a.sub-prefix"),
+                    path: vec![Bytes::from("example.one")],
+                    auth: [0; 32],
+                    props: Vec::new(),
+                },
+            );
             let mut peer_table_2 = RoutingTable::default();
             let peer_2 = TestAccount::new(8, "example.peer2");
             peer_table_2.add_route(
@@ -894,6 +917,13 @@ mod ranking_routes {
     #[test]
     fn prioritizes_configured_routes() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a");
+        assert_eq!(best_route.unwrap().0.id(), 4);
+    }
+
+    #[test]
+    fn prioritizes_shorter_configured_routes() {
+        let best_route =
+            get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a.sub-prefix");
         assert_eq!(best_route.unwrap().0.id(), 4);
     }
 
