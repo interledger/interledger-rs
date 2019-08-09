@@ -6,6 +6,7 @@ use futures::{
 use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use interledger_service::Account as AccountTrait;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
@@ -118,6 +119,26 @@ impl LeftoversStore for EthereumLedgerRedisStore {
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error saving leftovers {:?}: {:?}", leftovers, err))
                 .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
+        )
+    }
+
+    fn load_leftovers(
+        &self,
+        account_id: String,
+    ) -> Box<dyn Future<Item = BigUint, Error = ()> + Send> {
+        let mut pipe = redis::pipe();
+        pipe.get(format!("leftovers:{}", account_id))
+            .ignore();
+        Box::new(
+            pipe.query_async(self.connection.clone())
+                .map_err(move |err| error!("Error loading leftovers {:?}: ", err))
+                .and_then(move |(_conn, leftovers): (_, String)| {
+                    if let Ok(leftovers) = BigUint::from_str(&leftovers) {
+                        Box::new(ok(leftovers))
+                    } else {
+                        Box::new(err(()))
+                    }
+                })
         )
     }
 }

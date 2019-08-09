@@ -61,7 +61,7 @@ pub struct TestStore {
     pub last_observed_block: Arc<RwLock<U256>>,
     pub saved_hashes: Arc<RwLock<HashMap<H256, bool>>>,
     pub cache_hits: Arc<RwLock<u64>>,
-    pub leftovers: Arc<RwLock<HashMap<String, String>>>,
+    pub leftovers: Arc<RwLock<HashMap<String, BigUint>>>,
 }
 
 use crate::stores::LeftoversStore;
@@ -74,8 +74,17 @@ impl LeftoversStore for TestStore {
         leftovers: BigUint,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let mut guard = self.leftovers.write();
-        (*guard).insert(account_id, leftovers.to_string());
+        (*guard).insert(account_id, leftovers);
         Box::new(ok(()))
+    }
+
+    fn load_leftovers(&self, account_id: String) -> Box<Future<Item = BigUint, Error = ()> + Send> {
+        let guard = self.leftovers.read();
+        if let Some(l) = guard.get(&account_id) {
+            Box::new(ok(l.clone()))
+        } else {
+            Box::new(err(()))
+        }
     }
 }
 

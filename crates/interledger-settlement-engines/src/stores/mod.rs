@@ -28,3 +28,18 @@ pub trait IdempotentEngineStore {
         data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
+
+pub trait LeftoversStore {
+    /// Saves the leftover data
+    fn save_leftovers(
+        &self,
+        account_id: String,
+        leftovers: BigUint,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    /// Saves the leftover data
+    fn load_leftovers(
+        &self,
+        account_id: String,
+    ) -> Box<dyn Future<Item = BigUint, Error = ()> + Send>;
+}

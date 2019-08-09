@@ -373,7 +373,7 @@ where
                         store
                             .load_account_id_from_address(addr)
                             .and_then(move |id| {
-                                self_clone.notify_connector(id.to_string(), amount, tx_hash)
+                                self_clone.notify_connector(id.to_string(), amount.to_string(), tx_hash)
                             })
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
@@ -456,7 +456,7 @@ where
                         Either::A(
                         store.load_account_id_from_address(addr)
                         .and_then(move |id| {
-                            self_clone.notify_connector(id.to_string(), amount, tx_hash)
+                            self_clone.notify_connector(id.to_string(), amount.to_string(), tx_hash)
                         })
                         .and_then(move |_| {
                             // only save the transaction hash if the connector
@@ -477,7 +477,7 @@ where
     fn notify_connector(
         &self,
         account_id: String,
-        amount: U256,
+        amount: String,
         tx_hash: H256,
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
@@ -488,36 +488,57 @@ where
             .push("accounts")
             .push(&account_id.clone())
             .push("settlements");
-        let client = Client::new();
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
         let self_clone = self.clone();
+        let store = self.store.clone();
+        let amount_clone = amount.clone();
         let action = move || {
             // need to make 2 clones, one to own the variables in the function
             // and one for the retry closure..
             let self_clone = self_clone.clone();
+            let store = store.clone();
             let account_id = account_id.clone();
-            client
-                .post(url.clone())
-                .header("Idempotency-Key", tx_hash.to_string())
-                .json(&json!({ "amount": amount.to_string(), "scale" : engine_scale }))
-                .send()
-                .map_err(move |err| {
-                    error!(
-                        "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
-                        account_id, amount, err
-                    )
+            let account_id_clone2 = account_id.clone();
+            let amount = amount.clone();
+            let url = url.clone();
+
+            // settle for amount + leftovers
+            store.load_leftovers(account_id.clone())
+            .and_then(move |leftovers| {
+                result(BigUint::from_str(&amount.clone()).map_err(move |err| {
+                    let error_msg = format!("Error converting to BigUint {:?}", err);
+                    error!("{:?}", error_msg);
+                }))
+                .and_then(move |amount| {
+                    Ok(amount + leftovers)
                 })
-                .and_then(move |response| {
-                    trace!("Accounting system responded with {:?}", response);
-                    self_clone.process_connector_response(account_id_clone2, response, amount)
-                })
+            })
+            .and_then(move |full_amount| {
+                let client = Client::new();
+                let full_amount_clone = full_amount.clone();
+                client
+                    .post(url.clone())
+                    .header("Idempotency-Key", tx_hash.to_string())
+                    .json(&json!({ "amount": full_amount.clone().to_string(), "scale" : engine_scale }))
+                    .send()
+                    .map_err(move |err| {
+                        error!(
+                            "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
+                            account_id, full_amount_clone, err
+                        )
+                    })
+                    .and_then(move |response| {
+                        trace!("Accounting system responded with {:?}", response);
+                        self_clone.process_connector_response(account_id_clone2, response, full_amount.clone())
+                    })
+            })
         };
         Retry::spawn(
             ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
             action,
         )
         .map_err(move |_| {
-            error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, amount, tx_hash)
+            error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, amount_clone, tx_hash)
         })
     }
 
@@ -525,7 +546,7 @@ where
         &self,
         account_id: String,
         response: HttpResponse,
-        amount: U256,
+        engine_amount: BigUint,
     ) -> impl Future<Item = (), Error = ()> {
         let engine_scale = self.asset_scale;
         let store = self.store.clone();
@@ -549,18 +570,12 @@ where
                     })
                 })
                 .and_then(move |quantity: Quantity| {
-                    // Convert both to BigUInts so we can do arithmetic
-                    join_all(vec![
-                        result(BigUint::from_str(&quantity.amount)),
-                        result(BigUint::from_str(&amount.to_string())),
-                    ])
+                    result(BigUint::from_str(&quantity.amount))
                     .map_err(|err| {
-                        let error_msg = format!("Error converting to BigUints {:?}", err);
+                        let error_msg = format!("Error converting to BigUint {:?}", err);
                         error!("{:?}", error_msg);
                     })
-                    .and_then(move |amounts: Vec<BigUint>| {
-                        let connector_amount = amounts[0].clone();
-                        let engine_amount = amounts[1].clone();
+                    .and_then(move |connector_amount: BigUint| {
                         // Scale the amount settled by the
                         // connector back up to our scale
                         result(connector_amount.normalize_scale(ConvertDetails {
