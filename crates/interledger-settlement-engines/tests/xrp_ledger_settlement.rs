@@ -14,7 +14,7 @@ mod redis_helpers;
 use redis_helpers::*;
 
 mod test_helpers;
-use test_helpers::{create_account, get_balance, send_money, start_xrp_engine, XRP_DECIMALS};
+use test_helpers::{create_account, get_balance, send_money, start_xrp_engine};
 
 #[test]
 /// In this test we have Alice and Bob who have peered with each other and run
@@ -25,6 +25,7 @@ use test_helpers::{create_account, get_balance, send_money, start_xrp_engine, XR
 /// transactions, and once the transaction has sufficient confirmations it
 /// lets Bob's connector know about it, so that it adjusts their credit.
 fn xrp_ledger_settlement() {
+    let xrp_decimals = 6;
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
     let context = TestContext::new();
@@ -87,7 +88,7 @@ fn xrp_ledger_settlement() {
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.alice").unwrap(),
                 asset_code: "XRP".to_string(),
-                asset_scale: XRP_DECIMALS,
+                asset_scale: xrp_decimals,
                 btp_incoming_token: None,
                 btp_uri: None,
                 http_endpoint: None,
@@ -104,13 +105,12 @@ fn xrp_ledger_settlement() {
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
-                settlement_engine_asset_scale: None,
             })
             .and_then(move |_| {
                 node1_clone.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
                     asset_code: "XRP".to_string(),
-                    asset_scale: XRP_DECIMALS,
+                    asset_scale: xrp_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
@@ -127,7 +127,6 @@ fn xrp_ledger_settlement() {
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: Some(format!("http://localhost:{}", node1_engine)),
-                    settlement_engine_asset_scale: Some(XRP_DECIMALS),
                 })
             })
             .and_then(move |_| node1.serve()),
@@ -150,7 +149,7 @@ fn xrp_ledger_settlement() {
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.bob").unwrap(),
                 asset_code: "XRP".to_string(),
-                asset_scale: XRP_DECIMALS,
+                asset_scale: xrp_decimals,
                 btp_incoming_token: None,
                 btp_uri: None,
                 http_endpoint: None,
@@ -167,14 +166,13 @@ fn xrp_ledger_settlement() {
                 packets_per_minute_limit: None,
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
-                settlement_engine_asset_scale: None,
             })
             .and_then(move |_| {
                 node2
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
                         asset_code: "XRP".to_string(),
-                        asset_scale: XRP_DECIMALS,
+                        asset_scale: xrp_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -191,7 +189,6 @@ fn xrp_ledger_settlement() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
-                        settlement_engine_asset_scale: Some(XRP_DECIMALS),
                     })
                     .and_then(move |_| node2.serve())
             }),
@@ -222,9 +219,9 @@ fn xrp_ledger_settlement() {
                         .and_then(move |_| send1)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"10\"}");
+                                assert_eq!(ret, 10);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                    assert_eq!(ret, -10);
                                     Ok(())
                                 })
                             })
@@ -232,9 +229,9 @@ fn xrp_ledger_settlement() {
                         .and_then(move |_| send2)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"30\"}");
+                                assert_eq!(ret, 30);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-30\"}");
+                                    assert_eq!(ret, -30);
                                     Ok(())
                                 })
                             })
@@ -242,9 +239,9 @@ fn xrp_ledger_settlement() {
                         .and_then(move |_| send3)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"70\"}");
+                                assert_eq!(ret, 70);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, "{\"balance\":\"-70\"}");
+                                    assert_eq!(ret, -70);
                                     Ok(())
                                 })
                             })
@@ -257,7 +254,7 @@ fn xrp_ledger_settlement() {
                             // Since the credit connection reached -71, and the
                             // settle_to is -10, a 61 drops transaction is made.
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, "{\"balance\":\"10\"}");
+                                assert_eq!(ret, 10);
                                 // Wait a few seconds so that the receiver's engine
                                 // gets the data and applies it (longer than the
                                 // Ethereum engine since we're using a public
@@ -266,7 +263,7 @@ fn xrp_ledger_settlement() {
                                     .map_err(move |_| panic!("Weird error."))
                                     .and_then(move |_| {
                                         get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                            assert_eq!(ret, "{\"balance\":\"-10\"}");
+                                            assert_eq!(ret, -10);
                                             alice_engine_redis.kill().unwrap();
                                             engine_alice.kill().unwrap();
                                             bob_engine_redis.kill().unwrap();

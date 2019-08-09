@@ -11,7 +11,9 @@ use hyper::{Response, StatusCode};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
-use log::error;
+use log::{debug, error};
+use num_bigint::BigUint;
+use num_traits::cast::ToPrimitive;
 use ring::digest::{digest, SHA256};
 use std::{
     marker::PhantomData,
@@ -55,7 +57,7 @@ impl_web! {
             &self,
             idempotency_key: String,
             input_hash: [u8; 32],
-        ) -> impl Future<Item = (StatusCode, Bytes), Error = String> {
+        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String> {
             self.store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
@@ -63,11 +65,15 @@ impl_web! {
                     error!("{}", error_msg);
                     error_msg
                 })
-                .and_then(move |ret: IdempotentData| {
-                    if ret.2 == input_hash {
-                        Ok((ret.0, ret.1))
+                .and_then(move |ret: Option<IdempotentData>| {
+                    if let Some(ret) = ret {
+                        if ret.2 == input_hash {
+                            Ok(Some((ret.0, ret.1)))
+                        } else {
+                            Ok(Some((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..]))))
+                        }
                     } else {
-                        Ok((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..])))
+                        Ok(None)
                     }
                 })
         }
@@ -81,8 +87,12 @@ impl_web! {
                 // key, perform the call and save the idempotent return data
                 Either::A(
                     self.check_idempotency(idempotency_key.clone(), input_hash)
-                    .then(move |ret: Result<(StatusCode, Bytes), String>| {
-                        if let Ok(ret) = ret {
+                    .map_err(move |err| {
+                        let status_code = StatusCode::from_u16(500).unwrap();
+                        Response::builder().status(status_code).body(err).unwrap()
+                    })
+                    .and_then(move |ret: Option<(StatusCode, Bytes)>| {
+                        if let Some(ret) = ret {
                             if ret.0.is_success() {
                                 let resp = Response::builder().status(ret.0).body(ret.1).unwrap();
                                 return Either::A(Either::A(ok(resp)))
@@ -139,6 +149,8 @@ impl_web! {
 
         fn do_receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
             let store = self.store.clone();
+            let amount = body.amount;
+            let engine_scale = body.scale;
             Box::new(result(A::AccountId::from_str(&account_id)
             .map_err(move |_err| {
                 let error_msg = format!("Unable to parse account id: {}", account_id);
@@ -157,32 +169,54 @@ impl_web! {
             }})
             .and_then(move |accounts| {
                 let account = &accounts[0];
-                if let Some(settlement_engine) = account.settlement_engine_details() {
-                    Ok((account.clone(), settlement_engine))
+                if account.settlement_engine_details().is_some() {
+                    Ok(account.clone())
                 } else {
                     let error_msg = format!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
                     error!("{}", error_msg);
                     Err((StatusCode::from_u16(404).unwrap(), error_msg))
                 }
             })
-            .and_then(move |(account, settlement_engine)| {
-                let account_id = account.id();
-                let amount: u64 = body.amount.parse().unwrap();
-                let amount = amount.normalize_scale(ConvertDetails {
-                    // We have account, engine and request asset scale.
-                    // Which one is not required? Still not clear from all the spec discussions.
-                    from: account.asset_scale(),
-                    to: settlement_engine.asset_scale
-                });
-                store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+            .and_then(move |account| {
+                result(BigUint::from_str(&amount))
                 .map_err(move |_| {
-                    let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                    let error_msg = format!("Could not convert amount: {:?}", amount);
                     error!("{}", error_msg);
                     (StatusCode::from_u16(500).unwrap(), error_msg)
                 })
-            }).and_then(move |_| {
-                let ret = Bytes::from("Success");
-                Ok((StatusCode::OK, ret))
+                .and_then(move |amount_from_engine| {
+                    let account_id = account.id();
+                    let amount = amount_from_engine.normalize_scale(ConvertDetails {
+                        from: engine_scale,
+                        to: account.asset_scale(),
+                    });
+                    result(amount.clone())
+                    .map_err(move |_| {
+                        let error_msg = format!("Could not convert amount: {:?}", amount);
+                        error!("{}", error_msg);
+                        (StatusCode::from_u16(500).unwrap(), error_msg)
+                    })
+                    .and_then(move |amount| {
+                        // If we'd overflow, settle for the maximum u64 value
+                        let amount = if let Some(amount_u64) = amount.to_u64() {
+                            amount_u64
+                        } else {
+                            debug!("Amount settled from engine overflowed during conversion to connector scale: {:?}. Settling for u64::MAX", amount);
+                            std::u64::MAX
+                        };
+                        store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
+                        .map_err(move |_| {
+                            let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
+                            error!("{}", error_msg);
+                            (StatusCode::from_u16(500).unwrap(), error_msg)
+                        })
+                        .and_then(move |_| {
+                            // TODO: Return a Quantity of amount and account.asset_scale()
+                            let ret = Bytes::from("Success");
+                            Ok((StatusCode::OK, ret))
+                        })
+                    })
+                })
             }))
         }
 

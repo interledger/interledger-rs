@@ -8,15 +8,14 @@ use std::str;
 use std::thread::sleep;
 use std::time::Duration;
 
-const CONFIRMATIONS: u8 = 0;
-const CHAIN_ID: u8 = 1;
-pub const ETH_DECIMALS: u8 = 18;
-#[allow(unused)]
-pub const XRP_DECIMALS: u8 = 6;
-
 #[derive(serde::Deserialize)]
 pub struct DeliveryData {
     pub delivered_amount: u64,
+}
+
+#[derive(serde::Deserialize)]
+pub struct BalanceData {
+    pub balance: String,
 }
 
 #[allow(unused)]
@@ -69,9 +68,9 @@ pub fn start_eth_engine(
         engine_port,
         &cli::random_secret(),
         key,
-        CHAIN_ID,
-        CONFIRMATIONS,
-        ETH_DECIMALS,
+        1,
+        0,
+        18,
         1000,
         format!("http://127.0.0.1:{}", settlement_port),
         None,
@@ -94,10 +93,7 @@ pub fn create_account(
         .map_err(|err| {
             eprintln!("Error creating account: {:?}", err);
         })
-        .and_then(move |chunk| {
-            println!("GOT RES {} {} {:?}", engine_port, account_id, chunk);
-            Ok(str::from_utf8(&chunk).unwrap().to_string())
-        })
+        .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
 }
 
 pub fn send_money(
@@ -105,7 +101,7 @@ pub fn send_money(
     to: u16,
     amount: u64,
     auth: &str,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = u64, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .post(&format!("http://localhost:{}/pay", from))
@@ -122,8 +118,7 @@ pub fn send_money(
         })
         .and_then(move |body| {
             let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
-            assert_eq!(ret.delivered_amount, amount);
-            Ok(())
+            Ok(ret.delivered_amount)
         })
 }
 
@@ -131,7 +126,7 @@ pub fn get_balance(
     account_id: u64,
     node_port: u16,
     admin_token: &str,
-) -> impl Future<Item = String, Error = ()> {
+) -> impl Future<Item = i64, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .get(&format!(
@@ -145,5 +140,8 @@ pub fn get_balance(
         .map_err(|err| {
             eprintln!("Error getting account data: {:?}", err);
         })
-        .and_then(|chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
+        .and_then(|body| {
+            let ret: BalanceData = serde_json::from_slice(&body).unwrap();
+            Ok(ret.balance.parse().unwrap())
+        })
 }
