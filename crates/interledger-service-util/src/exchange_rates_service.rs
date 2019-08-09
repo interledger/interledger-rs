@@ -99,7 +99,9 @@ where
 
             match outgoing_amount {
                 Ok(outgoing_amount) => {
-                    // f64 which cannot fit in u64 gets cast as 0
+                    // The conversion succeeded, but the produced f64
+                    // is larger than the maximum value for a u64.
+                    // When it gets cast to a u64, it will end up being 0.
                     if outgoing_amount != 0.0 && outgoing_amount as u64 == 0 {
                         return Box::new(err(RejectBuilder {
                             code: ErrorCode::F08_AMOUNT_TOO_LARGE,
@@ -119,6 +121,10 @@ where
                         outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
                 }
                 Err(_) => {
+                    // This branch gets executed when the `Convert` trait
+                    // returns an error. Happens due to float
+                    // multiplication overflow .
+                    // (float overflow in Rust produces +inf)
                     return Box::new(err(RejectBuilder {
                         code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                         message: format!(
@@ -140,4 +146,161 @@ where
 
         Box::new(self.next.send_request(request))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{future::ok, Future};
+    use interledger_ildcp::IldcpAccount;
+    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
+    use interledger_service::{outgoing_service_fn, Account};
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use std::{
+        sync::{Arc, Mutex},
+        time::SystemTime,
+    };
+
+    #[test]
+    fn exchange_rate_ok() {
+        let ret = exchange_rate(100, 1, 1.0, 1, 2.0);
+        assert_eq!(ret.1[0].prepare.amount(), 200);
+
+        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0);
+        assert_eq!(ret.1[0].prepare.amount(), 666_666);
+    }
+
+    #[test]
+    fn exchange_conversion_error() {
+        // rejects f64 that does not fit in u64
+        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 1, 2.0);
+        let reject = ret.0.unwrap_err();
+        assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
+        assert!(reject.message().starts_with(b"Could not cast"));
+
+        // `Convert` errored
+        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 255, std::f64::MAX);
+        let reject = ret.0.unwrap_err();
+        assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
+        assert!(reject.message().starts_with(b"Could not convert"));
+    }
+
+    // Instantiates an exchange rate service and returns the fulfill/reject
+    // packet and the outgoing request after performing an asset conversion
+    fn exchange_rate(
+        amount: u64,
+        scale1: u8,
+        rate1: f64,
+        scale2: u8,
+        rate2: f64,
+    ) -> (Result<Fulfill, Reject>, Vec<OutgoingRequest<TestAccount>>) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_clone = requests.clone();
+        let outgoing = outgoing_service_fn(move |request| {
+            requests_clone.lock().unwrap().push(request);
+            Box::new(ok(FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"hello!",
+            }
+            .build()))
+        });
+        let mut service = test_service(rate1, rate2, outgoing);
+        let result = service
+            .send_request(OutgoingRequest {
+                from: TestAccount::new("ABC".to_owned(), scale1),
+                to: TestAccount::new("XYZ".to_owned(), scale2),
+                original_amount: amount,
+                prepare: PrepareBuilder {
+                    destination: Address::from_str("example.destination").unwrap(),
+                    amount,
+                    expires_at: SystemTime::now(),
+                    execution_condition: &[1; 32],
+                    data: b"hello",
+                }
+                .build(),
+            })
+            .wait();
+
+        let reqs = requests.lock().unwrap();
+        (result, reqs.clone())
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestAccount {
+        ilp_address: Address,
+        asset_code: String,
+        asset_scale: u8,
+    }
+    impl TestAccount {
+        fn new(asset_code: String, asset_scale: u8) -> Self {
+            TestAccount {
+                ilp_address: Address::from_str("example.alice").unwrap(),
+                asset_code,
+                asset_scale,
+            }
+        }
+    }
+
+    impl Account for TestAccount {
+        type AccountId = u64;
+
+        fn id(&self) -> u64 {
+            0
+        }
+    }
+
+    impl IldcpAccount for TestAccount {
+        fn asset_code(&self) -> &str {
+            &self.asset_code
+        }
+
+        fn asset_scale(&self) -> u8 {
+            self.asset_scale
+        }
+
+        fn client_address(&self) -> &Address {
+            &self.ilp_address
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestStore {
+        rates: HashMap<Vec<String>, (f64, f64)>,
+    }
+
+    impl ExchangeRateStore for TestStore {
+        fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
+            let mut ret = Vec::new();
+            let key = vec![asset_codes[0].to_owned(), asset_codes[1].to_owned()];
+            let v = self.rates.get(&key);
+            if let Some(v) = v {
+                ret.push(v.0);
+                ret.push(v.1);
+            } else {
+                return Err(());
+            }
+            Ok(ret)
+        }
+    }
+
+    fn test_store(rate1: f64, rate2: f64) -> TestStore {
+        let mut rates = HashMap::new();
+        rates.insert(vec!["ABC".to_owned(), "XYZ".to_owned()], (rate1, rate2));
+        TestStore { rates }
+    }
+
+    fn test_service(
+        rate1: f64,
+        rate2: f64,
+        handler: impl OutgoingService<TestAccount> + Clone + Send + Sync,
+    ) -> ExchangeRateService<
+        TestStore,
+        impl OutgoingService<TestAccount> + Clone + Send + Sync,
+        TestAccount,
+    > {
+        let store = test_store(rate1, rate2);
+        ExchangeRateService::new(Address::from_str("example.bob").unwrap(), store, handler)
+    }
+
 }
