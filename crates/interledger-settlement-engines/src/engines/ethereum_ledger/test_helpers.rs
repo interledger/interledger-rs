@@ -68,17 +68,22 @@ use crate::stores::LeftoversStore;
 use num_bigint::BigUint;
 
 impl LeftoversStore for TestStore {
+    type AssetType = BigUint;
+
     fn save_leftovers(
         &self,
         account_id: String,
-        leftovers: BigUint,
+        leftovers: Self::AssetType,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
         let mut guard = self.leftovers.write();
         (*guard).insert(account_id, leftovers);
         Box::new(ok(()))
     }
 
-    fn load_leftovers(&self, account_id: String) -> Box<Future<Item = BigUint, Error = ()> + Send> {
+    fn load_leftovers(
+        &self,
+        account_id: String,
+    ) -> Box<Future<Item = Self::AssetType, Error = ()> + Send> {
         let guard = self.leftovers.read();
         if let Some(l) = guard.get(&account_id) {
             Box::new(ok(l.clone()))
@@ -261,6 +266,7 @@ impl TestStore {
             cache_hits: Arc::new(RwLock::new(0)),
             last_observed_block: Arc::new(RwLock::new(U256::from(0))),
             saved_hashes: Arc::new(RwLock::new(HashMap::new())),
+            leftovers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -288,7 +294,13 @@ pub fn test_engine<Si, S, A>(
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
 where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    S: EthereumStore<Account = A> + IdempotentStore + Clone + Send + Sync + 'static,
+    S: EthereumStore<Account = A>
+        + LeftoversStore<AssetType = BigUint>
+        + IdempotentStore
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
     EthereumLedgerSettlementEngineBuilder::new(store, key)

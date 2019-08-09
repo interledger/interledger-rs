@@ -14,6 +14,8 @@ use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineComman
 use log::{error, trace};
 
 use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
+use crate::stores::LeftoversStore;
+use num_bigint::BigUint;
 
 // Key for the latest observed block and balance. The data is stored in order to
 // avoid double crediting transactions which have already been processed, and in
@@ -107,10 +109,12 @@ impl EthereumLedgerRedisStore {
 }
 
 impl LeftoversStore for EthereumLedgerRedisStore {
+    type AssetType = BigUint;
+
     fn save_leftovers(
         &self,
         account_id: String,
-        leftovers: BigUint,
+        leftovers: Self::AssetType,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut pipe = redis::pipe();
         pipe.set(format!("leftovers:{}", account_id), leftovers.to_string())
@@ -125,10 +129,9 @@ impl LeftoversStore for EthereumLedgerRedisStore {
     fn load_leftovers(
         &self,
         account_id: String,
-    ) -> Box<dyn Future<Item = BigUint, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.get(format!("leftovers:{}", account_id))
-            .ignore();
+        pipe.get(format!("leftovers:{}", account_id)).ignore();
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading leftovers {:?}: ", err))
@@ -138,7 +141,7 @@ impl LeftoversStore for EthereumLedgerRedisStore {
                     } else {
                         Box::new(err(()))
                     }
-                })
+                }),
         )
     }
 }

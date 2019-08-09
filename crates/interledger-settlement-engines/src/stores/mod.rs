@@ -30,16 +30,18 @@ pub trait IdempotentEngineStore {
 }
 
 pub trait LeftoversStore {
+    type AssetType;
+
     /// Saves the leftover data
     fn save_leftovers(
         &self,
         account_id: String,
-        leftovers: BigUint,
+        leftovers: Self::AssetType,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Saves the leftover data
     fn load_leftovers(
         &self,
         account_id: String,
-    ) -> Box<dyn Future<Item = BigUint, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
 }

@@ -35,7 +35,7 @@ use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 use uuid::Uuid;
 
-use crate::stores::redis_ethereum_ledger::*;
+use crate::stores::{redis_ethereum_ledger::*, LeftoversStore};
 use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};
 use interledger_settlement::{Convert, ConvertDetails, Quantity};
 
@@ -101,7 +101,12 @@ pub struct EthereumLedgerSettlementEngineBuilder<'a, S, Si, A> {
 
 impl<'a, S, Si, A> EthereumLedgerSettlementEngineBuilder<'a, S, Si, A>
 where
-    S: EthereumStore<Account = A> + Clone + Send + Sync + 'static,
+    S: EthereumStore<Account = A>
+        + LeftoversStore<AssetType = BigUint>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
@@ -223,7 +228,12 @@ where
 
 impl<S, Si, A> EthereumLedgerSettlementEngine<S, Si, A>
 where
-    S: EthereumStore<Account = A> + Clone + Send + Sync + 'static,
+    S: EthereumStore<Account = A>
+        + LeftoversStore<AssetType = BigUint>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
@@ -373,7 +383,11 @@ where
                         store
                             .load_account_id_from_address(addr)
                             .and_then(move |id| {
-                                self_clone.notify_connector(id.to_string(), amount.to_string(), tx_hash)
+                                self_clone.notify_connector(
+                                    id.to_string(),
+                                    amount.to_string(),
+                                    tx_hash,
+                                )
                             })
                             .and_then(move |_| {
                                 // only save the transaction hash if the connector
@@ -571,29 +585,31 @@ where
                 })
                 .and_then(move |quantity: Quantity| {
                     result(BigUint::from_str(&quantity.amount))
-                    .map_err(|err| {
-                        let error_msg = format!("Error converting to BigUint {:?}", err);
-                        error!("{:?}", error_msg);
-                    })
-                    .and_then(move |connector_amount: BigUint| {
-                        // Scale the amount settled by the
-                        // connector back up to our scale
-                        result(connector_amount.normalize_scale(ConvertDetails {
-                            from: quantity.scale,
-                            to: engine_scale,
-                        }))
-                        .and_then(move |scaled_connector_amount| {
-                            let diff: BigUint = engine_amount - scaled_connector_amount;
-                            if diff > Zero::zero() {
-                                // connector settled less than we
-                                // instructed it to, so we must save
-                                // the difference for the leftovers
-                                Either::A(store.save_leftovers(account_id, diff))
-                            } else {
-                                Either::B(ok(()))
-                            }
+                        .map_err(|err| {
+                            let error_msg = format!("Error converting to BigUint {:?}", err);
+                            error!("{:?}", error_msg);
                         })
-                    })
+                        .and_then(move |connector_amount: BigUint| {
+                            // Scale the amount settled by the
+                            // connector back up to our scale
+                            result(connector_amount.normalize_scale(ConvertDetails {
+                                from: quantity.scale,
+                                to: engine_scale,
+                            }))
+                            .and_then(
+                                move |scaled_connector_amount| {
+                                    let diff: BigUint = engine_amount - scaled_connector_amount;
+                                    if diff > Zero::zero() {
+                                        // connector settled less than we
+                                        // instructed it to, so we must save
+                                        // the difference for the leftovers
+                                        Either::A(store.save_leftovers(account_id, diff))
+                                    } else {
+                                        Either::B(ok(()))
+                                    }
+                                },
+                            )
+                        })
                 }),
         )
     }
@@ -689,7 +705,12 @@ where
 
 impl<S, Si, A> SettlementEngine for EthereumLedgerSettlementEngine<S, Si, A>
 where
-    S: EthereumStore<Account = A> + Clone + Send + Sync + 'static,
+    S: EthereumStore<Account = A>
+        + LeftoversStore<AssetType = BigUint>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     A: EthereumAccount + Send + Sync + 'static,
 {
