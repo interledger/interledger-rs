@@ -190,6 +190,7 @@ where
         let clone = self.clone();
         self.update_best_routes(None)
             .and_then(move |_| clone.send_route_updates())
+            .then(|_| Ok(()))
     }
 
     /// Request routes from all the peers we are willing to receive routes from.
@@ -382,6 +383,7 @@ where
                 }
             }
             Err(message) => {
+                warn!("Error handling incoming Route Update request, sending a Route Control request to get updated routing table info from peer. Error was: {}", &message);
                 let reject = RejectBuilder {
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
@@ -616,7 +618,7 @@ where
                                         account_id, err
                                     )
                                 })
-                                .and_then(|_| Ok(()))
+                                .then(|_| Ok(()))
                         }))
                         .and_then(|_| {
                             trace!("Finished sending route updates");
