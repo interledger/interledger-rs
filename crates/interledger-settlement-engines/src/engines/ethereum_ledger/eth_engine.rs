@@ -17,7 +17,6 @@ use hyper::StatusCode;
 use interledger_store_redis::RedisStoreBuilder;
 use log::info;
 use num_bigint::BigUint;
-use num_traits::Zero;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
 use ring::{digest, hmac};
@@ -299,64 +298,66 @@ where
         let token_address = self.address.token_address;
 
         // get the current block number
-        web3.eth()
-            .block_number()
-            .map_err(move |err| error!("Could not fetch current block number {:?}", err))
-            .and_then(move |current_block| {
-                trace!("Current block {}", current_block);
-                // get the safe number of blocks to avoid reorgs
-                let fetch_until = current_block - confirmations;
-                // U256 does not implement IntoFuture so we must wrap it
-                Ok((Ok(fetch_until), store.load_recently_observed_block()))
-            })
-            .flatten()
-            .and_then(move |(fetch_until, last_observed_block)| {
-                trace!(
-                    "Will fetch txs from block {} until {}",
-                    last_observed_block,
-                    fetch_until
-                );
-
-                let notify_all_txs_fut = if let Some(token_address) = token_address {
-                    trace!("Settling for ERC20 transactions");
-                    // get all erc20 transactions
-                    let notify_all_erc20_txs_fut = filter_transfer_logs(
-                        web3.clone(),
-                        token_address,
-                        None,
-                        Some(our_address),
-                        BlockNumber::Number(last_observed_block.low_u64()),
-                        BlockNumber::Number(fetch_until.low_u64()),
-                    )
-                    .and_then(move |transfers: Vec<ERC20Transfer>| {
-                        // map each incoming erc20 transactions to an outgoing
-                        // notification to the connector
-                        join_all(transfers.into_iter().map(move |transfer| {
-                            self_clone2.notify_erc20_transfer(transfer, token_address)
-                        }))
-                    });
-
-                    // combine all erc20 futures for that range of blocks
-                    Either::A(notify_all_erc20_txs_fut)
-                } else {
-                    trace!("Settling for ETH transactions");
-                    let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
-                    // for each block create a future which will notify the
-                    // connector about all the transactions in that block that are sent to our account
-                    let notify_eth_txs_fut = checked_blocks
-                        .map(move |block_num| self_clone.notify_eth_txs_in_block(block_num));
-
-                    // combine all the futures for that range of blocks
-                    Either::B(join_all(notify_eth_txs_fut))
-                };
-
-                notify_all_txs_fut.and_then(move |ret| {
-                    trace!("Transactions settled {:?}", ret);
-                    // now that all transactions have been processed successfully, we
-                    // can save `fetch_until` as the latest observed block
-                    store_clone.save_recently_observed_block(fetch_until)
+        Box::new(
+            web3.eth()
+                .block_number()
+                .map_err(move |err| error!("Could not fetch current block number {:?}", err))
+                .and_then(move |current_block| {
+                    trace!("Current block {}", current_block);
+                    // get the safe number of blocks to avoid reorgs
+                    let fetch_until = current_block - confirmations;
+                    // U256 does not implement IntoFuture so we must wrap it
+                    Ok((Ok(fetch_until), store.load_recently_observed_block()))
                 })
-            })
+                .flatten()
+                .and_then(move |(fetch_until, last_observed_block)| {
+                    trace!(
+                        "Will fetch txs from block {} until {}",
+                        last_observed_block,
+                        fetch_until
+                    );
+
+                    let notify_all_txs_fut = if let Some(token_address) = token_address {
+                        trace!("Settling for ERC20 transactions");
+                        // get all erc20 transactions
+                        let notify_all_erc20_txs_fut = filter_transfer_logs(
+                            web3.clone(),
+                            token_address,
+                            None,
+                            Some(our_address),
+                            BlockNumber::Number(last_observed_block.low_u64()),
+                            BlockNumber::Number(fetch_until.low_u64()),
+                        )
+                        .and_then(move |transfers: Vec<ERC20Transfer>| {
+                            // map each incoming erc20 transactions to an outgoing
+                            // notification to the connector
+                            join_all(transfers.into_iter().map(move |transfer| {
+                                self_clone2.notify_erc20_transfer(transfer, token_address)
+                            }))
+                        });
+
+                        // combine all erc20 futures for that range of blocks
+                        Either::A(notify_all_erc20_txs_fut)
+                    } else {
+                        trace!("Settling for ETH transactions");
+                        let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
+                        // for each block create a future which will notify the
+                        // connector about all the transactions in that block that are sent to our account
+                        let notify_eth_txs_fut = checked_blocks
+                            .map(move |block_num| self_clone.notify_eth_txs_in_block(block_num));
+
+                        // combine all the futures for that range of blocks
+                        Either::B(join_all(notify_eth_txs_fut))
+                    };
+
+                    notify_all_txs_fut.and_then(move |ret| {
+                        trace!("Transactions settled {:?}", ret);
+                        // now that all transactions have been processed successfully, we
+                        // can save `fetch_until` as the latest observed block
+                        store_clone.save_recently_observed_block(fetch_until)
+                    })
+                }),
+        )
     }
 
     /// Submits an ERC20 transfer object's data to the connector
@@ -365,7 +366,7 @@ where
         &self,
         transfer: ERC20Transfer,
         token_address: Address,
-    ) -> impl Future<Item = (), Error = ()> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let store = self.store.clone();
         let tx_hash = transfer.tx_hash;
         let self_clone = self.clone();
@@ -374,31 +375,35 @@ where
             token_address: Some(token_address),
         };
         let amount = transfer.amount;
-        store
-            .check_if_tx_processed(tx_hash)
-            .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
-            .and_then(move |processed| {
-                if !processed {
-                    Either::A(
-                        store
-                            .load_account_id_from_address(addr)
-                            .and_then(move |id| {
-                                self_clone.notify_connector(
-                                    id.to_string(),
-                                    amount.to_string(),
-                                    tx_hash,
-                                )
-                            })
-                            .and_then(move |_| {
-                                // only save the transaction hash if the connector
-                                // was successfully notified
-                                store.mark_tx_processed(tx_hash)
-                            }),
-                    )
-                } else {
-                    Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
-                }
-            })
+        Box::new(
+            store
+                .check_if_tx_processed(tx_hash)
+                .map_err(move |_| {
+                    error!("Error when querying store about transaction: {:?}", tx_hash)
+                })
+                .and_then(move |processed| {
+                    if !processed {
+                        Either::A(
+                            store
+                                .load_account_id_from_address(addr)
+                                .and_then(move |id| {
+                                    self_clone.notify_connector(
+                                        id.to_string(),
+                                        amount.to_string(),
+                                        tx_hash,
+                                    )
+                                })
+                                .and_then(move |_| {
+                                    // only save the transaction hash if the connector
+                                    // was successfully notified
+                                    store.mark_tx_processed(tx_hash)
+                                }),
+                        )
+                    } else {
+                        Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
+                    }
+                }),
+        )
     }
 
     fn notify_eth_txs_in_block(&self, block_number: u64) -> impl Future<Item = (), Error = ()> {
@@ -438,18 +443,17 @@ where
             })
     }
 
-    fn notify_eth_transfer(&self, tx_hash: H256) -> impl Future<Item = (), Error = ()> {
+    fn notify_eth_transfer(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let our_address = self.address.own_address;
         let web3 = self.web3.clone();
         let store = self.store.clone();
         let self_clone = self.clone();
         // Skip transactions which have already been processed by the connector
-        store.check_if_tx_processed(tx_hash)
+        Box::new(store.check_if_tx_processed(tx_hash)
         .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
         .and_then(move |processed| {
             if !processed {
-                Either::A(
-                web3.eth().transaction(TransactionId::Hash(tx_hash))
+                Either::A(web3.eth().transaction(TransactionId::Hash(tx_hash))
                 .map_err(move |err| error!("Could not fetch transaction data from transaction hash: {:?}. Got error: {:?}", tx_hash, err))
                 .and_then(move |maybe_tx| {
                     // Unlikely to error out since we only call this on
@@ -467,8 +471,7 @@ where
                             own_address: from,
                             token_address,
                         };
-                        Either::A(
-                        store.load_account_id_from_address(addr)
+                        Either::A(store.load_account_id_from_address(addr)
                         .and_then(move |id| {
                             self_clone.notify_connector(id.to_string(), amount.to_string(), tx_hash)
                         })
@@ -485,7 +488,7 @@ where
             } else {
                 Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
             }
-        })
+        }))
     }
 
     fn notify_connector(
@@ -504,72 +507,84 @@ where
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
 
         // settle for amount + leftovers
-        let self_clone = self.clone();
-        self.store
+        let account_id_clone = account_id.clone();
+        let full_amount_fut = self
+            .store
             .pop_leftovers(account_id.clone())
             .and_then(move |leftovers| {
-                debug!("POPPED LEFTOVERS {:?}", leftovers);
-                result(BigUint::from_str(&amount).map_err(move |err| {
+                let full_amount_fut2 = result(BigUint::from_str(&amount).map_err(move |err| {
                     let error_msg = format!("Error converting to BigUint {:?}", err);
                     error!("{:?}", error_msg);
                 }))
                 .and_then(move |amount| {
                     debug!("Got uncredited amount {}", amount);
                     let full_amount = amount + leftovers;
-                    let client = Client::new();
                     debug!(
                         "Notifying accounting system about full amount: {}",
                         full_amount
                     );
-                    let url = url.clone();
-                    let account_id_clone = account_id.clone();
-                    let full_amount_clone = full_amount.clone();
-                    let account_id_clone2 = account_id.clone();
-                    let full_amount_clone2 = full_amount.clone();
-
-                    let action = move || {
-                        let account_id = account_id.clone();
-                        let full_amount = full_amount.clone();
-                        client
-                            .post(url.clone())
-                            .header("Idempotency-Key", tx_hash.to_string())
-                            .json(&json!(Quantity::new(full_amount.clone(), engine_scale)))
-                            .send()
-                            .map_err(move |err| {
-                                error!(
-                                    "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
-                                    account_id.clone(), full_amount.clone(), err
-                                );
-                            })
-                    };
-                    Retry::spawn(
-                        ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
-                        action,
-                    )
-                    .map_err(move |_| {
-                        error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone2, full_amount_clone2, tx_hash)
-                    })
-                    .and_then(move |response| {
-                        trace!("Accounting system responded with {:?}", response);
-                        // Ok(()) // This call causes the type_length_error
-                        self_clone.process_connector_response(account_id_clone, response, full_amount_clone)
-                    })
-                })
+                    ok(full_amount)
+                });
+                ok(full_amount_fut2)
             })
+            .flatten();
+
+        let self_clone = self.clone();
+        let ping_connector_fut = full_amount_fut.and_then(move |full_amount| {
+            let url = url.clone();
+            let account_id = account_id_clone.clone();
+            let account_id2 = account_id_clone.clone();
+            let full_amount2 = full_amount.clone();
+
+            let action = move || {
+                let client = Client::new();
+                let account_id = account_id.clone();
+                let full_amount = full_amount.clone();
+                let full_amount_clone = full_amount.clone();
+                client
+                    .post(url.clone())
+                    .header("Idempotency-Key", tx_hash.to_string())
+                    .json(&json!(Quantity::new(full_amount.clone(), engine_scale)))
+                    .send()
+                    .map_err(move |err| {
+                        error!(
+                            "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
+                            account_id, full_amount_clone, err
+                        );
+                    })
+                    .and_then(move |ret| {
+                        ok((ret, full_amount))
+                    })
+            };
+            Retry::spawn(
+                ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                action,
+            )
+            .map_err(move |_| {
+                error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id2, full_amount2, tx_hash)
+            })
+        });
+
+        ping_connector_fut.and_then(move |ret| {
+            trace!("Accounting system responded with {:?}", ret.0);
+            self_clone.process_connector_response(account_id, ret.0, ret.1)
+        })
     }
 
+    /// Parses a response from a connector into a Quantity type and calls a
+    /// function to further process the parsed data to check if the store's
+    /// leftovers should be updated.
     fn process_connector_response(
         &self,
         account_id: String,
         response: HttpResponse,
         engine_amount: BigUint,
-    ) -> impl Future<Item = (), Error = ()> {
-        let engine_scale = self.asset_scale;
-        let store = self.store.clone();
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let self_clone = self.clone();
         if !response.status().is_success() {
-            return Either::A(err(()));
+            return Box::new(err(()));
         }
-        Either::B(
+        Box::new(
             response
                 .into_body()
                 .concat2()
@@ -586,32 +601,46 @@ where
                     })
                 })
                 .and_then(move |quantity: Quantity| {
-                    result(BigUint::from_str(&quantity.amount))
-                        .map_err(|err| {
-                            let error_msg = format!("Error converting to BigUint {:?}", err);
-                            error!("{:?}", error_msg);
-                        })
-                        .and_then(move |connector_amount: BigUint| {
-                            // Scale the amount settled by the
-                            // connector back up to our scale
-                            result(connector_amount.normalize_scale(ConvertDetails {
-                                from: quantity.scale,
-                                to: engine_scale,
-                            }))
-                            .and_then(
-                                move |scaled_connector_amount| {
-                                    let diff: BigUint = engine_amount - scaled_connector_amount;
-                                    if diff > Zero::zero() {
-                                        // connector settled less than we
-                                        // instructed it to, so we must save
-                                        // the difference for the leftovers
-                                        Either::A(store.save_leftovers(account_id, diff))
-                                    } else {
-                                        Either::B(ok(()))
-                                    }
-                                },
-                            )
-                        })
+                    self_clone.process_received_quantity(account_id, quantity, engine_amount)
+                }),
+        )
+    }
+
+    // Normalizes a received Quantity object against the local engine scale, and
+    // if the normalized value is less than what the engine originally sent, it
+    // stores it as leftovers in the store.
+    fn process_received_quantity(
+        &self,
+        account_id: String,
+        quantity: Quantity,
+        engine_amount: BigUint,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let store = self.store.clone();
+        let engine_scale = self.asset_scale;
+        Box::new(
+            result(BigUint::from_str(&quantity.amount))
+                .map_err(|err| {
+                    let error_msg = format!("Error converting to BigUint {:?}", err);
+                    error!("{:?}", error_msg);
+                })
+                .and_then(move |connector_amount: BigUint| {
+                    // Scale the amount settled by the
+                    // connector back up to our scale
+                    result(connector_amount.normalize_scale(ConvertDetails {
+                        from: quantity.scale,
+                        to: engine_scale,
+                    }))
+                    .and_then(move |scaled_connector_amount| {
+                        if engine_amount > scaled_connector_amount {
+                            let diff = engine_amount - scaled_connector_amount;
+                            // connector settled less than we
+                            // instructed it to, so we must save
+                            // the difference for the leftovers
+                            store.save_leftovers(account_id, diff)
+                        } else {
+                            Box::new(ok(()))
+                        }
+                    })
                 }),
         )
     }
@@ -1059,7 +1088,7 @@ mod tests {
                 "{\"amount\": \"100000000000\", \"scale\": 18 }".to_string(),
             ))
             .with_status(200)
-            .with_body("OK".to_string())
+            .with_body("{\"amount\": \"100000000000\", \"scale\": 9 }".to_string())
             .create();
 
         let bob_connector_url = mockito::server_url();
