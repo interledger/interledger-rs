@@ -504,6 +504,7 @@ where
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
 
         // settle for amount + leftovers
+        let self_clone = self.clone();
         self.store
             .pop_leftovers(account_id.clone())
             .and_then(move |leftovers| {
@@ -523,6 +524,8 @@ where
                     let url = url.clone();
                     let account_id_clone = account_id.clone();
                     let full_amount_clone = full_amount.clone();
+                    let account_id_clone2 = account_id.clone();
+                    let full_amount_clone2 = full_amount.clone();
 
                     let action = move || {
                         let account_id = account_id.clone();
@@ -539,18 +542,17 @@ where
                                 );
                             })
                     };
-
                     Retry::spawn(
                         ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
                         action,
                     )
                     .map_err(move |_| {
-                        error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, full_amount_clone, tx_hash)
+                        error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone2, full_amount_clone2, tx_hash)
                     })
                     .and_then(move |response| {
                         trace!("Accounting system responded with {:?}", response);
-                        Ok(()) // This call causes the type_length_error
-                        // self_clone.process_connector_response(account_id_clone2, response, full_amount.clone())
+                        // Ok(()) // This call causes the type_length_error
+                        self_clone.process_connector_response(account_id_clone, response, full_amount_clone)
                     })
                 })
             })
