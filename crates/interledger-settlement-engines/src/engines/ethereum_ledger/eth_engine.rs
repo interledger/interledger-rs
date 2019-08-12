@@ -297,6 +297,9 @@ where
         let our_address = self.address.own_address;
         let token_address = self.address.token_address;
 
+        // We `Box` futures in these functions due to
+        // https://github.com/rust-lang/rust/issues/54540#issuecomment-494749912.
+        // Otherwise, we get `type_length_limit` errors.
         // get the current block number
         Box::new(
             web3.eth()
@@ -306,7 +309,6 @@ where
                     trace!("Current block {}", current_block);
                     // get the safe number of blocks to avoid reorgs
                     let fetch_until = current_block - confirmations;
-                    // U256 does not implement IntoFuture so we must wrap it
                     Ok((Ok(fetch_until), store.load_recently_observed_block()))
                 })
                 .flatten()
@@ -506,19 +508,19 @@ where
             .push("settlements");
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
 
-        // settle for amount + leftovers
+        // settle for amount + uncredited_settlement_amount
         let account_id_clone = account_id.clone();
         let full_amount_fut = self
             .store
-            .pop_leftovers(account_id.clone())
-            .and_then(move |leftovers| {
+            .load_uncredited_settlement_amount(account_id.clone())
+            .and_then(move |uncredited_settlement_amount| {
                 let full_amount_fut2 = result(BigUint::from_str(&amount).map_err(move |err| {
                     let error_msg = format!("Error converting to BigUint {:?}", err);
                     error!("{:?}", error_msg);
                 }))
                 .and_then(move |amount| {
                     debug!("Got uncredited amount {}", amount);
-                    let full_amount = amount + leftovers;
+                    let full_amount = amount + uncredited_settlement_amount;
                     debug!(
                         "Notifying accounting system about full amount: {}",
                         full_amount
@@ -573,7 +575,7 @@ where
 
     /// Parses a response from a connector into a Quantity type and calls a
     /// function to further process the parsed data to check if the store's
-    /// leftovers should be updated.
+    /// uncredited settlement amount should be updated.
     fn process_connector_response(
         &self,
         account_id: String,
@@ -608,7 +610,7 @@ where
 
     // Normalizes a received Quantity object against the local engine scale, and
     // if the normalized value is less than what the engine originally sent, it
-    // stores it as leftovers in the store.
+    // stores it as uncredited settlement amount in the store.
     fn process_received_quantity(
         &self,
         account_id: String,
@@ -635,8 +637,8 @@ where
                             let diff = engine_amount - scaled_connector_amount;
                             // connector settled less than we
                             // instructed it to, so we must save
-                            // the difference for the leftovers
-                            store.save_leftovers(account_id, diff)
+                            // the difference
+                            store.save_uncredited_settlement_amount(account_id, diff)
                         } else {
                             Box::new(ok(()))
                         }

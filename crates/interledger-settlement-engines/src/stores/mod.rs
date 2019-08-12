@@ -33,14 +33,14 @@ pub trait LeftoversStore {
     type AssetType;
 
     /// Saves the leftover data
-    fn save_leftovers(
+    fn save_uncredited_settlement_amount(
         &self,
         account_id: String,
-        leftovers: Self::AssetType,
+        uncredited_settlement_amount: Self::AssetType,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Clears the leftover data in the database and returns the cleared value
-    fn pop_leftovers(
+    fn load_uncredited_settlement_amount(
         &self,
         account_id: String,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;

@@ -62,7 +62,7 @@ pub struct TestStore {
     pub last_observed_block: Arc<RwLock<U256>>,
     pub saved_hashes: Arc<RwLock<HashMap<H256, bool>>>,
     pub cache_hits: Arc<RwLock<u64>>,
-    pub leftovers: Arc<RwLock<HashMap<String, BigUint>>>,
+    pub uncredited_settlement_amount: Arc<RwLock<HashMap<String, BigUint>>>,
 }
 
 use crate::stores::LeftoversStore;
@@ -71,21 +71,21 @@ use num_bigint::BigUint;
 impl LeftoversStore for TestStore {
     type AssetType = BigUint;
 
-    fn save_leftovers(
+    fn save_uncredited_settlement_amount(
         &self,
         account_id: String,
-        leftovers: Self::AssetType,
+        uncredited_settlement_amount: Self::AssetType,
     ) -> Box<Future<Item = (), Error = ()> + Send> {
-        let mut guard = self.leftovers.write();
-        (*guard).insert(account_id, leftovers);
+        let mut guard = self.uncredited_settlement_amount.write();
+        (*guard).insert(account_id, uncredited_settlement_amount);
         Box::new(ok(()))
     }
 
-    fn pop_leftovers(
+    fn load_uncredited_settlement_amount(
         &self,
         account_id: String,
     ) -> Box<Future<Item = Self::AssetType, Error = ()> + Send> {
-        let mut guard = self.leftovers.write();
+        let mut guard = self.uncredited_settlement_amount.write();
         if let Some(l) = guard.get(&account_id) {
             let l = l.clone();
             (*guard).insert(account_id, Zero::zero());
@@ -269,7 +269,7 @@ impl TestStore {
             cache_hits: Arc::new(RwLock::new(0)),
             last_observed_block: Arc::new(RwLock::new(U256::from(0))),
             saved_hashes: Arc::new(RwLock::new(HashMap::new())),
-            leftovers: Arc::new(RwLock::new(HashMap::new())),
+            uncredited_settlement_amount: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

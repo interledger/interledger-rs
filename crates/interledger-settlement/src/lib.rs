@@ -186,7 +186,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        // there's leftovers for all number slots which do not increase in
+        // there's uncredited_settlement_amount for all number slots which do not increase in
         // increments of 10^abs(to_scale-from_scale)
         assert_eq!(
             1u64.normalize_scale(ConvertDetails { from: 2, to: 1 })
@@ -219,7 +219,7 @@ mod tests {
                 .unwrap(),
             100
         );
-        // 299 units with base 3 is 29 units with base 2 (0.9 leftovers)
+        // 299 units with base 3 is 29 units with base 2 (0.9 uncredited_settlement_amount)
         assert_eq!(
             299u64
                 .normalize_scale(ConvertDetails { from: 3, to: 2 })

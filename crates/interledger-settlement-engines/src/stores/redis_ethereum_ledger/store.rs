@@ -112,46 +112,64 @@ impl EthereumLedgerRedisStore {
 impl LeftoversStore for EthereumLedgerRedisStore {
     type AssetType = BigUint;
 
-    fn save_leftovers(
+    fn save_uncredited_settlement_amount(
         &self,
         account_id: String,
-        leftovers: Self::AssetType,
+        uncredited_settlement_amount: Self::AssetType,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        trace!("Saving leftovers {:?} {:?}", account_id, leftovers);
+        trace!(
+            "Saving uncredited_settlement_amount {:?} {:?}",
+            account_id,
+            uncredited_settlement_amount
+        );
         let mut pipe = redis::pipe();
-        pipe.set(format!("leftovers:{}", account_id), leftovers.to_string())
-            .ignore();
+        pipe.set(
+            format!("uncredited_settlement_amount:{}", account_id),
+            uncredited_settlement_amount.to_string(),
+        )
+        .ignore();
         Box::new(
             pipe.query_async(self.connection.clone())
-                .map_err(move |err| error!("Error saving leftovers {:?}: {:?}", leftovers, err))
+                .map_err(move |err| {
+                    error!(
+                        "Error saving uncredited_settlement_amount {:?}: {:?}",
+                        uncredited_settlement_amount, err
+                    )
+                })
                 .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
         )
     }
 
-    fn pop_leftovers(
+    fn load_uncredited_settlement_amount(
         &self,
         account_id: String,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
-        trace!("Loading leftovers {:?}", account_id);
+        trace!("Loading uncredited_settlement_amount {:?}", account_id);
         let mut pipe = redis::pipe();
         // Loads the value and resets it to 0
-        pipe.getset(format!("leftovers:{}", account_id), 0);
+        pipe.getset(format!("uncredited_settlement_amount:{}", account_id), 0);
         Box::new(
             pipe.query_async(self.connection.clone())
-                .map_err(move |err| error!("Error loading leftovers {:?}: ", err))
-                .and_then(move |(_conn, leftovers): (_, Vec<String>)| {
-                    // redis.rs returns a bulk value for some reason, length is
-                    // always 1
-                    if leftovers.len() == 1 {
-                        if let Ok(leftovers) = BigUint::from_str(&leftovers[0]) {
-                            Box::new(ok(leftovers))
+                .map_err(move |err| {
+                    error!("Error loading uncredited_settlement_amount {:?}: ", err)
+                })
+                .and_then(
+                    move |(_conn, uncredited_settlement_amount): (_, Vec<String>)| {
+                        // redis.rs returns a bulk value for some reason, length is
+                        // always 1
+                        if uncredited_settlement_amount.len() == 1 {
+                            if let Ok(uncredited_settlement_amount) =
+                                BigUint::from_str(&uncredited_settlement_amount[0])
+                            {
+                                Box::new(ok(uncredited_settlement_amount))
+                            } else {
+                                Box::new(ok(Zero::zero()))
+                            }
                         } else {
                             Box::new(ok(Zero::zero()))
                         }
-                    } else {
-                        Box::new(ok(Zero::zero()))
-                    }
-                }),
+                    },
+                ),
         )
     }
 }
@@ -337,16 +355,16 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn saves_and_pops_leftovers_properly() {
+    fn saves_and_pops_uncredited_settlement_amount_properly() {
         let amount = BigUint::from(100u64);
         let acc = "0".to_string();
         block_on(test_store().and_then(|(store, context)| {
             store
-                .save_leftovers(acc.clone(), amount.clone())
+                .save_uncredited_settlement_amount(acc.clone(), amount.clone())
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
                 .and_then(move |_| {
                     store
-                        .pop_leftovers(acc)
+                        .load_uncredited_settlement_amount(acc)
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
                         .and_then(move |ret| {
                             assert_eq!(amount, ret);
