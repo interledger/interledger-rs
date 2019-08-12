@@ -91,7 +91,7 @@ impl LeftoversStore for TestStore {
             (*guard).insert(account_id, Zero::zero());
             Box::new(ok(l.clone()))
         } else {
-            Box::new(err(()))
+            Box::new(ok(Zero::zero()))
         }
     }
 }

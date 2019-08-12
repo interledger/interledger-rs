@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
+use num_traits::Zero;
 use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
 
 use log::{error, trace};
@@ -116,6 +117,7 @@ impl LeftoversStore for EthereumLedgerRedisStore {
         account_id: String,
         leftovers: Self::AssetType,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        trace!("Saving leftovers {:?} {:?}", account_id, leftovers);
         let mut pipe = redis::pipe();
         pipe.set(format!("leftovers:{}", account_id), leftovers.to_string())
             .ignore();
@@ -130,6 +132,7 @@ impl LeftoversStore for EthereumLedgerRedisStore {
         &self,
         account_id: String,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
+        trace!("Loading leftovers {:?}", account_id);
         let mut pipe = redis::pipe();
         // Loads the value and resets it to 0
         pipe.getset(format!("leftovers:{}", account_id), 0);
@@ -137,11 +140,16 @@ impl LeftoversStore for EthereumLedgerRedisStore {
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading leftovers {:?}: ", err))
                 .and_then(move |(_conn, leftovers): (_, Vec<String>)| {
-                    // redis.rs returns a bulk value for some reason, length is always 1
-                    if let Ok(leftovers) = BigUint::from_str(&leftovers[0]) {
-                        Box::new(ok(leftovers))
+                    // redis.rs returns a bulk value for some reason, length is
+                    // always 1
+                    if leftovers.len() == 1 {
+                        if let Ok(leftovers) = BigUint::from_str(&leftovers[0]) {
+                            Box::new(ok(leftovers))
+                        } else {
+                            Box::new(ok(Zero::zero()))
+                        }
                     } else {
-                        Box::new(err(()))
+                        Box::new(ok(Zero::zero()))
                     }
                 }),
         )

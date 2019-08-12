@@ -494,67 +494,66 @@ where
         amount: String,
         tx_hash: H256,
     ) -> impl Future<Item = (), Error = ()> {
-        let mut url = self.connector_url.clone();
-        let account_id_clone = account_id.clone();
         let engine_scale = self.asset_scale;
+        let mut url = self.connector_url.clone();
         url.path_segments_mut()
             .expect("Invalid connector URL")
             .push("accounts")
             .push(&account_id.clone())
             .push("settlements");
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
-        let self_clone = self.clone();
-        let store = self.store.clone();
-        let amount_clone = amount.clone();
-        let action = move || {
-            // need to make 2 clones, one to own the variables in the function
-            // and one for the retry closure..
-            let self_clone = self_clone.clone();
-            let store = store.clone();
-            let account_id = account_id.clone();
-            let account_id_clone2 = account_id.clone();
-            let amount = amount.clone();
-            let url = url.clone();
 
-            // settle for amount + leftovers
-            store.pop_leftovers(account_id.clone())
+        // settle for amount + leftovers
+        self.store
+            .pop_leftovers(account_id.clone())
             .and_then(move |leftovers| {
-                result(BigUint::from_str(&amount.clone()).map_err(move |err| {
+                debug!("POPPED LEFTOVERS {:?}", leftovers);
+                result(BigUint::from_str(&amount).map_err(move |err| {
                     let error_msg = format!("Error converting to BigUint {:?}", err);
                     error!("{:?}", error_msg);
                 }))
                 .and_then(move |amount| {
-                    Ok(amount + leftovers)
-                })
-            })
-            .and_then(move |full_amount| {
-                let client = Client::new();
-                let full_amount_clone = full_amount.clone();
-                client
-                    .post(url.clone())
-                    .header("Idempotency-Key", tx_hash.to_string())
-                    .json(&json!({ "amount": full_amount.clone().to_string(), "scale" : engine_scale }))
-                    .send()
-                    .map_err(move |err| {
-                        error!(
-                            "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
-                            account_id, full_amount_clone, err
-                        )
+                    debug!("Got uncredited amount {}", amount);
+                    let full_amount = amount + leftovers;
+                    let client = Client::new();
+                    debug!(
+                        "Notifying accounting system about full amount: {}",
+                        full_amount
+                    );
+                    let url = url.clone();
+                    let account_id_clone = account_id.clone();
+                    let full_amount_clone = full_amount.clone();
+
+                    let action = move || {
+                        let account_id = account_id.clone();
+                        let full_amount = full_amount.clone();
+                        client
+                            .post(url.clone())
+                            .header("Idempotency-Key", tx_hash.to_string())
+                            .json(&json!(Quantity::new(full_amount.clone(), engine_scale)))
+                            .send()
+                            .map_err(move |err| {
+                                error!(
+                                    "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
+                                    account_id.clone(), full_amount.clone(), err
+                                );
+                            })
+                    };
+
+                    Retry::spawn(
+                        ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                        action,
+                    )
+                    .map_err(move |_| {
+                        error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, full_amount_clone, tx_hash)
                     })
                     .and_then(move |response| {
                         trace!("Accounting system responded with {:?}", response);
                         Ok(()) // This call causes the type_length_error
                         // self_clone.process_connector_response(account_id_clone2, response, full_amount.clone())
                     })
+                })
             })
-        };
-        Retry::spawn(
-            ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
-            action,
-        )
-        .map_err(move |_| {
-            error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id_clone, amount_clone, tx_hash)
-        })
     }
 
     fn process_connector_response(
