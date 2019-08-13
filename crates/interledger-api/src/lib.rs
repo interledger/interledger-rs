@@ -28,6 +28,11 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
+    fn remove_account(
+        &self,
+        id: <Self::Account as AccountTrait>::AccountId,
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
