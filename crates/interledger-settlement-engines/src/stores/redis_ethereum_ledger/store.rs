@@ -370,7 +370,8 @@ mod tests {
     #[test]
     fn saves_and_pops_uncredited_settlement_amount_properly() {
         block_on(test_store().and_then(|(store, context)| {
-            let amount = BigUint::from(100u64);
+            let amount = BigUint::from_str("10000000000000000000").unwrap();
+            let ret_amount = BigUint::from_str("30000000000000000000").unwrap();
             let acc = "0".to_string();
             join_all(vec![
                 store.save_uncredited_settlement_amount(acc.clone(), amount.clone()),
@@ -383,7 +384,7 @@ mod tests {
                     .load_uncredited_settlement_amount(acc)
                     .map_err(|err| eprintln!("Redis error: {:?}", err))
                     .and_then(move |ret| {
-                        assert_eq!(ret, BigUint::from(300u64));
+                        assert_eq!(ret, ret_amount);
                         let _ = context;
                         Ok(())
                     })
