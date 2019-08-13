@@ -1,4 +1,4 @@
-# Interledger with Ethereum and XRPL On-Ledger Settlement
+# Interledger with Ethereum and XRP On-Ledger Settlement
 > A demo that sends payments between 3 Interledger.rs nodes and settles using Ethereum transactions and XRP transactions.
 
 ## Overview
@@ -62,6 +62,11 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 ## Instructions
 
 <!--!
+function error_and_exit() {
+    printf "\e[31m$1\e[m\n"
+    exit 1
+}
+
 printf "Stopping Interledger nodes\n"
 
 if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
@@ -124,7 +129,7 @@ cargo build --bins
 ### 2. Launch Redis
 
 <!--!
-redis-server --version > /dev/null || printf "\e[31mUh oh! You need to install redis-server before running this example\e[m\n"
+redis-server --version &> /dev/null || error_and_exit "Uh oh! You need to install redis-server before running this example"
 -->
 
 ```bash
@@ -170,6 +175,10 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
     - To settle the balance of Bob's account on Charlie's node (Port 3003)
 
 Instead of using the LEDGER_ADDRESS and LEDGER_SECRET from the examples below, you can generate your own XRPL credentials at the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
+
+<!--!
+which ilp-settlement-xrp &> /dev/null || error_and_exit "You need to install \"ilp-settlement-xrp\"."
+-->
 
 ```bash
 # Turn on debug logging for all of the interledger.rs components
@@ -306,7 +315,7 @@ curl \
     "http_outgoing_token": "out_alice",
     "http_endpoint": "http://localhost:7770/ilp",
     "settle_to" : 0}' \
-    http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
+    http://localhost:7770/accounts &> /dev/null
 
 printf "Adding Charlie's Account...\n"
 curl \
@@ -321,7 +330,7 @@ curl \
     "http_outgoing_token": "out_charlie",
     "http_endpoint": "http://localhost:9770/ilp",
     "settle_to" : 0}' \
-    http://localhost:9770/accounts > logs/account-charlie-charlie.log 2>/dev/null
+    http://localhost:9770/accounts &> /dev/null
 
 printf "Adding Bob's account on Alice's node (ETH Peer relation)...\n"
 curl \
@@ -342,7 +351,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+    http://localhost:7770/accounts &> /dev/null &
 
 printf "Adding Alice's account on Bob's node (ETH Peer relation)...\n"
 curl \
@@ -363,7 +372,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null
+    http://localhost:8770/accounts &> /dev/null
 
 printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
 curl \
@@ -384,7 +393,7 @@ curl \
     "routing_relation": "Child",
     "send_routes": false,
     "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
+    http://localhost:8770/accounts &> /dev/null &
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
 curl \
@@ -405,7 +414,7 @@ curl \
     "routing_relation": "Parent",
     "send_routes": false,
     "receive_routes": true}' \
-    http://localhost:9770/accounts > logs/account-charlie-bob.log 2>/dev/null
+    http://localhost:9770/accounts &> /dev/null
 
 sleep 2
 ```
@@ -516,6 +525,7 @@ http://localhost:9770/accounts/0/balance
 ```
 
 <!--!
+INCOMING_NOT_SETTLED=0
 printf "\nChecking balances...\n"
 
 printf "\nAlice's balance on Alice's node: "
@@ -560,11 +570,13 @@ curl \
 -H "Authorization: Bearer hi_charlie" \
 http://localhost:9770/accounts/0/balance
 
+printf "\n"
+
 if [ $INCOMING_NOT_SETTLED -eq 1 ]; then
-    printf "\n\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated or a ledger is validated.\n"
+    printf "\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated or a ledger is validated.\n"
     printf "Try the following commands later:\n\n"
     printf "\tcurl -H \"Authorization: Bearer hi_bob\" http://localhost:8770/accounts/0/balance\n"
-    printf "\tcurl -H \"Authorization: Bearer hi_charlie\" http://localhost:9770/accounts/1/balance\e[m\n\n"
+    printf "\tcurl -H \"Authorization: Bearer hi_charlie\" http://localhost:9770/accounts/1/balance\e[m\n"
 fi
 -->
 
@@ -653,7 +665,7 @@ cat logs/node-charlie-settlement-engine-xrpl.log | grep "Got incoming XRP paymen
 ```
 
 <!--!
-printf "You could try the following command to check if a block is generated.\nTo check, you'll need to install geth.\n\n"
+printf "\nYou could try the following command to check if a block is generated.\nTo check, you'll need to install geth.\n\n"
 printf "To check the last block:\n"
 printf "\tgeth --exec \"eth.getTransaction(eth.getBlock(eth.blockNumber-1).transactions[0])\" attach http://localhost:8545 2>/dev/null\n\n"
 printf "To check the current block:\n"
