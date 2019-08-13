@@ -1256,10 +1256,8 @@ fn update_routes(
                         .chain(static_routes.into_iter())
                         .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
                 );
-                trace!("Routing table is now: {:?}", routes);
-                let num_routes = routes.len();
+                trace!("Routing table is: {:?}", routes);
                 *routing_table.write() = routes;
-                trace!("Updated routing table with {} routes", num_routes);
                 Ok(())
             },
         )
