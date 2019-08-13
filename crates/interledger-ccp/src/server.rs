@@ -182,7 +182,13 @@ where
         self.request_all_routes().and_then(move |_| {
             Interval::new(Instant::now(), Duration::from_millis(interval))
                 .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-                .for_each(move |_| clone.broadcast_routes())
+                .for_each(move |_| {
+                    clone.broadcast_routes().then(|_| {
+                        // Returning an error would end the broadcast loop
+                        // so we want to return Ok even if there was an error
+                        Ok(())
+                    })
+                })
         })
     }
 
@@ -190,7 +196,6 @@ where
         let clone = self.clone();
         self.update_best_routes(None)
             .and_then(move |_| clone.send_route_updates())
-            .then(|_| Ok(()))
     }
 
     /// Request routes from all the peers we are willing to receive routes from.

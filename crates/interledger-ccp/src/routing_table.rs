@@ -153,12 +153,9 @@ where
             return Ok(Vec::new());
         }
 
+        // Update the table with the epoch, new routes, and
+        // withdrawn routes received in the route update request
         self.epoch = request.to_epoch_index;
-        trace!(
-            "Updated routing table {} to epoch: {}",
-            hex::encode(&self.id[..]),
-            self.epoch
-        );
 
         if request.new_routes.is_empty() && request.withdrawn_routes.is_empty() {
             trace!(
@@ -182,6 +179,12 @@ where
                 changed_prefixes.push(prefix);
             }
         }
+
+        trace!(
+            "Updated routing table {} to epoch: {}",
+            hex::encode(&self.id[..]),
+            self.epoch
+        );
 
         Ok(changed_prefixes)
     }
