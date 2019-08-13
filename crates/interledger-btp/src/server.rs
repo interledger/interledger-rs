@@ -266,7 +266,7 @@ fn get_auth(
             match message {
                 // Skip non-binary messages like Pings and Pongs
                 // Note that the BTP protocol spec technically specifies that
-                // the auth message MUST be the first packet send over the 
+                // the auth message MUST be the first packet sent over the 
                 // WebSocket connection. However, the JavaScript implementation
                 // of BTP sends a Ping packet first, so we should ignore it.
                 // (Be liberal in what you accept but strict in what you send)

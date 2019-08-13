@@ -182,7 +182,13 @@ where
         self.request_all_routes().and_then(move |_| {
             Interval::new(Instant::now(), Duration::from_millis(interval))
                 .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-                .for_each(move |_| clone.broadcast_routes())
+                .for_each(move |_| {
+                    clone.broadcast_routes().then(|_| {
+                        // Returning an error would end the broadcast loop
+                        // so we want to return Ok even if there was an error
+                        Ok(())
+                    })
+                })
         })
     }
 
@@ -190,7 +196,6 @@ where
         let clone = self.clone();
         self.update_best_routes(None)
             .and_then(move |_| clone.send_route_updates())
-            .then(|_| Ok(()))
     }
 
     /// Request routes from all the peers we are willing to receive routes from.
@@ -751,11 +756,10 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     prefix: &[u8],
 ) -> Option<(A, Route)> {
     // Check if we have a configured route for that specific prefix
-    // or any shorter prefix
-    // TODO: should we match results that don't line up with the dot-separated segments?
-    // (for example, should "example.a" match for the prefix "example.abc"?)
-    // note: we could also implement this by looking through a sorted list to find the longest
-    // matching prefix instead of using a HashMap lookup
+    // or any shorter prefix ("example.a.b.c" will match "example.a.b" and "example.a")
+    // Note that this logic is duplicated from the Address type. We are not using
+    // Addresses here because the prefixes may not be valid ILP addresses ("example." is
+    // a valid prefix but not a valid address)
     let segments: Vec<&[u8]> = prefix.split(|c| c == &b'.').collect();
     for i in 0..segments.len() {
         let prefix = &segments[0..segments.len() - i].join(&b'.');
