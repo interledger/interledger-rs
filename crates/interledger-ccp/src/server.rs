@@ -338,7 +338,7 @@ where
             .build()));
         }
         let update = update.unwrap();
-        trace!(
+        debug!(
             "Got route update request from account {}: {:?}",
             request.from.id(),
             update
@@ -355,12 +355,27 @@ where
             );
         }
 
+        // Update the routing table we maintain for the account we got this from.
+        // Figure out whether we need to update our routes for any of the prefixes
+        // that were included in this route update.
         match (*incoming_tables)
             .get_mut(&request.from.id())
             .expect("Should have inserted a routing table for this account")
             .handle_update_request(request.from.clone(), update)
         {
             Ok(prefixes_updated) => {
+                if prefixes_updated.is_empty() {
+                    trace!("Route update request did not contain any prefixes we need to update our routes for");
+                    return Box::new(ok(CCP_RESPONSE.clone()));
+                }
+
+                debug!("Recalculating best routes for prefixes: {}", {
+                    let updated: Vec<&str> = prefixes_updated
+                        .iter()
+                        .map(|prefix| str::from_utf8(&prefix).unwrap_or("<not utf8>"))
+                        .collect();
+                    updated.join(", ")
+                });
                 let future = self.update_best_routes(Some(prefixes_updated));
                 if self.spawn_tasks {
                     spawn(future);
@@ -579,11 +594,9 @@ where
         };
 
         let route_update_request = self.create_route_update(from_epoch_index, to_epoch_index);
-        trace!(
+        debug!(
             "Sending route udpates for epochs {} - {}: {:?}",
-            from_epoch_index,
-            to_epoch_index,
-            route_update_request,
+            from_epoch_index, to_epoch_index, route_update_request,
         );
 
         let prepare = route_update_request.to_prepare();
@@ -595,7 +608,7 @@ where
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    trace!("Sending route updates to accounts: {}", {
+                    debug!("Sending route updates to accounts: {}", {
                         let account_list: Vec<String> = accounts
                             .iter()
                             .map(|a| format!("{} ({})", a.id(), a.client_address()))
