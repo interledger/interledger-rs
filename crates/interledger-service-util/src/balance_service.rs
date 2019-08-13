@@ -84,6 +84,11 @@ where
         &mut self,
         request: OutgoingRequest<A>,
     ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
+        // Don't bother touching the store for zero-amount packets
+        if request.prepare.amount() == 0 && request.original_amount == 0 {
+            return Box::new(self.next.send_request(request));
+        }
+
         let mut next = self.next.clone();
         let store = self.store.clone();
         let store_clone = store.clone();
