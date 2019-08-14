@@ -241,7 +241,11 @@ where
             tokio::run(
                 Interval::new(Instant::now(), interval)
                     .map_err(|e| panic!("interval errored; err={:?}", e))
-                    .for_each(move |_| _self.handle_received_transactions()),
+                    .for_each(move |_| _self.handle_received_transactions())
+                    .then(|_| {
+                        // Don't stop loop even if there was an error
+                        Ok(())
+                    }),
             );
         });
     }
@@ -438,16 +442,16 @@ where
                     if let Some(tx) = maybe_tx { ok(tx) } else { err(())}
                 })
                 .and_then(move |tx| {
-                    let (from, amount, token_address) = sent_to_us(tx, our_address);
+                    if let Some((from, amount)) = sent_to_us(tx, our_address) {
+                        trace!("Got transaction for our account from {} for amount {}", from, amount);
                     if amount > U256::from(0) {
                         // if the tx was for us and had some non-0 amount, then let
                         // the connector know
                         let addr = Addresses {
                             own_address: from,
-                            token_address,
+                            token_address: None,
                         };
-                        Either::A(
-                        store.load_account_id_from_address(addr)
+                            return Either::A(store.load_account_id_from_address(addr)
                         .and_then(move |id| {
                             debug!("Notifying connector about incoming ETH transaction for account {} for amount: {} (tx hash: {})", id, amount, tx_hash);
                             self_clone.notify_connector(id.to_string(), amount, tx_hash)
@@ -456,11 +460,12 @@ where
                             // only save the transaction hash if the connector
                             // was successfully notified
                             store.mark_tx_processed(tx_hash)
-                        }))
-                    } else {
-                        // otherwise return an empty future
+                                }));
+
+                            }
+                        }
+                        // Ignore this transaction if it wasn't for us or was for a zero amount
                         Either::B(ok(()))
-                    }
                 }))
             } else {
                 Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
@@ -568,6 +573,7 @@ where
                     let action = move || {
                         trace!("Sending tx to Ethereum: {}", hex::encode(&signed_tx));
                         web3.eth() // 4
+                            // TODO use send_transaction_with_confirmation
                             .send_raw_transaction(signed_tx.clone().into())
                             .map_err(|err| {
                                 error!("Error sending transaction to Ethereum ledger: {:?}", err);
@@ -583,6 +589,7 @@ where
                     })
                     .and_then(move |tx_hash| {
                         debug!("Transaction submitted. Hash: {:?}", tx_hash);
+                        // TODO make sure the transaction is actually received
                         Ok(tx_hash)
                     })
                 }),
