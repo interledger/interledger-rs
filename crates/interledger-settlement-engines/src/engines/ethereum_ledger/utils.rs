@@ -134,13 +134,16 @@ pub fn filter_transfer_logs(
 // There is no need to implement any ERC20 functionality here since these
 // transfers can be quickly found by filtering for the `Transfer` ERC20 event.
 
-pub fn sent_to_us(tx: Transaction, our_address: Address) -> (Address, U256, Option<Address>) {
+pub fn sent_to_us(tx: Transaction, our_address: Address) -> Option<(Address, U256)> {
     if let Some(to) = tx.to {
-        if tx.value > U256::from(0) && to == our_address {
-            return (tx.from, tx.value, None);
+        if to == our_address {
+            Some((tx.from, tx.value))
+        } else {
+            None
         }
+    } else {
+        None
     }
-    (tx.from, U256::from(0), None) // if it's not for us the amount is 0
 }
 
 #[cfg(test)]

@@ -200,7 +200,9 @@ impl EthereumStore for EthereumLedgerRedisStore {
         )
     }
 
-    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send> {
+    fn load_recently_observed_block(
+        &self,
+    ) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send> {
         let mut pipe = redis::pipe();
         pipe.get(RECENTLY_OBSERVED_BLOCK_KEY);
         Box::new(
