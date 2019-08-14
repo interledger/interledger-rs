@@ -1,6 +1,7 @@
 use futures::future::err;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, RejectBuilder};
 use interledger_service::*;
+use log::debug;
 
 pub trait MaxPacketAmountAccount: Account {
     fn max_packet_amount(&self) -> u64;
@@ -39,6 +40,11 @@ where
         if request.prepare.amount() <= max_packet_amount {
             Box::new(self.next.handle_request(request))
         } else {
+            debug!(
+                "Prepare amount:{} exceeds max_packet_amount: {}",
+                request.prepare.amount(),
+                max_packet_amount
+            );
             let details =
                 MaxPacketAmountDetails::new(request.prepare.amount(), max_packet_amount).to_bytes();
             Box::new(err(RejectBuilder {

@@ -6,6 +6,7 @@ use interledger_packet::{
     oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
 use interledger_service::*;
+use log::debug;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::str;
@@ -59,8 +60,10 @@ where
         let should_echo = request.prepare.destination() == self.ilp_address
             && request.prepare.data().starts_with(ECHO_PREFIX.as_bytes());
         if !should_echo {
+            debug!("Not responding to this request: {:?}", request);
             return Box::new(self.next.handle_request(request));
         }
+        debug!("Responding to this request: {:?}", request);
 
         // TODO Define EchoPacket struct and implement From<&p[u8]> for it
 

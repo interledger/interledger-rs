@@ -233,6 +233,11 @@ where
                             Ok(fulfill) => Packet::Fulfill(fulfill),
                             Err(reject) => Packet::Reject(reject),
                         };
+                        match &packet {
+                            Packet::Fulfill(fulfill) => trace!("Handled request and resulting: {:?}", fulfill),
+                            Packet::Reject(reject) => trace!("Handled request and resulting: {:?}", reject),
+                            _ => unreachable!(),
+                        };
                         if let Some(connection) = connections_clone
                             .read()
                             .get(&account_id) {
