@@ -108,8 +108,8 @@ impl EthereumStore for TestStore {
         Box::new(ok(()))
     }
 
-    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send> {
-        Box::new(ok(*self.last_observed_block.read()))
+    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send> {
+        Box::new(Some(ok(*self.last_observed_block.read())))
     }
 
     fn load_account_id_from_address(
