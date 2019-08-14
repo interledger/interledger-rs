@@ -106,7 +106,7 @@ local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', t
 --  2. balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
 --  3. settle_threshold must be greater than settle_to (e.g., settleTo=5, settleThreshold=6)
 local settle_amount = 0
-if (settle_threshold and settle_to) and (balance > tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
+if (settle_threshold and settle_to) and (balance >= tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
     settle_amount = balance - tonumber(settle_to)
 
     -- Update the balance _before_ sending the settlement so that we don't accidentally send
