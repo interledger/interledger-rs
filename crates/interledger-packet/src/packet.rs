@@ -1,4 +1,5 @@
 use hex;
+use std::cmp;
 use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;
@@ -239,6 +240,8 @@ impl From<Prepare> for BytesMut {
 
 impl fmt::Debug for Prepare {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        // up to 128 because data might be too large
+        let data_limit = cmp::min(self.data().len(), 128);
         formatter
             .debug_struct("Prepare")
             .field("destination", &self.destination())
@@ -252,6 +255,10 @@ impl fmt::Debug for Prepare {
                 &hex::encode(self.execution_condition()),
             )
             .field("data_length", &self.data().len())
+            .field(
+                &format!("data[..{}]", data_limit),
+                &String::from_utf8_lossy(&self.data()[..data_limit]),
+            )
             .finish()
     }
 }
@@ -361,10 +368,16 @@ impl From<Fulfill> for BytesMut {
 
 impl fmt::Debug for Fulfill {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        // up to 128 because data might be too large
+        let data_limit = cmp::min(self.data().len(), 128);
         formatter
             .debug_struct("Fulfill")
             .field("fulfillment", &hex::encode(self.fulfillment()))
             .field("data_length", &self.data().len())
+            .field(
+                &format!("data[..{}]", data_limit),
+                &String::from_utf8_lossy(&self.data()[..data_limit]),
+            )
             .finish()
     }
 }
@@ -483,6 +496,8 @@ impl From<Reject> for BytesMut {
 
 impl fmt::Debug for Reject {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        // up to 128 because data might be too large
+        let data_limit = cmp::min(self.data().len(), 128);
         formatter
             .debug_struct("Reject")
             .field("code", &self.code())
@@ -492,6 +507,10 @@ impl fmt::Debug for Reject {
             )
             .field("triggered_by", &self.triggered_by())
             .field("data_length", &self.data().len())
+            .field(
+                &format!("data[..{}]", data_limit),
+                &String::from_utf8_lossy(&self.data()[..data_limit]),
+            )
             .finish()
     }
 }
