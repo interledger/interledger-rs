@@ -10,7 +10,7 @@ use interledger_packet::{
     RejectBuilder,
 };
 use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService};
-use log::{debug, warn};
+use log::debug;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 
@@ -79,11 +79,6 @@ impl ConnectionGenerator {
             let derived_auth_tag = &hmac_sha256(&shared_secret[..], &dest[..dest.len() - 19])[..14];
             if derived_auth_tag == auth_tag {
                 return Ok(shared_secret);
-            } else {
-                warn!("Got packet where auth tag doesn't match. Expected: {}, actual: {}, destination_account: {:?}",
-                base64::encode_config(derived_auth_tag, base64::URL_SAFE_NO_PAD),
-                base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD),
-                destination_account)
             }
         }
         Err(())
