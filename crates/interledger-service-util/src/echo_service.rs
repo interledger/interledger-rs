@@ -63,7 +63,7 @@ where
             debug!("Not responding to this request: {:?}", request);
             return Box::new(self.next.handle_request(request));
         }
-        debug!("Responding to this request: {:?}", request);
+        debug!("Responding to Echo protocol request: {:?}", request);
 
         // TODO Define EchoPacket struct and implement From<&p[u8]> for it
 
