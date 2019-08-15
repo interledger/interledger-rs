@@ -15,7 +15,7 @@ use interledger_service_util::{
     MaxPacketAmountService, RateLimitService, ValidatorService,
 };
 use interledger_settlement::{SettlementApi, SettlementMessageService};
-use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
+use interledger_store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
 use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
 use ring::{digest, hmac};
@@ -109,7 +109,7 @@ pub struct InterledgerNode {
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
-    pub default_spsp_account: Option<u64>,
+    pub default_spsp_account: Option<String>,
     /// Interval, defined in milliseconds, on which the node will broadcast routing
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
     pub route_broadcast_interval: Option<u64>,
@@ -132,7 +132,7 @@ impl InterledgerNode {
         let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
-        let default_spsp_account = self.default_spsp_account;
+        let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
         let route_broadcast_interval = self.route_broadcast_interval;
 
@@ -264,7 +264,10 @@ impl InterledgerNode {
         tokio::run(self.serve());
     }
 
-    pub fn insert_account(&self, account: AccountDetails) -> impl Future<Item = (), Error = ()> {
+    pub fn insert_account(
+        &self,
+        account: AccountDetails,
+    ) -> impl Future<Item = AccountId, Error = ()> {
         insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account)
     }
 }
@@ -276,7 +279,7 @@ pub fn insert_account_redis<R>(
     redis_uri: R,
     secret_seed: &[u8; 32],
     account: AccountDetails,
-) -> impl Future<Item = (), Error = ()>
+) -> impl Future<Item = AccountId, Error = ()>
 where
     R: IntoConnectionInfo,
 {
@@ -291,7 +294,7 @@ where
                 .map_err(|_| error!("Unable to create account"))
                 .and_then(|account| {
                     debug!("Created account: {}", account.id());
-                    Ok(())
+                    Ok(account.id())
                 })
         })
 }

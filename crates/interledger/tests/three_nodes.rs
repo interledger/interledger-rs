@@ -44,7 +44,7 @@ fn three_nodes() {
 
     let node1 = InterledgerNode {
         ilp_address: Address::from_str("example.one").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -78,7 +78,8 @@ fn three_nodes() {
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
             })
-            .and_then(move |_|
+            .and_then(move |_| 
+
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {
@@ -107,7 +108,7 @@ fn three_nodes() {
 
     let node2 = InterledgerNode {
         ilp_address: Address::from_str("example.two").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
         btp_address: ([127, 0, 0, 1], node2_btp).into(),
@@ -182,7 +183,7 @@ fn three_nodes() {
 
     let node3 = InterledgerNode {
         ilp_address: Address::from_str("example.two.three").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
