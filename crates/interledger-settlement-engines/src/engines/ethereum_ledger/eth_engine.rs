@@ -250,16 +250,12 @@ where
         std::thread::spawn(move || {
             tokio::run(
                 Interval::new(Instant::now(), interval)
-                    .for_each(move |instant| {
-                        trace!(
-                            "[{:?}] Getting settlement data from the blockchain; instant={:?}",
-                            address,
-                            instant
-                        );
-                        tokio::spawn(_self.handle_received_transactions());
+                    .map_err(|e| panic!("interval errored; err={:?}", e))
+                    .for_each(move |_| _self.handle_received_transactions())
+                    .then(|_| {
+                        // Don't stop loop even if there was an error
                         Ok(())
-                    })
-                    .map_err(|e| panic!("interval errored; err={:?}", e)),
+                    }),
             );
         });
     }
@@ -301,65 +297,72 @@ where
         // https://github.com/rust-lang/rust/issues/54540#issuecomment-494749912.
         // Otherwise, we get `type_length_limit` errors.
         // get the current block number
-        Box::new(
-            web3.eth()
-                .block_number()
-                .map_err(move |err| error!("Could not fetch current block number {:?}", err))
-                .and_then(move |current_block| {
-                    trace!("Current block {}", current_block);
-                    // get the safe number of blocks to avoid reorgs
-                    let fetch_until = current_block - confirmations;
-                    Ok((Ok(fetch_until), store.load_recently_observed_block()))
-                })
-                .flatten()
-                .and_then(move |(fetch_until, last_observed_block)| {
-                    trace!(
-                        "Will fetch txs from block {} until {}",
-                        last_observed_block,
-                        fetch_until
-                    );
-
-                    let notify_all_txs_fut = if let Some(token_address) = token_address {
-                        trace!("Settling for ERC20 transactions");
-                        // get all erc20 transactions
-                        let notify_all_erc20_txs_fut = filter_transfer_logs(
-                            web3.clone(),
-                            token_address,
-                            None,
-                            Some(our_address),
-                            BlockNumber::Number(last_observed_block.low_u64()),
-                            BlockNumber::Number(fetch_until.low_u64()),
-                        )
-                        .and_then(move |transfers: Vec<ERC20Transfer>| {
-                            // map each incoming erc20 transactions to an outgoing
-                            // notification to the connector
-                            join_all(transfers.into_iter().map(move |transfer| {
-                                self_clone2.notify_erc20_transfer(transfer, token_address)
-                            }))
-                        });
-
-                        // combine all erc20 futures for that range of blocks
-                        Either::A(notify_all_erc20_txs_fut)
+        web3.eth()
+            .block_number()
+            .map_err(move |err| error!("Could not fetch current block number {:?}", err))
+            .and_then(move |current_block| {
+                // get the safe number of blocks to avoid reorgs
+                let fetch_until = current_block - confirmations;
+                // U256 does not implement IntoFuture so we must wrap it
+                Ok((Ok(fetch_until), store.load_recently_observed_block()))
+            })
+            .flatten()
+            .and_then(move |(to_block, last_observed_block)| {
+                // If we are just starting up, fetch only the most recent block
+                // Note this means we will ignore transactions that were received before
+                // the first time the settlement engine was started.
+                let from_block = if let Some(last_observed_block) = last_observed_block {
+                    if to_block == last_observed_block {
+                        // We already processed the latest block
+                        return Either::A(ok(()));
                     } else {
-                        trace!("Settling for ETH transactions");
-                        let checked_blocks = last_observed_block.low_u64()..=fetch_until.low_u64();
-                        // for each block create a future which will notify the
-                        // connector about all the transactions in that block that are sent to our account
-                        let notify_eth_txs_fut = checked_blocks
-                            .map(move |block_num| self_clone.notify_eth_txs_in_block(block_num));
+                        last_observed_block + 1
+                    }
+                } else {
+                    // Check only the latest block
+                    to_block
+                };
 
-                        // combine all the futures for that range of blocks
-                        Either::B(join_all(notify_eth_txs_fut))
-                    };
+                trace!("Fetching txs from block {} until {}", from_block, to_block);
 
-                    notify_all_txs_fut.and_then(move |ret| {
-                        trace!("Transactions settled {:?}", ret);
-                        // now that all transactions have been processed successfully, we
-                        // can save `fetch_until` as the latest observed block
-                        store_clone.save_recently_observed_block(fetch_until)
-                    })
-                }),
-        )
+                let notify_all_txs_fut = if let Some(token_address) = token_address {
+                    // get all erc20 transactions
+                    let notify_all_erc20_txs_fut = filter_transfer_logs(
+                        web3.clone(),
+                        token_address,
+                        None,
+                        Some(our_address),
+                        BlockNumber::Number(from_block.low_u64()),
+                        BlockNumber::Number(to_block.low_u64()),
+                    )
+                    .and_then(move |transfers: Vec<ERC20Transfer>| {
+                        // map each incoming erc20 transactions to an outgoing
+                        // notification to the connector
+                        join_all(transfers.into_iter().map(move |transfer| {
+                            self_clone2.notify_erc20_transfer(transfer, token_address)
+                        }))
+                    });
+
+                    // combine all erc20 futures for that range of blocks
+                    Either::A(notify_all_erc20_txs_fut)
+                } else {
+                    let checked_blocks = from_block.low_u64()..=to_block.low_u64();
+                    // for each block create a future which will notify the
+                    // connector about all the transactions in that block that are sent to our account
+                    let notify_eth_txs_fut = checked_blocks
+                        .map(move |block_num| self_clone.notify_eth_txs_in_block(block_num));
+
+                    // combine all the futures for that range of blocks
+                    Either::B(join_all(notify_eth_txs_fut))
+                };
+
+                Either::B(notify_all_txs_fut.and_then(move |_| {
+                    trace!("Processed all transctions up to block {}", to_block);
+                    // now that all transactions have been processed successfully, we
+                    // can save `to_block` as the latest observed block
+                    store_clone.save_recently_observed_block(to_block)
+                }))
+            })
     }
 
     /// Submits an ERC20 transfer object's data to the connector
@@ -377,35 +380,28 @@ where
             token_address: Some(token_address),
         };
         let amount = transfer.amount;
-        Box::new(
-            store
-                .check_if_tx_processed(tx_hash)
-                .map_err(move |_| {
-                    error!("Error when querying store about transaction: {:?}", tx_hash)
-                })
-                .and_then(move |processed| {
-                    if !processed {
-                        Either::A(
-                            store
-                                .load_account_id_from_address(addr)
-                                .and_then(move |id| {
-                                    self_clone.notify_connector(
-                                        id.to_string(),
-                                        amount.to_string(),
-                                        tx_hash,
-                                    )
-                                })
-                                .and_then(move |_| {
-                                    // only save the transaction hash if the connector
-                                    // was successfully notified
-                                    store.mark_tx_processed(tx_hash)
-                                }),
-                        )
-                    } else {
-                        Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
-                    }
-                }),
-        )
+        Box::new(store
+            .check_if_tx_processed(tx_hash)
+            .map_err(move |_| error!("Error when querying store about transaction: {:?}", tx_hash))
+            .and_then(move |processed| {
+                if !processed {
+                    Either::A(
+                        store
+                            .load_account_id_from_address(addr)
+                            .and_then(move |id| {
+                                debug!("Notifying connector about incoming ERC20 transaction for account {} for amount: {} (tx hash: {})", id, amount, tx_hash);
+                                self_clone.notify_connector(id.to_string(), amount.to_string(), tx_hash)
+                            })
+                            .and_then(move |_| {
+                                // only save the transaction hash if the connector
+                                // was successfully notified
+                                store.mark_tx_processed(tx_hash)
+                            }),
+                    )
+                } else {
+                    Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
+                }
+            }))
     }
 
     fn notify_eth_txs_in_block(&self, block_number: u64) -> impl Future<Item = (), Error = ()> {
@@ -436,13 +432,7 @@ where
                 // combine all the futures for that block's transactions
                 join_all(submit_txs_to_connector_future)
             })
-            .and_then(move |_res| {
-                trace!(
-                    "Successfully logged transactions in block: {:?}",
-                    block_number
-                );
-                ok(())
-            })
+            .and_then(|_| Ok(()))
     }
 
     fn notify_eth_transfer(&self, tx_hash: H256) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -464,16 +454,17 @@ where
                     if let Some(tx) = maybe_tx { ok(tx) } else { err(())}
                 })
                 .and_then(move |tx| {
-                    trace!("Inspecting transaction: {:?}", tx);
-                    let (from, amount, token_address) = sent_to_us(tx, our_address);
+                    if let Some((from, amount)) = sent_to_us(tx, our_address) {
+                        trace!("Got transaction for our account from {} for amount {}", from, amount);
                     if amount > U256::from(0) {
                         // if the tx was for us and had some non-0 amount, then let
                         // the connector know
                         let addr = Addresses {
                             own_address: from,
-                            token_address,
+                            token_address: None,
                         };
-                        Either::A(store.load_account_id_from_address(addr)
+
+                        return Either::A(store.load_account_id_from_address(addr)
                         .and_then(move |id| {
                             self_clone.notify_connector(id.to_string(), amount.to_string(), tx_hash)
                         })
@@ -481,11 +472,12 @@ where
                             // only save the transaction hash if the connector
                             // was successfully notified
                             store.mark_tx_processed(tx_hash)
-                        }))
-                    } else {
-                        // otherwise return an empty future
+                                }));
+
+                            }
+                        }
+                        // Ignore this transaction if it wasn't for us or was for a zero amount
                         Either::B(ok(()))
-                    }
                 }))
             } else {
                 Either::B(ok(())) // return an empty future otherwise since we want to skip this transaction
@@ -690,20 +682,33 @@ where
                     tx.gas = data[1];
                     tx.nonce = data[2];
 
+                    trace!(
+                        "Gas required for transaction: {}, gas price: {}",
+                        data[1],
+                        data[0]
+                    );
+
                     let signed_tx = signer.sign_raw_tx(tx.clone(), chain_id); // 3
                     let action = move || {
+                        trace!("Sending tx to Ethereum: {}", hex::encode(&signed_tx));
                         web3.eth() // 4
+                            // TODO use send_transaction_with_confirmation
                             .send_raw_transaction(signed_tx.clone().into())
+                            .map_err(|err| {
+                                error!("Error sending transaction to Ethereum ledger: {:?}", err);
+                                err
+                            })
                     };
                     Retry::spawn(
                         ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
                         action,
                     )
-                    .map_err(move |err| {
-                        error!("Error when sending transaction {:?}: {:?}", tx, err)
+                    .map_err(move |_err| {
+                        error!("Unable to submit tx to Ethereum ledger");
                     })
                     .and_then(move |tx_hash| {
                         debug!("Transaction submitted. Hash: {:?}", tx_hash);
+                        // TODO make sure the transaction is actually received
                         Ok(tx_hash)
                     })
                 }),
@@ -929,7 +934,16 @@ where
                         error!("{}", error_msg);
                         (StatusCode::from_u16(400).unwrap(), error_msg)
                     })
-                    .and_then(move |(_account_id, addresses)| {
+                    .and_then(move |(account_id, addresses)| {
+                        debug!("Sending settlement to account {} (Ethereum address: {}) for amount: {}{}",
+                            account_id,
+                            addresses.own_address,
+                            amount,
+                            if let Some(token_address) = addresses.token_address {
+                                format!(" (token address: {}", token_address)
+                            } else {
+                                "".to_string()
+                            });
                         self_clone
                             .settle_to(addresses.own_address, amount, addresses.token_address)
                             .map_err(move |_| {

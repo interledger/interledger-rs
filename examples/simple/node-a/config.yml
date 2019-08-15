@@ -1,9 +1,0 @@
-ilp_address: "example.node-a"
-secret_seed: "8852500887504328225458511465394229327394647958135038836332350604"
-admin_auth_token: "admin-a"
-redis_connection: "redis://127.0.0.1:6379/0"
-http_address: "127.0.0.1:7770"
-btp_address: "127.0.0.1:7768"
-settlement_address: "127.0.0.1:7771"
-default_spsp_account: "0"
-

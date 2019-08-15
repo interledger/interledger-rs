@@ -54,7 +54,9 @@ pub trait EthereumStore {
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Loads the latest saved block number
-    fn load_recently_observed_block(&self) -> Box<dyn Future<Item = U256, Error = ()> + Send>;
+    fn load_recently_observed_block(
+        &self,
+    ) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send>;
 
     /// Retrieves the account id associated with the provided addresses pair.
     /// Note that an account with the same `own_address` but different ERC20
@@ -123,6 +125,17 @@ mod tests {
         assert_eq!(
             addr,
             Address::from("4070abbd2e38a8d27cd5a495f482c13f049f8310")
+        );
+    }
+
+    #[test]
+    fn test_address_from_parity_ethkey() {
+        let privkey =
+            String::from("2569cb99b0936649aba55237c4952fc6f4090e016e8449a1d2f7cde142cfbb00");
+        let addr = privkey.address();
+        assert_eq!(
+            addr,
+            Address::from("e78cf81c309f27d5c509114471dcd7c0f9de05fa")
         );
     }
 }

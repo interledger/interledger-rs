@@ -11,8 +11,8 @@ use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_router::Router;
 use interledger_service::{outgoing_service_fn, Account as AccountTrait, OutgoingRequest};
 use interledger_service_util::{
-    BalanceService, ExchangeRateService, ExpiryShortenerService, MaxPacketAmountService,
-    RateLimitService, ValidatorService,
+    BalanceService, EchoService, ExchangeRateService, ExpiryShortenerService,
+    MaxPacketAmountService, RateLimitService, ValidatorService,
 };
 use interledger_settlement::{SettlementApi, SettlementMessageService};
 use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
@@ -208,7 +208,7 @@ impl InterledgerNode {
                                         ccp_builder.broadcast_interval(ms);
                                     }
                                     let incoming_service = ccp_builder.to_service();
-
+                                    let incoming_service = EchoService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = IldcpService::new(incoming_service);
                                     let incoming_service =

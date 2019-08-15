@@ -6,6 +6,7 @@ use interledger_packet::{
     oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
 use interledger_service::*;
+use log::debug;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::str;
@@ -61,6 +62,7 @@ where
         if !should_echo {
             return Box::new(self.next.handle_request(request));
         }
+        debug!("Responding to Echo protocol request: {:?}", request);
 
         // TODO Define EchoPacket struct and implement From<&p[u8]> for it
 

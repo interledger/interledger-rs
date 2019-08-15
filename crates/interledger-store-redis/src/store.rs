@@ -1,3 +1,22 @@
+// The informal schema of our data in redis:
+//   send_routes_to         set         used for CCP routing
+//   receive_routes_from    set         used for CCP routing
+//   next_account_id        string      unique ID for each new account
+//   rates:current          hash        exchange rates
+//   routes:current         hash        dynamic routing table
+//   routes:static          hash        static routing table
+//   accounts:<id>          hash        details for each account
+//   http_auth              hash        maps hmac of cryptographic credentials to an account
+//   btp_auth               hash        maps hmac of cryptographic credentials to an account
+//   btp_outgoing
+// For interactive exploration of the store,
+// use the redis-cli tool included with your redis install.
+// Within redis-cli:
+//    keys *                list all keys of any type in the store
+//    smembers <key>        list the members of a set
+//    get <key>             get the value of a key
+//    hgetall <key>         the flattened list of every key/value entry within a hash
+
 use super::account::*;
 use super::crypto::generate_keys;
 use bytes::Bytes;
@@ -87,7 +106,7 @@ local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', t
 --  2. balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
 --  3. settle_threshold must be greater than settle_to (e.g., settleTo=5, settleThreshold=6)
 local settle_amount = 0
-if (settle_threshold and settle_to) and (balance > tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
+if (settle_threshold and settle_to) and (balance >= tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
     settle_amount = balance - tonumber(settle_to)
 
     -- Update the balance _before_ sending the settlement so that we don't accidentally send
@@ -376,15 +395,52 @@ impl RedisStore {
                 }),
         )
     }
-}
 
-impl AccountStore for RedisStore {
-    type Account = Account;
+    fn delete_account(&self, id: u64) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+        let connection = self.connection.as_ref().clone();
+        let routing_table = self.routes.clone();
 
-    // TODO cache results to avoid hitting Redis for each packet
-    fn get_accounts(
+        Box::new(
+            // TODO: a retrieve_account API to avoid making Vecs which we only need one element of
+            self.retrieve_accounts(vec![id])
+                .and_then(|accounts| accounts.get(0).cloned().ok_or(()))
+                .and_then(|account| {
+                    let mut pipe = redis::pipe();
+                    pipe.atomic();
+
+                    pipe.del(account_details_key(account.id));
+
+                    if account.send_routes {
+                        pipe.srem("send_routes_to", account.id).ignore();
+                    }
+
+                    if account.receive_routes {
+                        pipe.srem("receive_routes_from", account.id).ignore();
+                    }
+
+                    if account.btp_uri.is_some() {
+                        pipe.srem("btp_outgoing", account.id).ignore();
+                    }
+
+                    pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
+                        .ignore();
+
+                    pipe.query_async(connection)
+                        .map_err(|err| error!("Error deleting account from DB: {:?}", err))
+                        .and_then(move |(connection, _ret): (SharedConnection, Value)| {
+                            update_routes(connection, routing_table)
+                        })
+                        .and_then(move |_| {
+                            debug!("Deleted account {}", account.id);
+                            Ok(account)
+                        })
+                }),
+        )
+    }
+
+    fn retrieve_accounts(
         &self,
-        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
+        account_ids: Vec<u64>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
@@ -414,6 +470,18 @@ impl AccountStore for RedisStore {
                     },
                 ),
         )
+    }
+}
+
+impl AccountStore for RedisStore {
+    type Account = Account;
+
+    // TODO cache results to avoid hitting Redis for each packet
+    fn get_accounts(
+        &self,
+        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
+    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
+        self.retrieve_accounts(account_ids)
     }
 }
 
@@ -689,6 +757,10 @@ impl NodeStore for RedisStore {
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         self.create_new_account(account)
+    }
+
+    fn remove_account(&self, id: u64) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+        self.delete_account(id)
     }
 
     // TODO limit the number of results and page through them
@@ -1256,10 +1328,8 @@ fn update_routes(
                         .chain(static_routes.into_iter())
                         .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
                 );
-                trace!("Routing table is now: {:?}", routes);
-                let num_routes = routes.len();
+                trace!("Routing table is: {:?}", routes);
                 *routing_table.write() = routes;
-                trace!("Updated routing table with {} routes", num_routes);
                 Ok(())
             },
         )

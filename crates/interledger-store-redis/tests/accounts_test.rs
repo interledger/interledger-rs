@@ -27,6 +27,25 @@ fn insert_accounts() {
 }
 
 #[test]
+fn delete_accounts() {
+    block_on(test_store().and_then(|(store, context)| {
+        store.get_all_accounts().and_then(move |accounts| {
+            let id = accounts[0].id();
+            store.remove_account(id).and_then(move |_| {
+                store.get_all_accounts().and_then(move |accounts| {
+                    for a in accounts {
+                        assert_ne!(id, a.id());
+                    }
+                    let _ = context;
+                    Ok(())
+                })
+            })
+        })
+    }))
+    .unwrap();
+}
+
+#[test]
 fn starts_with_zero_balance() {
     block_on(test_store().and_then(|(store, context)| {
         let account0 = Account::try_from(0, ACCOUNT_DETAILS_0.clone()).unwrap();

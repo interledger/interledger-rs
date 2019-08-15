@@ -182,7 +182,13 @@ where
         self.request_all_routes().and_then(move |_| {
             Interval::new(Instant::now(), Duration::from_millis(interval))
                 .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-                .for_each(move |_| clone.broadcast_routes())
+                .for_each(move |_| {
+                    clone.broadcast_routes().then(|_| {
+                        // Returning an error would end the broadcast loop
+                        // so we want to return Ok even if there was an error
+                        Ok(())
+                    })
+                })
         })
     }
 
@@ -293,9 +299,12 @@ where
                 } else if route.prefix.len() <= self.global_prefix.len() {
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
+                } else if route.prefix.starts_with(self.ilp_address.as_ref()) {
+                    trace!("Ignoring route broadcast for a prefix that starts with our own address: {:?}", route);
+                    false
                 } else if route.path.contains(self.ilp_address.as_ref()) {
-                    error!(
-                        "Got route broadcast with a routing loop (path includes us): {:?}",
+                    trace!(
+                        "Ignoring route broadcast for a route that includes us: {:?}",
                         route
                     );
                     false
@@ -312,6 +321,7 @@ where
     /// then check whether those routes are better than the current best ones we have in the
     /// Local Routing Table.
     fn handle_route_update_request(&self, request: IncomingRequest<A>) -> BoxedIlpFuture {
+        // Ignore the request if we don't accept routes from them
         if !request.from.should_receive_routes() {
             return Box::new(err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
@@ -333,12 +343,13 @@ where
             .build()));
         }
         let update = update.unwrap();
-        trace!(
+        debug!(
             "Got route update request from account {}: {:?}",
             request.from.id(),
             update
         );
 
+        // Filter out routes that don't make sense or that we won't accept
         let update = self.filter_routes(update);
 
         let mut incoming_tables = self.incoming_tables.write();
@@ -349,12 +360,27 @@ where
             );
         }
 
+        // Update the routing table we maintain for the account we got this from.
+        // Figure out whether we need to update our routes for any of the prefixes
+        // that were included in this route update.
         match (*incoming_tables)
             .get_mut(&request.from.id())
             .expect("Should have inserted a routing table for this account")
             .handle_update_request(request.from.clone(), update)
         {
             Ok(prefixes_updated) => {
+                if prefixes_updated.is_empty() {
+                    trace!("Route update request did not contain any prefixes we need to update our routes for");
+                    return Box::new(ok(CCP_RESPONSE.clone()));
+                }
+
+                debug!("Recalculating best routes for prefixes: {}", {
+                    let updated: Vec<&str> = prefixes_updated
+                        .iter()
+                        .map(|prefix| str::from_utf8(&prefix).unwrap_or("<not utf8>"))
+                        .collect();
+                    updated.join(", ")
+                });
                 let future = self.update_best_routes(Some(prefixes_updated));
                 if self.spawn_tasks {
                     spawn(future);
@@ -377,6 +403,7 @@ where
                 }
             }
             Err(message) => {
+                warn!("Error handling incoming Route Update request, sending a Route Control request to get updated routing table info from peer. Error was: {}", &message);
                 let reject = RejectBuilder {
                     code: ErrorCode::F00_BAD_REQUEST,
                     message: &message.as_bytes(),
@@ -572,11 +599,9 @@ where
         };
 
         let route_update_request = self.create_route_update(from_epoch_index, to_epoch_index);
-        trace!(
+        debug!(
             "Sending route udpates for epochs {} - {}: {:?}",
-            from_epoch_index,
-            to_epoch_index,
-            route_update_request,
+            from_epoch_index, to_epoch_index, route_update_request,
         );
 
         let prepare = route_update_request.to_prepare();
@@ -588,7 +613,7 @@ where
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    trace!("Sending route updates to accounts: {}", {
+                    debug!("Sending route updates to accounts: {}", {
                         let account_list: Vec<String> = accounts
                             .iter()
                             .map(|a| format!("{} ({})", a.id(), a.client_address()))
@@ -611,7 +636,7 @@ where
                                         account_id, err
                                     )
                                 })
-                                .and_then(|_| Ok(()))
+                                .then(|_| Ok(()))
                         }))
                         .and_then(|_| {
                             trace!("Finished sending route updates");
@@ -730,17 +755,27 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     incoming_tables: &HashMap<A::AccountId, RoutingTable<A>>,
     prefix: &[u8],
 ) -> Option<(A, Route)> {
-    if let Some(account) = configured_routes.get(prefix) {
-        return Some((
-            account.clone(),
-            Route {
-                prefix: account.client_address().to_bytes(),
-                auth: [0; 32],
-                path: Vec::new(),
-                props: Vec::new(),
-            },
-        ));
+    // Check if we have a configured route for that specific prefix
+    // or any shorter prefix ("example.a.b.c" will match "example.a.b" and "example.a")
+    // Note that this logic is duplicated from the Address type. We are not using
+    // Addresses here because the prefixes may not be valid ILP addresses ("example." is
+    // a valid prefix but not a valid address)
+    let segments: Vec<&[u8]> = prefix.split(|c| c == &b'.').collect();
+    for i in 0..segments.len() {
+        let prefix = &segments[0..segments.len() - i].join(&b'.');
+        if let Some(account) = configured_routes.get(prefix.as_ref() as &[u8]) {
+            return Some((
+                account.clone(),
+                Route {
+                    prefix: account.client_address().to_bytes(),
+                    auth: [0; 32],
+                    path: Vec::new(),
+                    props: Vec::new(),
+                },
+            ));
+        }
     }
+
     if let Some(account) = local_routes.get(prefix) {
         return Some((
             account.clone(),
@@ -876,6 +911,16 @@ mod ranking_routes {
                     props: Vec::new(),
                 },
             );
+            peer_table_1.add_route(
+                peer_1.clone(),
+                Route {
+                    // This route should be overridden by the configured "example.a" route
+                    prefix: Bytes::from("example.a.sub-prefix"),
+                    path: vec![Bytes::from("example.one")],
+                    auth: [0; 32],
+                    props: Vec::new(),
+                },
+            );
             let mut peer_table_2 = RoutingTable::default();
             let peer_2 = TestAccount::new(8, "example.peer2");
             peer_table_2.add_route(
@@ -894,6 +939,13 @@ mod ranking_routes {
     #[test]
     fn prioritizes_configured_routes() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a");
+        assert_eq!(best_route.unwrap().0.id(), 4);
+    }
+
+    #[test]
+    fn prioritizes_shorter_configured_routes() {
+        let best_route =
+            get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a.sub-prefix");
         assert_eq!(best_route.unwrap().0.id(), 4);
     }
 
@@ -1168,6 +1220,27 @@ mod handle_route_update_request {
                 service.ilp_address.to_bytes(),
                 Bytes::from("example.b"),
             ],
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.valid"),
+            path: Vec::new(),
+            auth: [0; 32],
+            props: Vec::new(),
+        });
+        let request = service.filter_routes(request);
+        assert_eq!(request.new_routes.len(), 1);
+        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+    }
+
+    #[test]
+    fn filters_own_prefix_routes() {
+        let service = test_service();
+        let mut request = UPDATE_REQUEST_SIMPLE.clone();
+        request.new_routes.push(Route {
+            prefix: Bytes::from("example.connector.invalid-route"),
+            path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });

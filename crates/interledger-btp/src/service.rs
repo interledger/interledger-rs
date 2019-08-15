@@ -22,14 +22,11 @@ use std::{
 };
 use stream_cancel::{Trigger, Valve};
 use tokio_executor::spawn;
-use tokio_tcp::TcpStream;
 use tokio_timer::Interval;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tungstenite::{error::Error as WebSocketError, Message};
 
 const PING_INTERVAL: u64 = 30; // seconds
 
-type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
@@ -78,7 +75,14 @@ where
     /// incoming Prepare packets are buffered in a channel (until an IncomingService is added
     /// via the handle_incoming method), and ILP Fulfill and Reject packets will be
     /// sent back to the Future that sent the outgoing request originally.
-    pub(crate) fn add_connection(&self, account: A, connection: WsStream) {
+    pub(crate) fn add_connection(
+        &self,
+        account: A,
+        connection: impl Stream<Item = Message, Error = WebSocketError>
+            + Sink<SinkItem = Message, SinkError = WebSocketError>
+            + Send
+            + 'static,
+    ) {
         let account_id = account.id();
 
         // Set up a channel to forward outgoing packets to the WebSocket connection
