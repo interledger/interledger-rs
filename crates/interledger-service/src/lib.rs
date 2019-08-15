@@ -48,8 +48,13 @@ pub trait Account: Clone + Send + Sized + Debug {
     type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy + Serialize;
 
     fn id(&self) -> Self::AccountId;
-    fn username(&self) -> &str;
-    fn ilp_address(&self) -> Option<&Address>;
+    fn username(&self) -> &str {
+        "bob"
+    }
+    fn client_address(&self) -> &Address;
+    fn ilp_address(&self) -> Option<&Address> {
+        None
+    }
     fn asset_scale(&self) -> u8;
     fn asset_code(&self) -> &str;
 }
