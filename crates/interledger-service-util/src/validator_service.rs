@@ -1,3 +1,4 @@
+use chrono::{DateTime, Duration, Utc};
 use futures::{future::err, Future};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
@@ -5,7 +6,6 @@ use interledger_service::*;
 use log::error;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
-use std::time::{Duration, SystemTime};
 use tokio::prelude::FutureExt;
 
 /// # Validator Service
@@ -56,17 +56,16 @@ where
     /// On receiving a request:
     /// 1. If the prepare packet in the request is not expired, forward it, otherwise return a reject
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
-        if request.prepare.expires_at() >= SystemTime::now() {
+        let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
+        let now = Utc::now();
+        if expires_at >= now {
             Box::new(self.next.handle_request(request))
         } else {
             error!(
                 "Incoming packet expired {}ms ago at {:?} (time now: {:?})",
-                SystemTime::now()
-                    .duration_since(request.prepare.expires_at())
-                    .unwrap_or_else(|_| Duration::from_secs(0))
-                    .as_millis(),
-                request.prepare.expires_at(),
-                SystemTime::now()
+                now.signed_duration_since(expires_at).num_milliseconds(),
+                expires_at.to_rfc3339(),
+                expires_at.to_rfc3339(),
             );
             let result = Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
@@ -99,23 +98,23 @@ where
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition()); // why?
 
-        if let Ok(time_left) = request
-            .prepare
-            .expires_at()
-            .duration_since(SystemTime::now())
-        {
+        let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
+        let now = Utc::now();
+        let time_left = expires_at - now;
+        if time_left > Duration::zero() {
             Box::new(
                 self.next
                     .send_request(request)
-                    .timeout(time_left)
+                    .timeout(time_left.to_std().expect("Time left must be positive"))
                     .map_err(move |err| {
                         // If the error was caused by the timer, into_inner will return None
                         if let Some(reject) = err.into_inner() {
                             reject
                         } else {
                             error!(
-                                "Outgoing request timed out after {}ms",
-                                time_left.as_millis()
+                                "Outgoing request timed out after {}ms (expiry was: {})",
+                                time_left.num_milliseconds(),
+                                expires_at,
                             );
                             RejectBuilder {
                                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
@@ -145,10 +144,7 @@ where
         } else {
             error!(
                 "Outgoing packet expired {}ms ago",
-                SystemTime::now()
-                    .duration_since(request.prepare.expires_at())
-                    .unwrap_or_default()
-                    .as_millis(),
+                (Duration::zero() - time_left).num_milliseconds(),
             );
             // Already expired
             Box::new(err(RejectBuilder {
@@ -182,7 +178,7 @@ mod incoming {
     use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
-        time::SystemTime,
+        time::{Duration, SystemTime},
     };
 
     #[test]
@@ -263,7 +259,7 @@ mod outgoing {
     use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
-        time::SystemTime,
+        time::{Duration, SystemTime},
     };
 
     #[test]
