@@ -6,7 +6,7 @@ use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use ethereum_tx_sign::web3::{
+use web3::{
     api::Web3,
     futures::future::{err, join_all, ok, result, Either, Future},
     futures::stream::Stream,
@@ -659,13 +659,14 @@ where
         let signer = self.signer.clone();
 
         let mut tx = make_tx(to, amount, token_address);
+        let value = U256::from_str(&tx.value.to_string()).unwrap();
         let gas_amount_fut = web3.eth().estimate_gas(
             CallRequest {
                 to,
                 from: None,
                 gas: None,
                 gas_price: None,
-                value: Some(tx.value),
+                value: Some(value),
                 data: Some(tx.data.clone().into()),
             },
             None,
@@ -829,7 +830,7 @@ where
                                 let payment_details = payment_details.clone();
                                 move |recovered_address| {
                                     if recovered_address.as_bytes()
-                                        == &payment_details.to.own_address.to_vec()[..]
+                                        == &payment_details.to.own_address.as_bytes()[..]
                                     {
                                         ok(())
                                     } else {
