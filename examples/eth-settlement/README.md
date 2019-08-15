@@ -220,7 +220,7 @@ curl \
     "http_outgoing_token": "out_alice",
     "http_endpoint": "http://localhost:7770/ilp",
     "settle_to" : 0}' \
-    http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
+    http://localhost:7770/accounts &>/dev/null
 
 printf "Adding Bob's Account...\n"
 curl \
@@ -235,7 +235,7 @@ curl \
     "http_outgoing_token": "out_bob",
     "http_endpoint": "http://localhost:8770/ilp",
     "settle_to" : 0}' \
-    http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
+    http://localhost:8770/accounts &>/dev/null
 
 printf "Adding Bob's account on Alice's node...\n"
 curl \
@@ -256,7 +256,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+    http://localhost:7770/accounts &>/dev/null &
 
 printf "Adding Alice's account on Bob's node...\n"
 curl \
@@ -277,7 +277,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null &
+    http://localhost:8770/accounts &>/dev/null &
 
 sleep 2
 ```
