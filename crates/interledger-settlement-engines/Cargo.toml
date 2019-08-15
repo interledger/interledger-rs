@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 tower-web = "0.3.7"
 hex = "0.3.2"
-ethereum-tx-sign = { git = "https://github.com/gakonst/ethereum-tx-sign/", branch = "update-deps" }
+ethereum-tx-sign = { git = "https://github.com/gakonst/ethereum-tx-sign", branch = "update-deps" }
 web3 = "0.8.0"
 log = "0.4.6"
 tokio = "0.1.21"
