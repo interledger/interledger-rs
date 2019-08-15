@@ -210,7 +210,7 @@ fn eth_ledger_settlement() {
                     // directly)
                     let send1 = send_money(node1_http, node2_http, 10, "in_alice");
                     let send2 = send_money(node1_http, node2_http, 20, "in_alice");
-                    let send3 = send_money(node1_http, node2_http, 40, "in_alice");
+                    let send3 = send_money(node1_http, node2_http, 39, "in_alice");
                     let send4 = send_money(node1_http, node2_http, 1, "in_alice");
 
                     create1
@@ -238,23 +238,23 @@ fn eth_ledger_settlement() {
                         .and_then(move |_| send3)
                         .and_then(move |_| {
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, 70);
+                                assert_eq!(ret, 69);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, -70);
+                                    assert_eq!(ret, -69);
                                     Ok(())
                                 })
                             })
                         })
-                        // Up to here, Alice's balance should be -70 and Bob's
-                        // balance should be 70. Once we make 1 more payment, we
+                        // Up to here, Alice's balance should be -69 and Bob's
+                        // balance should be 69. Once we make 1 more payment, we
                         // exceed the settle_threshold and thus a settlement is made
                         .and_then(move |_| send4)
                         .and_then(move |_| {
                             // Wait a few seconds so that the receiver's engine
                             // gets the data
                             sleep(Duration::from_secs(5));
-                            // Since the credit connection reached -71, and the
-                            // settle_to is -10, a 61 Wei transaction is made.
+                            // Since the credit connection reached -70, and the
+                            // settle_to is -10, a 60 Wei transaction is made.
                             get_balance(1, node1_http, "bob").and_then(move |ret| {
                                 assert_eq!(ret, 10);
                                 get_balance(1, node2_http, "alice").and_then(move |ret| {

@@ -322,10 +322,10 @@ fn eth_xrp_interoperable() {
                         .and_then(move |_| create_account(node2_engine, "0"))
                         .and_then(move |_| create_account(node2_xrp_engine_port, "1"))
                         .and_then(move |_| create_account(node3_xrp_engine_port, "1"))
-                        // Pay 70k Gwei --> 70 drops
-                        .and_then(move |_| send_money(node1_http, node3_http, 70000, "in_alice"))
+                        // Pay 69k Gwei --> 69 drops
+                        .and_then(move |_| send_money(node1_http, node3_http, 69000, "in_alice"))
                         // Pay 1k Gwei --> 1 drop
-                        // This will trigger a 71 Gwei settlement from Alice to Bob.
+                        // This will trigger a 60 Gwei settlement from Alice to Bob.
                         .and_then(move |_| send_money(node1_http, node3_http, 1000, "in_alice"))
                         .and_then(move |_| {
                             // wait for the settlements
@@ -339,12 +339,12 @@ fn eth_xrp_interoperable() {
                                     get_balance(1, node3_http, "admin"),
                                 ])
                                 .and_then(move |balances| {
-                                    // Alice has paid Charlie in total 71k Gwei through Bob.
-                                    assert_eq!(balances[0], -71000);
+                                    // Alice has paid Charlie in total 70k Gwei through Bob.
+                                    assert_eq!(balances[0], -70000);
                                     // Since Alice has configured Bob's
                                     // `settle_threshold` and `settle_to` to be
                                     // 70k and 10k respectively, once she
-                                    // exceeded the 70k threshold, she made a 61k
+                                    // exceeded the 70k threshold, she made a 60k
                                     // Gwei settlement to Bob so that their debt
                                     // settles down to 10k.
                                     // From her perspective, Bob's account has a
@@ -357,13 +357,13 @@ fn eth_xrp_interoperable() {
                                     // eventually exceeds the `settle_threshold`
                                     // which incidentally is set to 70k. As a
                                     // result, he must make a XRP ledger
-                                    // settlement of 66k Drops to get his debt
+                                    // settlement of 65k Drops to get his debt
                                     // back to the `settle_to` value of charlie,
-                                    // which is 5k (71k - 5k = 66k).
+                                    // which is 5k (70k - 5k = 65k).
                                     assert_eq!(balances[3], 5000);
                                     // Charlie's balance indicates that he's
-                                    // received 71k drops (the total amount Alice sent him)
-                                    assert_eq!(balances[4], 71000);
+                                    // received 70k drops (the total amount Alice sent him)
+                                    assert_eq!(balances[4], 70000);
                                     // And he sees is owed 5k by Bob.
                                     assert_eq!(balances[5], -5000);
 
