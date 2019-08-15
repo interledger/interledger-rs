@@ -26,6 +26,7 @@ static SAVED_TRANSACTIONS_KEY: &str = "transactions";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
 static ETHEREUM_KEY: &str = "eth";
+static UNCREDITED_AMOUNT_KEY: &str = "uncredited_settlement_amount";
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -53,6 +54,13 @@ fn ethereum_ledger_key(account_id: u64) -> String {
     format!(
         "{}:{}:{}:{}",
         ETHEREUM_KEY, LEDGER_KEY, SETTLEMENT_ENGINES_KEY, account_id
+    )
+}
+
+fn ethereum_uncredited_amount_key(account_id: String) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        ETHEREUM_KEY, LEDGER_KEY, UNCREDITED_AMOUNT_KEY, account_id,
     )
 }
 
@@ -123,8 +131,12 @@ impl LeftoversStore for EthereumLedgerRedisStore {
             uncredited_settlement_amount
         );
         let mut pipe = redis::pipe();
+        // We store these amounts as lists of strings
+        // because we cannot do BigNumber arithmetic in the store
+        // When loading the amounts, we convert them to the appropriate data
+        // type and sum them up.
         pipe.lpush(
-            format!("uncredited_settlement_amount:{}", account_id),
+            ethereum_uncredited_amount_key(account_id.clone()),
             uncredited_settlement_amount.to_string(),
         )
         .ignore();
@@ -147,11 +159,7 @@ impl LeftoversStore for EthereumLedgerRedisStore {
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         let mut pipe = redis::pipe();
         // Loads the value and resets it to 0
-        pipe.lrange(
-            format!("uncredited_settlement_amount:{}", account_id),
-            0,
-            -1,
-        );
+        pipe.lrange(ethereum_uncredited_amount_key(account_id.clone()), 0, -1);
         pipe.del(format!("uncredited_settlement_amount:{}", account_id))
             .ignore();
         Box::new(
