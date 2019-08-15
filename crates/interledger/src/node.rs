@@ -15,7 +15,9 @@ use interledger_service_util::{
     MaxPacketAmountService, RateLimitService, ValidatorService,
 };
 use interledger_settlement::{SettlementApi, SettlementMessageService};
-use interledger_store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
+use interledger_store_redis::{
+    Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
+};
 use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
 use ring::{digest, hmac};

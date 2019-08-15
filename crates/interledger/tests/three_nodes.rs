@@ -78,8 +78,7 @@ fn three_nodes() {
                 amount_per_minute_limit: None,
                 settlement_engine_url: None,
             })
-            .and_then(move |_| 
-
+            .and_then(move |_|
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {

@@ -35,70 +35,83 @@ fn polls_for_route_updates() {
                             *routing_table.get(&Bytes::from("example.alice")).unwrap(),
                             alice.id()
                         );
-                        store_clone_1.insert_account(AccountDetails {
-                            ilp_address: Address::from_str("example.bob").unwrap(),
-                            asset_scale: 6,
-                            asset_code: "XYZ".to_string(),
-                            max_packet_amount: 1000,
-                            min_balance: Some(-1000),
-                            http_endpoint: None,
-                            http_incoming_token: None,
-                            http_outgoing_token: None,
-                            btp_uri: None,
-                            btp_incoming_token: None,
-                            settle_threshold: None,
-                            settle_to: None,
-                            send_routes: false,
-                            receive_routes: false,
-                            routing_relation: None,
-                            round_trip_time: None,
-                            amount_per_minute_limit: None,
-                            packets_per_minute_limit: None,
-                            settlement_engine_url: None,
-                        })
-                        .and_then(move |bob| {
-                            let routing_table = store_clone_2.routing_table();
-                            assert_eq!(routing_table.len(), 2);
-                            assert_eq!(
-                                *routing_table.get(&Bytes::from("example.bob")).unwrap(),
-                                bob.id(),
-                            );
-                            let alice_id = alice.id().clone();
-                            let bob_id = bob.id().clone();
-                            connection
-                                .map_err(|err| panic!(err))
-                                .and_then(move |connection| {
-                                    redis::cmd("HMSET")
-                                        .arg("routes:current")
-                                        .arg("example.alice")
-                                        .arg(bob_id)
-                                        .arg("example.charlie")
-                                        .arg(alice_id)
-                                        .query_async(connection)
-                                        .and_then(|(_connection, _result): (_, redis::Value)| Ok(()))
-                                        .map_err(|err| panic!(err))
-                                        .and_then(|_| sleep(Duration::from_millis(10)).then(|_| Ok(())))
-                                })
-                                .and_then(move |_| {
-                                    let routing_table = store_clone_2.routing_table();
-                                    assert_eq!(routing_table.len(), 3);
-                                    assert_eq!(
-                                        *routing_table.get(&Bytes::from("example.alice")).unwrap(),
-                                        bob_id
-                                    );
-                                    assert_eq!(
-                                        *routing_table.get(&Bytes::from("example.bob")).unwrap(),
-                                        bob.id(),
-                                    );
-                                    assert_eq!(
-                                        *routing_table.get(&Bytes::from("example.charlie")).unwrap(),
-                                        alice_id,
-                                    );
-                                    assert!(routing_table.get(&Bytes::from("example.other")).is_none());
-                                    let _ = context;
-                                    Ok(())
-                                })
-                        })
+                        store_clone_1
+                            .insert_account(AccountDetails {
+                                ilp_address: Address::from_str("example.bob").unwrap(),
+                                asset_scale: 6,
+                                asset_code: "XYZ".to_string(),
+                                max_packet_amount: 1000,
+                                min_balance: Some(-1000),
+                                http_endpoint: None,
+                                http_incoming_token: None,
+                                http_outgoing_token: None,
+                                btp_uri: None,
+                                btp_incoming_token: None,
+                                settle_threshold: None,
+                                settle_to: None,
+                                send_routes: false,
+                                receive_routes: false,
+                                routing_relation: None,
+                                round_trip_time: None,
+                                amount_per_minute_limit: None,
+                                packets_per_minute_limit: None,
+                                settlement_engine_url: None,
+                            })
+                            .and_then(move |bob| {
+                                let routing_table = store_clone_2.routing_table();
+                                assert_eq!(routing_table.len(), 2);
+                                assert_eq!(
+                                    *routing_table.get(&Bytes::from("example.bob")).unwrap(),
+                                    bob.id(),
+                                );
+                                let alice_id = alice.id().clone();
+                                let bob_id = bob.id().clone();
+                                connection
+                                    .map_err(|err| panic!(err))
+                                    .and_then(move |connection| {
+                                        redis::cmd("HMSET")
+                                            .arg("routes:current")
+                                            .arg("example.alice")
+                                            .arg(bob_id)
+                                            .arg("example.charlie")
+                                            .arg(alice_id)
+                                            .query_async(connection)
+                                            .and_then(
+                                                |(_connection, _result): (_, redis::Value)| Ok(()),
+                                            )
+                                            .map_err(|err| panic!(err))
+                                            .and_then(|_| {
+                                                sleep(Duration::from_millis(10)).then(|_| Ok(()))
+                                            })
+                                    })
+                                    .and_then(move |_| {
+                                        let routing_table = store_clone_2.routing_table();
+                                        assert_eq!(routing_table.len(), 3);
+                                        assert_eq!(
+                                            *routing_table
+                                                .get(&Bytes::from("example.alice"))
+                                                .unwrap(),
+                                            bob_id
+                                        );
+                                        assert_eq!(
+                                            *routing_table
+                                                .get(&Bytes::from("example.bob"))
+                                                .unwrap(),
+                                            bob.id(),
+                                        );
+                                        assert_eq!(
+                                            *routing_table
+                                                .get(&Bytes::from("example.charlie"))
+                                                .unwrap(),
+                                            alice_id,
+                                        );
+                                        assert!(routing_table
+                                            .get(&Bytes::from("example.other"))
+                                            .is_none());
+                                        let _ = context;
+                                        Ok(())
+                                    })
+                            })
                     })
             }),
     )

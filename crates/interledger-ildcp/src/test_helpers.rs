@@ -1,5 +1,4 @@
 use super::*;
-use crate::IldcpAccount;
 use futures::future::err;
 use interledger_service::{incoming_service_fn, Account, IncomingService};
 
@@ -29,9 +28,7 @@ impl Account for TestAccount {
     fn id(&self) -> u64 {
         self.id
     }
-}
 
-impl IldcpAccount for TestAccount {
     fn asset_code(&self) -> &str {
         "XYZ"
     }

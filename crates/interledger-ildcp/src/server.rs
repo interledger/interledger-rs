@@ -1,5 +1,4 @@
 use super::packet::*;
-use super::IldcpAccount;
 use futures::future::ok;
 use interledger_packet::*;
 use interledger_service::*;
@@ -18,7 +17,7 @@ pub struct IldcpService<I, A> {
 impl<I, A> IldcpService<I, A>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: IldcpAccount + Clone + Send + Sync + 'static,
+    A: Account + Clone + Send + Sync + 'static,
 {
     /// The provided ilp address will be used as a base which will be prepended
     /// to the account's username, unless the account has specified an ilp
@@ -35,7 +34,7 @@ where
 impl<I, A> IncomingService<A> for IldcpService<I, A>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: IldcpAccount + Clone + Send + Sync + 'static,
+    A: Account + Clone + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -92,7 +91,7 @@ mod tests {
                 prepare: PrepareBuilder {
                     destination: ILDCP_DESTINATION.clone(),
                     amount: 100,
-                    execution_condition: &PEER_PROTOCOL_CONDITION.clone(),
+                    execution_condition: &PEER_PROTOCOL_CONDITION,
                     expires_at: SystemTime::UNIX_EPOCH,
                     data: &[],
                 }
@@ -117,7 +116,7 @@ mod tests {
                 prepare: PrepareBuilder {
                     destination: ILDCP_DESTINATION.clone(),
                     amount: 100,
-                    execution_condition: &PEER_PROTOCOL_CONDITION.clone(),
+                    execution_condition: &PEER_PROTOCOL_CONDITION,
                     expires_at: SystemTime::UNIX_EPOCH,
                     data: &[],
                 }
