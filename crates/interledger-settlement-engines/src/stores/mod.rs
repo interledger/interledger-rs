@@ -13,11 +13,10 @@ pub type IdempotentEngineData = (StatusCode, Bytes, [u8; 32]);
 pub trait IdempotentEngineStore {
     /// Returns the API response that was saved when the idempotency key was used
     /// Also returns a hash of the input data which resulted in the response
-    /// Returns error if the data was not found
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentEngineData, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Option<IdempotentEngineData>, Error = ()> + Send>;
 
     /// Saves the data that was passed along with the api request for later
     /// The store MUST also save a hash of the input, so that it errors out on requests

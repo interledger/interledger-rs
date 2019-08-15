@@ -17,13 +17,12 @@ use redis_helpers::*;
 mod test_helpers;
 use test_helpers::{
     create_account, get_balance, send_money, start_eth_engine, start_ganache, start_xrp_engine,
-    XRP_DECIMALS,
 };
-
-const ETH_DECIMALS: u8 = 6;
 
 #[test]
 fn eth_xrp_interoperable() {
+    let eth_decimals = 9;
+    let xrp_decimals = 6;
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
     let context = TestContext::new();
@@ -114,7 +113,7 @@ fn eth_xrp_interoperable() {
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.alice").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: ETH_DECIMALS,
+                    asset_scale: eth_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
@@ -123,7 +122,7 @@ fn eth_xrp_interoperable() {
                     max_packet_amount: u64::max_value(),
                     min_balance: None,
                     settle_threshold: None,
-                    settle_to: Some(-10),
+                    settle_to: None,
                     send_routes: false,
                     receive_routes: false,
                     routing_relation: None,
@@ -131,7 +130,6 @@ fn eth_xrp_interoperable() {
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: None,
-                    settlement_engine_asset_scale: None,
                 })
                 .and_then(move |_|
             // TODO insert the accounts via HTTP request
@@ -139,16 +137,16 @@ fn eth_xrp_interoperable() {
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
                     asset_code: "ETH".to_string(),
-                    asset_scale: ETH_DECIMALS,
+                    asset_scale: eth_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
                     http_incoming_token: Some("bob".to_string()),
                     http_outgoing_token: Some("alice".to_string()),
                     max_packet_amount: u64::max_value(),
-                    min_balance: Some(-100),
-                    settle_threshold: Some(70),
-                    settle_to: Some(-10),
+                    min_balance: Some(-100_000),
+                    settle_threshold: Some(70000),
+                    settle_to: Some(10000),
                     send_routes: true,
                     receive_routes: true,
                     routing_relation: Some("Peer".to_string()),
@@ -156,7 +154,6 @@ fn eth_xrp_interoperable() {
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: Some(format!("http://localhost:{}", node1_engine)),
-                    settlement_engine_asset_scale: Some(18),
                 }))
                 .and_then(move |_| node1.serve())
         }),
@@ -181,16 +178,16 @@ fn eth_xrp_interoperable() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
                         asset_code: "ETH".to_string(),
-                        asset_scale: ETH_DECIMALS,
+                        asset_scale: eth_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
                         http_incoming_token: Some("alice".to_string()),
                         http_outgoing_token: Some("bob".to_string()),
                         max_packet_amount: u64::max_value(),
-                        min_balance: Some(-100),
-                        settle_threshold: Some(70),
-                        settle_to: Some(-10),
+                        min_balance: Some(-100_000),
+                        settle_threshold: None,
+                        settle_to: None,
                         send_routes: true,
                         receive_routes: true,
                         routing_relation: Some("Peer".to_string()),
@@ -198,13 +195,12 @@ fn eth_xrp_interoperable() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: Some(format!("http://localhost:{}", node2_engine)),
-                        settlement_engine_asset_scale: Some(ETH_DECIMALS),
                     })
                     .and_then(move |_| {
                         node2_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                             asset_code: "XRP".to_string(),
-                            asset_scale: XRP_DECIMALS,
+                            asset_scale: xrp_decimals,
                             btp_incoming_token: None,
                             btp_uri: None,
                             http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
@@ -212,8 +208,8 @@ fn eth_xrp_interoperable() {
                             http_outgoing_token: Some("bob".to_string()),
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
-                            settle_threshold: Some(70),
-                            settle_to: Some(-10),
+                            settle_threshold: Some(70000),
+                            settle_to: Some(5000),
                             send_routes: false,
                             receive_routes: true,
                             routing_relation: Some("Child".to_string()),
@@ -224,7 +220,6 @@ fn eth_xrp_interoperable() {
                                 "http://localhost:{}",
                                 node2_xrp_engine_port
                             )),
-                            settlement_engine_asset_scale: Some(XRP_DECIMALS),
                         })
                     })
             })
@@ -234,7 +229,8 @@ fn eth_xrp_interoperable() {
                 client
                     .put(&format!("http://localhost:{}/rates", node2_http))
                     .header("Authorization", "Bearer admin")
-                    .json(&json!({"XRP": 1, "ETH": 1}))
+                    // Let's say 0.001 ETH = 1 XRP for this example
+                    .json(&json!({"XRP": 1000, "ETH": 1}))
                     .send()
                     .map_err(|err| panic!(err))
                     .and_then(|res| {
@@ -266,7 +262,7 @@ fn eth_xrp_interoperable() {
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob.charlie").unwrap(),
                         asset_code: "XRP".to_string(),
-                        asset_scale: XRP_DECIMALS,
+                        asset_scale: xrp_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
@@ -275,7 +271,7 @@ fn eth_xrp_interoperable() {
                         max_packet_amount: u64::max_value(),
                         min_balance: None,
                         settle_threshold: None,
-                        settle_to: Some(-10),
+                        settle_to: None,
                         send_routes: false,
                         receive_routes: false,
                         routing_relation: None,
@@ -283,22 +279,21 @@ fn eth_xrp_interoperable() {
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: None,
-                        settlement_engine_asset_scale: None,
                     })
                     .and_then(move |_| {
                         node3_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
                             asset_code: "XRP".to_string(),
-                            asset_scale: XRP_DECIMALS,
+                            asset_scale: xrp_decimals,
                             btp_incoming_token: None,
                             btp_uri: None,
                             http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
                             http_incoming_token: Some("bob".to_string()),
                             http_outgoing_token: Some("charlie".to_string()),
                             max_packet_amount: u64::max_value(),
-                            min_balance: Some(-100),
-                            settle_threshold: Some(70),
-                            settle_to: Some(-10),
+                            min_balance: Some(-100_000),
+                            settle_threshold: None,
+                            settle_to: None,
                             send_routes: true,
                             receive_routes: false,
                             routing_relation: Some("Parent".to_string()),
@@ -309,7 +304,6 @@ fn eth_xrp_interoperable() {
                                 "http://localhost:{}",
                                 node3_xrp_engine_port
                             )),
-                            settlement_engine_asset_scale: Some(XRP_DECIMALS),
                         })
                     })
             })
@@ -328,9 +322,11 @@ fn eth_xrp_interoperable() {
                         .and_then(move |_| create_account(node2_engine, "0"))
                         .and_then(move |_| create_account(node2_xrp_engine_port, "1"))
                         .and_then(move |_| create_account(node3_xrp_engine_port, "1"))
-                        .and_then(move |_| send_money(node1_http, node3_http, 70, "in_alice"))
-                        // node 3 updates account 1,
-                        .and_then(move |_| send_money(node1_http, node3_http, 1, "in_alice"))
+                        // Pay 70k Gwei --> 70 drops
+                        .and_then(move |_| send_money(node1_http, node3_http, 70000, "in_alice"))
+                        // Pay 1k Gwei --> 1 drop
+                        // This will trigger a 71 Gwei settlement from Alice to Bob.
+                        .and_then(move |_| send_money(node1_http, node3_http, 1000, "in_alice"))
                         .and_then(move |_| {
                             // wait for the settlements
                             delay(10000).map_err(|err| panic!(err)).and_then(move |_| {
@@ -343,12 +339,33 @@ fn eth_xrp_interoperable() {
                                     get_balance(1, node3_http, "admin"),
                                 ])
                                 .and_then(move |balances| {
-                                    assert_eq!(balances[0], "{\"balance\":\"-71\"}"); // alice has in total paid 71
-                                    assert_eq!(balances[1], "{\"balance\":\"-10\"}"); // alice owes bob 10
-                                    assert_eq!(balances[2], "{\"balance\":\"-71\"}"); // alice has in total paid 71
-                                    assert_eq!(balances[3], "{\"balance\":\"-10\"}"); // bob owes 10 to bob.charlie
-                                    assert_eq!(balances[4], "{\"balance\":\"71\"}"); // bob.charlie has been paid 71
-                                    assert_eq!(balances[5], "{\"balance\":\"10\"}"); // bob.charlie is owed 10 by bob
+                                    // Alice has paid Charlie in total 71k Gwei through Bob.
+                                    assert_eq!(balances[0], -71000);
+                                    // Since Alice has configured Bob's
+                                    // `settle_threshold` and `settle_to` to be
+                                    // 70k and 10k respectively, once she
+                                    // exceeded the 70k threshold, she made a 61k
+                                    // Gwei settlement to Bob so that their debt
+                                    // settles down to 10k.
+                                    // From her perspective, Bob's account has a
+                                    // positive 10k balance since she owes him money.
+                                    assert_eq!(balances[1], 10000);
+                                    // From Bob's perspective, Alice's account
+                                    // has a negative sign since he is owed money.
+                                    assert_eq!(balances[2], -10000);
+                                    // As Bob forwards money to Charlie, he also
+                                    // eventually exceeds the `settle_threshold`
+                                    // which incidentally is set to 70k. As a
+                                    // result, he must make a XRP ledger
+                                    // settlement of 66k Drops to get his debt
+                                    // back to the `settle_to` value of charlie,
+                                    // which is 5k (71k - 5k = 66k).
+                                    assert_eq!(balances[3], 5000);
+                                    // Charlie's balance indicates that he's
+                                    // received 71k drops (the total amount Alice sent him)
+                                    assert_eq!(balances[4], 71000);
+                                    // And he sees is owed 5k by Bob.
+                                    assert_eq!(balances[5], -5000);
 
                                     node2_engine_redis.kill().unwrap();
                                     node3_engine_redis.kill().unwrap();

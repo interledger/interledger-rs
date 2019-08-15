@@ -16,6 +16,7 @@ use ethereum_tx_sign::web3::{
 use hyper::StatusCode;
 use interledger_store_redis::RedisStoreBuilder;
 use log::info;
+use num_bigint::BigUint;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
 use ring::{digest, hmac};
@@ -35,7 +36,7 @@ use uuid::Uuid;
 
 use crate::stores::redis_ethereum_ledger::*;
 use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};
-use interledger_settlement::Quantity;
+use interledger_settlement::{Convert, ConvertDetails, Quantity};
 
 const MAX_RETRIES: usize = 10;
 const ETH_CREATE_ACCOUNT_PREFIX: &[u8] = b"ilp-ethl-create-account-message";
@@ -480,7 +481,7 @@ where
     ) -> impl Future<Item = (), Error = ()> {
         let mut url = self.connector_url.clone();
         let account_id_clone = account_id.clone();
-        let asset_scale = self.asset_scale;
+        let engine_scale = self.asset_scale;
         url.path_segments_mut()
             .expect("Invalid connector URL")
             .push("accounts")
@@ -493,7 +494,7 @@ where
             client
                 .post(url.clone())
                 .header("Idempotency-Key", tx_hash.to_string())
-                .json(&json!({ "amount": amount.to_string(), "scale" : asset_scale }))
+                .json(&json!({ "amount": amount.to_string(), "scale" : engine_scale }))
                 .send()
                 .map_err(move |err| {
                     error!(
@@ -757,12 +758,37 @@ where
         body: Quantity,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiResponse> + Send> {
         let self_clone = self.clone();
+        let engine_scale = self.asset_scale;
         Box::new(
-            result(U256::from_dec_str(&body.amount).map_err(move |err| {
-                let error_msg = format!("Error converting to U256 {:?}", err);
+            result(BigUint::from_str(&body.amount).map_err(move |err| {
+                let error_msg = format!("Error converting to BigUint {:?}", err);
                 error!("{:?}", error_msg);
                 (StatusCode::from_u16(400).unwrap(), error_msg)
             }))
+            .and_then(move |amount_from_connector| {
+                // If we receive a Quantity { amount: "1", scale: 9},
+                // we must normalize it to our engine's scale
+                let amount = amount_from_connector.normalize_scale(ConvertDetails {
+                    from: body.scale,
+                    to: engine_scale,
+                });
+
+                result(amount)
+                    .map_err(move |err| {
+                        let error_msg = format!("Error scaling amount: {:?}", err);
+                        error!("{:?}", error_msg);
+                        (StatusCode::from_u16(400).unwrap(), error_msg)
+                    })
+                    .and_then(move |amount| {
+                        // Typecast from num_bigint::BigUInt because we're using
+                        // ethereum_types::U256 for all rust-web3 related functionality
+                        result(U256::from_dec_str(&amount.to_string()).map_err(move |err| {
+                            let error_msg = format!("Error converting to U256 {:?}", err);
+                            error!("{:?}", error_msg);
+                            (StatusCode::from_u16(400).unwrap(), error_msg)
+                        }))
+                    })
+            })
             .and_then(move |amount| {
                 self_clone
                     .load_account(account_id)
@@ -929,7 +955,7 @@ mod tests {
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
-                "{\"amount\": \"100\", \"scale\": 18 }".to_string(),
+                "{\"amount\": \"100000000000\", \"scale\": 18 }".to_string(),
             ))
             .with_status(200)
             .with_body("OK".to_string())
@@ -953,7 +979,7 @@ mod tests {
         );
 
         let ret =
-            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 6))).unwrap();
+            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 9))).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
 

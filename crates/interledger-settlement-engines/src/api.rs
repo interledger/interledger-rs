@@ -7,7 +7,7 @@ use futures::{
 use hyper::{Response, StatusCode};
 use interledger_settlement::Quantity;
 use interledger_settlement::{IdempotentData, IdempotentStore};
-use log::trace;
+use log::error;
 use ring::digest::{digest, SHA256};
 use tokio::executor::spawn;
 use tower_web::{net::ConnectionStream, ServiceBuilder};
@@ -77,19 +77,23 @@ impl_web! {
             &self,
             idempotency_key: String,
             input_hash: [u8; 32],
-        ) -> impl Future<Item = (StatusCode, Bytes), Error = String> {
+        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String> {
             self.store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
-                    let error_msg = "Couldn't load idempotent data".to_owned();
-                    trace!("{}", error_msg);
+                    let error_msg = format!("Couldn't load idempotent data for idempotency key {:?}", idempotency_key);
+                    error!("{}", error_msg);
                     error_msg
                 })
-                .and_then(move |ret: IdempotentData| {
-                    if ret.2 == input_hash {
-                        Ok((ret.0, ret.1))
+                .and_then(move |ret: Option<IdempotentData>| {
+                    if let Some(ret) = ret {
+                        if ret.2 == input_hash {
+                            Ok(Some((ret.0, ret.1)))
+                        } else {
+                            Ok(Some((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..]))))
+                        }
                     } else {
-                        Ok((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..])))
+                        Ok(None)
                     }
                 })
         }
@@ -104,8 +108,8 @@ impl_web! {
                 Either::A(
                     self.check_idempotency(idempotency_key.clone(), input_hash)
                     .map_err(|err| Response::builder().status(502).body(err).unwrap())
-                    .then(move |ret: Result<(StatusCode, Bytes), Response<String>>| {
-                        if let Ok(ret) = ret {
+                    .and_then(move |ret: Option<(StatusCode, Bytes)>| {
+                        if let Some(ret) = ret {
                             let resp = Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap();
                             if ret.0.is_success() {
                                 return Either::A(Either::A(ok(resp)))

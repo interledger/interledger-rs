@@ -84,6 +84,14 @@ where
         &mut self,
         request: OutgoingRequest<A>,
     ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
+        // Don't bother touching the store for zero-amount packets.
+        // Note that it is possible for the original_amount to be >0 while the
+        // prepare.amount is 0, because the original amount could be rounded down
+        // to 0 when exchange rate and scale change are applied.
+        if request.prepare.amount() == 0 && request.original_amount == 0 {
+            return Box::new(self.next.send_request(request));
+        }
+
         let mut next = self.next.clone();
         let store = self.store.clone();
         let store_clone = store.clone();

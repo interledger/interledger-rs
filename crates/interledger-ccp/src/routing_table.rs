@@ -153,16 +153,20 @@ where
             return Ok(Vec::new());
         }
 
+        // Update the table with the epoch, new routes, and
+        // withdrawn routes received in the route update request
+        self.epoch = request.to_epoch_index;
+
         if request.new_routes.is_empty() && request.withdrawn_routes.is_empty() {
             trace!(
                 "Got heartbeat route update for table ID: {}, epoch: {}",
                 hex::encode(&self.id[..]),
                 self.epoch
             );
-            return Ok(Vec::new());
         }
 
-        let mut changed_prefixes = Vec::new();
+        let mut changed_prefixes =
+            Vec::with_capacity(request.new_routes.len() + request.withdrawn_routes.len());
         for prefix in request.withdrawn_routes.iter() {
             if self.delete_route(prefix) {
                 changed_prefixes.push(prefix.clone());
@@ -176,7 +180,6 @@ where
             }
         }
 
-        self.epoch = request.to_epoch_index;
         trace!(
             "Updated routing table {} to epoch: {}",
             hex::encode(&self.id[..]),
@@ -246,7 +249,25 @@ mod table {
             .handle_update_request(ROUTING_ACCOUNT.clone(), request.clone())
             .unwrap();
         assert_eq!(table.id, request.routing_table_id);
-        assert_eq!(table.epoch, 0);
+    }
+
+    #[test]
+    fn updates_epoch() {
+        let mut table = RoutingTable::new(UPDATE_REQUEST_SIMPLE.routing_table_id);
+        let mut request = UPDATE_REQUEST_SIMPLE.clone();
+        request.from_epoch_index = 0;
+        request.to_epoch_index = 1;
+        table
+            .handle_update_request(ROUTING_ACCOUNT.clone(), request.clone())
+            .unwrap();
+        assert_eq!(table.epoch, 1);
+
+        request.from_epoch_index = 1;
+        request.to_epoch_index = 3;
+        table
+            .handle_update_request(ROUTING_ACCOUNT.clone(), request.clone())
+            .unwrap();
+        assert_eq!(table.epoch, 3);
     }
 
     #[test]

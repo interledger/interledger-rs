@@ -93,7 +93,7 @@ printf "\n---------------------------------------\n"
 # insert Bob's account details on Alice's connector (ETH Peer relation)
 echo "Initializing Bob's account on Alice's connector (this will not return until Bob adds Alice in his connector)"
 curl http://localhost:7770/accounts -X POST \
-    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&settlement_engine_asset_scale=6&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10&routing_relation=Peer&receive_routes=true&send_routes=true" \
+    -d "ilp_address=example.bob&asset_code=ETH&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3000&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=alice&settle_threshold=70&min_balance=-100&settle_to=10&routing_relation=Peer&receive_routes=true&send_routes=true" \
     -H "Authorization: Bearer hi_alice" &
 
 printf "\n---------------------------------------\n"
@@ -104,13 +104,13 @@ read -p "Press [Enter] key to continue..."
 # insert Alice's account details on Bob's connector (ETH Peer relation)
 echo "Initializing Alice's account on Bob's connector (Alice has already added Bob as a peer so they should exchange SE addreses)"
 curl http://localhost:8770/accounts -X POST \
-     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&settlement_engine_asset_scale=6&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10&routing_relation=Peer&receive_routes=true&send_routes=true" \
+     -d "ilp_address=example.alice&asset_code=ETH&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3001&http_endpoint=http://127.0.0.1:7770/ilp&http_incoming_token=alice&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=-10&routing_relation=Peer&receive_routes=true&send_routes=true" \
      -H "Authorization: Bearer hi_bob"
 
 # insert Charlie's account details on Bob's connector (XRP Child Relation)
 echo "Initializing Charlie's account on Bob's connector (this will not return until Charlie adds Bob in his connector)"
 curl http://localhost:8770/accounts -X POST \
-    -d "ilp_address=example.bob.charlie&asset_code=XRP&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3002&settlement_engine_asset_scale=6&http_endpoint=http://127.0.0.1:9770/ilp&http_incoming_token=charlie&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=10&routing_relation=Child&receive_routes=true&send_routes=false" \
+    -d "ilp_address=example.bob.charlie&asset_code=XRP&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3002&http_endpoint=http://127.0.0.1:9770/ilp&http_incoming_token=charlie&http_outgoing_token=bob&settle_threshold=70&min_balance=-100&settle_to=10&routing_relation=Child&receive_routes=true&send_routes=false" \
     -H "Authorization: Bearer hi_bob" &
 
 sleep 2
@@ -128,7 +128,7 @@ printf "\n---------------------------------------\n"
 # insert Bob's account details on Alice's connector (XRP Peer relation)
 echo "Initializing Bob's account on Charlie's connector (this will not return until Bob adds Alice in his connector)"
 curl http://localhost:9770/accounts -X POST \
-    -d "ilp_address=example.bob&asset_code=XRP&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3003&settlement_engine_asset_scale=6&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=charlie&settle_threshold=70&min_balance=-100&settle_to=10&routing_relation=Parent&receive_routes=true&send_routes=false" \
+    -d "ilp_address=example.bob&asset_code=XRP&asset_scale=6&max_packet_amount=10&settlement_engine_url=http://127.0.0.1:3003&http_endpoint=http://127.0.0.1:8770/ilp&http_incoming_token=bob&http_outgoing_token=charlie&settle_threshold=70&min_balance=-100&settle_to=10&routing_relation=Parent&receive_routes=true&send_routes=false" \
     -H "Authorization: Bearer hi_charlie" &
 
 # Set the exchange rate between ETH and XRP

@@ -9,9 +9,16 @@ use log::{debug, error, warn};
 use ring::digest::{digest, SHA256};
 use std::{net::SocketAddr, str};
 use tokio_executor::spawn;
-use tokio_tcp::TcpListener;
-use tokio_tungstenite::{accept_async_with_config, stream::Stream as MaybeTlsStream};
-use tungstenite::protocol::{Message, WebSocketConfig};
+use tokio_tcp::{TcpListener, TcpStream};
+use tokio_tungstenite::{
+    accept_async_with_config, stream::Stream as WsStreamType, MaybeTlsStream, WebSocketStream,
+};
+use tungstenite::{
+    protocol::{Message, WebSocketConfig},
+    Error as WebSocketError,
+};
+
+type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const MAX_MESSAGE_SIZE: usize = 40000;
 
@@ -47,7 +54,7 @@ where
                 let service_clone = service_clone.clone();
                 let store = store.clone();
                 accept_async_with_config(
-                    MaybeTlsStream::Plain(stream),
+                    WsStreamType::Plain(stream),
                     Some(WebSocketConfig {
                         max_send_queue: None,
                         max_message_size: Some(MAX_MESSAGE_SIZE),
@@ -55,15 +62,19 @@ where
                     }),
                 )
                 .map_err(|err| error!("Error accepting incoming WebSocket connection: {:?}", err))
-                .and_then(|connection| validate_auth(store, connection))
+                .and_then(|connection: WsStream| validate_auth(store, connection))
                 .and_then(move |(account, connection)| {
                     debug!("Added connection for account {}", account.id());
                     service_clone.add_connection(account, connection);
                     Ok(())
                 })
+                .or_else(|_| {
+                    warn!("Closing Websocket connection because it encountered an error");
+                    Ok(())
+                })
             })
             .then(move |result| {
-                debug!("Finished reading connections from TcpListener");
+                debug!("Finished listening for incoming BTP/Websocket connections");
                 result
             });
         spawn(handle_incoming);
@@ -102,7 +113,7 @@ where
                 let store = store.clone();
                 let ildcp_info = ildcp_info.clone();
                 accept_async_with_config(
-                    MaybeTlsStream::Plain(stream),
+                    WsStreamType::Plain(stream),
                     Some(WebSocketConfig {
                         max_send_queue: None,
                         max_message_size: Some(MAX_MESSAGE_SIZE),
@@ -110,12 +121,22 @@ where
                     }),
                 )
                 .map_err(|err| error!("Error accepting incoming WebSocket connection: {:?}", err))
-                .and_then(move |connection| get_or_create_account(store, ildcp_info, connection))
+                .and_then(move |connection: WsStream| {
+                    get_or_create_account(store, ildcp_info, connection)
+                })
                 .and_then(move |(account, connection)| {
                     debug!("Added connection for account: {:?}", account);
                     service_clone.add_connection(account, connection);
                     Ok(())
                 })
+                .or_else(|_| {
+                    warn!("Closing Websocket connection because it encountered an error");
+                    Ok(())
+                })
+            })
+            .then(move |result| {
+                debug!("Finished listening for incoming BTP/Websocket connections");
+                result
             });
         spawn(handle_incoming);
 
@@ -129,17 +150,26 @@ struct Auth {
     token: String,
 }
 
-fn validate_auth<U, C, A>(store: U, connection: C) -> impl Future<Item = (A, C), Error = ()>
+fn validate_auth<U, A>(
+    store: U,
+    connection: impl Stream<Item = Message, Error = WebSocketError>
+        + Sink<SinkItem = Message, SinkError = WebSocketError>,
+) -> impl Future<
+    Item = (
+        A,
+        impl Stream<Item = Message, Error = WebSocketError>
+            + Sink<SinkItem = Message, SinkError = WebSocketError>,
+    ),
+    Error = (),
+>
 where
     U: BtpStore<Account = A> + 'static,
-    C: Stream<Item = Message> + Sink<SinkItem = Message>,
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
-        let token = auth.token.clone();
         store
             .get_account_from_btp_token(&auth.token)
-            .map_err(move |_| warn!("Got unauthorized connection with token: {}", token))
+            .map_err(move |_| warn!("Got BTP connection that does not correspond to an account"))
             .and_then(move |account| {
                 let auth_response = Message::Binary(
                     BtpResponse {
@@ -156,14 +186,21 @@ where
     })
 }
 
-fn get_or_create_account<A, C, U>(
+fn get_or_create_account<A, U>(
     store: U,
     ildcp_info: IldcpResponse,
-    connection: C,
-) -> impl Future<Item = (A, C), Error = ()>
+    connection: impl Stream<Item = Message, Error = WebSocketError>
+        + Sink<SinkItem = Message, SinkError = WebSocketError>,
+) -> impl Future<
+    Item = (
+        A,
+        impl Stream<Item = Message, Error = WebSocketError>
+            + Sink<SinkItem = Message, SinkError = WebSocketError>,
+    ),
+    Error = (),
+>
 where
     U: BtpStore<Account = A> + BtpOpenSignupStore<Account = A> + 'static,
-    C: Stream<Item = Message> + Sink<SinkItem = Message>,
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
@@ -213,46 +250,79 @@ where
     })
 }
 
-fn get_auth<C>(connection: C) -> impl Future<Item = (Auth, C), Error = ()>
-where
-    C: Stream<Item = Message> + Sink<SinkItem = Message>,
-{
+fn get_auth(
+    connection: impl Stream<Item = Message, Error = WebSocketError>
+        + Sink<SinkItem = Message, SinkError = WebSocketError>,
+) -> impl Future<
+    Item = (
+        Auth,
+        impl Stream<Item = Message, Error = WebSocketError>
+            + Sink<SinkItem = Message, SinkError = WebSocketError>,
+    ),
+    Error = (),
+> {
     connection
+        .skip_while(|message| {
+            match message {
+                // Skip non-binary messages like Pings and Pongs
+                // Note that the BTP protocol spec technically specifies that
+                // the auth message MUST be the first packet sent over the 
+                // WebSocket connection. However, the JavaScript implementation
+                // of BTP sends a Ping packet first, so we should ignore it.
+                // (Be liberal in what you accept but strict in what you send)
+                Message::Binary(_) => Ok(false),
+                // TODO: should we error if the client sends something other than a binary or ping packet first?
+                _ => Ok(true),
+            }
+        })
         .into_future()
         .map_err(|_err| ())
         .and_then(move |(message, connection)| {
             // The first packet sent on the connection MUST be the auth packet
-            result(parse_auth(message).map(|auth| (auth, connection)).ok_or(()))
+            result(parse_auth(message).map(|auth| (auth, connection)).ok_or_else(|| {
+                warn!("Got a BTP connection where the first packet sent was not a valid BTP Auth message. Closing the connection")
+            }))
         })
 }
 
 fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
     if let Some(Message::Binary(message)) = ws_packet {
-        if let Ok(message) = BtpMessage::from_bytes(&message) {
-            let request_id = message.request_id;
-            let mut username: Option<String> = None;
-            let mut token: Option<String> = None;
-            for protocol_data in message.protocol_data.iter() {
-                match (
-                    protocol_data.protocol_name.as_ref(),
-                    !protocol_data.data.is_empty(),
-                ) {
-                    ("auth_token", _) => token = String::from_utf8(protocol_data.data.clone()).ok(),
-                    ("auth_username", true) => {
-                        username = String::from_utf8(protocol_data.data.clone()).ok()
+        match BtpMessage::from_bytes(&message) {
+            Ok(message) => {
+                let request_id = message.request_id;
+                let mut username: Option<String> = None;
+                let mut token: Option<String> = None;
+                for protocol_data in message.protocol_data.iter() {
+                    match (
+                        protocol_data.protocol_name.as_ref(),
+                        !protocol_data.data.is_empty(),
+                    ) {
+                        ("auth_token", _) => {
+                            token = String::from_utf8(protocol_data.data.clone()).ok()
+                        }
+                        ("auth_username", true) => {
+                            username = String::from_utf8(protocol_data.data.clone()).ok()
+                        }
+                        _ => {}
                     }
-                    _ => {}
+                }
+
+                if let Some(token) = token {
+                    return Some(Auth {
+                        request_id,
+                        token,
+                        username,
+                    });
+                } else {
+                    warn!("BTP packet is missing auth token");
                 }
             }
-
-            if let Some(token) = token {
-                return Some(Auth {
-                    request_id,
-                    token,
-                    username,
-                });
+            Err(err) => {
+                warn!("Error parsing BTP packet from Websocket message: {:?}", err);
             }
         }
+    } else {
+        warn!("Websocket packet is not binary");
     }
     None
 }

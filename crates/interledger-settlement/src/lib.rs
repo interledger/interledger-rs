@@ -19,6 +19,8 @@ mod fixtures;
 mod message_service;
 #[cfg(test)]
 mod test_helpers;
+use num_bigint::BigUint;
+use std::ops::{Div, Mul};
 
 pub use api::SettlementApi;
 pub use client::SettlementClient;
@@ -43,15 +45,13 @@ impl Quantity {
     }
 }
 
+// TODO: Since we still haven't finalized all the settlement details, we might
+// end up deciding to add some more values, e.g. some settlement engine uid or similar.
+// All instances of this struct should be replaced with Url instances once/if we
+// agree that there is no more info required to refer to an engine.
 pub struct SettlementEngineDetails {
     /// Base URL of the settlement engine
     pub url: Url,
-    /// Asset scale that the settlement engine is configured to use.
-    /// For example, sending a settlement for amount 1000 to a settlement engine
-    /// that uses as scale of 3 would mean that it should send 1 whole unit of that asset.
-    /// The SettlementClient translates the amounts used for each account internally within
-    /// Interledger.rs into the correct scale used by the settlement engine.
-    pub asset_scale: u8,
 }
 
 pub trait SettlementAccount: Account {
@@ -85,7 +85,7 @@ pub trait IdempotentStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = IdempotentData, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send>;
 
     /// Saves the data that was passed along with the api request for later
     /// The store MUST also save a hash of the input, so that it errors out on requests
@@ -98,6 +98,7 @@ pub trait IdempotentStore {
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
+#[derive(Debug)]
 pub struct ConvertDetails {
     pub from: u8,
     pub to: u8,
@@ -105,29 +106,61 @@ pub struct ConvertDetails {
 
 /// Traits for u64 and f64 asset code conversions for amounts and rates
 pub trait Convert {
-    fn normalize_scale(&self, details: ConvertDetails) -> Self;
+    type Item: Sized;
+
+    // Returns the scaled result, or an error if there was an overflow
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()>;
 }
 
 impl Convert for u64 {
-    fn normalize_scale(&self, details: ConvertDetails) -> Self {
-        let from_scale = details.from;
-        let to_scale = details.to;
-        if from_scale >= to_scale {
-            self * 10u64.pow(u32::from(from_scale - to_scale))
+    type Item = u64;
+
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()> {
+        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
+        let scale = 10u64.pow(scale_diff.into());
+        let (res, overflow) = if details.to >= details.from {
+            self.overflowing_mul(scale)
         } else {
-            self / 10u64.pow(u32::from(to_scale - from_scale))
+            self.overflowing_div(scale)
+        };
+        if overflow {
+            Err(())
+        } else {
+            Ok(res)
         }
     }
 }
 
 impl Convert for f64 {
-    fn normalize_scale(&self, details: ConvertDetails) -> Self {
-        let from_scale = details.from;
-        let to_scale = details.to;
-        if from_scale >= to_scale {
-            self * 10f64.powi(i32::from(from_scale - to_scale))
+    type Item = f64;
+    // Not overflow safe. Would require using a package for Big floating point
+    // numbers such as BigDecimal
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()> {
+        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
+        let scale = 10f64.powi(scale_diff.into());
+        let res = if details.to >= details.from {
+            self * scale
         } else {
-            self / 10f64.powi(i32::from(to_scale - from_scale))
+            self / scale
+        };
+        if res == std::f64::INFINITY {
+            Err(())
+        } else {
+            Ok(res)
+        }
+    }
+}
+
+impl Convert for BigUint {
+    type Item = BigUint;
+
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()> {
+        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
+        let scale = 10u64.pow(scale_diff.into());
+        if details.to >= details.from {
+            Ok(self.mul(scale))
+        } else {
+            Ok(self.div(scale))
         }
     }
 }
@@ -139,45 +172,76 @@ mod tests {
 
     #[test]
     fn u64_test() {
-        // 1 unit with base 1, is 1 unit with base 1
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 1, to: 1 }), 1);
-        // 1 unit with base 10, is 10 units with base 1
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 2, to: 1 }), 10);
-        // 1 wei is 1e9 sats (multiplied by rate)
+        // overflows
+        let huge_number = std::u64::MAX / 10;
         assert_eq!(
-            1u64.normalize_scale(ConvertDetails { from: 18, to: 9 }),
+            huge_number
+                .normalize_scale(ConvertDetails { from: 1, to: 18 })
+                .unwrap_err(),
+            (),
+        );
+        // 1 unit with scale 1, is 1 unit with scale 1
+        assert_eq!(
+            1u64.normalize_scale(ConvertDetails { from: 1, to: 1 })
+                .unwrap(),
+            1
+        );
+        // there's leftovers for all number slots which do not increase in
+        // increments of 10^abs(to_scale-from_scale)
+        assert_eq!(
+            1u64.normalize_scale(ConvertDetails { from: 2, to: 1 })
+                .unwrap(),
+            0
+        );
+        // 1 unit with scale 1, is 10 units with scale 2
+        assert_eq!(
+            1u64.normalize_scale(ConvertDetails { from: 1, to: 2 })
+                .unwrap(),
+            10
+        );
+        // 1 gwei (scale 9) is 1e9 wei (scale 18)
+        assert_eq!(
+            1u64.normalize_scale(ConvertDetails { from: 9, to: 18 })
+                .unwrap(),
             1_000_000_000
         );
-
-        // there's leftovers for all number slots which do not increase in
-        // increments of 10^{to_scale-from_scale}
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 0);
-        assert_eq!(10u64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 1);
-        // 100 units with base 2 is 10 units with base 3
+        // 1_000_000_000 wei is 1gwei
         assert_eq!(
-            100u64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
-            10
+            1_000_000_000u64
+                .normalize_scale(ConvertDetails { from: 18, to: 9 })
+                .unwrap(),
+            1,
         );
-        // 299 units with base 2 is 10 units with base 3 plus 99 leftovers
+        // 10 units with base 2 is 100 units with base 3
         assert_eq!(
-            100u64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
-            10
+            10u64
+                .normalize_scale(ConvertDetails { from: 2, to: 3 })
+                .unwrap(),
+            100
         );
-
-        assert_eq!(999u64.normalize_scale(ConvertDetails { from: 6, to: 9 }), 0);
+        // 299 units with base 3 is 29 units with base 2 (0.9 leftovers)
         assert_eq!(
-            1000u64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            299u64
+                .normalize_scale(ConvertDetails { from: 3, to: 2 })
+                .unwrap(),
+            29
+        );
+        assert_eq!(
+            999u64
+                .normalize_scale(ConvertDetails { from: 9, to: 6 })
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            1000u64
+                .normalize_scale(ConvertDetails { from: 9, to: 6 })
+                .unwrap(),
             1
         );
         assert_eq!(
-            1999u64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
-            1
-        ); // 5 is leftovers, maybe we should return it?
-
-        // allow making sub-sat micropayments
-        assert_eq!(1u64.normalize_scale(ConvertDetails { from: 9, to: 18 }), 0);
-        assert_eq!(
-            1_000_000_000u64.normalize_scale(ConvertDetails { from: 9, to: 18 }),
+            1999u64
+                .normalize_scale(ConvertDetails { from: 9, to: 6 })
+                .unwrap(),
             1
         );
     }
@@ -185,46 +249,79 @@ mod tests {
     #[allow(clippy::float_cmp)]
     #[test]
     fn f64_test() {
+        // overflow
+        assert_eq!(
+            std::f64::MAX
+                .normalize_scale(ConvertDetails {
+                    from: 1,
+                    to: std::u8::MAX,
+                })
+                .unwrap_err(),
+            ()
+        );
+
         // 1 unit with base 1, is 1 unit with base 1
-        assert_eq!(1f64.normalize_scale(ConvertDetails { from: 1, to: 1 }), 1.0);
+        assert_eq!(
+            1f64.normalize_scale(ConvertDetails { from: 1, to: 1 })
+                .unwrap(),
+            1.0
+        );
         // 1 unit with base 10, is 10 units with base 1
         assert_eq!(
-            1f64.normalize_scale(ConvertDetails { from: 2, to: 1 }),
+            1f64.normalize_scale(ConvertDetails { from: 1, to: 2 })
+                .unwrap(),
             10.0
         );
-        // 1 wei is 1e9 sats (multiplied by rate)
+        // 1 sat is 1e9 wei (multiplied by rate)
         assert_eq!(
-            1f64.normalize_scale(ConvertDetails { from: 18, to: 9 }),
+            1f64.normalize_scale(ConvertDetails { from: 9, to: 18 })
+                .unwrap(),
             1_000_000_000.0
         );
 
-        // 1.0 unit with base 1 is 0.1 unit with base 2
-        assert_eq!(1f64.normalize_scale(ConvertDetails { from: 1, to: 2 }), 0.1);
+        // 1.0 unit with base 2 is 0.1 unit with base 1
         assert_eq!(
-            10f64.normalize_scale(ConvertDetails { from: 1, to: 2 }),
-            1.0
+            1f64.normalize_scale(ConvertDetails { from: 2, to: 1 })
+                .unwrap(),
+            0.1
         );
-        // 100 units with base 2 is 10 units with base 3
         assert_eq!(
-            100f64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
+            10.5f64
+                .normalize_scale(ConvertDetails { from: 2, to: 1 })
+                .unwrap(),
+            1.05
+        );
+        // 100 units with base 3 is 10 units with base 2
+        assert_eq!(
+            100f64
+                .normalize_scale(ConvertDetails { from: 3, to: 2 })
+                .unwrap(),
             10.0
         );
-        // 299 units with base 2 is 10 units with base 3 plus 99 leftovers
+        // 299 units with base 3 is 29.9 with base 2
         assert_eq!(
-            100f64.normalize_scale(ConvertDetails { from: 2, to: 3 }),
-            10.0
+            299f64
+                .normalize_scale(ConvertDetails { from: 3, to: 2 })
+                .unwrap(),
+            29.9
         );
 
         assert_eq!(
-            999f64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            999f64
+                .normalize_scale(ConvertDetails { from: 9, to: 6 })
+                .unwrap(),
             0.999
         );
         assert_eq!(
-            1000f64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            1000f64
+                .normalize_scale(ConvertDetails { from: 9, to: 6 })
+                .unwrap(),
             1.0
         );
         assert_eq!(
-            1999f64.normalize_scale(ConvertDetails { from: 6, to: 9 }),
+            1999f64
+                .normalize_scale(ConvertDetails { from: 9, to: 6 })
+                .unwrap(),
             1.999
         );
     }
