@@ -12,8 +12,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-static PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
-static PEER_PROTOCOL_CONDITION: [u8; 32] = [
+pub static PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
+pub static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
@@ -21,7 +21,7 @@ const ASSET_SCALE_LEN: usize = 1;
 
 lazy_static! {
     static ref PEER_PROTOCOL_EXPIRY_DURATION: Duration = Duration::from_secs(60);
-    static ref ILDCP_DESTINATION: Address = Address::from_str("peer.config").unwrap();
+    pub static ref ILDCP_DESTINATION: Address = Address::from_str("peer.config").unwrap();
 }
 
 pub fn is_ildcp_request(prepare: &Prepare) -> bool {

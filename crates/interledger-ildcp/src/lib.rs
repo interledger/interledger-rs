@@ -15,8 +15,12 @@ pub use client::get_ildcp_info;
 pub use packet::*;
 pub use server::IldcpService;
 
+#[cfg(test)]
+mod test_helpers;
+
 pub trait IldcpAccount: Account {
-    fn client_address(&self) -> &Address;
+    fn username(&self) -> &str;
+    fn ilp_address(&self) -> Option<&Address>;
     fn asset_scale(&self) -> u8;
     fn asset_code(&self) -> &str;
 }
