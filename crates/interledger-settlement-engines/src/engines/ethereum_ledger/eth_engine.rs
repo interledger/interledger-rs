@@ -107,7 +107,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount + Clone + Send + Sync + 'static,
 {
     pub fn new(store: S, signer: Si) -> Self {
         Self {
@@ -234,7 +234,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount + Clone + Send + Sync + 'static,
 {
     /// Periodically spawns a job every `self.poll_frequency` that notifies the
     /// Settlement Engine's connectors about transactions which are sent to the
@@ -750,7 +750,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount + Clone + Send + Sync + 'static,
 {
     /// Settlement Engine's function that corresponds to the
     /// /accounts/:id/ endpoint (POST). It queries the connector's

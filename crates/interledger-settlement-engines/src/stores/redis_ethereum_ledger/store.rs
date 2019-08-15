@@ -4,7 +4,6 @@ use futures::{
 };
 
 use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
-use interledger_service::Account as AccountTrait;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -35,14 +34,6 @@ pub struct Account {
     pub(crate) token_address: Option<EthAddress>,
 }
 
-impl AccountTrait for Account {
-    type AccountId = u64;
-
-    fn id(&self) -> Self::AccountId {
-        self.id
-    }
-}
-
 fn ethereum_transactions_key(tx_hash: H256) -> String {
     format!(
         "{}:{}:{}:{}",
@@ -65,6 +56,11 @@ fn ethereum_uncredited_amount_key(account_id: String) -> String {
 }
 
 impl EthereumAccount for Account {
+    type AccountId = u64;
+
+    fn id(&self) -> Self::AccountId {
+        self.id
+    }
     fn token_address(&self) -> Option<EthAddress> {
         self.token_address
     }
@@ -199,7 +195,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
 
     fn load_account_addresses(
         &self,
-        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
+        account_ids: Vec<<Self::Account as EthereumAccount>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<EthereumAddresses>, Error = ()> + Send> {
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
@@ -249,7 +245,7 @@ impl EthereumStore for EthereumLedgerRedisStore {
 
     fn save_account_addresses(
         &self,
-        data: HashMap<<Self::Account as AccountTrait>::AccountId, EthereumAddresses>,
+        data: HashMap<<Self::Account as EthereumAccount>::AccountId, EthereumAddresses>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut pipe = redis::pipe();
         for (account_id, d) in data {
@@ -311,7 +307,8 @@ impl EthereumStore for EthereumLedgerRedisStore {
     fn load_account_id_from_address(
         &self,
         eth_address: EthereumAddresses,
-    ) -> Box<dyn Future<Item = <Self::Account as AccountTrait>::AccountId, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = <Self::Account as EthereumAccount>::AccountId, Error = ()> + Send>
+    {
         let mut pipe = redis::pipe();
         pipe.get(addrs_to_key(eth_address));
         Box::new(

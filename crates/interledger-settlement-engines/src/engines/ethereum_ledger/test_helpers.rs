@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use interledger_service::{Account, AccountStore};
 use tokio::runtime::Runtime;
 
 use parking_lot::RwLock;
@@ -30,15 +29,13 @@ pub struct TestAccount {
     pub no_details: bool,
 }
 
-impl Account for TestAccount {
+impl EthereumAccount for TestAccount {
     type AccountId = u64;
 
     fn id(&self) -> u64 {
         self.id
     }
-}
 
-impl EthereumAccount for TestAccount {
     fn token_address(&self) -> Option<Address> {
         if self.no_details {
             return None;
@@ -178,32 +175,6 @@ impl EthereumStore for TestStore {
         let mut hashes = self.saved_hashes.write();
         (*hashes).insert(tx_hash, true);
         Box::new(ok(()))
-    }
-}
-
-impl AccountStore for TestStore {
-    type Account = TestAccount;
-
-    fn get_accounts(
-        &self,
-        account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
-        let accounts: Vec<TestAccount> = self
-            .accounts
-            .iter()
-            .filter_map(|account| {
-                if account_ids.contains(&account.id) {
-                    Some(account.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if accounts.len() == account_ids.len() {
-            Box::new(ok(accounts))
-        } else {
-            Box::new(err(()))
-        }
     }
 }
 

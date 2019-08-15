@@ -57,7 +57,7 @@ fn eth_ledger_settlement() {
     let node1_secret = cli::random_secret();
     let node1 = InterledgerNode {
         ilp_address: Address::from_str("example.alice").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "hi_alice".to_string(),
         redis_connection: connection_info1.clone(),
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -127,7 +127,7 @@ fn eth_ledger_settlement() {
     let node2_secret = cli::random_secret();
     let node2 = InterledgerNode {
         ilp_address: Address::from_str("example.bob").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2.clone(),
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
