@@ -60,7 +60,6 @@ where
         let should_echo = request.prepare.destination() == self.ilp_address
             && request.prepare.data().starts_with(ECHO_PREFIX.as_bytes());
         if !should_echo {
-            debug!("Not responding to this request: {:?}", request);
             return Box::new(self.next.handle_request(request));
         }
         debug!("Responding to Echo protocol request: {:?}", request);
