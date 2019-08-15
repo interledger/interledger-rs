@@ -4,7 +4,6 @@ use futures::{
     future::{err, ok},
     Future,
 };
-use interledger_ildcp::IldcpAccount;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService,
     OutgoingService,
@@ -29,13 +28,6 @@ pub struct TestAccount {
     pub no_details: bool,
 }
 
-impl Account for TestAccount {
-    type AccountId = u64;
-
-    fn id(&self) -> u64 {
-        self.id
-    }
-}
 impl SettlementAccount for TestAccount {
     fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
         if self.no_details {
@@ -47,7 +39,13 @@ impl SettlementAccount for TestAccount {
     }
 }
 
-impl IldcpAccount for TestAccount {
+impl Account for TestAccount {
+    type AccountId = u64;
+
+    fn id(&self) -> u64 {
+        self.id
+    }
+
     fn asset_code(&self) -> &str {
         "XYZ"
     }

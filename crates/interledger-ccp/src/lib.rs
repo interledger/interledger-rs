@@ -11,7 +11,6 @@
 
 use bytes::Bytes;
 use futures::Future;
-use interledger_ildcp::IldcpAccount;
 use interledger_service::Account;
 use std::collections::HashMap;
 use std::{str::FromStr, string::ToString};
@@ -58,7 +57,7 @@ impl ToString for RoutingRelation {
 }
 
 /// DefineCcpAccountethods Account types need to be used by the CCP Service
-pub trait CcpRoutingAccount: Account + IldcpAccount {
+pub trait CcpRoutingAccount: Account {
     /// The type of relationship we have with this account
     fn routing_relation(&self) -> RoutingRelation;
 

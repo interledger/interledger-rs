@@ -19,7 +19,6 @@ pub use server::{ConnectionGenerator, StreamReceiverService};
 pub mod test_helpers {
     use bytes::Bytes;
     use futures::{future::ok, Future};
-    use interledger_ildcp::IldcpAccount;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore};
@@ -47,9 +46,7 @@ pub mod test_helpers {
         fn id(&self) -> u64 {
             self.id
         }
-    }
 
-    impl IldcpAccount for TestAccount {
         fn asset_code(&self) -> &str {
             self.asset_code.as_str()
         }

@@ -8,10 +8,12 @@ use hyper::{
 };
 use interledger_btp::{connect_client, create_open_signup_server, parse_btp_url};
 use interledger_http::{HttpClientService, HttpServerService};
-use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
+use interledger_ildcp::{get_ildcp_info, IldcpResponse, IldcpService};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
+use interledger_service::{
+    incoming_service_fn, outgoing_service_fn, Account as AccountTrait, OutgoingRequest,
+};
 use interledger_service_util::ValidatorService;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
@@ -245,6 +247,7 @@ pub fn run_spsp_server_http(
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
     let ilp_address = ildcp_info.client_address();
+    let ilp_address_clone = ilp_address.clone();
     if !quiet {
         println!("Creating SPSP server. ILP Address: {}", ilp_address)
     }
@@ -272,7 +275,7 @@ pub fn run_spsp_server_http(
         }),
     );
     let incoming_handler = Router::new(store.clone(), outgoing_handler);
-    let incoming_handler = IldcpService::new(incoming_handler);
+    let incoming_handler = IldcpService::new(ilp_address_clone, incoming_handler);
     let incoming_handler = ValidatorService::incoming(incoming_handler);
     let http_service = HttpServerService::new(incoming_handler, store);
 
@@ -316,6 +319,7 @@ pub fn run_moneyd_local(
     ildcp_info: IldcpResponse,
 ) -> impl Future<Item = (), Error = ()> {
     let ilp_address = ildcp_info.client_address();
+    let ilp_address_clone = ilp_address.clone();
     let store = InMemoryStore::default();
     // TODO this needs a reference to the BtpService so it can send outgoing packets
     println!("Listening on: {}", address);
@@ -331,7 +335,7 @@ pub fn run_moneyd_local(
     create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
         move |btp_service| {
             let service = Router::new(store, btp_service.clone());
-            let service = IldcpService::new(service);
+            let service = IldcpService::new(ilp_address_clone, service);
             let service = ValidatorService::incoming(service);
             btp_service.handle_incoming(service);
             Ok(())

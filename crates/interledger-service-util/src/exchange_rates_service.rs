@@ -1,5 +1,4 @@
 use futures::{future::err, Future};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{Convert, ConvertDetails};
@@ -26,7 +25,7 @@ impl<S, O, A> ExchangeRateService<S, O, A>
 where
     S: ExchangeRateStore,
     O: OutgoingService<A>,
-    A: IldcpAccount,
+    A: Account,
 {
     pub fn new(ilp_address: Address, store: S, next: O) -> Self {
         ExchangeRateService {
@@ -43,7 +42,7 @@ where
     // TODO can we make these non-'static?
     S: ExchangeRateStore + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
-    A: IldcpAccount + Sync + 'static,
+    A: Account + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -152,7 +151,6 @@ where
 mod tests {
     use super::*;
     use futures::{future::ok, Future};
-    use interledger_ildcp::IldcpAccount;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::{outgoing_service_fn, Account};
     use std::collections::HashMap;
@@ -248,9 +246,7 @@ mod tests {
         fn id(&self) -> u64 {
             0
         }
-    }
 
-    impl IldcpAccount for TestAccount {
         fn asset_code(&self) -> &str {
             &self.asset_code
         }

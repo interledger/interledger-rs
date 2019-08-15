@@ -4,7 +4,6 @@ use bytes::Bytes;
 use common::*;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_ccp::RouteManagerStore;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::Account as AccountTrait;

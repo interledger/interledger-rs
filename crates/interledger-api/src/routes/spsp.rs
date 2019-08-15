@@ -6,8 +6,7 @@ use futures::{
 };
 use hyper::{Body, Response};
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_ildcp::IldcpAccount;
-use interledger_service::{AccountStore, IncomingService};
+use interledger_service::{Account as AccountTrait, AccountStore, IncomingService};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -44,7 +43,7 @@ impl_web! {
     impl<T, S, A> SpspApi<T, S>
     where T: HttpStore<Account = A> + AccountStore<Account = A>,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: IldcpAccount + HttpAccount + 'static,
+    A: AccountTrait + HttpAccount + 'static,
     {
         pub fn new(server_secret: Bytes, store: T, incoming_handler: S) -> Self {
             SpspApi {

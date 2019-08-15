@@ -1,5 +1,4 @@
 use futures::{future::err, Future};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 
@@ -55,7 +54,7 @@ where
     // TODO can we make these non-'static?
     S: OutgoingService<T::Account> + Send + Clone + 'static,
     T: BalanceStore + ExchangeRateStore + Clone + Send + Sync + 'static,
-    T::Account: IldcpAccount + Send + Sync + 'static,
+    T::Account: Account + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 

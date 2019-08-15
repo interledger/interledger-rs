@@ -212,7 +212,7 @@ impl InterledgerNode {
                                     let incoming_service = ccp_builder.to_service();
                                     let incoming_service = EchoService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
-                                    let incoming_service = IldcpService::new(incoming_service);
+                                    let incoming_service = IldcpService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service =
                                         MaxPacketAmountService::new(incoming_service);
                                     let incoming_service =

@@ -3,7 +3,6 @@ use futures::{
     future::{err, Either},
     Future,
 };
-use interledger_ildcp::IldcpAccount;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use serde_json::json;
@@ -21,7 +20,7 @@ impl SettlementClient {
         }
     }
 
-    pub fn send_settlement<A: SettlementAccount + IldcpAccount>(
+    pub fn send_settlement<A: SettlementAccount>(
         &self,
         account: A,
         amount: u64,

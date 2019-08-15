@@ -5,7 +5,6 @@ use common::*;
 use interledger_api::NodeStore;
 use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccontTrait;
 use interledger_service::AccountStore;
