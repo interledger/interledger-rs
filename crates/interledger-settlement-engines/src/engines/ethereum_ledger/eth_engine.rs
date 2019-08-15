@@ -6,13 +6,6 @@ use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use web3::{
-    api::Web3,
-    futures::future::{err, join_all, ok, result, Either, Future},
-    futures::stream::Stream,
-    transports::Http,
-    types::{Address, BlockNumber, CallRequest, TransactionId, H256, U256},
-};
 use hyper::StatusCode;
 use interledger_store_redis::RedisStoreBuilder;
 use log::info;
@@ -33,6 +26,13 @@ use tokio::timer::Interval;
 use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 use uuid::Uuid;
+use web3::{
+    api::Web3,
+    futures::future::{err, join_all, ok, result, Either, Future},
+    futures::stream::Stream,
+    transports::Http,
+    types::{Address, BlockNumber, CallRequest, TransactionId, H256, U256},
+};
 
 use crate::stores::{redis_ethereum_ledger::*, LeftoversStore};
 use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};

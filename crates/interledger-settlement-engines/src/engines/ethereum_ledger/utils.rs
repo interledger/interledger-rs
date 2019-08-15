@@ -1,14 +1,14 @@
 use ethabi::Token;
-use web3::{
-        api::Web3,
-        futures::future::Future,
-        transports::Http,
-        types::{Address, BlockNumber, FilterBuilder, Transaction, H160, H256, U256},
-};
 use ethereum_tx_sign::RawTransaction;
+use lazy_static::lazy_static;
 use log::error;
 use std::str::FromStr;
-use lazy_static::lazy_static;
+use web3::{
+    api::Web3,
+    futures::future::Future,
+    transports::Http,
+    types::{Address, BlockNumber, FilterBuilder, Transaction, H160, H256, U256},
+};
 
 lazy_static! {
     /// This is the result of keccak256("Transfer(address,address,to)"), which is
@@ -94,7 +94,7 @@ pub fn filter_transfer_logs(
         .topics(
             Some(vec![
                 // keccak256("transfer(address,address,to)")
-                TRANSFER_EVENT_FILTER.clone(),
+                *TRANSFER_EVENT_FILTER,
             ]),
             from,
             to,
@@ -157,7 +157,8 @@ mod tests {
         // https://etherscan.io/tx/0x6fd1b68f02f4201a38662647b7f09170b159faec6af4825ae509beefeb8e8130
         let to = "c92be489639a9c61f517bd3b955840fa19bc9b7c".parse().unwrap();
         let value = "16345785d8a0000".into();
-        let token_address = Some(H160::from_str("B8c77482e45F1F44dE1745F52C74426C631bDD52").unwrap());
+        let token_address =
+            Some(H160::from_str("B8c77482e45F1F44dE1745F52C74426C631bDD52").unwrap());
         let tx = make_tx(to, value, token_address);
         assert_eq!(tx.to, token_address);
         assert_eq!(tx.value, U256::from(0));

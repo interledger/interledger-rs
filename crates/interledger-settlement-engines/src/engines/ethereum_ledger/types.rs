@@ -1,11 +1,11 @@
 use clarity::{PrivateKey, Signature};
-use web3::types::{Address, H256, U256};
 use ethereum_tx_sign::RawTransaction;
 use futures::Future;
 use interledger_service::Account;
 use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::str::FromStr;
+use web3::types::{Address, H256, U256};
 
 /// An Ethereum account is associated with an address. We additionally require
 /// that an optional `token_address` is implemented. If the `token_address` of an

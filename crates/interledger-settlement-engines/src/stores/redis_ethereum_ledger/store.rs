@@ -3,10 +3,10 @@ use futures::{
     Future,
 };
 
-use web3::types::{Address as EthAddress, H256, U256};
 use interledger_service::Account as AccountTrait;
 use std::collections::HashMap;
 use std::str::FromStr;
+use web3::types::{Address as EthAddress, H256, U256};
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use num_traits::Zero;
@@ -486,7 +486,8 @@ mod tests {
     fn saves_tx_hashes_properly() {
         block_on(test_store().and_then(|(store, context)| {
             let tx_hash =
-                H256::from_str("b28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e").unwrap();
+                H256::from_str("b28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e")
+                    .unwrap();
             store
                 .mark_tx_processed(tx_hash)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
