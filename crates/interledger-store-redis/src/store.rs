@@ -278,15 +278,6 @@ pub struct RedisStore {
 }
 
 impl RedisStore {
-    fn generate_account_id(&self) -> impl Future<Item = AccountId, Error = ()> {
-        let mut pipe = redis::pipe();
-        let uid = AccountId::new();
-        pipe.sadd("accounts", uid).ignore();
-        pipe.query_async(self.connection.as_ref().clone())
-            .map_err(|err| error!("Error incrementing account ID: {:?}", err))
-            .and_then(move |(_conn, _ret): (_, Value)| Ok(uid))
-    }
-
     pub fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
         let mut pipe = redis::pipe();
         pipe.smembers("accounts");
@@ -317,12 +308,10 @@ impl RedisStore {
             .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
         let http_incoming_token_hmac_clone = http_incoming_token_hmac;
 
+        let id = AccountId::new();
+        debug!("Generated account: {}", id);
         Box::new(
-            self.generate_account_id()
-                .and_then(|id| {
-                    debug!("Generated account: {}", id);
-                    Account::try_from(id, account)
-                })
+                result(Account::try_from(id, account))
                 .and_then(move |account| {
                     // Check that there isn't already an account with values that must be unique
                     let mut keys: Vec<String> = vec!["ID".to_string()];
@@ -359,6 +348,9 @@ impl RedisStore {
                 .and_then(move |(connection, account)| {
                     let mut pipe = redis::pipe();
                     pipe.atomic();
+
+                    // Add the account key to the list of accounts
+                    pipe.sadd("accounts", id).ignore();
 
                     // Set account details
                     pipe.cmd("HMSET").arg(account_details_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
@@ -416,6 +408,8 @@ impl RedisStore {
                 .and_then(|account| {
                     let mut pipe = redis::pipe();
                     pipe.atomic();
+
+                    pipe.srem("accounts", account.id).ignore();
 
                     pipe.del(account_details_key(account.id));
 
