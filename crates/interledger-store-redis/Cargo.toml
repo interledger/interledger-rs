@@ -35,6 +35,7 @@ tokio-executor = "0.1.6"
 tokio-timer = "0.2.10"
 url = "1.7.2"
 http = "0.1.17"
+uuid = { version = "0.7.4", features = ["serde"] }
 
 
 [dev-dependencies]
