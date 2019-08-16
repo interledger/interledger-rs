@@ -3,7 +3,6 @@ use futures::{
     Future,
 };
 
-use interledger_service::Account as AccountTrait;
 use std::collections::HashMap;
 use std::str::FromStr;
 use web3::types::{Address as EthAddress, H256, U256};

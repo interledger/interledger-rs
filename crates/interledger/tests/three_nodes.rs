@@ -332,7 +332,7 @@ fn three_nodes() {
                             .and_then(move |_| {
                                 get_balance(one_on_one, node1_http, "default account holder")
                                     .and_then(move |ret| {
-                                        assert_eq!(ret, 499000);
+                                        assert_eq!(ret, 499_000);
                                         Ok(())
                                     })
                                     .and_then(move |_| {

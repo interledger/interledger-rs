@@ -6,10 +6,7 @@ use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
-use interledger_service::Account as AccountTrait;
-use interledger_store_redis::Account;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;

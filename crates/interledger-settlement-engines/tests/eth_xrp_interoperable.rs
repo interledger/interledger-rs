@@ -319,8 +319,6 @@ fn eth_xrp_interoperable() {
                 .and_then(move |_| {
                     let charlie_addr = Address::from_str("example.bob.charlie").unwrap();
                     let bob_addr = Address::from_str("example.bob").unwrap();
-                    let bob_addr = Address::from_str("example.bob").unwrap();
-                    let bob_addr2 = bob_addr.clone();
                     let alice_addr = Address::from_str("example.alice").unwrap();
                     futures::future::join_all(vec![
                         get_all_accounts(node1_http, "admin").map(accounts_to_ids),
