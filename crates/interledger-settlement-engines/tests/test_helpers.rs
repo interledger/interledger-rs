@@ -1,8 +1,16 @@
 use futures::{stream::Stream, Future};
 use interledger::cli;
+use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
+use interledger_service::Account as AccountTrait;
 use interledger_settlement_engines::engines::ethereum_ledger::run_ethereum_engine;
+use interledger_store_redis::Account;
+use interledger_store_redis::AccountId;
 use redis::ConnectionInfo;
+use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
+use std::fmt::Display;
 use std::process::Command;
 use std::str;
 use std::thread::sleep;
@@ -78,7 +86,7 @@ pub fn start_eth_engine(
     )
 }
 
-use serde::Serialize;
+#[allow(unused)]
 pub fn create_account<T: Serialize>(
     engine_port: u16,
     account_id: T,
@@ -97,6 +105,7 @@ pub fn create_account<T: Serialize>(
         .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
 }
 
+#[allow(unused)]
 pub fn send_money_to_id<T: Display>(
     from: u16,
     to: u16,
@@ -125,34 +134,37 @@ pub fn send_money_to_id<T: Display>(
         })
 }
 
-
-pub fn send_money(
-    from: u16,
-    to: u16,
-    amount: u64,
-    auth: &str,
-) -> impl Future<Item = u64, Error = ()> {
+#[allow(unused)]
+pub fn get_all_accounts(
+    node_port: u16,
+    admin_token: &str,
+) -> impl Future<Item = Vec<Account>, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
-        .post(&format!("http://localhost:{}/pay", from))
-        .header("Authorization", format!("Bearer {}", auth))
-        .json(&json!({
-            "receiver": format!("http://localhost:{}/.well-known/pay", to),
-            "source_amount": amount,
-        }))
+        .get(&format!("http://localhost:{}/accounts", node_port))
+        .header("Authorization", format!("Bearer {}", admin_token))
         .send()
         .and_then(|res| res.error_for_status())
         .and_then(|res| res.into_body().concat2())
         .map_err(|err| {
-            eprintln!("Error sending SPSP payment: {:?}", err);
+            eprintln!("Error getting account data: {:?}", err);
         })
         .and_then(move |body| {
-            let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
-            Ok(ret.delivered_amount)
+            let ret: Vec<Account> = serde_json::from_slice(&body).unwrap();
+            Ok(ret)
         })
 }
 
-use std::fmt::Display;
+#[allow(unused)]
+pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, AccountId> {
+    let mut map = HashMap::new();
+    for a in accounts {
+        map.insert(a.client_address().clone(), a.id());
+    }
+    map
+}
+
+#[allow(unused)]
 pub fn get_balance<T: Display>(
     account_id: T,
     node_port: u16,

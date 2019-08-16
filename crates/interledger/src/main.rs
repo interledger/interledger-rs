@@ -2,6 +2,7 @@ use base64;
 use clap::value_t;
 use clap::{App, Arg, ArgGroup, SubCommand};
 use config;
+use futures::future::Future;
 use hex;
 use interledger::{cli::*, node::*};
 use interledger_ildcp::IldcpResponseBuilder;

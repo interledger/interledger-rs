@@ -26,7 +26,7 @@ mod test_helpers;
 
 pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]

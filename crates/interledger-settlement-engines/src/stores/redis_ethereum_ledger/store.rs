@@ -16,8 +16,8 @@ use log::{error, trace};
 
 use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
 use crate::stores::LeftoversStore;
-use num_bigint::BigUint;
 use interledger_store_redis::AccountId;
+use num_bigint::BigUint;
 
 // Key for the latest observed block and balance. The data is stored in order to
 // avoid double crediting transactions which have already been processed, and in
@@ -28,7 +28,6 @@ static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
 static ETHEREUM_KEY: &str = "eth";
 static UNCREDITED_AMOUNT_KEY: &str = "uncredited_settlement_amount";
-
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -321,7 +320,12 @@ impl EthereumStore for EthereumLedgerRedisStore {
         Box::new(
             pipe.query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(move |(_conn, account_id): (_, Vec<<Self::Account as EthereumAccount>::AccountId>)| ok(account_id[0])),
+                .and_then(
+                    move |(_conn, account_id): (
+                        _,
+                        Vec<<Self::Account as EthereumAccount>::AccountId>,
+                    )| ok(account_id[0]),
+                ),
         )
     }
 
