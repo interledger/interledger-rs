@@ -4,19 +4,19 @@ use interledger_api::AccountDetails;
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
+use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
-use interledger_ildcp::IldcpAccount;
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
 use log::error;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 
 use ring::aead;
-use serde::Serialize;
 use serde::Serializer;
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::{
     collections::HashMap,
@@ -28,7 +28,7 @@ use uuid::{parser::ParseError, Uuid};
 use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     pub(crate) id: AccountId,
     #[serde(serialize_with = "address_to_string")]
@@ -38,24 +38,23 @@ pub struct Account {
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
     pub(crate) min_balance: Option<i64>,
-    #[serde(serialize_with = "optional_url_to_string")]
+    #[serde(with = "url_serde")]
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) http_outgoing_token: Option<Bytes>,
-    #[serde(serialize_with = "optional_url_to_string")]
+    #[serde(with = "url_serde")]
     pub(crate) btp_uri: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) btp_outgoing_token: Option<Bytes>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
-    #[serde(serialize_with = "routing_relation_to_string")]
     pub(crate) routing_relation: RoutingRelation,
     pub(crate) send_routes: bool,
     pub(crate) receive_routes: bool,
     pub(crate) round_trip_time: u64,
     pub(crate) packets_per_minute_limit: Option<u32>,
     pub(crate) amount_per_minute_limit: Option<u64>,
-    #[serde(serialize_with = "optional_url_to_string")]
+    #[serde(with = "url_serde")]
     pub(crate) settlement_engine_url: Option<Url>,
 }
 
@@ -75,29 +74,6 @@ where
     } else {
         serializer.serialize_none()
     }
-}
-
-fn optional_url_to_string<S>(url: &Option<Url>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if let Some(ref url) = url {
-        serializer.serialize_str(url.as_ref())
-    } else {
-        serializer.serialize_none()
-    }
-}
-
-// This needs to be pass by ref because serde expects this function to take a ref
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn routing_relation_to_string<S>(
-    relation: &RoutingRelation,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(relation.to_string().as_str())
 }
 
 impl Account {
@@ -186,7 +162,7 @@ impl AccountWithEncryptedTokens {
 // Rust does not allow implementing foreign traits on foreign data types.
 // As a result, we wrap Uuid in a local data type, and implement the necessary
 // traits for that.
-#[derive(Eq, Hash, Debug, Default, Serialize, Copy, Clone)]
+#[derive(Eq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
 pub struct AccountId(Uuid);
 
 impl AccountId {
@@ -426,7 +402,6 @@ impl AccountTrait for Account {
 }
 
 impl IldcpAccount for Account {
-
     fn client_address(&self) -> &Address {
         &self.ilp_address
     }
