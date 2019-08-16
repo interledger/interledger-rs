@@ -5,7 +5,6 @@ use interledger_api::{NodeApi, NodeStore};
 use interledger_btp::{connect_client, create_server, BtpStore};
 use interledger_ccp::CcpRouteManagerBuilder;
 use interledger_http::HttpClientService;
-use interledger_ildcp::IldcpAccount;
 use interledger_ildcp::IldcpService;
 use interledger_packet::Address;
 use interledger_packet::{ErrorCode, RejectBuilder};
@@ -273,7 +272,6 @@ impl InterledgerNode {
     ) -> impl Future<Item = AccountId, Error = ()> {
         insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account)
     }
-
 }
 
 #[doc(hidden)]

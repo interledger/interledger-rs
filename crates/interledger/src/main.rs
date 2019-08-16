@@ -338,7 +338,10 @@ pub fn main() {
                             .ok(),
                         settlement_engine_url: None,
                     };
-                    tokio::run(insert_account_redis(redis_uri, &server_secret, account));
+                    tokio::run(
+                        insert_account_redis(redis_uri, &server_secret, account)
+                            .and_then(move |_| Ok(())),
+                    );
                 }
                 _ => app.print_help().unwrap(),
             },
