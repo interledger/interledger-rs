@@ -87,7 +87,7 @@ pub fn start_eth_engine(
 }
 
 #[allow(unused)]
-pub fn create_account<T: Serialize>(
+pub fn create_account_on_engine<T: Serialize>(
     engine_port: u16,
     account_id: T,
 ) -> impl Future<Item = String, Error = ()> {

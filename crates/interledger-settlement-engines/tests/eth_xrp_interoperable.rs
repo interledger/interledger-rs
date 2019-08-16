@@ -16,7 +16,7 @@ use redis_helpers::*;
 
 mod test_helpers;
 use test_helpers::{
-    accounts_to_ids, create_account, get_all_accounts, get_balance, send_money_to_id,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
     start_eth_engine, start_ganache, start_xrp_engine,
 };
 
@@ -341,13 +341,13 @@ fn eth_xrp_interoperable() {
 
                         // Insert accounts for the 3 nodes (4 total since node2 has
                         // eth & xrp)
-                        create_account(node1_engine, bob_on_alice)
-                            .and_then(move |_| create_account(node2_engine, alice_on_bob))
+                        create_account_on_engine(node1_engine, bob_on_alice)
+                            .and_then(move |_| create_account_on_engine(node2_engine, alice_on_bob))
                             .and_then(move |_| {
-                                create_account(node2_xrp_engine_port, charlie_on_bob)
+                                create_account_on_engine(node2_xrp_engine_port, charlie_on_bob)
                             })
                             .and_then(move |_| {
-                                create_account(node3_xrp_engine_port, bob_on_charlie)
+                                create_account_on_engine(node3_xrp_engine_port, bob_on_charlie)
                             })
                             // Pay 69k Gwei --> 69 drops
                             .and_then(move |_| {

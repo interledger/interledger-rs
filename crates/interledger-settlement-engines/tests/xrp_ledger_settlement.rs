@@ -15,7 +15,7 @@ use redis_helpers::*;
 
 mod test_helpers;
 use test_helpers::{
-    accounts_to_ids, create_account, get_all_accounts, get_balance, send_money_to_id,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
     start_xrp_engine,
 };
 
@@ -222,8 +222,8 @@ fn xrp_ledger_settlement() {
                         let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
                         let bob_at_bob = node2_ids.get(&bob_addr).unwrap().to_owned();
 
-                        let create1 = create_account(node1_engine, bob);
-                        let create2 = create_account(node2_engine, alice);
+                        let create1 = create_account_on_engine(node1_engine, bob);
+                        let create2 = create_account_on_engine(node2_engine, alice);
 
                         // Make 4 subsequent payments (we could also do a 71 payment
                         // directly)

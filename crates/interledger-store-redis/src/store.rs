@@ -1238,7 +1238,7 @@ impl SettlementStore for RedisStore {
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: <Self::Account as AccountTrait>::AccountId,
+        account_id: AccountId,
         amount: u64,
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -1259,7 +1259,7 @@ impl SettlementStore for RedisStore {
 
     fn refund_settlement(
         &self,
-        account_id: <Self::Account as AccountTrait>::AccountId,
+        account_id: AccountId,
         settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(

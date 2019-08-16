@@ -768,7 +768,6 @@ where
         let self_clone = self.clone();
         let store: S = self.store.clone();
         let account_id = account_id.id;
-        debug!("Got account id to parse: {:?}", account_id);
 
         Box::new(
             result(A::AccountId::from_str(&account_id).map_err({

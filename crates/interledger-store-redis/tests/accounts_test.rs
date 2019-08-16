@@ -120,14 +120,14 @@ fn gets_single_account() {
 fn gets_multiple() {
     block_on(test_store().and_then(|(store, context, accs)| {
         let store_clone = store.clone();
-        let accs = vec![accs[1].clone(), accs[0].clone()];
-        let account_ids: Vec<AccountId> = accs.iter().map(|a| a.id()).collect::<_>();
+        // set account ids in reverse order
+        let account_ids: Vec<AccountId> = accs.iter().rev().map(|a| a.id()).collect::<_>();
         store_clone
             .get_accounts(account_ids)
             .and_then(move |accounts| {
                 // note reverse order is intentional
-                assert_eq!(accounts[0].client_address(), accs[0].client_address(),);
-                assert_eq!(accounts[1].client_address(), accs[1].client_address(),);
+                assert_eq!(accounts[0].client_address(), accs[1].client_address(),);
+                assert_eq!(accounts[1].client_address(), accs[0].client_address(),);
                 let _ = context;
                 Ok(())
             })
