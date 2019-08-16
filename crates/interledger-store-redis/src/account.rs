@@ -51,7 +51,7 @@ pub struct Account {
     pub(crate) routing_relation: RoutingRelation,
     pub(crate) send_routes: bool,
     pub(crate) receive_routes: bool,
-    pub(crate) round_trip_time: u64,
+    pub(crate) round_trip_time: u32,
     pub(crate) packets_per_minute_limit: Option<u32>,
     pub(crate) amount_per_minute_limit: Option<u64>,
     #[serde(with = "url_serde")]
@@ -299,8 +299,8 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         } else {
             RoutingRelation::Child
         };
-        let round_trip_time: Option<u64> = get_value_option("round_trip_time", &hash)?;
-        let round_trip_time: u64 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
+        let round_trip_time: Option<u32> = get_value_option("round_trip_time", &hash)?;
+        let round_trip_time: u32 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
 
         Ok(AccountWithEncryptedTokens {
             account: Account {
@@ -456,7 +456,7 @@ impl CcpRoutingAccount for Account {
 }
 
 impl RoundTripTimeAccount for Account {
-    fn round_trip_time(&self) -> u64 {
+    fn round_trip_time(&self) -> u32 {
         self.round_trip_time
     }
 }

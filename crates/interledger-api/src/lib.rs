@@ -72,7 +72,7 @@ pub struct AccountDetails {
     #[serde(default)]
     pub receive_routes: bool,
     pub routing_relation: Option<String>,
-    pub round_trip_time: Option<u64>,
+    pub round_trip_time: Option<u32>,
     pub amount_per_minute_limit: Option<u64>,
     pub packets_per_minute_limit: Option<u32>,
     pub settlement_engine_url: Option<String>,
