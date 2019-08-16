@@ -3,10 +3,10 @@ use futures::{
     Future,
 };
 
-use ethereum_tx_sign::web3::types::{Address as EthAddress, H256, U256};
 use interledger_service::Account as AccountTrait;
 use std::collections::HashMap;
 use std::str::FromStr;
+use web3::types::{Address as EthAddress, H256, U256};
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use num_traits::Zero;
@@ -223,7 +223,9 @@ impl EthereumStore for EthereumLedgerRedisStore {
                             } else {
                                 return err(());
                             };
-                            let own_address = EthAddress::from(&own_address[..]);
+                            let mut out = [0; 20];
+                            out.copy_from_slice(own_address);
+                            let own_address = EthAddress::from(out);
 
                             let token_address =
                                 if let Some(token_address) = addr.get("token_address") {
@@ -232,7 +234,9 @@ impl EthereumStore for EthereumLedgerRedisStore {
                                     return err(());
                                 };
                             let token_address = if token_address.len() == 20 {
-                                Some(EthAddress::from(&token_address[..]))
+                                let mut out = [0; 20];
+                                out.copy_from_slice(token_address);
+                                Some(EthAddress::from(out))
                             } else {
                                 None
                             };
@@ -254,14 +258,14 @@ impl EthereumStore for EthereumLedgerRedisStore {
         let mut pipe = redis::pipe();
         for (account_id, d) in data {
             let token_address = if let Some(token_address) = d.token_address {
-                token_address.to_vec()
+                token_address.as_bytes().to_owned()
             } else {
                 vec![]
             };
             let acc_id = ethereum_ledger_key(account_id);
             let addrs = &[
-                ("own_address", d.own_address.to_vec()),
-                ("token_address", token_address),
+                ("own_address", d.own_address.as_bytes()),
+                ("token_address", &token_address),
             ];
             pipe.hset_multiple(acc_id, addrs).ignore();
             pipe.set(addrs_to_key(d), account_id).ignore();
@@ -482,7 +486,8 @@ mod tests {
     fn saves_tx_hashes_properly() {
         block_on(test_store().and_then(|(store, context)| {
             let tx_hash =
-                H256::from("0xb28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e");
+                H256::from_str("b28675771f555adf614f1401838b9fffb43bc285387679bcbd313a8dc5bdc00e")
+                    .unwrap();
             store
                 .mark_tx_processed(tx_hash)
                 .map_err(|err| eprintln!("Redis error: {:?}", err))

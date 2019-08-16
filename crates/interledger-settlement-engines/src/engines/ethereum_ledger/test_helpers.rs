@@ -13,7 +13,7 @@ use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 
-use ethereum_tx_sign::web3::{
+use web3::{
     futures::future::{err, ok, Future},
     types::{Address, H256, U256},
 };

@@ -1,20 +1,22 @@
 use ethabi::Token;
-use ethereum_tx_sign::{
-    web3::{
-        api::Web3,
-        futures::future::Future,
-        transports::Http,
-        types::{Address, BlockNumber, FilterBuilder, Transaction, H160, H256, U256},
-    },
-    RawTransaction,
-};
+use ethereum_tx_sign::RawTransaction;
+use lazy_static::lazy_static;
 use log::error;
 use std::str::FromStr;
+use web3::{
+    api::Web3,
+    futures::future::Future,
+    transports::Http,
+    types::{Address, BlockNumber, FilterBuilder, Transaction, H160, H256, U256},
+};
 
-/// This is the result of keccak256("Transfer(address,address,to)"), which is
-/// used to filter through Ethereum ERC20 Transfer events in transaction receipts.
-const TRANSFER_EVENT_FILTER: &str =
-    "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+lazy_static! {
+    /// This is the result of keccak256("Transfer(address,address,to)"), which is
+    /// used to filter through Ethereum ERC20 Transfer events in transaction receipts.
+    pub static ref TRANSFER_EVENT_FILTER: H256 = {
+        H256::from_str("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef").unwrap()
+    };
+}
 
 // Helper function which is used to construct an Ethereum transaction sending
 // `value` tokens to `to`. If a `token_address` is provided, then an ERC20
@@ -90,10 +92,10 @@ pub fn filter_transfer_logs(
         .to_block(to_block)
         .address(vec![contract_address])
         .topics(
-            Some(vec![H256::from(
+            Some(vec![
                 // keccak256("transfer(address,address,to)")
-                TRANSFER_EVENT_FILTER,
-            )]),
+                *TRANSFER_EVENT_FILTER,
+            ]),
             from,
             to,
             None,
@@ -155,7 +157,8 @@ mod tests {
         // https://etherscan.io/tx/0x6fd1b68f02f4201a38662647b7f09170b159faec6af4825ae509beefeb8e8130
         let to = "c92be489639a9c61f517bd3b955840fa19bc9b7c".parse().unwrap();
         let value = "16345785d8a0000".into();
-        let token_address = Some("B8c77482e45F1F44dE1745F52C74426C631bDD52".into());
+        let token_address =
+            Some(H160::from_str("B8c77482e45F1F44dE1745F52C74426C631bDD52").unwrap());
         let tx = make_tx(to, value, token_address);
         assert_eq!(tx.to, token_address);
         assert_eq!(tx.value, U256::from(0));
@@ -164,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_eth_make_tx() {
-        let to = "c92be489639a9c61f517bd3b955840fa19bc9b7c".parse().unwrap();
+        let to = H160::from_str("c92be489639a9c61f517bd3b955840fa19bc9b7c").unwrap();
         let value = "16345785d8a0000".into();
         let token_address = None;
         let tx = make_tx(to, value, token_address);
@@ -173,5 +176,4 @@ mod tests {
         let empty: Vec<u8> = Vec::new();
         assert_eq!(tx.data, empty);
     }
-
 }

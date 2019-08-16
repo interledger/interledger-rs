@@ -1,13 +1,11 @@
 use clarity::{PrivateKey, Signature};
-use ethereum_tx_sign::{
-    web3::types::{Address, H256, U256},
-    RawTransaction,
-};
+use ethereum_tx_sign::RawTransaction;
 use futures::Future;
 use interledger_service::Account;
 use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::str::FromStr;
+use web3::types::{Address, H256, U256};
 
 /// An Ethereum account is associated with an address. We additionally require
 /// that an optional `token_address` is implemented. If the `token_address` of an
@@ -108,8 +106,10 @@ impl EthereumLedgerTxSigner for String {
     fn address(&self) -> Address {
         let private_key: PrivateKey = self.parse().unwrap();
         let address = private_key.to_public_key().unwrap();
+        let mut out = [0; 20];
+        out.copy_from_slice(address.as_bytes());
         // Address type from clarity library must convert to web3 Address
-        Address::from(address.as_bytes())
+        Address::from(out)
     }
 }
 
@@ -124,7 +124,7 @@ mod tests {
         let addr = privkey.address();
         assert_eq!(
             addr,
-            Address::from("4070abbd2e38a8d27cd5a495f482c13f049f8310")
+            Address::from_str("4070abbd2e38a8d27cd5a495f482c13f049f8310").unwrap()
         );
     }
 
@@ -135,7 +135,7 @@ mod tests {
         let addr = privkey.address();
         assert_eq!(
             addr,
-            Address::from("e78cf81c309f27d5c509114471dcd7c0f9de05fa")
+            Address::from_str("e78cf81c309f27d5c509114471dcd7c0f9de05fa").unwrap()
         );
     }
 }
