@@ -18,11 +18,7 @@ fn credits_prepaid_amount() {
         let id = accs[0].id();
         context.async_connection().and_then(move |conn| {
             store
-                .update_balance_for_incoming_settlement(
-                    id.clone(),
-                    100,
-                    Some(IDEMPOTENCY_KEY.clone()),
-                )
+                .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
                 .and_then(move |_| {
                     cmd("HMGET")
                         .arg(format!("accounts:{}", id))
@@ -85,14 +81,10 @@ fn idempotent_settlement_calls() {
         let id = accs[0].id();
         context.async_connection().and_then(move |conn| {
             store
-                .update_balance_for_incoming_settlement(
-                    id.clone(),
-                    100,
-                    Some(IDEMPOTENCY_KEY.clone()),
-                )
+                .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
                 .and_then(move |_| {
                     cmd("HMGET")
-                        .arg(format!("accounts:{}", id.clone()))
+                        .arg(format!("accounts:{}", id))
                         .arg("balance")
                         .arg("prepaid_amount")
                         .query_async(conn)
@@ -103,13 +95,13 @@ fn idempotent_settlement_calls() {
 
                             store
                                 .update_balance_for_incoming_settlement(
-                                    id.clone(),
+                                    id,
                                     100,
                                     Some(IDEMPOTENCY_KEY.clone()), // Reuse key to make idempotent request.
                                 )
                                 .and_then(move |_| {
                                     cmd("HMGET")
-                                        .arg(format!("accounts:{}", id.clone()))
+                                        .arg(format!("accounts:{}", id))
                                         .arg("balance")
                                         .arg("prepaid_amount")
                                         .query_async(conn)
@@ -145,7 +137,7 @@ fn credits_balance_owed() {
             .map_err(|err| panic!(err))
             .and_then(move |conn| {
                 cmd("HSET")
-                    .arg(format!("accounts:{}", id.clone()))
+                    .arg(format!("accounts:{}", id))
                     .arg("balance")
                     .arg(-200)
                     .query_async(conn)
@@ -153,13 +145,13 @@ fn credits_balance_owed() {
                     .and_then(move |(conn, _balance): (SharedConnection, i64)| {
                         store
                             .update_balance_for_incoming_settlement(
-                                id.clone(),
+                                id,
                                 100,
                                 Some(IDEMPOTENCY_KEY.clone()),
                             )
                             .and_then(move |_| {
                                 cmd("HMGET")
-                                    .arg(format!("accounts:{}", id.clone()))
+                                    .arg(format!("accounts:{}", id))
                                     .arg("balance")
                                     .arg("prepaid_amount")
                                     .query_async(conn)
@@ -191,7 +183,7 @@ fn clears_balance_owed() {
             .map_err(|err| panic!(err))
             .and_then(move |conn| {
                 cmd("HSET")
-                    .arg(format!("accounts:{}", id.clone()))
+                    .arg(format!("accounts:{}", id))
                     .arg("balance")
                     .arg(-100)
                     .query_async(conn)
@@ -199,7 +191,7 @@ fn clears_balance_owed() {
                     .and_then(move |(conn, _balance): (SharedConnection, i64)| {
                         store
                             .update_balance_for_incoming_settlement(
-                                id.clone(),
+                                id,
                                 100,
                                 Some(IDEMPOTENCY_KEY.clone()),
                             )

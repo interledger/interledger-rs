@@ -64,8 +64,8 @@ fn polls_for_route_updates() {
                                     *routing_table.get(&Bytes::from("example.bob")).unwrap(),
                                     bob.id(),
                                 );
-                                let alice_id = alice.id().clone();
-                                let bob_id = bob.id().clone();
+                                let alice_id = alice.id();
+                                let bob_id = bob.id();
                                 connection
                                     .map_err(|err| panic!(err))
                                     .and_then(move |connection| {

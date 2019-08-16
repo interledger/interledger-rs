@@ -826,14 +826,11 @@ impl NodeStore for RedisStore {
         R: IntoIterator<Item = (String, AccountId)>,
     {
         let routes: Vec<(String, AccountId)> = routes.into_iter().collect();
-        let accounts: HashSet<AccountId> = HashSet::from_iter(
-            routes
-                .iter()
-                .map(|(_prefix, account_id)| account_id.clone()),
-        );
+        let accounts: HashSet<_> =
+            HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| account_id));
         let mut pipe = redis::pipe();
         for account_id in accounts {
-            pipe.exists(account_details_key(account_id));
+            pipe.exists(account_details_key(*account_id));
         }
 
         let routing_table = self.routes.clone();
@@ -1022,7 +1019,7 @@ impl RouteManagerStore for RedisStore {
                         .map(|account| (account.ilp_address.to_bytes(), account.clone())),
                 );
 
-                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id.clone(), account)));
+                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
                 let configured_table: HashMap<Bytes, Account> = HashMap::from_iter(static_routes.into_iter()
                     .filter_map(|(prefix, account_id)| {
                         if let Some(account) = account_map.get(&account_id) {

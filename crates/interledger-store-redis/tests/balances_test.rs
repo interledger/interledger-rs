@@ -104,7 +104,7 @@ fn process_fulfill_no_settle_to() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let store_clone = store.clone();
         store.clone().insert_account(acc).and_then(move |account| {
-            let id = account.id().clone();
+            let id = account.id();
             store_clone
                 .get_accounts(vec![id])
                 .and_then(move |accounts| {
@@ -140,7 +140,7 @@ fn process_fulfill_settle_to_over_threshold() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let store_clone = store.clone();
         store.clone().insert_account(acc).and_then(move |acc| {
-            let id = acc.id().clone();
+            let id = acc.id();
             store_clone
                 .get_accounts(vec![id])
                 .and_then(move |accounts| {
@@ -176,7 +176,7 @@ fn process_fulfill_ok() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let store_clone = store.clone();
         store.clone().insert_account(acc).and_then(move |account| {
-            let id = account.id().clone();
+            let id = account.id();
             store_clone
                 .get_accounts(vec![id])
                 .and_then(move |accounts| {

@@ -162,19 +162,13 @@ impl AccountWithEncryptedTokens {
 // Rust does not allow implementing foreign traits on foreign data types.
 // As a result, we wrap Uuid in a local data type, and implement the necessary
 // traits for that.
-#[derive(Eq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
+#[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
 pub struct AccountId(Uuid);
 
 impl AccountId {
     pub fn new() -> Self {
         let uid = Uuid::new_v4();
-        AccountId(uid.clone())
-    }
-}
-
-impl PartialEq for AccountId {
-    fn eq(&self, other: &AccountId) -> bool {
-        self.0.eq(&other.0)
+        AccountId(uid)
     }
 }
 
@@ -183,7 +177,7 @@ impl FromStr for AccountId {
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
         let uid = Uuid::from_str(&src)?;
-        Ok(AccountId(uid.clone()))
+        Ok(AccountId(uid))
     }
 }
 

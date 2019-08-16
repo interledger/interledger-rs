@@ -35,7 +35,7 @@ fn delete_accounts() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store.get_all_accounts().and_then(move |accounts| {
             let id = accounts[0].id();
-            store.remove_account(id.clone()).and_then(move |_| {
+            store.remove_account(id).and_then(move |_| {
                 store.get_all_accounts().and_then(move |accounts| {
                     for a in accounts {
                         assert_ne!(id, a.id());
