@@ -78,9 +78,10 @@ pub fn start_eth_engine(
     )
 }
 
-pub fn create_account(
+use serde::Serialize;
+pub fn create_account<T: Serialize>(
     engine_port: u16,
-    account_id: &'static str,
+    account_id: T,
 ) -> impl Future<Item = String, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
@@ -95,6 +96,35 @@ pub fn create_account(
         })
         .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
 }
+
+pub fn send_money_to_id<T: Display>(
+    from: u16,
+    to: u16,
+    amount: u64,
+    id: T,
+    auth: &str,
+) -> impl Future<Item = u64, Error = ()> {
+    let client = reqwest::r#async::Client::new();
+    client
+        .post(&format!("http://localhost:{}/pay", from))
+        .header("Authorization", format!("Bearer {}", auth))
+        .json(&json!({
+            // TODO: replace with username
+            "receiver": format!("http://localhost:{}/spsp/{}", to, id),
+            "source_amount": amount,
+        }))
+        .send()
+        .and_then(|res| res.error_for_status())
+        .and_then(|res| res.into_body().concat2())
+        .map_err(|err| {
+            eprintln!("Error sending SPSP payment: {:?}", err);
+        })
+        .and_then(move |body| {
+            let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
+            Ok(ret.delivered_amount)
+        })
+}
+
 
 pub fn send_money(
     from: u16,
@@ -122,8 +152,9 @@ pub fn send_money(
         })
 }
 
-pub fn get_balance(
-    account_id: u64,
+use std::fmt::Display;
+pub fn get_balance<T: Display>(
+    account_id: T,
     node_port: u16,
     admin_token: &str,
 ) -> impl Future<Item = i64, Error = ()> {
