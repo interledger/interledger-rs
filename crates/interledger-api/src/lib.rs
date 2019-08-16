@@ -28,9 +28,15 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
-    fn remove_account(
+    fn delete_account(
         &self,
         id: <Self::Account as AccountTrait>::AccountId,
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+
+    fn update_account(
+        &self,
+        id: <Self::Account as AccountTrait>::AccountId,
+        account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
     // TODO limit the number of results and page through them
