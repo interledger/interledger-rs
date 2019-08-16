@@ -3,15 +3,20 @@ mod common;
 use common::*;
 use interledger_btp::BtpAccount;
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_service::Account as AccountTrait;
+use interledger_ildcp::IldcpAccount;
+use interledger_packet::Address;
+use std::str::FromStr;
 
 #[test]
 fn gets_account_from_http_bearer_token() {
-    block_on(test_store().and_then(|(store, context)| {
+    block_on(test_store().and_then(|(store, context, _accs)| {
         store
             .get_account_from_http_token("incoming_auth_token")
             .and_then(move |account| {
-                assert_eq!(account.id(), 0);
+                assert_eq!(
+                    *account.client_address(),
+                    Address::from_str("example.alice").unwrap()
+                );
                 assert_eq!(
                     account.get_http_auth_token().unwrap(),
                     "outgoing_auth_token"
@@ -25,8 +30,8 @@ fn gets_account_from_http_bearer_token() {
 }
 
 #[test]
-fn decrypts_outgoing_tokens() {
-    block_on(test_store().and_then(|(store, context)| {
+fn decrypts_outgoing_tokens_http() {
+    block_on(test_store().and_then(|(store, context, _accs)| {
         store
             .get_account_from_http_token("incoming_auth_token")
             .and_then(move |account| {
@@ -44,7 +49,7 @@ fn decrypts_outgoing_tokens() {
 
 #[test]
 fn errors_on_unknown_http_auth() {
-    let result = block_on(test_store().and_then(|(store, context)| {
+    let result = block_on(test_store().and_then(|(store, context, _accs)| {
         store
             .get_account_from_http_token("unknown_token")
             .then(move |result| {

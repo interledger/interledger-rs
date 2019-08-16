@@ -3,7 +3,7 @@ use super::redis_helpers::*;
 use env_logger;
 use futures::Future;
 use interledger_api::NodeStore;
-use interledger_store_redis::{RedisStore, RedisStoreBuilder};
+use interledger_store_redis::{Account, RedisStore, RedisStoreBuilder};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use tokio::runtime::Runtime;
@@ -12,17 +12,25 @@ lazy_static! {
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
 
-pub fn test_store() -> impl Future<Item = (RedisStore, TestContext), Error = ()> {
+pub fn test_store() -> impl Future<Item = (RedisStore, TestContext, Vec<Account>), Error = ()> {
     let context = TestContext::new();
     RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
         .connect()
         .and_then(|store| {
             let store_clone = store.clone();
+            let mut accs = Vec::new();
             store
                 .clone()
                 .insert_account(ACCOUNT_DETAILS_0.clone())
-                .and_then(move |_| store_clone.insert_account(ACCOUNT_DETAILS_1.clone()))
-                .and_then(|_| Ok((store, context)))
+                .and_then(move |acc| {
+                    accs.push(acc.clone());
+                    store_clone
+                        .insert_account(ACCOUNT_DETAILS_1.clone())
+                        .and_then(move |acc| {
+                            accs.push(acc.clone());
+                            Ok((store, context, accs))
+                        })
+                })
         })
 }
 
