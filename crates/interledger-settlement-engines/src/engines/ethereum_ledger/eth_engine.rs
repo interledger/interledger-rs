@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use hyper::StatusCode;
+use log::info;
 use num_bigint::BigUint;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
@@ -23,7 +24,6 @@ use tokio::timer::Interval;
 use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 use uuid::Uuid;
-use log::info;
 use web3::{
     api::Web3,
     futures::future::{err, join_all, ok, result, Either, Future},
@@ -105,7 +105,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Clone + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     pub fn new(store: S, signer: Si) -> Self {
         Self {
@@ -232,7 +232,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Clone + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     /// Periodically spawns a job every `self.poll_frequency` that notifies the
     /// Settlement Engine's connectors about transactions which are sent to the
@@ -719,24 +719,18 @@ where
     fn load_account(
         &self,
         account_id: String,
-    ) -> impl Future<Item = (A::AccountId, Addresses), Error = String> {
+    ) -> impl Future<Item = (String, Addresses), Error = String> {
         let store = self.store.clone();
         let addr = self.address;
-        result(A::AccountId::from_str(&account_id).map_err(move |_err| {
-            let error_msg = "Unable to parse account".to_string();
-            error!("{}", error_msg);
-            error_msg
-        }))
-        .and_then(move |account_id| {
-            store
-                .load_account_addresses(vec![account_id])
-                .map_err(move |_err| {
-                    let error_msg = format!("[{:?}] Error getting account: {}", addr, account_id);
-                    error!("{}", error_msg);
-                    error_msg
-                })
-                .and_then(move |addresses| ok((account_id, addresses[0])))
-        })
+        let account_id_clone = account_id.clone();
+        store
+            .load_account_addresses(vec![account_id.clone()])
+            .map_err(move |_err| {
+                let error_msg = format!("[{:?}] Error getting account: {}", addr, account_id_clone);
+                error!("{}", error_msg);
+                error_msg
+            })
+            .and_then(move |addresses| ok((account_id, addresses[0])))
     }
 }
 
@@ -749,7 +743,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Clone + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     /// Settlement Engine's function that corresponds to the
     /// /accounts/:id/ endpoint (POST). It queries the connector's
@@ -1009,27 +1003,27 @@ where
     EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
         .connect()
         .and_then(move |ethereum_store| {
-            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store.clone(), private_key)
-                .ethereum_endpoint(&ethereum_endpoint)
-                .chain_id(chain_id)
-                .connector_url(&connector_url)
-                .confirmations(confirmations)
-                .asset_scale(asset_scale)
-                .poll_frequency(poll_frequency)
-                .watch_incoming(watch_incoming)
-                .token_address(token_address)
-                .connect();
+            let engine =
+                EthereumLedgerSettlementEngineBuilder::new(ethereum_store.clone(), private_key)
+                    .ethereum_endpoint(&ethereum_endpoint)
+                    .chain_id(chain_id)
+                    .connector_url(&connector_url)
+                    .confirmations(confirmations)
+                    .asset_scale(asset_scale)
+                    .poll_frequency(poll_frequency)
+                    .watch_incoming(watch_incoming)
+                    .token_address(token_address)
+                    .connect();
 
             let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
-            let listener = TcpListener::bind(&addr)
-                .expect("Unable to bind to Settlement Engine address");
+            let listener =
+                TcpListener::bind(&addr).expect("Unable to bind to Settlement Engine address");
             let api = SettlementEngineApi::new(engine, ethereum_store);
             tokio::spawn(api.serve(listener.incoming()));
             info!("Ethereum Settlement Engine listening on: {}", addr);
             Ok(())
         })
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1058,7 +1052,7 @@ mod tests {
         let alice_store = test_store(ALICE.clone(), false, false, true);
         alice_store
             .save_account_addresses(HashMap::from_iter(vec![(
-                0,
+                "0".to_string(),
                 Addresses {
                     own_address: bob.address,
                     token_address: None,
@@ -1070,7 +1064,7 @@ mod tests {
         let bob_store = test_store(bob.clone(), false, false, true);
         bob_store
             .save_account_addresses(HashMap::from_iter(vec![(
-                42,
+                "42".to_string(),
                 Addresses {
                     own_address: alice.address,
                     token_address: None,

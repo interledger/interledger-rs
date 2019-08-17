@@ -1,5 +1,4 @@
 use futures::{stream::Stream, Future};
-use interledger::cli;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
@@ -74,7 +73,6 @@ pub fn start_eth_engine(
         db,
         "http://localhost:8545".to_string(),
         engine_port,
-        &cli::random_secret(),
         key,
         1,
         0,
