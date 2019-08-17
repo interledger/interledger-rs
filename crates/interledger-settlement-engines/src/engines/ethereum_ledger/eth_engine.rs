@@ -761,94 +761,83 @@ where
         let store: S = self.store.clone();
         let account_id = account_id.id;
 
-        Box::new(
-            result(A::AccountId::from_str(&account_id).map_err({
-                move |_err| {
-                    let error_msg = "Unable to parse account".to_string();
-                    error!("{}", error_msg);
-                    let status_code = StatusCode::from_u16(400).unwrap();
-                    (status_code, error_msg)
-                }
-            }))
-            .and_then(move |account_id| {
-                // We make a POST request to OUR connector's `messages`
-                // endpoint. This will in turn send an outgoing
-                // request to its peer connector, which will ask its
-                // own engine about its settlement information. Then,
-                // we store that information and use it when
-                // performing settlements.
-                let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
-                let challenge = Uuid::new_v4().to_hyphenated().to_string();
-                let challenge = challenge.into_bytes();
-                let challenge_clone = challenge.clone();
-                let client = Client::new();
-                let mut url = self_clone.connector_url.clone();
-                url.path_segments_mut()
-                    .expect("Invalid connector URL")
-                    .push("accounts")
-                    .push(&account_id.to_string())
-                    .push("messages");
-                let action = move || {
-                    client
-                        .post(url.clone())
-                        .header("Content-Type", "application/octet-stream")
-                        .header("Idempotency-Key", idempotency_uuid.clone())
-                        .body(challenge.clone())
-                        .send()
-                };
+        // We make a POST request to OUR connector's `messages`
+        // endpoint. This will in turn send an outgoing
+        // request to its peer connector, which will ask its
+        // own engine about its settlement information. Then,
+        // we store that information and use it when
+        // performing settlements.
+        let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
+        let challenge = Uuid::new_v4().to_hyphenated().to_string();
+        let challenge = challenge.into_bytes();
+        let challenge_clone = challenge.clone();
+        let client = Client::new();
+        let mut url = self_clone.connector_url.clone();
+        url.path_segments_mut()
+            .expect("Invalid connector URL")
+            .push("accounts")
+            .push(&account_id.to_string())
+            .push("messages");
+        let action = move || {
+            client
+                .post(url.clone())
+                .header("Content-Type", "application/octet-stream")
+                .header("Idempotency-Key", idempotency_uuid.clone())
+                .body(challenge.clone())
+                .send()
+        };
 
-                Retry::spawn(
-                    ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
-                    action,
-                )
-                .map_err(move |err| {
-                    let err = format!("Couldn't notify connector {:?}", err);
-                    error!("{}", err);
-                    (StatusCode::from_u16(500).unwrap(), err)
-                })
-                .and_then(move |resp| {
-                    parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        let data = prefixed_mesage(challenge_clone);
-                        let challenge_hash = Sha3::digest(&data);
-                        let recovered_address = payment_details.sig.recover(&challenge_hash);
-                        trace!("Received payment details {:?}", payment_details);
-                        result(recovered_address)
-                            .map_err(move |err| {
-                                let err = format!("Could not recover address {:?}", err);
-                                error!("{}", err);
-                                (StatusCode::from_u16(502).unwrap(), err)
-                            })
-                            .and_then({
-                                let payment_details = payment_details.clone();
-                                move |recovered_address| {
-                                    if recovered_address.as_bytes()
-                                        == &payment_details.to.own_address.as_bytes()[..]
-                                    {
-                                        ok(())
-                                    } else {
-                                        let error_msg = format!(
-                                            "Recovered address did not match: {:?}. Expected {:?}",
-                                            recovered_address.to_string(),
-                                            payment_details.to
-                                        );
-                                        error!("{}", error_msg);
-                                        err((StatusCode::from_u16(502).unwrap(), error_msg))
-                                    }
+        Box::new(
+            Retry::spawn(
+                ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                action,
+            )
+            .map_err(move |err| {
+                let err = format!("Couldn't notify connector {:?}", err);
+                error!("{}", err);
+                (StatusCode::from_u16(500).unwrap(), err)
+            })
+            .and_then(move |resp| {
+                parse_body_into_payment_details(resp).and_then(move |payment_details| {
+                    let data = prefixed_mesage(challenge_clone);
+                    let challenge_hash = Sha3::digest(&data);
+                    let recovered_address = payment_details.sig.recover(&challenge_hash);
+                    trace!("Received payment details {:?}", payment_details);
+                    result(recovered_address)
+                        .map_err(move |err| {
+                            let err = format!("Could not recover address {:?}", err);
+                            error!("{}", err);
+                            (StatusCode::from_u16(502).unwrap(), err)
+                        })
+                        .and_then({
+                            let payment_details = payment_details.clone();
+                            move |recovered_address| {
+                                if recovered_address.as_bytes()
+                                    == &payment_details.to.own_address.as_bytes()[..]
+                                {
+                                    ok(())
+                                } else {
+                                    let error_msg = format!(
+                                        "Recovered address did not match: {:?}. Expected {:?}",
+                                        recovered_address.to_string(),
+                                        payment_details.to
+                                    );
+                                    error!("{}", error_msg);
+                                    err((StatusCode::from_u16(502).unwrap(), error_msg))
                                 }
+                            }
+                        })
+                        .and_then(move |_| {
+                            let data = HashMap::from_iter(vec![(account_id, payment_details.to)]);
+                            store.save_account_addresses(data).map_err(move |err| {
+                                let err = format!("Couldn't connect to store {:?}", err);
+                                error!("{}", err);
+                                (StatusCode::from_u16(500).unwrap(), err)
                             })
-                            .and_then(move |_| {
-                                let data =
-                                    HashMap::from_iter(vec![(account_id, payment_details.to)]);
-                                store.save_account_addresses(data).map_err(move |err| {
-                                    let err = format!("Couldn't connect to store {:?}", err);
-                                    error!("{}", err);
-                                    (StatusCode::from_u16(500).unwrap(), err)
-                                })
-                            })
-                    })
+                        })
                 })
-                .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned())))
-            }),
+            })
+            .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned()))),
         )
     }
 

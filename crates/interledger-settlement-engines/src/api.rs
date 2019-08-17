@@ -1,3 +1,4 @@
+use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use crate::{ApiResponse, CreateAccount, SettlementEngine};
 use bytes::Bytes;
 use futures::{
@@ -6,7 +7,6 @@ use futures::{
 };
 use hyper::{Response, StatusCode};
 use interledger_settlement::Quantity;
-use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use log::error;
 use ring::digest::{digest, SHA256};
 use tokio::executor::spawn;

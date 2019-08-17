@@ -15,7 +15,16 @@ use std::fmt::{Debug, Display};
 ///
 use std::hash::Hash;
 pub trait EthereumAccount {
-    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Clone + Serialize;
+    type AccountId: Eq
+        + Hash
+        + Debug
+        + Display
+        + Default
+        + FromStr
+        + Send
+        + Sync
+        + Clone
+        + Serialize;
 
     fn id(&self) -> Self::AccountId;
 
