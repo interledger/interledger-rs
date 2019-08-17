@@ -19,7 +19,7 @@ use web3::{
 
 use super::eth_engine::{EthereumLedgerSettlementEngine, EthereumLedgerSettlementEngineBuilder};
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
-use interledger_settlement::{IdempotentData, IdempotentStore};
+use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 
 #[derive(Debug, Clone)]
 pub struct TestAccount {
@@ -178,11 +178,11 @@ impl EthereumStore for TestStore {
     }
 }
 
-impl IdempotentStore for TestStore {
+impl IdempotentEngineStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Option<IdempotentEngineData>, Error = ()> + Send> {
         let cache = self.cache.read();
         if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
@@ -272,7 +272,7 @@ where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     S: EthereumStore<Account = A>
         + LeftoversStore<AssetType = BigUint>
-        + IdempotentStore
+        + IdempotentEngineStore
         + Clone
         + Send
         + Sync
