@@ -3,6 +3,8 @@ use futures::{
     Future,
 };
 
+use http::StatusCode;
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::str::FromStr;
 use web3::types::{Address as EthAddress, H256, U256};
@@ -14,7 +16,7 @@ use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineComman
 use log::{error, trace};
 
 use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
-use crate::stores::LeftoversStore;
+use crate::stores::{LeftoversStore, IdempotentEngineStore, IdempotentEngineData};
 use interledger_store_redis::AccountId;
 use num_bigint::BigUint;
 
@@ -189,6 +191,26 @@ impl LeftoversStore for EthereumLedgerRedisStore {
                 ),
         )
     }
+}
+
+impl IdempotentEngineStore for EthereumLedgerRedisStore {
+    fn load_idempotent_data(
+        &self,
+        idempotency_key: String,
+    ) -> Box<dyn Future<Item = Option<IdempotentEngineData>, Error = ()> + Send> {
+        self.redis_store.load_idempotent_data(idempotency_key)
+    }
+
+    fn save_idempotent_data(
+        &self,
+        idempotency_key: String,
+        input_hash: [u8; 32],
+        status_code: StatusCode,
+        data: Bytes,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        self.redis_store.save_idempotent_data(idempotency_key, input_hash, status_code, data)
+    }
+
 }
 
 impl EthereumStore for EthereumLedgerRedisStore {
