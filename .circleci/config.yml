@@ -20,10 +20,10 @@ jobs:
             sudo apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 3B4FE6ACC0B21F32
             echo "deb http://security.ubuntu.com/ubuntu xenial-security main" | sudo tee -a /etc/apt/sources.list
             sudo apt-get update
-            sudo apt-get install libcurl3 -y
-            sudo apt-get install curl -y
             cargo install --quiet cargo-audit || true # cargo-kcov
             rustup component add rustfmt clippy || true
+            sudo apt-get install libcurl3 -y
+            sudo apt-get install curl -y
       - run:
           name: Install Redis
           command: |
