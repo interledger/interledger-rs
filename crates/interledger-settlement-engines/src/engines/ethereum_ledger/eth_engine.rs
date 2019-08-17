@@ -7,12 +7,9 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use hyper::StatusCode;
-use interledger_store_redis::RedisStoreBuilder;
-use log::info;
 use num_bigint::BigUint;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
-use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -26,6 +23,7 @@ use tokio::timer::Interval;
 use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use url::Url;
 use uuid::Uuid;
+use log::info;
 use web3::{
     api::Web3,
     futures::future::{err, join_all, ok, result, Either, Future},
@@ -993,7 +991,6 @@ pub fn run_ethereum_engine<R, Si>(
     redis_uri: R,
     ethereum_endpoint: String,
     settlement_port: u16,
-    secret_seed: &[u8; 32],
     private_key: Si,
     chain_id: u8,
     confirmations: u8,
@@ -1007,13 +1004,12 @@ where
     R: IntoConnectionInfo,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
 {
-    let redis_secret = generate_redis_secret(secret_seed);
     let redis_uri = redis_uri.into_connection_info().unwrap();
 
     EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
         .connect()
         .and_then(move |ethereum_store| {
-            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store, private_key)
+            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store.clone(), private_key)
                 .ethereum_endpoint(&ethereum_endpoint)
                 .chain_id(chain_id)
                 .connector_url(&connector_url)
@@ -1024,31 +1020,16 @@ where
                 .token_address(token_address)
                 .connect();
 
-            RedisStoreBuilder::new(redis_uri, redis_secret)
-                .connect()
-                .and_then(move |store| {
-                    let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
-                    let listener = TcpListener::bind(&addr)
-                        .expect("Unable to bind to Settlement Engine address");
-                    info!("Ethereum Settlement Engine listening on: {}", addr);
-
-                    let api = SettlementEngineApi::new(engine, store);
-                    tokio::spawn(api.serve(listener.incoming()));
-                    Ok(())
-                })
+            let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
+            let listener = TcpListener::bind(&addr)
+                .expect("Unable to bind to Settlement Engine address");
+            let api = SettlementEngineApi::new(engine, ethereum_store);
+            tokio::spawn(api.serve(listener.incoming()));
+            info!("Ethereum Settlement Engine listening on: {}", addr);
+            Ok(())
         })
 }
 
-static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
-fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
-    let mut redis_secret: [u8; 32] = [0; 32];
-    let sig = hmac::sign(
-        &hmac::SigningKey::new(&digest::SHA256, secret_seed),
-        REDIS_SECRET_GENERATION_STRING.as_bytes(),
-    );
-    redis_secret.copy_from_slice(sig.as_ref());
-    redis_secret
-}
 
 #[cfg(test)]
 mod tests {

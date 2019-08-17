@@ -6,7 +6,7 @@ use futures::{
 };
 use hyper::{Response, StatusCode};
 use interledger_settlement::Quantity;
-use interledger_settlement::{IdempotentData, IdempotentStore};
+use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use log::error;
 use ring::digest::{digest, SHA256};
 use tokio::executor::spawn;
@@ -26,7 +26,7 @@ impl_web! {
     impl<E, S> SettlementEngineApi<E, S>
     where
         E: SettlementEngine + Clone + Send + Sync + 'static,
-        S: IdempotentStore + Clone + Send + Sync + 'static,
+        S: IdempotentEngineStore + Clone + Send + Sync + 'static,
     {
         /// Create a new API service by providing it with a field that
         /// implements the `SettlementEngine` trait
@@ -85,7 +85,7 @@ impl_web! {
                     error!("{}", error_msg);
                     error_msg
                 })
-                .and_then(move |ret: Option<IdempotentData>| {
+                .and_then(move |ret: Option<IdempotentEngineData>| {
                     if let Some(ret) = ret {
                         if ret.2 == input_hash {
                             Ok(Some((ret.0, ret.1)))
@@ -160,7 +160,7 @@ fn get_hash_of(preimage: &[u8]) -> [u8; 32] {
 impl<E, S> SettlementEngineApi<E, S>
 where
     E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    S: IdempotentEngineStore + Clone + Send + Sync + 'static,
 {
     /// Serves the API
     /// Example:
