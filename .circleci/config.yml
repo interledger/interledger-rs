@@ -20,12 +20,9 @@ jobs:
             rustup component add rustfmt clippy || true
       - run:
           name: Install Redis
-          # Install from stretch-backports to get the latest version
-          # The normal repository has version 3.2, which doesn't support redis modules
           command: |
-            echo "deb http://deb.debian.org/debian stretch-backports main" | sudo tee -a /etc/apt/sources.list
             sudo apt-get update
-            sudo apt-get -t stretch-backports install redis-server
+            sudo apt-get install redis-server
             redis-server --version
       - run:
           name: Install node and ganache

@@ -202,7 +202,7 @@ mod test_address {
 
     use super::*;
 
-    static VALID_ADDRESSES: &'static [&'static [u8]] = &[
+    static VALID_ADDRESSES: &[&[u8]] = &[
         b"test.alice.XYZ.1234.-_~",
         b"g.us-fed.ach.0.acmebank.swx0a0.acmecorp.sales.199.~ipr.cdfa5e16-e759-4ba3-88f6-8b9dc83c1868.2",
 
@@ -210,7 +210,7 @@ mod test_address {
         b"test.A", b"test1.A", b"test2.A", b"test3.A", b"local.A",
     ];
 
-    static INVALID_ADDRESSES: &'static [&'static [u8]] = &[
+    static INVALID_ADDRESSES: &[&[u8]] = &[
         b"", // empty
         // Invalid characters.
         b"test.alice 123",
