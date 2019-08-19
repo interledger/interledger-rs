@@ -75,7 +75,7 @@ impl LeftoversStore for TestStore {
         &self,
         account_id: String,
         uncredited_settlement_amount: Self::AssetType,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
         (*guard).insert(account_id, uncredited_settlement_amount);
         Box::new(ok(()))
@@ -84,7 +84,7 @@ impl LeftoversStore for TestStore {
     fn load_uncredited_settlement_amount(
         &self,
         account_id: String,
-    ) -> Box<Future<Item = Self::AssetType, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
         if let Some(l) = guard.get(&account_id) {
             let l = l.clone();
@@ -102,7 +102,7 @@ impl EthereumStore for TestStore {
     fn save_account_addresses(
         &self,
         data: HashMap<u64, Addresses>,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.addresses.write();
         let mut guard2 = self.address_to_id.write();
         for (acc, d) in data {

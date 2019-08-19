@@ -78,7 +78,7 @@ impl SettlementStore for TestStore {
         _account_id: <Self::Account as Account>::AccountId,
         _amount: u64,
         _idempotency_key: Option<String>,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let ret = if self.should_fail { err(()) } else { ok(()) };
         Box::new(ret)
     }
@@ -87,7 +87,7 @@ impl SettlementStore for TestStore {
         &self,
         _account_id: <Self::Account as Account>::AccountId,
         _settle_amount: u64,
-    ) -> Box<Future<Item = (), Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let ret = if self.should_fail { err(()) } else { ok(()) };
         Box::new(ret)
     }
@@ -127,7 +127,7 @@ impl AccountStore for TestStore {
     fn get_accounts(
         &self,
         account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let accounts: Vec<TestAccount> = self
             .accounts
             .iter()

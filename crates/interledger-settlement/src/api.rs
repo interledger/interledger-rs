@@ -95,10 +95,10 @@ impl_web! {
                         if let Some(ret) = ret {
                             if ret.0.is_success() {
                                 let resp = Response::builder().status(ret.0).body(ret.1).unwrap();
-                                return Either::A(Either::A(ok(resp)))
+                                Either::A(Either::A(ok(resp)))
                             } else {
                                 let resp = Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap();
-                                return Either::A(Either::B(err(resp)))
+                                Either::A(Either::B(err(resp)))
 
                             }
                         } else {
