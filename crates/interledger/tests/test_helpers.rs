@@ -2,18 +2,13 @@ use futures::{stream::Stream, Future};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_settlement_engines::engines::ethereum_ledger::run_ethereum_engine;
 use interledger_store_redis::Account;
 use interledger_store_redis::AccountId;
-use redis::ConnectionInfo;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::process::Command;
 use std::str;
-use std::thread::sleep;
-use std::time::Duration;
 
 #[derive(serde::Deserialize)]
 pub struct DeliveryData {
@@ -23,65 +18,6 @@ pub struct DeliveryData {
 #[derive(serde::Deserialize)]
 pub struct BalanceData {
     pub balance: String,
-}
-
-#[allow(unused)]
-pub fn start_ganache() -> std::process::Child {
-    let mut ganache = Command::new("ganache-cli");
-    let ganache = ganache.stdout(std::process::Stdio::null()).arg("-m").arg(
-        "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle",
-    );
-    let ganache_pid = ganache.spawn().expect("couldnt start ganache-cli");
-    // wait a couple of seconds for ganache to boot up
-    sleep(Duration::from_secs(5));
-    ganache_pid
-}
-
-#[allow(unused)]
-pub fn start_xrp_engine(
-    connector_url: &str,
-    redis_port: u16,
-    engine_port: u16,
-    xrp_address: &str,
-    xrp_secret: &str,
-) -> std::process::Child {
-    let mut engine = Command::new("ilp-settlement-xrp");
-    engine
-        .env("DEBUG", "ilp-settlement-xrp")
-        .env("CONNECTOR_URL", connector_url)
-        .env("REDIS_PORT", redis_port.to_string())
-        .env("ENGINE_PORT", engine_port.to_string())
-        .env("LEDGER_ADDRESS", xrp_address)
-        .env("LEDGER_SECRET", xrp_secret);
-    let engine_pid = engine
-        // .stderr(std::process::Stdio::null())
-        // .stdout(std::process::Stdio::null())
-        .spawn()
-        .expect("couldnt start xrp engine");
-    sleep(Duration::from_secs(2));
-    engine_pid
-}
-
-#[allow(unused)]
-pub fn start_eth_engine(
-    db: ConnectionInfo,
-    engine_port: u16,
-    key: String,
-    settlement_port: u16,
-) -> impl Future<Item = (), Error = ()> {
-    run_ethereum_engine(
-        db,
-        "http://localhost:8545".to_string(),
-        engine_port,
-        key,
-        1,
-        0,
-        18,
-        1000,
-        format!("http://127.0.0.1:{}", settlement_port),
-        None,
-        true,
-    )
 }
 
 #[allow(unused)]

@@ -16,7 +16,10 @@ mod redis_helpers;
 use redis_helpers::*;
 
 mod test_helpers;
-use test_helpers::{create_account, get_balance, send_money, start_eth_engine, start_ganache};
+use test_helpers::{
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
+    start_eth_engine, start_ganache,
+};
 
 #[test]
 /// In this test we have Alice and Bob who have peered with each other and run
@@ -57,7 +60,7 @@ fn eth_ledger_settlement() {
     let node1_secret = cli::random_secret();
     let node1 = InterledgerNode {
         ilp_address: Address::from_str("example.alice").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "hi_alice".to_string(),
         redis_connection: connection_info1.clone(),
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -127,7 +130,7 @@ fn eth_ledger_settlement() {
     let node2_secret = cli::random_secret();
     let node2 = InterledgerNode {
         ilp_address: Address::from_str("example.bob").unwrap(),
-        default_spsp_account: Some(0),
+        default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2.clone(),
         btp_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -203,67 +206,89 @@ fn eth_ledger_settlement() {
                     // create account endpoint so that they trade addresses.
                     // This would happen automatically if we inserted the
                     // accounts via the Accounts API.
-                    let create1 = create_account(node1_engine, "1");
-                    let create2 = create_account(node2_engine, "1");
+                    let bob_addr = Address::from_str("example.bob").unwrap();
+                    let bob_addr2 = bob_addr.clone();
+                    let alice_addr = Address::from_str("example.alice").unwrap();
+                    futures::future::join_all(vec![
+                        get_all_accounts(node1_http, "hi_alice").map(accounts_to_ids),
+                        get_all_accounts(node2_http, "admin").map(accounts_to_ids),
+                    ])
+                    .and_then(move |ids| {
+                        let node1_ids = ids[0].clone();
+                        let node2_ids = ids[1].clone();
 
-                    // Make 4 subsequent payments (we could also do a 71 payment
-                    // directly)
-                    let send1 = send_money(node1_http, node2_http, 10, "in_alice");
-                    let send2 = send_money(node1_http, node2_http, 20, "in_alice");
-                    let send3 = send_money(node1_http, node2_http, 39, "in_alice");
-                    let send4 = send_money(node1_http, node2_http, 1, "in_alice");
+                        let bob = node1_ids.get(&bob_addr2).unwrap().to_owned();
+                        let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
+                        let bob_at_bob = node2_ids.get(&bob_addr).unwrap().to_owned();
 
-                    create1
-                        .and_then(move |_| create2)
-                        .and_then(move |_| send1)
-                        .and_then(move |_| {
-                            get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, 10);
-                                get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, -10);
-                                    Ok(())
+                        let create1 = create_account_on_engine(node1_engine, bob);
+                        let create2 = create_account_on_engine(node2_engine, alice);
+
+                        // Make 4 subsequent payments (we could also do a 71 payment
+                        // directly)
+                        // Alice must know Bob's id in the store... this does not
+                        // make much sense.
+                        let send1 =
+                            send_money_to_id(node1_http, node2_http, 10, bob_at_bob, "in_alice");
+                        let send2 =
+                            send_money_to_id(node1_http, node2_http, 20, bob_at_bob, "in_alice");
+                        let send3 =
+                            send_money_to_id(node1_http, node2_http, 39, bob_at_bob, "in_alice");
+                        let send4 =
+                            send_money_to_id(node1_http, node2_http, 1, bob_at_bob, "in_alice");
+
+                        create1
+                            .and_then(move |_| create2)
+                            .and_then(move |_| send1)
+                            .and_then(move |_| {
+                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
+                                    assert_eq!(ret, 10);
+                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
+                                        assert_eq!(ret, -10);
+                                        Ok(())
+                                    })
                                 })
                             })
-                        })
-                        .and_then(move |_| send2)
-                        .and_then(move |_| {
-                            get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, 30);
-                                get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, -30);
-                                    Ok(())
+                            .and_then(move |_| send2)
+                            .and_then(move |_| {
+                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
+                                    assert_eq!(ret, 30);
+                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
+                                        assert_eq!(ret, -30);
+                                        Ok(())
+                                    })
                                 })
                             })
-                        })
-                        .and_then(move |_| send3)
-                        .and_then(move |_| {
-                            get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, 69);
-                                get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, -69);
-                                    Ok(())
+                            .and_then(move |_| send3)
+                            .and_then(move |_| {
+                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
+                                    assert_eq!(ret, 69);
+                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
+                                        assert_eq!(ret, -69);
+                                        Ok(())
+                                    })
                                 })
                             })
-                        })
-                        // Up to here, Alice's balance should be -69 and Bob's
-                        // balance should be 69. Once we make 1 more payment, we
-                        // exceed the settle_threshold and thus a settlement is made
-                        .and_then(move |_| send4)
-                        .and_then(move |_| {
-                            // Wait a few seconds so that the receiver's engine
-                            // gets the data
-                            sleep(Duration::from_secs(5));
-                            // Since the credit connection reached -70, and the
-                            // settle_to is -10, a 60 Wei transaction is made.
-                            get_balance(1, node1_http, "bob").and_then(move |ret| {
-                                assert_eq!(ret, 10);
-                                get_balance(1, node2_http, "alice").and_then(move |ret| {
-                                    assert_eq!(ret, -10);
-                                    ganache_pid.kill().unwrap();
-                                    Ok(())
+                            // Up to here, Alice's balance should be -69 and Bob's
+                            // balance should be 69. Once we make 1 more payment, we
+                            // exceed the settle_threshold and thus a settlement is made
+                            .and_then(move |_| send4)
+                            .and_then(move |_| {
+                                // Wait a few seconds so that the receiver's engine
+                                // gets the data
+                                sleep(Duration::from_secs(5));
+                                // Since the credit connection reached -70, and the
+                                // settle_to is -10, a 60 Wei transaction is made.
+                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
+                                    assert_eq!(ret, 10);
+                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
+                                        assert_eq!(ret, -10);
+                                        ganache_pid.kill().unwrap();
+                                        Ok(())
+                                    })
                                 })
                             })
-                        })
+                    })
                 }),
         )
         .unwrap();

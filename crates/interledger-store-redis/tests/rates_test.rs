@@ -8,7 +8,7 @@ use tokio_timer::sleep;
 
 #[test]
 fn set_rates() {
-    block_on(test_store().and_then(|(store, context)| {
+    block_on(test_store().and_then(|(store, context, _accs)| {
         let store_clone = store.clone();
         let rates = store.get_exchange_rates(&["ABC", "XYZ"]);
         assert!(rates.is_err());

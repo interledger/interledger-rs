@@ -1,5 +1,4 @@
 use clap::{value_t, App, Arg, SubCommand};
-use hex;
 use std::str::FromStr;
 use tokio;
 use url::Url;
@@ -41,11 +40,6 @@ pub fn main() {
                             .long("redis_uri")
                             .help("Redis database to add the account to")
                             .default_value("redis://127.0.0.1:6379"),
-                        Arg::with_name("server_secret")
-                            .long("server_secret")
-                            .help("Cryptographic seed used to derive keys")
-                            .takes_value(true)
-                            .required(true),
                         Arg::with_name("chain_id")
                             .long("chain_id")
                             .help("The chain id so that the signer calculates the v value of the sig appropriately")
@@ -87,14 +81,6 @@ pub fn main() {
             let connector_url: String = value_t!(matches, "connector_url", String).unwrap();
             let redis_uri = value_t!(matches, "redis_uri", String).expect("redis_uri is required");
             let redis_uri = Url::parse(&redis_uri).expect("redis_uri is not a valid URI");
-            let server_secret: [u8; 32] = {
-                let encoded: String = value_t!(matches, "server_secret", String).unwrap();
-                let mut server_secret = [0; 32];
-                let decoded = hex::decode(encoded).expect("server_secret must be hex-encoded");
-                assert_eq!(decoded.len(), 32, "server_secret must be 32 bytes");
-                server_secret.clone_from_slice(&decoded);
-                server_secret
-            };
             let chain_id = value_t!(matches, "chain_id", u8).unwrap();
             let confirmations = value_t!(matches, "confirmations", u8).unwrap();
             let asset_scale = value_t!(matches, "asset_scale", u8).unwrap();
@@ -105,7 +91,6 @@ pub fn main() {
                 redis_uri,
                 ethereum_endpoint,
                 settlement_port,
-                &server_secret,
                 private_key,
                 chain_id,
                 confirmations,

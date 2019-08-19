@@ -7,12 +7,10 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use hyper::StatusCode;
-use interledger_store_redis::RedisStoreBuilder;
 use log::info;
 use num_bigint::BigUint;
 use redis::IntoConnectionInfo;
 use reqwest::r#async::{Client, Response as HttpResponse};
-use ring::{digest, hmac};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -107,7 +105,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     pub fn new(store: S, signer: Si) -> Self {
         Self {
@@ -234,7 +232,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     /// Periodically spawns a job every `self.poll_frequency` that notifies the
     /// Settlement Engine's connectors about transactions which are sent to the
@@ -721,24 +719,18 @@ where
     fn load_account(
         &self,
         account_id: String,
-    ) -> impl Future<Item = (A::AccountId, Addresses), Error = String> {
+    ) -> impl Future<Item = (String, Addresses), Error = String> {
         let store = self.store.clone();
         let addr = self.address;
-        result(A::AccountId::from_str(&account_id).map_err(move |_err| {
-            let error_msg = "Unable to parse account".to_string();
-            error!("{}", error_msg);
-            error_msg
-        }))
-        .and_then(move |account_id| {
-            store
-                .load_account_addresses(vec![account_id])
-                .map_err(move |_err| {
-                    let error_msg = format!("[{:?}] Error getting account: {}", addr, account_id);
-                    error!("{}", error_msg);
-                    error_msg
-                })
-                .and_then(move |addresses| ok((account_id, addresses[0])))
-        })
+        let account_id_clone = account_id.clone();
+        store
+            .load_account_addresses(vec![account_id.clone()])
+            .map_err(move |_err| {
+                let error_msg = format!("[{:?}] Error getting account: {}", addr, account_id_clone);
+                error!("{}", error_msg);
+                error_msg
+            })
+            .and_then(move |addresses| ok((account_id, addresses[0])))
     }
 }
 
@@ -751,7 +743,7 @@ where
         + Sync
         + 'static,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     /// Settlement Engine's function that corresponds to the
     /// /accounts/:id/ endpoint (POST). It queries the connector's
@@ -769,94 +761,83 @@ where
         let store: S = self.store.clone();
         let account_id = account_id.id;
 
-        Box::new(
-            result(A::AccountId::from_str(&account_id).map_err({
-                move |_err| {
-                    let error_msg = "Unable to parse account".to_string();
-                    error!("{}", error_msg);
-                    let status_code = StatusCode::from_u16(400).unwrap();
-                    (status_code, error_msg)
-                }
-            }))
-            .and_then(move |account_id| {
-                // We make a POST request to OUR connector's `messages`
-                // endpoint. This will in turn send an outgoing
-                // request to its peer connector, which will ask its
-                // own engine about its settlement information. Then,
-                // we store that information and use it when
-                // performing settlements.
-                let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
-                let challenge = Uuid::new_v4().to_hyphenated().to_string();
-                let challenge = challenge.into_bytes();
-                let challenge_clone = challenge.clone();
-                let client = Client::new();
-                let mut url = self_clone.connector_url.clone();
-                url.path_segments_mut()
-                    .expect("Invalid connector URL")
-                    .push("accounts")
-                    .push(&account_id.to_string())
-                    .push("messages");
-                let action = move || {
-                    client
-                        .post(url.clone())
-                        .header("Content-Type", "application/octet-stream")
-                        .header("Idempotency-Key", idempotency_uuid.clone())
-                        .body(challenge.clone())
-                        .send()
-                };
+        // We make a POST request to OUR connector's `messages`
+        // endpoint. This will in turn send an outgoing
+        // request to its peer connector, which will ask its
+        // own engine about its settlement information. Then,
+        // we store that information and use it when
+        // performing settlements.
+        let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
+        let challenge = Uuid::new_v4().to_hyphenated().to_string();
+        let challenge = challenge.into_bytes();
+        let challenge_clone = challenge.clone();
+        let client = Client::new();
+        let mut url = self_clone.connector_url.clone();
+        url.path_segments_mut()
+            .expect("Invalid connector URL")
+            .push("accounts")
+            .push(&account_id.to_string())
+            .push("messages");
+        let action = move || {
+            client
+                .post(url.clone())
+                .header("Content-Type", "application/octet-stream")
+                .header("Idempotency-Key", idempotency_uuid.clone())
+                .body(challenge.clone())
+                .send()
+        };
 
-                Retry::spawn(
-                    ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
-                    action,
-                )
-                .map_err(move |err| {
-                    let err = format!("Couldn't notify connector {:?}", err);
-                    error!("{}", err);
-                    (StatusCode::from_u16(500).unwrap(), err)
-                })
-                .and_then(move |resp| {
-                    parse_body_into_payment_details(resp).and_then(move |payment_details| {
-                        let data = prefixed_mesage(challenge_clone);
-                        let challenge_hash = Sha3::digest(&data);
-                        let recovered_address = payment_details.sig.recover(&challenge_hash);
-                        trace!("Received payment details {:?}", payment_details);
-                        result(recovered_address)
-                            .map_err(move |err| {
-                                let err = format!("Could not recover address {:?}", err);
-                                error!("{}", err);
-                                (StatusCode::from_u16(502).unwrap(), err)
-                            })
-                            .and_then({
-                                let payment_details = payment_details.clone();
-                                move |recovered_address| {
-                                    if recovered_address.as_bytes()
-                                        == &payment_details.to.own_address.as_bytes()[..]
-                                    {
-                                        ok(())
-                                    } else {
-                                        let error_msg = format!(
-                                            "Recovered address did not match: {:?}. Expected {:?}",
-                                            recovered_address.to_string(),
-                                            payment_details.to
-                                        );
-                                        error!("{}", error_msg);
-                                        err((StatusCode::from_u16(502).unwrap(), error_msg))
-                                    }
+        Box::new(
+            Retry::spawn(
+                ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                action,
+            )
+            .map_err(move |err| {
+                let err = format!("Couldn't notify connector {:?}", err);
+                error!("{}", err);
+                (StatusCode::from_u16(500).unwrap(), err)
+            })
+            .and_then(move |resp| {
+                parse_body_into_payment_details(resp).and_then(move |payment_details| {
+                    let data = prefixed_mesage(challenge_clone);
+                    let challenge_hash = Sha3::digest(&data);
+                    let recovered_address = payment_details.sig.recover(&challenge_hash);
+                    trace!("Received payment details {:?}", payment_details);
+                    result(recovered_address)
+                        .map_err(move |err| {
+                            let err = format!("Could not recover address {:?}", err);
+                            error!("{}", err);
+                            (StatusCode::from_u16(502).unwrap(), err)
+                        })
+                        .and_then({
+                            let payment_details = payment_details.clone();
+                            move |recovered_address| {
+                                if recovered_address.as_bytes()
+                                    == &payment_details.to.own_address.as_bytes()[..]
+                                {
+                                    ok(())
+                                } else {
+                                    let error_msg = format!(
+                                        "Recovered address did not match: {:?}. Expected {:?}",
+                                        recovered_address.to_string(),
+                                        payment_details.to
+                                    );
+                                    error!("{}", error_msg);
+                                    err((StatusCode::from_u16(502).unwrap(), error_msg))
                                 }
+                            }
+                        })
+                        .and_then(move |_| {
+                            let data = HashMap::from_iter(vec![(account_id, payment_details.to)]);
+                            store.save_account_addresses(data).map_err(move |err| {
+                                let err = format!("Couldn't connect to store {:?}", err);
+                                error!("{}", err);
+                                (StatusCode::from_u16(500).unwrap(), err)
                             })
-                            .and_then(move |_| {
-                                let data =
-                                    HashMap::from_iter(vec![(account_id, payment_details.to)]);
-                                store.save_account_addresses(data).map_err(move |err| {
-                                    let err = format!("Couldn't connect to store {:?}", err);
-                                    error!("{}", err);
-                                    (StatusCode::from_u16(500).unwrap(), err)
-                                })
-                            })
-                    })
+                        })
                 })
-                .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned())))
-            }),
+            })
+            .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned()))),
         )
     }
 
@@ -993,7 +974,6 @@ pub fn run_ethereum_engine<R, Si>(
     redis_uri: R,
     ethereum_endpoint: String,
     settlement_port: u16,
-    secret_seed: &[u8; 32],
     private_key: Si,
     chain_id: u8,
     confirmations: u8,
@@ -1007,47 +987,31 @@ where
     R: IntoConnectionInfo,
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
 {
-    let redis_secret = generate_redis_secret(secret_seed);
     let redis_uri = redis_uri.into_connection_info().unwrap();
 
     EthereumLedgerRedisStoreBuilder::new(redis_uri.clone())
         .connect()
         .and_then(move |ethereum_store| {
-            let engine = EthereumLedgerSettlementEngineBuilder::new(ethereum_store, private_key)
-                .ethereum_endpoint(&ethereum_endpoint)
-                .chain_id(chain_id)
-                .connector_url(&connector_url)
-                .confirmations(confirmations)
-                .asset_scale(asset_scale)
-                .poll_frequency(poll_frequency)
-                .watch_incoming(watch_incoming)
-                .token_address(token_address)
-                .connect();
+            let engine =
+                EthereumLedgerSettlementEngineBuilder::new(ethereum_store.clone(), private_key)
+                    .ethereum_endpoint(&ethereum_endpoint)
+                    .chain_id(chain_id)
+                    .connector_url(&connector_url)
+                    .confirmations(confirmations)
+                    .asset_scale(asset_scale)
+                    .poll_frequency(poll_frequency)
+                    .watch_incoming(watch_incoming)
+                    .token_address(token_address)
+                    .connect();
 
-            RedisStoreBuilder::new(redis_uri, redis_secret)
-                .connect()
-                .and_then(move |store| {
-                    let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
-                    let listener = TcpListener::bind(&addr)
-                        .expect("Unable to bind to Settlement Engine address");
-                    info!("Ethereum Settlement Engine listening on: {}", addr);
-
-                    let api = SettlementEngineApi::new(engine, store);
-                    tokio::spawn(api.serve(listener.incoming()));
-                    Ok(())
-                })
+            let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
+            let listener =
+                TcpListener::bind(&addr).expect("Unable to bind to Settlement Engine address");
+            let api = SettlementEngineApi::new(engine, ethereum_store);
+            tokio::spawn(api.serve(listener.incoming()));
+            info!("Ethereum Settlement Engine listening on: {}", addr);
+            Ok(())
         })
-}
-
-static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
-fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
-    let mut redis_secret: [u8; 32] = [0; 32];
-    let sig = hmac::sign(
-        &hmac::SigningKey::new(&digest::SHA256, secret_seed),
-        REDIS_SECRET_GENERATION_STRING.as_bytes(),
-    );
-    redis_secret.copy_from_slice(sig.as_ref());
-    redis_secret
 }
 
 #[cfg(test)]
@@ -1077,7 +1041,7 @@ mod tests {
         let alice_store = test_store(ALICE.clone(), false, false, true);
         alice_store
             .save_account_addresses(HashMap::from_iter(vec![(
-                0,
+                "0".to_string(),
                 Addresses {
                     own_address: bob.address,
                     token_address: None,
@@ -1089,7 +1053,7 @@ mod tests {
         let bob_store = test_store(bob.clone(), false, false, true);
         bob_store
             .save_account_addresses(HashMap::from_iter(vec![(
-                42,
+                "42".to_string(),
                 Addresses {
                     own_address: alice.address,
                     token_address: None,

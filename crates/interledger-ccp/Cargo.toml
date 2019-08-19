@@ -21,3 +21,4 @@ parking_lot = "0.7.1"
 ring = "0.14.6"
 tokio-executor = "0.1.7"
 tokio-timer = "0.2.10"
+serde = { version = "1.0.98", features = ["derive"] }

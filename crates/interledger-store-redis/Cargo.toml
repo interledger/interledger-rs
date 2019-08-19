@@ -33,8 +33,10 @@ serde = { version = "1.0.89", features = ["derive"] }
 stream-cancel = "0.4.4"
 tokio-executor = "0.1.6"
 tokio-timer = "0.2.10"
-url = "1.7.2"
+url = { version = "1.7.2", features = ["serde"] }
 http = "0.1.17"
+uuid = { version = "0.7.4", features = ["serde"] }
+url_serde = "0.2.0"
 
 
 [dev-dependencies]

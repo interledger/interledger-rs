@@ -1,17 +1,33 @@
 use clarity::{PrivateKey, Signature};
 use ethereum_tx_sign::RawTransaction;
 use futures::Future;
-use interledger_service::Account;
 use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::str::FromStr;
 use web3::types::{Address, H256, U256};
 
+use serde::Serialize;
+use std::fmt::{Debug, Display};
 /// An Ethereum account is associated with an address. We additionally require
 /// that an optional `token_address` is implemented. If the `token_address` of an
 /// Ethereum Account is not `None`, than that account is used with the ERC20 token
 /// associated with that `token_address`.
-pub trait EthereumAccount: Account {
+///
+use std::hash::Hash;
+pub trait EthereumAccount {
+    type AccountId: Eq
+        + Hash
+        + Debug
+        + Display
+        + Default
+        + FromStr
+        + Send
+        + Sync
+        + Clone
+        + Serialize;
+
+    fn id(&self) -> Self::AccountId;
+
     fn own_address(&self) -> Address;
 
     fn token_address(&self) -> Option<Address> {
@@ -35,13 +51,13 @@ pub trait EthereumStore {
     /// called when creating an account on the API.
     fn save_account_addresses(
         &self,
-        data: HashMap<<Self::Account as Account>::AccountId, Addresses>,
+        data: HashMap<<Self::Account as EthereumAccount>::AccountId, Addresses>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Loads the Ethereum address associated with this account
     fn load_account_addresses(
         &self,
-        account_ids: Vec<<Self::Account as Account>::AccountId>,
+        account_ids: Vec<<Self::Account as EthereumAccount>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Addresses>, Error = ()> + Send>;
 
     /// Saves the latest block number, up to which all
@@ -63,7 +79,7 @@ pub trait EthereumStore {
     fn load_account_id_from_address(
         &self,
         eth_address: Addresses,
-    ) -> Box<dyn Future<Item = <Self::Account as Account>::AccountId, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = <Self::Account as EthereumAccount>::AccountId, Error = ()> + Send>;
 
     /// Returns true if the transaction has already been processed and saved in
     /// the store.

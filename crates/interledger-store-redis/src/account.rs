@@ -15,20 +15,22 @@ use log::error;
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 
 use ring::aead;
-use serde::Serialize;
 use serde::Serializer;
+use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::{
     collections::HashMap,
     convert::TryFrom,
     str::{self, FromStr},
 };
+use uuid::{parser::ParseError, Uuid};
 
 use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
-    pub(crate) id: u64,
+    pub(crate) id: AccountId,
     #[serde(serialize_with = "address_to_string")]
     pub(crate) ilp_address: Address,
     // TODO add additional routes
@@ -36,24 +38,23 @@ pub struct Account {
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
     pub(crate) min_balance: Option<i64>,
-    #[serde(serialize_with = "optional_url_to_string")]
+    #[serde(with = "url_serde")]
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) http_outgoing_token: Option<Bytes>,
-    #[serde(serialize_with = "optional_url_to_string")]
+    #[serde(with = "url_serde")]
     pub(crate) btp_uri: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) btp_outgoing_token: Option<Bytes>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
-    #[serde(serialize_with = "routing_relation_to_string")]
     pub(crate) routing_relation: RoutingRelation,
     pub(crate) send_routes: bool,
     pub(crate) receive_routes: bool,
     pub(crate) round_trip_time: u64,
     pub(crate) packets_per_minute_limit: Option<u32>,
     pub(crate) amount_per_minute_limit: Option<u64>,
-    #[serde(serialize_with = "optional_url_to_string")]
+    #[serde(with = "url_serde")]
     pub(crate) settlement_engine_url: Option<Url>,
 }
 
@@ -75,31 +76,8 @@ where
     }
 }
 
-fn optional_url_to_string<S>(url: &Option<Url>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if let Some(ref url) = url {
-        serializer.serialize_str(url.as_ref())
-    } else {
-        serializer.serialize_none()
-    }
-}
-
-// This needs to be pass by ref because serde expects this function to take a ref
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn routing_relation_to_string<S>(
-    relation: &RoutingRelation,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(relation.to_string().as_str())
-}
-
 impl Account {
-    pub fn try_from(id: u64, details: AccountDetails) -> Result<Account, ()> {
+    pub fn try_from(id: AccountId, details: AccountDetails) -> Result<Account, ()> {
         let http_endpoint = if let Some(ref url) = details.http_endpoint {
             Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
         } else {
@@ -177,6 +155,50 @@ impl AccountWithEncryptedTokens {
         }
 
         self.account
+    }
+}
+
+// Uuid does not implement ToRedisArgs and FromRedisValue.
+// Rust does not allow implementing foreign traits on foreign data types.
+// As a result, we wrap Uuid in a local data type, and implement the necessary
+// traits for that.
+#[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
+pub struct AccountId(Uuid);
+
+impl AccountId {
+    pub fn new() -> Self {
+        let uid = Uuid::new_v4();
+        AccountId(uid)
+    }
+}
+
+impl FromStr for AccountId {
+    type Err = ParseError;
+
+    fn from_str(src: &str) -> Result<Self, Self::Err> {
+        let uid = Uuid::from_str(&src)?;
+        Ok(AccountId(uid))
+    }
+}
+
+impl Display for AccountId {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        f.write_str(&self.0.to_hyphenated().to_string())
+    }
+}
+
+impl ToRedisArgs for AccountId {
+    fn write_redis_args(&self, out: &mut Vec<Vec<u8>>) {
+        self.0.to_hyphenated().to_string().write_redis_args(out);
+    }
+}
+
+impl FromRedisValue for AccountId {
+    fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
+        let account_id = String::from_redis_value(v)?;
+        let uid = Uuid::from_str(&account_id)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid account id string")))?;
+        Ok(AccountId(uid))
     }
 }
 
@@ -366,7 +388,7 @@ fn get_bool(key: &str, map: &HashMap<String, Value>) -> bool {
 }
 
 impl AccountTrait for Account {
-    type AccountId = u64;
+    type AccountId = AccountId;
 
     fn id(&self) -> Self::AccountId {
         self.id
@@ -489,8 +511,9 @@ mod redis_account {
 
     #[test]
     fn from_account_details() {
-        let account = Account::try_from(10, ACCOUNT_DETAILS.clone()).unwrap();
-        assert_eq!(account.id(), 10);
+        let id = AccountId::new();
+        let account = Account::try_from(id, ACCOUNT_DETAILS.clone()).unwrap();
+        assert_eq!(account.id(), id);
         assert_eq!(
             account.get_http_auth_token().unwrap(),
             "outgoing_auth_token"

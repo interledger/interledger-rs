@@ -26,8 +26,10 @@ mod test_helpers;
 
 pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
+use serde::{Deserialize, Serialize};
+
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum RoutingRelation {
     Parent = 1,
     Peer = 2,

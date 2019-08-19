@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use interledger_service::{Account, AccountStore};
 use tokio::runtime::Runtime;
 
 use parking_lot::RwLock;
@@ -20,25 +19,23 @@ use web3::{
 
 use super::eth_engine::{EthereumLedgerSettlementEngine, EthereumLedgerSettlementEngineBuilder};
 use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
-use interledger_settlement::{IdempotentData, IdempotentStore};
+use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 
 #[derive(Debug, Clone)]
 pub struct TestAccount {
-    pub id: u64,
+    pub id: String,
     pub address: Address,
     pub token_address: Address,
     pub no_details: bool,
 }
 
-impl Account for TestAccount {
-    type AccountId = u64;
-
-    fn id(&self) -> u64 {
-        self.id
-    }
-}
-
 impl EthereumAccount for TestAccount {
+    type AccountId = String;
+
+    fn id(&self) -> String {
+        self.id.clone()
+    }
+
     fn token_address(&self) -> Option<Address> {
         if self.no_details {
             return None;
@@ -55,8 +52,8 @@ impl EthereumAccount for TestAccount {
 pub struct TestStore {
     pub accounts: Arc<Vec<TestAccount>>,
     pub should_fail: bool,
-    pub addresses: Arc<RwLock<HashMap<u64, Addresses>>>,
-    pub address_to_id: Arc<RwLock<HashMap<Addresses, u64>>>,
+    pub addresses: Arc<RwLock<HashMap<String, Addresses>>>,
+    pub address_to_id: Arc<RwLock<HashMap<Addresses, String>>>,
     #[allow(clippy::all)]
     pub cache: Arc<RwLock<HashMap<String, (StatusCode, String, [u8; 32])>>>,
     pub last_observed_block: Arc<RwLock<U256>>,
@@ -101,12 +98,12 @@ impl EthereumStore for TestStore {
 
     fn save_account_addresses(
         &self,
-        data: HashMap<u64, Addresses>,
+        data: HashMap<String, Addresses>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.addresses.write();
         let mut guard2 = self.address_to_id.write();
         for (acc, d) in data {
-            (*guard).insert(acc, d);
+            (*guard).insert(acc.clone(), d);
             (*guard2).insert(d, acc);
         }
         Box::new(ok(()))
@@ -114,12 +111,12 @@ impl EthereumStore for TestStore {
 
     fn load_account_addresses(
         &self,
-        account_ids: Vec<u64>,
+        account_ids: Vec<String>,
     ) -> Box<dyn Future<Item = Vec<Addresses>, Error = ()> + Send> {
         let mut v = Vec::with_capacity(account_ids.len());
         let addresses = self.addresses.read();
         for acc in &account_ids {
-            if let Some(d) = addresses.get(&acc) {
+            if let Some(d) = addresses.get(acc) {
                 v.push(Addresses {
                     own_address: d.own_address,
                     token_address: d.token_address,
@@ -150,10 +147,10 @@ impl EthereumStore for TestStore {
     fn load_account_id_from_address(
         &self,
         eth_address: Addresses,
-    ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = String, Error = ()> + Send> {
         let addresses = self.address_to_id.read();
         let d = if let Some(d) = addresses.get(&eth_address) {
-            *d
+            d.clone()
         } else {
             return Box::new(err(()));
         };
@@ -181,37 +178,11 @@ impl EthereumStore for TestStore {
     }
 }
 
-impl AccountStore for TestStore {
-    type Account = TestAccount;
-
-    fn get_accounts(
-        &self,
-        account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-    ) -> Box<Future<Item = Vec<Self::Account>, Error = ()> + Send> {
-        let accounts: Vec<TestAccount> = self
-            .accounts
-            .iter()
-            .filter_map(|account| {
-                if account_ids.contains(&account.id) {
-                    Some(account.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if accounts.len() == account_ids.len() {
-            Box::new(ok(accounts))
-        } else {
-            Box::new(err(()))
-        }
-    }
-}
-
-impl IdempotentStore for TestStore {
+impl IdempotentEngineStore for TestStore {
     fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Option<IdempotentEngineData>, Error = ()> + Send> {
         let cache = self.cache.read();
         if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
@@ -257,8 +228,8 @@ impl TestStore {
                     own_address: account.address,
                     token_address,
                 };
-                addresses.insert(account.id, addrs);
-                address_to_id.insert(addrs, account.id);
+                addresses.insert(account.id.clone(), addrs);
+                address_to_id.insert(addrs, account.id.clone());
             }
         }
 
@@ -279,9 +250,9 @@ impl TestStore {
 // Test Service
 
 impl TestAccount {
-    pub fn new(id: u64, address: &str, token_address: &str) -> Self {
+    pub fn new(id: String, address: &str, token_address: &str) -> Self {
         Self {
-            id,
+            id: id.to_string(),
             address: Address::from_str(address).unwrap(),
             token_address: Address::from_str(token_address).unwrap(),
             no_details: false,
@@ -301,12 +272,12 @@ where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     S: EthereumStore<Account = A>
         + LeftoversStore<AssetType = BigUint>
-        + IdempotentStore
+        + IdempotentEngineStore
         + Clone
         + Send
         + Sync
         + 'static,
-    A: EthereumAccount + Send + Sync + 'static,
+    A: EthereumAccount<AccountId = String> + Clone + Send + Sync + 'static,
 {
     EthereumLedgerSettlementEngineBuilder::new(store, key)
         .connector_url(connector_url)

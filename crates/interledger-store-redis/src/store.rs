@@ -27,6 +27,7 @@ use futures::{
 use log::{debug, error, trace, warn};
 use std::collections::{HashMap, HashSet};
 
+use super::account::AccountId;
 use http::StatusCode;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_btp::BtpStore;
@@ -162,13 +163,12 @@ return balance + prepaid_amount";
 static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
-static NEXT_ACCOUNT_ID_KEY: &str = "next_account_id";
 
 fn prefixed_idempotency_key(idempotency_key: String) -> String {
     format!("idempotency-key:{}", idempotency_key)
 }
 
-fn account_details_key(account_id: u64) -> String {
+fn account_details_key(account_id: AccountId) -> String {
     format!("accounts:{}", account_id)
 }
 
@@ -271,19 +271,19 @@ impl RedisStoreBuilder {
 pub struct RedisStore {
     connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
-    routes: Arc<RwLock<HashMap<Bytes, u64>>>,
+    routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
     hmac_key: Arc<hmac::SigningKey>, // redisstore stores a key, this must be protected
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
 }
 
 impl RedisStore {
-    fn get_next_account_id(&self) -> impl Future<Item = u64, Error = ()> {
-        cmd("INCR")
-            .arg(NEXT_ACCOUNT_ID_KEY)
-            .query_async(self.connection.as_ref().clone())
-            .map_err(|err| error!("Error incrementing account ID: {:?}", err))
-            .and_then(|(_conn, next_account_id): (_, u64)| Ok(next_account_id - 1))
+    pub fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
+        let mut pipe = redis::pipe();
+        pipe.smembers("accounts");
+        pipe.query_async(self.connection.as_ref().clone())
+            .map_err(|err| error!("Error getting account IDs: {:?}", err))
+            .and_then(|(_conn, account_ids): (_, Vec<Vec<AccountId>>)| Ok(account_ids[0].clone()))
     }
 
     fn create_new_account(
@@ -308,12 +308,10 @@ impl RedisStore {
             .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
         let http_incoming_token_hmac_clone = http_incoming_token_hmac;
 
+        let id = AccountId::new();
+        debug!("Generated account: {}", id);
         Box::new(
-            self.get_next_account_id()
-                .and_then(|id| {
-                    debug!("Next account id is: {}", id);
-                    Account::try_from(id, account)
-                })
+                result(Account::try_from(id, account))
                 .and_then(move |account| {
                     // Check that there isn't already an account with values that must be unique
                     let mut keys: Vec<String> = vec!["ID".to_string()];
@@ -350,6 +348,9 @@ impl RedisStore {
                 .and_then(move |(connection, account)| {
                     let mut pipe = redis::pipe();
                     pipe.atomic();
+
+                    // Add the account key to the list of accounts
+                    pipe.sadd("accounts", id).ignore();
 
                     // Set account details
                     pipe.cmd("HMSET").arg(account_details_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
@@ -396,7 +397,7 @@ impl RedisStore {
         )
     }
 
-    fn delete_account(&self, id: u64) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+    fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let connection = self.connection.as_ref().clone();
         let routing_table = self.routes.clone();
 
@@ -407,6 +408,8 @@ impl RedisStore {
                 .and_then(|account| {
                     let mut pipe = redis::pipe();
                     pipe.atomic();
+
+                    pipe.srem("accounts", account.id).ignore();
 
                     pipe.del(account_details_key(account.id));
 
@@ -440,7 +443,7 @@ impl RedisStore {
 
     fn retrieve_accounts(
         &self,
-        account_ids: Vec<u64>,
+        account_ids: Vec<AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
@@ -673,37 +676,41 @@ impl BtpStore for RedisStore {
                 .arg("btp_outgoing")
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting members of set btp_outgoing: {:?}", err))
-                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
-                    if account_ids.is_empty() {
-                        Either::A(ok(Vec::new()))
-                    } else {
-                        let mut pipe = redis::pipe();
-                        for id in account_ids {
-                            pipe.hgetall(account_details_key(id));
-                        }
-                        Either::B(
-                            pipe.query_async(connection)
-                                .map_err(|err| {
-                                    error!(
+                .and_then(
+                    |(connection, account_ids): (SharedConnection, Vec<AccountId>)| {
+                        if account_ids.is_empty() {
+                            Either::A(ok(Vec::new()))
+                        } else {
+                            let mut pipe = redis::pipe();
+                            for id in account_ids {
+                                pipe.hgetall(account_details_key(id));
+                            }
+                            Either::B(
+                                pipe.query_async(connection)
+                                    .map_err(|err| {
+                                        error!(
                                         "Error getting accounts with outgoing BTP details: {:?}",
                                         err
                                     )
-                                })
-                                .and_then(
-                                    move |(_connection, accounts): (
-                                        SharedConnection,
-                                        Vec<AccountWithEncryptedTokens>,
-                                    )| {
-                                        let accounts: Vec<Account> = accounts
-                                            .into_iter()
-                                            .map(|account| account.decrypt_tokens(&decryption_key))
-                                            .collect();
-                                        Ok(accounts)
-                                    },
-                                ),
-                        )
-                    }
-                }),
+                                    })
+                                    .and_then(
+                                        move |(_connection, accounts): (
+                                            SharedConnection,
+                                            Vec<AccountWithEncryptedTokens>,
+                                        )| {
+                                            let accounts: Vec<Account> = accounts
+                                                .into_iter()
+                                                .map(|account| {
+                                                    account.decrypt_tokens(&decryption_key)
+                                                })
+                                                .collect();
+                                            Ok(accounts)
+                                        },
+                                    ),
+                            )
+                        }
+                    },
+                ),
         )
     }
 }
@@ -744,7 +751,7 @@ impl HttpStore for RedisStore {
 }
 
 impl RouterStore for RedisStore {
-    fn routing_table(&self) -> HashMap<Bytes, u64> {
+    fn routing_table(&self) -> HashMap<Bytes, <Self::Account as AccountTrait>::AccountId> {
         self.routes.read().clone()
     }
 }
@@ -759,46 +766,35 @@ impl NodeStore for RedisStore {
         self.create_new_account(account)
     }
 
-    fn remove_account(&self, id: u64) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+    fn remove_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         self.delete_account(id)
     }
 
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
-        Box::new(
-            cmd("GET")
-                .arg(NEXT_ACCOUNT_ID_KEY)
-                .query_async(self.connection.as_ref().clone())
+        let mut pipe = redis::pipe();
+        let connection = self.connection.clone();
+        pipe.smembers("accounts");
+        Box::new(self.get_all_accounts_ids().and_then(move |account_ids| {
+            let mut pipe = redis::pipe();
+            for account_id in account_ids {
+                pipe.hgetall(account_details_key(account_id));
+            }
+
+            pipe.query_async(connection.as_ref().clone())
+                .map_err(|err| error!("Error getting account ids: {:?}", err))
                 .and_then(
-                    move |(connection, next_account_id): (SharedConnection, Option<u64>)| {
-                        if let Some(next_account_id) = next_account_id {
-                            if next_account_id > 0 {
-                                trace!("Getting accounts up to id: {}", next_account_id);
-                                let mut pipe = redis::pipe();
-                                for i in 0..next_account_id {
-                                    pipe.hgetall(account_details_key(i));
-                                }
-                                return Either::A(pipe.query_async(connection).and_then(
-                                    move |(_, accounts): (
-                                        _,
-                                        Vec<Option<AccountWithEncryptedTokens>>,
-                                    )| {
-                                        let accounts: Vec<Account> = accounts
-                                            .into_iter()
-                                            .filter_map(|a| a)
-                                            .map(|account| account.decrypt_tokens(&decryption_key))
-                                            .collect();
-                                        Ok(accounts)
-                                    },
-                                ));
-                            }
-                        }
-                        Either::B(ok(Vec::new()))
+                    move |(_, accounts): (_, Vec<Option<AccountWithEncryptedTokens>>)| {
+                        let accounts: Vec<Account> = accounts
+                            .into_iter()
+                            .filter_map(|a| a)
+                            .map(|account| account.decrypt_tokens(&decryption_key))
+                            .collect();
+                        Ok(accounts)
                     },
                 )
-                .map_err(|err| error!("Error getting all accounts: {:?}", err)),
-        )
+        }))
     }
 
     fn set_rates<R>(&self, rates: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
@@ -827,14 +823,14 @@ impl NodeStore for RedisStore {
     // takes the prefixes as Bytes and the account as an Account object
     fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
-        R: IntoIterator<Item = (String, u64)>,
+        R: IntoIterator<Item = (String, AccountId)>,
     {
-        let routes: Vec<(String, u64)> = routes.into_iter().collect();
-        let accounts: HashSet<u64> =
-            HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| *account_id));
+        let routes: Vec<(String, AccountId)> = routes.into_iter().collect();
+        let accounts: HashSet<_> =
+            HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| account_id));
         let mut pipe = redis::pipe();
         for account_id in accounts {
-            pipe.exists(account_details_key(account_id));
+            pipe.exists(account_details_key(*account_id));
         }
 
         let routing_table = self.routes.clone();
@@ -866,7 +862,7 @@ impl NodeStore for RedisStore {
     fn set_static_route(
         &self,
         prefix: String,
-        account_id: u64,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routing_table = self.routes.clone();
         let prefix_clone = prefix.clone();
@@ -912,34 +908,41 @@ impl RouteManagerStore for RedisStore {
                 .arg("send_routes_to")
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting members of set send_routes_to: {:?}", err))
-                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
-                    if account_ids.is_empty() {
-                        Either::A(ok(Vec::new()))
-                    } else {
-                        let mut pipe = redis::pipe();
-                        for id in account_ids {
-                            pipe.hgetall(account_details_key(id));
+                .and_then(
+                    |(connection, account_ids): (SharedConnection, Vec<AccountId>)| {
+                        if account_ids.is_empty() {
+                            Either::A(ok(Vec::new()))
+                        } else {
+                            let mut pipe = redis::pipe();
+                            for id in account_ids {
+                                pipe.hgetall(account_details_key(id));
+                            }
+                            Either::B(
+                                pipe.query_async(connection)
+                                    .map_err(|err| {
+                                        error!(
+                                            "Error getting accounts to send routes to: {:?}",
+                                            err
+                                        )
+                                    })
+                                    .and_then(
+                                        move |(_connection, accounts): (
+                                            SharedConnection,
+                                            Vec<AccountWithEncryptedTokens>,
+                                        )| {
+                                            let accounts: Vec<Account> = accounts
+                                                .into_iter()
+                                                .map(|account| {
+                                                    account.decrypt_tokens(&decryption_key)
+                                                })
+                                                .collect();
+                                            Ok(accounts)
+                                        },
+                                    ),
+                            )
                         }
-                        Either::B(
-                            pipe.query_async(connection)
-                                .map_err(|err| {
-                                    error!("Error getting accounts to send routes to: {:?}", err)
-                                })
-                                .and_then(
-                                    move |(_connection, accounts): (
-                                        SharedConnection,
-                                        Vec<AccountWithEncryptedTokens>,
-                                    )| {
-                                        let accounts: Vec<Account> = accounts
-                                            .into_iter()
-                                            .map(|account| account.decrypt_tokens(&decryption_key))
-                                            .collect();
-                                        Ok(accounts)
-                                    },
-                                ),
-                        )
-                    }
-                }),
+                    },
+                ),
         )
     }
 
@@ -957,37 +960,41 @@ impl RouteManagerStore for RedisStore {
                         err
                     )
                 })
-                .and_then(|(connection, account_ids): (SharedConnection, Vec<u64>)| {
-                    if account_ids.is_empty() {
-                        Either::A(ok(Vec::new()))
-                    } else {
-                        let mut pipe = redis::pipe();
-                        for id in account_ids {
-                            pipe.hgetall(account_details_key(id));
+                .and_then(
+                    |(connection, account_ids): (SharedConnection, Vec<AccountId>)| {
+                        if account_ids.is_empty() {
+                            Either::A(ok(Vec::new()))
+                        } else {
+                            let mut pipe = redis::pipe();
+                            for id in account_ids {
+                                pipe.hgetall(account_details_key(id));
+                            }
+                            Either::B(
+                                pipe.query_async(connection)
+                                    .map_err(|err| {
+                                        error!(
+                                            "Error getting accounts to receive routes from: {:?}",
+                                            err
+                                        )
+                                    })
+                                    .and_then(
+                                        move |(_connection, accounts): (
+                                            SharedConnection,
+                                            Vec<AccountWithEncryptedTokens>,
+                                        )| {
+                                            let accounts: Vec<Account> = accounts
+                                                .into_iter()
+                                                .map(|account| {
+                                                    account.decrypt_tokens(&decryption_key)
+                                                })
+                                                .collect();
+                                            Ok(accounts)
+                                        },
+                                    ),
+                            )
                         }
-                        Either::B(
-                            pipe.query_async(connection)
-                                .map_err(|err| {
-                                    error!(
-                                        "Error getting accounts to receive routes from: {:?}",
-                                        err
-                                    )
-                                })
-                                .and_then(
-                                    move |(_connection, accounts): (
-                                        SharedConnection,
-                                        Vec<AccountWithEncryptedTokens>,
-                                    )| {
-                                        let accounts: Vec<Account> = accounts
-                                            .into_iter()
-                                            .map(|account| account.decrypt_tokens(&decryption_key))
-                                            .collect();
-                                        Ok(accounts)
-                                    },
-                                ),
-                        )
-                    }
-                }),
+                    },
+                ),
         )
     }
 
@@ -1000,7 +1007,9 @@ impl RouteManagerStore for RedisStore {
             .query_async(self.connection.as_ref().clone())
             .map_err(|err| error!("Error getting static routes: {:?}", err))
             .and_then(
-                |(_, static_routes): (SharedConnection, Vec<(String, u64)>)| Ok(static_routes),
+                |(_, static_routes): (SharedConnection, Vec<(String, AccountId)>)| {
+                    Ok(static_routes)
+                },
             );
         Box::new(self.get_all_accounts().join(get_static_routes).and_then(
             |(accounts, static_routes)| {
@@ -1010,7 +1019,7 @@ impl RouteManagerStore for RedisStore {
                         .map(|account| (account.ilp_address.to_bytes(), account.clone())),
                 );
 
-                let account_map: HashMap<u64, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
+                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
                 let configured_table: HashMap<Bytes, Account> = HashMap::from_iter(static_routes.into_iter()
                     .filter_map(|(prefix, account_id)| {
                         if let Some(account) = account_map.get(&account_id) {
@@ -1030,7 +1039,7 @@ impl RouteManagerStore for RedisStore {
         &mut self,
         routes: impl IntoIterator<Item = (Bytes, Account)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let routes: Vec<(String, u64)> = routes
+        let routes: Vec<(String, AccountId)> = routes
             .into_iter()
             .filter_map(|(prefix, account)| {
                 if let Ok(prefix) = String::from_utf8(prefix.to_vec()) {
@@ -1229,7 +1238,7 @@ impl SettlementStore for RedisStore {
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: u64,
+        account_id: AccountId,
         amount: u64,
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -1250,7 +1259,7 @@ impl SettlementStore for RedisStore {
 
     fn refund_settlement(
         &self,
-        account_id: u64,
+        account_id: AccountId,
         settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
@@ -1303,11 +1312,11 @@ fn update_rates(
 }
 
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
-type RouteVec = Vec<(String, u64)>;
+type RouteVec = Vec<(String, AccountId)>;
 
 fn update_routes(
     connection: SharedConnection,
-    routing_table: Arc<RwLock<HashMap<Bytes, u64>>>,
+    routing_table: Arc<RwLock<HashMap<Bytes, AccountId>>>,
 ) -> impl Future<Item = (), Error = ()> {
     let mut pipe = redis::pipe();
     pipe.hgetall(ROUTES_KEY).hgetall(STATIC_ROUTES_KEY);

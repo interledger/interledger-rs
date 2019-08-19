@@ -1,19 +1,21 @@
 #![recursion_limit = "128"]
 
 use env_logger;
-use futures::{Future, Stream};
+use futures::Future;
 use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
 use serde_json::json;
-use std::str;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
 use redis_helpers::*;
+
+mod test_helpers;
+use test_helpers::*;
 
 #[test]
 fn three_nodes() {
@@ -250,113 +252,115 @@ fn three_nodes() {
             delay(500)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
-                    let client = reqwest::r#async::Client::new();
-                    let send_1_to_3 = client
-                        .post(&format!("http://localhost:{}/pay", node1_http))
-                        .header("Authorization", "Bearer default account holder")
-                        .json(&json!({
-                            "receiver": format!("http://localhost:{}/.well-known/pay", node3_http),
-                            "source_amount": 1000,
-                        }))
-                        .send()
-                        .and_then(|res| res.error_for_status())
-                    .and_then(|res| res.into_body().concat2())
-                    .and_then(|body| {
-                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"delivered_amount\":2}");
-                        Ok(())
-                    });
+                    let three_addr = Address::from_str("example.two.three").unwrap();
+                    let one_addr = Address::from_str("example.one").unwrap();
+                    futures::future::join_all(vec![
+                        get_all_accounts(node1_http, "admin").map(accounts_to_ids),
+                        get_all_accounts(node2_http, "admin").map(accounts_to_ids),
+                        get_all_accounts(node3_http, "admin").map(accounts_to_ids),
+                    ])
+                    .and_then(move |ids| {
+                        let node1_ids = ids[0].clone();
+                        let node2_ids = ids[1].clone();
+                        let node3_ids = ids[2].clone();
 
-                    let send_3_to_1 = client
-                        .post(&format!("http://localhost:{}/pay", node3_http))
-                        .header("Authorization", "Bearer default account holder")
-                        .json(&json!({
-                                "receiver": format!("http://localhost:{}/.well-known/pay", node1_http).as_str(),
-                            "source_amount": 1000,
-                        }))
-                        .send()
-                        .and_then(|res| res.error_for_status())
-                    .and_then(|res| res.into_body().concat2())
-                    .and_then(|body| {
-                        assert_eq!(str::from_utf8(body.as_ref()).unwrap(), "{\"delivered_amount\":500000}");
-                        Ok(())
-                    });
+                        let one_on_one = node1_ids.get(&one_addr).unwrap().to_owned();
+                        let three_on_two = node2_ids.get(&three_addr).unwrap().to_owned();
+                        let three_on_three = node3_ids.get(&three_addr).unwrap().to_owned();
 
-                    let get_balance = |account_id, node_port, admin_token| {
-                        let client = reqwest::r#async::Client::new();
-                        client
-                            .get(&format!(
-                                "http://localhost:{}/accounts/{}/balance",
-                                node_port, account_id
-                            ))
-                            .header("Authorization", format!("Bearer {}", admin_token))
-                            .send()
+                        let send_1_to_3 = send_money_to_id(
+                            node1_http,
+                            node3_http,
+                            1000,
+                            three_on_three,
+                            "default account holder",
+                        );
+                        let send_3_to_1 = send_money_to_id(
+                            node3_http,
+                            node1_http,
+                            1000,
+                            one_on_one,
+                            "default account holder",
+                        );
+
+                        // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
+                        // while Node 3's scale is 6. This means that Node 3 will
+                        // see 1000x less. In addition, the conversion rate is 2:1
+                        // for 3's asset, so he will receive 2 total.
+                        send_1_to_3
                             .map_err(|err| {
-                                eprintln!("Error getting account data: {:?}", err);
+                                eprintln!("Error sending from node 1 to node 3: {:?}", err);
                                 err
                             })
-                            .and_then(|res| res.error_for_status())
-                            .and_then(|res| res.into_body().concat2())
-                    };
-
-                    // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
-                    // while Node 3's scale is 6. This means that Node 3 will
-                    // see 1000x less. In addition, the conversion rate is 2:1
-                    // for 3's asset, so he will receive 2 total.
-                    send_1_to_3
-                        .map_err(|err| {
-                            eprintln!("Error sending from node 1 to node 3: {:?}", err);
-                            err
-                        })
-                        .and_then(move |_| {
-                            get_balance(0, node1_http, "default account holder")
-                            .and_then(move |ret| {
-                                let ret = str::from_utf8(&ret).unwrap();
-                                assert_eq!(ret, "{\"balance\":\"-1000\"}");
-                                Ok(())
-                            }).and_then(move |_| {
-                                // Node 2 updates Node 3's balance properly.
-                                get_balance(1, node2_http, "three").and_then(move |ret| {
-                                    let ret = str::from_utf8(&ret).unwrap();
-                                    assert_eq!(ret, "{\"balance\":\"2\"}");
-                                    Ok(())
-                                })
-                            }).and_then(move |_| {
-                                // Node 3's balance is properly adjusted after
-                                // it's received the message from node 2
-                                get_balance(0, node3_http, "default account holder").and_then(move |ret| {
-                                    let ret = str::from_utf8(&ret).unwrap();
-                                    assert_eq!(ret, "{\"balance\":\"2\"}");
-                                    Ok(())
+                            .and_then(move |_| {
+                                get_balance(one_on_one, node1_http, "default account holder")
+                                    .and_then(move |ret| {
+                                        assert_eq!(ret, -1000);
+                                        Ok(())
+                                    })
+                                    .and_then(move |_| {
+                                        // Node 2 updates Node 3's balance properly.
+                                        get_balance(three_on_two, node2_http, "three").and_then(
+                                            move |ret| {
+                                                assert_eq!(ret, 2);
+                                                Ok(())
+                                            },
+                                        )
+                                    })
+                                    .and_then(move |_| {
+                                        // Node 3's balance is properly adjusted after
+                                        // it's received the message from node 2
+                                        get_balance(
+                                            three_on_three,
+                                            node3_http,
+                                            "default account holder",
+                                        )
+                                        .and_then(
+                                            move |ret| {
+                                                assert_eq!(ret, 2);
+                                                Ok(())
+                                            },
+                                        )
+                                    })
+                            })
+                            .and_then(move |_| {
+                                send_3_to_1.map_err(|err| {
+                                    eprintln!("Error sending from node 3 to node 1: {:?}", err);
+                                    err
                                 })
                             })
-                        })
-                        .and_then(move |_| send_3_to_1
-                        .map_err(|err| {
-                            eprintln!("Error sending from node 3 to node 1: {:?}", err);
-                            err
-                        }))
-                        .and_then(move |_| {
-                            get_balance(0, node1_http, "default account holder").and_then(move |ret| {
-                                let ret = str::from_utf8(&ret).unwrap();
-                                assert_eq!(ret, "{\"balance\":\"499000\"}");
-                                Ok(())
-                            }).and_then(move |_| {
-                                // Node 2 updates Node 3's balance properly.
-                                get_balance(1, node2_http, "three").and_then(move |ret| {
-                                    let ret = str::from_utf8(&ret).unwrap();
-                                    assert_eq!(ret, "{\"balance\":\"-998\"}");
-                                    Ok(())
-                                })
-                            }).and_then(move |_| {
-                                // Node 3's balance is properly adjusted after
-                                // it's received the message from node 2
-                                get_balance(0, node3_http, "default account holder").and_then(move |ret| {
-                                    let ret = str::from_utf8(&ret).unwrap();
-                                    assert_eq!(ret, "{\"balance\":\"-998\"}");
-                                    Ok(())
-                                })
+                            .and_then(move |_| {
+                                get_balance(one_on_one, node1_http, "default account holder")
+                                    .and_then(move |ret| {
+                                        assert_eq!(ret, 499_000);
+                                        Ok(())
+                                    })
+                                    .and_then(move |_| {
+                                        // Node 2 updates Node 3's balance properly.
+                                        get_balance(three_on_two, node2_http, "three").and_then(
+                                            move |ret| {
+                                                assert_eq!(ret, -998);
+                                                Ok(())
+                                            },
+                                        )
+                                    })
+                                    .and_then(move |_| {
+                                        // Node 3's balance is properly adjusted after
+                                        // it's received the message from node 2
+                                        get_balance(
+                                            three_on_three,
+                                            node3_http,
+                                            "default account holder",
+                                        )
+                                        .and_then(
+                                            move |ret| {
+                                                assert_eq!(ret, -998);
+                                                Ok(())
+                                            },
+                                        )
+                                    })
                             })
-                        })
+                    })
                 }),
         )
         .unwrap();

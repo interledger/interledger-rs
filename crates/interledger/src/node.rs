@@ -15,7 +15,9 @@ use interledger_service_util::{
     MaxPacketAmountService, RateLimitService, ValidatorService,
 };
 use interledger_settlement::{SettlementApi, SettlementMessageService};
-use interledger_store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder};
+use interledger_store_redis::{
+    Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
+};
 use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
 use ring::{digest, hmac};
@@ -264,7 +266,10 @@ impl InterledgerNode {
         tokio::run(self.serve());
     }
 
-    pub fn insert_account(&self, account: AccountDetails) -> impl Future<Item = (), Error = ()> {
+    pub fn insert_account(
+        &self,
+        account: AccountDetails,
+    ) -> impl Future<Item = AccountId, Error = ()> {
         insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account)
     }
 }
@@ -276,7 +281,7 @@ pub fn insert_account_redis<R>(
     redis_uri: R,
     secret_seed: &[u8; 32],
     account: AccountDetails,
-) -> impl Future<Item = (), Error = ()>
+) -> impl Future<Item = AccountId, Error = ()>
 where
     R: IntoConnectionInfo,
 {
@@ -291,7 +296,7 @@ where
                 .map_err(|_| error!("Unable to create account"))
                 .and_then(|account| {
                     debug!("Created account: {}", account.id());
-                    Ok(())
+                    Ok(account.id())
                 })
         })
 }
