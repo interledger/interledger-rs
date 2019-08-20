@@ -15,6 +15,8 @@ use tokio::runtime::Runtime;
 mod redis_helpers;
 use redis_helpers::*;
 
+mod test_helpers;
+
 #[test]
 fn btp_end_to_end() {
     let _ = env_logger::try_init();
@@ -38,9 +40,10 @@ fn btp_end_to_end() {
             join_all(vec![
                 node.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.node.one").unwrap(),
+                    username: "alice".to_string(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
-                    btp_incoming_token: Some("token-one".to_string()),
+                    btp_incoming_token: Some("alice:token-one".to_string()),
                     btp_uri: None,
                     http_endpoint: None,
                     http_incoming_token: None,
@@ -59,9 +62,10 @@ fn btp_end_to_end() {
                 }),
                 node.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.node.two").unwrap(),
+                    username: "bob".to_string(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
-                    btp_incoming_token: Some("token-two".to_string()),
+                    btp_incoming_token: Some("bob:token-two".to_string()),
                     btp_uri: None,
                     http_endpoint: None,
                     http_incoming_token: None,
@@ -84,8 +88,9 @@ fn btp_end_to_end() {
         let spsp_server_port = get_open_port(Some(3000));
         let spawn_spsp_server = move |_| {
             debug!("Spawning SPSP server");
+            let auth = format!("{}:{}", "alice", "token-one");
             let spsp_server = cli::run_spsp_server_btp(
-                &format!("btp+ws://:token-one@localhost:{}", btp_port),
+                &format!("btp+ws://:{}@localhost:{}", auth, btp_port),
                 ([127, 0, 0, 1], spsp_server_port).into(),
                 true,
             );
@@ -98,8 +103,9 @@ fn btp_end_to_end() {
             .and_then(spawn_spsp_server)
             .and_then(|_| delay(200))
             .and_then(move |_| {
+                let auth = format!("{}:{}", "bob", "token-two");
                 cli::send_spsp_payment_btp(
-                    &format!("btp+ws://:token-two@localhost:{}", btp_port),
+                    &format!("btp+ws://:{}@localhost:{}", auth, btp_port),
                     &format!("http://localhost:{}", spsp_server_port),
                     10000,
                     true,
