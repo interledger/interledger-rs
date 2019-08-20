@@ -187,7 +187,6 @@ export RUST_LOG=interledger=debug
 # Start Alice's settlement engine (ETH)
 cargo run --package interledger-settlement-engines -- ethereum-ledger \
 --key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
---server_secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 --confirmations 0 \
 --poll_frequency 1000 \
 --ethereum_endpoint http://127.0.0.1:8545 \
@@ -201,7 +200,6 @@ cargo run --package interledger-settlement-engines -- ethereum-ledger \
 # Start Bob's settlement engine (ETH, XRPL)
 cargo run --package interledger-settlement-engines -- ethereum-ledger \
 --key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
---server_secret bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
 --confirmations 0 \
 --poll_frequency 1000 \
 --ethereum_endpoint http://127.0.0.1:8545 \
@@ -292,7 +290,6 @@ wait_to_serve "http://localhost:3001"
 wait_to_serve "http://localhost:3002"
 wait_to_serve "http://localhost:3003"
 printf "\n"
-
 -->
 
 ### 6. Configure the Nodes
@@ -315,7 +312,7 @@ curl \
     "http_outgoing_token": "out_alice",
     "http_endpoint": "http://localhost:7770/ilp",
     "settle_to" : 0}' \
-    http://localhost:7770/accounts &> /dev/null
+    http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
 
 printf "Adding Charlie's Account...\n"
 curl \
@@ -330,7 +327,7 @@ curl \
     "http_outgoing_token": "out_charlie",
     "http_endpoint": "http://localhost:9770/ilp",
     "settle_to" : 0}' \
-    http://localhost:9770/accounts &> /dev/null
+    http://localhost:9770/accounts > logs/account-charlie-charlie.log 2>/dev/null
 
 printf "Adding Bob's account on Alice's node (ETH Peer relation)...\n"
 curl \
@@ -351,7 +348,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:7770/accounts &> /dev/null &
+    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
 
 printf "Adding Alice's account on Bob's node (ETH Peer relation)...\n"
 curl \
@@ -372,7 +369,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:8770/accounts &> /dev/null
+    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null
 
 printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
 curl \
@@ -393,7 +390,7 @@ curl \
     "routing_relation": "Child",
     "send_routes": false,
     "receive_routes": true}' \
-    http://localhost:8770/accounts &> /dev/null &
+    http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
 curl \
@@ -414,7 +411,7 @@ curl \
     "routing_relation": "Parent",
     "send_routes": false,
     "receive_routes": true}' \
-    http://localhost:9770/accounts &> /dev/null
+    http://localhost:9770/accounts > logs/account-charlie-bob.log 2>/dev/null
 
 sleep 2
 ```
@@ -439,40 +436,68 @@ curl http://localhost:8770/rates -X PUT \
 ### 8. Sending a Payment
 
 <!--!
+function get_account_id() {
+    ACCOUNT_ID=`cat $1 | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/dev/stdin", "utf8")).id);'`
+}
+
+get_account_id logs/account-alice-alice.log
+ACCOUNT_ID_ALICE_ALICE=${ACCOUNT_ID}
+get_account_id logs/account-alice-bob.log
+ACCOUNT_ID_ALICE_BOB=${ACCOUNT_ID}
+get_account_id logs/account-bob-alice.log
+ACCOUNT_ID_BOB_ALICE=${ACCOUNT_ID}
+get_account_id logs/account-bob-charlie.log
+ACCOUNT_ID_BOB_CHARLIE=${ACCOUNT_ID}
+get_account_id logs/account-charlie-bob.log
+ACCOUNT_ID_CHARLIE_BOB=${ACCOUNT_ID}
+get_account_id logs/account-charlie-charlie.log
+ACCOUNT_ID_CHARLIE_CHARLIE=${ACCOUNT_ID}
+
 printf "\nChecking balances...\n"
 
 printf "\nAlice's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/0/balance
+http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_ALICE}/balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/1/balance
+http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_BOB}/balance
 
 printf "\nAlice's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/0/balance
+http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance
 
 printf "\nCharlie's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/1/balance
+http://localhost:8770/accounts/${ACCOUNT_ID_BOB_CHARLIE}/balance
 
 printf "\nBob's balance on Charlie's node: "
 curl \
 -H "Authorization: Bearer hi_charlie" \
-http://localhost:9770/accounts/1/balance
+http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_BOB}/balance
 
 printf "\nCharlie's balance on Charlie's node: "
 curl \
 -H "Authorization: Bearer hi_charlie" \
-http://localhost:9770/accounts/0/balance
+http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_CHARLIE}/balance
 
 printf "\n\n"
 -->
+
+First you have to obtain account ids from the logs that were written out when you added the accounts.
+
+```bash #
+ACCOUNT_ID_ALICE_ALICE=`../../scripts/get_account_id.sh logs/account-alice-alice.log`
+ACCOUNT_ID_ALICE_BOB=`../../scripts/get_account_id.sh logs/account-alice-bob.log`
+ACCOUNT_ID_BOB_ALICE=`../../scripts/get_account_id.sh logs/account-bob-alice.log`
+ACCOUNT_ID_BOB_CHARLIE=`../../scripts/get_account_id.sh logs/account-bob-charlie.log`
+ACCOUNT_ID_CHARLIE_BOB=`../../scripts/get_account_id.sh logs/account-charlie-bob.log`
+ACCOUNT_ID_CHARLIE_CHARLIE=`../../scripts/get_account_id.sh logs/account-charlie-charlie.log`
+```
 
 The following script sends a payment from Alice to Charlie through Bob.
 
@@ -482,7 +507,7 @@ The following script sends a payment from Alice to Charlie through Bob.
 curl \
     -H "Authorization: Bearer in_alice" \
     -H "Content-Type: application/json" \
-    -d '{"receiver":"http://localhost:9770","source_amount":500}' \
+    -d "{\"receiver\":\"http://localhost:9770/spsp/${ACCOUNT_ID_CHARLIE_CHARLIE}\",\"source_amount\":500}" \
     http://localhost:7770/pay
 ```
 
@@ -496,32 +521,32 @@ You may see unsettled balances before the settlement engines exactly work. Wait 
 printf "\nAlice's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/0/balance
+http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_ALICE}/balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/1/balance
+http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_BOB}/balance
 
 printf "\nAlice's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/0/balance
+http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance
 
 printf "\nCharlie's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/1/balance
+http://localhost:8770/accounts/${ACCOUNT_ID_BOB_CHARLIE}/balance
 
 printf "\nBob's balance on Charlie's node: "
 curl \
 -H "Authorization: Bearer hi_charlie" \
-http://localhost:9770/accounts/1/balance
+http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_BOB}/balance
 
 printf "\nCharlie's balance on Charlie's node: "
 curl \
 -H "Authorization: Bearer hi_charlie" \
-http://localhost:9770/accounts/0/balance
+http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_CHARLIE}/balance
 ```
 
 <!--!
@@ -531,17 +556,17 @@ printf "\nChecking balances...\n"
 printf "\nAlice's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/0/balance
+http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_ALICE}/balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/1/balance
+http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_BOB}/balance
 
 printf "\nAlice's balance on Bob's node: "
 AB_BALANCE=`curl \
 -H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/0/balance 2>/dev/null`
+http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance 2>/dev/null`
 if [[ $AB_BALANCE =~ "-500" ]]; then
     INCOMING_NOT_SETTLED=1
     printf "\e[33m$AB_BALANCE\e[m"
@@ -552,12 +577,12 @@ fi
 printf "\nCharlie's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/1/balance
+http://localhost:8770/accounts/${ACCOUNT_ID_BOB_CHARLIE}/balance
 
 printf "\nBob's balance on Charlie's node: "
 BC_BALANCE=`curl \
 -H "Authorization: Bearer hi_charlie" \
-http://localhost:9770/accounts/1/balance 2>/dev/null`
+http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_BOB}/balance 2>/dev/null`
 if [[ $BC_BALANCE =~ "-500" ]]; then
     INCOMING_NOT_SETTLED=1
     printf "\e[33m$BC_BALANCE\e[m"
@@ -568,15 +593,15 @@ fi
 printf "\nCharlie's balance on Charlie's node: "
 curl \
 -H "Authorization: Bearer hi_charlie" \
-http://localhost:9770/accounts/0/balance
+http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_CHARLIE}/balance
 
 printf "\n"
 
 if [ $INCOMING_NOT_SETTLED -eq 1 ]; then
     printf "\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated or a ledger is validated.\n"
     printf "Try the following commands later:\n\n"
-    printf "\tcurl -H \"Authorization: Bearer hi_bob\" http://localhost:8770/accounts/0/balance\n"
-    printf "\tcurl -H \"Authorization: Bearer hi_charlie\" http://localhost:9770/accounts/1/balance\e[m\n"
+    printf "\tcurl -H \"Authorization: Bearer hi_bob\" http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance\n"
+    printf "\tcurl -H \"Authorization: Bearer hi_charlie\" http://localhost:9770/accounts/${ACCOUNT_ID_CHARLIE_BOB}/balance\e[m\n"
 fi
 -->
 
