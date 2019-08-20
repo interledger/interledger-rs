@@ -11,7 +11,6 @@ use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::str::FromStr;
 use tokio_retry::{strategy::FixedInterval, Retry};
 use tower_web::{impl_web, Response};
 use url::Url;
@@ -32,6 +31,7 @@ struct BalanceResponse {
     balance: String,
 }
 
+#[derive(Clone)]
 pub struct AccountsApi<T> {
     store: T,
     admin_api_token: String,
@@ -147,15 +147,17 @@ impl_web! {
             }
         }
 
-        #[get("/accounts/:id")]
+        #[get("/accounts/:username")]
         #[content_type("application/json")]
-        fn get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let is_admin = self.is_admin(&authorization);
-            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
-            result(parsed_id)
-                .map_err(|_| Response::error(400))
-                .and_then(move |id| {
+            store.get_account_id_from_username(username.clone())
+            .map_err(move |_| {
+                error!("Error getting account id from username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |id| {
                     if is_admin  {
                         Either::A(store.get_accounts(vec![id])
                             .map_err(move |_| {
@@ -180,63 +182,70 @@ impl_web! {
                 })
         }
 
-        #[delete("/accounts/:id")]
+        #[delete("/accounts/:username")]
         #[content_type("application/json")]
-        fn delete_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
-            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
-            self.validate_admin(authorization)
-                .and_then(move |store| match parsed_id {
-                    Ok(id) => Ok((store, id)),
-                    Err(_) => Err(Response::error(400)),
-                })
+        fn delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let store_clone = self.store.clone();
+            let self_clone = self.clone();
+            store_clone.get_account_id_from_username(username.clone())
+            .map_err(move |_| {
+                error!("Error getting account id from username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |id| {
+                self_clone.validate_admin(authorization)
+                .and_then(move |store| Ok((store, id)))
                 .and_then(move |(store, id)|
                     store.remove_account(id)
-                        .map_err(|_| Response::error(500))
+                        .map_err(move |_| Response::error(500))
                         .and_then(move |account| {
                             // TODO: deregister from SE if url is present
                             Ok(json!(account))
                         })
                 )
+            })
         }
 
         // TODO should this be combined into the account record?
-        #[get("/accounts/:id/balance")]
+        #[get("/accounts/:username/balance")]
         #[content_type("application/json")]
-        fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
+        fn get_balance(&self, username: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
             let store = self.store.clone();
             let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
-            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
-            result(parsed_id)
-                .map_err(|_| Response::error(400))
-                .and_then(move |id| {
-                    if is_admin  {
-                        Either::A(store.get_accounts(vec![id])
-                            .map_err(move |_| {
-                                debug!("Account not found: {}", id);
-                                Response::error(404)
-                            })
-                            .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
-                    } else {
-                        Either::B(store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                            .map_err(move |_| {
-                                debug!("No account found with auth: {}", authorization);
-                                Response::error(401)
-                            })
-                            .and_then(move |account| {
-                                if account.id() == id {
-                                    Ok(account)
-                                } else {
-                                    Err(Response::error(401))
-                                }
-                            }))
-                    }
-                })
-                .and_then(move |account| store_clone.get_balance(account)
-                .map_err(|_| Response::error(500)))
-                .and_then(|balance| Ok(BalanceResponse {
-                    balance: balance.to_string(),
-                }))
+            store_clone.get_account_id_from_username(username.clone())
+            .map_err(move |_| {
+                error!("Error getting account id from username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |id| {
+                if is_admin  {
+                    Either::A(store.get_accounts(vec![id])
+                        .map_err(move |_| {
+                            debug!("Account not found: {}", id);
+                            Response::error(404)
+                        })
+                        .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
+                } else {
+                    Either::B(store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
+                        .map_err(move |_| {
+                            debug!("No account found with auth: {}", authorization);
+                            Response::error(401)
+                        })
+                        .and_then(move |account| {
+                            if account.id() == id {
+                                Ok(account)
+                            } else {
+                                Err(Response::error(401))
+                            }
+                        }))
+                }
+            })
+            .and_then(move |account| store_clone.get_balance(account)
+            .map_err(|_| Response::error(500)))
+            .and_then(|balance| Ok(BalanceResponse {
+                balance: balance.to_string(),
+            }))
         }
     }
 }
