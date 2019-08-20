@@ -3,25 +3,19 @@
 
 There are some parameters which determine how your node works. You could specify these parameters by the following methods.
 
-1. By commandline arguments
-1. By environment variables
 1. By a configuration file
+1. By environment variables
 
 ```bash #
 # 1.
-# passing as a commandline argument
-# --{parameter name} {value}
-cargo run --package interledger -- node --ilp_address example.alice --other_parameter other_value
+# passing by a YAML configuration file
+cargo run --package interledger -- node --config config.yml
 
 # 2.
 # passing as an environment variable
 # {parameter name (typically in capital)}={value}
 # note that the parameter names MUST begin with a prefix of "ILP_" e.g. ILP_SECRET_SEED
 ILP_ADDRESS=example.alice OTHER_PARAMETER=other_value cargo run --package interledger -- node
-
-# 3.
-# passing by a YAML configuration file
-cargo run --package interledger -- node --config config.yml
 ```
 
 [YAML](https://yaml.org/) configuration files should be like:
