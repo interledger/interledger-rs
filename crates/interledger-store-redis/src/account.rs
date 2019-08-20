@@ -11,7 +11,7 @@ use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
-use log::error;
+use log::{debug, error};
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 
 use ring::aead;
@@ -84,14 +84,26 @@ impl Account {
         } else {
             None
         };
+
         let (btp_uri, btp_outgoing_token) = if let Some(ref url) = details.btp_uri {
             let mut btp_uri = Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?;
-            let btp_outgoing_token = btp_uri.password().map(Bytes::from);
+            let username = btp_uri.username();
+            let btp_outgoing_token = if username != "" {
+                btp_uri
+                    .password()
+                    .map(|password| Bytes::from(format!("{}:{}", username, password)))
+            } else {
+                None
+            };
+            debug!("Setting btp_outgoing_token: {:?}", btp_outgoing_token.clone());
+            btp_uri.set_username("").unwrap();
             btp_uri.set_password(None).unwrap();
             (Some(btp_uri), btp_outgoing_token)
         } else {
             (None, None)
         };
+
+        let http_outgoing_token = details.http_outgoing_token.map(Bytes::from);
         let routing_relation = if let Some(ref relation) = details.routing_relation {
             RoutingRelation::from_str(relation)?
         } else {
@@ -114,7 +126,7 @@ impl Account {
             max_packet_amount: details.max_packet_amount,
             min_balance: details.min_balance,
             http_endpoint,
-            http_outgoing_token: details.http_outgoing_token.map(Bytes::from),
+            http_outgoing_token,
             btp_uri,
             btp_outgoing_token,
             settle_threshold: details.settle_threshold,
@@ -504,10 +516,11 @@ mod redis_account {
             max_packet_amount: 1000,
             min_balance: Some(-1000),
             http_endpoint: Some("http://example.com/ilp".to_string()),
-            http_incoming_token: Some("incoming_auth_token".to_string()),
-            http_outgoing_token: Some("outgoing_auth_token".to_string()),
-            btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
-            btp_incoming_token: Some("btp_token".to_string()),
+            // we are Bob and we're using this account to peer with Alice
+            http_incoming_token: Some("alice:incoming_auth_token".to_string()),
+            http_outgoing_token: Some("bob:outgoing_auth_token".to_string()),
+            btp_uri: Some("btp+ws://bob:btp_token@example.com/btp".to_string()),
+            btp_incoming_token: Some("alice:btp_token".to_string()),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
             send_routes: true,
@@ -527,9 +540,16 @@ mod redis_account {
         assert_eq!(account.id(), id);
         assert_eq!(
             account.get_http_auth_token().unwrap(),
-            "outgoing_auth_token"
+            format!("{}:outgoing_auth_token", "bob"),
         );
-        assert_eq!(account.get_btp_token().unwrap(), b"btp_token");
+        assert_eq!(
+            account.get_btp_token().unwrap(),
+            format!("{}:btp_token", "bob").as_bytes(),
+        );
+        assert_eq!(
+            account.get_btp_uri().unwrap().to_string(),
+            format!("btp+ws://example.com/btp"),
+        );
         assert_eq!(account.routing_relation(), RoutingRelation::Peer);
     }
 }
