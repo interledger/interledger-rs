@@ -309,6 +309,7 @@ pub fn main() {
                             &value_t!(matches, "ilp_address", String).unwrap(),
                         )
                         .unwrap(),
+                        username: value_t!(matches, "username", String).unwrap(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),
                         asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
                         btp_incoming_token: matches

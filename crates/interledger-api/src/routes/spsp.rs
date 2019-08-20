@@ -1,7 +1,7 @@
 use crate::BEARER_TOKEN_START;
 use bytes::Bytes;
 use futures::{
-    future::{err, result, Either},
+    future::{err, Either},
     Future,
 };
 use hyper::{Body, Response};
@@ -11,7 +11,6 @@ use interledger_service::{AccountStore, IncomingService};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use tower_web::{impl_web, Extract, Response};
 
 #[derive(Extract, Debug)]
@@ -84,14 +83,16 @@ impl_web! {
                 })
         }
 
-        #[get("/spsp/:id")]
-        fn get_spsp(&self, id: String) -> impl Future<Item = Response<Body>, Error = Response<()>> {
+        #[get("/spsp/:username")]
+        fn get_spsp(&self, username: String) -> impl Future<Item = Response<Body>, Error = Response<()>> {
             let server_secret = self.server_secret.clone();
             let store = self.store.clone();
-            let id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id: {}", id));
-            result(id)
-                .map_err(|_| Response::builder().status(400).body(()).unwrap())
-                .and_then(move |id| store.get_accounts(vec![id])
+            store.get_account_id_from_username(username.clone())
+            .map_err(move |_| {
+                error!("Error getting account id from username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |id| store.get_accounts(vec![id])
                 .map_err(move |_| {
                     error!("Account not found: {}", id);
                     Response::builder().status(404).body(()).unwrap()
