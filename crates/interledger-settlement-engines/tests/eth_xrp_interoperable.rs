@@ -17,7 +17,7 @@ use redis_helpers::*;
 mod test_helpers;
 use test_helpers::{
     accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
-    start_eth_engine, start_ganache, start_xrp_engine,
+    send_money_to_username, start_eth_engine, start_ganache, start_xrp_engine,
 };
 
 #[test]
@@ -113,13 +113,14 @@ fn eth_xrp_interoperable() {
             node1_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.alice").unwrap(),
+                    username: "alice".to_string(),
                     asset_code: "ETH".to_string(),
                     asset_scale: eth_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
-                    http_incoming_token: Some("in_alice".to_string()),
-                    http_outgoing_token: Some("out_alice".to_string()),
+                    http_incoming_token: Some("alice:in_alice".to_string()),
+                    http_outgoing_token: None,
                     max_packet_amount: u64::max_value(),
                     min_balance: None,
                     settle_threshold: None,
@@ -137,13 +138,14 @@ fn eth_xrp_interoperable() {
             node1_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
+                    username: "bob".to_string(),
                     asset_code: "ETH".to_string(),
                     asset_scale: eth_decimals,
                     btp_incoming_token: None,
                     btp_uri: None,
                     http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                    http_incoming_token: Some("bob".to_string()),
-                    http_outgoing_token: Some("alice".to_string()),
+                    http_incoming_token: Some("bob:alice".to_string()),
+                    http_outgoing_token: Some("alice:bob".to_string()),
                     max_packet_amount: u64::max_value(),
                     min_balance: Some(-100_000),
                     settle_threshold: Some(70000),
@@ -178,13 +180,14 @@ fn eth_xrp_interoperable() {
                 node2_clone
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
+                        username: "alice".to_string(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
-                        http_incoming_token: Some("alice".to_string()),
-                        http_outgoing_token: Some("bob".to_string()),
+                        http_incoming_token: Some("alice:bob".to_string()),
+                        http_outgoing_token: Some("bob:alice".to_string()),
                         max_packet_amount: u64::max_value(),
                         min_balance: Some(-100_000),
                         settle_threshold: None,
@@ -200,13 +203,14 @@ fn eth_xrp_interoperable() {
                     .and_then(move |_| {
                         node2_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob.charlie").unwrap(),
+                            username: "charlie".to_string(),
                             asset_code: "XRP".to_string(),
                             asset_scale: xrp_decimals,
                             btp_incoming_token: None,
                             btp_uri: None,
                             http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
-                            http_incoming_token: Some("charlie".to_string()),
-                            http_outgoing_token: Some("bob".to_string()),
+                            http_incoming_token: Some("charlie:bob".to_string()),
+                            http_outgoing_token: Some("bob:charlie".to_string()),
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100),
                             settle_threshold: Some(70000),
@@ -262,13 +266,14 @@ fn eth_xrp_interoperable() {
                 node3_clone
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob.charlie").unwrap(),
+                        username: "charlie".to_string(),
                         asset_code: "XRP".to_string(),
                         asset_scale: xrp_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
-                        http_incoming_token: Some("in_charlie".to_string()),
-                        http_outgoing_token: Some("out_charlie".to_string()),
+                        http_incoming_token: Some("charlie:in_charlie".to_string()),
+                        http_outgoing_token: None,
                         max_packet_amount: u64::max_value(),
                         min_balance: None,
                         settle_threshold: None,
@@ -284,13 +289,14 @@ fn eth_xrp_interoperable() {
                     .and_then(move |_| {
                         node3_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
+                            username: "bob".to_string(),
                             asset_code: "XRP".to_string(),
                             asset_scale: xrp_decimals,
                             btp_incoming_token: None,
                             btp_uri: None,
                             http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                            http_incoming_token: Some("bob".to_string()),
-                            http_outgoing_token: Some("charlie".to_string()),
+                            http_incoming_token: Some("bob:charlie".to_string()),
+                            http_outgoing_token: Some("charlie:bob".to_string()),
                             max_packet_amount: u64::max_value(),
                             min_balance: Some(-100_000),
                             settle_threshold: None,
@@ -330,13 +336,9 @@ fn eth_xrp_interoperable() {
                         let node2_ids = ids[1].clone();
                         let node3_ids = ids[2].clone();
 
-                        let alice_on_alice = node1_ids.get(&alice_addr).unwrap().to_owned();
                         let bob_on_alice = node1_ids.get(&bob_addr).unwrap().to_owned();
-
                         let alice_on_bob = node2_ids.get(&alice_addr).unwrap().to_owned();
                         let charlie_on_bob = node2_ids.get(&charlie_addr).unwrap().to_owned();
-
-                        let charlie_on_charlie = node3_ids.get(&charlie_addr).unwrap().to_owned();
                         let bob_on_charlie = node3_ids.get(&bob_addr).unwrap().to_owned();
 
                         // Insert accounts for the 3 nodes (4 total since node2 has
@@ -351,35 +353,27 @@ fn eth_xrp_interoperable() {
                             })
                             // Pay 69k Gwei --> 69 drops
                             .and_then(move |_| {
-                                send_money_to_id(
-                                    node1_http,
-                                    node3_http,
-                                    69000,
-                                    charlie_on_charlie,
-                                    "in_alice",
+                                send_money_to_username(
+                                    node1_http, node3_http, 69000, "charlie", "alice", "in_alice",
                                 )
                             })
                             // Pay 1k Gwei --> 1 drop
                             // This will trigger a 60 Gwei settlement from Alice to Bob.
                             .and_then(move |_| {
-                                send_money_to_id(
-                                    node1_http,
-                                    node3_http,
-                                    1000,
-                                    charlie_on_charlie,
-                                    "in_alice",
+                                send_money_to_username(
+                                    node1_http, node3_http, 1000, "charlie", "alice", "in_alice",
                                 )
                             })
                             .and_then(move |_| {
                                 // wait for the settlements
                                 delay(10000).map_err(|err| panic!(err)).and_then(move |_| {
                                     futures::future::join_all(vec![
-                                        get_balance(alice_on_alice, node1_http, "admin"),
-                                        get_balance(bob_on_alice, node1_http, "admin"),
-                                        get_balance(alice_on_bob, node2_http, "admin"),
-                                        get_balance(charlie_on_bob, node2_http, "admin"),
-                                        get_balance(charlie_on_charlie, node3_http, "admin"),
-                                        get_balance(bob_on_charlie, node3_http, "admin"),
+                                        get_balance("alice", node1_http, "in_alice"),
+                                        get_balance("bob", node1_http, "alice"),
+                                        get_balance("alice", node2_http, "bob"),
+                                        get_balance("charlie", node2_http, "bob"),
+                                        get_balance("charlie", node3_http, "in_charlie"),
+                                        get_balance("bob", node3_http, "charlie"),
                                     ])
                                     .and_then(
                                         move |balances| {

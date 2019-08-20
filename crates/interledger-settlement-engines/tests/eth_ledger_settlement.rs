@@ -1,6 +1,7 @@
 #![recursion_limit = "128"]
 
 use env_logger;
+use futures::future::join_all;
 use futures::Future;
 use interledger::{
     cli,
@@ -18,7 +19,7 @@ use redis_helpers::*;
 mod test_helpers;
 use test_helpers::{
     accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
-    start_eth_engine, start_ganache,
+    send_money_to_username, start_eth_engine, start_ganache,
 };
 
 #[test]
@@ -77,13 +78,14 @@ fn eth_ledger_settlement() {
                 node1_clone
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
+                        username: "alice".to_string(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: None,
-                        http_incoming_token: Some("in_alice".to_string()),
-                        http_outgoing_token: Some("out_alice".to_string()),
+                        http_incoming_token: Some("alice:in_alice".to_string()),
+                        http_outgoing_token: None,
                         max_packet_amount: 10,
                         min_balance: None,
                         settle_threshold: None,
@@ -99,13 +101,14 @@ fn eth_ledger_settlement() {
                     .and_then(move |_| {
                         node1_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
+                            username: "bob".to_string(),
                             asset_code: "ETH".to_string(),
                             asset_scale: eth_decimals,
                             btp_incoming_token: None,
                             btp_uri: None,
                             http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                            http_incoming_token: Some("bob".to_string()),
-                            http_outgoing_token: Some("alice".to_string()),
+                            http_incoming_token: Some("bob:alice".to_string()),
+                            http_outgoing_token: Some("alice:bob".to_string()),
                             max_packet_amount: 10,
                             min_balance: Some(-100),
                             settle_threshold: Some(70),
@@ -145,13 +148,14 @@ fn eth_ledger_settlement() {
                 node2
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob").unwrap(),
+                        username: "bob".to_string(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
                         http_endpoint: None,
-                        http_incoming_token: Some("in_bob".to_string()),
-                        http_outgoing_token: Some("out_bob".to_string()),
+                        http_incoming_token: Some("bob:in_bob".to_string()),
+                        http_outgoing_token: None,
                         max_packet_amount: 10,
                         min_balance: None,
                         settle_threshold: None,
@@ -168,13 +172,14 @@ fn eth_ledger_settlement() {
                         node2
                             .insert_account(AccountDetails {
                                 ilp_address: Address::from_str("example.alice").unwrap(),
+                                username: "alice".to_string(),
                                 asset_code: "ETH".to_string(),
                                 asset_scale: eth_decimals,
                                 btp_incoming_token: None,
                                 btp_uri: None,
                                 http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
-                                http_incoming_token: Some("alice".to_string()),
-                                http_outgoing_token: Some("bob".to_string()),
+                                http_incoming_token: Some("alice:bob".to_string()),
+                                http_outgoing_token: Some("bob:alice".to_string()),
                                 max_packet_amount: 10,
                                 min_balance: Some(-100),
                                 settle_threshold: Some(70),
@@ -199,7 +204,7 @@ fn eth_ledger_settlement() {
     runtime
         .block_on(
             // Wait for the nodes to spin up
-            delay(500)
+            delay(1000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     // The 2 nodes are peered, we make a POST to the engine's
@@ -209,7 +214,7 @@ fn eth_ledger_settlement() {
                     let bob_addr = Address::from_str("example.bob").unwrap();
                     let bob_addr2 = bob_addr.clone();
                     let alice_addr = Address::from_str("example.alice").unwrap();
-                    futures::future::join_all(vec![
+                    join_all(vec![
                         get_all_accounts(node1_http, "hi_alice").map(accounts_to_ids),
                         get_all_accounts(node2_http, "admin").map(accounts_to_ids),
                     ])
@@ -228,46 +233,48 @@ fn eth_ledger_settlement() {
                         // directly)
                         // Alice must know Bob's id in the store... this does not
                         // make much sense.
-                        let send1 =
-                            send_money_to_id(node1_http, node2_http, 10, bob_at_bob, "in_alice");
-                        let send2 =
-                            send_money_to_id(node1_http, node2_http, 20, bob_at_bob, "in_alice");
-                        let send3 =
-                            send_money_to_id(node1_http, node2_http, 39, bob_at_bob, "in_alice");
-                        let send4 =
-                            send_money_to_id(node1_http, node2_http, 1, bob_at_bob, "in_alice");
+                        let send1 = send_money_to_username(
+                            node1_http, node2_http, 10, "bob", "alice", "in_alice",
+                        );
+                        let send2 = send_money_to_username(
+                            node1_http, node2_http, 20, "bob", "alice", "in_alice",
+                        );
+                        let send3 = send_money_to_username(
+                            node1_http, node2_http, 39, "bob", "alice", "in_alice",
+                        );
+                        let send4 = send_money_to_username(
+                            node1_http, node2_http, 1, "bob", "alice", "in_alice",
+                        );
+
+                        let get_balances = move || {
+                            join_all(vec![
+                                get_balance("bob", node1_http, "alice"),
+                                get_balance("alice", node2_http, "bob"),
+                            ])
+                        };
 
                         create1
                             .and_then(move |_| create2)
                             .and_then(move |_| send1)
-                            .and_then(move |_| {
-                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
-                                    assert_eq!(ret, 10);
-                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
-                                        assert_eq!(ret, -10);
-                                        Ok(())
-                                    })
-                                })
+                            .and_then(move |_| get_balances())
+                            .and_then(move |ret| {
+                                assert_eq!(ret[0], 10);
+                                assert_eq!(ret[1], -10);
+                                Ok(())
                             })
                             .and_then(move |_| send2)
-                            .and_then(move |_| {
-                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
-                                    assert_eq!(ret, 30);
-                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
-                                        assert_eq!(ret, -30);
-                                        Ok(())
-                                    })
-                                })
+                            .and_then(move |_| get_balances())
+                            .and_then(move |ret| {
+                                assert_eq!(ret[0], 30);
+                                assert_eq!(ret[1], -30);
+                                Ok(())
                             })
                             .and_then(move |_| send3)
-                            .and_then(move |_| {
-                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
-                                    assert_eq!(ret, 69);
-                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
-                                        assert_eq!(ret, -69);
-                                        Ok(())
-                                    })
-                                })
+                            .and_then(move |_| get_balances())
+                            .and_then(move |ret| {
+                                assert_eq!(ret[0], 69);
+                                assert_eq!(ret[1], -69);
+                                Ok(())
                             })
                             // Up to here, Alice's balance should be -69 and Bob's
                             // balance should be 69. Once we make 1 more payment, we
@@ -279,13 +286,11 @@ fn eth_ledger_settlement() {
                                 sleep(Duration::from_secs(5));
                                 // Since the credit connection reached -70, and the
                                 // settle_to is -10, a 60 Wei transaction is made.
-                                get_balance(bob, node1_http, "bob").and_then(move |ret| {
-                                    assert_eq!(ret, 10);
-                                    get_balance(alice, node2_http, "alice").and_then(move |ret| {
-                                        assert_eq!(ret, -10);
-                                        ganache_pid.kill().unwrap();
-                                        Ok(())
-                                    })
+                                get_balances().and_then(move |ret| {
+                                    assert_eq!(ret[0], 10);
+                                    assert_eq!(ret[1], -10);
+                                    ganache_pid.kill().unwrap();
+                                    Ok(())
                                 })
                             })
                     })
