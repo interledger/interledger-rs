@@ -55,6 +55,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 #[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
     pub ilp_address: Address,
+    pub username: String,
     pub asset_code: String,
     pub asset_scale: u8,
     #[serde(default = "u64::max_value")]

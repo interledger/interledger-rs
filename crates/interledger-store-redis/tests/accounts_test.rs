@@ -63,6 +63,19 @@ fn starts_with_zero_balance() {
 }
 
 #[test]
+fn fetches_account_from_username() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        store.get_account_id_from_username("alice".to_string())
+        .and_then(move |account_id| {
+            assert_eq!(account_id, accs[0].id());
+            let _ = context;
+            Ok(())
+        })
+    }))
+    .unwrap();
+}
+
+#[test]
 fn fails_on_duplicate_http_incoming_auth() {
     let mut account = ACCOUNT_DETAILS_2.clone();
     account.http_incoming_token = Some("incoming_auth_token".to_string());

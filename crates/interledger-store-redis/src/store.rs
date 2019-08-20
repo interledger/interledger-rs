@@ -352,6 +352,9 @@ impl RedisStore {
                     // Add the account key to the list of accounts
                     pipe.sadd("accounts", id).ignore();
 
+                    // Save map for Username -> Account ID
+                    pipe.set(format!("username:{}", account.username), id).ignore();
+
                     // Set account details
                     pipe.cmd("HMSET").arg(account_details_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
@@ -412,6 +415,7 @@ impl RedisStore {
                     pipe.srem("accounts", account.id).ignore();
 
                     pipe.del(account_details_key(account.id));
+                    pipe.del(format!("username:{}", account.id)).ignore();
 
                     if account.send_routes {
                         pipe.srem("send_routes_to", account.id).ignore();
@@ -485,6 +489,25 @@ impl AccountStore for RedisStore {
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         self.retrieve_accounts(account_ids)
+    }
+
+    fn get_account_id_from_username(
+        &self,
+        username: String,
+    ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+        Box::new(
+        cmd("GET")
+            .arg(format!("username:{}", username))
+            .query_async(self.connection.as_ref().clone())
+            .map_err(move |err| {
+                error!(
+                    "Error getting account id for username: {} {:?}",
+                    username, err
+                )
+            })
+            .and_then(|(_connection, id): (_, AccountId)| {
+                Ok(id)
+            }))
     }
 }
 

@@ -48,6 +48,9 @@ pub trait Account: Clone + Send + Sized + Debug {
     type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy + Serialize;
 
     fn id(&self) -> Self::AccountId;
+    fn username(&self) -> &str {
+        "alice"
+    }
 }
 
 /// A struct representing an incoming ILP Prepare packet or an outgoing one before the next hop is set.
@@ -106,6 +109,13 @@ pub trait AccountStore {
         &self,
         account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+
+    fn get_account_id_from_username(
+      &self,
+      username: String,
+    ) -> Box<dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()> + Send>;
+
+
 }
 
 /// Create an IncomingService that calls the given handler for each request.

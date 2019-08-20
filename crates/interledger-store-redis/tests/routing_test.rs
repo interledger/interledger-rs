@@ -38,6 +38,7 @@ fn polls_for_route_updates() {
                         store_clone_1
                             .insert_account(AccountDetails {
                                 ilp_address: Address::from_str("example.bob").unwrap(),
+                                username: "bob".to_string(),
                                 asset_scale: 6,
                                 asset_code: "XYZ".to_string(),
                                 max_packet_amount: 1000,

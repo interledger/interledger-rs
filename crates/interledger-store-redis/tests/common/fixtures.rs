@@ -6,6 +6,7 @@ use std::str::FromStr;
 lazy_static! {
     pub static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.alice").unwrap(),
+        username: "alice".to_string(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
@@ -27,6 +28,7 @@ lazy_static! {
     };
     pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.bob").unwrap(),
+        username: "bob".to_string(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
@@ -48,6 +50,7 @@ lazy_static! {
     };
     pub static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.charlie").unwrap(),
+        username: "charlie".to_string(),
         asset_scale: 9,
         asset_code: "XRP".to_string(),
         max_packet_amount: 1000,
