@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use std::str::FromStr;
 
 lazy_static! {
+    // We are dylan starting a connection with all these accounts
     pub static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.alice").unwrap(),
         username: "alice".to_string(),
@@ -12,10 +13,10 @@ lazy_static! {
         max_packet_amount: 1000,
         min_balance: Some(-1000),
         http_endpoint: Some("http://example.com/ilp".to_string()),
-        http_incoming_token: Some("incoming_auth_token".to_string()),
-        http_outgoing_token: Some("outgoing_auth_token".to_string()),
-        btp_uri: Some("btp+ws://:btp_token@example.com/btp".to_string()),
-        btp_incoming_token: Some("btp_token".to_string()),
+        http_incoming_token: Some("alice:incoming_auth_token".to_string()),
+        http_outgoing_token: Some("dylan:outgoing_auth_token".to_string()),
+        btp_uri: Some("btp+ws://dylan:btp_token@example.com/btp".to_string()),
+        btp_incoming_token: Some("alice:btp_token".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
         send_routes: false,
@@ -34,10 +35,11 @@ lazy_static! {
         max_packet_amount: 1_000_000,
         min_balance: Some(0),
         http_endpoint: Some("http://example.com/ilp".to_string()),
-        http_incoming_token: Some("QWxhZGRpbjpPcGVuU2VzYW1l".to_string()),
-        http_outgoing_token: Some("outgoing_auth_token".to_string()),
-        btp_uri: Some("btp+ws://:other_outgoing_btp_token@example.com/btp".to_string()),
-        btp_incoming_token: Some("other_btp_token".to_string()),
+        // incoming token has is the account's username concatenated wiht the password
+        http_incoming_token: Some("bob:incoming_auth_token".to_string()),
+        http_outgoing_token: Some("dylan:outgoing_auth_token".to_string()),
+        btp_uri: Some("btp+ws://dylan:btp_token@example.com/btp".to_string()),
+        btp_incoming_token: Some("bob:other_btp_token".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
         send_routes: true,

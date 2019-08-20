@@ -766,7 +766,6 @@ impl HttpStore for RedisStore {
         &self,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-        debug!("GOT HTTP TOKEN {:?}", token);
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
         let hmac_token = hmac::sign(&self.hmac_key, token.as_bytes());
