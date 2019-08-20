@@ -520,7 +520,7 @@ mod redis_account {
             min_balance: Some(-1000),
             http_endpoint: Some("http://example.com/ilp".to_string()),
             // we are Bob and we're using this account to peer with Alice
-            http_incoming_token: Some("alice:incoming_auth_token".to_string()),
+            http_incoming_token: Some("incoming_auth_token".to_string()),
             http_outgoing_token: Some("bob:outgoing_auth_token".to_string()),
             btp_uri: Some("btp+ws://bob:btp_token@example.com/btp".to_string()),
             btp_incoming_token: Some("alice:btp_token".to_string()),

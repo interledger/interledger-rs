@@ -80,7 +80,10 @@ impl_web! {
         #[content_type("application/json")]
         fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
-            // TODO try connecting to that account's websocket server if it has a btp_uri
+            // TODO try connecting to that account's websocket server if it has
+            // a btp_uri
+            // TODO: Add the node's username as a parameter, which removes the
+            // need to prepend it to the outgoing token ids when creating accounts
             let se_url = body.settlement_engine_url.clone();
             self.validate_admin(authorization)
                 .and_then(move |store| store.insert_account(body)

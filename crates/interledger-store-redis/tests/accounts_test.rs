@@ -80,7 +80,7 @@ fn fetches_account_from_username() {
 fn duplicate_http_incoming_auth_works() {
     let mut duplicate = ACCOUNT_DETAILS_2.clone();
     let token = "incoming_auth_token".to_string();
-    duplicate.http_incoming_token = Some(format!("charlie:{}", token.clone()));
+    duplicate.http_incoming_token = Some(token.clone());
     let alice_auth = format!("{}:{}", "alice", token);
     let charlie_auth = format!("{}:{}", "charlie", token);
     block_on(test_store().and_then(|(store, context, accs)| {
@@ -145,7 +145,7 @@ fn duplicate_btp_incoming_auth_works() {
     let alice_auth = format!("{}:{}", "alice", token);
     let charlie_auth = format!("{}:{}", "charlie", token);
     let mut charlie = ACCOUNT_DETAILS_2.clone();
-    charlie.btp_incoming_token = Some("charlie:btp_token".to_string());
+    charlie.btp_incoming_token = Some("btp_token".to_string());
     block_on(test_store().and_then(|(store, context, accs)| {
         let alice = accs[0].clone();
         let alice_id = alice.id();

@@ -304,15 +304,17 @@ impl RedisStore {
         // account holder over the wire)
         let btp_incoming = account.btp_incoming_token.clone();
         let http_incoming = account.http_incoming_token.clone();
+        let username = account.username.clone();
         let btp_incoming_token_hmac = account
             .btp_incoming_token
             .clone()
-            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
+            .map(|token| hmac::sign(&self.hmac_key, format!("{}:{}", username, token).as_bytes()));
         let btp_incoming_token_hmac_clone = btp_incoming_token_hmac;
+        let username = account.username.clone();
         let http_incoming_token_hmac = account
             .http_incoming_token
             .clone()
-            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
+            .map(|token| hmac::sign(&self.hmac_key, format!("{}:{}", username, token).as_bytes()));
         let http_incoming_token_hmac_clone = http_incoming_token_hmac;
 
         let id = AccountId::new();
