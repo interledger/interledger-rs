@@ -148,6 +148,10 @@ mod tests {
         fn id(&self) -> u64 {
             self.0
         }
+
+        fn username(&self) -> &str {
+            "alice"
+        }
     }
 
     #[derive(Clone)]

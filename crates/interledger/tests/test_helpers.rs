@@ -40,7 +40,7 @@ pub fn create_account_on_engine<T: Serialize>(
 }
 
 #[allow(unused)]
-pub fn send_money_to_id<T: Display + Debug>(
+pub fn send_money_to_username<T: Display + Debug>(
     from_port: u16,
     to_port: u16,
     amount: u64,

@@ -228,6 +228,10 @@ mod echo_tests {
         fn id(&self) -> u64 {
             self.0
         }
+
+        fn username(&self) -> &str {
+            "alice"
+        }
     }
 
     /// If the destination of the packet is not destined to the node's address,

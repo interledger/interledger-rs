@@ -258,7 +258,7 @@ fn three_nodes() {
             delay(500)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
-                    let send_1_to_3 = send_money_to_id(
+                    let send_1_to_3 = send_money_to_username(
                         node1_http,
                         node3_http,
                         1000,
@@ -266,7 +266,7 @@ fn three_nodes() {
                         "alice",
                         "default account holder",
                     );
-                    let send_3_to_1 = send_money_to_id(
+                    let send_3_to_1 = send_money_to_username(
                         node3_http,
                         node1_http,
                         1000,
@@ -275,9 +275,13 @@ fn three_nodes() {
                         "default account holder",
                     );
 
-                    let balance_1 = move || get_balance("alice", node1_http, "admin");
-                    let balance_2 = move || get_balance("charlie", node2_http, "admin");
-                    let balance_3 = move || get_balance("charlie", node3_http, "admin");
+                    let get_balances = move || {
+                        futures::future::join_all(vec![
+                            get_balance("alice", node1_http, "admin"),
+                            get_balance("charlie", node2_http, "admin"),
+                            get_balance("charlie", node3_http, "admin"),
+                        ])
+                    };
 
                     // // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
                     // // while Node 3's scale is 6. This means that Node 3 will
@@ -289,27 +293,12 @@ fn three_nodes() {
                             err
                         })
                         .and_then(move |_| {
-                            balance_1()
-                                .and_then(move |ret| {
-                                    assert_eq!(ret, -1000);
-                                    Ok(())
-                                })
-                                .and_then(move |_| {
-                                    // Node 2 updates Node 3's balance
-                                    // properly.
-                                    balance_2().and_then(move |ret| {
-                                        assert_eq!(ret, 2);
-                                        Ok(())
-                                    })
-                                })
-                                .and_then(move |_| {
-                                    // Node 3's balance is properly adjusted after
-                                    // it's received the message from node 2
-                                    balance_3().and_then(move |ret| {
-                                        assert_eq!(ret, 2);
-                                        Ok(())
-                                    })
-                                })
+                            get_balances().and_then(move |ret| {
+                                assert_eq!(ret[0], -1000);
+                                assert_eq!(ret[1], 2);
+                                assert_eq!(ret[2], 2);
+                                Ok(())
+                            })
                         })
                         .and_then(move |_| {
                             send_3_to_1.map_err(|err| {
@@ -318,27 +307,12 @@ fn three_nodes() {
                             })
                         })
                         .and_then(move |_| {
-                            balance_1()
-                                .and_then(move |ret| {
-                                    assert_eq!(ret, 499_000);
-                                    Ok(())
-                                })
-                                .and_then(move |_| {
-                                    // Node 2 updates Node 3's balance
-                                    // properly.
-                                    balance_2().and_then(move |ret| {
-                                        assert_eq!(ret, -998);
-                                        Ok(())
-                                    })
-                                })
-                                .and_then(move |_| {
-                                    // Node 3's balance is properly adjusted after
-                                    // it's received the message from node 2
-                                    balance_3().and_then(move |ret| {
-                                        assert_eq!(ret, -998);
-                                        Ok(())
-                                    })
-                                })
+                            get_balances().and_then(move |ret| {
+                                assert_eq!(ret[0], 499_000);
+                                assert_eq!(ret[1], -998);
+                                assert_eq!(ret[2], -998);
+                                Ok(())
+                            })
                         })
                 }),
         )

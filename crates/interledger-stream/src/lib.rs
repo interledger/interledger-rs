@@ -47,6 +47,10 @@ pub mod test_helpers {
         fn id(&self) -> u64 {
             self.id
         }
+
+        fn username(&self) -> &str {
+            "alice"
+        }
     }
 
     impl IldcpAccount for TestAccount {

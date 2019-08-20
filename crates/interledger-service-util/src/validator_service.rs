@@ -168,6 +168,10 @@ impl Account for TestAccount {
     fn id(&self) -> u64 {
         self.0
     }
+
+    fn username(&self) -> &str {
+        "alice"
+    }
 }
 
 #[cfg(test)]

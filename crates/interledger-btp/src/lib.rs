@@ -93,6 +93,10 @@ mod client_server {
         fn id(&self) -> u64 {
             self.id
         }
+
+        fn username(&self) -> &str {
+            "alice"
+        }
     }
 
     impl BtpAccount for TestAccount {

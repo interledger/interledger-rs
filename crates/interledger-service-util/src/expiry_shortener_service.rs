@@ -90,6 +90,10 @@ mod tests {
         fn id(&self) -> u64 {
             self.0
         }
+
+        fn username(&self) -> &str {
+            "alice"
+        }
     }
 
     impl RoundTripTimeAccount for TestAccount {

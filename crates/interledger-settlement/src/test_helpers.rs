@@ -35,6 +35,10 @@ impl Account for TestAccount {
     fn id(&self) -> u64 {
         self.id
     }
+
+    fn username(&self) -> &str {
+        "alice"
+    }
 }
 impl SettlementAccount for TestAccount {
     fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {

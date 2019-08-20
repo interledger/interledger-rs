@@ -144,6 +144,10 @@ impl AccountTrait for Account {
     fn id(&self) -> Self::AccountId {
         self.inner.id
     }
+
+    fn username(&self) -> &str {
+        "alice"
+    }
 }
 
 impl IldcpAccount for Account {

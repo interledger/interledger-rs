@@ -248,6 +248,10 @@ mod tests {
         fn id(&self) -> u64 {
             0
         }
+
+        fn username(&self) -> &str {
+            "alice"
+        }
     }
 
     impl IldcpAccount for TestAccount {
