@@ -5,7 +5,6 @@ use interledger_btp::BtpAccount;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
-use interledger_service::Account;
 use std::str::FromStr;
 
 #[test]
@@ -36,7 +35,7 @@ fn gets_account_from_http_bearer_token() {
 
 #[test]
 fn decrypts_outgoing_tokens_http() {
-    block_on(test_store().and_then(|(store, context, accs)| {
+    block_on(test_store().and_then(|(store, context, _accs)| {
         store
             .get_account_from_http_token(&format!("{}:{}", "alice", "incoming_auth_token"))
             .and_then(move |account| {

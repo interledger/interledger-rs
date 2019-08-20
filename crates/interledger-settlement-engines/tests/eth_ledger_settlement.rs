@@ -9,8 +9,6 @@ use interledger::{
 };
 use interledger_packet::Address;
 use std::str::FromStr;
-use std::thread::sleep;
-use std::time::Duration;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
@@ -18,7 +16,7 @@ use redis_helpers::*;
 
 mod test_helpers;
 use test_helpers::{
-    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
     send_money_to_username, start_eth_engine, start_ganache,
 };
 
@@ -224,15 +222,12 @@ fn eth_ledger_settlement() {
 
                         let bob = node1_ids.get(&bob_addr2).unwrap().to_owned();
                         let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
-                        let bob_at_bob = node2_ids.get(&bob_addr).unwrap().to_owned();
 
                         let create1 = create_account_on_engine(node1_engine, bob);
                         let create2 = create_account_on_engine(node2_engine, alice);
 
                         // Make 4 subsequent payments (we could also do a 71 payment
                         // directly)
-                        // Alice must know Bob's id in the store... this does not
-                        // make much sense.
                         let send1 = send_money_to_username(
                             node1_http, node2_http, 10, "bob", "alice", "in_alice",
                         );
@@ -283,15 +278,18 @@ fn eth_ledger_settlement() {
                             .and_then(move |_| {
                                 // Wait a few seconds so that the receiver's engine
                                 // gets the data
-                                sleep(Duration::from_secs(5));
-                                // Since the credit connection reached -70, and the
-                                // settle_to is -10, a 60 Wei transaction is made.
-                                get_balances().and_then(move |ret| {
-                                    assert_eq!(ret[0], 10);
-                                    assert_eq!(ret[1], -10);
-                                    ganache_pid.kill().unwrap();
-                                    Ok(())
-                                })
+                                delay(5000)
+                                    .map_err(move |_| panic!("Weird error."))
+                                    .and_then(move |_| {
+                                        // Since the credit connection reached -70, and the
+                                        // settle_to is -10, a 60 Wei transaction is made.
+                                        get_balances().and_then(move |ret| {
+                                            assert_eq!(ret[0], 10);
+                                            assert_eq!(ret[1], -10);
+                                            ganache_pid.kill().unwrap();
+                                            Ok(())
+                                        })
+                                    })
                             })
                     })
                 }),

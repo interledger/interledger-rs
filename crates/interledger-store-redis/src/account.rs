@@ -95,7 +95,10 @@ impl Account {
             } else {
                 None
             };
-            debug!("Setting btp_outgoing_token: {:?}", btp_outgoing_token.clone());
+            debug!(
+                "Setting btp_outgoing_token: {:?}",
+                btp_outgoing_token.clone()
+            );
             btp_uri.set_username("").unwrap();
             btp_uri.set_password(None).unwrap();
             (Some(btp_uri), btp_outgoing_token)
@@ -548,7 +551,7 @@ mod redis_account {
         );
         assert_eq!(
             account.get_btp_uri().unwrap().to_string(),
-            format!("btp+ws://example.com/btp"),
+            "btp+ws://example.com/btp",
         );
         assert_eq!(account.routing_relation(), RoutingRelation::Peer);
     }

@@ -750,8 +750,7 @@ impl BtpStore for RedisStore {
 }
 
 fn unpack_token(token: &str) -> (String, String) {
-    let ret = token.clone();
-    let ret = ret.split(':').collect::<Vec<_>>();
+    let ret = token.split(':').collect::<Vec<_>>();
     (ret[0].to_owned(), ret[1].to_owned())
 }
 

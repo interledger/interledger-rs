@@ -16,7 +16,7 @@ use redis_helpers::*;
 
 mod test_helpers;
 use test_helpers::{
-    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, send_money_to_id,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
     send_money_to_username, start_eth_engine, start_ganache, start_xrp_engine,
 };
 

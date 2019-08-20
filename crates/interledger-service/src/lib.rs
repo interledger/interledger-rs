@@ -111,11 +111,12 @@ pub trait AccountStore {
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
     fn get_account_id_from_username(
-      &self,
-      username: String,
-    ) -> Box<dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()> + Send>;
-
-
+        &self,
+        username: String,
+    ) -> Box<
+        dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()>
+            + Send,
+    >;
 }
 
 /// Create an IncomingService that calls the given handler for each request.

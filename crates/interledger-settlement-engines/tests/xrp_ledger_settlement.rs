@@ -225,7 +225,6 @@ fn xrp_ledger_settlement() {
 
                         let bob = node1_ids.get(&bob_addr2).unwrap().to_owned();
                         let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
-                        let bob_at_bob = node2_ids.get(&bob_addr).unwrap().to_owned();
 
                         let create1 = create_account_on_engine(node1_engine, bob);
                         let create2 = create_account_on_engine(node2_engine, alice);
