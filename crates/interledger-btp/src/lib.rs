@@ -138,6 +138,11 @@ mod client_server {
                 Box::new(err(()))
             }
         }
+
+        // stub implementation (not used in these tests)
+        fn get_account_id_from_username(&self, _username: String) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
+            Box::new(ok(1))
+        }
     }
 
     impl BtpStore for TestStore {
@@ -181,7 +186,7 @@ mod client_server {
         let server_store = TestStore {
             accounts: Arc::new(vec![TestAccount {
                 id: 0,
-                btp_incoming_token: Some("test_auth_token".to_string()),
+                btp_incoming_token: Some("0:test_auth_token".to_string()),
                 btp_outgoing_token: None,
                 btp_uri: None,
             }]),
@@ -214,7 +219,7 @@ mod client_server {
         let account = TestAccount {
             id: 0,
             btp_uri: Some(Url::parse("btp+ws://127.0.0.1:12345").unwrap()),
-            btp_outgoing_token: Some("test_auth_token".to_string()),
+            btp_outgoing_token: Some("0:test_auth_token".to_string()),
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];
