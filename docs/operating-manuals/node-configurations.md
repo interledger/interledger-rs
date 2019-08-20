@@ -16,6 +16,7 @@ cargo run --package interledger -- node --ilp_address example.alice --other_para
 # 2.
 # passing as an environment variable
 # {parameter name (typically in capital)}={value}
+# note that the parameter names MUST begin with a prefix of "ILP_" e.g. ILP_SECRET_SEED
 ILP_ADDRESS=example.alice OTHER_PARAMETER=other_value cargo run --package interledger -- node
 
 # 3.
@@ -72,8 +73,8 @@ The parameters are shown in the following format.
         - `127.0.0.1:7768`
     - IP address and port to listen for BTP connections. Refer to [this](https://github.com/interledger/rfcs/blob/master/0033-relationship-between-protocols/0033-relationship-between-protocols.md#connections-1) brief explanation or [the RFC](https://github.com/interledger/rfcs/blob/master/0023-bilateral-transfer-protocol/0023-bilateral-transfer-protocol.md) to understand what BTP connections are.
 - `default_spsp_account`
-    - non-negative integer
-        - `0`
+    - [URL-safe](https://tools.ietf.org/html/rfc3986#section-2.3) String
+        - `f8b26fef-9a5f-4b1c-8004-538664140205`
     - When [SPSP payments](https://github.com/interledger/rfcs/blob/master/0009-simple-payment-setup-protocol/0009-simple-payment-setup-protocol.md) are sent to the root domain, the payment pointer is resolved to `<domain>/.well-known/pay`. This value determines which account those payments will be sent to.
 - `route_broadcast_interval`
     - non-negative integer
