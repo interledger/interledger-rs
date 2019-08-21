@@ -10,7 +10,6 @@ use url::Url;
 
 mod client;
 mod server;
-use log::error;
 
 /// Originally from [interledger-relay](https://github.com/coilhq/interledger-relay/blob/master/crates/interledger-relay/src/combinators/limit_stream.rs).
 mod limit_stream;

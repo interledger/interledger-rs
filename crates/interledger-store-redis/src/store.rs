@@ -302,12 +302,8 @@ impl RedisStore {
         // (This is better than encrypting because the output is deterministic so we can look
         // up the account by the HMAC of the auth details submitted by the
         // account holder over the wire)
-        let btp_incoming_token = account
-            .btp_incoming_token
-            .clone();
-        let http_incoming_token = account
-            .http_incoming_token
-            .clone();
+        let btp_incoming_token = account.btp_incoming_token.clone();
+        let http_incoming_token = account.http_incoming_token.clone();
 
         let id = AccountId::new();
         debug!("Generated account: {}", id);
