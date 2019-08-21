@@ -64,6 +64,7 @@ impl Auth {
     }
 
     pub fn parse(s: &str) -> Result<Self, ()> {
+        let s = s.replace("%3A", ":"); // When the token is received over the wire, it is URL encoded. We must decode the semi-colons.
         if s.starts_with("Basic") {
             Auth::parse_basic(&s[BASIC_TOKEN_START..])
         } else if s.starts_with("Bearer") {
@@ -108,6 +109,11 @@ mod tests {
     fn parses_correctly() {
         assert_eq!(
             Auth::parse("Basic ZXZhbjpzY2h3YXJ6").unwrap(),
+            Auth::new("evan", "schwarz")
+        );
+
+        assert_eq!(
+            Auth::parse("Bearer evan%3Aschwarz").unwrap(),
             Auth::new("evan", "schwarz")
         );
 

@@ -146,9 +146,11 @@ where
 
 struct Auth {
     request_id: u32,
-    username: Option<String>,
+    username: Option<String>, // This username is different from the one saved per account (?)
     token: String,
 }
+
+use interledger_http::Auth as AuthToken;
 
 fn validate_auth<U, A>(
     store: U,
@@ -167,22 +169,26 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
-        store
-            .get_account_from_btp_token(&auth.token)
-            .map_err(move |_| warn!("Got BTP connection that does not correspond to an account"))
-            .and_then(move |account| {
-                let auth_response = Message::Binary(
-                    BtpResponse {
-                        request_id: auth.request_id,
-                        protocol_data: Vec::new(),
-                    }
-                    .to_bytes(),
-                );
-                connection
-                    .send(auth_response)
-                    .map_err(|_err| error!("Error sending auth response"))
-                    .and_then(|connection| Ok((account, connection)))
-            })
+        result(AuthToken::parse(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
+            store
+                .get_account_from_btp_token(&auth_token.username(), &auth_token.password())
+                .map_err(move |_| {
+                    warn!("Got BTP connection that does not correspond to an account")
+                })
+                .and_then(move |account| {
+                    let auth_response = Message::Binary(
+                        BtpResponse {
+                            request_id: auth.request_id,
+                            protocol_data: Vec::new(),
+                        }
+                        .to_bytes(),
+                    );
+                    connection
+                        .send(auth_response)
+                        .map_err(|_err| error!("Error sending auth response"))
+                        .and_then(|connection| Ok((account, connection)))
+                })
+        })
     })
 }
 
@@ -205,48 +211,50 @@ where
 {
     get_auth(connection).and_then(move |(auth, connection)| {
         let request_id = auth.request_id;
-        store
-            .get_account_from_btp_token(&auth.token)
-            .or_else(move |_| {
-                let local_part = if let Some(username) = auth.username {
-                    username
-                } else {
-                    base64::encode_config(
-                        digest(&SHA256, auth.token.as_str().as_bytes()).as_ref(),
-                        base64::URL_SAFE_NO_PAD,
-                    )
-                };
-                let ilp_address = ildcp_info.client_address();
-                // in case local_part is set to be `auth.username`, will it always be a valid suffix?
-                // if we unwrap on the `with_suffix` call we implicitly allow auth.username to be an invalid suffix
-                let ilp_address = ilp_address.with_suffix(local_part.as_ref()).unwrap();
+        result(AuthToken::parse(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
+            store
+                .get_account_from_btp_token(&auth_token.username(), &auth_token.password())
+                .or_else(move |_| {
+                    let local_part = if let Some(username) = auth.username {
+                        username
+                    } else {
+                        base64::encode_config(
+                            digest(&SHA256, auth.token.as_str().as_bytes()).as_ref(),
+                            base64::URL_SAFE_NO_PAD,
+                        )
+                    };
+                    let ilp_address = ildcp_info.client_address();
+                    // in case local_part is set to be `auth.username`, will it always be a valid suffix?
+                    // if we unwrap on the `with_suffix` call we implicitly allow auth.username to be an invalid suffix
+                    let ilp_address = ilp_address.with_suffix(local_part.as_ref()).unwrap();
 
-                store
-                    .create_btp_account(BtpOpenSignupAccount {
-                        auth_token: &auth.token,
-                        ilp_address: &ilp_address,
-                        asset_code: str::from_utf8(ildcp_info.asset_code())
-                            .expect("Asset code provided is not valid utf8"),
-                        asset_scale: ildcp_info.asset_scale(),
-                    })
-                    .and_then(|account| {
-                        debug!("Created new account: {:?}", account);
-                        Ok(account)
-                    })
-            })
-            .and_then(move |account| {
-                let auth_response = Message::Binary(
-                    BtpResponse {
-                        request_id,
-                        protocol_data: Vec::new(),
-                    }
-                    .to_bytes(),
-                );
-                connection
-                    .send(auth_response)
-                    .map_err(|_err| error!("Error sending auth response"))
-                    .and_then(|connection| Ok((account, connection)))
-            })
+                    store
+                        .create_btp_account(BtpOpenSignupAccount {
+                            auth_token: &auth.token,
+                            ilp_address: &ilp_address,
+                            asset_code: str::from_utf8(ildcp_info.asset_code())
+                                .expect("Asset code provided is not valid utf8"),
+                            asset_scale: ildcp_info.asset_scale(),
+                        })
+                        .and_then(|account| {
+                            debug!("Created new account: {:?}", account);
+                            Ok(account)
+                        })
+                })
+                .and_then(move |account| {
+                    let auth_response = Message::Binary(
+                        BtpResponse {
+                            request_id,
+                            protocol_data: Vec::new(),
+                        }
+                        .to_bytes(),
+                    );
+                    connection
+                        .send(auth_response)
+                        .map_err(|_err| error!("Error sending auth response"))
+                        .and_then(|connection| Ok((account, connection)))
+                })
+        })
     })
 }
 
