@@ -1,11 +1,10 @@
-use crate::BEARER_TOKEN_START;
 use bytes::Bytes;
 use futures::{
     future::{err, result, Either},
     Future,
 };
 use hyper::{Body, Response};
-use interledger_http::{HttpAccount, HttpStore};
+use interledger_http::{Auth, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_service::{AccountStore, FromUsername, IncomingService};
 use interledger_spsp::{pay, SpspResponder};
@@ -64,15 +63,19 @@ impl_web! {
         // TODO add a version that lets you specify the destination amount instead
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
             let service = self.incoming_handler.clone();
+            let store = self.store.clone();
+            let auth = Auth::parse(&authorization).unwrap();
+            let username = auth.username();
+            let token = auth.password();
             debug!("Got request to pay: {:?}", body);
-            self.store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
-                .and_then(move |account| {
-                    pay(service, account, &body.receiver, body.source_amount)
-                        .and_then(|delivered_amount| {
-                            debug!("Sent SPSP payment and delivered: {} of the receiver's units", delivered_amount);
-                            Ok(SpspPayResponse {
-                                delivered_amount,
+            store.get_account_from_http_token(&username, &token)
+            .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
+            .and_then(move |account| {
+                pay(service, account, &body.receiver, body.source_amount)
+                    .and_then(|delivered_amount| {
+                        debug!("Sent SPSP payment and delivered: {} of the receiver's units", delivered_amount);
+                        Ok(SpspPayResponse {
+                            delivered_amount,
                             })
                         })
                         .map_err(|err| {

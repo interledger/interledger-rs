@@ -131,6 +131,7 @@ impl HttpStore for InMemoryStore {
 
     fn get_account_from_http_token(
         &self,
+        _username: &str, // What's going on here? InMemoryStore is very confusing.
         auth_header: &str,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         if let Some(account_id) = self.http_auth.read().get(auth_header) {
@@ -233,11 +234,11 @@ mod tests {
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_token("test_token")
+            .get_account_from_http_token("username", "test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_http_token("bad_token")
+            .get_account_from_http_token("another_username", "bad_token")
             .wait()
             .is_err());
     }

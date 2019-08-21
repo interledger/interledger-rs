@@ -11,7 +11,7 @@ use std::str::FromStr;
 fn gets_account_from_http_bearer_token() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_http_token(&format!("{}:{}", "alice", "incoming_auth_token"))
+            .get_account_from_http_token("alice", "incoming_auth_token")
             .and_then(move |account| {
                 assert_eq!(
                     *account.client_address(),
@@ -37,7 +37,7 @@ fn gets_account_from_http_bearer_token() {
 fn decrypts_outgoing_tokens_http() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_http_token(&format!("{}:{}", "alice", "incoming_auth_token"))
+            .get_account_from_http_token("alice", "incoming_auth_token")
             .and_then(move |account| {
                 assert_eq!(
                     account.get_http_auth_token().unwrap(),
@@ -58,7 +58,7 @@ fn decrypts_outgoing_tokens_http() {
 fn errors_on_unknown_http_auth() {
     let result = block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_http_token("some_user:unknown_token")
+            .get_account_from_http_token("some_user", "unknown_token")
             .then(move |result| {
                 let _ = context;
                 result

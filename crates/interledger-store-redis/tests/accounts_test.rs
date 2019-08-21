@@ -65,10 +65,7 @@ fn starts_with_zero_balance() {
 #[test]
 fn duplicate_http_incoming_auth_works() {
     let mut duplicate = ACCOUNT_DETAILS_2.clone();
-    let token = "incoming_auth_token".to_string();
-    duplicate.http_incoming_token = Some(token.clone());
-    let alice_auth = format!("{}:{}", "alice", token);
-    let charlie_auth = format!("{}:{}", "charlie", token);
+    duplicate.http_incoming_token = Some("incoming_auth_token".to_string());
     block_on(test_store().and_then(|(store, context, accs)| {
         let original = accs[0].clone();
         let original_id = original.id();
@@ -76,8 +73,8 @@ fn duplicate_http_incoming_auth_works() {
             let duplicate_id = duplicate.id();
             assert_ne!(original_id, duplicate_id);
             futures::future::join_all(vec![
-                store.get_account_from_http_token(&alice_auth),
-                store.get_account_from_http_token(&charlie_auth),
+                store.get_account_from_http_token("alice", "incoming_auth_token"),
+                store.get_account_from_http_token("charlie", "incoming_auth_token"),
             ])
             .and_then(move |accs| {
                 // Alice and Charlie had the same auth token, but they had a
@@ -113,9 +110,8 @@ fn gets_account_from_btp_token() {
 #[test]
 fn gets_account_from_http_token() {
     block_on(test_store().and_then(|(store, context, accs)| {
-        let alice_auth = "alice:incoming_auth_token";
         store
-            .get_account_from_http_token(&alice_auth)
+            .get_account_from_http_token("alice", "incoming_auth_token")
             .and_then(move |acc| {
                 assert_eq!(acc.id(), accs[0].id());
                 let _ = context;

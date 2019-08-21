@@ -634,6 +634,8 @@ impl ExchangeRateStore for RedisStore {
     }
 }
 
+use interledger_http::Auth;
+
 impl BtpStore for RedisStore {
     type Account = Account;
 
@@ -649,7 +651,9 @@ impl BtpStore for RedisStore {
         // The hmac made during account insertion is on both the account id and
         // the token.
         let token = token.replace("%3A", ":");
-        let (username, token) = unpack_token(&token);
+        let auth = Auth::parse(&token).unwrap(); // TODO: Handle error.
+        let username = auth.username();
+        let token = auth.password().to_owned();
         let account_id = AccountId::from_username(&username).unwrap().to_hex();
         // reconstruct the token from the username to use the account id
         let token = format!("{}:{}", account_id, token);
@@ -732,12 +736,11 @@ impl HttpStore for RedisStore {
     /// provided token, and if so, returns the account associated with that token
     fn get_account_from_http_token(
         &self,
+        username: &str,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
-        let token = token.replace("%3A", ":");
-        let (username, token) = unpack_token(&token);
         let account_id = AccountId::from_username(&username).unwrap().to_hex();
         // reconstruct the token from the username to use the account id
         let token = format!("{}:{}", account_id, token);
@@ -1358,13 +1361,6 @@ fn update_routes(
                 Ok(())
             },
         )
-}
-
-// Helper function that decodes a username and authorization token from a
-// concatenated string
-fn unpack_token(token: &str) -> (String, String) {
-    let ret = token.split(':').collect::<Vec<_>>();
-    (ret[0].to_owned(), ret[1].to_owned())
 }
 
 #[cfg(test)]
