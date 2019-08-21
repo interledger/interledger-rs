@@ -5,7 +5,7 @@ use futures::{
 };
 use hyper::Response;
 use interledger_http::{Auth, HttpAccount, HttpStore};
-use interledger_service::{Account, FromUsername};
+use interledger_service::Account;
 use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
@@ -162,6 +162,8 @@ impl_web! {
         fn get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let is_admin = self.is_admin(&authorization);
+            let username_clone = username.clone();
+            let auth_clone = authorization.clone();
             store.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
@@ -233,6 +235,8 @@ impl_web! {
             let store = self.store.clone();
             let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
+            let username_clone = username.clone();
+            let auth_clone = authorization.clone();
             store_clone.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);

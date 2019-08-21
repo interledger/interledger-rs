@@ -302,18 +302,12 @@ impl RedisStore {
         // (This is better than encrypting because the output is deterministic so we can look
         // up the account by the HMAC of the auth details submitted by the
         // account holder over the wire)
-        let username = account.username.clone();
-        let btp_incoming_token_hmac = account
+        let btp_incoming_token = account
             .btp_incoming_token
-            .clone()
-            .map(|token| hmac::sign(&self.hmac_key, format!("{}:{}", username, token).as_bytes()));
-        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac;
-        let username = account.username.clone();
-        let http_incoming_token_hmac = account
+            .clone();
+        let http_incoming_token = account
             .http_incoming_token
-            .clone()
-            .map(|token| hmac::sign(&self.hmac_key, format!("{}:{}", username, token).as_bytes()));
-        let http_incoming_token_hmac_clone = http_incoming_token_hmac;
+            .clone();
 
         let id = AccountId::new();
         debug!("Generated account: {}", id);
@@ -363,12 +357,12 @@ impl RedisStore {
                     pipe.hset_multiple(account_details_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
 
                     // Set incoming auth details
-                    if let Some(auth) = btp_incoming_token_hmac_clone {
-                        pipe.hset("btp_auth", account.id, auth.as_ref()).ignore();
+                    if let Some(auth) = btp_incoming_token {
+                        pipe.hset("btp_auth", account.id, auth).ignore();
                     }
 
-                    if let Some(auth) = http_incoming_token_hmac_clone {
-                        pipe.hset("http_auth", account.id, auth.as_ref()).ignore();
+                    if let Some(auth) = http_incoming_token {
+                        pipe.hset("http_auth", account.id, auth).ignore();
                     }
 
                     if account.send_routes {
@@ -537,7 +531,7 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_prepare(
         &self,
-        from_account: Account,
+        from_account: Account, // TODO: Make this take only the id
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
@@ -570,7 +564,7 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_fulfill(
         &self,
-        to_account: Account,
+        to_account: Account, // TODO: Make this take only the id
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
         if outgoing_amount > 0 {
@@ -609,7 +603,7 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_reject(
         &self,
-        from_account: Account,
+        from_account: Account, // TODO: Make this take only the id
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
@@ -662,8 +656,6 @@ impl ExchangeRateStore for RedisStore {
 impl BtpStore for RedisStore {
     type Account = Account;
 
-    // `token` is the account's incoming btp token which is saved hmac'ed in the
-    //  store
     fn get_account_from_btp_token(
         &self,
         username: &str,
@@ -672,20 +664,14 @@ impl BtpStore for RedisStore {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
         let decryption_key = self.decryption_key.clone();
-        // The hmac made during account insertion is on both the username and
-        // the token.
-        let account_id = AccountId::from_username(&username).unwrap().to_hex();
         // reconstruct the token from the username to use the account id
-        let token = format!("{}:{}", account_id, token);
-        let hmac_token = hmac::sign(&self.hmac_key, token.as_bytes());
-        let username = unpack_token(&token).0;
         Box::new(
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_TOKEN)
                 .arg(0)
                 .arg("btp_auth")
                 .arg(username)
-                .arg(hmac_token.as_ref())
+                .arg(token)
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
                 .and_then(
@@ -762,18 +748,13 @@ impl HttpStore for RedisStore {
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
-        let account_id = AccountId::from_username(&username).unwrap().to_hex();
-        // reconstruct the token from the username to use the account id
-        let token = format!("{}:{}", account_id, token);
-        let hmac_token = hmac::sign(&self.hmac_key, token.as_bytes());
-        let username = unpack_token(&token).0;
         Box::new(
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_TOKEN)
                 .arg(0)
                 .arg("http_auth")
                 .arg(username)
-                .arg(hmac_token.as_ref())
+                .arg(token)
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
                 .and_then(
