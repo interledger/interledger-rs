@@ -1,15 +1,13 @@
 mod common;
 use common::*;
 use futures::future::join_all;
-use interledger_service::FromUsername;
 use interledger_service_util::{RateLimitError, RateLimitStore};
 use interledger_store_redis::AccountId;
 
 #[test]
 fn rate_limits_number_of_packets() {
     block_on(test_store().and_then(|(store, context, _accs)| {
-        let account_id = AccountId::from_username("alice").unwrap();
-        let account = Account::try_from(account_id, ACCOUNT_DETAILS_0.clone()).unwrap();
+        let account = Account::try_from(AccountId::new(), ACCOUNT_DETAILS_0.clone()).unwrap();
         join_all(vec![
             store.clone().apply_rate_limits(account.clone(), 10),
             store.clone().apply_rate_limits(account.clone(), 10),
@@ -28,8 +26,7 @@ fn rate_limits_number_of_packets() {
 #[test]
 fn limits_amount_throughput() {
     block_on(test_store().and_then(|(store, context, _accs)| {
-        let account_id = AccountId::from_username("alice").unwrap();
-        let account = Account::try_from(account_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+        let account = Account::try_from(AccountId::new(), ACCOUNT_DETAILS_1.clone()).unwrap();
         join_all(vec![
             store.clone().apply_rate_limits(account.clone(), 500),
             store.clone().apply_rate_limits(account.clone(), 500),
@@ -48,8 +45,7 @@ fn limits_amount_throughput() {
 #[test]
 fn refunds_throughput_limit_for_rejected_packets() {
     block_on(test_store().and_then(|(store, context, _accs)| {
-        let account_id = AccountId::from_username("alice").unwrap();
-        let account = Account::try_from(account_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+        let account = Account::try_from(AccountId::new(), ACCOUNT_DETAILS_1.clone()).unwrap();
         join_all(vec![
             store.clone().apply_rate_limits(account.clone(), 500),
             store.clone().apply_rate_limits(account.clone(), 500),

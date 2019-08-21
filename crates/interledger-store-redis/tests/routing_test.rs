@@ -7,7 +7,7 @@ use interledger_ccp::RouteManagerStore;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, FromUsername};
+use interledger_service::Account as AccountTrait;
 use interledger_store_redis::AccountId;
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
@@ -174,8 +174,8 @@ fn gets_local_and_configured_routes() {
 fn saves_routes_to_db() {
     block_on(test_store().and_then(|(mut store, context, _accs)| {
         let get_connection = context.async_connection();
-        let account0_id = AccountId::from_username("alice").unwrap();
-        let account1_id = AccountId::from_username("bob").unwrap();
+        let account0_id = AccountId::new();
+        let account1_id = AccountId::new();
         let account0 = Account::try_from(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
         let account1 = Account::try_from(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
         store
@@ -210,8 +210,8 @@ fn saves_routes_to_db() {
 #[test]
 fn updates_local_routes() {
     block_on(test_store().and_then(|(store, context, _accs)| {
-        let account0_id = AccountId::from_username("alice").unwrap();
-        let account1_id = AccountId::from_username("bob").unwrap();
+        let account0_id = AccountId::new();
+        let account1_id = AccountId::new();
         let account0 = Account::try_from(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
         let account1 = Account::try_from(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
         store
@@ -279,7 +279,7 @@ fn static_routes_override_others() {
                 ("example.b".to_string(), accs[0].id()),
             ])
             .and_then(move |_| {
-                let account1_id = AccountId::from_username("random").unwrap();
+                let account1_id = AccountId::new();
                 let account1 = Account::try_from(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
                 store_clone
                     .set_routes(vec![

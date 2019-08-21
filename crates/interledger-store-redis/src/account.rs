@@ -1,6 +1,5 @@
 use super::crypto::{decrypt_token, encrypt_token};
 use bytes::Bytes;
-use hex;
 use interledger_api::AccountDetails;
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
@@ -15,9 +14,7 @@ use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
 use log::{debug, error};
 use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
 
-use interledger_service::FromUsername;
 use ring::aead;
-use ring::digest::{digest, SHA256};
 use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -26,6 +23,8 @@ use std::{
     convert::TryFrom,
     str::{self, FromStr},
 };
+use uuid::{parser::ParseError, Uuid};
+
 use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
@@ -176,62 +175,47 @@ impl AccountWithEncryptedTokens {
     }
 }
 
+// Uuid does not implement ToRedisArgs and FromRedisValue.
 // Rust does not allow implementing foreign traits on foreign data types.
-// As a result, we wrap [u8; 32] in a local data type, and implement the necessary
+// As a result, we wrap Uuid in a local data type, and implement the necessary
 // traits for that.
 #[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
-pub struct AccountId([u8; 32]);
+pub struct AccountId(Uuid);
 
-impl FromUsername for AccountId {
-    fn from_username(username: &str) -> Result<Self, ()> {
-        let mut out = [0; 32];
-        out.copy_from_slice(digest(&SHA256, username.as_ref()).as_ref());
-        Ok(AccountId(out))
+impl AccountId {
+    pub fn new() -> Self {
+        let uid = Uuid::new_v4();
+        AccountId(uid)
     }
 }
 
 impl FromStr for AccountId {
-    type Err = ();
+    type Err = ParseError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let id_bytes = src.as_bytes();
-        let mut fixed_size = [0; 32];
-        fixed_size.copy_from_slice(id_bytes);
-        Ok(AccountId(fixed_size))
+        let uid = Uuid::from_str(&src)?;
+        Ok(AccountId(uid))
     }
 }
 
 impl Display for AccountId {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        f.write_str(&hex::encode(self.0))
+        f.write_str(&self.0.to_hyphenated().to_string())
     }
 }
 
 impl ToRedisArgs for AccountId {
     fn write_redis_args(&self, out: &mut Vec<Vec<u8>>) {
-        hex::encode(self.0).write_redis_args(out);
+        self.0.to_hyphenated().to_string().write_redis_args(out);
     }
 }
 
 impl FromRedisValue for AccountId {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
-        match v {
-            Value::Data(v) => {
-                let id = hex::decode(v).map_err(|_| {
-                    RedisError::from((
-                        ErrorKind::TypeError,
-                        "Could not convert {:?} to array from hex-string",
-                    ))
-                })?;
-                let mut out = [0; 32];
-                out.copy_from_slice(&id);
-                Ok(AccountId(out))
-            }
-            _ => Err(RedisError::from((
-                ErrorKind::TypeError,
-                "Invalid account id array",
-            ))),
-        }
+        let account_id = String::from_redis_value(v)?;
+        let uid = Uuid::from_str(&account_id)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid account id string")))?;
+        Ok(AccountId(uid))
     }
 }
 
@@ -554,7 +538,7 @@ mod redis_account {
 
     #[test]
     fn from_account_details() {
-        let id = AccountId::from_username("bob").unwrap();
+        let id = AccountId::new();
         let account = Account::try_from(id, ACCOUNT_DETAILS.clone()).unwrap();
         assert_eq!(account.id(), id);
         assert_eq!(

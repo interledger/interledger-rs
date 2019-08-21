@@ -34,7 +34,7 @@ use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore, FromUsername};
+use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
 use parking_lot::RwLock;
@@ -315,8 +315,8 @@ impl RedisStore {
             .map(|token| hmac::sign(&self.hmac_key, format!("{}:{}", username, token).as_bytes()));
         let http_incoming_token_hmac_clone = http_incoming_token_hmac;
 
-        // this implementation of AccountId::from_username can never fail
-        let id = AccountId::from_username(&username).unwrap();
+        let id = AccountId::new();
+        debug!("Generated account: {}", id);
         Box::new(
                 result(Account::try_from(id, account))
                 .and_then(move |account| {
@@ -491,6 +491,24 @@ impl AccountStore for RedisStore {
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         self.retrieve_accounts(account_ids)
+    }
+
+    fn get_account_id_from_username(
+        &self,
+        username: String,
+    ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+        Box::new(
+            cmd("GET")
+                .arg(format!("username:{}", username))
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error getting account id for username: {} {:?}",
+                        username, err
+                    )
+                })
+                .and_then(|(_connection, id): (_, AccountId)| Ok(id)),
+        )
     }
 }
 
