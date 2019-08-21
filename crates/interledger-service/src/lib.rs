@@ -38,6 +38,10 @@ use std::{
 
 use serde::Serialize;
 
+pub trait FromUsername: Sized {
+    fn from_username(username: &str) -> Result<Self, ()>;
+}
+
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
 ///
@@ -45,7 +49,17 @@ use serde::Serialize;
 /// Store implementations will implement these Account traits for a concrete type that
 /// they will load from the database.
 pub trait Account: Clone + Send + Sized + Debug {
-    type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy + Serialize;
+    type AccountId: Eq
+        + Hash
+        + Debug
+        + Display
+        + Default
+        + FromStr
+        + Send
+        + Sync
+        + Copy
+        + Serialize
+        + FromUsername;
 
     fn id(&self) -> Self::AccountId;
     fn username(&self) -> &str;
@@ -107,14 +121,6 @@ pub trait AccountStore {
         &self,
         account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
-
-    fn get_account_id_from_username(
-        &self,
-        username: String,
-    ) -> Box<
-        dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()>
-            + Send,
-    >;
 }
 
 /// Create an IncomingService that calls the given handler for each request.

@@ -5,7 +5,7 @@ use futures::{
 };
 use hyper::Response;
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_service::Account;
+use interledger_service::{Account, FromUsername};
 use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
@@ -153,42 +153,41 @@ impl_web! {
         fn get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let is_admin = self.is_admin(&authorization);
-            store.get_account_id_from_username(username.clone())
+            result(A::AccountId::from_username(&username))
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |id| {
-                    if is_admin  {
-                        Either::A(store.get_accounts(vec![id])
-                            .map_err(move |_| {
-                                debug!("Account not found: {}", id);
-                                Response::error(404)
-                            })
-                            .and_then(|mut accounts| Ok(json!(accounts.pop().unwrap()))))
-                    } else {
-                        Either::B(store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
-                            .map_err(move |_| {
-                                debug!("No account found with auth: {}", authorization);
-                                Response::error(401)
-                            })
-                            .and_then(move |account| {
-                                if account.id() == id {
-                                    Ok(json!(account))
-                                } else {
-                                    Err(Response::error(401))
-                                }
-                            }))
-                    }
-                })
+                if is_admin  {
+                    Either::A(store.get_accounts(vec![id])
+                    .map_err(move |_| {
+                        debug!("Account not found: {:?}", id);
+                        Response::error(404)
+                    })
+                    .and_then(|mut accounts| Ok(json!(accounts.pop().unwrap()))))
+                } else {
+                    Either::B(store.get_account_from_http_token(&authorization[BEARER_TOKEN_START..])
+                        .map_err(move |_| {
+                            debug!("No account found with auth: {}", authorization);
+                            Response::error(401)
+                        })
+                        .and_then(move |account| {
+                            if account.id() == id {
+                                Ok(json!(account))
+                            } else {
+                                Err(Response::error(401))
+                            }
+                        }))
+                }
+            })
         }
 
         #[delete("/accounts/:username")]
         #[content_type("application/json")]
         fn delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
-            let store_clone = self.store.clone();
             let self_clone = self.clone();
-            store_clone.get_account_id_from_username(username.clone())
+            result(A::AccountId::from_username(&username))
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
@@ -214,7 +213,7 @@ impl_web! {
             let store = self.store.clone();
             let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
-            store_clone.get_account_id_from_username(username.clone())
+            result(A::AccountId::from_username(&username))
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
