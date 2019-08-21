@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::{
-    future::{err, Either},
+    future::{result, err, Either},
     Future,
 };
 use hyper::{Body, Response};
@@ -64,26 +64,34 @@ impl_web! {
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
             let service = self.incoming_handler.clone();
             let store = self.store.clone();
-            let auth = Auth::parse(&authorization).unwrap();
-            let username = auth.username();
-            let token = auth.password();
-            debug!("Got request to pay: {:?}", body);
-            store.get_account_from_http_token(&username, &token)
-            .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
-            .and_then(move |account| {
-                pay(service, account, &body.receiver, body.source_amount)
-                    .and_then(|delivered_amount| {
-                        debug!("Sent SPSP payment and delivered: {} of the receiver's units", delivered_amount);
-                        Ok(SpspPayResponse {
-                            delivered_amount,
+            
+            result(Auth::parse(&authorization))
+            .map_err(|err| {
+                let error_msg = format!("Could not convert auth token {:?}", err);
+                error!("{}", error_msg);
+                Response::builder().status(500).body(error_msg).unwrap()
+            })
+            .and_then(move |auth| {
+                let username = auth.username();
+                let token = auth.password();
+                debug!("Got request to pay: {:?}", body);
+                store.get_account_from_http_token(&username, &token)
+                .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
+                .and_then(move |account| {
+                    pay(service, account, &body.receiver, body.source_amount)
+                        .and_then(|delivered_amount| {
+                            debug!("Sent SPSP payment and delivered: {} of the receiver's units", delivered_amount);
+                            Ok(SpspPayResponse {
+                                delivered_amount,
+                                })
                             })
-                        })
-                        .map_err(|err| {
-                            error!("Error sending SPSP payment: {:?}", err);
-                            // TODO give a different error message depending on what type of error it is
-                            Response::builder().status(500).body(format!("Error sending SPSP payment: {:?}", err)).unwrap()
-                        })
-                })
+                            .map_err(|err| {
+                                error!("Error sending SPSP payment: {:?}", err);
+                                // TODO give a different error message depending on what type of error it is
+                                Response::builder().status(500).body(format!("Error sending SPSP payment: {:?}", err)).unwrap()
+                            })
+                    })
+            })
         }
 
         #[get("/spsp/:username")]

@@ -180,7 +180,7 @@ impl_web! {
                 } else {
                     Either::B(result(Auth::parse(&auth_clone))
                         .map_err(move |_| {
-                            error!("No account found with auth: {}", auth_clone);
+                            error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)
                         })
                         .and_then(move |auth| {
@@ -253,7 +253,7 @@ impl_web! {
                 } else {
                     Either::B(result(Auth::parse(&auth_clone))
                         .map_err(move |_| {
-                            error!("No account found with auth: {}", auth_clone);
+                            error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)
                         })
                         .and_then(move |auth| {
