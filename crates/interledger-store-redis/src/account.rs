@@ -182,12 +182,6 @@ impl AccountWithEncryptedTokens {
 #[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
 pub struct AccountId([u8; 32]);
 
-impl AccountId {
-    pub fn to_hex(&self) -> String {
-        hex::encode(self.0)
-    }
-}
-
 impl FromUsername for AccountId {
     fn from_username(username: &str) -> Result<Self, ()> {
         let mut out = [0; 32];
