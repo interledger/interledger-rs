@@ -1,12 +1,12 @@
 use bytes::Bytes;
 use futures::{
-    future::{err, result, Either},
+    future::{result, err, Either},
     Future,
 };
 use hyper::{Body, Response};
 use interledger_http::{Auth, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
-use interledger_service::{AccountStore, FromUsername, IncomingService};
+use interledger_service::{AccountStore, IncomingService, FromUsername};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};

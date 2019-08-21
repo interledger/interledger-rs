@@ -183,13 +183,3 @@ where
         Box::new((self.handler)(request).into_future())
     }
 }
-
-/// by default convert string usernames to u64 usernames
-/// (this is useful for tests because we cannot implement
-/// FromUsername for u64 since it's a foreign trait)
-/// For some reason #[cfg(test)] does not work here.
-impl FromUsername for u64 {
-    fn from_username(username: &str) -> Result<Self, ()> {
-        u64::from_str(username).map_err(|_| ())
-    }
-}
