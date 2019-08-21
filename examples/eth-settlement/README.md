@@ -100,6 +100,7 @@ mkdir -p logs
 
 # Start Redis
 redis-server &> logs/redis.log &
+redis-cli flushall
 ```
 
 When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis.log`
@@ -210,12 +211,12 @@ curl \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer hi_alice" \
     -d '{
+    "username": "alice",
     "ilp_address": "example.alice",
     "asset_code": "ETH",
     "asset_scale": 18,
     "max_packet_amount": 100,
     "http_incoming_token": "in_alice",
-    "http_outgoing_token": "out_alice",
     "http_endpoint": "http://localhost:7770/ilp",
     "settle_to" : 0}' \
     http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
@@ -225,12 +226,12 @@ curl \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer hi_bob" \
     -d '{
+    "username": "bob",
     "ilp_address": "example.bob",
     "asset_code": "ETH",
     "asset_scale": 18,
     "max_packet_amount": 100,
     "http_incoming_token": "in_bob",
-    "http_outgoing_token": "out_bob",
     "http_endpoint": "http://localhost:8770/ilp",
     "settle_to" : 0}' \
     http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
@@ -241,12 +242,13 @@ curl \
     -H "Authorization: Bearer hi_alice" \
     -d '{
     "ilp_address": "example.bob",
+    "username": "bob",
     "asset_code": "ETH",
     "asset_scale": 18,
     "max_packet_amount": 100,
     "settlement_engine_url": "http://localhost:3000",
-    "http_incoming_token": "bob",
-    "http_outgoing_token": "alice",
+    "http_incoming_token": "bob_password",
+    "http_outgoing_token": "alice:alice_password",
     "http_endpoint": "http://localhost:8770/ilp",
     "settle_threshold": 500,
     "min_balance": -1000,
@@ -262,12 +264,13 @@ curl \
     -H "Authorization: Bearer hi_bob" \
     -d '{
     "ilp_address": "example.alice",
+    "username": "alice",
     "asset_code": "ETH",
     "asset_scale": 18,
     "max_packet_amount": 100,
     "settlement_engine_url": "http://localhost:3001",
-    "http_incoming_token": "alice",
-    "http_outgoing_token": "bob",
+    "http_incoming_token": "alice_password",
+    "http_outgoing_token": "bob:bob_password",
     "http_endpoint": "http://localhost:7770/ilp",
     "settle_threshold": 500,
     "min_balance": -1000,
@@ -289,52 +292,30 @@ The `settle_threshold` and `settle_to` parameters control when settlements are t
 ### 7. Sending a Payment
 
 <!--!
-function get_account_id() {
-    ACCOUNT_ID=`cat $1 | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/dev/stdin", "utf8")).id);'`
-}
-
-get_account_id logs/account-alice-alice.log
-ACCOUNT_ID_ALICE_ALICE=${ACCOUNT_ID}
-get_account_id logs/account-alice-bob.log
-ACCOUNT_ID_ALICE_BOB=${ACCOUNT_ID}
-get_account_id logs/account-bob-alice.log
-ACCOUNT_ID_BOB_ALICE=${ACCOUNT_ID}
-get_account_id logs/account-bob-bob.log
-ACCOUNT_ID_BOB_BOB=${ACCOUNT_ID}
-
 printf "\nChecking balances...\n"
 
 printf "\nAlice's balance on Alice's node: "
 curl \
--H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_ALICE}/balance
+-H "Authorization: Bearer alice:in_alice" \
+http://localhost:7770/accounts/alice/balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
--H "Authorization: Bearer bob" \
-http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_BOB}/balance
+-H "Authorization: Bearer bob:bob_password" \
+http://localhost:7770/accounts/bob/balance
 
 printf "\nAlice's balance on Bob's node: "
 curl \
--H "Authorization: Bearer alice" \
-http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance
+-H "Authorization: Bearer alice:alice_password" \
+http://localhost:8770/accounts/alice/balance
 
 printf "\nBob's balance on Bob's node: "
 curl \
--H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/${ACCOUNT_ID_BOB_BOB}/balance
+-H "Authorization: Bearer bob:in_bob" \
+http://localhost:8770/accounts/bob/balance
 
 printf "\n\n"
 -->
-
-First you have to obtain account ids from the logs that were written out when you added the accounts.
-
-```bash #
-ACCOUNT_ID_ALICE_ALICE=`../../scripts/get_account_id.sh logs/account-alice-alice.log`
-ACCOUNT_ID_ALICE_BOB=`../../scripts/get_account_id.sh logs/account-alice-bob.log`
-ACCOUNT_ID_BOB_ALICE=`../../scripts/get_account_id.sh logs/account-bob-alice.log`
-ACCOUNT_ID_BOB_BOB=`../../scripts/get_account_id.sh logs/account-bob-bob.log`
-```
 
 The following script sends a payment from Alice to Bob.
 
@@ -342,9 +323,9 @@ The following script sends a payment from Alice to Bob.
 
 ```bash
 curl \
-    -H "Authorization: Bearer in_alice" \
+    -H "Authorization: Bearer alice:in_alice" \
     -H "Content-Type: application/json" \
-    -d "{\"receiver\":\"http://localhost:8770/spsp/${ACCOUNT_ID_BOB_BOB}\",\"source_amount\":500}" \
+    -d "{\"receiver\":\"http://localhost:8770/spsp/bob\",\"source_amount\":500}" \
     http://localhost:7770/pay
 ```
 
@@ -355,42 +336,43 @@ curl \
 ```bash #
 printf "\nAlice's balance on Alice's node: "
 curl \
--H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_ALICE}/balance
+-H "Authorization: Bearer alice:in_alice" \
+http://localhost:7770/accounts/alice/balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
--H "Authorization: Bearer bob" \
-http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_BOB}/balance
+-H "Authorization: Bearer bob:bob_password" \
+http://localhost:7770/accounts/bob/balance
 
 printf "\nAlice's balance on Bob's node: "
 curl \
--H "Authorization: Bearer alice" \
-http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance
+-H "Authorization: Bearer alice:alice_password" \
+http://localhost:8770/accounts/alice/balance
 
 printf "\nBob's balance on Bob's node: "
 curl \
--H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/${ACCOUNT_ID_BOB_BOB}/balance
+-H "Authorization: Bearer bob:in_bob" \
+http://localhost:8770/accounts/bob/balance
 ```
 
 <!--!
 printf "Checking balances...\n"
 printf "\nAlice's balance on Alice's node: "
 curl \
--H "Authorization: Bearer hi_alice" \
-http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_ALICE}/balance
+-H "Authorization: Bearer alice:in_alice" \
+http://localhost:7770/accounts/alice/balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
--H "Authorization: Bearer bob" \
-http://localhost:7770/accounts/${ACCOUNT_ID_ALICE_BOB}/balance
+-H "Authorization: Bearer bob:bob_password" \
+http://localhost:7770/accounts/bob/balance
 
 printf "\nAlice's balance on Bob's node: "
 AB_BALANCE=`curl \
--H "Authorization: Bearer alice" \
-http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance 2>/dev/null`
-if [[ $AB_BALANCE =~ "-500" ]]; then
+-H "Authorization: Bearer alice:alice_password" \
+http://localhost:8770/accounts/alice/balance 2>/dev/null`
+EXPECTED_BALANCE='{"balance":"-500"}'
+if [[ $AB_BALANCE != $EXPECTED_BALANCE ]]; then
     INCOMING_NOT_SETTLED=1
     printf "\e[33m$AB_BALANCE\e[m"
 else
@@ -399,13 +381,13 @@ fi
 
 printf "\nBob's balance on Bob's node: "
 curl \
--H "Authorization: Bearer hi_bob" \
-http://localhost:8770/accounts/${ACCOUNT_ID_BOB_BOB}/balance
+-H "Authorization: Bearer bob:in_bob" \
+http://localhost:8770/accounts/bob/balance
 
-if [ $INCOMING_NOT_SETTLED -eq 1 ]; then
+if [ "$INCOMING_NOT_SETTLED" = "1" ]; then
     printf "\n\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated.\n"
     printf "Try the following command later:\n\n"
-    printf "\tcurl -H \"Authorization: Bearer alice\" http://localhost:8770/accounts/${ACCOUNT_ID_BOB_ALICE}/balance\e[m\n\n"
+    printf "\tcurl -H \"Authorization: Bearer bob:bob_password\" http://localhost:8770/accounts/bob/balance\e[m\n\n"
 fi
 -->
 
@@ -465,7 +447,7 @@ geth --exec "eth.getTransaction(eth.getBlock(eth.blockNumber).transactions[0])" 
 ```
 
 <!--!
-printf "You could try the following command to check if a block is generated.\nTo check, you'll need to install geth.\n\n"
+printf "\n\nYou could try the following command to check if a block is generated.\nTo check, you'll need to install geth.\n\n"
 printf "To check the last block:\n"
 printf "\tgeth --exec \"eth.getTransaction(eth.getBlock(eth.blockNumber-1).transactions[0])\" attach http://localhost:8545 2>/dev/null\n\n"
 printf "To check the current block:\n"
