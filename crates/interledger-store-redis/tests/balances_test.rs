@@ -8,13 +8,13 @@ use interledger_service::AccountStore;
 use interledger_service_util::BalanceStore;
 use std::str::FromStr;
 
-use interledger_service::Account as AccountTrait;
+use interledger_service::{Account as AccountTrait, FromUsername};
 use interledger_store_redis::{Account, AccountId};
 
 #[test]
 fn get_balance() {
     block_on(test_store().and_then(|(store, context, _accs)| {
-        let account_id = AccountId::new();
+        let account_id = AccountId::from_username("alice").unwrap();
         context
             .async_connection()
             .map_err(move |err| panic!(err))

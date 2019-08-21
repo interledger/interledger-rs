@@ -8,7 +8,7 @@ use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_service::AccountStore;
+use interledger_service::{AccountStore, FromUsername};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
 use std::str::FromStr;
@@ -58,20 +58,6 @@ fn starts_with_zero_balance() {
             let _ = context;
             Ok(())
         })
-    }))
-    .unwrap();
-}
-
-#[test]
-fn fetches_account_from_username() {
-    block_on(test_store().and_then(|(store, context, accs)| {
-        store
-            .get_account_id_from_username("alice".to_string())
-            .and_then(move |account_id| {
-                assert_eq!(account_id, accs[0].id());
-                let _ = context;
-                Ok(())
-            })
     }))
     .unwrap();
 }
@@ -241,12 +227,12 @@ fn decrypts_outgoing_tokens_acc() {
 #[test]
 fn errors_for_unknown_accounts() {
     let result = block_on(test_store().and_then(|(store, context, _accs)| {
-        store
-            .get_accounts(vec![AccountId::new(), AccountId::new()])
-            .then(move |result| {
-                let _ = context;
-                result
-            })
+        let id0 = AccountId::from_username("random1").unwrap();
+        let id1 = AccountId::from_username("random2").unwrap();
+        store.get_accounts(vec![id0, id1]).then(move |result| {
+            let _ = context;
+            result
+        })
     }));
     assert!(result.is_err());
 }
