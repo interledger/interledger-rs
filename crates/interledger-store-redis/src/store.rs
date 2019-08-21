@@ -5,7 +5,7 @@
 //   rates:current          hash        exchange rates
 //   routes:current         hash        dynamic routing table
 //   routes:static          hash        static routing table
-//   accounts:<id>          hash        details for each account
+//   accounts:<id>          hash        information for each account
 //   http_auth              hash        maps hmac of cryptographic credentials to an account
 //   btp_auth               hash        maps hmac of cryptographic credentials to an account
 //   btp_outgoing
@@ -168,7 +168,7 @@ fn prefixed_idempotency_key(idempotency_key: String) -> String {
     format!("idempotency-key:{}", idempotency_key)
 }
 
-fn account_details_key(account_id: AccountId) -> String {
+fn accounts_key(account_id: AccountId) -> String {
     format!("accounts:{}", account_id)
 }
 
@@ -286,7 +286,7 @@ impl RedisStore {
             .and_then(|(_conn, account_ids): (_, Vec<Vec<AccountId>>)| Ok(account_ids[0].clone()))
     }
 
-    fn create_new_account(
+    fn redis_insert_account(
         &self,
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
@@ -311,13 +311,13 @@ impl RedisStore {
         let id = AccountId::new();
         debug!("Generated account: {}", id);
         Box::new(
-                result(Account::try_from(id, account))
+            result(Account::try_from(id, account))
                 .and_then(move |account| {
                     // Check that there isn't already an account with values that must be unique
                     let mut keys: Vec<String> = vec!["ID".to_string()];
 
                     let mut pipe = redis::pipe();
-                    pipe.exists(account_details_key(account.id));
+                    pipe.exists(accounts_key(account.id));
 
                     if let Some(auth) = btp_incoming_token_hmac {
                         keys.push("BTP auth".to_string());
@@ -327,17 +327,15 @@ impl RedisStore {
                         keys.push("HTTP auth".to_string());
                         pipe.hexists("http_auth", auth.as_ref());
                     }
+                    // TODO this needs to be atomic with the insertions later, waiting on #186
                     pipe.query_async(connection.as_ref().clone())
                         .map_err(|err| {
-                            error!(
-                                "Error checking whether account details already exist: {:?}",
-                                err
-                            )
+                            error!("Error checking whether account details already exist: {:?}", err)
                         })
                         .and_then(
                             move |(connection, results): (SharedConnection, Vec<bool>)| {
                                 if let Some(index) = results.iter().position(|val| *val) {
-                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
+                                warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
                                     Err(())
                                 } else {
                                     Ok((connection, account))
@@ -353,11 +351,11 @@ impl RedisStore {
                     pipe.sadd("accounts", id).ignore();
 
                     // Set account details
-                    pipe.cmd("HMSET").arg(account_details_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
+                    pipe.cmd("HMSET").arg(accounts_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
 
                     // Set balance-related details
-                    pipe.hset_multiple(account_details_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
+                    pipe.hset_multiple(accounts_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
 
                     // Set incoming auth details
                     if let Some(auth) = btp_incoming_token_hmac_clone {
@@ -393,17 +391,122 @@ impl RedisStore {
                             debug!("Inserted account {} (ILP address: {})", account.id, str::from_utf8(account.ilp_address.as_ref()).unwrap_or("<not utf8>"));
                             Ok(account)
                         })
+                })
+        )
+    }
+
+    fn redis_update_account(
+        &self,
+        id: AccountId,
+        account: AccountDetails,
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+        let connection = self.connection.clone();
+        let routing_table = self.routes.clone();
+        let encryption_key = self.encryption_key.clone();
+
+        // Instead of storing the incoming secrets, we store the HMAC digest of them
+        // (This is better than encrypting because the output is deterministic so we can look
+        // up the account by the HMAC of the auth details submitted by the account holder over the wire)
+        let btp_incoming_token_hmac = account
+            .btp_incoming_token
+            .clone()
+            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
+        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac;
+        let http_incoming_token_hmac = account
+            .http_incoming_token
+            .clone()
+            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
+        let http_incoming_token_hmac_clone = http_incoming_token_hmac;
+
+        Box::new(
+            // Check to make sure an account with this ID already exists
+            redis::cmd("EXISTS")
+                .arg(accounts_key(id))
+                // TODO this needs to be atomic with the insertions later, waiting on #186
+                .query_async(connection.as_ref().clone())
+                .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
+                .and_then(move |(connection, result): (SharedConnection, bool)| {
+                    if result {
+                        Account::try_from(id, account)
+                            .and_then(move |account| Ok((connection, account)))
+                    } else {
+                        warn!(
+                            "No account exists with ID {}, cannot update account {:?}",
+                            id, account
+                        );
+                        Err(())
+                    }
+                })
+                .and_then(move |(connection, account)| {
+                    let mut pipe = redis::pipe();
+                    pipe.atomic();
+
+                    // Add the account key to the list of accounts
+                    pipe.sadd("accounts", id).ignore();
+
+                    // Set account details
+                    pipe.cmd("HMSET")
+                        .arg(accounts_key(account.id))
+                        .arg(account.clone().encrypt_tokens(&encryption_key))
+                        .ignore();
+
+                    // Set incoming auth details
+                    if let Some(auth) = btp_incoming_token_hmac_clone {
+                        pipe.hset("btp_auth", auth.as_ref(), account.id).ignore();
+                    }
+
+                    if let Some(auth) = http_incoming_token_hmac_clone {
+                        pipe.hset("http_auth", auth.as_ref(), account.id).ignore();
+                    }
+
+                    if account.send_routes {
+                        pipe.sadd("send_routes_to", account.id).ignore();
+                    }
+
+                    if account.receive_routes {
+                        pipe.sadd("receive_routes_from", account.id).ignore();
+                    }
+
+                    if account.btp_uri.is_some() {
+                        pipe.sadd("btp_outgoing", account.id).ignore();
+                    }
+
+                    // Add route to routing table
+                    pipe.hset(
+                        ROUTES_KEY,
+                        account.ilp_address.to_bytes().to_vec(),
+                        account.id,
+                    )
+                    .ignore();
+
+                    pipe.query_async(connection)
+                        .map_err(|err| error!("Error inserting account into DB: {:?}", err))
+                        .and_then(move |(connection, _ret): (SharedConnection, Value)| {
+                            update_routes(connection, routing_table)
+                        })
+                        .and_then(move |_| {
+                            debug!(
+                                "Inserted account {} (ILP address: {})",
+                                account.id,
+                                str::from_utf8(account.ilp_address.as_ref())
+                                    .unwrap_or("<not utf8>")
+                            );
+                            Ok(account)
+                        })
                 }),
         )
     }
 
-    fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+    fn redis_delete_account(
+        &self,
+        id: AccountId,
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let connection = self.connection.as_ref().clone();
         let routing_table = self.routes.clone();
 
         Box::new(
-            // TODO: a retrieve_account API to avoid making Vecs which we only need one element of
-            self.retrieve_accounts(vec![id])
+            // TODO: a get_account API to avoid making Vecs which we only need one element of
+            self.redis_get_accounts(vec![id])
                 .and_then(|accounts| accounts.get(0).cloned().ok_or(()))
                 .and_then(|account| {
                     let mut pipe = redis::pipe();
@@ -411,7 +514,7 @@ impl RedisStore {
 
                     pipe.srem("accounts", account.id).ignore();
 
-                    pipe.del(account_details_key(account.id));
+                    pipe.del(accounts_key(account.id));
 
                     if account.send_routes {
                         pipe.srem("send_routes_to", account.id).ignore();
@@ -441,7 +544,7 @@ impl RedisStore {
         )
     }
 
-    fn retrieve_accounts(
+    fn redis_get_accounts(
         &self,
         account_ids: Vec<AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
@@ -449,7 +552,7 @@ impl RedisStore {
         let num_accounts = account_ids.len();
         let mut pipe = redis::pipe();
         for account_id in account_ids.iter() {
-            pipe.hgetall(account_details_key(*account_id));
+            pipe.hgetall(accounts_key(*account_id));
         }
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
@@ -484,7 +587,7 @@ impl AccountStore for RedisStore {
         &self,
         account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
-        self.retrieve_accounts(account_ids)
+        self.redis_get_accounts(account_ids)
     }
 }
 
@@ -494,7 +597,7 @@ impl BalanceStore for RedisStore {
     fn get_balance(&self, account: Account) -> Box<dyn Future<Item = i64, Error = ()> + Send> {
         Box::new(
             cmd("HMGET")
-                .arg(account_details_key(account.id))
+                .arg(accounts_key(account.id))
                 .arg(&["balance", "prepaid_amount"])
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
@@ -683,7 +786,7 @@ impl BtpStore for RedisStore {
                         } else {
                             let mut pipe = redis::pipe();
                             for id in account_ids {
-                                pipe.hgetall(account_details_key(id));
+                                pipe.hgetall(accounts_key(id));
                             }
                             Either::B(
                                 pipe.query_async(connection)
@@ -763,11 +866,19 @@ impl NodeStore for RedisStore {
         &self,
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
-        self.create_new_account(account)
+        self.redis_insert_account(account)
     }
 
-    fn remove_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
-        self.delete_account(id)
+    fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+        self.redis_delete_account(id)
+    }
+
+    fn update_account(
+        &self,
+        id: AccountId,
+        account: AccountDetails,
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+        self.redis_update_account(id, account)
     }
 
     // TODO limit the number of results and page through them
@@ -779,7 +890,7 @@ impl NodeStore for RedisStore {
         Box::new(self.get_all_accounts_ids().and_then(move |account_ids| {
             let mut pipe = redis::pipe();
             for account_id in account_ids {
-                pipe.hgetall(account_details_key(account_id));
+                pipe.hgetall(accounts_key(account_id));
             }
 
             pipe.query_async(connection.as_ref().clone())
@@ -830,7 +941,7 @@ impl NodeStore for RedisStore {
             HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| account_id));
         let mut pipe = redis::pipe();
         for account_id in accounts {
-            pipe.exists(account_details_key(*account_id));
+            pipe.exists(accounts_key(*account_id));
         }
 
         let routing_table = self.routes.clone();
@@ -868,7 +979,7 @@ impl NodeStore for RedisStore {
         let prefix_clone = prefix.clone();
         Box::new(
         cmd("EXISTS")
-            .arg(account_details_key(account_id))
+            .arg(accounts_key(account_id))
             .query_async(self.connection.as_ref().clone())
             .map_err(|err| error!("Error checking if account exists before setting static route: {:?}", err))
             .and_then(move |(connection, exists): (SharedConnection, bool)| {
@@ -915,7 +1026,7 @@ impl RouteManagerStore for RedisStore {
                         } else {
                             let mut pipe = redis::pipe();
                             for id in account_ids {
-                                pipe.hgetall(account_details_key(id));
+                                pipe.hgetall(accounts_key(id));
                             }
                             Either::B(
                                 pipe.query_async(connection)
@@ -967,7 +1078,7 @@ impl RouteManagerStore for RedisStore {
                         } else {
                             let mut pipe = redis::pipe();
                             for id in account_ids {
-                                pipe.hgetall(account_details_key(id));
+                                pipe.hgetall(accounts_key(id));
                             }
                             Either::B(
                                 pipe.query_async(connection)

@@ -78,7 +78,7 @@ impl_web! {
 
         #[post("/accounts")]
         #[content_type("application/json")]
-        fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
             // TODO try connecting to that account's websocket server if it has a btp_uri
             let se_url = body.settlement_engine_url.clone();
@@ -133,7 +133,7 @@ impl_web! {
 
         #[get("/accounts")]
         #[content_type("application/json")]
-        fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             if self.is_admin(&authorization) {
                 Either::A(store.get_all_accounts()
@@ -149,7 +149,7 @@ impl_web! {
 
         #[get("/accounts/:id")]
         #[content_type("application/json")]
-        fn get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_get_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let is_admin = self.is_admin(&authorization);
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
@@ -182,7 +182,7 @@ impl_web! {
 
         #[delete("/accounts/:id")]
         #[content_type("application/json")]
-        fn delete_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_delete_account(&self, id: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
             self.validate_admin(authorization)
                 .and_then(move |store| match parsed_id {
@@ -190,7 +190,7 @@ impl_web! {
                     Err(_) => Err(Response::error(400)),
                 })
                 .and_then(move |(store, id)|
-                    store.remove_account(id)
+                    store.delete_account(id)
                         .map_err(|_| Response::error(500))
                         .and_then(move |account| {
                             // TODO: deregister from SE if url is present
@@ -199,10 +199,30 @@ impl_web! {
                 )
         }
 
+        #[put("/accounts/:id")]
+        #[content_type("application/json")]
+        fn http_put_account(&self, id: String, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let parsed_id: Result<A::AccountId, ()> = A::AccountId::from_str(&id).map_err(|_| error!("Invalid id"));
+            self.validate_admin(authorization)
+                .and_then(move |store| if let Ok(id) = parsed_id {
+                    Ok((store, id))
+                } else {
+                    Err(Response::error(400))
+                })
+                .and_then(move |(store, id)|
+                    store.update_account(id, body)
+                        .map_err(|_| Response::error(500))
+                        .and_then(move |account| {
+                            Ok(json!(account))
+                        })
+                )
+
+        }
+
         // TODO should this be combined into the account record?
         #[get("/accounts/:id/balance")]
         #[content_type("application/json")]
-        fn get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
+        fn http_get_balance(&self, id: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
             let store = self.store.clone();
             let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
