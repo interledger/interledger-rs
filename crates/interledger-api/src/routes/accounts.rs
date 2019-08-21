@@ -162,9 +162,7 @@ impl_web! {
         fn get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let is_admin = self.is_admin(&authorization);
-            let username_clone = username.clone();
-            let auth_clone = authorization.clone();
-            result(A::AccountId::from_username(&username.clone()))
+            store.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
                 Response::builder().status(500).body(()).unwrap()
@@ -207,8 +205,9 @@ impl_web! {
         #[delete("/accounts/:username")]
         #[content_type("application/json")]
         fn delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let store_clone = self.store.clone();
             let self_clone = self.clone();
-            result(A::AccountId::from_username(&username))
+            store_clone.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
@@ -234,9 +233,7 @@ impl_web! {
             let store = self.store.clone();
             let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
-            let auth_clone= authorization.clone();
-            let username_clone = username.clone();
-            result(A::AccountId::from_username(&username.clone()))
+            store_clone.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
                 Response::builder().status(500).body(()).unwrap()

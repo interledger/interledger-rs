@@ -1,12 +1,12 @@
 use bytes::Bytes;
 use futures::{
-    future::{result, err, Either},
+    future::{err, Either},
     Future,
 };
 use hyper::{Body, Response};
 use interledger_http::{Auth, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
-use interledger_service::{AccountStore, IncomingService, FromUsername};
+use interledger_service::{AccountStore, IncomingService};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -90,7 +90,7 @@ impl_web! {
         fn get_spsp(&self, username: String) -> impl Future<Item = Response<Body>, Error = Response<()>> {
             let server_secret = self.server_secret.clone();
             let store = self.store.clone();
-            result(A::AccountId::from_username(&username))
+            store.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
