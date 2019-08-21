@@ -11,7 +11,7 @@ use std::str::FromStr;
 fn gets_account_from_btp_token() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_btp_token(&format!("{}:{}", "bob", "other_btp_token"))
+            .get_account_from_btp_token("bob", "other_btp_token")
             .and_then(move |account| {
                 assert_eq!(
                     *account.client_address(),
@@ -28,7 +28,7 @@ fn gets_account_from_btp_token() {
 fn decrypts_outgoing_tokens_btp() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_btp_token(&format!("{}:{}", "bob", "other_btp_token"))
+            .get_account_from_btp_token("bob", "other_btp_token")
             .and_then(move |account| {
                 // the account is created on Dylan's connector
                 assert_eq!(
@@ -50,7 +50,7 @@ fn decrypts_outgoing_tokens_btp() {
 fn errors_on_unknown_btp_token() {
     let result = block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_btp_token("some_user:unknown_btp_token")
+            .get_account_from_btp_token("some_user", "unknown_btp_token")
             .then(move |result| {
                 let _ = context;
                 result

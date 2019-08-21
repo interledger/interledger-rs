@@ -95,9 +95,8 @@ fn gets_account_from_btp_token() {
     block_on(test_store().and_then(|(store, context, accs)| {
         // alice's incoming btp token is the username/password to get her
         // account's information
-        let alice_auth = "alice:btp_token";
         store
-            .get_account_from_btp_token(&alice_auth)
+            .get_account_from_btp_token("alice", "btp_token")
             .and_then(move |acc| {
                 assert_eq!(acc.id(), accs[0].id());
                 let _ = context;
@@ -123,9 +122,6 @@ fn gets_account_from_http_token() {
 
 #[test]
 fn duplicate_btp_incoming_auth_works() {
-    let token = "btp_token";
-    let alice_auth = format!("{}:{}", "alice", token);
-    let charlie_auth = format!("{}:{}", "charlie", token);
     let mut charlie = ACCOUNT_DETAILS_2.clone();
     charlie.btp_incoming_token = Some("btp_token".to_string());
     block_on(test_store().and_then(|(store, context, accs)| {
@@ -135,8 +131,8 @@ fn duplicate_btp_incoming_auth_works() {
             let charlie_id = charlie.id();
             assert_ne!(alice_id, charlie_id);
             futures::future::join_all(vec![
-                store.get_account_from_btp_token(&alice_auth),
-                store.get_account_from_btp_token(&charlie_auth),
+                store.get_account_from_btp_token("alice", "btp_token"),
+                store.get_account_from_btp_token("charlie", "btp_token"),
             ])
             .and_then(move |accs| {
                 assert_ne!(accs[0].id(), accs[1].id());

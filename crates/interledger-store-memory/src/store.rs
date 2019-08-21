@@ -154,6 +154,7 @@ impl BtpStore for InMemoryStore {
 
     fn get_account_from_btp_token(
         &self,
+        _username: &str, // What does this do here?
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         if let Some(account_id) = self.btp_auth.read().get(&(token.to_string())) {
@@ -250,11 +251,11 @@ mod tests {
             .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_btp_token("test_token")
+            .get_account_from_btp_token("user", "test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_btp_token("bad_token")
+            .get_account_from_btp_token("another_user", "bad_token")
             .wait()
             .is_err());
     }

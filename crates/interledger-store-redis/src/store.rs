@@ -634,8 +634,6 @@ impl ExchangeRateStore for RedisStore {
     }
 }
 
-use interledger_http::Auth;
-
 impl BtpStore for RedisStore {
     type Account = Account;
 
@@ -643,6 +641,7 @@ impl BtpStore for RedisStore {
     //  store
     fn get_account_from_btp_token(
         &self,
+        username: &str,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
@@ -650,10 +649,6 @@ impl BtpStore for RedisStore {
         let decryption_key = self.decryption_key.clone();
         // The hmac made during account insertion is on both the account id and
         // the token.
-        let token = token.replace("%3A", ":");
-        let auth = Auth::parse(&token).unwrap(); // TODO: Handle error.
-        let username = auth.username();
-        let token = auth.password().to_owned();
         let account_id = AccountId::from_username(&username).unwrap().to_hex();
         // reconstruct the token from the username to use the account id
         let token = format!("{}:{}", account_id, token);
