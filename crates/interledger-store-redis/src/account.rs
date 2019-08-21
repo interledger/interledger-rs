@@ -200,9 +200,9 @@ impl FromStr for AccountId {
     type Err = ();
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let id_bytes = src.as_bytes();
+        let id_bytes = hex::decode(src).map_err(|_| ())?;
         let mut fixed_size = [0; 32];
-        fixed_size.copy_from_slice(id_bytes);
+        fixed_size.copy_from_slice(&id_bytes);
         Ok(AccountId(fixed_size))
     }
 }

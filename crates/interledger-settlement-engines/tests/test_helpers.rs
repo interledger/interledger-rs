@@ -6,7 +6,6 @@ use interledger_settlement_engines::engines::ethereum_ledger::run_ethereum_engin
 use interledger_store_redis::Account;
 use interledger_store_redis::AccountId;
 use redis::ConnectionInfo;
-use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
@@ -85,15 +84,15 @@ pub fn start_eth_engine(
 }
 
 #[allow(unused)]
-pub fn create_account_on_engine<T: Serialize>(
+pub fn create_account_on_engine(
     engine_port: u16,
-    account_id: T,
+    account_id: AccountId,
 ) -> impl Future<Item = String, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .post(&format!("http://localhost:{}/accounts", engine_port))
         .header("Content-Type", "application/json")
-        .json(&json!({ "id": account_id }))
+        .json(&json!({ "id": account_id.to_hex() }))
         .send()
         .and_then(move |res| res.error_for_status())
         .and_then(move |res| res.into_body().concat2())

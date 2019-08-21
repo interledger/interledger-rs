@@ -142,14 +142,6 @@ mod client_server {
                 Box::new(err(()))
             }
         }
-
-        // stub implementation (not used in these tests)
-        fn get_account_id_from_username(
-            &self,
-            _username: String,
-        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-            Box::new(ok(1))
-        }
     }
 
     impl BtpStore for TestStore {

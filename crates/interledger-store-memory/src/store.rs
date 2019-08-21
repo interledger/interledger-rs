@@ -124,13 +124,6 @@ impl AccountStore for InMemoryStore {
             Box::new(err(()))
         }
     }
-
-    fn get_account_id_from_username(
-        &self,
-        _username: String,
-    ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-        Box::new(ok(1))
-    }
 }
 
 impl HttpStore for InMemoryStore {

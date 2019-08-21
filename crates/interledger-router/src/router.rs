@@ -168,14 +168,6 @@ mod tests {
         ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(account_ids.into_iter().map(TestAccount).collect()))
         }
-
-        // stub implementation (not used in these tests)
-        fn get_account_id_from_username(
-            &self,
-            _username: String,
-        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-            Box::new(ok(1))
-        }
     }
 
     impl RouterStore for TestStore {

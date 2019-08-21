@@ -1,13 +1,13 @@
 use crate::BEARER_TOKEN_START;
 use bytes::Bytes;
 use futures::{
-    future::{result, err, Either},
+    future::{err, result, Either},
     Future,
 };
 use hyper::{Body, Response};
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
-use interledger_service::{AccountStore, IncomingService, FromUsername};
+use interledger_service::{AccountStore, FromUsername, IncomingService};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};

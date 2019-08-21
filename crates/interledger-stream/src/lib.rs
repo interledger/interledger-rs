@@ -81,14 +81,6 @@ pub mod test_helpers {
         ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(vec![self.route.1.clone()]))
         }
-
-        // stub implementation (not used in these tests)
-        fn get_account_id_from_username(
-            &self,
-            _username: String,
-        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-            Box::new(ok(1))
-        }
     }
 
     impl RouterStore for TestStore {
