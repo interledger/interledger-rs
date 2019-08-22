@@ -37,9 +37,10 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
+use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use redis::{
-    self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands, Value,
+    self, aio::SharedConnection, cmd, Client, ConnectionInfo, PipelineCommands, Script, Value,
 };
 use ring::{aead, hmac};
 use std::{
@@ -59,106 +60,112 @@ const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 // trips for messages to be sent to and from Redis, as well as locks to ensure no other
 // process is accessing Redis at the same time.
 // For more information on scripting in Redis, see https://redis.io/commands/eval
-static ACCOUNT_FROM_INDEX: &str = "
-local id = redis.call('HGET', KEYS[1], ARGV[1])
-if not id then
-    return nil
-end
-return redis.call('HGETALL', 'accounts:' .. id)";
-
-static PROCESS_PREPARE: &str = "
-local from_id = ARGV[1]
-local from_account = 'accounts:' .. ARGV[1]
-local from_amount = tonumber(ARGV[2])
-local min_balance, balance, prepaid_amount = unpack(redis.call('HMGET', from_account, 'min_balance', 'balance', 'prepaid_amount'))
-balance = tonumber(balance)
-prepaid_amount = tonumber(prepaid_amount)
-
--- Check that the prepare wouldn't go under the account's minimum balance
-if min_balance then
-    min_balance = tonumber(min_balance)
-    if balance + prepaid_amount - from_amount < min_balance then
-        error('Incoming prepare of ' .. from_amount .. ' would bring account ' .. from_id .. ' under its minimum balance. Current balance: ' .. balance .. ', min balance: ' .. min_balance)
+lazy_static! {
+    static ref ACCOUNT_FROM_INDEX: Script = Script::new("
+    local id = redis.call('HGET', KEYS[1], ARGV[1])
+    if not id then
+        return nil
     end
-end
+    return redis.call('HGETALL', 'accounts:' .. id)");
 
--- Deduct the from_amount from the prepaid_amount and/or the balance
-if prepaid_amount >= from_amount then
-    prepaid_amount = redis.call('HINCRBY', from_account, 'prepaid_amount', 0 - from_amount)
-elseif prepaid_amount > 0 then
-    local sub_from_balance = from_amount - prepaid_amount
-    prepaid_amount = 0
-    redis.call('HSET', from_account, 'prepaid_amount', 0)
-    balance = redis.call('HINCRBY', from_account, 'balance', 0 - sub_from_balance)
-else
-    balance = redis.call('HINCRBY', from_account, 'balance', 0 - from_amount)
-end
+    static ref PROCESS_PREPARE: Script = Script::new("
+    local from_id = ARGV[1]
+    local from_account = 'accounts:' .. ARGV[1]
+    local from_amount = tonumber(ARGV[2])
+    local min_balance, balance, prepaid_amount = unpack(redis.call('HMGET', from_account, 'min_balance', 'balance', 'prepaid_amount'))
+    balance = tonumber(balance)
+    prepaid_amount = tonumber(prepaid_amount)
 
-return balance + prepaid_amount";
-static PROCESS_FULFILL: &str = "
-local to_account = 'accounts:' .. ARGV[1]
-local to_amount = tonumber(ARGV[2])
+    -- Check that the prepare wouldn't go under the account's minimum balance
+    if min_balance then
+        min_balance = tonumber(min_balance)
+        if balance + prepaid_amount - from_amount < min_balance then
+            error('Incoming prepare of ' .. from_amount .. ' would bring account ' .. from_id .. ' under its minimum balance. Current balance: ' .. balance .. ', min balance: ' .. min_balance)
+        end
+    end
 
-local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
-local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'prepaid_amount', 'settle_threshold', 'settle_to'))
+    -- Deduct the from_amount from the prepaid_amount and/or the balance
+    if prepaid_amount >= from_amount then
+        prepaid_amount = redis.call('HINCRBY', from_account, 'prepaid_amount', 0 - from_amount)
+    elseif prepaid_amount > 0 then
+        local sub_from_balance = from_amount - prepaid_amount
+        prepaid_amount = 0
+        redis.call('HSET', from_account, 'prepaid_amount', 0)
+        balance = redis.call('HINCRBY', from_account, 'balance', 0 - sub_from_balance)
+    else
+        balance = redis.call('HINCRBY', from_account, 'balance', 0 - from_amount)
+    end
 
--- The logic for trigerring settlement is as follows:
---  1. settle_threshold must be non-nil (if it's nil, then settlement was perhaps disabled on the account).
---  2. balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
---  3. settle_threshold must be greater than settle_to (e.g., settleTo=5, settleThreshold=6)
-local settle_amount = 0
-if (settle_threshold and settle_to) and (balance >= tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
-    settle_amount = balance - tonumber(settle_to)
+    return balance + prepaid_amount");
 
-    -- Update the balance _before_ sending the settlement so that we don't accidentally send
-    -- multiple settlements for the same balance. If the settlement fails we'll roll back
-    -- the balance change by re-adding the amount back to the balance
-    balance = settle_to
-    redis.call('HSET', to_account, 'balance', balance)
-end
+    static ref PROCESS_FULFILL: Script = Script::new("
+    local to_account = 'accounts:' .. ARGV[1]
+    local to_amount = tonumber(ARGV[2])
 
-return {balance + prepaid_amount, settle_amount}";
-static PROCESS_REJECT: &str = "
-local from_account = 'accounts:' .. ARGV[1]
-local from_amount = tonumber(ARGV[2])
+    local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
+    local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'prepaid_amount', 'settle_threshold', 'settle_to'))
 
-local prepaid_amount = redis.call('HGET', from_account, 'prepaid_amount')
-local balance = redis.call('HINCRBY', from_account, 'balance', from_amount)
-return balance + prepaid_amount";
-static REFUND_SETTLEMENT: &str = "
-local account = 'accounts:' .. ARGV[1]
-local settle_amount = tonumber(ARGV[2])
+    -- The logic for trigerring settlement is as follows:
+    --  1. settle_threshold must be non-nil (if it's nil, then settlement was perhaps disabled on the account).
+    --  2. balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
+    --  3. settle_threshold must be greater than settle_to (e.g., settleTo=5, settleThreshold=6)
+    local settle_amount = 0
+    if (settle_threshold and settle_to) and (balance >= tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
+        settle_amount = balance - tonumber(settle_to)
 
-local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
-return balance";
-static PROCESS_INCOMING_SETTLEMENT: &str = "
-local account = 'accounts:' .. ARGV[1]
-local amount = tonumber(ARGV[2])
-local idempotency_key = ARGV[3]
+        -- Update the balance _before_ sending the settlement so that we don't accidentally send
+        -- multiple settlements for the same balance. If the settlement fails we'll roll back
+        -- the balance change by re-adding the amount back to the balance
+        balance = settle_to
+        redis.call('HSET', to_account, 'balance', balance)
+    end
 
-local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
+    return {balance + prepaid_amount, settle_amount}");
 
--- If idempotency key has been used, then do not perform any operations
-if redis.call('EXISTS', idempotency_key) == 1 then
-    return balance + prepaid_amount
-end
+    static ref PROCESS_REJECT: Script = Script::new("
+    local from_account = 'accounts:' .. ARGV[1]
+    local from_amount = tonumber(ARGV[2])
 
--- Otherwise, set it to true and make it expire after 24h (86400 sec)
-redis.call('SET', idempotency_key, 'true', 'EX', 86400)
+    local prepaid_amount = redis.call('HGET', from_account, 'prepaid_amount')
+    local balance = redis.call('HINCRBY', from_account, 'balance', from_amount)
+    return balance + prepaid_amount");
 
--- Credit the incoming settlement to the balance and/or prepaid amount,
--- depending on whether that account currently owes money or not
-if tonumber(balance) >= 0 then
-    prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
-elseif math.abs(balance) >= amount then
-    balance = redis.call('HINCRBY', account, 'balance', amount)
-else
-    prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount + balance)
-    balance = 0
-    redis.call('HSET', account, 'balance', 0)
-end
+    static ref REFUND_SETTLEMENT: Script = Script::new("
+    local account = 'accounts:' .. ARGV[1]
+    local settle_amount = tonumber(ARGV[2])
 
-return balance + prepaid_amount";
+    local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
+    return balance");
+
+    static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new("
+    local account = 'accounts:' .. ARGV[1]
+    local amount = tonumber(ARGV[2])
+    local idempotency_key = ARGV[3]
+
+    local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
+
+    -- If idempotency key has been used, then do not perform any operations
+    if redis.call('EXISTS', idempotency_key) == 1 then
+        return balance + prepaid_amount
+    end
+
+    -- Otherwise, set it to true and make it expire after 24h (86400 sec)
+    redis.call('SET', idempotency_key, 'true', 'EX', 86400)
+
+    -- Credit the incoming settlement to the balance and/or prepaid amount,
+    -- depending on whether that account currently owes money or not
+    if tonumber(balance) >= 0 then
+        prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
+    elseif math.abs(balance) >= amount then
+        balance = redis.call('HINCRBY', account, 'balance', amount)
+    else
+        prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount + balance)
+        balance = 0
+        redis.call('HSET', account, 'balance', 0)
+    end
+
+    return balance + prepaid_amount");
+}
 
 static ROUTES_KEY: &str = "routes:current";
 static RATES_KEY: &str = "rates:current";
@@ -622,12 +629,10 @@ impl BalanceStore for RedisStore {
         if incoming_amount > 0 {
             let from_account_id = from_account.id;
             Box::new(
-                cmd("EVAL")
-                    .arg(PROCESS_PREPARE)
-                    .arg(0)
+                PROCESS_PREPARE
                     .arg(from_account_id)
                     .arg(incoming_amount)
-                    .query_async(self.connection.as_ref().clone())
+                    .invoke_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         warn!(
                             "Error handling prepare from account: {}:  {:?}",
@@ -659,12 +664,10 @@ impl BalanceStore for RedisStore {
             );
             let to_account_id = to_account.id;
             Box::new(
-                cmd("EVAL")
-                    .arg(PROCESS_FULFILL)
-                    .arg(0)
+                PROCESS_FULFILL
                     .arg(to_account_id)
                     .arg(outgoing_amount)
-                    .query_async(self.connection.as_ref().clone())
+                    .invoke_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         error!(
                             "Error handling Fulfill received from account: {}: {:?}",
@@ -694,12 +697,10 @@ impl BalanceStore for RedisStore {
         if incoming_amount > 0 {
             let from_account_id = from_account.id;
             Box::new(
-                cmd("EVAL")
-                    .arg(PROCESS_REJECT)
-                    .arg(0)
+                PROCESS_REJECT
                     .arg(from_account_id)
                     .arg(incoming_amount)
-                    .query_async(self.connection.as_ref().clone())
+                    .invoke_async(self.connection.as_ref().clone())
                     .map_err(move |err| {
                         warn!(
                             "Error handling reject for packet from account: {}: {:?}",
@@ -749,12 +750,10 @@ impl BtpStore for RedisStore {
         // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
         let decryption_key = self.decryption_key.clone();
         Box::new(
-            cmd("EVAL")
-                .arg(ACCOUNT_FROM_INDEX)
-                .arg(1)
-                .arg("btp_auth")
+            ACCOUNT_FROM_INDEX
+                .key("btp_auth")
                 .arg(hmac::sign(&self.hmac_key, token.as_bytes()).as_ref())
-                .query_async(self.connection.as_ref().clone())
+                .invoke_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
@@ -829,12 +828,10 @@ impl HttpStore for RedisStore {
         let decryption_key = self.decryption_key.clone();
         let token = token.to_string();
         Box::new(
-            cmd("EVAL")
-                .arg(ACCOUNT_FROM_INDEX)
-                .arg(1)
-                .arg("http_auth")
+            ACCOUNT_FROM_INDEX
+                .key("http_auth")
                 .arg(hmac::sign(&self.hmac_key, token.as_bytes()).as_ref())
-                .query_async(self.connection.as_ref().clone())
+                .invoke_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
@@ -1354,13 +1351,12 @@ impl SettlementStore for RedisStore {
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let idempotency_key = idempotency_key.unwrap();
-        Box::new(cmd("EVAL")
-            .arg(PROCESS_INCOMING_SETTLEMENT)
-            .arg(0)
+        Box::new(
+            PROCESS_INCOMING_SETTLEMENT
             .arg(account_id)
             .arg(amount)
             .arg(idempotency_key)
-            .query_async(self.connection.as_ref().clone())
+            .invoke_async(self.connection.as_ref().clone())
             .map_err(move |err| error!("Error processing incoming settlement from account: {} for amount: {}: {:?}", account_id, amount, err))
             .and_then(move |(_connection, balance): (_, i64)| {
                 trace!("Processed incoming settlement from account: {} for amount: {}. Balance is now: {}", account_id, amount, balance);
@@ -1379,12 +1375,10 @@ impl SettlementStore for RedisStore {
             settle_amount
         );
         Box::new(
-            cmd("EVAL")
-                .arg(REFUND_SETTLEMENT)
-                .arg(0)
+            REFUND_SETTLEMENT
                 .arg(account_id)
                 .arg(settle_amount)
-                .query_async(self.connection.as_ref().clone())
+                .invoke_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
                         "Error refunding settlement for account: {} of amount: {}: {:?}",

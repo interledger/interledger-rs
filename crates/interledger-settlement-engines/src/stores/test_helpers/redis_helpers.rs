@@ -134,7 +134,7 @@ impl TestContext {
             passwd: None,
         })
         .unwrap();
-        let con;
+        let mut con;
 
         let millisecond = Duration::from_millis(1);
         loop {
@@ -152,7 +152,7 @@ impl TestContext {
                 }
             }
         }
-        redis::cmd("FLUSHDB").execute(&con);
+        redis::cmd("FLUSHDB").execute(&mut con);
 
         TestContext { server, client }
     }
@@ -170,7 +170,7 @@ impl TestContext {
         self.client.get_connection().unwrap()
     }
 
-    pub fn async_connection(&self) -> impl Future<Item = redis::r#async::Connection, Error = ()> {
+    pub fn async_connection(&self) -> impl Future<Item = redis::aio::Connection, Error = ()> {
         self.client
             .get_async_connection()
             .map_err(|err| panic!(err))
@@ -182,7 +182,7 @@ impl TestContext {
 
     pub fn shared_async_connection(
         &self,
-    ) -> impl Future<Item = redis::r#async::SharedConnection, Error = RedisError> {
+    ) -> impl Future<Item = redis::aio::SharedConnection, Error = RedisError> {
         self.client.get_shared_async_connection()
     }
 }
