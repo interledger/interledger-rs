@@ -14,9 +14,10 @@ pub struct AccountBuilder {
 }
 
 impl AccountBuilder {
-    pub fn new(ilp_address: Address) -> Self {
+    pub fn new(ilp_address: Address, username: String) -> Self {
         let details = AccountDetails {
             ilp_address,
+            username,
             max_packet_amount: u64::max_value(),
             id: 0,
             additional_routes: Vec::new(),
@@ -38,6 +39,11 @@ impl AccountBuilder {
 
     pub fn id(mut self, id: u64) -> Self {
         self.details.id = id;
+        self
+    }
+
+    pub fn username(mut self, username: String) -> Self {
+        self.details.username = username;
         self
     }
 
@@ -100,6 +106,7 @@ impl AccountBuilder {
 #[derive(Clone)]
 pub(crate) struct AccountDetails {
     pub(crate) id: u64,
+    pub(crate) username: String,
     pub(crate) ilp_address: Address,
     pub(crate) additional_routes: Vec<Bytes>,
     pub(crate) asset_code: String,
@@ -146,7 +153,7 @@ impl AccountTrait for Account {
     }
 
     fn username(&self) -> &str {
-        "alice"
+        &self.inner.username
     }
 }
 
@@ -202,7 +209,7 @@ mod tests {
     use std::str::FromStr;
     #[test]
     fn uses_default_values() {
-        let account = AccountBuilder::new(Address::from_str("example.address").unwrap()).build();
+        let account = AccountBuilder::new(Address::from_str("example.address").unwrap(), "username".to_string()).build();
         assert_eq!(account.id(), 0);
         assert_eq!(account.asset_code(), "");
         assert_eq!(account.asset_scale(), 0);
@@ -213,11 +220,15 @@ mod tests {
             *account.client_address(),
             Address::from_str("example.address").unwrap()
         );
+        assert_eq!(
+            account.username(),
+            "username",
+        );
     }
 
     #[test]
     fn returns_properties_correctly() {
-        let account = AccountBuilder::new(Address::from_str("example.address").unwrap())
+        let account = AccountBuilder::new(Address::from_str("example.address").unwrap(), "username".to_string())
             .id(1)
             .additional_routes(&[b"example.route", b"example.other-route"])
             .asset_code("XYZ".to_string())
@@ -242,5 +253,9 @@ mod tests {
         assert_eq!(account.get_http_auth_token(), Some("sodgiuoixfugoiudf"));
         assert_eq!(account.max_packet_amount(), 7777);
         assert_eq!(account.client_address(), &b"example.address"[..]);
+        assert_eq!(
+            account.username(),
+            "username",
+        );
     }
 }

@@ -61,6 +61,7 @@ impl InMemoryStore {
 
         let btp_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
             if let Some(ref token) = account.inner.btp_incoming_token {
+                let token = format!("{}:{}", account.username(), token.clone());
                 Some((token.to_string(), *account_id))
             } else {
                 None
@@ -69,6 +70,7 @@ impl InMemoryStore {
 
         let http_auth = HashMap::from_iter(accounts.iter().filter_map(|(account_id, account)| {
             if let Some(ref auth) = account.inner.http_incoming_token {
+                let auth = format!("{}:{}", account.username(), auth.clone());
                 Some((auth.to_string(), *account_id))
             } else {
                 None
@@ -95,9 +97,11 @@ impl InMemoryStore {
                 .insert(route.clone(), account.id());
         }
         if let Some(ref btp_auth) = account.inner.btp_incoming_token {
+            let btp_auth = format!("{}:{}", account.username(), btp_auth.clone());
             self.btp_auth.write().insert(btp_auth.clone(), account.id());
         }
         if let Some(ref http_auth) = account.inner.http_incoming_token {
+            let http_auth = format!("{}:{}", account.username(), http_auth.clone());
             self.http_auth
                 .write()
                 .insert(http_auth.clone(), account.id());
@@ -138,10 +142,11 @@ impl HttpStore for InMemoryStore {
 
     fn get_account_from_http_token(
         &self,
-        _username: &str, // What's going on here? InMemoryStore is very confusing.
-        auth_header: &str,
+        username: &str,
+        token: &str,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
-        if let Some(account_id) = self.http_auth.read().get(auth_header) {
+        let token = format!("{}:{}", username, token);
+        if let Some(account_id) = self.http_auth.read().get(&token) {
             if let Some(account) = self.accounts.read().get(account_id) {
                 return Box::new(ok(account.clone()));
             }
@@ -161,9 +166,10 @@ impl BtpStore for InMemoryStore {
 
     fn get_account_from_btp_token(
         &self,
-        _username: &str, // What does this do here?
+        username: &str,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+        let token = format!("{}:{}", username, token);
         if let Some(account_id) = self.btp_auth.read().get(&(token.to_string())) {
             Box::new(ok(self.accounts.read()[account_id].clone()))
         } else {
@@ -196,7 +202,7 @@ impl BtpOpenSignupStore for InMemoryStore {
             *self.next_account_id.lock() += 1;
             next_id
         };
-        let account = AccountBuilder::new(account.ilp_address.clone())
+        let account = AccountBuilder::new(account.ilp_address.clone(), "username".to_string())
             .id(account_id)
             .btp_incoming_token(account.auth_token.to_string())
             .asset_code(account.asset_code.to_string())
@@ -224,9 +230,17 @@ mod tests {
     #[test]
     fn get_accounts() {
         let store = InMemoryStore::new(vec![
-            AccountBuilder::new(Address::from_str("example.zero").unwrap()).id(0),
-            AccountBuilder::new(Address::from_str("example.one").unwrap()).id(1),
-            AccountBuilder::new(Address::from_str("example.four").unwrap()).id(4),
+            AccountBuilder::new(
+                Address::from_str("example.zero").unwrap(),
+                "zero".to_string(),
+            )
+            .id(0),
+            AccountBuilder::new(Address::from_str("example.one").unwrap(), "one".to_string()).id(1),
+            AccountBuilder::new(
+                Address::from_str("example.four").unwrap(),
+                "four".to_string(),
+            )
+            .id(4),
         ]);
         let accounts = store.get_accounts(vec![0, 4]).wait().unwrap();
         assert_eq!(accounts[0].id(), 0);
@@ -237,12 +251,15 @@ mod tests {
 
     #[test]
     fn query_by_http_auth() {
-        let account = AccountBuilder::new(Address::from_str("example.zero").unwrap())
-            .http_incoming_token("test_token".to_string())
-            .build();
+        let account = AccountBuilder::new(
+            Address::from_str("example.zero").unwrap(),
+            "zero".to_string(),
+        )
+        .http_incoming_token("test_token".to_string())
+        .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_token("username", "test_token")
+            .get_account_from_http_token("zero", "test_token")
             .wait()
             .unwrap();
         assert!(store
@@ -253,12 +270,15 @@ mod tests {
 
     #[test]
     fn query_by_btp() {
-        let account = AccountBuilder::new(Address::from_str("example.zero").unwrap())
-            .btp_incoming_token("test_token".to_string())
-            .build();
+        let account = AccountBuilder::new(
+            Address::from_str("example.zero").unwrap(),
+            "zero".to_string(),
+        )
+        .btp_incoming_token("test_token".to_string())
+        .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_btp_token("user", "test_token")
+            .get_account_from_btp_token("zero", "test_token")
             .wait()
             .unwrap();
         assert!(store
@@ -270,10 +290,10 @@ mod tests {
     #[test]
     fn routing_table() {
         let store = InMemoryStore::new(vec![
-            AccountBuilder::new(Address::from_str("example.one").unwrap())
+            AccountBuilder::new(Address::from_str("example.one").unwrap(), "one".to_string())
                 .id(1)
                 .additional_routes(&[b"example.three"]),
-            AccountBuilder::new(Address::from_str("example.two").unwrap()).id(2),
+            AccountBuilder::new(Address::from_str("example.two").unwrap(), "two".to_string()).id(2),
         ]);
 
         assert_eq!(
