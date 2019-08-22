@@ -107,18 +107,18 @@ mod tests {
     #[test]
     fn parses_correctly() {
         assert_eq!(
-            Auth::parse("Basic ZXZhbjpzY2h3YXJ6").unwrap(),
-            Auth::new("evan", "schwarz")
+            Auth::parse("Basic aW50ZXJsZWRnZXI6cnVzdA==").unwrap(),
+            Auth::new("interledger", "rust")
         );
 
         assert_eq!(
-            Auth::parse("Bearer evan%3Aschwarz").unwrap(),
-            Auth::new("evan", "schwarz")
+            Auth::parse("Bearer interledger%3Arust").unwrap(),
+            Auth::new("interledger", "rust")
         );
 
         assert_eq!(
-            Auth::parse("Bearer evan:schwarz").unwrap(),
-            Auth::new("evan", "schwarz")
+            Auth::parse("Bearer interledger:rust").unwrap(),
+            Auth::new("interledger", "rust")
         );
 
         assert!(Auth::parse("SomethingElse asdf").is_err());
