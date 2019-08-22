@@ -39,7 +39,7 @@ use std::{
 use serde::Serialize;
 
 mod auth;
-pub use auth::Auth as AuthToken;
+pub use auth::{Auth as AuthToken, Username};
 
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
