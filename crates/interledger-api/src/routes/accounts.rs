@@ -148,9 +148,7 @@ impl_web! {
                         Response::error(401)
                     })
                     .and_then(move |auth| {
-                        let username = auth.username().to_owned();
-                        let token = auth.password().to_owned();
-                        store.get_account_from_http_token(&username, &token).map_err(|_| Response::error(404))
+                        store.get_account_from_http_token(&auth.username(), &auth.password()).map_err(|_| Response::error(401))
                         .and_then(|account| Ok(json!(vec![account])))
                     })
                 )
@@ -164,10 +162,19 @@ impl_web! {
             let is_admin = self.is_admin(&authorization);
             let username_clone = username.clone();
             let auth_clone = authorization.clone();
+            // TODO:
+            // It seems somewhat inconsistent that get_account_from_http_token
+            // would return the Account while this method only gives the ID (and
+            // then the next call is made to get the account)
+            // One option would be to have two methods get_account_from_username
+            // and get_account_from_id (or just get_account) that would provide
+            // two ways to get the full Account details. If the next call only
+            // takes the account ID, that would be fine because you could just
+            // get that ID from the Account
             store.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
-                Response::builder().status(500).body(()).unwrap()
+                Response::builder().status(404).body(()).unwrap()
             })
             .and_then(move |id| {
                 if is_admin  {

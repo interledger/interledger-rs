@@ -146,7 +146,7 @@ where
 
 struct Auth {
     request_id: u32,
-    username: Option<String>, // This username is different from the one saved per account (?)
+    username: Option<String>,
     token: String,
 }
 

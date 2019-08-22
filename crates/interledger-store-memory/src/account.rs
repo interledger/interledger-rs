@@ -209,7 +209,11 @@ mod tests {
     use std::str::FromStr;
     #[test]
     fn uses_default_values() {
-        let account = AccountBuilder::new(Address::from_str("example.address").unwrap(), "username".to_string()).build();
+        let account = AccountBuilder::new(
+            Address::from_str("example.address").unwrap(),
+            "username".to_string(),
+        )
+        .build();
         assert_eq!(account.id(), 0);
         assert_eq!(account.asset_code(), "");
         assert_eq!(account.asset_scale(), 0);
@@ -220,28 +224,28 @@ mod tests {
             *account.client_address(),
             Address::from_str("example.address").unwrap()
         );
-        assert_eq!(
-            account.username(),
-            "username",
-        );
+        assert_eq!(account.username(), "username",);
     }
 
     #[test]
     fn returns_properties_correctly() {
-        let account = AccountBuilder::new(Address::from_str("example.address").unwrap(), "username".to_string())
-            .id(1)
-            .additional_routes(&[b"example.route", b"example.other-route"])
-            .asset_code("XYZ".to_string())
-            .asset_scale(9)
-            .btp_uri(Url::parse("btp+wss://example.com").unwrap())
-            .btp_outgoing_token("token".to_string())
-            .btp_incoming_token("auth".to_string())
-            .http_endpoint(Url::parse("http://example.com").unwrap())
-            .http_incoming_token("sldkfjlkdsjflj".to_string())
-            .http_outgoing_token("sodgiuoixfugoiudf".to_string())
-            .btp_incoming_token("asdflkjsaldkfjoi".to_string())
-            .max_packet_amount(7777)
-            .build();
+        let account = AccountBuilder::new(
+            Address::from_str("example.address").unwrap(),
+            "username".to_string(),
+        )
+        .id(1)
+        .additional_routes(&[b"example.route", b"example.other-route"])
+        .asset_code("XYZ".to_string())
+        .asset_scale(9)
+        .btp_uri(Url::parse("btp+wss://example.com").unwrap())
+        .btp_outgoing_token("token".to_string())
+        .btp_incoming_token("auth".to_string())
+        .http_endpoint(Url::parse("http://example.com").unwrap())
+        .http_incoming_token("sldkfjlkdsjflj".to_string())
+        .http_outgoing_token("sodgiuoixfugoiudf".to_string())
+        .btp_incoming_token("asdflkjsaldkfjoi".to_string())
+        .max_packet_amount(7777)
+        .build();
         assert_eq!(account.id(), 1);
         assert_eq!(account.asset_code(), "XYZ");
         assert_eq!(account.asset_scale(), 9);
@@ -253,9 +257,6 @@ mod tests {
         assert_eq!(account.get_http_auth_token(), Some("sodgiuoixfugoiudf"));
         assert_eq!(account.max_packet_amount(), 7777);
         assert_eq!(account.client_address(), &b"example.address"[..]);
-        assert_eq!(
-            account.username(),
-            "username",
-        );
+        assert_eq!(account.username(), "username",);
     }
 }

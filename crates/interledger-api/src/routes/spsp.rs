@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::{
-    future::{result, err, Either},
+    future::{err, result, Either},
     Future,
 };
 use hyper::{Body, Response};
@@ -64,7 +64,7 @@ impl_web! {
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
             let service = self.incoming_handler.clone();
             let store = self.store.clone();
-            
+
             result(Auth::parse(&authorization))
             .map_err(|err| {
                 let error_msg = format!("Could not convert auth token {:?}", err);
