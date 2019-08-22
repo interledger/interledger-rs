@@ -5,8 +5,8 @@ use interledger_btp::BtpAccount;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
-use std::str::FromStr;
 use interledger_service::Username;
+use std::str::FromStr;
 
 #[test]
 fn gets_account_from_http_bearer_token() {

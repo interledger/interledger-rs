@@ -235,7 +235,11 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         "id".write_redis_args(&mut rv);
         account.id.write_redis_args(&mut rv);
         "username".write_redis_args(&mut rv);
-        account.username.as_bytes().to_vec().write_redis_args(&mut rv);
+        account
+            .username
+            .as_bytes()
+            .to_vec()
+            .write_redis_args(&mut rv);
         if !account.ilp_address.is_empty() {
             "ilp_address".write_redis_args(&mut rv);
             rv.push(account.ilp_address.to_bytes().to_vec());

@@ -1,5 +1,5 @@
-use base64;
 use crate::Username;
+use base64;
 use std::str::FromStr;
 
 // Helpers for parsing authorization methods

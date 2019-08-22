@@ -7,8 +7,7 @@ use futures::{
 use interledger_ildcp::IldcpAccount;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService,
-    OutgoingService,
-    Username,
+    OutgoingService, Username,
 };
 
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};

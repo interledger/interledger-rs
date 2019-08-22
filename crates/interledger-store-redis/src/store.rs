@@ -497,7 +497,8 @@ impl RedisStore {
                     pipe.srem("accounts", account.id).ignore();
 
                     pipe.del(accounts_key(account.id)).ignore();
-                    pipe.hdel("usernames", account.username().as_bytes().to_vec()).ignore();
+                    pipe.hdel("usernames", account.username().as_bytes().to_vec())
+                        .ignore();
 
                     if account.send_routes {
                         pipe.srem("send_routes_to", account.id).ignore();

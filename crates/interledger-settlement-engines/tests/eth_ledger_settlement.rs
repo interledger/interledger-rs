@@ -8,9 +8,9 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
-use interledger_service::Username;
 
 mod redis_helpers;
 use redis_helpers::*;

@@ -3,7 +3,6 @@ use futures::{
     future::{err, ok, result, Either},
     Future,
 };
-use std::str::FromStr;
 use hyper::Response;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_service::{Account, AuthToken, Username};
@@ -12,6 +11,7 @@ use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::str::FromStr;
 use tokio_retry::{strategy::FixedInterval, Retry};
 use tower_web::{impl_web, Response};
 use url::Url;

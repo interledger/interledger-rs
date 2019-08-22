@@ -15,11 +15,11 @@ mod redis_helpers;
 use redis_helpers::*;
 
 mod test_helpers;
+use interledger_service::Username;
 use test_helpers::{
     accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
     send_money_to_username, start_eth_engine, start_ganache, start_xrp_engine,
 };
-use interledger_service::Username;
 
 #[test]
 fn eth_xrp_interoperable() {

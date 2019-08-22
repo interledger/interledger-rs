@@ -6,8 +6,8 @@ use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
-use interledger_service::Username;
 use interledger_packet::Address;
+use interledger_service::Username;
 use serde_json::json;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;

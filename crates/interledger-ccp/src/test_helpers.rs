@@ -9,8 +9,7 @@ use futures::{
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
-    OutgoingService,
-    Username,
+    OutgoingService, Username,
 };
 #[cfg(test)]
 use lazy_static::lazy_static;

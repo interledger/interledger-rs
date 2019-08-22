@@ -3,12 +3,12 @@ use futures::{
     future::{join_all, ok},
     Future,
 };
-use interledger_service::Username;
 use interledger::{
     cli,
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use log::debug;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
