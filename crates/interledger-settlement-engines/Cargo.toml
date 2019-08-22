@@ -29,7 +29,7 @@ reqwest = "0.9.18"
 env_logger = "0.6.2"
 uuid = { version = "0.7.4", features = ["serde", "v4"]  }
 tokio-retry = "0.2.0"
-redis = { version = "0.10.0", features = [ "with-unix-sockets" ] }
+redis = "0.12.0"
 http = "0.1.17"
 clap = "2.32.0"
 clarity = "0.1.22"
