@@ -3,9 +3,10 @@ use futures::{
     future::{err, ok, result, Either},
     Future,
 };
+use std::str::FromStr;
 use hyper::Response;
-use interledger_http::HttpAccount, HttpStore};
-use interledger_service::{Account, AuthToken};
+use interledger_http::{HttpAccount, HttpStore};
+use interledger_service::{Account, AuthToken, Username};
 use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
@@ -148,7 +149,7 @@ impl_web! {
                         Response::error(401)
                     })
                     .and_then(move |auth| {
-                        store.get_account_from_http_token(&auth.username(), &auth.password()).map_err(|_| Response::error(401))
+                        store.get_account_from_http_token(auth.username(), &auth.password()).map_err(|_| Response::error(401))
                         .and_then(|account| Ok(json!(vec![account])))
                     })
                 )
@@ -171,6 +172,12 @@ impl_web! {
             // two ways to get the full Account details. If the next call only
             // takes the account ID, that would be fine because you could just
             // get that ID from the Account
+            result(Username::from_str(&username))
+            .map_err(move |_| {
+                error!("Invalid username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |username| {
             store.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
@@ -191,9 +198,7 @@ impl_web! {
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            let username = auth.username().to_owned();
-                            let token = auth.password().to_owned();
-                            store.get_account_from_http_token(&username, &token)
+                            store.get_account_from_http_token(auth.username(), &auth.password())
                             .map_err(move |_| {
                                 debug!("No account found with auth: {}", authorization);
                                 Response::error(401)
@@ -209,6 +214,7 @@ impl_web! {
                     )
                 }
             })
+            })
         }
 
         #[delete("/accounts/:username")]
@@ -216,22 +222,29 @@ impl_web! {
         fn http_delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store_clone = self.store.clone();
             let self_clone = self.clone();
-            store_clone.get_account_id_from_username(username.clone())
+            result(Username::from_str(&username))
             .map_err(move |_| {
-                error!("Error getting account id from username: {}", username);
+                error!("Invalid username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
             })
-            .and_then(move |id| {
-                self_clone.validate_admin(authorization)
-                .and_then(move |store| Ok((store, id)))
-                .and_then(move |(store, id)|
-                    store.delete_account(id)
-                        .map_err(move |_| Response::error(500))
-                        .and_then(move |account| {
-                            // TODO: deregister from SE if url is present
-                            Ok(json!(account))
-                        })
-                )
+            .and_then(move |username| {
+                store_clone.get_account_id_from_username(username.clone())
+                .map_err(move |_| {
+                    error!("Error getting account id from username: {}", username);
+                    Response::builder().status(500).body(()).unwrap()
+                })
+                .and_then(move |id| {
+                    self_clone.validate_admin(authorization)
+                    .and_then(move |store| Ok((store, id)))
+                    .and_then(move |(store, id)|
+                        store.delete_account(id)
+                            .map_err(move |_| Response::error(500))
+                            .and_then(move |account| {
+                                // TODO: deregister from SE if url is present
+                                Ok(json!(account))
+                            })
+                    )
+                })
             })
         }
 
@@ -239,7 +252,13 @@ impl_web! {
         #[content_type("application/json")]
         fn http_put_account(&self, username: String, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let self_clone = self.clone();
-            self.store.get_account_id_from_username(username.clone())
+            result(Username::from_str(&username))
+            .map_err(move |_| {
+                error!("Invalid username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |username| {
+            self_clone.store.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
@@ -255,6 +274,7 @@ impl_web! {
                         })
                 )
             })
+            })
 
         }
 
@@ -267,6 +287,12 @@ impl_web! {
             let is_admin = self.is_admin(&authorization);
             let username_clone = username.clone();
             let auth_clone = authorization.clone();
+            result(Username::from_str(&username))
+            .map_err(move |_| {
+                error!("Invalid username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |username| {
             store_clone.get_account_id_from_username(username.clone())
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
@@ -289,7 +315,7 @@ impl_web! {
                         .and_then(move |auth| {
                             let token = auth.password().to_owned();
 
-                            store.get_account_from_http_token(&username, &token)
+                            store.get_account_from_http_token(auth.username(), &token)
                             .map_err(move |_| {
                                 error!("No account found with auth: {}", authorization);
                                 Response::error(401)
@@ -310,6 +336,7 @@ impl_web! {
             .and_then(|balance| Ok(BalanceResponse {
                 balance: balance.to_string(),
             }))
+            })
         }
     }
 }

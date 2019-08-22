@@ -249,8 +249,8 @@ mod tests {
             0
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> Username {
+            Username::from_str("alice").unwrap()
         }
     }
 

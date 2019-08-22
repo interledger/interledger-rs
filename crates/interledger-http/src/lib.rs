@@ -3,7 +3,7 @@
 //! Client and server implementations of the [ILP-Over-HTTP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md) bilateral communication protocol.
 //! This protocol is intended primarily for server-to-server communication between peers on the Interledger network.
 use futures::Future;
-use interledger_service::Account;
+use interledger_service::{Account, Username};
 use url::Url;
 
 mod client;
@@ -29,7 +29,7 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
     /// received on the incoming HTTP request.
     fn get_account_from_http_token(
         &self,
-        username: &str,
+        username: Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 }

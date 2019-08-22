@@ -51,7 +51,7 @@ pub trait Account: Clone + Send + Sized + Debug {
     type AccountId: Eq + Hash + Debug + Display + Default + FromStr + Send + Sync + Copy + Serialize;
 
     fn id(&self) -> Self::AccountId;
-    fn username(&self) -> &str;
+    fn username(&self) -> Username;
 }
 
 /// A struct representing an incoming ILP Prepare packet or an outgoing one before the next hop is set.
@@ -113,7 +113,7 @@ pub trait AccountStore {
 
     fn get_account_id_from_username(
         &self,
-        username: String,
+        username: Username,
     ) -> Box<
         dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()>
             + Send,

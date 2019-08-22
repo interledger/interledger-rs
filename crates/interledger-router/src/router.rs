@@ -149,8 +149,8 @@ mod tests {
             self.0
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> Username {
+            Username::from_str("alice").unwrap()
         }
     }
 
@@ -172,7 +172,7 @@ mod tests {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: String,
+            _username: Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }

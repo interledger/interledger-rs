@@ -34,7 +34,7 @@ use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore};
+use interledger_service::{Account as AccountTrait, AccountStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
 use parking_lot::RwLock;
@@ -314,7 +314,7 @@ impl RedisStore {
                     // Check that there isn't already an account with values that MUST be unique
                     let mut pipe = redis::pipe();
                     pipe.exists(accounts_key(account.id));
-                    pipe.hexists("usernames", account.username());
+                    pipe.hexists("usernames", account.username().as_bytes().to_vec());
 
                     pipe.query_async(connection.as_ref().clone())
                         .map_err(|err| {
@@ -339,7 +339,7 @@ impl RedisStore {
                     pipe.sadd("accounts", id).ignore();
 
                     // Save map for Username -> Account ID
-                    pipe.hset("usernames", account.username(), id).ignore();
+                    pipe.hset("usernames", account.username().as_bytes().to_vec(), id).ignore();
 
                     // Set account details
                     pipe.cmd("HMSET").arg(accounts_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
@@ -497,7 +497,7 @@ impl RedisStore {
                     pipe.srem("accounts", account.id).ignore();
 
                     pipe.del(accounts_key(account.id)).ignore();
-                    pipe.hdel("usernames", account.username()).ignore();
+                    pipe.hdel("usernames", account.username().as_bytes().to_vec()).ignore();
 
                     if account.send_routes {
                         pipe.srem("send_routes_to", account.id).ignore();
@@ -575,12 +575,12 @@ impl AccountStore for RedisStore {
 
     fn get_account_id_from_username(
         &self,
-        username: String,
+        username: Username,
     ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
         Box::new(
             cmd("HGET")
                 .arg("usernames")
-                .arg(username.clone())
+                .arg(username.clone().as_bytes().to_vec())
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -745,7 +745,7 @@ impl BtpStore for RedisStore {
 
     fn get_account_from_btp_token(
         &self,
-        username: &str,
+        username: Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
@@ -756,7 +756,7 @@ impl BtpStore for RedisStore {
                 .arg(ACCOUNT_FROM_TOKEN)
                 .arg(0)
                 .arg("btp_incoming_token")
-                .arg(username)
+                .arg(username.as_bytes().to_vec())
                 .arg(token)
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
@@ -829,7 +829,7 @@ impl HttpStore for RedisStore {
     /// provided token, and if so, returns the account associated with that token
     fn get_account_from_http_token(
         &self,
-        username: &str,
+        username: Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
@@ -839,7 +839,7 @@ impl HttpStore for RedisStore {
                 .arg(ACCOUNT_FROM_TOKEN)
                 .arg(0)
                 .arg("http_incoming_token")
-                .arg(username)
+                .arg(username.as_bytes().to_vec())
                 .arg(token)
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))

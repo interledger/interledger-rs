@@ -6,12 +6,13 @@ use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use std::str::FromStr;
+use interledger_service::Username;
 
 #[test]
 fn gets_account_from_http_bearer_token() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_http_token("alice", "incoming_auth_token")
+            .get_account_from_http_token(ALICE.clone(), "incoming_auth_token")
             .and_then(move |account| {
                 assert_eq!(
                     *account.client_address(),
@@ -37,7 +38,7 @@ fn gets_account_from_http_bearer_token() {
 fn decrypts_outgoing_tokens_http() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_http_token("alice", "incoming_auth_token")
+            .get_account_from_http_token(ALICE.clone(), "incoming_auth_token")
             .and_then(move |account| {
                 assert_eq!(
                     account.get_http_auth_token().unwrap(),
@@ -58,7 +59,7 @@ fn decrypts_outgoing_tokens_http() {
 fn errors_on_unknown_http_auth() {
     let result = block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_http_token("some_user", "unknown_token")
+            .get_account_from_http_token(Username::from_str("someuser").unwrap(), "unknown_token")
             .then(move |result| {
                 let _ = context;
                 result

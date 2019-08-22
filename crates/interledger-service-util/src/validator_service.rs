@@ -159,6 +159,8 @@ where
 }
 
 #[cfg(test)]
+use std::str::FromStr;
+#[cfg(test)]
 #[derive(Clone, Debug)]
 struct TestAccount(u64);
 #[cfg(test)]
@@ -169,8 +171,8 @@ impl Account for TestAccount {
         self.0
     }
 
-    fn username(&self) -> &str {
-        "alice"
+    fn username(&self) -> Username {
+        Username::from_str("alice").unwrap()
     }
 }
 
@@ -179,7 +181,6 @@ mod incoming {
     use super::*;
     use interledger_packet::*;
     use interledger_service::incoming_service_fn;
-    use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
         time::{Duration, SystemTime},

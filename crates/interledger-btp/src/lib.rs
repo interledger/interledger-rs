@@ -7,7 +7,7 @@
 //! endpoint but both sides can send and receive ILP packets.
 
 use futures::Future;
-use interledger_service::Account;
+use interledger_service::{Account, Username};
 use url::Url;
 
 mod client;
@@ -34,7 +34,7 @@ pub trait BtpStore {
     /// Load Account details based on the auth token received via BTP.
     fn get_account_from_btp_token(
         &self,
-        username: &str,
+        username: Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
@@ -95,8 +95,8 @@ mod client_server {
             self.id
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> Username {
+            Username::from_str("alice").unwrap()
         }
     }
 
@@ -147,7 +147,7 @@ mod client_server {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: String,
+            _username: Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }
@@ -158,7 +158,7 @@ mod client_server {
 
         fn get_account_from_btp_token(
             &self,
-            username: &str,
+            username: Username,
             token: &str,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
             Box::new(result(

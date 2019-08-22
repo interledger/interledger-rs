@@ -1,13 +1,18 @@
 use interledger_api::AccountDetails;
 use interledger_packet::Address;
+use interledger_service::Username;
 use lazy_static::lazy_static;
 use std::str::FromStr;
 
 lazy_static! {
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    pub static ref BOB: Username = Username::from_str("bob").unwrap();
+    pub static ref CHARLIE: Username = Username::from_str("charlie").unwrap();
+
     // We are dylan starting a connection with all these accounts
     pub static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.alice").unwrap(),
-        username: "alice".to_string(),
+        username: Username::from_str("alice").unwrap(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
         max_packet_amount: 1000,
@@ -29,7 +34,7 @@ lazy_static! {
     };
     pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.bob").unwrap(),
-        username: "bob".to_string(),
+        username: Username::from_str("bob").unwrap(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
         max_packet_amount: 1_000_000,
@@ -52,7 +57,7 @@ lazy_static! {
     };
     pub static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.charlie").unwrap(),
-        username: "charlie".to_string(),
+        username: Username::from_str("charlie").unwrap(),
         asset_scale: 9,
         asset_code: "XRP".to_string(),
         max_packet_amount: 1000,

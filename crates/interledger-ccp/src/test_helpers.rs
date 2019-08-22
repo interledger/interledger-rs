@@ -10,6 +10,7 @@ use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
     OutgoingService,
+    Username,
 };
 #[cfg(test)]
 use lazy_static::lazy_static;
@@ -64,8 +65,8 @@ impl Account for TestAccount {
         self.id
     }
 
-    fn username(&self) -> &str {
-        "alice"
+    fn username(&self) -> Username {
+        Username::from_str("alice").unwrap()
     }
 }
 

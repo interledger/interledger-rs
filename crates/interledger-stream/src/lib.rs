@@ -22,7 +22,7 @@ pub mod test_helpers {
     use interledger_ildcp::IldcpAccount;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
-    use interledger_service::{Account, AccountStore};
+    use interledger_service::{Account, AccountStore, Username};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -48,8 +48,8 @@ pub mod test_helpers {
             self.id
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> Username {
+            Username::from_str("alice").unwrap()
         }
     }
 
@@ -85,7 +85,7 @@ pub mod test_helpers {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: String,
+            _username: Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }

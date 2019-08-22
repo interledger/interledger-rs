@@ -1,4 +1,6 @@
 use base64;
+use crate::Username;
+use std::str::FromStr;
 
 // Helpers for parsing authorization methods
 pub const BEARER_TOKEN_START: usize = 7;
@@ -6,24 +8,24 @@ pub const BASIC_TOKEN_START: usize = 6;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Auth {
-    username: String,
+    username: Username,
     password: String,
 }
 
 impl Auth {
-    pub fn new(username: &str, password: &str) -> Self {
-        Auth {
-            username: username.to_owned(),
+    pub fn new(username: &str, password: &str) -> Result<Self, ()> {
+        Ok(Auth {
+            username: Username::from_str(username)?,
             password: password.to_owned(),
-        }
+        })
     }
 
     pub fn to_bearer(&self) -> String {
         format!("Bearer {}:{}", self.username, self.password)
     }
 
-    pub fn username(&self) -> &str {
-        &self.username
+    pub fn username(&self) -> Username {
+        self.username.clone()
     }
 
     pub fn password(&self) -> &str {
@@ -57,7 +59,7 @@ impl Auth {
     fn parse_text(text: &str) -> Result<Self, ()> {
         let parts = &mut text.split(':');
         let username = match parts.next() {
-            Some(part) => part.to_owned(),
+            Some(part) => Username::from_str(part)?,
             None => return Err(()),
         };
         let password = match parts.next() {
@@ -76,17 +78,17 @@ mod tests {
     fn parses_correctly() {
         assert_eq!(
             Auth::parse("Basic aW50ZXJsZWRnZXI6cnVzdA==").unwrap(),
-            Auth::new("interledger", "rust")
+            Auth::new("interledger", "rust").unwrap()
         );
 
         assert_eq!(
             Auth::parse("Bearer interledger%3Arust").unwrap(),
-            Auth::new("interledger", "rust")
+            Auth::new("interledger", "rust").unwrap()
         );
 
         assert_eq!(
             Auth::parse("Bearer interledger:rust").unwrap(),
-            Auth::new("interledger", "rust")
+            Auth::new("interledger", "rust").unwrap()
         );
 
         assert!(Auth::parse("SomethingElse asdf").is_err());
@@ -94,7 +96,7 @@ mod tests {
         assert!(Auth::parse("Bearer asdf").is_err());
 
         assert_eq!(
-            Auth::new("interledger", "rust").to_bearer(),
+            Auth::new("interledger", "rust").unwrap().to_bearer(),
             "Bearer interledger:rust"
         );
     }

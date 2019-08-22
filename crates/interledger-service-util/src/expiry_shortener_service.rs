@@ -79,7 +79,7 @@ mod tests {
     use super::*;
     use futures::Future;
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
-    use interledger_service::outgoing_service_fn;
+    use interledger_service::{outgoing_service_fn, Username};
     use std::str::FromStr;
 
     #[derive(Clone, Debug)]
@@ -91,8 +91,8 @@ mod tests {
             self.0
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> Username {
+            Username::from_str("alice").unwrap()
         }
     }
 

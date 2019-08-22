@@ -60,4 +60,9 @@ mod tests {
         );
     }
 
+    #[test]
+    fn formats_correctly() {
+        let user = Username("alice".to_owned());
+        assert_eq!(format!("{}:password", user), "alice:password");
+    }
 }

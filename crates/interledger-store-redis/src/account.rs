@@ -6,7 +6,7 @@ use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
-use interledger_service::Account as AccountTrait;
+use interledger_service::{Account as AccountTrait, Username};
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
@@ -31,7 +31,7 @@ const ACCOUNT_DETAILS_FIELDS: usize = 21;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     pub(crate) id: AccountId,
-    pub(crate) username: String,
+    pub(crate) username: Username,
     #[serde(serialize_with = "address_to_string")]
     pub(crate) ilp_address: Address,
     // TODO add additional routes
@@ -235,7 +235,7 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         "id".write_redis_args(&mut rv);
         account.id.write_redis_args(&mut rv);
         "username".write_redis_args(&mut rv);
-        account.username.write_redis_args(&mut rv);
+        account.username.as_bytes().to_vec().write_redis_args(&mut rv);
         if !account.ilp_address.is_empty() {
             "ilp_address".write_redis_args(&mut rv);
             rv.push(account.ilp_address.to_bytes().to_vec());
@@ -328,6 +328,8 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         let ilp_address = Address::from_str(&ilp_address)
             .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid ILP address")))?;
         let username: String = get_value("username", &hash)?;
+        let username = Username::from_str(&username)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid username")))?;
         let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
         let routing_relation = if let Some(relation) = routing_relation {
             RoutingRelation::from_str(relation.as_str())
@@ -433,8 +435,8 @@ impl AccountTrait for Account {
         self.id
     }
 
-    fn username(&self) -> &str {
-        &self.username
+    fn username(&self) -> Username {
+        self.username.clone()
     }
 }
 
@@ -531,7 +533,7 @@ mod redis_account {
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
             ilp_address: Address::from_str("example.alice").unwrap(),
-            username: "alice".to_string(),
+            username: Username::from_str("alice").unwrap(),
             asset_scale: 6,
             asset_code: "XYZ".to_string(),
             max_packet_amount: 1000,
