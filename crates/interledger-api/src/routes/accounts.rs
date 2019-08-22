@@ -4,8 +4,8 @@ use futures::{
     Future,
 };
 use hyper::Response;
-use interledger_http::{Auth, HttpAccount, HttpStore};
-use interledger_service::Account;
+use interledger_http::HttpAccount, HttpStore};
+use interledger_service::{Account, AuthToken};
 use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
@@ -142,7 +142,7 @@ impl_web! {
                     .and_then(|accounts| Ok(json!(accounts))))
             } else {
                 // Only allow the user to see their own account
-                Either::B(result(Auth::parse(&authorization))
+                Either::B(result(AuthToken::parse(&authorization))
                     .map_err(move |_| {
                         error!("No account found with auth: {}", authorization);
                         Response::error(401)
@@ -185,7 +185,7 @@ impl_web! {
                     })
                     .and_then(|mut accounts| Ok(json!(accounts.pop().unwrap()))))
                 } else {
-                    Either::B(result(Auth::parse(&auth_clone))
+                    Either::B(result(AuthToken::parse(&auth_clone))
                         .map_err(move |_| {
                             error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)
@@ -281,7 +281,7 @@ impl_web! {
                         })
                         .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
                 } else {
-                    Either::B(result(Auth::parse(&auth_clone))
+                    Either::B(result(AuthToken::parse(&auth_clone))
                         .map_err(move |_| {
                             error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)

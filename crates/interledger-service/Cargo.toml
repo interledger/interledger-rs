@@ -11,3 +11,4 @@ repository = "https://github.com/emschwartz/interledger-rs"
 futures = "0.1.25"
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 serde = "1.0.94"
+base64 = "0.10.1"

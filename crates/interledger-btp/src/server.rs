@@ -150,8 +150,6 @@ struct Auth {
     token: String,
 }
 
-use interledger_http::Auth as AuthToken;
-
 fn validate_auth<U, A>(
     store: U,
     connection: impl Stream<Item = Message, Error = WebSocketError>

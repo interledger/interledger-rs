@@ -1,4 +1,4 @@
-use super::{Auth, HttpAccount, HttpStore};
+use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
 use futures::{
     future::{err, result},
@@ -65,7 +65,7 @@ where
                 url.as_str()
             );
             let token = request.to.get_http_auth_token().unwrap_or("");
-            let auth = match Auth::parse(token) {
+            let auth = match AuthToken::parse(token) {
                 Ok(auth) => auth,
                 Err(_) => {
                     return Box::new(err(RejectBuilder {

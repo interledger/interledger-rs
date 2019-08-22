@@ -1,5 +1,4 @@
 use super::limit_stream::LimitStream;
-use super::Auth;
 use super::HttpStore;
 use bytes::BytesMut;
 use futures::{
@@ -43,7 +42,7 @@ where
             .headers()
             .get(AUTHORIZATION)
             .and_then(|auth| auth.to_str().ok())
-            .map(|auth| Auth::parse(auth).ok())
+            .map(|auth| AuthToken::parse(auth).ok())
             .and_then(|x| x);
         if let Some(authorization) = authorization {
             Either::A(

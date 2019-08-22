@@ -4,9 +4,9 @@ use futures::{
     Future,
 };
 use hyper::{Body, Response};
-use interledger_http::{Auth, HttpAccount, HttpStore};
+use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
-use interledger_service::{AccountStore, IncomingService};
+use interledger_service::{AccountStore, IncomingService, AuthToken};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -65,7 +65,7 @@ impl_web! {
             let service = self.incoming_handler.clone();
             let store = self.store.clone();
 
-            result(Auth::parse(&authorization))
+            result(AuthToken::parse(&authorization))
             .map_err(|err| {
                 let error_msg = format!("Could not convert auth token {:?}", err);
                 error!("{}", error_msg);
