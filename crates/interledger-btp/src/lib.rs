@@ -196,7 +196,7 @@ mod client_server {
         let server_store = TestStore {
             accounts: Arc::new(vec![TestAccount {
                 id: 0,
-                btp_incoming_token: Some("0:test_auth_token".to_string()),
+                btp_incoming_token: Some("alice:test_auth_token".to_string()),
                 btp_outgoing_token: None,
                 btp_uri: None,
             }]),
@@ -229,7 +229,7 @@ mod client_server {
         let account = TestAccount {
             id: 0,
             btp_uri: Some(Url::parse("btp+ws://127.0.0.1:12345").unwrap()),
-            btp_outgoing_token: Some("0:test_auth_token".to_string()),
+            btp_outgoing_token: Some("alice:test_auth_token".to_string()),
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];
