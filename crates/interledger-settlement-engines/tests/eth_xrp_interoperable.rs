@@ -19,6 +19,7 @@ use test_helpers::{
     accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
     send_money_to_username, start_eth_engine, start_ganache, start_xrp_engine,
 };
+use interledger_service::Username;
 
 #[test]
 fn eth_xrp_interoperable() {
@@ -113,7 +114,7 @@ fn eth_xrp_interoperable() {
             node1_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.alice").unwrap(),
-                    username: "alice".to_string(),
+                    username: Username::from_str("alice").unwrap(),
                     asset_code: "ETH".to_string(),
                     asset_scale: eth_decimals,
                     btp_incoming_token: None,
@@ -138,7 +139,7 @@ fn eth_xrp_interoperable() {
             node1_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.bob").unwrap(),
-                    username: "bob".to_string(),
+                    username: Username::from_str("bob").unwrap(),
                     asset_code: "ETH".to_string(),
                     asset_scale: eth_decimals,
                     btp_incoming_token: None,
@@ -180,7 +181,7 @@ fn eth_xrp_interoperable() {
                 node2_clone
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
-                        username: "alice".to_string(),
+                        username: Username::from_str("alice").unwrap(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
                         btp_incoming_token: None,
@@ -203,7 +204,7 @@ fn eth_xrp_interoperable() {
                     .and_then(move |_| {
                         node2_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob.charlie").unwrap(),
-                            username: "charlie".to_string(),
+                            username: Username::from_str("charlie").unwrap(),
                             asset_code: "XRP".to_string(),
                             asset_scale: xrp_decimals,
                             btp_incoming_token: None,
@@ -266,7 +267,7 @@ fn eth_xrp_interoperable() {
                 node3_clone
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob.charlie").unwrap(),
-                        username: "charlie".to_string(),
+                        username: Username::from_str("charlie").unwrap(),
                         asset_code: "XRP".to_string(),
                         asset_scale: xrp_decimals,
                         btp_incoming_token: None,
@@ -289,7 +290,7 @@ fn eth_xrp_interoperable() {
                     .and_then(move |_| {
                         node3_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
-                            username: "bob".to_string(),
+                            username: Username::from_str("bob").unwrap(),
                             asset_code: "XRP".to_string(),
                             asset_scale: xrp_decimals,
                             btp_incoming_token: None,

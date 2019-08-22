@@ -11,7 +11,7 @@ use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
+use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest, Username};
 use interledger_service_util::ValidatorService;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
@@ -26,7 +26,7 @@ use url::Url;
 
 lazy_static! {
     pub static ref LOCAL_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
-    pub static ref LOCAL_USERNAME: String = "localhost".to_owned();
+    pub static ref LOCAL_USERNAME: Username = Username::from_str("localhost").unwrap();
 }
 
 #[doc(hidden)]

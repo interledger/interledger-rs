@@ -10,6 +10,7 @@ use interledger::{
 use interledger_packet::Address;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
+use interledger_service::Username;
 
 mod redis_helpers;
 use redis_helpers::*;
@@ -76,7 +77,7 @@ fn eth_ledger_settlement() {
                 node1_clone
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.alice").unwrap(),
-                        username: "alice".to_string(),
+                        username: Username::from_str("alice").unwrap(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
                         btp_incoming_token: None,
@@ -99,7 +100,7 @@ fn eth_ledger_settlement() {
                     .and_then(move |_| {
                         node1_clone.insert_account(AccountDetails {
                             ilp_address: Address::from_str("example.bob").unwrap(),
-                            username: "bob".to_string(),
+                            username: Username::from_str("bob").unwrap(),
                             asset_code: "ETH".to_string(),
                             asset_scale: eth_decimals,
                             btp_incoming_token: None,
@@ -146,7 +147,7 @@ fn eth_ledger_settlement() {
                 node2
                     .insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.bob").unwrap(),
-                        username: "bob".to_string(),
+                        username: Username::from_str("bob").unwrap(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
                         btp_incoming_token: None,
@@ -170,7 +171,7 @@ fn eth_ledger_settlement() {
                         node2
                             .insert_account(AccountDetails {
                                 ilp_address: Address::from_str("example.alice").unwrap(),
-                                username: "alice".to_string(),
+                                username: Username::from_str("alice").unwrap(),
                                 asset_code: "ETH".to_string(),
                                 asset_scale: eth_decimals,
                                 btp_incoming_token: None,

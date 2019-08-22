@@ -8,6 +8,7 @@ use interledger_ildcp::IldcpAccount;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService,
     OutgoingService,
+    Username,
 };
 
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
@@ -36,8 +37,8 @@ impl Account for TestAccount {
         self.id
     }
 
-    fn username(&self) -> &str {
-        "alice"
+    fn username(&self) -> Username {
+        Username::from_str("alice").unwrap()
     }
 }
 impl SettlementAccount for TestAccount {
@@ -153,7 +154,7 @@ impl AccountStore for TestStore {
     // stub implementation (not used in these tests)
     fn get_account_id_from_username(
         &self,
-        _username: String,
+        _username: Username,
     ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
         Box::new(ok(1))
     }
