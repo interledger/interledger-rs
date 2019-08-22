@@ -225,7 +225,7 @@ impl_web! {
                 self_clone.validate_admin(authorization)
                 .and_then(move |store| Ok((store, id)))
                 .and_then(move |(store, id)|
-                    store.remove_account(id)
+                    store.delete_account(id)
                         .map_err(move |_| Response::error(500))
                         .and_then(move |account| {
                             // TODO: deregister from SE if url is present
