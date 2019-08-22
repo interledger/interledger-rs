@@ -1,6 +1,9 @@
-use super::{HttpAccount, HttpStore};
+use super::{Auth, HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{future::result, Future, Stream};
+use futures::{
+    future::{err, result},
+    Future, Stream,
+};
 use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use log::{error, trace};
@@ -61,13 +64,25 @@ where
                 request.to.id(),
                 url.as_str()
             );
+            let token = request.to.get_http_auth_token().unwrap_or("");
+            let auth = match Auth::parse(token) {
+                Ok(auth) => auth,
+                Err(_) => {
+                    return Box::new(err(RejectBuilder {
+                        code: ErrorCode::T00_INTERNAL_ERROR,
+                        message: format!("Cannot parse authorization token {}", token)
+                            .as_str()
+                            .as_ref(),
+                        triggered_by: None,
+                        data: &[],
+                    }
+                    .build()))
+                }
+            };
             Box::new(
                 self.client
                     .post(url.clone())
-                    .header(
-                        "authorization",
-                        format!("Bearer {}", request.to.get_http_auth_token().unwrap_or("")),
-                    )
+                    .header("authorization", auth.to_bearer())
                     .body(BytesMut::from(request.prepare).freeze())
                     .send()
                     .map_err(|err| {

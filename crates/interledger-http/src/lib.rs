@@ -54,6 +54,10 @@ impl Auth {
         }
     }
 
+    pub fn to_bearer(&self) -> String {
+        format!("Bearer {}:{}", self.username, self.password)
+    }
+
     pub fn username(&self) -> &str {
         &self.username
     }
@@ -124,6 +128,11 @@ mod tests {
         assert!(Auth::parse("SomethingElse asdf").is_err());
         assert!(Auth::parse("Basic asdf").is_err());
         assert!(Auth::parse("Bearer asdf").is_err());
+
+        assert_eq!(
+            Auth::new("interledger", "rust").to_bearer(),
+            "Bearer interledger:rust"
+        );
     }
 
 }
