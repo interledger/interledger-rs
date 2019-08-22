@@ -58,17 +58,25 @@ const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 // inside Redis. This allows for more complex logic without needing multiple round
 // trips for messages to be sent to and from Redis, as well as locks to ensure no other
 // process is accessing Redis at the same time.
-// For more information on scripting in Redis, see https://redis.io/commands/eval
+// For more information on scripting in Redis, see
+// https://redis.io/commands/eval
+
+// This lua script receives the token type (HTTP/BTP), the username and a user
+// provided auth token. It fetches the account id associated with that username.
+// Then, it fetches the token associated with that account id. Finally, it
+// compares the fetched token with the one provided by the user, and returns the
+// account that corresponds to the fetched account id if they match.
 static ACCOUNT_FROM_TOKEN: &str = "
 local token_type = ARGV[1]
-local username = 'username:' .. ARGV[2]
+local acc_id = redis.call('HGET', 'usernames', ARGV[2])
 local provided_token = ARGV[3]
-local id = redis.call('GET', username)
-local token = redis.call('HGET', token_type, id)
+
+local id_key = 'accounts:' .. acc_id
+local token = redis.call('HGET', id_key, token_type)
 if token ~= provided_token then
     return nil
 end
-return redis.call('HGETALL', 'accounts:' .. id)";
+return redis.call('HGETALL', id_key)";
 
 static PROCESS_PREPARE: &str = "
 local from_id = ARGV[1]
@@ -298,13 +306,6 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
 
-        // Instead of storing the incoming secrets, we store the HMAC digest of them
-        // (This is better than encrypting because the output is deterministic so we can look
-        // up the account by the HMAC of the auth details submitted by the
-        // account holder over the wire)
-        let btp_incoming_token = account.btp_incoming_token.clone();
-        let http_incoming_token = account.http_incoming_token.clone();
-
         let id = AccountId::new();
         debug!("Generated account: {}", id);
         Box::new(
@@ -313,9 +314,7 @@ impl RedisStore {
                     // Check that there isn't already an account with values that MUST be unique
                     let mut pipe = redis::pipe();
                     pipe.exists(account_details_key(account.id));
-                    pipe.exists(format!("username:{}", account.username));
-                    pipe.hexists("btp_auth", account.id);
-                    pipe.hexists("http_auth", account.id);
+                    pipe.hexists("usernames", account.username());
 
                     pipe.query_async(connection.as_ref().clone())
                         .map_err(|err| {
@@ -343,7 +342,7 @@ impl RedisStore {
                     pipe.sadd("accounts", id).ignore();
 
                     // Save map for Username -> Account ID
-                    pipe.set(format!("username:{}", account.username), id).ignore();
+                    pipe.hset("usernames", account.username(), id).ignore();
 
                     // Set account details
                     pipe.cmd("HMSET").arg(account_details_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
@@ -351,15 +350,6 @@ impl RedisStore {
 
                     // Set balance-related details
                     pipe.hset_multiple(account_details_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
-
-                    // Set incoming auth details
-                    if let Some(auth) = btp_incoming_token {
-                        pipe.hset("btp_auth", account.id, auth).ignore();
-                    }
-
-                    if let Some(auth) = http_incoming_token {
-                        pipe.hset("http_auth", account.id, auth).ignore();
-                    }
 
                     if account.send_routes {
                         pipe.sadd("send_routes_to", account.id).ignore();
@@ -405,9 +395,7 @@ impl RedisStore {
                     pipe.srem("accounts", account.id).ignore();
 
                     pipe.del(account_details_key(account.id)).ignore();
-                    pipe.del(format!("username:{}", account.id)).ignore();
-                    pipe.hdel("http_auth", account.id).ignore();
-                    pipe.hdel("btp_auth", account.id).ignore();
+                    pipe.hdel("usernames", account.username()).ignore();
 
                     if account.send_routes {
                         pipe.srem("send_routes_to", account.id).ignore();
@@ -488,8 +476,9 @@ impl AccountStore for RedisStore {
         username: String,
     ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
         Box::new(
-            cmd("GET")
-                .arg(format!("username:{}", username))
+            cmd("HGET")
+                .arg("usernames")
+                .arg(username.clone())
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| {
                     error!(
@@ -660,12 +649,11 @@ impl BtpStore for RedisStore {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
         let decryption_key = self.decryption_key.clone();
-        // reconstruct the token from the username to use the account id
         Box::new(
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_TOKEN)
                 .arg(0)
-                .arg("btp_auth")
+                .arg("btp_incoming_token")
                 .arg(username)
                 .arg(token)
                 .query_async(self.connection.as_ref().clone())
@@ -748,7 +736,7 @@ impl HttpStore for RedisStore {
             cmd("EVAL")
                 .arg(ACCOUNT_FROM_TOKEN)
                 .arg(0)
-                .arg("http_auth")
+                .arg("http_incoming_token")
                 .arg(username)
                 .arg(token)
                 .query_async(self.connection.as_ref().clone())

@@ -42,9 +42,13 @@ pub struct Account {
     #[serde(with = "url_serde")]
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
+    pub(crate) http_incoming_token: Option<Bytes>,
+    #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) http_outgoing_token: Option<Bytes>,
     #[serde(with = "url_serde")]
     pub(crate) btp_uri: Option<Url>,
+    #[serde(serialize_with = "optional_bytes_to_utf8")]
+    pub(crate) btp_incoming_token: Option<Bytes>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) btp_outgoing_token: Option<Bytes>,
     pub(crate) settle_threshold: Option<i64>,
@@ -106,6 +110,8 @@ impl Account {
             (None, None)
         };
 
+        let http_incoming_token = details.http_incoming_token.map(Bytes::from);
+        let btp_incoming_token = details.btp_incoming_token.map(Bytes::from);
         let http_outgoing_token = details.http_outgoing_token.map(Bytes::from);
         let routing_relation = if let Some(ref relation) = details.routing_relation {
             RoutingRelation::from_str(relation)?
@@ -129,8 +135,10 @@ impl Account {
             max_packet_amount: details.max_packet_amount,
             min_balance: details.min_balance,
             http_endpoint,
+            http_incoming_token,
             http_outgoing_token,
             btp_uri,
+            btp_incoming_token,
             btp_outgoing_token,
             settle_threshold: details.settle_threshold,
             settle_to: details.settle_to,
@@ -253,6 +261,10 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "http_endpoint".write_redis_args(&mut rv);
             http_endpoint.as_str().write_redis_args(&mut rv);
         }
+        if let Some(http_incoming_token) = account.http_incoming_token.as_ref() {
+            "http_incoming_token".write_redis_args(&mut rv);
+            http_incoming_token.as_ref().write_redis_args(&mut rv);
+        }
         if let Some(http_outgoing_token) = account.http_outgoing_token.as_ref() {
             "http_outgoing_token".write_redis_args(&mut rv);
             http_outgoing_token.as_ref().write_redis_args(&mut rv);
@@ -260,6 +272,10 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         if let Some(btp_uri) = account.btp_uri.as_ref() {
             "btp_uri".write_redis_args(&mut rv);
             btp_uri.as_str().write_redis_args(&mut rv);
+        }
+        if let Some(btp_incoming_token) = account.btp_incoming_token.as_ref() {
+            "btp_incoming_token".write_redis_args(&mut rv);
+            btp_incoming_token.as_ref().write_redis_args(&mut rv);
         }
         if let Some(btp_outgoing_token) = account.btp_outgoing_token.as_ref() {
             "btp_outgoing_token".write_redis_args(&mut rv);
@@ -330,8 +346,10 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 asset_code: get_value("asset_code", &hash)?,
                 asset_scale: get_value("asset_scale", &hash)?,
                 http_endpoint: get_url_option("http_endpoint", &hash)?,
+                http_incoming_token: get_bytes_option("http_incoming_token", &hash)?,
                 http_outgoing_token: get_bytes_option("http_outgoing_token", &hash)?,
                 btp_uri: get_url_option("btp_uri", &hash)?,
+                btp_incoming_token: get_bytes_option("btp_incoming_token", &hash)?,
                 btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?,
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
                 min_balance: get_value_option("min_balance", &hash)?,
