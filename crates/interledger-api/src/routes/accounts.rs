@@ -78,7 +78,7 @@ impl_web! {
 
         #[post("/accounts")]
         #[content_type("application/json")]
-        fn post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_post_accounts(&self, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             // TODO don't allow accounts to be overwritten
             // TODO try connecting to that account's websocket server if it has
             // a btp_uri
@@ -134,7 +134,7 @@ impl_web! {
 
         #[get("/accounts")]
         #[content_type("application/json")]
-        fn get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_get_accounts(&self, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             if self.is_admin(&authorization) {
                 Either::A(store.get_all_accounts()
@@ -157,7 +157,7 @@ impl_web! {
 
         #[get("/accounts/:username")]
         #[content_type("application/json")]
-        fn get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
             let is_admin = self.is_admin(&authorization);
             let username_clone = username.clone();
@@ -213,7 +213,7 @@ impl_web! {
 
         #[delete("/accounts/:username")]
         #[content_type("application/json")]
-        fn delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store_clone = self.store.clone();
             let self_clone = self.clone();
             store_clone.get_account_id_from_username(username.clone())
@@ -235,10 +235,33 @@ impl_web! {
             })
         }
 
+        #[put("/accounts/:username")]
+        #[content_type("application/json")]
+        fn http_put_account(&self, username: String, body: AccountDetails, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let self_clone = self.clone();
+            self.store.get_account_id_from_username(username.clone())
+            .map_err(move |_| {
+                error!("Error getting account id from username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |id| {
+                let id = id.to_owned();
+                self_clone.validate_admin(authorization)
+                .and_then(move |store|
+                    store.update_account(id, body)
+                        .map_err(move |_| Response::error(500))
+                        .and_then(move |account| {
+                            Ok(json!(account))
+                        })
+                )
+            })
+
+        }
+
         // TODO should this be combined into the account record?
         #[get("/accounts/:username/balance")]
         #[content_type("application/json")]
-        fn get_balance(&self, username: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
+        fn http_get_balance(&self, username: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
             let store = self.store.clone();
             let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
