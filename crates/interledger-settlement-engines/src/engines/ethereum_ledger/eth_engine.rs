@@ -509,7 +509,7 @@ where
                     error!("{:?}", error_msg);
                 }))
                 .and_then(move |amount| {
-                    debug!("Got uncredited amount {}", amount);
+                    debug!("Got uncredited amount {}", uncredited_settlement_amount);
                     let full_amount = amount + uncredited_settlement_amount;
                     debug!(
                         "Notifying accounting system about full amount: {}",
@@ -618,19 +618,28 @@ where
                 .and_then(move |connector_amount: BigUint| {
                     // Scale the amount settled by the
                     // connector back up to our scale
+                    debug!("Scaling amount received from connector back to engine scale: {:?}", quantity);
                     result(connector_amount.normalize_scale(ConvertDetails {
                         from: quantity.scale,
                         to: engine_scale,
                     }))
                     .and_then(move |scaled_connector_amount| {
+                        debug!(
+                            "Engine settled to connector {}. Connector settled {}. Will save the difference: {}",
+                            engine_amount, scaled_connector_amount, engine_amount > scaled_connector_amount,
+                        );
                         if engine_amount > scaled_connector_amount {
                             let diff = engine_amount - scaled_connector_amount;
                             // connector settled less than we
                             // instructed it to, so we must save
                             // the difference
-                            store.save_uncredited_settlement_amount(account_id, diff)
+                            Either::A(store.save_uncredited_settlement_amount(account_id, diff.clone())
+                            .and_then(move |_| {
+                                debug!("Saved uncredited settlement amount {}", diff);
+                                Ok(())
+                            }))
                         } else {
-                            Box::new(ok(()))
+                            Either::B(ok(()))
                         }
                     })
                 }),
@@ -1093,10 +1102,10 @@ mod tests {
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
-                "{\"amount\": \"100000000000\", \"scale\": 18 }".to_string(),
+                json!(Quantity::new(100_000_000_000u64, 18)).to_string(),
             ))
             .with_status(200)
-            .with_body("{\"amount\": \"100000000000\", \"scale\": 9 }".to_string())
+            .with_body(json!(Quantity::new(100, 9)).to_string())
             .create();
 
         let bob_connector_url = mockito::server_url();
@@ -1182,10 +1191,10 @@ mod tests {
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
-                "{\"amount\": \"100000000000\", \"scale\": 18 }".to_string(),
+                json!(Quantity::new(100_000_000_000u64, 18)).to_string(),
             ))
             .with_status(200)
-            .with_body("{\"amount\": \"100000000000\", \"scale\": 9 }".to_string())
+            .with_body(json!(Quantity::new(100, 9)).to_string())
             .create();
 
         let bob_connector_url = mockito::server_url();
@@ -1216,8 +1225,108 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(2000)); // wait a few seconds so that the receiver's engine that does the polling
 
-        ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
+        let (eloop, transport) = Http::new("http://localhost:8545").unwrap();
+        eloop.into_remote();
+        let web3 = Web3::new(transport);
+        let alice_balance = web3.eth().balance(alice.address, None).wait().unwrap();
+        let bob_balance = web3.eth().balance(bob.address, None).wait().unwrap();
+        let expected_alice = U256::from_dec_str("99999579900000000000").unwrap(); // 99ether - 21k gas - 100 gwei
+        let expected_bob = U256::from_dec_str("100000000100000000000").unwrap(); // 100 ether + 100 gwei
+        assert_eq!(alice_balance, expected_alice);
+        assert_eq!(bob_balance, expected_bob);
+
+        // ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
         bob_mock.assert();
+    }
+
+    #[test]
+    fn saves_leftovers() {
+        // dummy tx_hashes to avoid making idempotent calls
+        let tx_hash1 =
+            H256::from_str("5ad3b56557dab5994c264ca17e2e08816341be2e6649ee6b2b1141006bfd347e")
+                .unwrap();
+        let tx_hash2 =
+            H256::from_str("5ad3b56557dab5994c264ca17e2e08816341be2e6649ee6b2b1141006bfd3472")
+                .unwrap();
+        let tx_hash3 =
+            H256::from_str("5ad3b56557dab5994c264ca17e2e08816341be2e6649ee6b2b1141006bfd3471")
+                .unwrap();
+
+        let bob = BOB.clone();
+        let alice = ALICE.clone();
+        let bob_store = test_store(bob.clone(), false, false, true);
+        bob_store
+            .save_account_addresses(HashMap::from_iter(vec![(
+                "42".to_string(),
+                Addresses {
+                    own_address: alice.address,
+                    token_address: None,
+                },
+            )]))
+            .wait()
+            .unwrap();
+
+        let mut ganache_pid = start_ganache(8547);
+
+        // helper for customizing connector return values and making sure the
+        // engine makes POSTs with the correct arguments
+        let connector_mock = |received, ret| {
+            // the connector will return any amount it receives with 2 less 0s
+            let received = json!(Quantity::new(received, 18)).to_string();
+            let ret = json!(Quantity::new(ret, 16)).to_string();
+            mockito::mock("POST", "/accounts/42/settlements")
+                .match_body(mockito::Matcher::JsonString(received))
+                .with_status(200)
+                .with_body(ret)
+        };
+
+        let full_amount = "100000000000";
+        let full_return = "1000000000";
+        let amount_with_leftovers = "110000000000";
+        let full_return_with_leftovers = "1100000000";
+        let partial_return = "900000000";
+
+        // Bob's connector is initially set up to not return the full amount
+        let bob_connector = connector_mock(full_amount, partial_return).create();
+        // initialize the engine
+        let bob_connector_url = mockito::server_url();
+        let bob_engine = test_engine(
+            bob_store.clone(),
+            BOB_PK.clone(),
+            0,
+            &bob_connector_url,
+            8547,
+            None,
+            true,
+        );
+
+        // the call the engine makes when it picks up an on-chain event
+        let ping_connector = |idempotency| {
+            block_on(bob_engine.notify_connector(
+                "42".to_string(),
+                full_amount.to_string(),
+                idempotency,
+            ))
+            .unwrap()
+        };
+
+        ping_connector(tx_hash1);
+        bob_connector.assert();
+
+        // for whatever reason, the connector now will return the full amount
+        // (but our engine must also send the uncredited amount from the
+        // previous call)
+        let bob_connector =
+            connector_mock(amount_with_leftovers, full_return_with_leftovers).create();
+        ping_connector(tx_hash2);
+        bob_connector.assert();
+
+        // after the leftovers have been cleared, our engine continues normally
+        let bob_connector = connector_mock(full_amount, full_return).create();
+        ping_connector(tx_hash3);
+        bob_connector.assert();
+
+        ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
     }
 
     #[test]
