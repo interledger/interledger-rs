@@ -1235,7 +1235,7 @@ mod tests {
         assert_eq!(alice_balance, expected_alice);
         assert_eq!(bob_balance, expected_bob);
 
-        // ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
+        ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
         bob_mock.assert();
     }
 
