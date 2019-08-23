@@ -30,7 +30,7 @@ lazy_static! {
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
 
-#[derive(Extract, Debug, Clone, Serialize, Deserialize)]
+#[derive(Extract, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Quantity {
     pub amount: String,
     pub scale: u8,
