@@ -83,7 +83,7 @@ pub fn send_spsp_payment_btp(
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: b"Not expecting incoming prepare packets",
-                triggered_by: None,
+                triggered_by: Some(&LOCAL_ILP_ADDRESS),
                 data: &[],
             }
             .build())
@@ -91,7 +91,7 @@ pub fn send_spsp_payment_btp(
         // TODO seems kind of janky to clone the btp_service just to
         // close it later. Is there some better way of making sure it closes?
         let btp_service = service.clone();
-        let service = ValidatorService::outgoing(service);
+        let service = ValidatorService::outgoing(LOCAL_ILP_ADDRESS.clone(), service);
         let store = InMemoryStore::from_accounts(vec![account.clone()]);
         let router = Router::new(LOCAL_ILP_ADDRESS.clone(), store, service);
         pay(router, account, &receiver, amount)
@@ -147,7 +147,7 @@ pub fn send_spsp_payment_http(
             .build())
         }),
     );
-    let service = ValidatorService::outgoing(service);
+    let service = ValidatorService::outgoing(LOCAL_ILP_ADDRESS.clone(), service);
     let service = Router::new(LOCAL_ILP_ADDRESS.clone(), store, service);
     pay(service, account, &receiver, amount)
         .map_err(|err| {
@@ -204,10 +204,11 @@ pub fn run_spsp_server_btp(
         eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |btp_service| {
-        let outgoing_service = ValidatorService::outgoing(btp_service.clone());
+        let outgoing_service = ValidatorService::outgoing(LOCAL_ILP_ADDRESS.clone(), btp_service.clone());
         let outgoing_service = StreamReceiverService::new(server_secret.clone(), outgoing_service);
-        let incoming_service = Router::new(LOCAL_ILP_ADDRESS.clone(), store.clone(), outgoing_service);
-        let mut incoming_service = ValidatorService::incoming(incoming_service);
+        let incoming_service =
+            Router::new(LOCAL_ILP_ADDRESS.clone(), store.clone(), outgoing_service);
+        let mut incoming_service = ValidatorService::incoming(LOCAL_ILP_ADDRESS.clone(), incoming_service);
 
         btp_service.handle_incoming(incoming_service.clone());
 
@@ -275,9 +276,9 @@ pub fn run_spsp_server_http(
             .build())
         }),
     );
-    let incoming_handler = Router::new(ilp_address_clone, store.clone(), outgoing_handler);
+    let incoming_handler = Router::new(ilp_address_clone.clone(), store.clone(), outgoing_handler);
     let incoming_handler = IldcpService::new(incoming_handler);
-    let incoming_handler = ValidatorService::incoming(incoming_handler);
+    let incoming_handler = ValidatorService::incoming(ilp_address_clone, incoming_handler);
     let http_service = HttpServerService::new(incoming_handler, store);
 
     if !quiet {
@@ -333,13 +334,18 @@ pub fn run_moneyd_local(
         }
         .build())
     });
-    create_open_signup_server(ilp_address_clone, address, ildcp_info, store.clone(), rejecter).and_then(
-        move |btp_service| {
-            let service = Router::new(LOCAL_ILP_ADDRESS.clone(),store, btp_service.clone());
-            let service = IldcpService::new(service);
-            let service = ValidatorService::incoming(service);
-            btp_service.handle_incoming(service);
-            Ok(())
-        },
+    create_open_signup_server(
+        ilp_address_clone,
+        address,
+        ildcp_info,
+        store.clone(),
+        rejecter,
     )
+    .and_then(move |btp_service| {
+        let service = Router::new(LOCAL_ILP_ADDRESS.clone(), store, btp_service.clone());
+        let service = IldcpService::new(service);
+        let service = ValidatorService::incoming(LOCAL_ILP_ADDRESS.clone(), service);
+        btp_service.handle_incoming(service);
+        Ok(())
+    })
 }
