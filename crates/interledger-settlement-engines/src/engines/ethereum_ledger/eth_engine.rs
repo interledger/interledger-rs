@@ -678,7 +678,7 @@ where
                 .map_err(|err| error!("Error when querying gas price / nonce: {:?}", err))
                 .and_then(move |data| {
                     tx.gas_price = data[0];
-                    tx.gas = data[1];
+                    tx.gas = U256::from(100000); // data[1];
                     tx.nonce = data[2];
 
                     trace!(
@@ -1023,6 +1023,7 @@ mod tests {
     use super::*;
     use lazy_static::lazy_static;
     use mockito;
+    use web3::contract::{Contract, Options};
 
     lazy_static! {
         pub static ref ALICE_PK: String =
@@ -1032,8 +1033,115 @@ mod tests {
     }
 
     #[test]
+    fn test_send_erc20() {
+        let mut ganache_pid = start_ganache();
+        let _ = env_logger::try_init();
+        let alice = ALICE.clone();
+        let bob = BOB.clone();
+        let (eloop, transport) = Http::new("http://localhost:8545").unwrap();
+        eloop.into_remote();
+        let web3 = Web3::new(transport);
+        // deploy erc20 contract
+        let erc20_bytecode = include_str!("./erc20.code");
+        let contract = Contract::deploy(web3.eth(), include_bytes!("./erc20_abi.json"))
+            .unwrap()
+            .confirmations(0)
+            .options(Options::with(|opt| {
+                opt.gas_price = Some(5.into());
+                opt.gas = Some(2_000_000.into());
+            }))
+            .execute(
+                erc20_bytecode,
+                U256::from_dec_str("1000000000000000000000").unwrap(),
+                alice.address,
+            )
+            .expect("Correct parameters are passed to the constructor.")
+            .wait()
+            .unwrap();
+
+        let token_address = contract.address();
+
+        let alice_store = test_store(ALICE.clone(), false, false, true);
+        alice_store
+            .save_account_addresses(HashMap::from_iter(vec![(
+                "0".to_string(),
+                Addresses {
+                    own_address: bob.address,
+                    token_address: Some(token_address),
+                },
+            )]))
+            .wait()
+            .unwrap();
+
+        let bob_store = test_store(bob.clone(), false, false, true);
+        bob_store
+            .save_account_addresses(HashMap::from_iter(vec![(
+                "42".to_string(),
+                Addresses {
+                    own_address: alice.address,
+                    token_address: Some(token_address),
+                },
+            )]))
+            .wait()
+            .unwrap();
+
+        let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
+            .match_body(mockito::Matcher::JsonString(
+                "{\"amount\": \"100000000000\", \"scale\": 18 }".to_string(),
+            ))
+            .with_status(200)
+            .with_body("{\"amount\": \"100000000000\", \"scale\": 9 }".to_string())
+            .create();
+
+        let bob_connector_url = mockito::server_url();
+        let _bob_engine = test_engine(
+            bob_store.clone(),
+            BOB_PK.clone(),
+            0,
+            &bob_connector_url,
+            Some(token_address),
+            true,
+        );
+
+        let alice_engine = test_engine(
+            alice_store.clone(),
+            ALICE_PK.clone(),
+            0,
+            "http://127.0.0.1:9999",
+            Some(token_address),
+            false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
+        );
+
+        // 100 Gwei
+        let ret =
+            block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 9))).unwrap();
+        assert_eq!(ret.0.as_u16(), 200);
+        assert_eq!(ret.1, "OK");
+
+        std::thread::sleep(Duration::from_millis(2000)); // wait a few seconds so that the receiver's engine that does the polling
+                                                         // did token balances update correctly?
+        let token_balance = |address| {
+            let balance: U256 = contract
+                .query("balanceOf", address, None, Options::default(), None)
+                .wait()
+                .unwrap();
+            balance
+        };
+        let alice_balance = token_balance(alice.address);
+        let bob_balance = token_balance(bob.address);
+        assert_eq!(
+            alice_balance,
+            U256::from_dec_str("999999999900000000000").unwrap()
+        );
+        assert_eq!(bob_balance, U256::from_dec_str("100000000000").unwrap()); // 100 + 9 0's for the Gwei conversion
+
+        ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
+        bob_mock.assert();
+    }
+
+    #[test]
     // All tests involving ganache must be run in 1 suite so that they run serially
-    fn test_send_money() {
+    fn test_send_eth() {
         let _ = env_logger::try_init();
         let alice = ALICE.clone();
         let bob = BOB.clone();
@@ -1078,6 +1186,7 @@ mod tests {
             BOB_PK.clone(),
             0,
             &bob_connector_url,
+            None,
             true,
         );
 
@@ -1086,6 +1195,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             "http://127.0.0.1:9999",
+            None,
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
 
@@ -1129,7 +1239,14 @@ mod tests {
         // which makes a call to bob's connector which replies with bob's
         // address and signature on the challenge
         let store = test_store(bob.clone(), false, false, false);
-        let engine = test_engine(store.clone(), ALICE_PK.clone(), 0, &connector_url, false);
+        let engine = test_engine(
+            store.clone(),
+            ALICE_PK.clone(),
+            0,
+            &connector_url,
+            None,
+            false,
+        );
 
         // the signed message does not match. We are not able to make Mockito
         // capture the challenge and return a signature on it.
@@ -1155,6 +1272,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             "http://127.0.0.1:8770",
+            None,
             false,
         );
 

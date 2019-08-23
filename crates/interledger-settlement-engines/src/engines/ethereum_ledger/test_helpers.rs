@@ -266,6 +266,7 @@ pub fn test_engine<Si, S, A>(
     key: Si,
     confs: u8,
     connector_url: &str,
+    token_address: Option<Address>,
     watch_incoming: bool,
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
 where
@@ -281,6 +282,7 @@ where
 {
     EthereumLedgerSettlementEngineBuilder::new(store, key)
         .connector_url(connector_url)
+        .token_address(token_address)
         .confirmations(confs)
         .watch_incoming(watch_incoming)
         .poll_frequency(1000)
