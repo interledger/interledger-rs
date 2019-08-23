@@ -202,8 +202,11 @@ impl InterledgerNode {
                                     );
 
                                     // Set up the Router and Routing Manager
-                                    let incoming_service =
-                                        Router::new(store.clone(), outgoing_service.clone());
+                                    let incoming_service = Router::new(
+                                        ilp_address.clone(),
+                                        store.clone(),
+                                        outgoing_service.clone()
+                                    );
                                     let mut ccp_builder = CcpRouteManagerBuilder::new(
                                         ilp_address.clone(),
                                         store.clone(),

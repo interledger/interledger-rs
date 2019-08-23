@@ -93,7 +93,7 @@ pub fn send_spsp_payment_btp(
         let btp_service = service.clone();
         let service = ValidatorService::outgoing(service);
         let store = InMemoryStore::from_accounts(vec![account.clone()]);
-        let router = Router::new(store, service);
+        let router = Router::new(LOCAL_ILP_ADDRESS.clone(), store, service);
         pay(router, account, &receiver, amount)
             .map_err(|err| {
                 eprintln!("Error sending SPSP payment: {:?}", err);
@@ -148,7 +148,7 @@ pub fn send_spsp_payment_http(
         }),
     );
     let service = ValidatorService::outgoing(service);
-    let service = Router::new(store, service);
+    let service = Router::new(LOCAL_ILP_ADDRESS.clone(), store, service);
     pay(service, account, &receiver, amount)
         .map_err(|err| {
             eprintln!("Error sending SPSP payment: {:?}", err);
@@ -206,7 +206,7 @@ pub fn run_spsp_server_btp(
     .and_then(move |btp_service| {
         let outgoing_service = ValidatorService::outgoing(btp_service.clone());
         let outgoing_service = StreamReceiverService::new(server_secret.clone(), outgoing_service);
-        let incoming_service = Router::new(store.clone(), outgoing_service);
+        let incoming_service = Router::new(LOCAL_ILP_ADDRESS.clone(), store.clone(), outgoing_service);
         let mut incoming_service = ValidatorService::incoming(incoming_service);
 
         btp_service.handle_incoming(incoming_service.clone());
@@ -248,6 +248,7 @@ pub fn run_spsp_server_http(
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
     let ilp_address = ildcp_info.client_address();
+    let ilp_address_clone = ilp_address.clone();
     if !quiet {
         println!("Creating SPSP server. ILP Address: {}", ilp_address)
     }
@@ -274,7 +275,7 @@ pub fn run_spsp_server_http(
             .build())
         }),
     );
-    let incoming_handler = Router::new(store.clone(), outgoing_handler);
+    let incoming_handler = Router::new(ilp_address_clone, store.clone(), outgoing_handler);
     let incoming_handler = IldcpService::new(incoming_handler);
     let incoming_handler = ValidatorService::incoming(incoming_handler);
     let http_service = HttpServerService::new(incoming_handler, store);
@@ -334,7 +335,7 @@ pub fn run_moneyd_local(
     });
     create_open_signup_server(ilp_address_clone, address, ildcp_info, store.clone(), rejecter).and_then(
         move |btp_service| {
-            let service = Router::new(store, btp_service.clone());
+            let service = Router::new(LOCAL_ILP_ADDRESS.clone(),store, btp_service.clone());
             let service = IldcpService::new(service);
             let service = ValidatorService::incoming(service);
             btp_service.handle_incoming(service);
