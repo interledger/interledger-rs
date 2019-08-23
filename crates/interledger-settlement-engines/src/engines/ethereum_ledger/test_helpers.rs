@@ -266,6 +266,7 @@ pub fn test_engine<Si, S, A>(
     key: Si,
     confs: u8,
     connector_url: &str,
+    ganache_port: u16,
     token_address: Option<Address>,
     watch_incoming: bool,
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
@@ -282,6 +283,7 @@ where
 {
     EthereumLedgerSettlementEngineBuilder::new(store, key)
         .connector_url(connector_url)
+        .ethereum_endpoint(&format!("http://localhost:{}", ganache_port))
         .token_address(token_address)
         .confirmations(confs)
         .watch_incoming(watch_incoming)
@@ -289,11 +291,12 @@ where
         .connect()
 }
 
-pub fn start_ganache() -> std::process::Child {
+pub fn start_ganache(port: u16) -> std::process::Child {
     let mut ganache = Command::new("ganache-cli");
-    let ganache = ganache.stdout(std::process::Stdio::null()).arg("-m").arg(
-        "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle",
-    );
+    let ganache = ganache
+        .stdout(std::process::Stdio::null())
+        .arg("-m").arg("abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle")
+        .arg("-p").arg(port.to_string());
     let ganache_pid = ganache.spawn().expect("couldnt start ganache-cli");
     // wait a couple of seconds for ganache to boot up
     sleep(Duration::from_secs(5));

@@ -1039,11 +1039,12 @@ mod tests {
 
     #[test]
     fn test_send_erc20() {
-        let mut ganache_pid = start_ganache();
+        let ganache_port = 8546;
+        let mut ganache_pid = start_ganache(ganache_port);
         let _ = env_logger::try_init();
         let alice = ALICE.clone();
         let bob = BOB.clone();
-        let (eloop, transport) = Http::new("http://localhost:8545").unwrap();
+        let (eloop, transport) = Http::new(&format!("http://localhost:{}", ganache_port)).unwrap();
         eloop.into_remote();
         let web3 = Web3::new(transport);
         // deploy erc20 contract
@@ -1104,6 +1105,7 @@ mod tests {
             BOB_PK.clone(),
             0,
             &bob_connector_url,
+            8546,
             Some(token_address),
             true,
         );
@@ -1113,6 +1115,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             "http://127.0.0.1:9999",
+            8546,
             Some(token_address),
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
@@ -1175,7 +1178,7 @@ mod tests {
             .wait()
             .unwrap();
 
-        let mut ganache_pid = start_ganache();
+        let mut ganache_pid = start_ganache(8545);
 
         let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
             .match_body(mockito::Matcher::JsonString(
@@ -1191,6 +1194,7 @@ mod tests {
             BOB_PK.clone(),
             0,
             &bob_connector_url,
+            8545,
             None,
             true,
         );
@@ -1200,6 +1204,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             "http://127.0.0.1:9999",
+            8545,
             None,
             false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
         );
@@ -1249,6 +1254,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             &connector_url,
+            8545,
             None,
             false,
         );
@@ -1277,6 +1283,7 @@ mod tests {
             ALICE_PK.clone(),
             0,
             "http://127.0.0.1:8770",
+            8545,
             None,
             false,
         );
