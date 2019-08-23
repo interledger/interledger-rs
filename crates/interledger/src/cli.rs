@@ -57,6 +57,7 @@ pub fn send_spsp_payment_btp(
         .btp_uri(btp_server)
         .build();
     connect_client(
+        LOCAL_ILP_ADDRESS.clone(),
         vec![account.clone()],
         true,
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
@@ -67,7 +68,7 @@ pub fn send_spsp_payment_btp(
                     request.from.client_address(),
                 )
                 .as_bytes(),
-                triggered_by: None,
+                triggered_by: Some(&LOCAL_ILP_ADDRESS),
                 data: &[],
             }
             .build())
@@ -183,6 +184,7 @@ pub fn run_spsp_server_btp(
     // Can we get better syntax than .read()[..] here? Doesn't seem too intuitive.
     let ilp_addr = Address::try_from(&ilp_address.read()[..]).ok();
     connect_client(
+        LOCAL_ILP_ADDRESS.clone(), // Is this correct? ilp_addr is an option for which there seems to be no clear value. Maybe running a btp server should require specifying an ILP address?
         vec![incoming_account.clone()],
         true,
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
@@ -316,6 +318,7 @@ pub fn run_moneyd_local(
     ildcp_info: IldcpResponse,
 ) -> impl Future<Item = (), Error = ()> {
     let ilp_address = ildcp_info.client_address();
+    let ilp_address_clone = ilp_address.clone();
     let store = InMemoryStore::default();
     // TODO this needs a reference to the BtpService so it can send outgoing packets
     println!("Listening on: {}", address);
@@ -328,7 +331,7 @@ pub fn run_moneyd_local(
         }
         .build())
     });
-    create_open_signup_server(address, ildcp_info, store.clone(), rejecter).and_then(
+    create_open_signup_server(ilp_address_clone, address, ildcp_info, store.clone(), rejecter).and_then(
         move |btp_service| {
             let service = Router::new(store, btp_service.clone());
             let service = IldcpService::new(service);

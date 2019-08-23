@@ -133,6 +133,7 @@ impl InterledgerNode {
         let settlement_address = self.settlement_address;
         let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
+        let ilp_address_clone2 = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account;
         let redis_addr = self.redis_connection.addr.clone();
@@ -166,9 +167,9 @@ impl InterledgerNode {
                     // Connect to all of the accounts that have outgoing btp_uris configured
                     // but don't fail if we are unable to connect
                     // TODO try reconnecting to those accounts later
-                    connect_client(btp_accounts, false, outgoing_service).and_then(
+                    connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            create_server(btp_address, store.clone(), btp_client_service.clone()).and_then(
+                            create_server(ilp_address_clone2, btp_address, store.clone(), btp_client_service.clone()).and_then(
                                 move |btp_server_service| {
                                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
