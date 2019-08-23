@@ -190,14 +190,17 @@ mod incoming {
     fn lets_through_valid_incoming_packet() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::incoming(
+            Address::from_str("example.connector").unwrap(),
+            incoming_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
@@ -223,14 +226,17 @@ mod incoming {
     fn rejects_expired_incoming_packet() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::incoming(
+            Address::from_str("example.connector").unwrap(),
+            incoming_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
@@ -271,14 +277,17 @@ mod outgoing {
     fn lets_through_valid_outgoing_response() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::outgoing(
+            Address::from_str("example.connector").unwrap(),
+            outgoing_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
@@ -306,14 +315,17 @@ mod outgoing {
     fn returns_reject_instead_of_invalid_fulfillment() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[1; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::outgoing(
+            Address::from_str("example.connector").unwrap(),
+            outgoing_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[1; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .send_request(OutgoingRequest {
                 from: TestAccount(1),

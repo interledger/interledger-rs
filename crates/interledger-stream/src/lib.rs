@@ -126,7 +126,7 @@ mod send_money_to_receiver {
                 .build())
             }),
         );
-        let server = Router::new(store, server);
+        let server = Router::new(EXAMPLE_RECEIVER.clone(), store, server);
         let server = IldcpService::new(server);
 
         let (destination_account, shared_secret) =

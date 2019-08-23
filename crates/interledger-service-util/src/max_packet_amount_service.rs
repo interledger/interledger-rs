@@ -1,5 +1,5 @@
 use futures::future::err;
-use interledger_packet::{ErrorCode, MaxPacketAmountDetails, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, MaxPacketAmountDetails, RejectBuilder};
 use interledger_service::*;
 use log::debug;
 
@@ -17,12 +17,13 @@ pub trait MaxPacketAmountAccount: Account {
 /// Requires a `MaxPacketAmountAccount` and _no store_.
 #[derive(Clone)]
 pub struct MaxPacketAmountService<I> {
+    ilp_address: Address,
     next: I,
 }
 
 impl<I> MaxPacketAmountService<I> {
-    pub fn new(next: I) -> Self {
-        MaxPacketAmountService { next }
+    pub fn new(ilp_address: Address, next: I) -> Self {
+        MaxPacketAmountService { ilp_address, next }
     }
 }
 
@@ -50,7 +51,7 @@ where
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                 message: &[],
-                triggered_by: None,
+                triggered_by: Some(&self.ilp_address),
                 data: &details[..],
             }
             .build()))

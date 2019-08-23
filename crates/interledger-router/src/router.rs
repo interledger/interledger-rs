@@ -36,7 +36,11 @@ where
     O: OutgoingService<S::Account>,
 {
     pub fn new(ilp_address: Address, store: S, next: O) -> Self {
-        Router { ilp_address, store, next }
+        Router {
+            ilp_address,
+            store,
+            next,
+        }
     }
 }
 
@@ -177,6 +181,7 @@ mod tests {
     #[test]
     fn empty_routing_table() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::new(),
             },
@@ -208,6 +213,7 @@ mod tests {
     #[test]
     fn no_route() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(vec![(Bytes::from("example.other"), 1)].into_iter()),
             },
@@ -239,6 +245,7 @@ mod tests {
     #[test]
     fn finds_exact_route() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(
                     vec![(Bytes::from("example.destination"), 1)].into_iter(),
@@ -272,6 +279,7 @@ mod tests {
     #[test]
     fn catch_all_route() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(vec![(Bytes::from(""), 0)].into_iter()),
             },
@@ -303,6 +311,7 @@ mod tests {
     #[test]
     fn finds_matching_prefix() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(vec![(Bytes::from("example."), 1)].into_iter()),
             },
@@ -336,6 +345,7 @@ mod tests {
         let to: Arc<Mutex<Option<TestAccount>>> = Arc::new(Mutex::new(None));
         let to_clone = to.clone();
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(
                     vec![

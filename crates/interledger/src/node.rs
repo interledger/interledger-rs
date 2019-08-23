@@ -180,7 +180,7 @@ impl InterledgerNode {
                                     );
                                     let outgoing_service = HttpClientService::new(
                                         ilp_address.clone(),
-                                        store.clone(), 
+                                        store.clone(),
                                         outgoing_service,
                                     );
 
@@ -224,7 +224,10 @@ impl InterledgerNode {
                                     let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = IldcpService::new(incoming_service);
                                     let incoming_service =
-                                        MaxPacketAmountService::new(incoming_service);
+                                        MaxPacketAmountService::new(
+                                            ilp_address.clone(),
+                                            incoming_service
+                                    );
                                     let incoming_service =
                                         ValidatorService::incoming(ilp_address.clone(), incoming_service);
                                     let incoming_service = RateLimitService::new(

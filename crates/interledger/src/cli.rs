@@ -204,11 +204,13 @@ pub fn run_spsp_server_btp(
         eprintln!("(Hint: is moneyd running?)");
     })
     .and_then(move |btp_service| {
-        let outgoing_service = ValidatorService::outgoing(LOCAL_ILP_ADDRESS.clone(), btp_service.clone());
+        let outgoing_service =
+            ValidatorService::outgoing(LOCAL_ILP_ADDRESS.clone(), btp_service.clone());
         let outgoing_service = StreamReceiverService::new(server_secret.clone(), outgoing_service);
         let incoming_service =
             Router::new(LOCAL_ILP_ADDRESS.clone(), store.clone(), outgoing_service);
-        let mut incoming_service = ValidatorService::incoming(LOCAL_ILP_ADDRESS.clone(), incoming_service);
+        let mut incoming_service =
+            ValidatorService::incoming(LOCAL_ILP_ADDRESS.clone(), incoming_service);
 
         btp_service.handle_incoming(incoming_service.clone());
 
