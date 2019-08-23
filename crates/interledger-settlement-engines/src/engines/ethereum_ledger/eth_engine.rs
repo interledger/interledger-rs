@@ -658,9 +658,14 @@ where
 
         let mut tx = make_tx(to, amount, token_address);
         let value = U256::from_str(&tx.value.to_string()).unwrap();
+        let estimate_gas_destination = if let Some(token_address) = token_address {
+            token_address
+        } else {
+            to
+        };
         let gas_amount_fut = web3.eth().estimate_gas(
             CallRequest {
-                to,
+                to: estimate_gas_destination,
                 from: None,
                 gas: None,
                 gas_price: None,
@@ -678,7 +683,7 @@ where
                 .map_err(|err| error!("Error when querying gas price / nonce: {:?}", err))
                 .and_then(move |data| {
                     tx.gas_price = data[0];
-                    tx.gas = U256::from(100000); // data[1];
+                    tx.gas = data[1];
                     tx.nonce = data[2];
 
                     trace!(
