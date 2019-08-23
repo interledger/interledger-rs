@@ -176,7 +176,11 @@ impl InterledgerNode {
                                     let outgoing_service = btp_server_service.clone();
                                     let outgoing_service =
                                         ValidatorService::outgoing(outgoing_service);
-                                    let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
+                                    let outgoing_service = HttpClientService::new(
+                                        ilp_address.clone(),
+                                        store.clone(), 
+                                        outgoing_service,
+                                    );
 
                                     // Note: the expiry shortener must come after the Validator so that the expiry duration
                                     // is shortened before we check whether there is enough time left

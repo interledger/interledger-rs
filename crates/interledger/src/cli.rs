@@ -134,13 +134,14 @@ pub fn send_spsp_payment_http(
     };
     let store = InMemoryStore::from_accounts(vec![account.clone()]);
     let service = HttpClientService::new(
+        LOCAL_ILP_ADDRESS.clone(),
         store.clone(),
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &format!("No outgoing route for: {:?}", request.from.client_address())
                     .as_bytes(),
-                triggered_by: None,
+                triggered_by: Some(&LOCAL_ILP_ADDRESS),
                 data: &[],
             }
             .build())
