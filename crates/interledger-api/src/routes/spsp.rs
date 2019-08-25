@@ -66,7 +66,7 @@ impl_web! {
             let service = self.incoming_handler.clone();
             let store = self.store.clone();
 
-            result(AuthToken::parse(&authorization))
+            result(AuthToken::from_str(&authorization))
             .map_err(|err| {
                 let error_msg = format!("Could not convert auth token {:?}", err);
                 error!("{}", error_msg);
@@ -76,7 +76,7 @@ impl_web! {
                 let username = auth.username();
                 let token = auth.password();
                 debug!("Got request to pay: {:?}", body);
-                store.get_account_from_http_token(username, &token)
+                store.get_account_from_http_token(username.clone(), &token)
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)

@@ -7,7 +7,7 @@ use interledger_ildcp::IldcpResponse;
 use interledger_service::*;
 use log::{debug, error, warn};
 use ring::digest::{digest, SHA256};
-use std::{net::SocketAddr, str};
+use std::{net::SocketAddr, str, str::FromStr};
 use tokio_executor::spawn;
 use tokio_tcp::{TcpListener, TcpStream};
 use tokio_tungstenite::{
@@ -167,9 +167,9 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
-        result(AuthToken::parse(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
+        result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
             store
-                .get_account_from_btp_token(auth_token.username(), &auth_token.password())
+                .get_account_from_btp_token(auth_token.username().clone(), &auth_token.password())
                 .map_err(move |_| {
                     warn!("Got BTP connection that does not correspond to an account")
                 })
@@ -209,9 +209,9 @@ where
 {
     get_auth(connection).and_then(move |(auth, connection)| {
         let request_id = auth.request_id;
-        result(AuthToken::parse(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
+        result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
             store
-                .get_account_from_btp_token(auth_token.username(), &auth_token.password())
+                .get_account_from_btp_token(auth_token.username().clone(), &auth_token.password())
                 .or_else(move |_| {
                     let local_part = if let Some(username) = auth.username {
                         username

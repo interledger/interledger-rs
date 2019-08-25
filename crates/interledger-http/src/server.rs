@@ -12,6 +12,7 @@ use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
 use log::{debug, error, trace};
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_MESSAGE_SIZE: usize = 40000;
@@ -42,13 +43,13 @@ where
             .headers()
             .get(AUTHORIZATION)
             .and_then(|auth| auth.to_str().ok())
-            .map(|auth| AuthToken::parse(auth).ok())
+            .map(|auth| AuthToken::from_str(auth).ok())
             .and_then(|x| x);
         if let Some(authorization) = authorization {
             Either::A(
                 self.store
                     .get_account_from_http_token(
-                        authorization.username(),
+                        authorization.username().clone(),
                         &authorization.password(),
                     )
                     .map_err(move |_err| {

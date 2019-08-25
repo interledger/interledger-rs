@@ -11,6 +11,7 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
 };
+use std::str::FromStr;
 use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
@@ -65,7 +66,7 @@ where
                 url.as_str()
             );
             let token = request.to.get_http_auth_token().unwrap_or("");
-            let auth = match AuthToken::parse(token) {
+            let auth = match AuthToken::from_str(token) {
                 Ok(auth) => auth,
                 Err(_) => {
                     return Box::new(err(RejectBuilder {

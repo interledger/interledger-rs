@@ -143,13 +143,13 @@ impl_web! {
                     .and_then(|accounts| Ok(json!(accounts))))
             } else {
                 // Only allow the user to see their own account
-                Either::B(result(AuthToken::parse(&authorization))
+                Either::B(result(AuthToken::from_str(&authorization))
                     .map_err(move |_| {
                         error!("No account found with auth: {}", authorization);
                         Response::error(401)
                     })
                     .and_then(move |auth| {
-                        store.get_account_from_http_token(auth.username(), &auth.password()).map_err(|_| Response::error(401))
+                        store.get_account_from_http_token(auth.username().to_owned(), &auth.password()).map_err(|_| Response::error(401))
                         .and_then(|account| Ok(json!(vec![account])))
                     })
                 )
@@ -192,13 +192,13 @@ impl_web! {
                     })
                     .and_then(|mut accounts| Ok(json!(accounts.pop().unwrap()))))
                 } else {
-                    Either::B(result(AuthToken::parse(&auth_clone))
+                    Either::B(result(AuthToken::from_str(&auth_clone))
                         .map_err(move |_| {
                             error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            store.get_account_from_http_token(auth.username(), &auth.password())
+                            store.get_account_from_http_token(auth.username().clone(), &auth.password())
                             .map_err(move |_| {
                                 debug!("No account found with auth: {}", authorization);
                                 Response::error(401)
@@ -307,7 +307,7 @@ impl_web! {
                         })
                         .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
                 } else {
-                    Either::B(result(AuthToken::parse(&auth_clone))
+                    Either::B(result(AuthToken::from_str(&auth_clone))
                         .map_err(move |_| {
                             error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)
@@ -315,7 +315,7 @@ impl_web! {
                         .and_then(move |auth| {
                             let token = auth.password().to_owned();
 
-                            store.get_account_from_http_token(auth.username(), &token)
+                            store.get_account_from_http_token(auth.username().clone(), &token)
                             .map_err(move |_| {
                                 error!("No account found with auth: {}", authorization);
                                 Response::error(401)
