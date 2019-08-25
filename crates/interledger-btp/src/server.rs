@@ -4,6 +4,7 @@ use super::{
 use base64;
 use futures::{future::result, Future, Sink, Stream};
 use interledger_ildcp::IldcpResponse;
+use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, warn};
 use ring::digest::{digest, SHA256};
@@ -30,6 +31,7 @@ const MAX_MESSAGE_SIZE: usize = 40000;
 /// to another service like the Router, and _then_ for the Router to be passed as the
 /// IncomingService to the BTP server.
 pub fn create_server<T, U, A>(
+    ilp_address: Address,
     address: SocketAddr,
     store: U,
     next_outgoing: T,
@@ -44,7 +46,7 @@ where
     }))
     .and_then(move |socket| {
         debug!("Listening on {}", address);
-        let service = BtpOutgoingService::new(next_outgoing);
+        let service = BtpOutgoingService::new(ilp_address, next_outgoing);
 
         let service_clone = service.clone();
         let handle_incoming = socket
@@ -88,6 +90,7 @@ where
 ///
 /// **WARNING:** Users of this should be very careful to prevent malicious users from creating huge numbers of accounts.
 pub fn create_open_signup_server<T, U, A>(
+    ilp_address: Address,
     address: SocketAddr,
     ildcp_info: IldcpResponse,
     store: U,
@@ -102,7 +105,7 @@ where
         error!("Error binding to address {:?} {:?}", address, err);
     }))
     .and_then(|socket| {
-        let service = BtpOutgoingService::new(next_outgoing);
+        let service = BtpOutgoingService::new(ilp_address, next_outgoing);
 
         let service_clone = service.clone();
         let handle_incoming = socket

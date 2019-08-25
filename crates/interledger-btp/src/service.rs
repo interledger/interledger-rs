@@ -6,7 +6,7 @@ use futures::{
     sync::oneshot,
     Future, Sink, Stream,
 };
-use interledger_packet::{ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
 use interledger_service::*;
 use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
@@ -35,6 +35,7 @@ type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 #[derive(Clone)]
 pub struct BtpOutgoingService<O, A: Account> {
     // TODO support multiple connections per account
+    ilp_address: Address,
     connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
     pending_outgoing: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
@@ -49,10 +50,11 @@ where
     O: OutgoingService<A> + Clone,
     A: Account + 'static,
 {
-    pub fn new(next: O) -> Self {
+    pub fn new(ilp_address: Address, next: O) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
         let (close_all_connections, stream_valve) = Valve::new();
         BtpOutgoingService {
+            ilp_address,
             connections: Arc::new(RwLock::new(HashMap::new())),
             pending_outgoing: Arc::new(Mutex::new(HashMap::new())),
             pending_incoming: Arc::new(Mutex::new(Some(incoming_receiver))),
@@ -280,6 +282,7 @@ where
         let account_id = request.to.id();
         if let Some(connection) = (*self.connections.read()).get(&account_id) {
             let request_id = random::<u32>();
+            let ilp_address = self.ilp_address.clone();
 
             // Clone the trigger so that the connections stay open until we've
             // gotten the response to our outgoing request
@@ -315,7 +318,7 @@ where
                                 RejectBuilder {
                                     code: ErrorCode::T00_INTERNAL_ERROR,
                                     message: &[],
-                                    triggered_by: None,
+                                    triggered_by: Some(&ilp_address),
                                     data: &[],
                                 }
                                 .build()
@@ -334,7 +337,7 @@ where
                     let reject = RejectBuilder {
                         code: ErrorCode::T00_INTERNAL_ERROR,
                         message: &[],
-                        triggered_by: None,
+                        triggered_by: Some(&ilp_address),
                         data: &[],
                     }
                     .build();

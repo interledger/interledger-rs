@@ -186,14 +186,17 @@ mod client_server {
                 btp_uri: None,
             }]),
         };
+        let server_address = Address::from_str("example.server").unwrap();
+        let server_address_clone = server_address.clone();
         let server = create_server(
+            server_address,
             "127.0.0.1:12345".parse().unwrap(),
             server_store,
-            outgoing_service_fn(|_| {
+            outgoing_service_fn(move |_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other outgoing handler",
-                    triggered_by: None,
+                    triggered_by: Some(&server_address_clone),
                     data: &[],
                 }
                 .build())
@@ -218,26 +221,29 @@ mod client_server {
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];
+        let addr = Address::from_str("example.address").unwrap();
+        let addr_clone = addr.clone();
         let client = connect_client(
+            addr.clone(),
             accounts,
             true,
-            outgoing_service_fn(|_| {
+            outgoing_service_fn(move |_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: None,
+                    triggered_by: Some(&addr_clone),
                 }
                 .build())
             }),
         )
         .and_then(move |btp_service| {
-            let mut btp_service = btp_service.handle_incoming(incoming_service_fn(|_| {
+            let mut btp_service = btp_service.handle_incoming(incoming_service_fn(move |_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: &[],
                     data: &[],
-                    triggered_by: None,
+                    triggered_by: Some(&addr),
                 }
                 .build())
             }));
