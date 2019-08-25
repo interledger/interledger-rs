@@ -323,33 +323,52 @@ mod tests {
     mod settlement_tests {
         use super::*;
 
+        const CONNECTOR_SCALE: u8 = 9;
+        const OUR_SCALE: u8 = 11;
+
         #[test]
         fn settlement_ok() {
             let id = TEST_ACCOUNT_0.clone().id.to_string();
             let store = test_store(false, true);
             let api = test_api(store.clone(), false);
 
+            // The operator accounts are configured to work with CONNECTOR_SCALE
+            // = 9. When
+            // we send a settlement with scale OUR_SCALE, the connector should respond
+            // with 2 less 0's.
             let ret: Response<_> = api
-                .receive_settlement(id.clone(), Quantity::new(200, 11), IDEMPOTENCY.clone())
+                .receive_settlement(
+                    id.clone(),
+                    Quantity::new(200, OUR_SCALE),
+                    IDEMPOTENCY.clone(),
+                )
                 .wait()
                 .unwrap();
             assert_eq!(ret.status(), 200);
             let quantity: Quantity = serde_json::from_slice(ret.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(2, 9));
+            assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
 
             // check that it's idempotent
             let ret: Response<_> = api
-                .receive_settlement(id.clone(), Quantity::new(200, 11), IDEMPOTENCY.clone())
+                .receive_settlement(
+                    id.clone(),
+                    Quantity::new(200, OUR_SCALE),
+                    IDEMPOTENCY.clone(),
+                )
                 .wait()
                 .unwrap();
             assert_eq!(ret.status(), 200);
             let quantity: Quantity = serde_json::from_slice(ret.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(2, 9));
+            assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
 
             // fails with different account id
             let id2 = "2".to_string();
             let ret: Response<_> = api
-                .receive_settlement(id2.clone(), Quantity::new(200, 11), IDEMPOTENCY.clone())
+                .receive_settlement(
+                    id2.clone(),
+                    Quantity::new(200, OUR_SCALE),
+                    IDEMPOTENCY.clone(),
+                )
                 .wait()
                 .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
@@ -360,7 +379,7 @@ mod tests {
 
             // fails with different settlement data and account id
             let ret: Response<_> = api
-                .receive_settlement(id2, Quantity::new(42, 11), IDEMPOTENCY.clone())
+                .receive_settlement(id2, Quantity::new(42, OUR_SCALE), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
@@ -371,7 +390,7 @@ mod tests {
 
             // fails with different settlement data and same account id
             let ret: Response<_> = api
-                .receive_settlement(id, Quantity::new(42, 11), IDEMPOTENCY.clone())
+                .receive_settlement(id, Quantity::new(42, OUR_SCALE), IDEMPOTENCY.clone())
                 .wait()
                 .unwrap_err();
             assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
@@ -388,7 +407,7 @@ mod tests {
             assert_eq!(*cache_hits, 4);
             assert_eq!(cached_data.0, StatusCode::OK);
             let quantity: Quantity = serde_json::from_slice(&cached_data.1).unwrap();
-            assert_eq!(quantity, Quantity::new(2, 9));
+            assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
         }
 
         #[test]

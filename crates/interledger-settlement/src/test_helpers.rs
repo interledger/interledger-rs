@@ -61,6 +61,7 @@ impl IldcpAccount for TestAccount {
         "XYZ"
     }
 
+    // All connector accounts use asset scale = 9.
     fn asset_scale(&self) -> u8 {
         9
     }
