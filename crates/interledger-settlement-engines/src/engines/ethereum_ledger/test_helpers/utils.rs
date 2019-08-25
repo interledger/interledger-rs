@@ -17,8 +17,10 @@ use web3::{
     types::{Address, H256, U256},
 };
 
-use super::eth_engine::{EthereumLedgerSettlementEngine, EthereumLedgerSettlementEngineBuilder};
-use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
+use crate::engines::ethereum_ledger::{
+    EthereumAccount, EthereumAddresses as Addresses, EthereumLedgerSettlementEngine,
+    EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner, EthereumStore,
+};
 use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 
 #[derive(Debug, Clone)]

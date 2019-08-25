@@ -509,7 +509,7 @@ where
                     error!("{:?}", error_msg);
                 }))
                 .and_then(move |amount| {
-                    debug!("Got uncredited amount {}", uncredited_settlement_amount);
+                    debug!("Loaded uncredited amount {}", uncredited_settlement_amount);
                     let full_amount = amount + uncredited_settlement_amount;
                     debug!(
                         "Notifying accounting system about full amount: {}",
@@ -618,7 +618,6 @@ where
                 .and_then(move |connector_amount: BigUint| {
                     // Scale the amount settled by the
                     // connector back up to our scale
-                    debug!("Scaling amount received from connector back to engine scale: {:?}", quantity);
                     result(connector_amount.normalize_scale(ConvertDetails {
                         from: quantity.scale,
                         to: engine_scale,
@@ -1030,9 +1029,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::fixtures::{ALICE, BOB, MESSAGES_API};
     use super::super::test_helpers::{
-        block_on, start_ganache, test_engine, test_store, TestAccount,
+        block_on, start_ganache, test_engine, test_store, TestAccount, ALICE, BOB, MESSAGES_API,
     };
     use super::*;
     use lazy_static::lazy_static;
@@ -1057,22 +1055,23 @@ mod tests {
         eloop.into_remote();
         let web3 = Web3::new(transport);
         // deploy erc20 contract
-        let erc20_bytecode = include_str!("./erc20.code");
-        let contract = Contract::deploy(web3.eth(), include_bytes!("./erc20_abi.json"))
-            .unwrap()
-            .confirmations(0)
-            .options(Options::with(|opt| {
-                opt.gas_price = Some(5.into());
-                opt.gas = Some(2_000_000.into());
-            }))
-            .execute(
-                erc20_bytecode,
-                U256::from_dec_str("1000000000000000000000").unwrap(),
-                alice.address,
-            )
-            .expect("Correct parameters are passed to the constructor.")
-            .wait()
-            .unwrap();
+        let erc20_bytecode = include_str!("./test_helpers/erc20.code");
+        let contract =
+            Contract::deploy(web3.eth(), include_bytes!("./test_helpers/erc20_abi.json"))
+                .unwrap()
+                .confirmations(0)
+                .options(Options::with(|opt| {
+                    opt.gas_price = Some(5.into());
+                    opt.gas = Some(2_000_000.into());
+                }))
+                .execute(
+                    erc20_bytecode,
+                    U256::from_dec_str("1000000000000000000000").unwrap(),
+                    alice.address,
+                )
+                .expect("Correct parameters are passed to the constructor.")
+                .wait()
+                .unwrap();
 
         let token_address = contract.address();
 

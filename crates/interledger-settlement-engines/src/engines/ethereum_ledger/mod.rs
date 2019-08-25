@@ -3,8 +3,6 @@ mod types;
 mod utils;
 
 #[cfg(test)]
-pub mod fixtures;
-#[cfg(test)]
 pub mod test_helpers;
 
 // Only expose the engine and the ledger signer
