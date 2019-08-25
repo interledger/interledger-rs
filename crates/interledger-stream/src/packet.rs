@@ -8,7 +8,7 @@ use interledger_packet::{
 #[cfg(test)]
 use lazy_static::lazy_static;
 use log::warn;
-use std::{convert::TryFrom, fmt, str};
+use std::{convert::TryFrom, fmt, str, u64};
 
 const STREAM_VERSION: u8 = 1;
 
@@ -609,7 +609,7 @@ pub struct StreamMaxMoneyFrame {
 impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
-        let receive_max = reader.read_var_uint()?;
+        let receive_max = saturating_read_var_uint(&mut reader)?;
         let total_received = reader.read_var_uint()?;
 
         Ok(StreamMaxMoneyFrame {
@@ -636,7 +636,7 @@ pub struct StreamMoneyBlockedFrame {
 impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
-        let send_max = reader.read_var_uint()?;
+        let send_max = saturating_read_var_uint(&mut reader)?;
         let total_sent = reader.read_var_uint()?;
 
         Ok(StreamMoneyBlockedFrame {
@@ -723,6 +723,16 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
         buf.put_var_uint(self.stream_id);
         buf.put_var_uint(self.max_offset);
+    }
+}
+
+/// See: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#514-maximum-varuint-size
+fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, ParseError> {
+    if reader.peek_var_octet_string()?.len() > 8 {
+        reader.skip_var_octet_string()?;
+        Ok(u64::MAX)
+    } else {
+        Ok(reader.read_var_uint()?)
     }
 }
 
@@ -832,5 +842,31 @@ mod serialization {
             })
         );
         assert_eq!(iter.count(), 12);
+    }
+
+    #[test]
+    fn it_saturates_max_money_frame_receive_max() {
+        let mut buffer = BytesMut::new();
+        buffer.put_var_uint(123); // stream_id
+        buffer.put_var_octet_string(vec![
+            // receive_max
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+        ]);
+        buffer.put_var_uint(123); // total_received
+        let frame = StreamMaxMoneyFrame::read_contents(&buffer).unwrap();
+        assert_eq!(frame.receive_max, u64::MAX);
+    }
+
+    #[test]
+    fn it_saturates_money_blocked_frame_send_max() {
+        let mut buffer = BytesMut::new();
+        buffer.put_var_uint(123); // stream_id
+        buffer.put_var_octet_string(vec![
+            // send_max
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+        ]);
+        buffer.put_var_uint(123); // total_sent
+        let frame = StreamMoneyBlockedFrame::read_contents(&buffer).unwrap();
+        assert_eq!(frame.send_max, u64::MAX);
     }
 }
