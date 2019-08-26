@@ -19,8 +19,16 @@ lazy_static! {
 /// 1. [NFKC Normalization](https://en.wikipedia.org/wiki/Unicode_equivalence#Normalization)
 /// 2. Checks the string is 2-32 word characters only (no special characters except `_`)
 /// 3. Uses [case folding](https://www.w3.org/International/wiki/Case_folding) to convert to lowercase in a language-aware manner
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Username(String);
+
+impl PartialEq for Username {
+    fn eq(&self, other: &Self) -> bool {
+        UniCase::new(self) == UniCase::new(other)
+    }
+}
+
+impl Eq for Username {}
 
 impl Display for Username {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
@@ -51,8 +59,7 @@ impl FromStr for Username {
         if !USERNAME_PATTERN.is_match(&unicode_normalized) {
             return Err("invalid username format".to_owned());
         }
-        let casefolded = UniCase::new(unicode_normalized);
-        Ok(Username(casefolded.to_string()))
+        Ok(Username(unicode_normalized))
     }
 }
 
@@ -70,10 +77,17 @@ mod tests {
 
     #[test]
     fn case_folding_works() {
-        // note the different accents
-        assert_ne!(
+        assert_eq!(
             Username::from_str("Coté").unwrap(),
-            Username::from_str("Côte").unwrap()
+            Username::from_str("coté").unwrap()
+        );
+        assert_eq!(
+            Username::from_str("Maße").unwrap(),
+            Username::from_str("MASSE").unwrap()
+        );
+        assert_eq!(
+            Username::from_str("foobar").unwrap(),
+            Username::from_str("FoObAr").unwrap()
         );
     }
 
