@@ -1029,10 +1029,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_helpers::{
-        block_on, start_ganache, test_engine, test_store, TestAccount, ALICE, BOB, MESSAGES_API,
-    };
     use super::*;
+    use crate::engines::ethereum_ledger::test_helpers::{
+        block_on,
+        fixtures::{ALICE, BOB, MESSAGES_API},
+        start_ganache, test_engine, test_store, TestAccount,
+    };
     use lazy_static::lazy_static;
     use mockito;
     use web3::contract::{Contract, Options};
@@ -1134,8 +1136,10 @@ mod tests {
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK");
 
-        std::thread::sleep(Duration::from_millis(2000)); // wait a few seconds so that the receiver's engine that does the polling
-                                                         // did token balances update correctly?
+        // wait a few seconds so that the receiver's engine that does the polling
+        std::thread::sleep(Duration::from_millis(2000));
+
+        // did token balances update correctly?
         let token_balance = |address| {
             let balance: U256 = contract
                 .query("balanceOf", address, None, Options::default(), None)
@@ -1156,7 +1160,6 @@ mod tests {
     }
 
     #[test]
-    // All tests involving ganache must be run in 1 suite so that they run serially
     fn test_send_eth() {
         let _ = env_logger::try_init();
         let alice = ALICE.clone();
