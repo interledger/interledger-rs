@@ -30,7 +30,7 @@ lazy_static! {
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
 
-#[derive(Extract, Debug, Clone, Serialize, Deserialize)]
+#[derive(Extract, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Quantity {
     pub amount: String,
     pub scale: u8,
@@ -168,7 +168,21 @@ impl Convert for BigUint {
 #[cfg(test)]
 mod tests {
     /// Tests for the asset conversion
+    use super::*;
     use super::{Convert, ConvertDetails};
+    use num_traits::cast::FromPrimitive;
+
+    #[test]
+    fn biguint_test() {
+        let hundred_gwei = BigUint::from_str("100000000000").unwrap();
+        assert_eq!(
+            hundred_gwei
+                .normalize_scale(ConvertDetails { from: 18, to: 9 })
+                .unwrap()
+                .to_string(),
+            BigUint::from_u64(100u64).unwrap().to_string(),
+        );
+    }
 
     #[test]
     fn u64_test() {

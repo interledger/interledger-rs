@@ -7,18 +7,17 @@ use std::sync::Arc;
 
 use hyper::StatusCode;
 use num_traits::Zero;
-use std::process::Command;
 use std::str::FromStr;
-use std::thread::sleep;
-use std::time::Duration;
 
 use web3::{
     futures::future::{err, ok, Future},
     types::{Address, H256, U256},
 };
 
-use super::eth_engine::{EthereumLedgerSettlementEngine, EthereumLedgerSettlementEngineBuilder};
-use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumStore};
+use crate::engines::ethereum_ledger::{
+    EthereumAccount, EthereumAddresses as Addresses, EthereumLedgerSettlementEngine,
+    EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner, EthereumStore,
+};
 use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 
 #[derive(Debug, Clone)]
@@ -260,12 +259,13 @@ impl TestAccount {
     }
 }
 
-// Helper to create a new engine and spin a new ganache instance.
+// Helper to create a new engine
 pub fn test_engine<Si, S, A>(
     store: S,
     key: Si,
     confs: u8,
     connector_url: &str,
+    token_address: Option<Address>,
     watch_incoming: bool,
 ) -> EthereumLedgerSettlementEngine<S, Si, A>
 where
@@ -281,21 +281,11 @@ where
 {
     EthereumLedgerSettlementEngineBuilder::new(store, key)
         .connector_url(connector_url)
+        .token_address(token_address)
         .confirmations(confs)
         .watch_incoming(watch_incoming)
         .poll_frequency(1000)
         .connect()
-}
-
-pub fn start_ganache() -> std::process::Child {
-    let mut ganache = Command::new("ganache-cli");
-    let ganache = ganache.stdout(std::process::Stdio::null()).arg("-m").arg(
-        "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle",
-    );
-    let ganache_pid = ganache.spawn().expect("couldnt start ganache-cli");
-    // wait a couple of seconds for ganache to boot up
-    sleep(Duration::from_secs(5));
-    ganache_pid
 }
 
 pub fn test_store(

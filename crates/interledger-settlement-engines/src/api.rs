@@ -181,9 +181,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::engines::ethereum_ledger::fixtures::ALICE;
-    use super::super::engines::ethereum_ledger::test_helpers::test_store;
-    use super::super::stores::test_helpers::store_helpers::block_on;
+    use crate::engines::ethereum_ledger::test_helpers::{fixtures::ALICE, test_store};
+    use crate::stores::test_helpers::store_helpers::block_on;
     use lazy_static::lazy_static;
 
     use super::*;

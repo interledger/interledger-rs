@@ -1,4 +1,4 @@
-use super::test_helpers::TestAccount;
+use super::utils::TestAccount;
 use lazy_static::lazy_static;
 use mockito::Matcher;
 
