@@ -1,6 +1,9 @@
 use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{future::{result, err}, Future, Stream};
+use futures::{
+    future::{err, result},
+    Future, Stream,
+};
 use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use log::{error, trace};
