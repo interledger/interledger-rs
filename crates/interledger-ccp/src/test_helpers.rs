@@ -34,6 +34,7 @@ lazy_static! {
         relation: RoutingRelation::Child,
     };
     pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
 }
 
 #[derive(Clone, Debug)]
@@ -64,8 +65,8 @@ impl Account for TestAccount {
         self.id
     }
 
-    fn username(&self) -> Username {
-        Username::from_str("alice").unwrap()
+    fn username(&self) -> &Username {
+        &ALICE
     }
 }
 

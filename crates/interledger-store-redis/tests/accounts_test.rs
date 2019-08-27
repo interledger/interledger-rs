@@ -8,7 +8,7 @@ use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_service::AccountStore;
+use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
 use std::str::FromStr;
@@ -99,7 +99,7 @@ fn starts_with_zero_balance() {
 fn fetches_account_from_username() {
     block_on(test_store().and_then(|(store, context, accs)| {
         store
-            .get_account_id_from_username(&ALICE)
+            .get_account_id_from_username(&Username::from_str("alice").unwrap())
             .and_then(move |account_id| {
                 assert_eq!(account_id, accs[0].id());
                 let _ = context;
@@ -120,8 +120,14 @@ fn duplicate_http_incoming_auth_works() {
             let duplicate_id = duplicate.id();
             assert_ne!(original_id, duplicate_id);
             futures::future::join_all(vec![
-                store.get_account_from_http_auth(&ALICE, "incoming_auth_token"),
-                store.get_account_from_http_auth(&CHARLIE, "incoming_auth_token"),
+                store.get_account_from_http_auth(
+                    &Username::from_str("alice").unwrap(),
+                    "incoming_auth_token",
+                ),
+                store.get_account_from_http_auth(
+                    &Username::from_str("charlie").unwrap(),
+                    "incoming_auth_token",
+                ),
             ])
             .and_then(move |accs| {
                 // Alice and Charlie had the same auth token, but they had a
@@ -143,7 +149,7 @@ fn gets_account_from_btp_auth() {
         // alice's incoming btp token is the username/password to get her
         // account's information
         store
-            .get_account_from_btp_auth(&ALICE, "btp_token")
+            .get_account_from_btp_auth(&Username::from_str("alice").unwrap(), "btp_token")
             .and_then(move |acc| {
                 assert_eq!(acc.id(), accs[0].id());
                 let _ = context;
@@ -157,7 +163,10 @@ fn gets_account_from_btp_auth() {
 fn gets_account_from_http_auth() {
     block_on(test_store().and_then(|(store, context, accs)| {
         store
-            .get_account_from_http_auth(&ALICE, "incoming_auth_token")
+            .get_account_from_http_auth(
+                &Username::from_str("alice").unwrap(),
+                "incoming_auth_token",
+            )
             .and_then(move |acc| {
                 assert_eq!(acc.id(), accs[0].id());
                 let _ = context;
@@ -178,8 +187,11 @@ fn duplicate_btp_incoming_auth_works() {
             let charlie_id = charlie.id();
             assert_ne!(alice_id, charlie_id);
             futures::future::join_all(vec![
-                store.get_account_from_btp_auth(&ALICE, "btp_token"),
-                store.get_account_from_btp_auth(&CHARLIE, "btp_token"),
+                store.get_account_from_btp_auth(&Username::from_str("alice").unwrap(), "btp_token"),
+                store.get_account_from_btp_auth(
+                    &Username::from_str("charlie").unwrap(),
+                    "btp_token",
+                ),
             ])
             .and_then(move |accs| {
                 assert_ne!(accs[0].id(), accs[1].id());

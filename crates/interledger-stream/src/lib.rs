@@ -31,6 +31,7 @@ pub mod test_helpers {
     lazy_static! {
         pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
         pub static ref EXAMPLE_RECEIVER: Address = Address::from_str("example.receiver").unwrap();
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
     }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
@@ -48,8 +49,8 @@ pub mod test_helpers {
             self.id
         }
 
-        fn username(&self) -> Username {
-            Username::from_str("alice").unwrap()
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 

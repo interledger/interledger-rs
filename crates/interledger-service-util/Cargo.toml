@@ -21,3 +21,6 @@ log = "0.4.6"
 ring = "0.14.6"
 tokio = "0.1.16"
 tokio-executor = "0.1.7"
+
+[dev-dependencies]
+lazy_static = "1.4.0"

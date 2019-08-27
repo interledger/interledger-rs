@@ -164,7 +164,13 @@ where
 }
 
 #[cfg(test)]
+use lazy_static::lazy_static;
+#[cfg(test)]
 use std::str::FromStr;
+#[cfg(test)]
+lazy_static! {
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+}
 #[cfg(test)]
 #[derive(Clone, Debug)]
 struct TestAccount(u64);
@@ -176,8 +182,8 @@ impl Account for TestAccount {
         self.0
     }
 
-    fn username(&self) -> Username {
-        Username::from_str("alice").unwrap()
+    fn username(&self) -> &Username {
+        &ALICE
     }
 }
 

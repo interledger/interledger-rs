@@ -215,11 +215,16 @@ mod echo_tests {
     use futures::future::Future;
     use interledger_packet::{FulfillBuilder, PrepareBuilder};
     use interledger_service::incoming_service_fn;
+    use lazy_static::lazy_static;
     use ring::digest::{digest, SHA256};
     use ring::rand::{SecureRandom, SystemRandom};
-
     use std::str::FromStr;
     use std::time::{Duration, SystemTime};
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
+
     #[derive(Debug, Clone)]
     struct TestAccount(u64);
 
@@ -229,8 +234,8 @@ mod echo_tests {
             self.0
         }
 
-        fn username(&self) -> Username {
-            Username::from_str("alice").unwrap()
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 

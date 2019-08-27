@@ -70,8 +70,8 @@ mod tests {
     #[test]
     fn unicode_normalization_works() {
         assert_eq!(
-            Username::from_str("Zoé").unwrap(),  // \u005a\u006f\u00e9
-            Username::from_str("Zoé").unwrap()  // \u005a\u006f\u0065\u0301
+            Username::from_str("\u{005a}\u{006f}\u{00e9}").unwrap(), // Zoé
+            Username::from_str("\u{005a}\u{006f}\u{0065}\u{0301}").unwrap()  //  "Zoé"
         );
     }
 

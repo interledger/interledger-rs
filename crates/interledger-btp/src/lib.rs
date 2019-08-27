@@ -80,6 +80,12 @@ mod client_server {
     };
     use tokio::runtime::Runtime;
 
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
+
     #[derive(Clone, Debug)]
     pub struct TestAccount {
         pub id: u64,
@@ -95,8 +101,8 @@ mod client_server {
             self.id
         }
 
-        fn username(&self) -> Username {
-            Username::from_str("alice").unwrap()
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 

@@ -155,12 +155,17 @@ mod tests {
     use interledger_ildcp::IldcpAccount;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::{outgoing_service_fn, Account};
+    use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
         time::SystemTime,
     };
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
 
     #[test]
     fn exchange_rate_ok() {
@@ -249,8 +254,8 @@ mod tests {
             0
         }
 
-        fn username(&self) -> Username {
-            Username::from_str("alice").unwrap()
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 

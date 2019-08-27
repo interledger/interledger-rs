@@ -5,10 +5,6 @@ use lazy_static::lazy_static;
 use std::str::FromStr;
 
 lazy_static! {
-    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-    pub static ref BOB: Username = Username::from_str("bob").unwrap();
-    pub static ref CHARLIE: Username = Username::from_str("charlie").unwrap();
-
     // We are dylan starting a connection with all these accounts
     pub static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
         ilp_address: Address::from_str("example.alice").unwrap(),

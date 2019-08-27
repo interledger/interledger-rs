@@ -14,6 +14,7 @@ use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use mockito::mock;
 
 use crate::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
+use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -29,6 +30,10 @@ pub struct TestAccount {
     pub no_details: bool,
 }
 
+lazy_static! {
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+}
+
 impl Account for TestAccount {
     type AccountId = u64;
 
@@ -36,8 +41,8 @@ impl Account for TestAccount {
         self.id
     }
 
-    fn username(&self) -> Username {
-        Username::from_str("alice").unwrap()
+    fn username(&self) -> &Username {
+        &ALICE
     }
 }
 impl SettlementAccount for TestAccount {

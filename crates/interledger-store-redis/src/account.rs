@@ -439,8 +439,8 @@ impl AccountTrait for Account {
         self.id
     }
 
-    fn username(&self) -> Username {
-        self.username.clone()
+    fn username(&self) -> &Username {
+        &self.username
     }
 }
 

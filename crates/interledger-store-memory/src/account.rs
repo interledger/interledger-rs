@@ -152,8 +152,8 @@ impl AccountTrait for Account {
         self.inner.id
     }
 
-    fn username(&self) -> Username {
-        self.inner.username.clone()
+    fn username(&self) -> &Username {
+        &self.inner.username
     }
 }
 
@@ -224,7 +224,7 @@ mod tests {
             *account.client_address(),
             Address::from_str("example.address").unwrap()
         );
-        assert_eq!(account.username(), Username::from_str("username").unwrap());
+        assert_eq!(account.username(), &Username::from_str("username").unwrap());
     }
 
     #[test]
@@ -257,6 +257,6 @@ mod tests {
         assert_eq!(account.get_http_auth_token(), Some("sodgiuoixfugoiudf"));
         assert_eq!(account.max_packet_amount(), 7777);
         assert_eq!(account.client_address(), &b"example.address"[..]);
-        assert_eq!(account.username(), Username::from_str("username").unwrap());
+        assert_eq!(account.username(), &Username::from_str("username").unwrap());
     }
 }

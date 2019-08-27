@@ -82,6 +82,12 @@ mod tests {
     use interledger_service::{outgoing_service_fn, Username};
     use std::str::FromStr;
 
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
+
     #[derive(Clone, Debug)]
     struct TestAccount(u64, u32);
     impl Account for TestAccount {
@@ -91,8 +97,8 @@ mod tests {
             self.0
         }
 
-        fn username(&self) -> Username {
-            Username::from_str("alice").unwrap()
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 
