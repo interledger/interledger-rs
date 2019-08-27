@@ -738,7 +738,7 @@ impl ExchangeRateStore for RedisStore {
 impl BtpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_btp_token(
+    fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
@@ -822,7 +822,7 @@ impl HttpStore for RedisStore {
 
     /// Checks if the stored token for the provided account id matches the
     /// provided token, and if so, returns the account associated with that token
-    fn get_account_from_http_token(
+    fn get_account_from_http_auth(
         &self,
         username: &Username,
         token: &str,

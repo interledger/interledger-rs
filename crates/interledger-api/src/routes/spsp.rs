@@ -76,7 +76,7 @@ impl_web! {
                 let username = auth.username();
                 let token = auth.password();
                 debug!("Got request to pay: {:?}", body);
-                store.get_account_from_http_token(&username, &token)
+                store.get_account_from_http_auth(&username, &token)
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)

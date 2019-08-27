@@ -120,8 +120,8 @@ fn duplicate_http_incoming_auth_works() {
             let duplicate_id = duplicate.id();
             assert_ne!(original_id, duplicate_id);
             futures::future::join_all(vec![
-                store.get_account_from_http_token(&ALICE, "incoming_auth_token"),
-                store.get_account_from_http_token(&CHARLIE, "incoming_auth_token"),
+                store.get_account_from_http_auth(&ALICE, "incoming_auth_token"),
+                store.get_account_from_http_auth(&CHARLIE, "incoming_auth_token"),
             ])
             .and_then(move |accs| {
                 // Alice and Charlie had the same auth token, but they had a
@@ -138,12 +138,12 @@ fn duplicate_http_incoming_auth_works() {
 }
 
 #[test]
-fn gets_account_from_btp_token() {
+fn gets_account_from_btp_auth() {
     block_on(test_store().and_then(|(store, context, accs)| {
         // alice's incoming btp token is the username/password to get her
         // account's information
         store
-            .get_account_from_btp_token(&ALICE, "btp_token")
+            .get_account_from_btp_auth(&ALICE, "btp_token")
             .and_then(move |acc| {
                 assert_eq!(acc.id(), accs[0].id());
                 let _ = context;
@@ -154,10 +154,10 @@ fn gets_account_from_btp_token() {
 }
 
 #[test]
-fn gets_account_from_http_token() {
+fn gets_account_from_http_auth() {
     block_on(test_store().and_then(|(store, context, accs)| {
         store
-            .get_account_from_http_token(&ALICE, "incoming_auth_token")
+            .get_account_from_http_auth(&ALICE, "incoming_auth_token")
             .and_then(move |acc| {
                 assert_eq!(acc.id(), accs[0].id());
                 let _ = context;
@@ -178,8 +178,8 @@ fn duplicate_btp_incoming_auth_works() {
             let charlie_id = charlie.id();
             assert_ne!(alice_id, charlie_id);
             futures::future::join_all(vec![
-                store.get_account_from_btp_token(&ALICE, "btp_token"),
-                store.get_account_from_btp_token(&CHARLIE, "btp_token"),
+                store.get_account_from_btp_auth(&ALICE, "btp_token"),
+                store.get_account_from_btp_auth(&CHARLIE, "btp_token"),
             ])
             .and_then(move |accs| {
                 assert_ne!(accs[0].id(), accs[1].id());

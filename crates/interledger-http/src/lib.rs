@@ -27,7 +27,7 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
 
     /// Load account details based on the full HTTP Authorization header
     /// received on the incoming HTTP request.
-    fn get_account_from_http_token(
+    fn get_account_from_http_auth(
         &self,
         username: &Username,
         token: &str,

@@ -169,7 +169,7 @@ where
     get_auth(connection).and_then(move |(auth, connection)| {
         result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
             store
-                .get_account_from_btp_token(&auth_token.username(), &auth_token.password())
+                .get_account_from_btp_auth(&auth_token.username(), &auth_token.password())
                 .map_err(move |_| {
                     warn!("Got BTP connection that does not correspond to an account")
                 })
@@ -211,7 +211,7 @@ where
         let request_id = auth.request_id;
         result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
             store
-                .get_account_from_btp_token(&auth_token.username(), &auth_token.password())
+                .get_account_from_btp_auth(&auth_token.username(), &auth_token.password())
                 .or_else(move |_| {
                     let local_part = if let Some(username) = auth.username {
                         username

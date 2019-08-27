@@ -149,7 +149,7 @@ impl_web! {
                         Response::error(401)
                     })
                     .and_then(move |auth| {
-                        store.get_account_from_http_token(&auth.username(), &auth.password()).map_err(|_| Response::error(401))
+                        store.get_account_from_http_auth(&auth.username(), &auth.password()).map_err(|_| Response::error(401))
                         .and_then(|account| Ok(json!(vec![account])))
                     })
                 )
@@ -164,7 +164,7 @@ impl_web! {
             let username_clone = username.clone();
             let auth_clone = authorization.clone();
             // TODO:
-            // It seems somewhat inconsistent that get_account_from_http_token
+            // It seems somewhat inconsistent that get_account_from_http_auth
             // would return the Account while this method only gives the ID (and
             // then the next call is made to get the account)
             // One option would be to have two methods get_account_from_username
@@ -198,7 +198,7 @@ impl_web! {
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            store.get_account_from_http_token(&auth.username(), &auth.password())
+                            store.get_account_from_http_auth(&auth.username(), &auth.password())
                             .map_err(move |_| {
                                 debug!("No account found with auth: {}", authorization);
                                 Response::error(401)
@@ -313,7 +313,7 @@ impl_web! {
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            store.get_account_from_http_token(&auth.username(), &auth.password())
+                            store.get_account_from_http_auth(&auth.username(), &auth.password())
                             .map_err(move |_| {
                                 error!("No account found with auth: {}", authorization);
                                 Response::error(401)

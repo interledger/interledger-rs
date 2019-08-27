@@ -141,7 +141,7 @@ impl AccountStore for InMemoryStore {
 impl HttpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_http_token(
+    fn get_account_from_http_auth(
         &self,
         username: &Username,
         token: &str,
@@ -165,7 +165,7 @@ impl RouterStore for InMemoryStore {
 impl BtpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_btp_token(
+    fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
@@ -267,11 +267,11 @@ mod tests {
         .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_token(&Username::from_str("zero").unwrap(), "test_token")
+            .get_account_from_http_auth(&Username::from_str("zero").unwrap(), "test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_http_token(
+            .get_account_from_http_auth(
                 &Username::from_str("another_username").unwrap(),
                 "bad_token"
             )
@@ -289,11 +289,11 @@ mod tests {
         .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_btp_token(&Username::from_str("zero").unwrap(), "test_token")
+            .get_account_from_btp_auth(&Username::from_str("zero").unwrap(), "test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_btp_token(
+            .get_account_from_btp_auth(
                 &Username::from_str("another_username").unwrap(),
                 "bad_token"
             )

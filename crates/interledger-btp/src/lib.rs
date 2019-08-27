@@ -32,7 +32,7 @@ pub trait BtpStore {
     type Account: BtpAccount;
 
     /// Load Account details based on the auth token received via BTP.
-    fn get_account_from_btp_token(
+    fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
@@ -156,7 +156,7 @@ mod client_server {
     impl BtpStore for TestStore {
         type Account = TestAccount;
 
-        fn get_account_from_btp_token(
+        fn get_account_from_btp_auth(
             &self,
             username: &Username,
             token: &str,

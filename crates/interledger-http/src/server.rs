@@ -48,7 +48,7 @@ where
         if let Some(authorization) = authorization {
             Either::A(
                 self.store
-                    .get_account_from_http_token(
+                    .get_account_from_http_auth(
                         &authorization.username(),
                         &authorization.password(),
                     )

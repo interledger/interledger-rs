@@ -9,10 +9,10 @@ use interledger_service::Username;
 use std::str::FromStr;
 
 #[test]
-fn gets_account_from_btp_token() {
+fn gets_account_from_btp_auth() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_btp_token(&BOB, "other_btp_token")
+            .get_account_from_btp_auth(&BOB, "other_btp_token")
             .and_then(move |account| {
                 assert_eq!(
                     *account.client_address(),
@@ -29,7 +29,7 @@ fn gets_account_from_btp_token() {
 fn decrypts_outgoing_tokens_btp() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_btp_token(&BOB, "other_btp_token")
+            .get_account_from_btp_auth(&BOB, "other_btp_token")
             .and_then(move |account| {
                 // the account is created on Dylan's connector
                 assert_eq!(
@@ -51,7 +51,7 @@ fn decrypts_outgoing_tokens_btp() {
 fn errors_on_unknown_btp_token() {
     let result = block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_account_from_btp_token(
+            .get_account_from_btp_auth(
                 &Username::from_str("someuser").unwrap(),
                 "unknown_btp_token",
             )
