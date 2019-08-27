@@ -67,7 +67,7 @@ where
             );
             Box::new(
                 self.client
-                    .post(url.clone())
+                    .post(url.as_ref())
                     .header(
                         "authorization",
                         format!("Bearer {}", request.to.get_http_auth_token().unwrap_or("")),
