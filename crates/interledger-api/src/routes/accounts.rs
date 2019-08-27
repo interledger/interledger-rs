@@ -103,7 +103,7 @@ impl_web! {
                                 se_url.clone()
                             );
                             let action = move || {
-                                Client::new().post(se_url.clone())
+                                Client::new().post(se_url.as_ref())
                                 .json(&json!({"id" : id.to_string()}))
                                 .send()
                                 .map_err(move |err| {

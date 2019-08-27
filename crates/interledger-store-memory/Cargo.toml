@@ -18,4 +18,4 @@ interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
 parking_lot = "0.7.1"
-url = "1.7.2"
+url = "2.1.0"

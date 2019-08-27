@@ -64,7 +64,7 @@ where
                 let http_client = self.http_client.clone();
                 let action = move || {
                     http_client
-                        .post(settlement_engine_url.clone())
+                        .post(settlement_engine_url.as_ref())
                         .header("Content-Type", "application/octet-stream")
                         .header("Idempotency-Key", idempotency_uuid.clone())
                         .body(message.clone())
