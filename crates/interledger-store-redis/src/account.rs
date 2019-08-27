@@ -41,13 +41,11 @@ pub struct Account {
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
     pub(crate) min_balance: Option<i64>,
-    #[serde(with = "url_serde")]
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) http_incoming_token: Option<Bytes>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) http_outgoing_token: Option<Bytes>,
-    #[serde(with = "url_serde")]
     pub(crate) btp_uri: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) btp_incoming_token: Option<Bytes>,
@@ -61,7 +59,6 @@ pub struct Account {
     pub(crate) round_trip_time: u32,
     pub(crate) packets_per_minute_limit: Option<u32>,
     pub(crate) amount_per_minute_limit: Option<u64>,
-    #[serde(with = "url_serde")]
     pub(crate) settlement_engine_url: Option<Url>,
 }
 
