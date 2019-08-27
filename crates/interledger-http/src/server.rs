@@ -12,10 +12,10 @@ use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::*;
 use log::{debug, error, trace};
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_MESSAGE_SIZE: usize = 40000;
-const BEARER_TOKEN_START: usize = 7;
 
 /// A Hyper::Service that parses incoming ILP-Over-HTTP requests, validates the authorization,
 /// and passes the request to an IncomingService handler.
@@ -39,17 +39,21 @@ where
         &self,
         request: &Request<Body>,
     ) -> impl Future<Item = T::Account, Error = Response<Body>> {
-        let authorization: Option<String> = request
+        let authorization = request
             .headers()
             .get(AUTHORIZATION)
             .and_then(|auth| auth.to_str().ok())
-            .map(|auth| auth[BEARER_TOKEN_START..].to_string());
+            .map(|auth| AuthToken::from_str(auth).ok())
+            .and_then(|x| x);
         if let Some(authorization) = authorization {
             Either::A(
                 self.store
-                    .get_account_from_http_token(&authorization)
+                    .get_account_from_http_auth(
+                        &authorization.username(),
+                        &authorization.password(),
+                    )
                     .map_err(move |_err| {
-                        error!("Authorization not found in the DB: {}", authorization);
+                        error!("Authorization not found in the DB: {:?}", authorization);
                         Response::builder().status(401).body(Body::empty()).unwrap()
                     }),
             )

@@ -7,7 +7,7 @@ use interledger_ccp::RouteManagerStore;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::Account as AccountTrait;
+use interledger_service::{Account as AccountTrait, Username};
 use interledger_store_redis::AccountId;
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
@@ -38,6 +38,7 @@ fn polls_for_route_updates() {
                         store_clone_1
                             .insert_account(AccountDetails {
                                 ilp_address: Address::from_str("example.bob").unwrap(),
+                                username: Username::from_str("bob").unwrap(),
                                 asset_scale: 6,
                                 asset_code: "XYZ".to_string(),
                                 max_packet_amount: 1000,

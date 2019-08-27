@@ -7,6 +7,7 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use serde_json::json;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -61,6 +62,7 @@ fn three_nodes() {
         node1_clone
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.one").unwrap(),
+                username: Username::from_str("alice").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -85,13 +87,14 @@ fn three_nodes() {
         node1_clone
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.two").unwrap(),
+                username: Username::from_str("bob").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
                 btp_uri: None,
                 http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                http_incoming_token: Some("two".to_string()),
-                http_outgoing_token: Some("one".to_string()),
+                http_incoming_token: Some("two".to_string()), // usrename from other party
+                http_outgoing_token: Some("alice:one".to_string()), // our username
                 max_packet_amount: u64::max_value(),
                 min_balance: Some(-1_000_000_000),
                 settle_threshold: None,
@@ -123,13 +126,14 @@ fn three_nodes() {
         node2_clone
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.one").unwrap(),
+                username: Username::from_str("alice").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
                 btp_uri: None,
                 http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
                 http_incoming_token: Some("one".to_string()),
-                http_outgoing_token: Some("two".to_string()),
+                http_outgoing_token: Some("bob:two".to_string()),
                 max_packet_amount: u64::max_value(),
                 min_balance: None,
                 settle_threshold: None,
@@ -145,6 +149,7 @@ fn three_nodes() {
             .and_then(move |_| {
                 node2_clone.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.two.three").unwrap(),
+                    username: Username::from_str("charlie").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
                     btp_incoming_token: Some("three".to_string()),
@@ -200,6 +205,7 @@ fn three_nodes() {
             node3_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.two.three").unwrap(),
+                    username: Username::from_str("charlie").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
                     btp_incoming_token: None,
@@ -222,10 +228,11 @@ fn three_nodes() {
                 .and_then(move |_| {
                     node3_clone.insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.two").unwrap(),
+                        username: Username::from_str("bob").unwrap(),
                         asset_code: "ABC".to_string(),
                         asset_scale: 6,
                         btp_incoming_token: None,
-                        btp_uri: Some(format!("btp+ws://:three@localhost:{}", node2_btp)),
+                        btp_uri: Some(format!("btp+ws://charlie:three@localhost:{}", node2_btp)),
                         http_endpoint: None,
                         http_incoming_token: None,
                         http_outgoing_token: None,
@@ -252,115 +259,62 @@ fn three_nodes() {
             delay(500)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
-                    let three_addr = Address::from_str("example.two.three").unwrap();
-                    let one_addr = Address::from_str("example.one").unwrap();
-                    futures::future::join_all(vec![
-                        get_all_accounts(node1_http, "admin").map(accounts_to_ids),
-                        get_all_accounts(node2_http, "admin").map(accounts_to_ids),
-                        get_all_accounts(node3_http, "admin").map(accounts_to_ids),
-                    ])
-                    .and_then(move |ids| {
-                        let node1_ids = ids[0].clone();
-                        let node2_ids = ids[1].clone();
-                        let node3_ids = ids[2].clone();
+                    let send_1_to_3 = send_money_to_username(
+                        node1_http,
+                        node3_http,
+                        1000,
+                        "charlie",
+                        "alice",
+                        "default account holder",
+                    );
+                    let send_3_to_1 = send_money_to_username(
+                        node3_http,
+                        node1_http,
+                        1000,
+                        "alice",
+                        "charlie",
+                        "default account holder",
+                    );
 
-                        let one_on_one = node1_ids.get(&one_addr).unwrap().to_owned();
-                        let three_on_two = node2_ids.get(&three_addr).unwrap().to_owned();
-                        let three_on_three = node3_ids.get(&three_addr).unwrap().to_owned();
+                    let get_balances = move || {
+                        futures::future::join_all(vec![
+                            get_balance("alice", node1_http, "admin"),
+                            get_balance("charlie", node2_http, "admin"),
+                            get_balance("charlie", node3_http, "admin"),
+                        ])
+                    };
 
-                        let send_1_to_3 = send_money_to_id(
-                            node1_http,
-                            node3_http,
-                            1000,
-                            three_on_three,
-                            "default account holder",
-                        );
-                        let send_3_to_1 = send_money_to_id(
-                            node3_http,
-                            node1_http,
-                            1000,
-                            one_on_one,
-                            "default account holder",
-                        );
-
-                        // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
-                        // while Node 3's scale is 6. This means that Node 3 will
-                        // see 1000x less. In addition, the conversion rate is 2:1
-                        // for 3's asset, so he will receive 2 total.
-                        send_1_to_3
-                            .map_err(|err| {
-                                eprintln!("Error sending from node 1 to node 3: {:?}", err);
+                    // // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
+                    // // while Node 3's scale is 6. This means that Node 3 will
+                    // // see 1000x less. In addition, the conversion rate is 2:1
+                    // // for 3's asset, so he will receive 2 total.
+                    send_1_to_3
+                        .map_err(|err| {
+                            eprintln!("Error sending from node 1 to node 3: {:?}", err);
+                            err
+                        })
+                        .and_then(move |_| {
+                            get_balances().and_then(move |ret| {
+                                assert_eq!(ret[0], -1000);
+                                assert_eq!(ret[1], 2);
+                                assert_eq!(ret[2], 2);
+                                Ok(())
+                            })
+                        })
+                        .and_then(move |_| {
+                            send_3_to_1.map_err(|err| {
+                                eprintln!("Error sending from node 3 to node 1: {:?}", err);
                                 err
                             })
-                            .and_then(move |_| {
-                                get_balance(one_on_one, node1_http, "default account holder")
-                                    .and_then(move |ret| {
-                                        assert_eq!(ret, -1000);
-                                        Ok(())
-                                    })
-                                    .and_then(move |_| {
-                                        // Node 2 updates Node 3's balance properly.
-                                        get_balance(three_on_two, node2_http, "three").and_then(
-                                            move |ret| {
-                                                assert_eq!(ret, 2);
-                                                Ok(())
-                                            },
-                                        )
-                                    })
-                                    .and_then(move |_| {
-                                        // Node 3's balance is properly adjusted after
-                                        // it's received the message from node 2
-                                        get_balance(
-                                            three_on_three,
-                                            node3_http,
-                                            "default account holder",
-                                        )
-                                        .and_then(
-                                            move |ret| {
-                                                assert_eq!(ret, 2);
-                                                Ok(())
-                                            },
-                                        )
-                                    })
+                        })
+                        .and_then(move |_| {
+                            get_balances().and_then(move |ret| {
+                                assert_eq!(ret[0], 499_000);
+                                assert_eq!(ret[1], -998);
+                                assert_eq!(ret[2], -998);
+                                Ok(())
                             })
-                            .and_then(move |_| {
-                                send_3_to_1.map_err(|err| {
-                                    eprintln!("Error sending from node 3 to node 1: {:?}", err);
-                                    err
-                                })
-                            })
-                            .and_then(move |_| {
-                                get_balance(one_on_one, node1_http, "default account holder")
-                                    .and_then(move |ret| {
-                                        assert_eq!(ret, 499_000);
-                                        Ok(())
-                                    })
-                                    .and_then(move |_| {
-                                        // Node 2 updates Node 3's balance properly.
-                                        get_balance(three_on_two, node2_http, "three").and_then(
-                                            move |ret| {
-                                                assert_eq!(ret, -998);
-                                                Ok(())
-                                            },
-                                        )
-                                    })
-                                    .and_then(move |_| {
-                                        // Node 3's balance is properly adjusted after
-                                        // it's received the message from node 2
-                                        get_balance(
-                                            three_on_three,
-                                            node3_http,
-                                            "default account holder",
-                                        )
-                                        .and_then(
-                                            move |ret| {
-                                                assert_eq!(ret, -998);
-                                                Ok(())
-                                            },
-                                        )
-                                    })
-                            })
-                    })
+                        })
                 }),
         )
         .unwrap();

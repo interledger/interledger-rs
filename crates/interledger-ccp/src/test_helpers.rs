@@ -9,7 +9,7 @@ use futures::{
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
-    OutgoingService,
+    OutgoingService, Username,
 };
 #[cfg(test)]
 use lazy_static::lazy_static;
@@ -34,6 +34,7 @@ lazy_static! {
         relation: RoutingRelation::Child,
     };
     pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +63,10 @@ impl Account for TestAccount {
 
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn username(&self) -> &Username {
+        &ALICE
     }
 }
 

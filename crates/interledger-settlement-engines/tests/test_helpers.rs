@@ -9,7 +9,7 @@ use redis::ConnectionInfo;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::process::Command;
 use std::str;
 use std::thread::sleep;
@@ -104,20 +104,21 @@ pub fn create_account_on_engine<T: Serialize>(
 }
 
 #[allow(unused)]
-pub fn send_money_to_id<T: Display>(
-    from: u16,
-    to: u16,
+pub fn send_money_to_username<T: Display + Debug>(
+    from_port: u16,
+    to_port: u16,
     amount: u64,
-    id: T,
-    auth: &str,
+    to_username: T,
+    from_username: &str,
+    from_auth: &str,
 ) -> impl Future<Item = u64, Error = ()> {
     let client = reqwest::r#async::Client::new();
+    let auth = format!("{}:{}", from_username, from_auth);
     client
-        .post(&format!("http://localhost:{}/pay", from))
+        .post(&format!("http://localhost:{}/pay", from_port))
         .header("Authorization", format!("Bearer {}", auth))
         .json(&json!({
-            // TODO: replace with username
-            "receiver": format!("http://localhost:{}/spsp/{}", to, id),
+            "receiver": format!("http://localhost:{}/spsp/{}", to_port, to_username),
             "source_amount": amount,
         }))
         .send()
@@ -164,17 +165,17 @@ pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, AccountId> {
 
 #[allow(unused)]
 pub fn get_balance<T: Display>(
-    account_id: T,
+    username: T,
     node_port: u16,
-    admin_token: &str,
+    auth: &str,
 ) -> impl Future<Item = i64, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .get(&format!(
             "http://localhost:{}/accounts/{}/balance",
-            node_port, account_id
+            node_port, username
         ))
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", format!("Bearer {}:{}", username, auth))
         .send()
         .and_then(|res| res.error_for_status())
         .and_then(|res| res.into_body().concat2())

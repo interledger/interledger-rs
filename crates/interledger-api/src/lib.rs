@@ -8,7 +8,7 @@ use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, IncomingService};
+use interledger_service::{Account as AccountTrait, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use serde::Serialize;
@@ -61,6 +61,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
 #[derive(Debug, Extract, Response, Clone)]
 pub struct AccountDetails {
     pub ilp_address: Address,
+    pub username: Username,
     pub asset_code: String,
     pub asset_scale: u8,
     #[serde(default = "u64::max_value")]

@@ -7,6 +7,7 @@ use hex;
 use interledger::{cli::*, node::*};
 use interledger_ildcp::IldcpResponseBuilder;
 use interledger_packet::Address;
+use interledger_service::Username;
 use std::str::FromStr;
 use tokio;
 use url::Url;
@@ -307,6 +308,10 @@ pub fn main() {
                     let account = AccountDetails {
                         ilp_address: Address::from_str(
                             &value_t!(matches, "ilp_address", String).unwrap(),
+                        )
+                        .unwrap(),
+                        username: Username::from_str(
+                            &value_t!(matches, "username", String).unwrap(),
                         )
                         .unwrap(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),

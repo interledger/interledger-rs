@@ -4,7 +4,7 @@ use common::*;
 use futures::future::{self, Either};
 use interledger_api::NodeStore;
 use interledger_packet::Address;
-use interledger_service::AccountStore;
+use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use std::str::FromStr;
 
@@ -94,6 +94,7 @@ fn process_fulfill_no_settle_to() {
     // account without a settle_to
     let acc = {
         let mut acc = ACCOUNT_DETAILS_1.clone();
+        acc.username = Username::from_str("charlie").unwrap();
         acc.ilp_address = Address::from_str("example.charlie").unwrap();
         acc.http_incoming_token = None;
         acc.http_outgoing_token = None;
@@ -129,6 +130,7 @@ fn process_fulfill_settle_to_over_threshold() {
     // account misconfigured with settle_to >= settle_threshold does not get settlements
     let acc = {
         let mut acc = ACCOUNT_DETAILS_1.clone();
+        acc.username = Username::from_str("charlie").unwrap();
         acc.ilp_address = Address::from_str("example.b").unwrap();
         acc.settle_to = Some(101);
         acc.settle_threshold = Some(100);
@@ -165,6 +167,7 @@ fn process_fulfill_ok() {
     // account with settle to = 0 (not falsy) with settle_threshold > 0, gets settlements
     let acc = {
         let mut acc = ACCOUNT_DETAILS_1.clone();
+        acc.username = Username::from_str("charlie").unwrap();
         acc.ilp_address = Address::from_str("example.c").unwrap();
         acc.settle_to = Some(0);
         acc.settle_threshold = Some(100);

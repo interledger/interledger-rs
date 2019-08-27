@@ -79,8 +79,14 @@ mod tests {
     use super::*;
     use futures::Future;
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
-    use interledger_service::outgoing_service_fn;
+    use interledger_service::{outgoing_service_fn, Username};
     use std::str::FromStr;
+
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
 
     #[derive(Clone, Debug)]
     struct TestAccount(u64, u32);
@@ -89,6 +95,10 @@ mod tests {
 
         fn id(&self) -> u64 {
             self.0
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 

@@ -10,4 +10,9 @@ repository = "https://github.com/emschwartz/interledger-rs"
 [dependencies]
 futures = "0.1.25"
 interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
-serde = "1.0.94"
+serde = { version = "1.0.94", features = ["derive"] }
+base64 = "0.10.1"
+regex = "1.2.1"
+lazy_static = "1.3.0"
+unicase = "2.4.0"
+unicode-normalization = "0.1.8"

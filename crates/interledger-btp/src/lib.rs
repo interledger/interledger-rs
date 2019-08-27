@@ -7,7 +7,7 @@
 //! endpoint but both sides can send and receive ILP packets.
 
 use futures::Future;
-use interledger_service::Account;
+use interledger_service::{Account, Username};
 use url::Url;
 
 mod client;
@@ -32,8 +32,9 @@ pub trait BtpStore {
     type Account: BtpAccount;
 
     /// Load Account details based on the auth token received via BTP.
-    fn get_account_from_btp_token(
+    fn get_account_from_btp_auth(
         &self,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
@@ -79,6 +80,12 @@ mod client_server {
     };
     use tokio::runtime::Runtime;
 
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
+
     #[derive(Clone, Debug)]
     pub struct TestAccount {
         pub id: u64,
@@ -92,6 +99,10 @@ mod client_server {
 
         fn id(&self) -> u64 {
             self.id
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 
@@ -138,21 +149,31 @@ mod client_server {
                 Box::new(err(()))
             }
         }
+
+        // stub implementation (not used in these tests)
+        fn get_account_id_from_username(
+            &self,
+            _username: &Username,
+        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
+            Box::new(ok(1))
+        }
     }
 
     impl BtpStore for TestStore {
         type Account = TestAccount;
 
-        fn get_account_from_btp_token(
+        fn get_account_from_btp_auth(
             &self,
+            username: &Username,
             token: &str,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+            let saved_token = format!("{}:{}", username, token);
             Box::new(result(
                 self.accounts
                     .iter()
                     .find(|account| {
                         if let Some(account_token) = &account.btp_incoming_token {
-                            account_token == token
+                            account_token == &saved_token
                         } else {
                             false
                         }
@@ -181,7 +202,7 @@ mod client_server {
         let server_store = TestStore {
             accounts: Arc::new(vec![TestAccount {
                 id: 0,
-                btp_incoming_token: Some("test_auth_token".to_string()),
+                btp_incoming_token: Some("alice:test_auth_token".to_string()),
                 btp_outgoing_token: None,
                 btp_uri: None,
             }]),
@@ -217,7 +238,7 @@ mod client_server {
         let account = TestAccount {
             id: 0,
             btp_uri: Some(Url::parse("btp+ws://127.0.0.1:12345").unwrap()),
-            btp_outgoing_token: Some("test_auth_token".to_string()),
+            btp_outgoing_token: Some("alice:test_auth_token".to_string()),
             btp_incoming_token: None,
         };
         let accounts = vec![account.clone()];

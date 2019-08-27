@@ -152,10 +152,11 @@ curl \
     -H "Authorization: Bearer admin-a" \
     -d '{
     "ilp_address": "example.node-a.alice",
+    "username" : "alice",
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "alice"}' \
+    "http_incoming_token": "alice-password"}' \
     http://localhost:7770/accounts
 
 printf "\nNode B's account on Node A:\n"
@@ -164,11 +165,12 @@ curl \
     -H "Authorization: Bearer admin-a" \
     -d '{
     "ilp_address": "example.node-b",
+    "username" : "node-b",
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "node-b",
-    "http_outgoing_token": "node-a",
+    "http_incoming_token": "node-b-password",
+    "http_outgoing_token": "node-a:node-a-password",
     "http_endpoint": "http://localhost:8770/ilp",
     "min_balance": -100000,
     "routing_relation": "Peer",
@@ -185,6 +187,7 @@ curl \
     -H "Authorization: Bearer admin-b" \
     -d '{
     "ilp_address": "example.node-b.bob",
+    "username" : "bob",
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
@@ -197,11 +200,12 @@ curl \
     -H "Authorization: Bearer admin-b" \
     -d '{
     "ilp_address": "example.node-a",
+    "username" : "node-a",
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "node-a",
-    "http_outgoing_token": "node-b",
+    "http_incoming_token": "node-a-password",
+    "http_outgoing_token": "node-b:node-b-password",
     "http_endpoint": "http://localhost:7770/ilp",
     "min_balance": -100000,
     "routing_relation": "Peer",
@@ -220,22 +224,22 @@ printf "Checking balances...\n"
 printf "\nAlice's balance: "
 curl \
 -H "Authorization: Bearer admin-a" \
-http://localhost:7770/accounts/0/balance
+http://localhost:7770/accounts/alice/balance
 
 printf "\nNode B's balance on Node A: "
 curl \
 -H "Authorization: Bearer admin-a" \
-http://localhost:7770/accounts/1/balance
+http://localhost:7770/accounts/node-b/balance
 
 printf "\nNode A's balance on Node B: "
 curl \
 -H "Authorization: Bearer admin-b" \
-http://localhost:8770/accounts/1/balance
+http://localhost:8770/accounts/node-a/balance
 
 printf "\nBob's balance: "
 curl \
 -H "Authorization: Bearer admin-b" \
-http://localhost:8770/accounts/0/balance
+http://localhost:8770/accounts/bob/balance
 
 printf "\n\n"
 -->
@@ -247,9 +251,9 @@ The following script sends a payment from Alice to Bob that is routed from Node 
 ```bash
 # Sending payment of 500 from Alice (on Node A) to Bob (on Node B)
 curl \
-    -H "Authorization: Bearer alice" \
+    -H "Authorization: Bearer alice:alice-password" \
     -H "Content-Type: application/json" \
-    -d '{"receiver":"http://localhost:8770/spsp/0","source_amount":500}' \
+    -d '{"receiver":"http://localhost:8770/spsp/bob","source_amount":500}' \
     http://localhost:7770/pay
 ```
 
@@ -265,22 +269,22 @@ You can run the following script to print each of the accounts' balances (try do
 printf "\nAlice's balance: "
 curl \
 -H "Authorization: Bearer admin-a" \
-http://localhost:7770/accounts/0/balance
+http://localhost:7770/accounts/alice/balance
 
 printf "\nNode B's balance on Node A: "
 curl \
 -H "Authorization: Bearer admin-a" \
-http://localhost:7770/accounts/1/balance
+http://localhost:7770/accounts/node-b/balance
 
 printf "\nNode A's balance on Node B: "
 curl \
 -H "Authorization: Bearer admin-b" \
-http://localhost:8770/accounts/1/balance
+http://localhost:8770/accounts/node-a/balance
 
 printf "\nBob's balance: "
 curl \
 -H "Authorization: Bearer admin-b" \
-http://localhost:8770/accounts/0/balance
+http://localhost:8770/accounts/bob/balance
 ```
 
 <!--! printf "\n\n" -->
@@ -292,6 +296,7 @@ Finally, you can stop all the services as follows:
 
 ```bash
 if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
+    redis-cli -p 6379 flushall
     redis-cli -p 6379 shutdown
 fi
 

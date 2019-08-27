@@ -3,12 +3,12 @@ mod common;
 use common::*;
 
 use interledger_api::NodeStore;
-use interledger_btp::BtpAccount;
-use interledger_http::HttpAccount;
+use interledger_btp::{BtpAccount, BtpStore};
+use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_service::AccountStore;
+use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
 use std::str::FromStr;
@@ -96,29 +96,113 @@ fn starts_with_zero_balance() {
 }
 
 #[test]
-fn fails_on_duplicate_http_incoming_auth() {
-    let mut account = ACCOUNT_DETAILS_2.clone();
-    account.http_incoming_token = Some("incoming_auth_token".to_string());
-    let result = block_on(test_store().and_then(|(store, context, _accs)| {
-        store.insert_account(account).then(move |result| {
-            let _ = context;
-            result
-        })
-    }));
-    assert!(result.is_err());
+fn fetches_account_from_username() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        store
+            .get_account_id_from_username(&Username::from_str("alice").unwrap())
+            .and_then(move |account_id| {
+                assert_eq!(account_id, accs[0].id());
+                let _ = context;
+                Ok(())
+            })
+    }))
+    .unwrap();
 }
 
 #[test]
-fn fails_on_duplicate_btp_incoming_auth() {
-    let mut account = ACCOUNT_DETAILS_2.clone();
-    account.btp_incoming_token = Some("btp_token".to_string());
-    let result = block_on(test_store().and_then(|(store, context, _accs)| {
-        store.insert_account(account).then(move |result| {
-            let _ = context;
-            result
+fn duplicate_http_incoming_auth_works() {
+    let mut duplicate = ACCOUNT_DETAILS_2.clone();
+    duplicate.http_incoming_token = Some("incoming_auth_token".to_string());
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let original = accs[0].clone();
+        let original_id = original.id();
+        store.insert_account(duplicate).and_then(move |duplicate| {
+            let duplicate_id = duplicate.id();
+            assert_ne!(original_id, duplicate_id);
+            futures::future::join_all(vec![
+                store.get_account_from_http_auth(
+                    &Username::from_str("alice").unwrap(),
+                    "incoming_auth_token",
+                ),
+                store.get_account_from_http_auth(
+                    &Username::from_str("charlie").unwrap(),
+                    "incoming_auth_token",
+                ),
+            ])
+            .and_then(move |accs| {
+                // Alice and Charlie had the same auth token, but they had a
+                // different username/account id, so no problem.
+                assert_ne!(accs[0].id(), accs[1].id());
+                assert_eq!(accs[0].id(), original_id);
+                assert_eq!(accs[1].id(), duplicate_id);
+                let _ = context;
+                Ok(())
+            })
         })
-    }));
-    assert!(result.is_err());
+    }))
+    .unwrap();
+}
+
+#[test]
+fn gets_account_from_btp_auth() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        // alice's incoming btp token is the username/password to get her
+        // account's information
+        store
+            .get_account_from_btp_auth(&Username::from_str("alice").unwrap(), "btp_token")
+            .and_then(move |acc| {
+                assert_eq!(acc.id(), accs[0].id());
+                let _ = context;
+                Ok(())
+            })
+    }))
+    .unwrap();
+}
+
+#[test]
+fn gets_account_from_http_auth() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        store
+            .get_account_from_http_auth(
+                &Username::from_str("alice").unwrap(),
+                "incoming_auth_token",
+            )
+            .and_then(move |acc| {
+                assert_eq!(acc.id(), accs[0].id());
+                let _ = context;
+                Ok(())
+            })
+    }))
+    .unwrap();
+}
+
+#[test]
+fn duplicate_btp_incoming_auth_works() {
+    let mut charlie = ACCOUNT_DETAILS_2.clone();
+    charlie.btp_incoming_token = Some("btp_token".to_string());
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let alice = accs[0].clone();
+        let alice_id = alice.id();
+        store.insert_account(charlie).and_then(move |charlie| {
+            let charlie_id = charlie.id();
+            assert_ne!(alice_id, charlie_id);
+            futures::future::join_all(vec![
+                store.get_account_from_btp_auth(&Username::from_str("alice").unwrap(), "btp_token"),
+                store.get_account_from_btp_auth(
+                    &Username::from_str("charlie").unwrap(),
+                    "btp_token",
+                ),
+            ])
+            .and_then(move |accs| {
+                assert_ne!(accs[0].id(), accs[1].id());
+                assert_eq!(accs[0].id(), alice_id);
+                assert_eq!(accs[1].id(), charlie_id);
+                let _ = context;
+                Ok(())
+            })
+        })
+    }))
+    .unwrap();
 }
 
 #[test]
@@ -159,8 +243,8 @@ fn gets_multiple() {
             .get_accounts(account_ids)
             .and_then(move |accounts| {
                 // note reverse order is intentional
-                assert_eq!(accounts[0].client_address(), accs[1].client_address(),);
-                assert_eq!(accounts[1].client_address(), accs[0].client_address(),);
+                assert_eq!(accounts[0].client_address(), accs[1].client_address());
+                assert_eq!(accounts[1].client_address(), accs[0].client_address());
                 let _ = context;
                 Ok(())
             })

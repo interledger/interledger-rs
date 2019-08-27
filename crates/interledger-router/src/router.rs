@@ -139,6 +139,7 @@ mod tests {
     use futures::future::ok;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
+    use lazy_static::lazy_static;
     use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -149,10 +150,18 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestAccount(u64);
 
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
+
     impl Account for TestAccount {
         type AccountId = u64;
         fn id(&self) -> u64 {
             self.0
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 
@@ -169,6 +178,14 @@ mod tests {
             account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
         ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(account_ids.into_iter().map(TestAccount).collect()))
+        }
+
+        // stub implementation (not used in these tests)
+        fn get_account_id_from_username(
+            &self,
+            _username: &Username,
+        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
+            Box::new(ok(1))
         }
     }
 

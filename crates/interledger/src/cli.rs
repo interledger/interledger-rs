@@ -11,7 +11,7 @@ use interledger_http::{HttpClientService, HttpServerService};
 use interledger_ildcp::{get_ildcp_info, IldcpAccount, IldcpResponse, IldcpService};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_router::Router;
-use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest};
+use interledger_service::{incoming_service_fn, outgoing_service_fn, OutgoingRequest, Username};
 use interledger_service_util::ValidatorService;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_store_memory::{Account, AccountBuilder, InMemoryStore};
@@ -26,6 +26,7 @@ use url::Url;
 
 lazy_static! {
     pub static ref LOCAL_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
+    pub static ref LOCAL_USERNAME: Username = Username::from_str("localhost").unwrap();
 }
 
 #[doc(hidden)]
@@ -51,7 +52,7 @@ pub fn send_spsp_payment_btp(
 ) -> impl Future<Item = (), Error = ()> {
     let receiver = receiver.to_string();
     let btp_server = parse_btp_url(btp_server).unwrap();
-    let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
+    let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
         .additional_routes(&[&b""[..]])
         .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
         .btp_uri(btp_server)
@@ -121,13 +122,13 @@ pub fn send_spsp_payment_http(
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
     let account = if let Some(token) = url.password() {
-        AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
+        AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
             .additional_routes(&[&b""[..]])
             .http_endpoint(Url::parse(http_server).unwrap())
             .http_outgoing_token(token.to_string())
             .build()
     } else {
-        AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
+        AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
             .additional_routes(&[&b""[..]])
             .http_endpoint(Url::parse(http_server).unwrap())
             .build()
@@ -174,11 +175,12 @@ pub fn run_spsp_server_btp(
     debug!("Starting SPSP server");
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
     let btp_server = parse_btp_url(btp_server).unwrap();
-    let incoming_account: Account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone())
-        .additional_routes(&[b"peer."])
-        .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
-        .btp_uri(btp_server)
-        .build();
+    let incoming_account: Account =
+        AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
+            .additional_routes(&[b"peer."])
+            .btp_outgoing_token(btp_server.password().unwrap_or_default().to_string())
+            .btp_uri(btp_server)
+            .build();
     let server_secret = Bytes::from(&random_secret()[..]);
     let store = InMemoryStore::from_accounts(vec![incoming_account.clone()]);
 
@@ -220,12 +222,13 @@ pub fn run_spsp_server_btp(
             // Update the ILP Address with the ildcp info request's address
             *ilp_address.write() = client_address.to_bytes();
 
-            let receiver_account = AccountBuilder::new(client_address.clone())
-                .asset_code(String::from_utf8(info.asset_code().to_vec()).unwrap_or_default())
-                .asset_scale(info.asset_scale())
-                // Send all outgoing packets to this account
-                .additional_routes(&[&b""[..]])
-                .build();
+            let receiver_account =
+                AccountBuilder::new(client_address.clone(), LOCAL_USERNAME.clone())
+                    .asset_code(String::from_utf8(info.asset_code().to_vec()).unwrap_or_default())
+                    .asset_scale(info.asset_scale())
+                    // Send all outgoing packets to this account
+                    .additional_routes(&[&b""[..]])
+                    .build();
             store.add_account(receiver_account);
 
             if !quiet {
@@ -256,7 +259,7 @@ pub fn run_spsp_server_http(
         println!("Creating SPSP server. ILP Address: {}", ilp_address)
     }
 
-    let account: Account = AccountBuilder::new(ilp_address.clone())
+    let account: Account = AccountBuilder::new(ilp_address.clone(), LOCAL_USERNAME.clone())
         .http_incoming_token(auth_token)
         .build();
     let server_secret = Bytes::from(&random_secret()[..]);

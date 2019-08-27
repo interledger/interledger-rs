@@ -8,12 +8,15 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use log::debug;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 
 mod redis_helpers;
 use redis_helpers::*;
+
+mod test_helpers;
 
 #[test]
 fn btp_end_to_end() {
@@ -38,6 +41,7 @@ fn btp_end_to_end() {
             join_all(vec![
                 node.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.node.one").unwrap(),
+                    username: Username::from_str("alice").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-one".to_string()),
@@ -59,6 +63,7 @@ fn btp_end_to_end() {
                 }),
                 node.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.node.two").unwrap(),
+                    username: Username::from_str("bob").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-two".to_string()),
@@ -84,8 +89,9 @@ fn btp_end_to_end() {
         let spsp_server_port = get_open_port(Some(3000));
         let spawn_spsp_server = move |_| {
             debug!("Spawning SPSP server");
+            let auth = format!("{}:{}", "alice", "token-one");
             let spsp_server = cli::run_spsp_server_btp(
-                &format!("btp+ws://:token-one@localhost:{}", btp_port),
+                &format!("btp+ws://:{}@localhost:{}", auth, btp_port),
                 ([127, 0, 0, 1], spsp_server_port).into(),
                 true,
             );
@@ -98,8 +104,9 @@ fn btp_end_to_end() {
             .and_then(spawn_spsp_server)
             .and_then(|_| delay(200))
             .and_then(move |_| {
+                let auth = format!("{}:{}", "bob", "token-two");
                 cli::send_spsp_payment_btp(
-                    &format!("btp+ws://:token-two@localhost:{}", btp_port),
+                    &format!("btp+ws://:{}@localhost:{}", auth, btp_port),
                     &format!("http://localhost:{}", spsp_server_port),
                     10000,
                     true,

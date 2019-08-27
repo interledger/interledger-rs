@@ -34,7 +34,7 @@ use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore};
+use interledger_service::{Account as AccountTrait, AccountStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
 use lazy_static::lazy_static;
@@ -61,12 +61,22 @@ const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 // process is accessing Redis at the same time.
 // For more information on scripting in Redis, see https://redis.io/commands/eval
 lazy_static! {
-    static ref ACCOUNT_FROM_INDEX: Script = Script::new("
-    local id = redis.call('HGET', KEYS[1], ARGV[1])
-    if not id then
+    // This lua script receives the token type (HTTP/BTP), the username and a user
+    // provided auth token. It fetches the account id associated with that username.
+    // Then, it fetches the token associated with that account id. Finally, it
+    // compares the fetched token with the one provided by the user, and returns the
+    // account that corresponds to the fetched account id if they match.
+    static ref ACCOUNT_FROM_TOKEN: Script = Script::new("
+    local token_type = ARGV[1]
+    local acc_id = redis.call('HGET', 'usernames', ARGV[2])
+    local provided_token = ARGV[3]
+
+    local id_key = 'accounts:' .. acc_id
+    local token = redis.call('HGET', id_key, token_type)
+    if token ~= provided_token then
         return nil
     end
-    return redis.call('HGETALL', 'accounts:' .. id)");
+    return redis.call('HGETALL', id_key)");
 
     static ref PROCESS_PREPARE: Script = Script::new("
     local from_id = ARGV[1]
@@ -301,48 +311,24 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
 
-        // Instead of storing the incoming secrets, we store the HMAC digest of them
-        // (This is better than encrypting because the output is deterministic so we can look
-        // up the account by the HMAC of the auth details submitted by the account holder over the wire)
-        let btp_incoming_token_hmac = account
-            .btp_incoming_token
-            .clone()
-            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
-        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac;
-        let http_incoming_token_hmac = account
-            .http_incoming_token
-            .clone()
-            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
-        let http_incoming_token_hmac_clone = http_incoming_token_hmac;
-
         let id = AccountId::new();
         debug!("Generated account: {}", id);
         Box::new(
             result(Account::try_from(id, account))
                 .and_then(move |account| {
-                    // Check that there isn't already an account with values that must be unique
-                    let mut keys: Vec<String> = vec!["ID".to_string()];
-
+                    // Check that there isn't already an account with values that MUST be unique
                     let mut pipe = redis::pipe();
                     pipe.exists(accounts_key(account.id));
+                    pipe.hexists("usernames", account.username().as_ref());
 
-                    if let Some(auth) = btp_incoming_token_hmac {
-                        keys.push("BTP auth".to_string());
-                        pipe.hexists("btp_auth", auth.as_ref());
-                    }
-                    if let Some(auth) = http_incoming_token_hmac {
-                        keys.push("HTTP auth".to_string());
-                        pipe.hexists("http_auth", auth.as_ref());
-                    }
-                    // TODO this needs to be atomic with the insertions later, waiting on #186
                     pipe.query_async(connection.as_ref().clone())
                         .map_err(|err| {
                             error!("Error checking whether account details already exist: {:?}", err)
                         })
                         .and_then(
                             move |(connection, results): (SharedConnection, Vec<bool>)| {
-                                if let Some(index) = results.iter().position(|val| *val) {
-                                warn!("An account already exists with the same {}. Cannot insert account: {:?}", keys[index], account);
+                                if results.iter().any(|val| *val) {
+                                    warn!("An account already exists with the same {}. Cannot insert account: {:?}", id, account);
                                     Err(())
                                 } else {
                                     Ok((connection, account))
@@ -357,21 +343,15 @@ impl RedisStore {
                     // Add the account key to the list of accounts
                     pipe.sadd("accounts", id).ignore();
 
+                    // Save map for Username -> Account ID
+                    pipe.hset("usernames", account.username().as_ref(), id).ignore();
+
                     // Set account details
                     pipe.cmd("HMSET").arg(accounts_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
 
                     // Set balance-related details
                     pipe.hset_multiple(accounts_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
-
-                    // Set incoming auth details
-                    if let Some(auth) = btp_incoming_token_hmac_clone {
-                        pipe.hset("btp_auth", auth.as_ref(), account.id).ignore();
-                    }
-
-                    if let Some(auth) = http_incoming_token_hmac_clone {
-                        pipe.hset("http_auth", auth.as_ref(), account.id).ignore();
-                    }
 
                     if account.send_routes {
                         pipe.sadd("send_routes_to", account.id).ignore();
@@ -521,7 +501,8 @@ impl RedisStore {
 
                     pipe.srem("accounts", account.id).ignore();
 
-                    pipe.del(accounts_key(account.id));
+                    pipe.del(accounts_key(account.id)).ignore();
+                    pipe.hdel("usernames", account.username().as_ref()).ignore();
 
                     if account.send_routes {
                         pipe.srem("send_routes_to", account.id).ignore();
@@ -596,6 +577,20 @@ impl AccountStore for RedisStore {
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         self.redis_get_accounts(account_ids)
     }
+
+    fn get_account_id_from_username(
+        &self,
+        username: &Username,
+    ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+        Box::new(
+            cmd("HGET")
+                .arg("usernames")
+                .arg(username.as_ref())
+                .query_async(self.connection.as_ref().clone())
+                .map_err(move |err| error!("Error getting account id: {:?}", err))
+                .and_then(|(_connection, id): (_, AccountId)| Ok(id)),
+        )
+    }
 }
 
 impl BalanceStore for RedisStore {
@@ -623,7 +618,7 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_prepare(
         &self,
-        from_account: Account,
+        from_account: Account, // TODO: Make this take only the id
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
@@ -654,7 +649,7 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_fulfill(
         &self,
-        to_account: Account,
+        to_account: Account, // TODO: Make this take only the id
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
         if outgoing_amount > 0 {
@@ -691,7 +686,7 @@ impl BalanceStore for RedisStore {
 
     fn update_balances_for_reject(
         &self,
-        from_account: Account,
+        from_account: Account, // TODO: Make this take only the id
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
@@ -742,17 +737,19 @@ impl ExchangeRateStore for RedisStore {
 impl BtpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_btp_token(
+    fn get_account_from_btp_auth(
         &self,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
         let decryption_key = self.decryption_key.clone();
         Box::new(
-            ACCOUNT_FROM_INDEX
-                .key("btp_auth")
-                .arg(hmac::sign(&self.hmac_key, token.as_bytes()).as_ref())
+            ACCOUNT_FROM_TOKEN
+                .arg("btp_incoming_token")
+                .arg(username.as_ref())
+                .arg(token)
                 .invoke_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
                 .and_then(
@@ -820,17 +817,20 @@ impl BtpStore for RedisStore {
 impl HttpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_http_token(
+    /// Checks if the stored token for the provided account id matches the
+    /// provided token, and if so, returns the account associated with that token
+    fn get_account_from_http_auth(
         &self,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
-        let token = token.to_string();
         Box::new(
-            ACCOUNT_FROM_INDEX
-                .key("http_auth")
-                .arg(hmac::sign(&self.hmac_key, token.as_bytes()).as_ref())
+            ACCOUNT_FROM_TOKEN
+                .arg("http_incoming_token")
+                .arg(username.as_ref())
+                .arg(token)
                 .invoke_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
                 .and_then(
@@ -840,8 +840,6 @@ impl HttpStore for RedisStore {
                             Ok(account)
                         } else {
                             warn!("No account found with given HTTP auth");
-                            // TODO remove this log line (not safe to log auth token)
-                            trace!("Unknown HTTP auth token: {}", token);
                             Err(())
                         }
                     },

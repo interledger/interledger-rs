@@ -164,6 +164,14 @@ where
 }
 
 #[cfg(test)]
+use lazy_static::lazy_static;
+#[cfg(test)]
+use std::str::FromStr;
+#[cfg(test)]
+lazy_static! {
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+}
+#[cfg(test)]
 #[derive(Clone, Debug)]
 struct TestAccount(u64);
 #[cfg(test)]
@@ -173,6 +181,10 @@ impl Account for TestAccount {
     fn id(&self) -> u64 {
         self.0
     }
+
+    fn username(&self) -> &Username {
+        &ALICE
+    }
 }
 
 #[cfg(test)]
@@ -180,7 +192,6 @@ mod incoming {
     use super::*;
     use interledger_packet::*;
     use interledger_service::incoming_service_fn;
-    use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
         time::{Duration, SystemTime},

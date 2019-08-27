@@ -2,13 +2,16 @@ use super::{
     packet::*, BtpAccount, BtpOpenSignupAccount, BtpOpenSignupStore, BtpOutgoingService, BtpStore,
 };
 use base64;
-use futures::{future::result, Future, Sink, Stream};
+use futures::{
+    future::{err, result, Either},
+    Future, Sink, Stream,
+};
 use interledger_ildcp::IldcpResponse;
 use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, warn};
 use ring::digest::{digest, SHA256};
-use std::{net::SocketAddr, str};
+use std::{net::SocketAddr, str, str::FromStr};
 use tokio_executor::spawn;
 use tokio_tcp::{TcpListener, TcpStream};
 use tokio_tungstenite::{
@@ -149,7 +152,7 @@ where
 
 struct Auth {
     request_id: u32,
-    username: Option<String>,
+    username: Option<Username>,
     token: String,
 }
 
@@ -170,22 +173,26 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
-        store
-            .get_account_from_btp_token(&auth.token)
-            .map_err(move |_| warn!("Got BTP connection that does not correspond to an account"))
-            .and_then(move |account| {
-                let auth_response = Message::Binary(
-                    BtpResponse {
-                        request_id: auth.request_id,
-                        protocol_data: Vec::new(),
-                    }
-                    .to_bytes(),
-                );
-                connection
-                    .send(auth_response)
-                    .map_err(|_err| error!("Error sending auth response"))
-                    .and_then(|connection| Ok((account, connection)))
-            })
+        result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
+            store
+                .get_account_from_btp_auth(&auth_token.username(), &auth_token.password())
+                .map_err(move |_| {
+                    warn!("Got BTP connection that does not correspond to an account")
+                })
+                .and_then(move |account| {
+                    let auth_response = Message::Binary(
+                        BtpResponse {
+                            request_id: auth.request_id,
+                            protocol_data: Vec::new(),
+                        }
+                        .to_bytes(),
+                    );
+                    connection
+                        .send(auth_response)
+                        .map_err(|_err| error!("Error sending auth response"))
+                        .and_then(|connection| Ok((account, connection)))
+                })
+        })
     })
 }
 
@@ -208,48 +215,55 @@ where
 {
     get_auth(connection).and_then(move |(auth, connection)| {
         let request_id = auth.request_id;
-        store
-            .get_account_from_btp_token(&auth.token)
-            .or_else(move |_| {
-                let local_part = if let Some(username) = auth.username {
-                    username
-                } else {
-                    base64::encode_config(
-                        digest(&SHA256, auth.token.as_str().as_bytes()).as_ref(),
-                        base64::URL_SAFE_NO_PAD,
-                    )
-                };
-                let ilp_address = ildcp_info.client_address();
-                // in case local_part is set to be `auth.username`, will it always be a valid suffix?
-                // if we unwrap on the `with_suffix` call we implicitly allow auth.username to be an invalid suffix
-                let ilp_address = ilp_address.with_suffix(local_part.as_ref()).unwrap();
+        result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
+            store
+                .get_account_from_btp_auth(&auth_token.username(), &auth_token.password())
+                .or_else(move |_| {
+                    let local_part = if let Some(username) = auth.username {
+                        username
+                    } else {
+                        match Username::from_str(&base64::encode_config(
+                            digest(&SHA256, auth.token.as_str().as_bytes()).as_ref(),
+                            base64::URL_SAFE_NO_PAD,
+                        )) {
+                            Ok(username) => username,
+                            Err(_) => return Either::A(err(())),
+                        }
+                    };
+                    let ilp_address = ildcp_info.client_address();
+                    // auth.username is always a valid suffix, enforced by the
+                    // Username type, hence we can unwrap safely here.
+                    let ilp_address = ilp_address.with_suffix(local_part.as_bytes()).unwrap();
 
-                store
-                    .create_btp_account(BtpOpenSignupAccount {
-                        auth_token: &auth.token,
-                        ilp_address: &ilp_address,
-                        asset_code: str::from_utf8(ildcp_info.asset_code())
-                            .expect("Asset code provided is not valid utf8"),
-                        asset_scale: ildcp_info.asset_scale(),
-                    })
-                    .and_then(|account| {
-                        debug!("Created new account: {:?}", account);
-                        Ok(account)
-                    })
-            })
-            .and_then(move |account| {
-                let auth_response = Message::Binary(
-                    BtpResponse {
-                        request_id,
-                        protocol_data: Vec::new(),
-                    }
-                    .to_bytes(),
-                );
-                connection
-                    .send(auth_response)
-                    .map_err(|_err| error!("Error sending auth response"))
-                    .and_then(|connection| Ok((account, connection)))
-            })
+                    Either::B(
+                        store
+                            .create_btp_account(BtpOpenSignupAccount {
+                                auth_token: &auth.token,
+                                ilp_address: &ilp_address,
+                                asset_code: str::from_utf8(ildcp_info.asset_code())
+                                    .expect("Asset code provided is not valid utf8"),
+                                asset_scale: ildcp_info.asset_scale(),
+                            })
+                            .and_then(|account| {
+                                debug!("Created new account: {:?}", account);
+                                Ok(account)
+                            }),
+                    )
+                })
+                .and_then(move |account| {
+                    let auth_response = Message::Binary(
+                        BtpResponse {
+                            request_id,
+                            protocol_data: Vec::new(),
+                        }
+                        .to_bytes(),
+                    );
+                    connection
+                        .send(auth_response)
+                        .map_err(|_err| error!("Error sending auth response"))
+                        .and_then(|connection| Ok((account, connection)))
+                })
+        })
     })
 }
 
@@ -293,7 +307,7 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
         match BtpMessage::from_bytes(&message) {
             Ok(message) => {
                 let request_id = message.request_id;
-                let mut username: Option<String> = None;
+                let mut username: Option<Username> = None;
                 let mut token: Option<String> = None;
                 for protocol_data in message.protocol_data.iter() {
                     match (
@@ -304,7 +318,9 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
                             token = String::from_utf8(protocol_data.data.clone()).ok()
                         }
                         ("auth_username", true) => {
-                            username = String::from_utf8(protocol_data.data.clone()).ok()
+                            username = String::from_utf8(protocol_data.data.clone())
+                                .ok()
+                                .and_then(|username| Username::from_str(&username).ok())
                         }
                         _ => {}
                     }

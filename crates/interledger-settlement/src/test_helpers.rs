@@ -7,13 +7,14 @@ use futures::{
 use interledger_ildcp::IldcpAccount;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService,
-    OutgoingService,
+    OutgoingService, Username,
 };
 
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use mockito::mock;
 
 use crate::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
+use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -29,11 +30,19 @@ pub struct TestAccount {
     pub no_details: bool,
 }
 
+lazy_static! {
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+}
+
 impl Account for TestAccount {
     type AccountId = u64;
 
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn username(&self) -> &Username {
+        &ALICE
     }
 }
 impl SettlementAccount for TestAccount {
@@ -144,6 +153,14 @@ impl AccountStore for TestStore {
         } else {
             Box::new(err(()))
         }
+    }
+
+    // stub implementation (not used in these tests)
+    fn get_account_id_from_username(
+        &self,
+        _username: &Username,
+    ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
+        Box::new(ok(1))
     }
 }
 
