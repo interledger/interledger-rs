@@ -4,7 +4,7 @@ use futures::{
     future::{err, result},
     Future, Stream,
 };
-use interledger_packet::{ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use log::{error, trace};
 use reqwest::{
@@ -16,6 +16,7 @@ use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct HttpClientService<S, O, A> {
+    ilp_address: Address,
     client: Client,
     store: Arc<S>,
     next: O,
@@ -28,7 +29,7 @@ where
     O: OutgoingService<A> + Clone,
     A: HttpAccount,
 {
-    pub fn new(store: S, next: O) -> Self {
+    pub fn new(ilp_address: Address, store: S, next: O) -> Self {
         let mut headers = HeaderMap::with_capacity(2);
         headers.insert(
             HeaderName::from_static("content-type"),
@@ -41,6 +42,7 @@ where
             .unwrap();
 
         HttpClientService {
+            ilp_address,
             client,
             store: Arc::new(store),
             next,
@@ -59,6 +61,8 @@ where
 
     /// Send an OutgoingRequest to a peer that implements the ILP-Over-HTTP.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        let ilp_address = self.ilp_address.clone();
+        let ilp_address_clone = ilp_address.clone();
         if let Some(url) = request.to.get_http_url() {
             trace!(
                 "Sending outgoing ILP over HTTP packet to account: {} (URL: {})",
@@ -86,17 +90,17 @@ where
                     .header("authorization", auth.to_bearer())
                     .body(BytesMut::from(request.prepare).freeze())
                     .send()
-                    .map_err(|err| {
+                    .map_err(move |err| {
                         error!("Error sending HTTP request: {:?}", err);
                         RejectBuilder {
                             code: ErrorCode::T01_PEER_UNREACHABLE,
                             message: &[],
-                            triggered_by: None,
+                            triggered_by: Some(&ilp_address),
                             data: &[],
                         }
                         .build()
                     })
-                    .and_then(parse_packet_from_response),
+                    .and_then(move |resp| parse_packet_from_response(resp, ilp_address_clone)),
             )
         } else {
             Box::new(self.next.send_request(request))
@@ -106,7 +110,9 @@ where
 
 fn parse_packet_from_response(
     response: HttpResponse,
+    ilp_address: Address,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
+    let ilp_address_clone = ilp_address.clone();
     result(response.error_for_status().map_err(|err| {
         error!("HTTP error sending ILP over HTTP packet: {:?}", err);
         let code = if let Some(status) = err.status() {
@@ -122,25 +128,26 @@ fn parse_packet_from_response(
         RejectBuilder {
             code,
             message: &[],
-            triggered_by: None,
+            triggered_by: Some(&ilp_address),
             data: &[],
         }
         .build()
     }))
-    .and_then(|response: HttpResponse| {
+    .and_then(move |response: HttpResponse| {
+        let ilp_address_clone = ilp_address.clone();
         let decoder = response.into_body();
-        decoder.concat2().map_err(|err| {
+        decoder.concat2().map_err(move |err| {
             error!("Error getting HTTP response body: {:?}", err);
             RejectBuilder {
                 code: ErrorCode::T01_PEER_UNREACHABLE,
                 message: &[],
-                triggered_by: None,
+                triggered_by: Some(&ilp_address_clone.clone()),
                 data: &[],
             }
             .build()
         })
     })
-    .and_then(|body: Chunk| {
+    .and_then(move |body: Chunk| {
         // TODO can we get the body as a BytesMut so we don't need to copy?
         let body = BytesMut::from(body.to_vec());
         match Packet::try_from(body) {
@@ -149,7 +156,7 @@ fn parse_packet_from_response(
             _ => Err(RejectBuilder {
                 code: ErrorCode::T01_PEER_UNREACHABLE,
                 message: &[],
-                triggered_by: None,
+                triggered_by: Some(&ilp_address_clone.clone()),
                 data: &[],
             }
             .build()),

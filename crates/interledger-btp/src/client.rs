@@ -2,6 +2,7 @@ use super::packet::*;
 use super::service::BtpOutgoingService;
 use super::BtpAccount;
 use futures::{future::join_all, Future, Sink};
+use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, trace};
 use rand::random;
@@ -23,6 +24,7 @@ pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
 /// Calling `handle_incoming` with an `IncomingService` will turn the returned
 /// BtpOutgoingService into a bidirectional handler.
 pub fn connect_client<A, S>(
+    ilp_address: Address,
     accounts: Vec<A>,
     error_on_unavailable: bool,
     next_outgoing: S,
@@ -97,7 +99,7 @@ where
             })
     }))
     .and_then(|connections| {
-        let service = BtpOutgoingService::new(next_outgoing);
+        let service = BtpOutgoingService::new(ilp_address, next_outgoing);
         let connections = connections.into_iter().filter_map(|conn| conn);
         for (account, connection) in connections {
             service.add_connection(account, connection);
