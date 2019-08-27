@@ -57,8 +57,8 @@ impl Auth {
     }
 
     // Currently, we use bearer tokens in a non-standard way, where they each have a
-    // username and a password in them. In the future, we will deprecate Bearer auth
-    // for accounts.
+    // username and a password in them. In the future, we will deprecate
+    // the non-standard Bearer auth for accounts.
     fn parse_bearer(s: &str) -> AuthResult {
         Auth::parse_text(s)
     }

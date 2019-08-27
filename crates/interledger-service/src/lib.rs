@@ -113,7 +113,7 @@ pub trait AccountStore {
 
     fn get_account_id_from_username(
         &self,
-        username: Username,
+        username: &Username,
     ) -> Box<
         dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()>
             + Send,

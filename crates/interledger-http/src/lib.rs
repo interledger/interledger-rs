@@ -29,7 +29,7 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
     /// received on the incoming HTTP request.
     fn get_account_from_http_token(
         &self,
-        username: Username,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 }

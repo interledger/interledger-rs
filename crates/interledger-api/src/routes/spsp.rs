@@ -76,7 +76,7 @@ impl_web! {
                 let username = auth.username();
                 let token = auth.password();
                 debug!("Got request to pay: {:?}", body);
-                store.get_account_from_http_token(username.clone(), &token)
+                store.get_account_from_http_token(&username, &token)
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)
@@ -105,7 +105,7 @@ impl_web! {
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |username| {
-            store.get_account_id_from_username(username.clone())
+            store.get_account_id_from_username(&username)
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()

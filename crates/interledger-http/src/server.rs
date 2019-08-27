@@ -49,7 +49,7 @@ where
             Either::A(
                 self.store
                     .get_account_from_http_token(
-                        authorization.username().clone(),
+                        &authorization.username(),
                         &authorization.password(),
                     )
                     .map_err(move |_err| {

@@ -132,7 +132,7 @@ impl AccountStore for InMemoryStore {
 
     fn get_account_id_from_username(
         &self,
-        _username: Username,
+        _username: &Username,
     ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
         Box::new(ok(1))
     }
@@ -143,7 +143,7 @@ impl HttpStore for InMemoryStore {
 
     fn get_account_from_http_token(
         &self,
-        username: Username,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let token = format!("{}:{}", username, token);
@@ -167,7 +167,7 @@ impl BtpStore for InMemoryStore {
 
     fn get_account_from_btp_token(
         &self,
-        username: Username,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         let token = format!("{}:{}", username, token);
@@ -267,12 +267,12 @@ mod tests {
         .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_token(Username::from_str("zero").unwrap(), "test_token")
+            .get_account_from_http_token(&Username::from_str("zero").unwrap(), "test_token")
             .wait()
             .unwrap();
         assert!(store
             .get_account_from_http_token(
-                Username::from_str("another_username").unwrap(),
+                &Username::from_str("another_username").unwrap(),
                 "bad_token"
             )
             .wait()
@@ -289,12 +289,12 @@ mod tests {
         .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_btp_token(Username::from_str("zero").unwrap(), "test_token")
+            .get_account_from_btp_token(&Username::from_str("zero").unwrap(), "test_token")
             .wait()
             .unwrap();
         assert!(store
             .get_account_from_btp_token(
-                Username::from_str("another_username").unwrap(),
+                &Username::from_str("another_username").unwrap(),
                 "bad_token"
             )
             .wait()

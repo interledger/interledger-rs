@@ -575,19 +575,14 @@ impl AccountStore for RedisStore {
 
     fn get_account_id_from_username(
         &self,
-        username: Username,
+        username: &Username,
     ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
         Box::new(
             cmd("HGET")
                 .arg("usernames")
-                .arg(username.clone().as_ref())
+                .arg(username.as_ref())
                 .query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error getting account id for username: {} {:?}",
-                        username, err
-                    )
-                })
+                .map_err(move |err| error!("Error getting account id: {:?}", err))
                 .and_then(|(_connection, id): (_, AccountId)| Ok(id)),
         )
     }
@@ -745,7 +740,7 @@ impl BtpStore for RedisStore {
 
     fn get_account_from_btp_token(
         &self,
-        username: Username,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
@@ -829,7 +824,7 @@ impl HttpStore for RedisStore {
     /// provided token, and if so, returns the account associated with that token
     fn get_account_from_http_token(
         &self,
-        username: Username,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!

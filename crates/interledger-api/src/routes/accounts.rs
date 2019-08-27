@@ -149,7 +149,7 @@ impl_web! {
                         Response::error(401)
                     })
                     .and_then(move |auth| {
-                        store.get_account_from_http_token(auth.username().to_owned(), &auth.password()).map_err(|_| Response::error(401))
+                        store.get_account_from_http_token(&auth.username(), &auth.password()).map_err(|_| Response::error(401))
                         .and_then(|account| Ok(json!(vec![account])))
                     })
                 )
@@ -178,7 +178,7 @@ impl_web! {
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |username| {
-            store.get_account_id_from_username(username.clone())
+            store.get_account_id_from_username(&username)
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
                 Response::builder().status(404).body(()).unwrap()
@@ -198,7 +198,7 @@ impl_web! {
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            store.get_account_from_http_token(auth.username().clone(), &auth.password())
+                            store.get_account_from_http_token(&auth.username(), &auth.password())
                             .map_err(move |_| {
                                 debug!("No account found with auth: {}", authorization);
                                 Response::error(401)
@@ -228,7 +228,7 @@ impl_web! {
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |username| {
-                store_clone.get_account_id_from_username(username.clone())
+                store_clone.get_account_id_from_username(&username)
                 .map_err(move |_| {
                     error!("Error getting account id from username: {}", username);
                     Response::builder().status(500).body(()).unwrap()
@@ -258,7 +258,7 @@ impl_web! {
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |username| {
-            self_clone.store.get_account_id_from_username(username.clone())
+            self_clone.store.get_account_id_from_username(&username)
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
@@ -293,7 +293,7 @@ impl_web! {
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |username| {
-            store_clone.get_account_id_from_username(username.clone())
+            store_clone.get_account_id_from_username(&username)
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username_clone);
                 Response::builder().status(500).body(()).unwrap()
@@ -313,9 +313,7 @@ impl_web! {
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            let token = auth.password().to_owned();
-
-                            store.get_account_from_http_token(auth.username().clone(), &token)
+                            store.get_account_from_http_token(&auth.username(), &auth.password())
                             .map_err(move |_| {
                                 error!("No account found with auth: {}", authorization);
                                 Response::error(401)

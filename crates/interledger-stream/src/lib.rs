@@ -85,7 +85,7 @@ pub mod test_helpers {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: Username,
+            _username: &Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }

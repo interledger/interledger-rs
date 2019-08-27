@@ -34,7 +34,7 @@ pub trait BtpStore {
     /// Load Account details based on the auth token received via BTP.
     fn get_account_from_btp_token(
         &self,
-        username: Username,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
@@ -147,7 +147,7 @@ mod client_server {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: Username,
+            _username: &Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }
@@ -158,14 +158,14 @@ mod client_server {
 
         fn get_account_from_btp_token(
             &self,
-            username: Username,
+            username: &Username,
             token: &str,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+            let saved_token = format!("{}:{}", username, token);
             Box::new(result(
                 self.accounts
                     .iter()
                     .find(|account| {
-                        let saved_token = format!("{}:{}", username, token);
                         if let Some(account_token) = &account.btp_incoming_token {
                             account_token == &saved_token
                         } else {
