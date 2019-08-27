@@ -1,15 +1,9 @@
 use mockito;
 use serde_json::json;
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::time::Duration;
 use web3::contract::{Contract, Options};
-use web3::{
-    api::Web3,
-    futures::future::Future,
-    transports::Http,
-    types::{H256, U256},
-};
+use web3::{api::Web3, futures::future::Future, transports::Http, types::U256};
 
 use super::utils::*;
 use interledger_settlement::Quantity;
@@ -229,90 +223,4 @@ fn test_send_eth() {
 
     ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
     bob_mock.assert();
-}
-
-#[test]
-fn saves_leftovers() {
-    // dummy tx_hashes to avoid making idempotent calls
-    let tx_hash1 =
-        H256::from_str("5ad3b56557dab5994c264ca17e2e08816341be2e6649ee6b2b1141006bfd347e").unwrap();
-    let tx_hash2 =
-        H256::from_str("5ad3b56557dab5994c264ca17e2e08816341be2e6649ee6b2b1141006bfd3472").unwrap();
-    let tx_hash3 =
-        H256::from_str("5ad3b56557dab5994c264ca17e2e08816341be2e6649ee6b2b1141006bfd3471").unwrap();
-
-    let bob = BOB.clone();
-    let alice = ALICE.clone();
-    let bob_store = test_store(bob.clone(), false, false, true);
-    bob_store
-        .save_account_addresses(HashMap::from_iter(vec![(
-            "42".to_string(),
-            Addresses {
-                own_address: alice.address,
-                token_address: None,
-            },
-        )]))
-        .wait()
-        .unwrap();
-
-    let mut ganache_pid = start_ganache(8547);
-
-    // helper for customizing connector return values and making sure the
-    // engine makes POSTs with the correct arguments
-    let connector_mock = |received, ret| {
-        // the connector will return any amount it receives with 2 less 0s
-        let received = json!(Quantity::new(received, 18)).to_string();
-        let ret = json!(Quantity::new(ret, 16)).to_string();
-        mockito::mock("POST", "/accounts/42/settlements")
-            .match_body(mockito::Matcher::JsonString(received))
-            .with_status(200)
-            .with_body(ret)
-    };
-
-    let full_amount = "100000000000";
-    let full_return = "1000000000";
-    let amount_with_leftovers = "110000000000";
-    let full_return_with_leftovers = "1100000000";
-    let partial_return = "900000000";
-
-    // Bob's connector is initially set up to not return the full amount
-    let bob_connector = connector_mock(full_amount, partial_return).create();
-    // initialize the engine
-    let bob_connector_url = mockito::server_url();
-    let bob_engine = test_engine(
-        bob_store.clone(),
-        BOB_PK.clone(),
-        0,
-        &bob_connector_url,
-        8547,
-        None,
-        true,
-    );
-
-    // the call the engine makes when it picks up an on-chain event
-    let ping_connector = |idempotency| {
-        block_on(bob_engine.notify_connector(
-            "42".to_string(),
-            full_amount.to_string(),
-            idempotency,
-        ))
-        .unwrap()
-    };
-
-    ping_connector(tx_hash1);
-    bob_connector.assert();
-
-    // for whatever reason, the connector now will return the full amount
-    // (but our engine must also send the uncredited amount from the
-    // previous call)
-    let bob_connector = connector_mock(amount_with_leftovers, full_return_with_leftovers).create();
-    ping_connector(tx_hash2);
-    bob_connector.assert();
-
-    // after the leftovers have been cleared, our engine continues normally
-    let bob_connector = connector_mock(full_amount, full_return).create();
-    ping_connector(tx_hash3);
-    bob_connector.assert();
-
-    ganache_pid.kill().unwrap(); // kill ganache since it's no longer needed
 }
