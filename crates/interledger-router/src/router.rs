@@ -1,7 +1,7 @@
 use super::RouterStore;
 use bytes::Bytes;
 use futures::{future::err, Future};
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::*;
 use log::{error, trace};
 use std::str;
@@ -25,6 +25,7 @@ use std::str;
 
 #[derive(Clone)]
 pub struct Router<S, O> {
+    ilp_address: Address,
     store: S,
     next: O,
 }
@@ -34,8 +35,12 @@ where
     S: RouterStore,
     O: OutgoingService<S::Account>,
 {
-    pub fn new(store: S, next: O) -> Self {
-        Router { store, next }
+    pub fn new(ilp_address: Address, store: S, next: O) -> Self {
+        Router {
+            ilp_address,
+            store,
+            next,
+        }
     }
 }
 
@@ -55,6 +60,7 @@ where
         let destination = request.prepare.destination();
         let mut next_hop = None;
         let routing_table = self.store.routing_table();
+        let ilp_address = self.ilp_address.clone();
 
         // Check if we have a direct path for that account or if we need to scan
         // through the routing table
@@ -104,7 +110,7 @@ where
                         RejectBuilder {
                             code: ErrorCode::F02_UNREACHABLE,
                             message: &[],
-                            triggered_by: None,
+                            triggered_by: Some(&ilp_address),
                             data: &[],
                         }
                         .build()
@@ -119,7 +125,7 @@ where
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],
-                triggered_by: None,
+                triggered_by: Some(&ilp_address),
                 data: &[],
             }
             .build()))
@@ -133,6 +139,7 @@ mod tests {
     use futures::future::ok;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
+    use lazy_static::lazy_static;
     use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -143,14 +150,18 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestAccount(u64);
 
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    }
+
     impl Account for TestAccount {
         type AccountId = u64;
         fn id(&self) -> u64 {
             self.0
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 
@@ -172,7 +183,7 @@ mod tests {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: String,
+            _username: &Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }
@@ -187,6 +198,7 @@ mod tests {
     #[test]
     fn empty_routing_table() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::new(),
             },
@@ -218,6 +230,7 @@ mod tests {
     #[test]
     fn no_route() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(vec![(Bytes::from("example.other"), 1)].into_iter()),
             },
@@ -249,6 +262,7 @@ mod tests {
     #[test]
     fn finds_exact_route() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(
                     vec![(Bytes::from("example.destination"), 1)].into_iter(),
@@ -282,6 +296,7 @@ mod tests {
     #[test]
     fn catch_all_route() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(vec![(Bytes::from(""), 0)].into_iter()),
             },
@@ -313,6 +328,7 @@ mod tests {
     #[test]
     fn finds_matching_prefix() {
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(vec![(Bytes::from("example."), 1)].into_iter()),
             },
@@ -346,6 +362,7 @@ mod tests {
         let to: Arc<Mutex<Option<TestAccount>>> = Arc::new(Mutex::new(None));
         let to_clone = to.clone();
         let mut router = Router::new(
+            Address::from_str("example.connector").unwrap(),
             TestStore {
                 routes: HashMap::from_iter(
                     vec![

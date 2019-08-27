@@ -22,7 +22,7 @@ pub mod test_helpers {
     use interledger_ildcp::IldcpAccount;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
-    use interledger_service::{Account, AccountStore};
+    use interledger_service::{Account, AccountStore, Username};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -31,6 +31,7 @@ pub mod test_helpers {
     lazy_static! {
         pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
         pub static ref EXAMPLE_RECEIVER: Address = Address::from_str("example.receiver").unwrap();
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
     }
 
     #[derive(Debug, Eq, PartialEq, Clone)]
@@ -48,8 +49,8 @@ pub mod test_helpers {
             self.id
         }
 
-        fn username(&self) -> &str {
-            "alice"
+        fn username(&self) -> &Username {
+            &ALICE
         }
     }
 
@@ -85,7 +86,7 @@ pub mod test_helpers {
         // stub implementation (not used in these tests)
         fn get_account_id_from_username(
             &self,
-            _username: String,
+            _username: &Username,
         ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
             Box::new(ok(1))
         }
@@ -138,7 +139,7 @@ mod send_money_to_receiver {
                 .build())
             }),
         );
-        let server = Router::new(store, server);
+        let server = Router::new(EXAMPLE_RECEIVER.clone(), store, server);
         let server = IldcpService::new(server);
 
         let (destination_account, shared_secret) =

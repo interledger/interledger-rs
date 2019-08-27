@@ -8,6 +8,7 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use log::debug;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
@@ -40,7 +41,7 @@ fn btp_end_to_end() {
             join_all(vec![
                 node.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.node.one").unwrap(),
-                    username: "alice".to_string(),
+                    username: Username::from_str("alice").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-one".to_string()),
@@ -62,7 +63,7 @@ fn btp_end_to_end() {
                 }),
                 node.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.node.two").unwrap(),
-                    username: "bob".to_string(),
+                    username: Username::from_str("bob").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-two".to_string()),

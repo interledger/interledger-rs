@@ -8,13 +8,14 @@ use interledger_btp::{BtpOpenSignupAccount, BtpOpenSignupStore, BtpStore};
 use interledger_http::HttpStore;
 use interledger_ildcp::IldcpAccount;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore};
+use interledger_service::{Account as AccountTrait, AccountStore, Username};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::{
     cmp::max,
     iter::{empty, once, FromIterator, IntoIterator},
     str,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -131,7 +132,7 @@ impl AccountStore for InMemoryStore {
 
     fn get_account_id_from_username(
         &self,
-        _username: String,
+        _username: &Username,
     ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
         Box::new(ok(1))
     }
@@ -140,9 +141,9 @@ impl AccountStore for InMemoryStore {
 impl HttpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_http_token(
+    fn get_account_from_http_auth(
         &self,
-        username: &str,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let token = format!("{}:{}", username, token);
@@ -164,9 +165,9 @@ impl RouterStore for InMemoryStore {
 impl BtpStore for InMemoryStore {
     type Account = Account;
 
-    fn get_account_from_btp_token(
+    fn get_account_from_btp_auth(
         &self,
-        username: &str,
+        username: &Username,
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         let token = format!("{}:{}", username, token);
@@ -202,12 +203,15 @@ impl BtpOpenSignupStore for InMemoryStore {
             *self.next_account_id.lock() += 1;
             next_id
         };
-        let account = AccountBuilder::new(account.ilp_address.clone(), "username".to_string())
-            .id(account_id)
-            .btp_incoming_token(account.auth_token.to_string())
-            .asset_code(account.asset_code.to_string())
-            .asset_scale(account.asset_scale)
-            .build();
+        let account = AccountBuilder::new(
+            account.ilp_address.clone(),
+            Username::from_str("username").unwrap(),
+        )
+        .id(account_id)
+        .btp_incoming_token(account.auth_token.to_string())
+        .asset_code(account.asset_code.to_string())
+        .asset_scale(account.asset_scale)
+        .build();
 
         (*self.accounts.write()).insert(account_id, account.clone());
         let ilp_address = account.client_address().clone();
@@ -232,13 +236,17 @@ mod tests {
         let store = InMemoryStore::new(vec![
             AccountBuilder::new(
                 Address::from_str("example.zero").unwrap(),
-                "zero".to_string(),
+                Username::from_str("zero").unwrap(),
             )
             .id(0),
-            AccountBuilder::new(Address::from_str("example.one").unwrap(), "one".to_string()).id(1),
+            AccountBuilder::new(
+                Address::from_str("example.one").unwrap(),
+                Username::from_str("one").unwrap(),
+            )
+            .id(1),
             AccountBuilder::new(
                 Address::from_str("example.four").unwrap(),
-                "four".to_string(),
+                Username::from_str("four").unwrap(),
             )
             .id(4),
         ]);
@@ -253,17 +261,20 @@ mod tests {
     fn query_by_http_auth() {
         let account = AccountBuilder::new(
             Address::from_str("example.zero").unwrap(),
-            "zero".to_string(),
+            Username::from_str("zero").unwrap(),
         )
         .http_incoming_token("test_token".to_string())
         .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_http_token("zero", "test_token")
+            .get_account_from_http_auth(&Username::from_str("zero").unwrap(), "test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_http_token("another_username", "bad_token")
+            .get_account_from_http_auth(
+                &Username::from_str("another_username").unwrap(),
+                "bad_token"
+            )
             .wait()
             .is_err());
     }
@@ -272,17 +283,20 @@ mod tests {
     fn query_by_btp() {
         let account = AccountBuilder::new(
             Address::from_str("example.zero").unwrap(),
-            "zero".to_string(),
+            Username::from_str("zero").unwrap(),
         )
         .btp_incoming_token("test_token".to_string())
         .build();
         let store = InMemoryStore::from_accounts(vec![account]);
         store
-            .get_account_from_btp_token("zero", "test_token")
+            .get_account_from_btp_auth(&Username::from_str("zero").unwrap(), "test_token")
             .wait()
             .unwrap();
         assert!(store
-            .get_account_from_btp_token("another_user", "bad_token")
+            .get_account_from_btp_auth(
+                &Username::from_str("another_username").unwrap(),
+                "bad_token"
+            )
             .wait()
             .is_err());
     }
@@ -290,10 +304,17 @@ mod tests {
     #[test]
     fn routing_table() {
         let store = InMemoryStore::new(vec![
-            AccountBuilder::new(Address::from_str("example.one").unwrap(), "one".to_string())
-                .id(1)
-                .additional_routes(&[b"example.three"]),
-            AccountBuilder::new(Address::from_str("example.two").unwrap(), "two".to_string()).id(2),
+            AccountBuilder::new(
+                Address::from_str("example.one").unwrap(),
+                Username::from_str("one").unwrap(),
+            )
+            .id(1)
+            .additional_routes(&[b"example.three"]),
+            AccountBuilder::new(
+                Address::from_str("example.two").unwrap(),
+                Username::from_str("two").unwrap(),
+            )
+            .id(2),
         ]);
 
         assert_eq!(

@@ -3,7 +3,7 @@ use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
-use interledger_service::Account as AccountTrait;
+use interledger_service::{Account as AccountTrait, Username};
 use interledger_service_util::MaxPacketAmountAccount;
 use std::{fmt, str, sync::Arc};
 use url::Url;
@@ -14,7 +14,7 @@ pub struct AccountBuilder {
 }
 
 impl AccountBuilder {
-    pub fn new(ilp_address: Address, username: String) -> Self {
+    pub fn new(ilp_address: Address, username: Username) -> Self {
         let details = AccountDetails {
             ilp_address,
             username,
@@ -42,7 +42,7 @@ impl AccountBuilder {
         self
     }
 
-    pub fn username(mut self, username: String) -> Self {
+    pub fn username(mut self, username: Username) -> Self {
         self.details.username = username;
         self
     }
@@ -106,7 +106,7 @@ impl AccountBuilder {
 #[derive(Clone)]
 pub(crate) struct AccountDetails {
     pub(crate) id: u64,
-    pub(crate) username: String,
+    pub(crate) username: Username,
     pub(crate) ilp_address: Address,
     pub(crate) additional_routes: Vec<Bytes>,
     pub(crate) asset_code: String,
@@ -152,7 +152,7 @@ impl AccountTrait for Account {
         self.inner.id
     }
 
-    fn username(&self) -> &str {
+    fn username(&self) -> &Username {
         &self.inner.username
     }
 }
@@ -211,7 +211,7 @@ mod tests {
     fn uses_default_values() {
         let account = AccountBuilder::new(
             Address::from_str("example.address").unwrap(),
-            "username".to_string(),
+            Username::from_str("username").unwrap(),
         )
         .build();
         assert_eq!(account.id(), 0);
@@ -224,14 +224,14 @@ mod tests {
             *account.client_address(),
             Address::from_str("example.address").unwrap()
         );
-        assert_eq!(account.username(), "username",);
+        assert_eq!(account.username(), &Username::from_str("username").unwrap());
     }
 
     #[test]
     fn returns_properties_correctly() {
         let account = AccountBuilder::new(
             Address::from_str("example.address").unwrap(),
-            "username".to_string(),
+            Username::from_str("username").unwrap(),
         )
         .id(1)
         .additional_routes(&[b"example.route", b"example.other-route"])
@@ -257,6 +257,6 @@ mod tests {
         assert_eq!(account.get_http_auth_token(), Some("sodgiuoixfugoiudf"));
         assert_eq!(account.max_packet_amount(), 7777);
         assert_eq!(account.client_address(), &b"example.address"[..]);
-        assert_eq!(account.username(), "username",);
+        assert_eq!(account.username(), &Username::from_str("username").unwrap());
     }
 }

@@ -7,6 +7,7 @@ use hex;
 use interledger::{cli::*, node::*};
 use interledger_ildcp::IldcpResponseBuilder;
 use interledger_packet::Address;
+use interledger_service::Username;
 use std::str::FromStr;
 use tokio;
 use url::Url;
@@ -309,7 +310,10 @@ pub fn main() {
                             &value_t!(matches, "ilp_address", String).unwrap(),
                         )
                         .unwrap(),
-                        username: value_t!(matches, "username", String).unwrap(),
+                        username: Username::from_str(
+                            &value_t!(matches, "username", String).unwrap(),
+                        )
+                        .unwrap(),
                         asset_code: value_t!(matches, "asset_code", String).unwrap(),
                         asset_scale: value_t!(matches, "asset_scale", u8).unwrap(),
                         btp_incoming_token: matches

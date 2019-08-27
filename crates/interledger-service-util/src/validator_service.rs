@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use futures::{future::err, Future};
 use hex;
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::*;
 use log::error;
 use ring::digest::{digest, SHA256};
@@ -16,6 +16,7 @@ use tokio::prelude::FutureExt;
 ///
 #[derive(Clone)]
 pub struct ValidatorService<IO, A> {
+    ilp_address: Address,
     next: IO,
     account_type: PhantomData<A>,
 }
@@ -25,8 +26,9 @@ where
     I: IncomingService<A>,
     A: Account,
 {
-    pub fn incoming(next: I) -> Self {
+    pub fn incoming(ilp_address: Address, next: I) -> Self {
         ValidatorService {
+            ilp_address,
             next,
             account_type: PhantomData,
         }
@@ -38,8 +40,9 @@ where
     O: OutgoingService<A>,
     A: Account,
 {
-    pub fn outgoing(next: O) -> Self {
+    pub fn outgoing(ilp_address: Address, next: O) -> Self {
         ValidatorService {
+            ilp_address,
             next,
             account_type: PhantomData,
         }
@@ -70,7 +73,7 @@ where
             let result = Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
-                triggered_by: None,
+                triggered_by: Some(&self.ilp_address),
                 data: &[],
             }
             .build()));
@@ -101,6 +104,8 @@ where
         let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
         let now = Utc::now();
         let time_left = expires_at - now;
+        let ilp_address = self.ilp_address.clone();
+        let ilp_address_clone = ilp_address.clone();
         if time_left > Duration::zero() {
             Box::new(
                 self.next
@@ -119,7 +124,7 @@ where
                             RejectBuilder {
                                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                                 message: &[],
-                                triggered_by: None,
+                                triggered_by: Some(&ilp_address_clone),
                                 data: &[],
                             }
                             .build()
@@ -134,7 +139,7 @@ where
                             Err(RejectBuilder {
                                 code: ErrorCode::F09_INVALID_PEER_RESPONSE,
                                 message: b"Fulfillment did not match condition",
-                                triggered_by: None,
+                                triggered_by: Some(&ilp_address),
                                 data: &[],
                             }
                             .build())
@@ -150,7 +155,7 @@ where
             Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
-                triggered_by: None,
+                triggered_by: Some(&ilp_address),
                 data: &[],
             }
             .build()))
@@ -158,6 +163,14 @@ where
     }
 }
 
+#[cfg(test)]
+use lazy_static::lazy_static;
+#[cfg(test)]
+use std::str::FromStr;
+#[cfg(test)]
+lazy_static! {
+    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+}
 #[cfg(test)]
 #[derive(Clone, Debug)]
 struct TestAccount(u64);
@@ -169,8 +182,8 @@ impl Account for TestAccount {
         self.0
     }
 
-    fn username(&self) -> &str {
-        "alice"
+    fn username(&self) -> &Username {
+        &ALICE
     }
 }
 
@@ -179,7 +192,6 @@ mod incoming {
     use super::*;
     use interledger_packet::*;
     use interledger_service::incoming_service_fn;
-    use std::str::FromStr;
     use std::{
         sync::{Arc, Mutex},
         time::{Duration, SystemTime},
@@ -189,14 +201,17 @@ mod incoming {
     fn lets_through_valid_incoming_packet() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::incoming(
+            Address::from_str("example.connector").unwrap(),
+            incoming_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
@@ -222,14 +237,17 @@ mod incoming {
     fn rejects_expired_incoming_packet() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::incoming(incoming_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::incoming(
+            Address::from_str("example.connector").unwrap(),
+            incoming_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .handle_request(IncomingRequest {
                 from: TestAccount(0),
@@ -270,14 +288,17 @@ mod outgoing {
     fn lets_through_valid_outgoing_response() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::outgoing(
+            Address::from_str("example.connector").unwrap(),
+            outgoing_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .send_request(OutgoingRequest {
                 from: TestAccount(1),
@@ -305,14 +326,17 @@ mod outgoing {
     fn returns_reject_instead_of_invalid_fulfillment() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
-        let mut validator = ValidatorService::outgoing(outgoing_service_fn(move |request| {
-            requests_clone.lock().unwrap().push(request);
-            Ok(FulfillBuilder {
-                fulfillment: &[1; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        let mut validator = ValidatorService::outgoing(
+            Address::from_str("example.connector").unwrap(),
+            outgoing_service_fn(move |request| {
+                requests_clone.lock().unwrap().push(request);
+                Ok(FulfillBuilder {
+                    fulfillment: &[1; 32],
+                    data: b"test data",
+                }
+                .build())
+            }),
+        );
         let result = validator
             .send_request(OutgoingRequest {
                 from: TestAccount(1),

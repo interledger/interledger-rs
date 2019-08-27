@@ -133,6 +133,7 @@ impl InterledgerNode {
         let settlement_address = self.settlement_address;
         let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
+        let ilp_address_clone2 = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account;
         let redis_addr = self.redis_connection.addr.clone();
@@ -166,16 +167,22 @@ impl InterledgerNode {
                     // Connect to all of the accounts that have outgoing btp_uris configured
                     // but don't fail if we are unable to connect
                     // TODO try reconnecting to those accounts later
-                    connect_client(btp_accounts, false, outgoing_service).and_then(
+                    connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            create_server(btp_address, store.clone(), btp_client_service.clone()).and_then(
+                            create_server(ilp_address_clone2, btp_address, store.clone(), btp_client_service.clone()).and_then(
                                 move |btp_server_service| {
                                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
                                     let outgoing_service = btp_server_service.clone();
-                                    let outgoing_service =
-                                        ValidatorService::outgoing(outgoing_service);
-                                    let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
+                                    let outgoing_service = ValidatorService::outgoing(
+                                        ilp_address.clone(),
+                                        outgoing_service
+                                    );
+                                    let outgoing_service = HttpClientService::new(
+                                        ilp_address.clone(),
+                                        store.clone(),
+                                        outgoing_service,
+                                    );
 
                                     // Note: the expiry shortener must come after the Validator so that the expiry duration
                                     // is shortened before we check whether there is enough time left
@@ -197,8 +204,11 @@ impl InterledgerNode {
                                     );
 
                                     // Set up the Router and Routing Manager
-                                    let incoming_service =
-                                        Router::new(store.clone(), outgoing_service.clone());
+                                    let incoming_service = Router::new(
+                                        ilp_address.clone(),
+                                        store.clone(),
+                                        outgoing_service.clone()
+                                    );
                                     let mut ccp_builder = CcpRouteManagerBuilder::new(
                                         ilp_address.clone(),
                                         store.clone(),
@@ -214,9 +224,12 @@ impl InterledgerNode {
                                     let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
                                     let incoming_service = IldcpService::new(incoming_service);
                                     let incoming_service =
-                                        MaxPacketAmountService::new(incoming_service);
+                                        MaxPacketAmountService::new(
+                                            ilp_address.clone(),
+                                            incoming_service
+                                    );
                                     let incoming_service =
-                                        ValidatorService::incoming(incoming_service);
+                                        ValidatorService::incoming(ilp_address.clone(), incoming_service);
                                     let incoming_service = RateLimitService::new(
                                         ilp_address.clone(),
                                         store.clone(),

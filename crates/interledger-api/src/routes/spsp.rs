@@ -4,12 +4,13 @@ use futures::{
     Future,
 };
 use hyper::{Body, Response};
-use interledger_http::{Auth, HttpAccount, HttpStore};
+use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
-use interledger_service::{AccountStore, IncomingService};
+use interledger_service::{AccountStore, AuthToken, IncomingService, Username};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use tower_web::{impl_web, Extract, Response};
 
 #[derive(Extract, Debug)]
@@ -65,7 +66,7 @@ impl_web! {
             let service = self.incoming_handler.clone();
             let store = self.store.clone();
 
-            result(Auth::parse(&authorization))
+            result(AuthToken::from_str(&authorization))
             .map_err(|err| {
                 let error_msg = format!("Could not convert auth token {:?}", err);
                 error!("{}", error_msg);
@@ -75,7 +76,7 @@ impl_web! {
                 let username = auth.username();
                 let token = auth.password();
                 debug!("Got request to pay: {:?}", body);
-                store.get_account_from_http_token(&username, &token)
+                store.get_account_from_http_auth(&username, &token)
                 .map_err(|_| Response::builder().status(401).body("Unauthorized".to_string()).unwrap())
                 .and_then(move |account| {
                     pay(service, account, &body.receiver, body.source_amount)
@@ -98,7 +99,13 @@ impl_web! {
         fn get_spsp(&self, username: String) -> impl Future<Item = Response<Body>, Error = Response<()>> {
             let server_secret = self.server_secret.clone();
             let store = self.store.clone();
-            store.get_account_id_from_username(username.clone())
+            result(Username::from_str(&username))
+            .map_err(move |_| {
+                error!("Invalid username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |username| {
+            store.get_account_id_from_username(&username)
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
@@ -113,6 +120,7 @@ impl_web! {
                     Ok(SpspResponder::new(accounts[0].client_address().clone(), server_secret)
                         .generate_http_response())
                     })
+            })
         }
 
 

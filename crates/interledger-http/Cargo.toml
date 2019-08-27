@@ -17,4 +17,3 @@ interledger-service = { path = "../interledger-service", version = "0.2.1" }
 log = "0.4.6"
 reqwest = "0.9.11"
 url = "1.7.2"
-base64 = "0.10.1"

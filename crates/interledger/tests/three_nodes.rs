@@ -7,6 +7,7 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use serde_json::json;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -61,7 +62,7 @@ fn three_nodes() {
         node1_clone
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.one").unwrap(),
-                username: "alice".to_string(),
+                username: Username::from_str("alice").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -86,7 +87,7 @@ fn three_nodes() {
         node1_clone
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.two").unwrap(),
-                username: "bob".to_string(),
+                username: Username::from_str("bob").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -125,7 +126,7 @@ fn three_nodes() {
         node2_clone
             .insert_account(AccountDetails {
                 ilp_address: Address::from_str("example.one").unwrap(),
-                username: "alice".to_string(),
+                username: Username::from_str("alice").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 btp_incoming_token: None,
@@ -148,7 +149,7 @@ fn three_nodes() {
             .and_then(move |_| {
                 node2_clone.insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.two.three").unwrap(),
-                    username: "charlie".to_string(),
+                    username: Username::from_str("charlie").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
                     btp_incoming_token: Some("three".to_string()),
@@ -204,7 +205,7 @@ fn three_nodes() {
             node3_clone
                 .insert_account(AccountDetails {
                     ilp_address: Address::from_str("example.two.three").unwrap(),
-                    username: "charlie".to_string(),
+                    username: Username::from_str("charlie").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
                     btp_incoming_token: None,
@@ -227,7 +228,7 @@ fn three_nodes() {
                 .and_then(move |_| {
                     node3_clone.insert_account(AccountDetails {
                         ilp_address: Address::from_str("example.two").unwrap(),
-                        username: "bob".to_string(),
+                        username: Username::from_str("bob").unwrap(),
                         asset_code: "ABC".to_string(),
                         asset_scale: 6,
                         btp_incoming_token: None,
