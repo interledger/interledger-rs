@@ -2,7 +2,7 @@ use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use bytes::Bytes;
 use futures::{future::result, Future};
 use http::StatusCode;
-use redis::{self, cmd, r#async::SharedConnection, Client, ConnectionInfo, PipelineCommands};
+use redis::{self, aio::SharedConnection, cmd, Client, ConnectionInfo, PipelineCommands};
 use std::collections::HashMap as SlowHashMap;
 use std::str::FromStr;
 

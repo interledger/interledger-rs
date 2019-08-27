@@ -11,8 +11,10 @@ use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
-use log::{debug, error};
-use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, ToRedisArgs, Value};
+use log::error;
+use redis::{
+    from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
+};
 
 use ring::aead;
 use serde::Serializer;
@@ -99,10 +101,6 @@ impl Account {
             } else {
                 None
             };
-            debug!(
-                "Setting btp_outgoing_token: {:?}",
-                btp_outgoing_token.clone()
-            );
             btp_uri.set_username("").unwrap();
             btp_uri.set_password(None).unwrap();
             (Some(btp_uri), btp_outgoing_token)
@@ -213,8 +211,8 @@ impl Display for AccountId {
 }
 
 impl ToRedisArgs for AccountId {
-    fn write_redis_args(&self, out: &mut Vec<Vec<u8>>) {
-        self.0.to_hyphenated().to_string().write_redis_args(out);
+    fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
+        out.write_arg(self.0.to_hyphenated().to_string().as_bytes().as_ref());
     }
 }
 
@@ -228,7 +226,7 @@ impl FromRedisValue for AccountId {
 }
 
 impl ToRedisArgs for AccountWithEncryptedTokens {
-    fn write_redis_args(&self, out: &mut Vec<Vec<u8>>) {
+    fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
         let mut rv = Vec::with_capacity(ACCOUNT_DETAILS_FIELDS * 2);
         let account = &self.account;
 

@@ -11,7 +11,7 @@ use web3::types::{Address as EthAddress, H256, U256};
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
 use num_traits::Zero;
-use redis::{self, cmd, r#async::SharedConnection, ConnectionInfo, PipelineCommands, Value};
+use redis::{self, aio::SharedConnection, cmd, ConnectionInfo, PipelineCommands, Value};
 
 use log::{error, trace};
 

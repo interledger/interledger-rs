@@ -6,7 +6,7 @@ use http::StatusCode;
 use interledger_service::Account;
 use interledger_settlement::{IdempotentStore, SettlementStore};
 use lazy_static::lazy_static;
-use redis::{cmd, r#async::SharedConnection};
+use redis::{aio::SharedConnection, cmd};
 
 lazy_static! {
     static ref IDEMPOTENCY_KEY: String = String::from("AJKJNUjM0oyiAN46");

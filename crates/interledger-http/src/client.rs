@@ -1,9 +1,6 @@
 use super::{HttpAccount, HttpStore};
 use bytes::BytesMut;
-use futures::{
-    future::{err, result},
-    Future, Stream,
-};
+use futures::{future::{result, err}, Future, Stream};
 use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Reject, RejectBuilder};
 use interledger_service::*;
 use log::{error, trace};
@@ -86,7 +83,7 @@ where
             };
             Box::new(
                 self.client
-                    .post(url.clone())
+                    .post(url.as_ref())
                     .header("authorization", auth.to_bearer())
                     .body(BytesMut::from(request.prepare).freeze())
                     .send()

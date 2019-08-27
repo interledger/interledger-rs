@@ -534,7 +534,7 @@ where
                 let full_amount = full_amount.clone();
                 let full_amount_clone = full_amount.clone();
                 client
-                    .post(url.clone())
+                    .post(url.as_ref())
                     .header("Idempotency-Key", tx_hash.to_string())
                     .json(&json!(Quantity::new(full_amount.clone(), engine_scale)))
                     .send()
@@ -780,7 +780,7 @@ where
             .push("messages");
         let action = move || {
             client
-                .post(url.clone())
+                .post(url.as_ref())
                 .header("Content-Type", "application/octet-stream")
                 .header("Idempotency-Key", idempotency_uuid.clone())
                 .body(challenge.clone())
