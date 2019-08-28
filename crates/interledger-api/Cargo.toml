@@ -5,7 +5,7 @@ authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "API for managing an Interledger node"
 license = "Apache-2.0"
 edition = "2018"
-repository = "https://github.com/emschwartz/interledger-rs"
+repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 bytes = "0.4.12"
@@ -29,5 +29,5 @@ url = "2.1.0"
 tokio-retry = "0.2.0"
 
 [badges]
-circle-ci = { repository = "emschwartz/interledger-rs" }
-codecov = { repository = "emschwartz/interledger-rs" }
+circle-ci = { repository = "interledger-rs/interledger-rs" }
+codecov = { repository = "interledger-rs/interledger-rs" }

@@ -7,4 +7,4 @@ of the Interledger Protocol stack, roughly analogous to [Ethernet](https://en.wi
 BTP utilizes websockets, which makes it suitable for users who
 do not have a public internet server.
 Users who do not need such functionality may prefer the alternative,
-simpler data link layer protocol provided by [the interledger-http crate](https://github.com/emschwartz/interledger-rs/tree/master/crates/interledger-http).
+simpler data link layer protocol provided by [the interledger-http crate](https://github.com/interledger-rs/interledger-rs/tree/master/crates/interledger-http).
