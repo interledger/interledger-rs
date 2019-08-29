@@ -9,7 +9,7 @@ const NONCE_LENGTH: usize = 12;
 static ENCRYPTION_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_encryption_key";
 
 use core::sync::atomic;
-use secrecy::DebugSecret;
+use secrecy::{Secret, DebugSecret};
 use std::ptr;
 use zeroize::Zeroize;
 
@@ -19,8 +19,12 @@ pub struct EncryptionKey(pub(crate) aead::SealingKey);
 #[derive(Debug)]
 pub struct DecryptionKey(pub(crate) aead::OpeningKey);
 
+#[derive(Debug)]
+pub struct GenerationKey(pub(crate) hmac::SigningKey);
+
 impl DebugSecret for EncryptionKey {}
 impl DebugSecret for DecryptionKey {}
+impl DebugSecret for GenerationKey {}
 
 impl Zeroize for EncryptionKey {
     fn zeroize(&mut self) {
@@ -54,6 +58,23 @@ impl Drop for DecryptionKey {
     }
 }
 
+impl Zeroize for GenerationKey {
+    fn zeroize(&mut self) {
+        // Instead of clearing the memory, we create a key from an empty
+        // slice as a secret.
+        let empty_key = GenerationKey(hmac::SigningKey::new(&digest::SHA256, &[0; 32]));
+        volatile_write(self, empty_key);
+        atomic_fence();
+    }
+}
+
+impl Drop for GenerationKey {
+    fn drop(&mut self) {
+        self.zeroize()
+    }
+}
+
+
 // this logic is taken from: https://github.com/iqlusioninc/crates/blob/develop/zeroize/src/lib.rs#L388-L400
 // Perform a volatile write to the destination
 #[inline]
@@ -69,19 +90,19 @@ fn atomic_fence() {
     atomic::compiler_fence(atomic::Ordering::SeqCst);
 }
 
-pub fn generate_keys(server_secret: &[u8]) -> (aead::SealingKey, aead::OpeningKey) {
-    let generation_key = hmac::SigningKey::new(&digest::SHA256, server_secret);
-    let encryption_key = aead::SealingKey::new(
+pub fn generate_keys(server_secret: &[u8]) -> (Secret<EncryptionKey>, Secret<DecryptionKey>) {
+    let generation_key = GenerationKey(hmac::SigningKey::new(&digest::SHA256, server_secret));
+    let encryption_key = Secret::new(EncryptionKey(aead::SealingKey::new(
         &aead::AES_256_GCM,
-        hmac::sign(&generation_key, ENCRYPTION_KEY_GENERATION_STRING).as_ref(),
+        hmac::sign(&generation_key.0, ENCRYPTION_KEY_GENERATION_STRING).as_ref(),
     )
-    .unwrap();
-    let decryption_key = aead::OpeningKey::new(
+    .unwrap()));
+    let decryption_key = Secret::new(DecryptionKey(aead::OpeningKey::new(
         &aead::AES_256_GCM,
-        hmac::sign(&generation_key, ENCRYPTION_KEY_GENERATION_STRING).as_ref(),
+        hmac::sign(&generation_key.0, ENCRYPTION_KEY_GENERATION_STRING).as_ref(),
     )
-    .unwrap();
-    // is the generation key cleared from memory when it's dropped here?
+    .unwrap()));
+    // the generation key is dropped and zeroized here
     (encryption_key, decryption_key)
 }
 
@@ -136,12 +157,13 @@ pub fn decrypt_token(decryption_key: &aead::OpeningKey, encrypted: &[u8]) -> Opt
 mod encryption {
     use super::*;
     use std::str;
+    use secrecy::ExposeSecret;
 
     #[test]
     fn encrypts_and_decrypts() {
         let (encryption_key, decryption_key) = generate_keys(&[9; 32]);
-        let encrypted = encrypt_token(&encryption_key, b"test test");
-        let decrypted = decrypt_token(&decryption_key, encrypted.as_ref());
+        let encrypted = encrypt_token(&encryption_key.expose_secret().0, b"test test");
+        let decrypted = decrypt_token(&decryption_key.expose_secret().0, encrypted.as_ref());
         assert_eq!(
             str::from_utf8(decrypted.unwrap().as_ref()).unwrap(),
             "test test"

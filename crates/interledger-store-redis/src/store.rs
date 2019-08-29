@@ -217,8 +217,8 @@ impl RedisStoreBuilder {
                     connection: Arc::new(connection),
                     exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                     routes: Arc::new(RwLock::new(HashMap::new())),
-                    encryption_key: Arc::new(Secret::new(EncryptionKey(encryption_key))),
-                    decryption_key: Arc::new(Secret::new(DecryptionKey(decryption_key))),
+                    encryption_key: Arc::new(encryption_key),
+                    decryption_key: Arc::new(decryption_key),
                 };
 
                 // Start polling for rate updates
