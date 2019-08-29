@@ -108,19 +108,21 @@ pub trait EthereumLedgerTxSigner {
     fn address(&self) -> Address;
 }
 
-impl EthereumLedgerTxSigner for String {
+use secrecy::{Secret, ExposeSecret};
+
+impl EthereumLedgerTxSigner for Secret<String> {
     fn sign_raw_tx(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8> {
-        tx.sign(&H256::from_str(self).unwrap(), &chain_id)
+        tx.sign(&H256::from_str(self.expose_secret()).unwrap(), &chain_id)
     }
 
     fn sign_message(&self, message: &[u8]) -> Signature {
-        let private_key: PrivateKey = self.parse().unwrap();
+        let private_key: PrivateKey = self.expose_secret().parse().unwrap();
         let hash = Sha3::digest(message);
         private_key.sign_hash(&hash)
     }
 
     fn address(&self) -> Address {
-        let private_key: PrivateKey = self.parse().unwrap();
+        let private_key: PrivateKey = self.expose_secret().parse().unwrap();
         let address = private_key.to_public_key().unwrap();
         let mut out = [0; 20];
         out.copy_from_slice(address.as_bytes());
@@ -136,7 +138,7 @@ mod tests {
     #[test]
     fn test_address() {
         let privkey =
-            String::from("acb8f4184aaf6490b6e6aea7b474225be0d965eed75f4b91183eff6032c299f8");
+            Secret::new(String::from("acb8f4184aaf6490b6e6aea7b474225be0d965eed75f4b91183eff6032c299f8"));
         let addr = privkey.address();
         assert_eq!(
             addr,
@@ -147,7 +149,7 @@ mod tests {
     #[test]
     fn test_address_from_parity_ethkey() {
         let privkey =
-            String::from("2569cb99b0936649aba55237c4952fc6f4090e016e8449a1d2f7cde142cfbb00");
+            Secret::new(String::from("2569cb99b0936649aba55237c4952fc6f4090e016e8449a1d2f7cde142cfbb00"));
         let addr = privkey.address();
         assert_eq!(
             addr,

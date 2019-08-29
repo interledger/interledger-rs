@@ -15,6 +15,7 @@ use std::process::Command;
 use std::str;
 use std::thread::sleep;
 use std::time::Duration;
+use secrecy::Secret;
 
 #[allow(unused)]
 static XRP_FAUCET_URL: &str = "https://faucet.altnet.rippletest.net/accounts";
@@ -73,6 +74,7 @@ pub fn start_eth_engine(
     key: String,
     settlement_port: u16,
 ) -> impl Future<Item = (), Error = ()> {
+    let key = Secret::new(key);
     run_ethereum_engine(
         db,
         "http://localhost:8545".to_string(),

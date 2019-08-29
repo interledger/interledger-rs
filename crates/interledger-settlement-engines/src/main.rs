@@ -4,6 +4,7 @@ use tokio;
 use url::Url;
 
 use interledger_settlement_engines::engines::ethereum_ledger::{run_ethereum_engine, EthAddress};
+use secrecy::Secret;
 
 #[allow(clippy::cognitive_complexity)]
 pub fn main() {
@@ -71,6 +72,7 @@ pub fn main() {
             // TODO make compatible with
             // https://github.com/tendermint/signatory to have HSM sigs
             let private_key: String = value_t!(matches, "key", String).unwrap();
+            let private_key = Secret::new(private_key);
             let ethereum_endpoint: String = value_t!(matches, "ethereum_endpoint", String).unwrap();
             let token_address = value_t!(matches, "token_address", String).unwrap();
             let token_address = if token_address.len() == 20 {
