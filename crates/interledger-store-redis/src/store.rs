@@ -51,6 +51,9 @@ use std::{
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 
+use secrecy::{DebugSecret, ExposeSecret, Secret};
+use zeroize::Zeroize;
+
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 
 // The following are Lua scripts that are used to atomically execute the given logic
@@ -59,21 +62,11 @@ const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 // process is accessing Redis at the same time.
 // For more information on scripting in Redis, see https://redis.io/commands/eval
 lazy_static! {
-    // This lua script receives the token type (HTTP/BTP), the username and a user
-    // provided auth token. It fetches the account id associated with that username.
-    // Then, it fetches the token associated with that account id. Finally, it
-    // compares the fetched token with the one provided by the user, and returns the
-    // account that corresponds to the fetched account id if they match.
-    static ref ACCOUNT_FROM_TOKEN: Script = Script::new("
-    local token_type = ARGV[1]
-    local acc_id = redis.call('HGET', 'usernames', ARGV[2])
-    local provided_token = ARGV[3]
-
+    // This lua script fetches an account associated with a username. The client
+    // MUST ensure that the returned account is authenticated.
+    static ref ACCOUNT_FROM_USERNAME: Script = Script::new("
+    local acc_id = redis.call('HGET', 'usernames', ARGV[1])
     local id_key = 'accounts:' .. acc_id
-    local token = redis.call('HGET', id_key, token_type)
-    if token ~= provided_token then
-        return nil
-    end
     return redis.call('HGETALL', id_key)");
 
     static ref PROCESS_PREPARE: Script = Script::new("
@@ -207,8 +200,9 @@ impl RedisStoreBuilder {
         self
     }
 
-    pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
+    pub fn connect(&mut self) -> impl Future<Item = RedisStore, Error = ()> {
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
+        self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
 
         result(Client::open(self.redis_uri.clone()))
@@ -716,20 +710,29 @@ impl BtpStore for RedisStore {
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
-        // TODO cache the result so we don't hit redis for every packet (is that necessary if redis is often used as a cache?)
+        // TODO cache the result so we don't hit redis for every packet (is that
+        // necessary if redis is often used as a cache?)
         let decryption_key = self.decryption_key.clone();
+        let token = token.to_owned();
         Box::new(
-            ACCOUNT_FROM_TOKEN
-                .arg("btp_incoming_token")
+            ACCOUNT_FROM_USERNAME
                 .arg(username.as_ref())
-                .arg(token)
                 .invoke_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
                             let account = account.decrypt_tokens(&decryption_key);
-                            Ok(account)
+                            if let Some(t) = account.btp_incoming_token.clone() {
+                                let t = t.expose_secret().clone();
+                                if t == Bytes::from(token) {
+                                    Ok(account)
+                                } else {
+                                    Err(())
+                                }
+                            } else {
+                                Err(())
+                            }
                         } else {
                             warn!("No account found with BTP token");
                             Err(())
@@ -799,18 +802,26 @@ impl HttpStore for RedisStore {
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
+        let token = token.to_owned();
         Box::new(
-            ACCOUNT_FROM_TOKEN
-                .arg("http_incoming_token")
+            ACCOUNT_FROM_USERNAME
                 .arg(username.as_ref())
-                .arg(token)
                 .invoke_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
                             let account = account.decrypt_tokens(&decryption_key);
-                            Ok(account)
+                            if let Some(t) = account.http_incoming_token.clone() {
+                                let t = t.expose_secret().clone();
+                                if t == Bytes::from(token) {
+                                    Ok(account)
+                                } else {
+                                    Err(())
+                                }
+                            } else {
+                                Err(())
+                            }
                         } else {
                             warn!("No account found with given HTTP auth");
                             Err(())
