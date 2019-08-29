@@ -108,7 +108,7 @@ pub trait EthereumLedgerTxSigner {
     fn address(&self) -> Address;
 }
 
-use secrecy::{Secret, ExposeSecret};
+use secrecy::{ExposeSecret, Secret};
 
 impl EthereumLedgerTxSigner for Secret<String> {
     fn sign_raw_tx(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8> {
@@ -137,8 +137,9 @@ mod tests {
 
     #[test]
     fn test_address() {
-        let privkey =
-            Secret::new(String::from("acb8f4184aaf6490b6e6aea7b474225be0d965eed75f4b91183eff6032c299f8"));
+        let privkey = Secret::new(String::from(
+            "acb8f4184aaf6490b6e6aea7b474225be0d965eed75f4b91183eff6032c299f8",
+        ));
         let addr = privkey.address();
         assert_eq!(
             addr,
@@ -148,8 +149,9 @@ mod tests {
 
     #[test]
     fn test_address_from_parity_ethkey() {
-        let privkey =
-            Secret::new(String::from("2569cb99b0936649aba55237c4952fc6f4090e016e8449a1d2f7cde142cfbb00"));
+        let privkey = Secret::new(String::from(
+            "2569cb99b0936649aba55237c4952fc6f4090e016e8449a1d2f7cde142cfbb00",
+        ));
         let addr = privkey.address();
         assert_eq!(
             addr,

@@ -7,6 +7,7 @@ use interledger_store_redis::Account;
 use interledger_store_redis::AccountId;
 use redis::ConnectionInfo;
 use reqwest;
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -15,7 +16,6 @@ use std::process::Command;
 use std::str;
 use std::thread::sleep;
 use std::time::Duration;
-use secrecy::Secret;
 
 #[allow(unused)]
 static XRP_FAUCET_URL: &str = "https://faucet.altnet.rippletest.net/accounts";
