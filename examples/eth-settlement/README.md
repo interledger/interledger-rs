@@ -132,7 +132,6 @@ cargo run --package interledger-settlement-engines -- ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
 --redis_uri redis://127.0.0.1:6379/0 \
---watch_incoming true \
 --port 3000 \
 &> logs/node-alice-settlement-engine.log &
 
@@ -144,7 +143,6 @@ cargo run --package interledger-settlement-engines -- ethereum-ledger \
 --ethereum_endpoint http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
 --redis_uri redis://127.0.0.1:6379/1 \
---watch_incoming true \
 --port 3001 \
 &> logs/node-bob-settlement-engine.log &
 ```

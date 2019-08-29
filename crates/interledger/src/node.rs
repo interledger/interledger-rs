@@ -83,8 +83,6 @@ where
 #[derive(Deserialize, Clone)]
 pub struct InterledgerNode {
     /// ILP address of the node
-    // Rename this one because the env vars are prefixed with "ILP_"
-    #[serde(alias = "address")]
     #[serde(deserialize_with = "deserialize_string_to_address")]
     pub ilp_address: Address,
     /// Root secret used to derive encryption keys
@@ -111,7 +109,7 @@ pub struct InterledgerNode {
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
-    pub default_spsp_account: Option<u64>,
+    pub default_spsp_account: Option<String>,
     /// Interval, defined in milliseconds, on which the node will broadcast routing
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
     pub route_broadcast_interval: Option<u64>,
@@ -135,7 +133,7 @@ impl InterledgerNode {
         let ilp_address_clone = ilp_address.clone();
         let ilp_address_clone2 = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
-        let default_spsp_account = self.default_spsp_account;
+        let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
         let route_broadcast_interval = self.route_broadcast_interval;
 
@@ -249,7 +247,7 @@ impl InterledgerNode {
                                         incoming_service.clone(),
                                     );
                                     if let Some(account_id) = default_spsp_account {
-                                        api.default_spsp_account(format!("{}", account_id));
+                                        api.default_spsp_account(account_id);
                                     }
                                     let listener = TcpListener::bind(&http_address)
                                         .expect("Unable to bind to HTTP address");
