@@ -18,6 +18,8 @@ use tower_web::{net::ConnectionStream, Extract, Response, ServiceBuilder};
 mod routes;
 use self::routes::*;
 
+pub(crate) mod client;
+
 pub(crate) const BEARER_TOKEN_START: usize = 7;
 
 pub trait NodeStore: Clone + Send + Sync + 'static {

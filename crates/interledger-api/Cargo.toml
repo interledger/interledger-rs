@@ -27,7 +27,7 @@ tower-web = "0.3.7"
 reqwest = "0.9.18"
 url = "2.1.0"
 tokio-executor = "0.1.7"
-tokio-retry = "0.2.0"
+futures-retry = "0.3.3"
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
