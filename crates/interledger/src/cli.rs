@@ -49,7 +49,7 @@ pub fn send_spsp_payment_btp(
     receiver: &str,
     amount: u64,
     quiet: bool,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = (), Error = ()> + Send {
     let receiver = receiver.to_string();
     let btp_server = parse_btp_url(btp_server).unwrap();
     let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
@@ -118,7 +118,7 @@ pub fn send_spsp_payment_http(
     receiver: &str,
     amount: u64,
     quiet: bool,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = (), Error = ()> + Send {
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
     let account = if let Some(token) = url.password() {
