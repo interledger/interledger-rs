@@ -54,19 +54,21 @@ fn xrp_ledger_settlement() {
     let bob_redis_port = get_open_port(Some(6380));
     let mut alice_engine_redis = RedisServer::spawn_with_port(alice_redis_port);
     let mut bob_engine_redis = RedisServer::spawn_with_port(bob_redis_port);
+    let alice_xrp_credentials = test_helpers::get_xrp_credentials();
     let mut engine_alice = start_xrp_engine(
         "http://localhost:3011",
         alice_redis_port,
         node1_engine,
-        "rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV",
-        "sahVoeg97nuitefnzL9GHjp2Z6kpj",
+        &alice_xrp_credentials.address,
+        &alice_xrp_credentials.secret,
     );
+    let bob_xrp_credentials = test_helpers::get_xrp_credentials();
     let mut engine_bob = start_xrp_engine(
         "http://localhost:3021",
         bob_redis_port,
         node2_engine,
-        "r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K",
-        "ssnYUDNeNQrNij2EVJG6dDw258jA6",
+        &bob_xrp_credentials.address,
+        &bob_xrp_credentials.secret,
     );
 
     let mut runtime = RuntimeBuilder::new()

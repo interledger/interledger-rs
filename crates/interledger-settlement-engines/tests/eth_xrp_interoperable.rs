@@ -59,19 +59,21 @@ fn eth_xrp_interoperable() {
     let node3_redis_port = get_open_port(Some(6380));
     let mut node2_engine_redis = RedisServer::spawn_with_port(node2_redis_port);
     let mut node3_engine_redis = RedisServer::spawn_with_port(node3_redis_port);
+    let node2_xrp_credentials = test_helpers::get_xrp_credentials();
     let mut node2_xrp_engine = start_xrp_engine(
         &format!("http://localhost:{}", node2_settlement),
         node2_redis_port,
         node2_xrp_engine_port,
-        "rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV",
-        "sahVoeg97nuitefnzL9GHjp2Z6kpj",
+        &node2_xrp_credentials.address,
+        &node2_xrp_credentials.secret,
     );
+    let node3_xrp_credentials = test_helpers::get_xrp_credentials();
     let mut node3_xrp_engine = start_xrp_engine(
         &format!("http://localhost:{}", node3_settlement),
         node3_redis_port,
         node3_xrp_engine_port,
-        "r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K",
-        "ssnYUDNeNQrNij2EVJG6dDw258jA6",
+        &node3_xrp_credentials.address,
+        &node3_xrp_credentials.secret,
     );
 
     let node1_eth_key =
