@@ -6,17 +6,10 @@ use ring::{
 };
 
 const NONCE_LENGTH: usize = 12;
-static HMAC_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_hmac_key";
 static ENCRYPTION_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_encryption_key";
 
-pub fn generate_keys(
-    server_secret: &[u8],
-) -> (hmac::SigningKey, aead::SealingKey, aead::OpeningKey) {
+pub fn generate_keys(server_secret: &[u8]) -> (aead::SealingKey, aead::OpeningKey) {
     let generation_key = hmac::SigningKey::new(&digest::SHA256, server_secret);
-    let hmac_key = hmac::SigningKey::new(
-        &digest::SHA256,
-        hmac::sign(&generation_key, HMAC_KEY_GENERATION_STRING).as_ref(),
-    );
     let encryption_key = aead::SealingKey::new(
         &aead::AES_256_GCM,
         hmac::sign(&generation_key, ENCRYPTION_KEY_GENERATION_STRING).as_ref(),
@@ -27,7 +20,8 @@ pub fn generate_keys(
         hmac::sign(&generation_key, ENCRYPTION_KEY_GENERATION_STRING).as_ref(),
     )
     .unwrap();
-    (hmac_key, encryption_key, decryption_key)
+    // is the generation key cleared from memory when it's dropped here?
+    (encryption_key, decryption_key)
 }
 
 pub fn encrypt_token(encryption_key: &aead::SealingKey, token: &[u8]) -> Bytes {
@@ -84,7 +78,7 @@ mod encryption {
 
     #[test]
     fn encrypts_and_decrypts() {
-        let (_, encryption_key, decryption_key) = generate_keys(&[9; 32]);
+        let (encryption_key, decryption_key) = generate_keys(&[9; 32]);
         let encrypted = encrypt_token(&encryption_key, b"test test");
         let decrypted = decrypt_token(&decryption_key, encrypted.as_ref());
         assert_eq!(

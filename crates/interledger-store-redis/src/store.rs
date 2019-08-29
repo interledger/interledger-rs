@@ -6,8 +6,6 @@
 //   routes:current         hash        dynamic routing table
 //   routes:static          hash        static routing table
 //   accounts:<id>          hash        information for each account
-//   http_auth              hash        maps hmac of cryptographic credentials to an account
-//   btp_auth               hash        maps hmac of cryptographic credentials to an account
 //   btp_outgoing
 // For interactive exploration of the store,
 // use the redis-cli tool included with your redis install.
@@ -42,7 +40,7 @@ use parking_lot::RwLock;
 use redis::{
     self, aio::SharedConnection, cmd, Client, ConnectionInfo, PipelineCommands, Script, Value,
 };
-use ring::{aead, hmac};
+use ring::aead;
 use std::{
     iter::FromIterator,
     str,
@@ -210,7 +208,7 @@ impl RedisStoreBuilder {
     }
 
     pub fn connect(&self) -> impl Future<Item = RedisStore, Error = ()> {
-        let (hmac_key, encryption_key, decryption_key) = generate_keys(&self.secret[..]);
+        let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         let poll_interval = self.poll_interval;
 
         result(Client::open(self.redis_uri.clone()))
@@ -226,7 +224,6 @@ impl RedisStoreBuilder {
                     connection: Arc::new(connection),
                     exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                     routes: Arc::new(RwLock::new(HashMap::new())),
-                    hmac_key: Arc::new(hmac_key),
                     encryption_key: Arc::new(encryption_key),
                     decryption_key: Arc::new(decryption_key),
                 };
@@ -289,7 +286,6 @@ pub struct RedisStore {
     connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
-    hmac_key: Arc<hmac::SigningKey>, // redisstore stores a key, this must be protected
     encryption_key: Arc<aead::SealingKey>,
     decryption_key: Arc<aead::OpeningKey>,
 }
@@ -391,20 +387,6 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
 
-        // Instead of storing the incoming secrets, we store the HMAC digest of them
-        // (This is better than encrypting because the output is deterministic so we can look
-        // up the account by the HMAC of the auth details submitted by the account holder over the wire)
-        let btp_incoming_token_hmac = account
-            .btp_incoming_token
-            .clone()
-            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
-        let btp_incoming_token_hmac_clone = btp_incoming_token_hmac;
-        let http_incoming_token_hmac = account
-            .http_incoming_token
-            .clone()
-            .map(|token| hmac::sign(&self.hmac_key, token.as_bytes()));
-        let http_incoming_token_hmac_clone = http_incoming_token_hmac;
-
         Box::new(
             // Check to make sure an account with this ID already exists
             redis::cmd("EXISTS")
@@ -436,15 +418,6 @@ impl RedisStore {
                         .arg(accounts_key(account.id))
                         .arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
-
-                    // Set incoming auth details
-                    if let Some(auth) = btp_incoming_token_hmac_clone {
-                        pipe.hset("btp_auth", auth.as_ref(), account.id).ignore();
-                    }
-
-                    if let Some(auth) = http_incoming_token_hmac_clone {
-                        pipe.hset("http_auth", auth.as_ref(), account.id).ignore();
-                    }
 
                     if account.send_routes {
                         pipe.sadd("send_routes_to", account.id).ignore();

@@ -61,7 +61,6 @@ pub struct Account {
     pub(crate) amount_per_minute_limit: Option<u64>,
     pub(crate) settlement_engine_url: Option<Url>,
 }
-
 fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
