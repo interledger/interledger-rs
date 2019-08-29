@@ -5,7 +5,7 @@ authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Client and server implementations of the STREAM transport protocol"
 license = "Apache-2.0"
 edition = "2018"
-repository = "https://github.com/emschwartz/interledger-rs"
+repository = "https://github.com/interledger-rs/interledger-rs"
 
 # Optional feature to log connection statistics using a CSV file
 [features]

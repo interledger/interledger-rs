@@ -5,7 +5,7 @@ authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Data store for Interledger.js using Redis"
 license = "Apache-2.0"
 edition = "2018"
-repository = "https://github.com/emschwartz/interledger-rs"
+repository = "https://github.com/interledger-rs/interledger-rs"
 
 [lib]
 name = "interledger_store_redis"

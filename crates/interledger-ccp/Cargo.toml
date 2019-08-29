@@ -5,7 +5,7 @@ authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Implementation of the Interledger Dynamic Configuration Protocol (ILDCP)"
 license = "Apache-2.0"
 edition = "2018"
-repository = "https://github.com/emschwartz/interledger-rs"
+repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 bytes = "0.4.12"
@@ -21,4 +21,4 @@ parking_lot = "0.7.1"
 ring = "0.14.6"
 tokio-executor = "0.1.7"
 tokio-timer = "0.2.10"
-serde = { version = "1.0.98", features = ["derive"] }
+serde = { version = "1.0.99", features = ["derive"] }

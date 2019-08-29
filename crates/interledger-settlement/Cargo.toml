@@ -5,7 +5,7 @@ authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Settlement-related components for Interledger.rs"
 license = "Apache-2.0"
 edition = "2018"
-repository = "https://github.com/emschwartz/interledger-rs"
+repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 bytes = "0.4.12"
@@ -16,7 +16,7 @@ interledger-service = { path = "../interledger-service", version = "0.2.1" }
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 log = "0.4.6"
 reqwest = "0.9.17"
-serde = "1.0.91"
+serde = "1.0.99"
 serde_json = "1.0.39"
 tower-web = "0.3.7"
 url = "2.1.0"

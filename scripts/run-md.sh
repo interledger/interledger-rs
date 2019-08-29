@@ -10,9 +10,12 @@
 # This is largely intended for commands that make the output more readable
 
 {
-  # if the first argument is given, it is considered as a file input
-  if [ -n $1  ]; then
+  # if the first argument is a file, run it
+  if [ -f $1  ]; then
     cat $1
+  elif [ -d $1 ]; then
+    # if the argument is a directory, run the README.md file in it
+    cat $1/README.md
   else
     cat -
   fi

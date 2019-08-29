@@ -6,7 +6,8 @@ use interledger_settlement_engines::engines::ethereum_ledger::run_ethereum_engin
 use interledger_store_redis::Account;
 use interledger_store_redis::AccountId;
 use redis::ConnectionInfo;
-use serde::Serialize;
+use reqwest;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
@@ -15,12 +16,15 @@ use std::str;
 use std::thread::sleep;
 use std::time::Duration;
 
-#[derive(serde::Deserialize)]
+#[allow(unused)]
+static XRP_FAUCET_URL: &str = "https://faucet.altnet.rippletest.net/accounts";
+
+#[derive(Deserialize)]
 pub struct DeliveryData {
     pub delivered_amount: u64,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 pub struct BalanceData {
     pub balance: String,
 }
@@ -186,4 +190,30 @@ pub fn get_balance<T: Display>(
             let ret: BalanceData = serde_json::from_slice(&body).unwrap();
             Ok(ret.balance.parse().unwrap())
         })
+}
+
+#[derive(Deserialize, Debug)]
+struct FaucetResponse {
+    pub account: XrpCredentials,
+    pub balance: u64,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct XrpCredentials {
+    pub address: String,
+    pub secret: String,
+}
+
+#[allow(unused)]
+pub fn get_xrp_credentials() -> XrpCredentials {
+    // TODO make this async
+    let client = reqwest::Client::new();
+    let mut res = client
+        .post(XRP_FAUCET_URL)
+        .send()
+        .expect("Unable to get new XRP testnet credentials");
+    let body: FaucetResponse = res
+        .json()
+        .expect("Got unexpected response from XRP testnet faucet");
+    body.account
 }
