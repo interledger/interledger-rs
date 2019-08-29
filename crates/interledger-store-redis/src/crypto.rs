@@ -8,6 +8,67 @@ use ring::{
 const NONCE_LENGTH: usize = 12;
 static ENCRYPTION_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_encryption_key";
 
+use core::sync::atomic;
+use secrecy::DebugSecret;
+use std::ptr;
+use zeroize::Zeroize;
+
+#[derive(Debug)]
+pub struct EncryptionKey(pub(crate) aead::SealingKey);
+
+#[derive(Debug)]
+pub struct DecryptionKey(pub(crate) aead::OpeningKey);
+
+impl DebugSecret for EncryptionKey {}
+impl DebugSecret for DecryptionKey {}
+
+impl Zeroize for EncryptionKey {
+    fn zeroize(&mut self) {
+        // Instead of clearing the memory, we create a key from an empty
+        // slice as a secret.
+        let empty_key = EncryptionKey(aead::SealingKey::new(&aead::AES_256_GCM, &[0; 32]).unwrap());
+        volatile_write(self, empty_key);
+        atomic_fence();
+    }
+}
+
+impl Drop for EncryptionKey {
+    fn drop(&mut self) {
+        self.zeroize()
+    }
+}
+
+impl Zeroize for DecryptionKey {
+    fn zeroize(&mut self) {
+        // Instead of clearing the memory, we create a key from an empty
+        // slice as a secret.
+        let empty_key = DecryptionKey(aead::OpeningKey::new(&aead::AES_256_GCM, &[0; 32]).unwrap());
+        volatile_write(self, empty_key);
+        atomic_fence();
+    }
+}
+
+impl Drop for DecryptionKey {
+    fn drop(&mut self) {
+        self.zeroize()
+    }
+}
+
+// this logic is taken from: https://github.com/iqlusioninc/crates/blob/develop/zeroize/src/lib.rs#L388-L400
+// Perform a volatile write to the destination
+#[inline]
+fn volatile_write<T>(dst: &mut T, src: T) {
+    unsafe { ptr::write_volatile(dst, src) }
+}
+
+/// Use fences to prevent accesses from being reordered before this
+/// point, which should hopefully help ensure that all accessors
+/// see zeroes after this point.
+#[inline]
+fn atomic_fence() {
+    atomic::compiler_fence(atomic::Ordering::SeqCst);
+}
+
 pub fn generate_keys(server_secret: &[u8]) -> (aead::SealingKey, aead::OpeningKey) {
     let generation_key = hmac::SigningKey::new(&digest::SHA256, server_secret);
     let encryption_key = aead::SealingKey::new(

@@ -12,7 +12,9 @@ use interledger_service_util::{
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
 use log::error;
-use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value};
+use redis::{
+    from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
+};
 
 use ring::aead;
 use serde::Serializer;

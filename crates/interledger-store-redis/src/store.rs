@@ -16,7 +16,7 @@
 //    hgetall <key>         the flattened list of every key/value entry within a hash
 
 use super::account::*;
-use super::crypto::generate_keys;
+use super::crypto::{generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -40,7 +40,6 @@ use parking_lot::RwLock;
 use redis::{
     self, aio::SharedConnection, cmd, Client, ConnectionInfo, PipelineCommands, Script, Value,
 };
-use ring::aead;
 use std::{
     iter::FromIterator,
     str,
@@ -51,7 +50,7 @@ use std::{
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 
-use secrecy::{DebugSecret, ExposeSecret, Secret};
+use secrecy::{ExposeSecret, Secret};
 use zeroize::Zeroize;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
@@ -218,8 +217,8 @@ impl RedisStoreBuilder {
                     connection: Arc::new(connection),
                     exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                     routes: Arc::new(RwLock::new(HashMap::new())),
-                    encryption_key: Arc::new(encryption_key),
-                    decryption_key: Arc::new(decryption_key),
+                    encryption_key: Arc::new(Secret::new(EncryptionKey(encryption_key))),
+                    decryption_key: Arc::new(Secret::new(DecryptionKey(decryption_key))),
                 };
 
                 // Start polling for rate updates
@@ -280,8 +279,8 @@ pub struct RedisStore {
     connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
-    encryption_key: Arc<aead::SealingKey>,
-    decryption_key: Arc<aead::OpeningKey>,
+    encryption_key: Arc<Secret<EncryptionKey>>,
+    decryption_key: Arc<Secret<DecryptionKey>>,
 }
 
 impl RedisStore {
@@ -337,7 +336,7 @@ impl RedisStore {
                     pipe.hset("usernames", account.username().as_ref(), id).ignore();
 
                     // Set account details
-                    pipe.cmd("HMSET").arg(accounts_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
+                    pipe.cmd("HMSET").arg(accounts_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key.expose_secret().0))
                         .ignore();
 
                     // Set balance-related details
@@ -410,7 +409,11 @@ impl RedisStore {
                     // Set account details
                     pipe.cmd("HMSET")
                         .arg(accounts_key(account.id))
-                        .arg(account.clone().encrypt_tokens(&encryption_key))
+                        .arg(
+                            account
+                                .clone()
+                                .encrypt_tokens(&encryption_key.expose_secret().0),
+                        )
                         .ignore();
 
                     if account.send_routes {
@@ -522,7 +525,9 @@ impl RedisStore {
                         if accounts.len() == num_accounts {
                             let accounts = accounts
                                 .into_iter()
-                                .map(|account| account.decrypt_tokens(&decryption_key))
+                                .map(|account| {
+                                    account.decrypt_tokens(&decryption_key.expose_secret().0)
+                                })
                                 .collect();
                             Ok(accounts)
                         } else {
@@ -722,7 +727,7 @@ impl BtpStore for RedisStore {
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
-                            let account = account.decrypt_tokens(&decryption_key);
+                            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
                             if let Some(t) = account.btp_incoming_token.clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
@@ -776,7 +781,9 @@ impl BtpStore for RedisStore {
                                             let accounts: Vec<Account> = accounts
                                                 .into_iter()
                                                 .map(|account| {
-                                                    account.decrypt_tokens(&decryption_key)
+                                                    account.decrypt_tokens(
+                                                        &decryption_key.expose_secret().0,
+                                                    )
                                                 })
                                                 .collect();
                                             Ok(accounts)
@@ -811,7 +818,7 @@ impl HttpStore for RedisStore {
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
-                            let account = account.decrypt_tokens(&decryption_key);
+                            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
                             if let Some(t) = account.http_incoming_token.clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
@@ -879,7 +886,9 @@ impl NodeStore for RedisStore {
                         let accounts: Vec<Account> = accounts
                             .into_iter()
                             .filter_map(|a| a)
-                            .map(|account| account.decrypt_tokens(&decryption_key))
+                            .map(|account| {
+                                account.decrypt_tokens(&decryption_key.expose_secret().0)
+                            })
                             .collect();
                         Ok(accounts)
                     },
@@ -1023,7 +1032,9 @@ impl RouteManagerStore for RedisStore {
                                             let accounts: Vec<Account> = accounts
                                                 .into_iter()
                                                 .map(|account| {
-                                                    account.decrypt_tokens(&decryption_key)
+                                                    account.decrypt_tokens(
+                                                        &decryption_key.expose_secret().0,
+                                                    )
                                                 })
                                                 .collect();
                                             Ok(accounts)
@@ -1075,7 +1086,9 @@ impl RouteManagerStore for RedisStore {
                                             let accounts: Vec<Account> = accounts
                                                 .into_iter()
                                                 .map(|account| {
-                                                    account.decrypt_tokens(&decryption_key)
+                                                    account.decrypt_tokens(
+                                                        &decryption_key.expose_secret().0,
+                                                    )
                                                 })
                                                 .collect();
                                             Ok(accounts)

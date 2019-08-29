@@ -38,7 +38,7 @@ url = { version = "2.1.0", features = ["serde"] }
 http = "0.1.17"
 uuid = { version = "0.7.4", features = ["serde"] }
 secrecy = { branch = "gakonst/serde-secret-bytes", features = ["serde", "bytes"], git = "https://github.com/gakonst/crates" }
-zeroize = { git = "https://github.com/iqlusioninc/crates", branch = "develop", features = ["bytes"] }
+zeroize = { git = "https://github.com/gakonst/crates", branch = "gakonst/serde-secret-bytes", features = ["bytes"] }
 
 [dev-dependencies]
 env_logger = "0.6.1"
