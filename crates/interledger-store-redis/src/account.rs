@@ -12,9 +12,7 @@ use interledger_service_util::{
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
 use log::error;
-use redis::{
-    from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
-};
+use redis::{from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value};
 
 use ring::aead;
 use serde::Serializer;
@@ -30,6 +28,9 @@ use uuid::{parser::ParseError, Uuid};
 use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
+use secrecy::ExposeSecret;
+use secrecy::SecretBytes;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
     pub(crate) id: AccountId,
@@ -42,15 +43,15 @@ pub struct Account {
     pub(crate) max_packet_amount: u64,
     pub(crate) min_balance: Option<i64>,
     pub(crate) http_endpoint: Option<Url>,
-    #[serde(serialize_with = "optional_bytes_to_utf8")]
-    pub(crate) http_incoming_token: Option<Bytes>,
-    #[serde(serialize_with = "optional_bytes_to_utf8")]
-    pub(crate) http_outgoing_token: Option<Bytes>,
+    #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
+    pub(crate) http_incoming_token: Option<SecretBytes>,
+    #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
+    pub(crate) http_outgoing_token: Option<SecretBytes>,
     pub(crate) btp_uri: Option<Url>,
-    #[serde(serialize_with = "optional_bytes_to_utf8")]
-    pub(crate) btp_incoming_token: Option<Bytes>,
-    #[serde(serialize_with = "optional_bytes_to_utf8")]
-    pub(crate) btp_outgoing_token: Option<Bytes>,
+    #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
+    pub(crate) btp_incoming_token: Option<SecretBytes>,
+    #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
+    pub(crate) btp_outgoing_token: Option<SecretBytes>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
     pub(crate) routing_relation: RoutingRelation,
@@ -68,12 +69,15 @@ where
     serializer.serialize_str(str::from_utf8(address.as_ref()).unwrap_or(""))
 }
 
-fn optional_bytes_to_utf8<S>(bytes: &Option<Bytes>, serializer: S) -> Result<S::Ok, S::Error>
+fn optional_secret_bytes_to_utf8<S>(
+    bytes: &Option<SecretBytes>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     if let Some(bytes) = bytes {
-        serializer.serialize_some(str::from_utf8(bytes.as_ref()).unwrap_or(""))
+        serializer.serialize_some(str::from_utf8(bytes.expose_secret().as_ref()).unwrap_or(""))
     } else {
         serializer.serialize_none()
     }
@@ -91,9 +95,9 @@ impl Account {
             let mut btp_uri = Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?;
             let username = btp_uri.username();
             let btp_outgoing_token = if username != "" {
-                btp_uri
-                    .password()
-                    .map(|password| Bytes::from(format!("{}:{}", username, password)))
+                btp_uri.password().map(|password| {
+                    SecretBytes::from(Bytes::from(format!("{}:{}", username, password)))
+                })
             } else {
                 None
             };
@@ -104,9 +108,15 @@ impl Account {
             (None, None)
         };
 
-        let http_incoming_token = details.http_incoming_token.map(Bytes::from);
-        let btp_incoming_token = details.btp_incoming_token.map(Bytes::from);
-        let http_outgoing_token = details.http_outgoing_token.map(Bytes::from);
+        let http_incoming_token = details
+            .http_incoming_token
+            .map(|token| SecretBytes::from(Bytes::from(token)));
+        let btp_incoming_token = details
+            .btp_incoming_token
+            .map(|token| SecretBytes::from(Bytes::from(token)));
+        let http_outgoing_token = details
+            .http_outgoing_token
+            .map(|token| SecretBytes::from(Bytes::from(token)));
         let routing_relation = if let Some(ref relation) = details.routing_relation {
             RoutingRelation::from_str(relation)?
         } else {
@@ -151,10 +161,28 @@ impl Account {
         encryption_key: &aead::SealingKey,
     ) -> AccountWithEncryptedTokens {
         if let Some(ref token) = self.btp_outgoing_token {
-            self.btp_outgoing_token = Some(encrypt_token(encryption_key, token));
+            self.btp_outgoing_token = Some(SecretBytes::from(encrypt_token(
+                encryption_key,
+                &token.expose_secret(),
+            )));
         }
         if let Some(ref token) = self.http_outgoing_token {
-            self.http_outgoing_token = Some(encrypt_token(encryption_key, token));
+            self.http_outgoing_token = Some(SecretBytes::from(encrypt_token(
+                encryption_key,
+                &token.expose_secret(),
+            )));
+        }
+        if let Some(ref token) = self.btp_incoming_token {
+            self.btp_incoming_token = Some(SecretBytes::from(encrypt_token(
+                encryption_key,
+                &token.expose_secret(),
+            )));
+        }
+        if let Some(ref token) = self.http_incoming_token {
+            self.http_incoming_token = Some(SecretBytes::from(encrypt_token(
+                encryption_key,
+                &token.expose_secret(),
+            )));
         }
         AccountWithEncryptedTokens { account: self }
     }
@@ -167,10 +195,24 @@ pub struct AccountWithEncryptedTokens {
 impl AccountWithEncryptedTokens {
     pub fn decrypt_tokens(mut self, decryption_key: &aead::OpeningKey) -> Account {
         if let Some(ref encrypted) = self.account.btp_outgoing_token {
-            self.account.btp_outgoing_token = decrypt_token(decryption_key, encrypted);
+            self.account.btp_outgoing_token =
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map(|decrypted| SecretBytes::from(decrypted));
         }
         if let Some(ref encrypted) = self.account.http_outgoing_token {
-            self.account.http_outgoing_token = decrypt_token(decryption_key, encrypted);
+            self.account.http_outgoing_token =
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map(|decrypted| SecretBytes::from(decrypted));
+        }
+        if let Some(ref encrypted) = self.account.btp_incoming_token {
+            self.account.btp_incoming_token =
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map(|decrypted| SecretBytes::from(decrypted));
+        }
+        if let Some(ref encrypted) = self.account.http_incoming_token {
+            self.account.http_incoming_token =
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map(|decrypted| SecretBytes::from(decrypted));
         }
 
         self.account
@@ -261,11 +303,17 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         }
         if let Some(http_incoming_token) = account.http_incoming_token.as_ref() {
             "http_incoming_token".write_redis_args(&mut rv);
-            http_incoming_token.as_ref().write_redis_args(&mut rv);
+            http_incoming_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
         }
         if let Some(http_outgoing_token) = account.http_outgoing_token.as_ref() {
             "http_outgoing_token".write_redis_args(&mut rv);
-            http_outgoing_token.as_ref().write_redis_args(&mut rv);
+            http_outgoing_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
         }
         if let Some(btp_uri) = account.btp_uri.as_ref() {
             "btp_uri".write_redis_args(&mut rv);
@@ -273,11 +321,17 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         }
         if let Some(btp_incoming_token) = account.btp_incoming_token.as_ref() {
             "btp_incoming_token".write_redis_args(&mut rv);
-            btp_incoming_token.as_ref().write_redis_args(&mut rv);
+            btp_incoming_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
         }
         if let Some(btp_outgoing_token) = account.btp_outgoing_token.as_ref() {
             "btp_outgoing_token".write_redis_args(&mut rv);
-            btp_outgoing_token.as_ref().write_redis_args(&mut rv);
+            btp_outgoing_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
         }
         if let Some(settle_threshold) = account.settle_threshold {
             "settle_threshold".write_redis_args(&mut rv);
@@ -346,11 +400,15 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 asset_code: get_value("asset_code", &hash)?,
                 asset_scale: get_value("asset_scale", &hash)?,
                 http_endpoint: get_url_option("http_endpoint", &hash)?,
-                http_incoming_token: get_bytes_option("http_incoming_token", &hash)?,
-                http_outgoing_token: get_bytes_option("http_outgoing_token", &hash)?,
+                http_incoming_token: get_bytes_option("http_incoming_token", &hash)?
+                    .map(|token| SecretBytes::from(token)),
+                http_outgoing_token: get_bytes_option("http_outgoing_token", &hash)?
+                    .map(|token| SecretBytes::from(token)),
                 btp_uri: get_url_option("btp_uri", &hash)?,
-                btp_incoming_token: get_bytes_option("btp_incoming_token", &hash)?,
-                btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?,
+                btp_incoming_token: get_bytes_option("btp_incoming_token", &hash)?
+                    .map(|token| SecretBytes::from(token)),
+                btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?
+                    .map(|token| SecretBytes::from(token)),
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
                 min_balance: get_value_option("min_balance", &hash)?,
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
@@ -460,7 +518,7 @@ impl HttpAccount for Account {
     fn get_http_auth_token(&self) -> Option<&str> {
         self.http_outgoing_token
             .as_ref()
-            .map(|s| str::from_utf8(s.as_ref()).unwrap_or_default())
+            .map(|s| str::from_utf8(s.expose_secret().as_ref()).unwrap_or_default())
     }
 }
 
@@ -471,7 +529,7 @@ impl BtpAccount for Account {
 
     fn get_btp_token(&self) -> Option<&[u8]> {
         if let Some(ref token) = self.btp_outgoing_token {
-            Some(token)
+            Some(&token.expose_secret())
         } else {
             None
         }
