@@ -12,7 +12,8 @@ use reqwest::r#async::Client;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
-use tokio_retry::{strategy::FixedInterval, Retry};
+use tokio_executor::spawn;
+use tokio_retry::{strategy::ExponentialBackoff, Retry};
 use tower_web::{impl_web, Response};
 use url::Url;
 
@@ -86,51 +87,44 @@ impl_web! {
             let se_url = body.settlement_engine_url.clone();
             self.validate_admin(authorization)
                 .and_then(move |store| store.insert_account(body)
-                .map_err(|_| Response::error(500))
                 .and_then(|account| {
                     // if the account had a SE associated with it, then register
                     // the account in the SE.
                     if let Some(se_url)  = se_url {
                         let id = account.id();
-                        Either::A(result(Url::parse(&se_url))
-                        .map_err(|_| Response::error(500))
-                        .and_then(move |mut se_url| {
-                            se_url
-                                .path_segments_mut()
-                                .expect("Invalid settlement engine URL")
-                                .push("accounts");
-                            trace!(
-                                "Sending account {} creation request to settlement engine: {:?}",
-                                id,
-                                se_url.clone()
-                            );
-                            let action = move || {
-                                Client::new().post(se_url.as_ref())
-                                .json(&json!({"id" : id.to_string()}))
-                                .send()
-                                .map_err(move |err| {
-                                    error!("Error sending account creation command to the settlement engine: {:?}", err)
-                                })
-                                .and_then(move |response| {
-                                    if response.status().is_success() {
-                                        trace!("Account {} created on the SE", id);
-                                        Ok(())
-                                    } else {
-                                        error!("Error creating account. Settlement engine responded with HTTP code: {}", response.status());
-                                        Err(())
-                                    }
-                                })
-                            };
-                            Retry::spawn(FixedInterval::from_millis(2000).take(MAX_RETRIES), action)
-                            .map_err(|_| Response::error(500))
-                            .and_then(move |_| {
-                                Ok(json!(account))
+                        let mut se_url = Url::parse(&se_url).map_err(|err| error!("Invalid URL: {:?}", err))?;
+                        se_url
+                            .path_segments_mut()
+                            .expect("Invalid settlement engine URL")
+                            .push("accounts");
+                        trace!(
+                            "Sending account {} creation request to settlement engine: {:?}",
+                            id,
+                            se_url.clone()
+                        );
+                        let action = move || {
+                            Client::new()
+                            .post(se_url.as_ref())
+                            .json(&json!({"id" : id.to_string()}))
+                            .send()
+                            .map_err(move |err| {
+                                error!("Error sending account creation command to the settlement engine: {:?}", err)
                             })
-                        }))
-                    } else {
-                        Either::B(ok(json!(account)))
+                            .and_then(move |response| {
+                                if response.status().is_success() {
+                                    trace!("Account {} created on the SE", id);
+                                    Ok(())
+                                } else {
+                                    error!("Error creating account. Settlement engine responded with HTTP code: {}", response.status());
+                                    Err(())
+                                }
+                            })
+                        };
+                        spawn(Retry::spawn(ExponentialBackoff::from_millis(10).take(MAX_RETRIES), action).map_err(|_| error!("Failed to keep retrying!")));
                     }
-                }))
+                    Ok(json!(account))
+                })
+                .map_err(|_| Response::builder().status(500).body(()).unwrap()))
         }
 
         #[get("/accounts")]
