@@ -198,23 +198,19 @@ impl AccountWithEncryptedTokens {
     pub fn decrypt_tokens(mut self, decryption_key: &aead::OpeningKey) -> Account {
         if let Some(ref encrypted) = self.account.btp_outgoing_token {
             self.account.btp_outgoing_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret())
-                    .map(|decrypted| SecretBytes::from(decrypted));
+                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
         }
         if let Some(ref encrypted) = self.account.http_outgoing_token {
             self.account.http_outgoing_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret())
-                    .map(|decrypted| SecretBytes::from(decrypted));
+                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
         }
         if let Some(ref encrypted) = self.account.btp_incoming_token {
             self.account.btp_incoming_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret())
-                    .map(|decrypted| SecretBytes::from(decrypted));
+                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
         }
         if let Some(ref encrypted) = self.account.http_incoming_token {
             self.account.http_incoming_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret())
-                    .map(|decrypted| SecretBytes::from(decrypted));
+                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
         }
 
         self.account
@@ -403,14 +399,14 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 asset_scale: get_value("asset_scale", &hash)?,
                 http_endpoint: get_url_option("http_endpoint", &hash)?,
                 http_incoming_token: get_bytes_option("http_incoming_token", &hash)?
-                    .map(|token| SecretBytes::from(token)),
+                    .map(SecretBytes::from),
                 http_outgoing_token: get_bytes_option("http_outgoing_token", &hash)?
-                    .map(|token| SecretBytes::from(token)),
+                    .map(SecretBytes::from),
                 btp_uri: get_url_option("btp_uri", &hash)?,
                 btp_incoming_token: get_bytes_option("btp_incoming_token", &hash)?
-                    .map(|token| SecretBytes::from(token)),
+                    .map(SecretBytes::from),
                 btp_outgoing_token: get_bytes_option("btp_outgoing_token", &hash)?
-                    .map(|token| SecretBytes::from(token)),
+                    .map(SecretBytes::from),
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
                 min_balance: get_value_option("min_balance", &hash)?,
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
