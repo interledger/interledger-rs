@@ -986,7 +986,7 @@ fn prefixed_mesage(challenge: Vec<u8>) -> Vec<u8> {
 pub fn run_ethereum_engine<R, Si>(
     redis_uri: R,
     ethereum_endpoint: String,
-    settlement_port: u16,
+    http_address: SocketAddr,
     private_key: Si,
     chain_id: u8,
     confirmations: u8,
@@ -1017,12 +1017,11 @@ where
                     .token_address(token_address)
                     .connect();
 
-            let addr = SocketAddr::from(([127, 0, 0, 1], settlement_port));
-            let listener =
-                TcpListener::bind(&addr).expect("Unable to bind to Settlement Engine address");
+            let listener = TcpListener::bind(&http_address)
+                .expect("Unable to bind to Settlement Engine address");
             let api = SettlementEngineApi::new(engine, ethereum_store);
             tokio::spawn(api.serve(listener.incoming()));
-            info!("Ethereum Settlement Engine listening on: {}", addr);
+            info!("Ethereum Settlement Engine listening on: {}", http_address);
             Ok(())
         })
 }

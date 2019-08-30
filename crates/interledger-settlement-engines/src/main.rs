@@ -25,11 +25,10 @@ pub fn main() {
                         .takes_value(true)
                         .index(1)
                         .help("Name of config file (in JSON, TOML, YAML, or INI format)"),
-                    Arg::with_name("port")
-                        .long("port")
-                        .short("p")
+                    Arg::with_name("http_address")
+                        .long("http_address")
                         .takes_value(true)
-                        .default_value("3000")
+                        .default_value("127.0.0.1:3000")
                         .help("Port to listen for settlement requests on"),
                     Arg::with_name("key")
                         .long("key")
@@ -237,7 +236,7 @@ impl Runnable<EthereumLedgerOpt> for Runner {
         tokio::run(run_ethereum_engine(
             redis_uri,
             opt.ethereum_endpoint.clone(),
-            opt.port,
+            opt.http_address.parse().unwrap(),
             opt.key.clone(),
             opt.chain_id,
             opt.confirmations,
@@ -252,8 +251,8 @@ impl Runnable<EthereumLedgerOpt> for Runner {
 
 #[derive(Deserialize, Clone)]
 struct EthereumLedgerOpt {
-    port: u16,
     key: String,
+    http_address: String,
     ethereum_endpoint: String,
     token_address: String,
     connector_url: String,
