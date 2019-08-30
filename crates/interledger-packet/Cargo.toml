@@ -18,7 +18,7 @@ regex = "1.1.6"
 lazy_static = "1.3"
 
 [dev-dependencies]
-criterion = "0.2.10"
+criterion = "0.3.0"
 lazy_static = "1.3"
  # "serde" is both here and in `[dependencies]` to ensure it is included during
 # testing, but optional otherwise.
