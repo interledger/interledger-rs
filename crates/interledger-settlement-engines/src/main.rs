@@ -1,7 +1,8 @@
 use clap::{crate_version, App, AppSettings, Arg, ArgMatches, SubCommand};
-use config::{Config, ConfigError, Source, Value};
+use config::{Config, ConfigError, FileFormat, Source, Value};
 use serde::Deserialize;
 use std::ffi::{OsStr, OsString};
+use std::io::Read;
 use std::str::FromStr;
 use tokio;
 use url::Url;
@@ -24,7 +25,10 @@ pub fn main() {
                     Arg::with_name("config")
                         .takes_value(true)
                         .index(1)
-                        .help("Name of config file (in JSON, TOML, YAML, or INI format)"),
+                        .help("Name of config file (in JSON, HJSON, TOML, YAML, or INI format)"),
+                    Arg::with_name("stdin")
+                        .long("stdin")
+                        .help("If given, read config from stdin (in JSON, HJSON, TOML, YAML, or INI format)"),
                     Arg::with_name("http_address")
                         .long("http_address")
                         .takes_value(true)
@@ -83,10 +87,15 @@ pub fn main() {
         ]);
 
     let mut config = get_env_config("ilp");
-    if let Ok(path) = merge_config_file(app.clone(), &mut config) {
+    if let Ok((path, stdin_flag, config_file)) = precheck_arguments(app.clone()) {
+        if stdin_flag {
+            merge_std_in(&mut config);
+        }
+        if let Some(ref config_path) = config_file {
+            merge_config_file(config_path, &mut config);
+        }
         set_app_env(&config, &mut app, &path, path.len());
     }
-
     let matches = app.clone().get_matches();
     let runner = Runner::new();
     match matches.subcommand() {
@@ -99,7 +108,8 @@ pub fn main() {
     }
 }
 
-fn merge_config_file(mut app: App, config: &mut Config) -> Result<Vec<String>, ()> {
+// returns (subcommand paths, stdin flag, config path)
+fn precheck_arguments(mut app: App) -> Result<(Vec<String>, bool, Option<String>), ()> {
     // not to cause `required fields error`.
     reset_required(&mut app);
     let matches = app.get_matches_safe();
@@ -110,23 +120,59 @@ fn merge_config_file(mut app: App, config: &mut Config) -> Result<Vec<String>, (
     let matches = &matches.unwrap();
     let mut path = Vec::<String>::new();
     let subcommand = get_deepest_command(matches, &mut path);
-    if let Some(config_path) = subcommand.value_of("config") {
-        let file_config = config::File::with_name(config_path);
-        let file_config = file_config.collect().unwrap();
+    let mut config_path: Option<String> = None;
+    if let Some(config_path_arg) = subcommand.value_of("config") {
+        config_path = Some(config_path_arg.to_string());
+    };
+    let stdin_flag = subcommand.is_present("stdin");
+    Ok((path, stdin_flag, config_path))
+}
 
-        // if the key is not defined in the given config already, set it to the config
-        // because the original values override the ones from the config file
-        for (k, v) in file_config {
-            if config.get_str(&k).is_err() {
-                config.set(&k, v).unwrap();
+fn merge_config_file(config_path: &str, config: &mut Config) {
+    let file_config = config::File::with_name(config_path);
+    let file_config = file_config.collect().unwrap();
+    // if the key is not defined in the given config already, set it to the config
+    // because the original values override the ones from the config file
+    for (k, v) in file_config {
+        if config.get_str(&k).is_err() {
+            config.set(&k, v).unwrap();
+        }
+    }
+}
+
+fn merge_std_in(config: &mut Config) {
+    let stdin = std::io::stdin();
+    let mut stdin_lock = stdin.lock();
+    let mut buf = Vec::new();
+    if let Ok(_read) = stdin_lock.read_to_end(&mut buf) {
+        if let Ok(buf_str) = String::from_utf8(buf) {
+            let format: FileFormat;
+            if yaml_rust::YamlLoader::load_from_str(&buf_str).is_ok() {
+                format = FileFormat::Yaml;
+            } else if serde_json::from_str::<serde_json::Value>(&buf_str).is_ok() {
+                format = FileFormat::Json;
+            } else if toml::from_str::<toml::Value>(&buf_str).is_ok() {
+                format = FileFormat::Toml;
+            } else if serde_hjson::from_str::<serde_hjson::Value>(&buf_str).is_ok() {
+                format = FileFormat::Hjson;
+            } else if ini::Ini::load_from_str(&buf_str).is_ok() {
+                format = FileFormat::Ini;
+            } else {
+                return;
+            }
+            if let Ok(config_hash) = format.parse(None, &buf_str) {
+                // if the key is not defined in the given config already, set it to the config
+                // because the original values override the ones from the stdin
+                for (k, v) in config_hash {
+                    if config.get_str(&k).is_err() {
+                        config.set(&k, v).unwrap();
+                    }
+                }
             }
         }
     }
-    Ok(path)
 }
 
-// merge in other source of config options
-// note that previously set values will NOT be overwritten
 fn merge_args(config: &mut Config, matches: &ArgMatches) {
     for (key, value) in &matches.args {
         if config.get_str(key).is_ok() {

@@ -38,6 +38,11 @@ num-bigint = "0.2.2"
 num-traits = "0.2.8"
 lazy_static = "1.3.0"
 config = "0.9.3"
+rust-ini = "0.13"
+serde-hjson = "0.8.2"
+toml = "0.4.1"
+yaml-rust = "0.4"
+libc = "0.2.62"
 
 [dev-dependencies]
 lazy_static = "1.3"
