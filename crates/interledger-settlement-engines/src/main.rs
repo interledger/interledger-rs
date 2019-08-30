@@ -126,6 +126,8 @@ fn merge_config_file(mut app: App, config: &mut Config) -> Result<Vec<String>, (
     Ok(path)
 }
 
+// merge in other source of config options
+// note that previously set values will NOT be overwritten
 fn merge_args(config: &mut Config, matches: &ArgMatches) {
     for (key, value) in &matches.args {
         if config.get_str(key).is_ok() {

@@ -144,12 +144,12 @@ pub fn main() {
                         .long("secret_seed")
                         .takes_value(true)
                         .required(true)
-                        .help("Root secret used to derive encryption keys. This MUST NOT be changed after once you started up the node. You could obtain randomly generated one using `openssl rand -hex 32`"),
+                        .help("Root secret used to derive encryption keys. This MUST NOT be changed after once you started up the node. You can generate a random secret by running `openssl rand -hex 32`"),
                     Arg::with_name("admin_auth_token")
                         .long("admin_auth_token")
                         .takes_value(true)
                         .required(true)
-                        .help("HTTP Authorization token for the node admin (sent as a Bearer token). Refer to: https://bit.ly/2Lk4xgF https://bit.ly/2XaUiBb"),
+                        .help("HTTP Authorization token for the node admin (sent as a Bearer token)")
                     Arg::with_name("redis_connection")
                         .long("redis_connection")
                         .takes_value(true)
