@@ -1,5 +1,6 @@
 /// Wrapper around String to perform sanitization for usernames
 use regex::Regex;
+use std::convert::TryFrom;
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -20,6 +21,7 @@ lazy_static! {
 /// 2. Checks the string is 2-32 word characters only (no special characters except `_`)
 /// 3. Uses [case folding](https://www.w3.org/International/wiki/Case_folding) to convert to lowercase in a language-aware manner
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "&str")]
 pub struct Username(String);
 
 impl PartialEq for Username {
@@ -48,6 +50,14 @@ impl std::ops::Deref for Username {
 
     fn deref(&self) -> &str {
         self.0.as_ref()
+    }
+}
+
+impl TryFrom<&str> for Username {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Username, String> {
+        Username::from_str(value)
     }
 }
 
@@ -134,5 +144,25 @@ mod tests {
     fn formats_correctly() {
         let user = Username("alice".to_owned());
         assert_eq!(format!("{}:password", user), "alice:password");
+    }
+
+    #[test]
+    fn reject_invalid_usernames() {
+        let rejected_user = Username::from_str("no-hyphens-allowed");
+        assert!(rejected_user.is_err());
+    }
+
+    #[test]
+    fn deserialize_usernames() {
+        use serde_json;
+        let rejected_deserialize: Result<Username, _> =
+            serde_json::from_str(r#""no-hyphens-allowed""#);
+        assert!(rejected_deserialize.is_err());
+        let valid_deserialize: Result<Username, _> =
+            serde_json::from_str(r#""underscores_fine_though""#);
+        assert_eq!(
+            valid_deserialize.unwrap().0,
+            String::from("underscores_fine_though")
+        );
     }
 }
