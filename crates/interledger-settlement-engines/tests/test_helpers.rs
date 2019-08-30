@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::net::SocketAddr;
 use std::process::Command;
 use std::str;
 use std::thread::sleep;
@@ -69,14 +70,14 @@ pub fn start_xrp_engine(
 #[allow(unused)]
 pub fn start_eth_engine(
     db: ConnectionInfo,
-    engine_port: u16,
+    http_address: SocketAddr,
     key: String,
     settlement_port: u16,
 ) -> impl Future<Item = (), Error = ()> {
     run_ethereum_engine(
         db,
         "http://localhost:8545".to_string(),
-        engine_port,
+        http_address,
         key,
         1,
         0,

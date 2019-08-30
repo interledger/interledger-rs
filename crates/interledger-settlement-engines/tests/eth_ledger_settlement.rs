@@ -9,6 +9,7 @@ use interledger::{
 };
 use interledger_packet::Address;
 use interledger_service::Username;
+use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
@@ -46,10 +47,12 @@ fn eth_ledger_settlement() {
     let node1_http = get_open_port(Some(3010));
     let node1_settlement = get_open_port(Some(3011));
     let node1_engine = get_open_port(Some(3012));
+    let node1_engine_address = SocketAddr::from(([127, 0, 0, 1], node1_engine));
     let alice_key = "380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc".to_string();
     let node2_http = get_open_port(Some(3020));
     let node2_settlement = get_open_port(Some(3021));
     let node2_engine = get_open_port(Some(3022));
+    let node2_engine_address = SocketAddr::from(([127, 0, 0, 1], node2_engine));
     let bob_key = "cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e".to_string();
 
     let mut runtime = RuntimeBuilder::new()
@@ -71,7 +74,7 @@ fn eth_ledger_settlement() {
     };
     let node1_clone = node1.clone();
     runtime.spawn(
-        start_eth_engine(connection_info1, node1_engine, alice_key, node1_settlement).and_then(
+        start_eth_engine(connection_info1, node1_engine_address, alice_key, node1_settlement).and_then(
             move |_| {
                 // TODO insert the accounts via HTTP request
                 node1_clone
@@ -142,7 +145,7 @@ fn eth_ledger_settlement() {
         route_broadcast_interval: Some(200),
     };
     runtime.spawn(
-        start_eth_engine(connection_info2, node2_engine, bob_key, node2_settlement).and_then(
+        start_eth_engine(connection_info2, node2_engine_address, bob_key, node2_settlement).and_then(
             move |_| {
                 node2
                     .insert_account(AccountDetails {

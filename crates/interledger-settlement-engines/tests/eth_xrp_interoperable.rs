@@ -8,6 +8,7 @@ use interledger::{
 };
 use interledger_packet::Address;
 use serde_json::json;
+use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
@@ -42,10 +43,12 @@ fn eth_xrp_interoperable() {
     let node1_http = get_open_port(Some(3010));
     let node1_settlement = get_open_port(Some(3011));
     let node1_engine = get_open_port(Some(3012));
+    let node1_engine_address = SocketAddr::from(([127, 0, 0, 1], node1_engine));
 
     let node2_http = get_open_port(Some(3020));
     let node2_settlement = get_open_port(Some(3021));
     let node2_engine = get_open_port(Some(3022));
+    let node2_engine_address = SocketAddr::from(([127, 0, 0, 1], node2_engine));
     let node2_xrp_engine_port = get_open_port(Some(3023));
     let node2_btp = get_open_port(Some(3024));
 
@@ -82,13 +85,13 @@ fn eth_xrp_interoperable() {
         "cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e".to_string();
     let node1_eth_engine_fut = start_eth_engine(
         connection_info1.clone(),
-        node1_engine,
+        node1_engine_address,
         node1_eth_key,
         node1_settlement,
     );
     let node2_eth_engine_fut = start_eth_engine(
         connection_info2.clone(),
-        node2_engine,
+        node2_engine_address,
         node2_eth_key,
         node2_settlement,
     );
