@@ -149,7 +149,7 @@ pub fn main() {
                         .long("admin_auth_token")
                         .takes_value(true)
                         .required(true)
-                        .help("HTTP Authorization token for the node admin (sent as a Bearer token)")
+                        .help("HTTP Authorization token for the node admin (sent as a Bearer token)"),
                     Arg::with_name("redis_connection")
                         .long("redis_connection")
                         .takes_value(true)
