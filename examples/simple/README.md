@@ -7,106 +7,120 @@ This example sets up two local Interledger.rs nodes, peers them together, and se
 
 To run the full example, you can use [`run-md.sh`](../../scripts/run-md.sh) as described [here](../README.md). Otherwise, you can walk through each step below.
 
-Each of the services write their logs to files found under the `logs` directory. You can run `tail -f logs/node_a.log`, for example, to watch the logs of Node A.
+The logs of each service will be managed by Docker and you can watch the logs by `docker logs -f {container name}`. For instance, run `docker logs -f interledger-rs-node-a` to watch the logs of Node A.
 
 ![overview](images/overview.svg)
 
 ## Prerequisites
 
-- [Rust](#rust)
-- [Redis](#redis)
+- [Docker](#docker)
 
-### Rust
+### Docker
+Because we provide docker images for node and others on [Docker Hub](https://hub.docker.com/u/interledgerrs), in this example we utilize it. You have to install Docker if you don't have already.
 
-Because Interledger.rs is written in the Rust language, you need the Rust environment. Refer to the [Getting started](https://www.rust-lang.org/learn/get-started) page or just `curl https://sh.rustup.rs -sSf | sh` and follow the instruction.
-
-### Redis
-The Interledger.rs nodes currently use [Redis](https://redis.io/) to store their data (SQL database support coming soon!)
-
-- Compile and install from the source code
-    - [Download the source code here](https://redis.io/download)
-- Install using package managers
-    - Ubuntu: run `sudo apt-get install redis-server`
-    - macOS: If you use Homebrew, run `brew install redis`
-
-Make sure your Redis is empty. You could run `redis-cli flushall` to clear all the data.
+- Ubuntu: [Get Docker Engine - Community for Ubuntu](https://docs.docker.com/install/linux/docker-ce/ubuntu/)
+- macOS: [Install Docker Desktop for Mac](https://docs.docker.com/docker-for-mac/install/)
 
 ## Instructions
 
 <!--!
+docker --version > /dev/null || printf "\e[31mUh oh! You need to install Docker before running this example\e[m\n"
+
 printf "Stopping Interledger nodes\n"
 
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6379 shutdown
-fi
-
-if [ -f dump.rdb ] ; then
-    rm -f dump.rdb
-fi
-
-if lsof -tPi :7770 ; then
-    kill `lsof -tPi :7770`
-fi
-
-if lsof -tPi :8770 ; then
-    kill `lsof -tPi :8770`
-fi
-
-printf "\n"
+docker stop redis interledger-rs-node_a interledger-rs-node_b 2> /dev/null
 -->
 
-### 1. Build interledger.rs
-First of all, let's build interledger.rs. (This may take a couple of minutes)
+### 0. Clean up Docker
+If you have ever tried the other examples, clean up your docker because the names may conflict.
 
-<!--! printf "Building interledger.rs... (This may take a couple of minutes)\n" -->
-```bash
-cargo build --bins
+```bash #
+docker stop `docker ps -aq -f "name=interledger-rs-node"`
+docker rm `docker ps -aq -f "name=interledger-rs-node"`
+
+docker stop `docker ps -aq -f "name=interledger-rs-se_"`
+docker rm `docker ps -aq -f "name=interledger-rs-se_"`
+
+docker stop `docker ps -aq -f "name=redis"`
+docker rm `docker ps -aq -f "name=redis"`
+```
+
+### 1. Set up Docker
+First, let's set up a docker network so that containers could connect each other.
+
+<!--!
+NETWORK_ID=`docker network ls -f "name=interledger" --format="{{.ID}}"`
+if [ -z "${NETWORK_ID}" ]; then
+    printf "Creating a docker network...\n"
+    docker network create interledger
+fi
+-->
+```bash #
+docker network create interledger
 ```
 
 ### 2. Launch Redis
 
 <!--!
-redis-server --version > /dev/null || printf "\e[31mUh oh! You need to install redis-server before running this example\e[m\n"
+printf "\nStarting Redis...\n"
 -->
 
 ```bash
-# Create the logs directory if it doesn't already exist
-mkdir -p logs
-
-# Start Redis
-redis-server &> logs/redis.log &
+docker start redis ||
+docker run --name redis -d -p 6379:6379 --network=interledger redis:5.0.5
 ```
 
-When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis.log`
+When you want to watch logs, use the `docker logs` command. You can use the command like: `docker logs redis`.
 
 ### 3. Launch 2 Nodes
 
-```bash
-# Turn on debug logging for all of the interledger.rs components
-export RUST_LOG=interledger=debug
+<!--!
 
+printf "\nStarting nodes...\n"
+
+-->
+
+```bash
 # Start both nodes
 # Note that the configuration options can be passed as environment variables
 # or saved to a YAML file and passed to the node with the `--config` or `-c` CLI argument
-ILP_ADDRESS=example.node_a \
-ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
-ILP_ADMIN_AUTH_TOKEN=admin-a \
-ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/0 \
-ILP_HTTP_ADDRESS=127.0.0.1:7770 \
-ILP_BTP_ADDRESS=127.0.0.1:7768 \
-ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
-cargo run --package interledger -- node &> logs/node_a.log &
+# You can also pass it from STDIN
 
-ILP_ADDRESS=example.node_b \
-ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
-ILP_ADMIN_AUTH_TOKEN=admin-b \
-ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/1 \
-ILP_HTTP_ADDRESS=127.0.0.1:8770 \
-ILP_BTP_ADDRESS=127.0.0.1:8768 \
-ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
-cargo run --package interledger -- node &> logs/node_b.log &
+docker start interledger-rs-node_a ||
+docker run \
+    -e ILP_ADDRESS=example.node_a \
+    -e ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
+    -e ILP_ADMIN_AUTH_TOKEN=admin-a \
+    -e ILP_REDIS_CONNECTION=redis://redis:6379/0 \
+    -e ILP_HTTP_ADDRESS=0.0.0.0:7770 \
+    -e ILP_BTP_ADDRESS=0.0.0.0:7768 \
+    -e ILP_SETTLEMENT_ADDRESS=0.0.0.0:7771 \
+    -e ILP_DEFAULT_SPSP_ACCOUNT=0 \
+    -p 7768:7768 \
+    -p 7770:7770 \
+    -p 7771:7771 \
+    --network=interledger \
+    --name=interledger-rs-node_a \
+    -id \
+    interledgerrs/node node
+
+docker start interledger-rs-node_b ||
+docker run \
+    -e ILP_ADDRESS=example.node_b \
+    -e ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
+    -e ILP_ADMIN_AUTH_TOKEN=admin-b \
+    -e ILP_REDIS_CONNECTION=redis://redis:6379/1 \
+    -e ILP_HTTP_ADDRESS=0.0.0.0:7770 \
+    -e ILP_BTP_ADDRESS=0.0.0.0:7768 \
+    -e ILP_SETTLEMENT_ADDRESS=0.0.0.0:7771 \
+    -e ILP_DEFAULT_SPSP_ACCOUNT=0 \
+    -p 8768:7768 \
+    -p 8770:7770 \
+    -p 8771:7771 \
+    --network=interledger \
+    --name=interledger-rs-node_b \
+    -id \
+    interledgerrs/node node
 ```
 
 <!--!
@@ -132,7 +146,7 @@ printf "The Interledger.rs nodes are up and running!\n\n"
 -->
 
 Now the Interledger.rs nodes are up and running!  
-You can also watch the logs with: `tail -f logs/node_a.log` or `tail -f logs/node_b.log`.
+You can also watch the logs with: `docker logs interledger-rs-node_a` or `docker logs interledger-rs-node_b`.
 
 ### 4. Configure the Nodes
 
@@ -143,6 +157,9 @@ See the [HTTP API docs](../../docs/api.md) for the full list of fields that can 
 <!--! printf "Creating accounts:\n\n" -->
 
 ```bash
+# Create the logs directory if it doesn't already exist
+mkdir -p logs
+
 # Insert accounts on Node A
 # One account represents Alice and the other represents Node B's account with Node A
 
@@ -171,7 +188,7 @@ curl \
     "max_packet_amount": 100,
     "http_incoming_token": "node_b-password",
     "http_outgoing_token": "node_a:node_a-password",
-    "http_endpoint": "http://localhost:8770/ilp",
+    "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
     "min_balance": -100000,
     "routing_relation": "Peer",
     "send_routes": true,
@@ -206,7 +223,7 @@ curl \
     "max_packet_amount": 100,
     "http_incoming_token": "node_a-password",
     "http_outgoing_token": "node_b:node_b-password",
-    "http_endpoint": "http://localhost:7770/ilp",
+    "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
     "min_balance": -100000,
     "routing_relation": "Peer",
     "send_routes": true,
@@ -253,7 +270,7 @@ The following script sends a payment from Alice to Bob that is routed from Node 
 curl \
     -H "Authorization: Bearer alice:alice-password" \
     -H "Content-Type: application/json" \
-    -d '{"receiver":"http://localhost:8770/spsp/bob","source_amount":500}' \
+    -d "{\"receiver\":\"http://interledger-rs-node_b:7770/spsp/bob\",\"source_amount\":500}" \
     http://localhost:7770/pay
 ```
 
@@ -289,47 +306,36 @@ http://localhost:8770/accounts/bob/balance
 
 <!--! printf "\n\n" -->
 
-### 7. Kill All the Services
-Finally, you can stop all the services as follows:
-
-<!--! printf "Stopping Interledger nodes\n" -->
+### 7. Clear Redis
+If you want to repeat the procedure, you could clear Redis data as follows.
 
 ```bash
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6379 flushall
-    redis-cli -p 6379 shutdown
-fi
+docker exec redis redis-cli flushall
+```
 
-if [ -f dump.rdb ] ; then
-    rm -f dump.rdb
-fi
+### 8. Kill All the Services
+Finally, you can stop all the services as follows:
 
-if lsof -tPi :7770 ; then
-    kill `lsof -tPi :7770`
-fi
+<!--!
+printf "Stopping Interledger nodes\n"
+-->
 
-if lsof -tPi :8770 ; then
-    kill `lsof -tPi :8770`
-fi
+```bash
+docker stop redis interledger-rs-node_a interledger-rs-node_b
 ```
 
 <!--! printf "\n" -->
 
 ## Troubleshooting
 
-> Uh oh! You need to install redis-server before running this example
+> Uh oh! You need to install Docker before running this example
 
-You need to install Redis to run `redis-server` command. See [Prerequisites](#prerequisites) section.
+You need to install Docker to run this example. See [Prerequisites](#prerequisites) section.
 
-> curl: (7) Failed to connect to localhost port 7770: Connection refused
+> docker: Error response from daemon: Conflict. The container name "/interledger-rs-node_a" is already in use by container "xxx".
+>You have to remove (or rename) that container to be able to reuse that name.
 
-Your interledger.rs node is not running. The reason may be:
-
-1. You tried to insert the accounts before the nodes had time to spin up. Adjust the `sleep 1` command to `sleep 3` or larger.
-1. You have already running interledger.rs nodes on port `7770`. Stop the nodes and retry.
-1. You have some other process running on port `7770`. Stop the process and retry.
-
-To stop the process running on port `7770`, try `` kill `lsof -i:7770 -t` ``. Since this example launches 2 nodes, the port may be other than `7770`. Adjust the port number according to the situation.
+You seem to have run the other example, try [0. Clean up Docker](#0-clean-up-docker) first.
 
 ## Conclusion
 

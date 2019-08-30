@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="97.5 291 829 436.5" width="829" height="436.5">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xl="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="97.5 291 829 436.5" width="829" height="436.5">
   <defs>
     <font-face font-family="Courier" font-size="12" units-per-em="1000" underline-position="-178.22266" underline-thickness="57.61719" slope="0" x-height="456.54297" cap-height="586.91406" ascent="753.90625" descent="-246.09375" font-weight="400">
       <font-face-src>
@@ -18,10 +18,10 @@
       </g>
     </marker>
   </defs>
-  <metadata> Produced by OmniGraffle 7.10.2 
-    <dc:date>2019-07-26 06:53:16 +0000</dc:date>
+  <metadata> Produced by OmniGraffle 7.11.2 
+    <dc:date>2019-08-30 06:20:27 +0000</dc:date>
   </metadata>
-  <g id="Campus_1" stroke="none" stroke-dasharray="none" fill="none" stroke-opacity="1" fill-opacity="1">
+  <g id="Campus_1" stroke-dasharray="none" stroke-opacity="1" stroke="none" fill-opacity="1" fill="none">
     <title>Campus 1</title>
     <g id="Campus_1: Layer 1">
       <title>Layer 1</title>
@@ -44,7 +44,7 @@
         <path d="M 371 429 L 523.5 429 C 529.02285 429 533.5 433.47715 533.5 439 L 533.5 515 C 533.5 520.52285 529.02285 525 523.5 525 L 371 525 C 365.47715 525 361 520.52285 361 515 L 361 439 C 361 433.47715 365.47715 429 371 429 Z" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
         <text transform="translate(366 463)" fill="black">
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="59.646484" y="11">Node A</tspan>
-          <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="23.640625" y="25">(example.node-a)</tspan>
+          <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="23.640625" y="25">(example.node_a)</tspan>
         </text>
       </g>
       <g id="Graphic_8">
@@ -57,7 +57,7 @@
         <path d="M 753.5 429 L 906 429 C 911.5228 429 916 433.47715 916 439 L 916 515 C 916 520.52285 911.5228 525 906 525 L 753.5 525 C 747.97715 525 743.5 520.52285 743.5 515 L 743.5 439 C 743.5 433.47715 747.97715 429 753.5 429 Z" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
         <text transform="translate(748.5 463)" fill="black">
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="59.646484" y="11">Node B</tspan>
-          <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="23.640625" y="25">(example.node-b)</tspan>
+          <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="23.640625" y="25">(example.node_b)</tspan>
         </text>
       </g>
       <g id="Graphic_10">
