@@ -33,6 +33,8 @@ Interledger.rs commands such as `node` and `ethereum-ledger` accept configuratio
 1. Configuration files
 1. Environment variables
 
+The priority is: Environment variables > Configuration files > Command line arguments.
+
 ```bash #
 # 1.
 # passing by command line arguments
@@ -52,14 +54,6 @@ ILP_ADDRESS=example.alice \
 ILP_OTHER_PARAMETER=other_value \
 cargo run -- node
 ```
-
-The commands prioritize parameters in the following order (high to low).
-
-- Environment variables
-- Configuration files
-- Command line arguments
-
-This means that environment variables override configuration file settings, configuration file settings override command line arguments.
 
 You can specify these 3 at the same time.
 
