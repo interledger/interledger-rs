@@ -19,7 +19,7 @@ use super::account::*;
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
-    future::{err, ok, result, Either},
+    future::{err, lazy, ok, result, Either},
     Future, Stream,
 };
 use log::{debug, error, trace, warn};
@@ -31,8 +31,9 @@ use interledger_api::{AccountDetails, AccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore, Username};
+use interledger_service::{Account as AccountTrait, AccountStore, PubStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
 use lazy_static::lazy_static;
@@ -612,6 +613,21 @@ impl RedisStore {
                 ),
         )
     }
+
+    fn redis_publish(
+        &self,
+        channel: &str,
+        message: &str,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(
+            redis::cmd("PUBLISH")
+                .arg(channel)
+                .arg(message)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|_| ())
+                .and_then(|(_, _): (_, i32)| Ok(())),
+        )
+    }
 }
 
 impl AccountStore for RedisStore {
@@ -637,6 +653,24 @@ impl AccountStore for RedisStore {
                 .map_err(move |err| error!("Error getting account id: {:?}", err))
                 .and_then(|(_connection, id): (_, AccountId)| Ok(id)),
         )
+    }
+}
+
+impl PubStore for RedisStore {
+    fn publish_payment_notification(
+        self: Arc<Self>,
+        receiver: Username,
+        sender: Username,
+        sender_address: Address,
+        amount: u64,
+        timestamp: i64,
+    ) {
+        let channel = format!("p:{}", receiver);
+        let message = format!("{}:{}:{}:{}", sender, sender_address, amount, timestamp);
+        spawn(lazy(move || {
+            debug!("Publishing message {} to channel {}", message, channel);
+            self.redis_publish(&channel, &message)
+        }));
     }
 }
 

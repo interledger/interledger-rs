@@ -191,6 +191,7 @@ impl InterledgerNode {
                                         ExpiryShortenerService::new(outgoing_service);
                                     let outgoing_service = StreamReceiverService::new(
                                         secret_seed.clone(),
+                                        store.clone(),
                                         outgoing_service,
                                     );
                                     let outgoing_service = BalanceService::new(

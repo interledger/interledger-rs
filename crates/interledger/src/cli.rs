@@ -208,7 +208,8 @@ pub fn run_spsp_server_btp(
     .and_then(move |btp_service| {
         let outgoing_service =
             ValidatorService::outgoing(LOCAL_ILP_ADDRESS.clone(), btp_service.clone());
-        let outgoing_service = StreamReceiverService::new(server_secret.clone(), outgoing_service);
+        let outgoing_service =
+            StreamReceiverService::new(server_secret.clone(), store.clone(), outgoing_service);
         let incoming_service =
             Router::new(LOCAL_ILP_ADDRESS.clone(), store.clone(), outgoing_service);
         let mut incoming_service =
@@ -270,6 +271,7 @@ pub fn run_spsp_server_http(
     let spsp_responder = SpspResponder::new(ilp_address.clone(), server_secret.clone());
     let outgoing_handler = StreamReceiverService::new(
         server_secret,
+        store.clone(),
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,

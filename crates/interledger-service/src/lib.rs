@@ -27,13 +27,14 @@
 //! HttpServerService --> ValidatorService --> StreamReceiverService
 
 use futures::{Future, IntoFuture};
-use interledger_packet::{Fulfill, Prepare, Reject};
+use interledger_packet::{Address, Fulfill, Prepare, Reject};
 use std::{
     cmp::Eq,
     fmt::{Debug, Display},
     hash::Hash,
     marker::PhantomData,
     str::FromStr,
+    sync::Arc,
 };
 
 use serde::Serialize;
@@ -118,6 +119,22 @@ pub trait AccountStore {
         dyn Future<Item = <<Self as AccountStore>::Account as Account>::AccountId, Error = ()>
             + Send,
     >;
+}
+
+/// A trait representing the Publish side of a pub/sub store
+pub trait PubStore {
+    fn publish_payment_notification(
+        self: Arc<Self>,
+        _sender: Username,
+        _receiver: Username,
+        _sender_address: Address,
+        _amount: u64,
+        _timestamp: i64,
+    ) {
+        // Publishing a notification is an operation we care about only for its side effects,
+        // so for ease of mocking we give it a default implementation that is entirely empty.
+        // In other words: This Space Intentionally Left Blank.
+    }
 }
 
 /// Create an IncomingService that calls the given handler for each request.

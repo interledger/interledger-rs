@@ -2,17 +2,20 @@ use super::crypto::*;
 use super::packet::*;
 use base64;
 use bytes::Bytes;
+use chrono::Utc;
 use futures::future::result;
+use futures::Future;
 use hex;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
     RejectBuilder,
 };
-use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService};
+use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, PubStore};
 use log::debug;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_secret_generator";
 
@@ -92,30 +95,33 @@ impl ConnectionGenerator {
 ///
 /// This does not currently support handling data sent via STREAM.
 #[derive(Clone)]
-pub struct StreamReceiverService<O: OutgoingService<A>, A: Account> {
+pub struct StreamReceiverService<S, O: OutgoingService<A>, A: Account> {
     connection_generator: ConnectionGenerator,
     next: O,
     account_type: PhantomData<A>,
+    store: Arc<S>,
 }
 
-impl<O, A> StreamReceiverService<O, A>
+impl<S, O, A> StreamReceiverService<S, O, A>
 where
+    S: PubStore,
     O: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(server_secret: Bytes, next: O) -> Self {
+    pub fn new(server_secret: Bytes, store: S, next: O) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         StreamReceiverService {
             connection_generator,
             next,
             account_type: PhantomData,
+            store: Arc::new(store),
         }
     }
 }
 
-// TODO should this be an OutgoingService instead so the balance logic is applied before this is called?
-impl<O, A> OutgoingService<A> for StreamReceiverService<O, A>
+impl<S, O, A> OutgoingService<A> for StreamReceiverService<S, O, A>
 where
+    S: PubStore + Send + Sync + 'static,
     O: OutgoingService<A>,
     A: Account + IldcpAccount,
 {
@@ -128,14 +134,31 @@ where
     /// the server to check whether the Prepare packet was created with STREAM parameters
     /// that this server would have created or not.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        let to_name = request.to.username().clone();
+        let from_name = request.from.username().clone();
+        let from_address = request.from.client_address().clone();
+        let amount = request.prepare.amount();
+        let store = self.store.clone();
+
         let destination = request.prepare.destination();
-        let to = request.to.client_address();
+        let to_address = request.to.client_address();
         let dest: &[u8] = destination.as_ref();
-        if dest.starts_with(to.as_ref()) {
+        if dest.starts_with(to_address.as_ref()) {
             if let Ok(shared_secret) = self.connection_generator.rederive_secret(&destination) {
-                {
-                    return Box::new(result(receive_money(&shared_secret, &to, request.prepare)));
-                }
+                return Box::new(
+                    result(receive_money(&shared_secret, &to_address, request.prepare)).and_then(
+                        move |val| {
+                            store.publish_payment_notification(
+                                to_name,
+                                from_name,
+                                from_address,
+                                amount,
+                                Utc::now().timestamp_millis(),
+                            );
+                            Ok(val)
+                        },
+                    ),
+                );
             }
         }
         Box::new(self.next.send_request(request))
@@ -458,6 +481,7 @@ mod stream_receiver_service {
 
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
+            DummyStore,
             outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> BoxedIlpFuture {
                 panic!("shouldn't get here")
             }),
@@ -509,6 +533,7 @@ mod stream_receiver_service {
 
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
+            DummyStore,
             outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> BoxedIlpFuture {
                 panic!("shouldn't get here")
             }),
@@ -560,6 +585,7 @@ mod stream_receiver_service {
 
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
+            DummyStore,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,

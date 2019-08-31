@@ -22,7 +22,7 @@ pub mod test_helpers {
     use interledger_ildcp::IldcpAccount;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
-    use interledger_service::{Account, AccountStore, Username};
+    use interledger_service::{Account, AccountStore, PubStore, Username};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -67,6 +67,11 @@ pub mod test_helpers {
             &self.ilp_address
         }
     }
+
+    #[derive(Clone)]
+    pub struct DummyStore;
+
+    impl PubStore for DummyStore {}
 
     #[derive(Clone)]
     pub struct TestStore {
@@ -129,6 +134,7 @@ mod send_money_to_receiver {
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
         let server = StreamReceiverService::new(
             server_secret,
+            DummyStore,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
