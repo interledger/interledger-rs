@@ -19,10 +19,11 @@ use super::account::*;
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
-    future::{err, ok, result, Either},
+    future::{err, lazy, ok, result, Either},
+    sync::mpsc::UnboundedSender,
     Future, Stream,
 };
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::collections::{HashMap, HashSet};
 
 use super::account::AccountId;
@@ -35,11 +36,14 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
+use interledger_stream::{PaymentNotification, PubStore};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use redis::{
-    self, aio::SharedConnection, cmd, Client, ConnectionInfo, PipelineCommands, Script, Value,
+    self, aio::SharedConnection, cmd, Client, ConnectionInfo, ControlFlow, PipelineCommands,
+    PubSubCommands, Script, Value,
 };
+use serde_json::json;
 use std::{
     iter::FromIterator,
     str,
@@ -199,21 +203,33 @@ impl RedisStoreBuilder {
     }
 
     pub fn connect(&mut self) -> impl Future<Item = RedisStore, Error = ()> {
+        let redis_info = self.redis_url.clone();
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
 
-        result(Client::open(self.redis_url.clone()))
-            .map_err(|err| error!("Error creating Redis client: {:?}", err))
+        result(Client::open(redis_info.clone()))
+            .map_err(|err| error!("Error creating shared Redis client: {:?}", err))
             .and_then(|client| {
-                debug!("Connected to redis: {:?}", client);
+                debug!("Connected shared client to redis: {:?}", client);
                 client
                     .get_shared_async_connection()
-                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+                    .map_err(|err| error!("Error connecting shared client to Redis: {:?}", err))
             })
-            .and_then(move |connection| {
+            .join(
+                result(Client::open(redis_info.clone()))
+                    .map_err(|err| error!("Error creating subscription Redis client: {:?}", err))
+                    .and_then(|client| {
+                        debug!("Connected subscription client to redis: {:?}", client);
+                        client.get_connection().map_err(|err| {
+                            error!("Error connecting subscription client to Redis: {:?}", err)
+                        })
+                    }),
+            )
+            .and_then(move |(shared_connection, mut sub_connection)| {
                 let store = RedisStore {
-                    connection: Arc::new(connection),
+                    connection: Arc::new(shared_connection),
+                    subscriptions: Arc::new(RwLock::new(HashMap::new())),
                     exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                     routes: Arc::new(RwLock::new(HashMap::new())),
                     encryption_key: Arc::new(encryption_key),
@@ -241,6 +257,36 @@ impl RedisStoreBuilder {
                         });
                 spawn(poll_routes);
 
+                let subs_clone = store.subscriptions.clone();
+                std::thread::spawn(move || {
+                    let sub_status =
+                        sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
+                            let channel: Vec<_> = msg.get_channel_name().split(':').collect();
+                            let message: String = match msg.get_payload() {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    error!("Failed to get payload from subscription: {}", e);
+                                    return ControlFlow::Continue;
+                                }
+                            };
+                            debug!("Subscribed message received for {:?}", channel[1]);
+                            match subs_clone.read().get(channel[1]) {
+                                Some(sender) => {
+                                    debug!("Mailboxes looking for {:?}: {:?}", channel[1], sender);
+                                    if let Err(e) = sender.unbounded_send(message) {
+                                        error!("Failed to send message: {}", e);
+                                    }
+                                }
+                                None => debug!("No mailboxes looking for {:?}", channel[1]),
+                            }
+                            ControlFlow::Continue
+                        });
+                    match sub_status {
+                        Err(e) => warn!("Could not issue psubscribe to Redis: {}", e),
+                        Ok(_) => info!("Successfully issued psubscribe to Redis"),
+                    }
+                });
+
                 Ok(store)
             })
     }
@@ -255,6 +301,7 @@ impl RedisStoreBuilder {
 #[derive(Clone)]
 pub struct RedisStore {
     connection: Arc<SharedConnection>,
+    subscriptions: Arc<RwLock<HashMap<String, UnboundedSender<String>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
     encryption_key: Arc<Secret<EncryptionKey>>,
@@ -615,6 +662,23 @@ impl AccountStore for RedisStore {
                 .map_err(move |err| error!("Error getting account id: {:?}", err))
                 .and_then(|(_connection, id): (_, AccountId)| Ok(id)),
         )
+    }
+}
+
+impl PubStore for RedisStore {
+    fn publish_payment_notification(&self, pmt: PaymentNotification) {
+        let channel = format!("paid:{}", pmt.to_username);
+        let message: String = json!(pmt).to_string();
+        let connection = self.connection.as_ref().clone();
+        spawn(lazy(move || {
+            debug!("Publishing message {} to channel {}", message, channel);
+            redis::cmd("PUBLISH")
+                .arg(channel)
+                .arg(message)
+                .query_async(connection)
+                .map_err(|_| ())
+                .and_then(|(_, _): (_, i32)| Ok(()))
+        }));
     }
 }
 
@@ -1039,6 +1103,11 @@ impl NodeStore for RedisStore {
                     })
             })
         )
+    }
+
+    fn add_payment_notification_subscription(&self, id: String, sender: UnboundedSender<String>) {
+        info!("Added listener for {}", id);
+        self.subscriptions.write().insert(id, sender);
     }
 }
 

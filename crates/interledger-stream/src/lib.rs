@@ -13,7 +13,7 @@ mod server;
 
 pub use client::send_money;
 pub use error::Error;
-pub use server::{ConnectionGenerator, StreamReceiverService};
+pub use server::{ConnectionGenerator, PaymentNotification, PubStore, StreamReceiverService};
 
 #[cfg(test)]
 pub mod test_helpers {
@@ -67,6 +67,11 @@ pub mod test_helpers {
             &self.ilp_address
         }
     }
+
+    #[derive(Clone)]
+    pub struct DummyStore;
+
+    impl super::PubStore for DummyStore {}
 
     #[derive(Clone)]
     pub struct TestStore {
@@ -129,6 +134,7 @@ mod send_money_to_receiver {
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
         let server = StreamReceiverService::new(
             server_secret,
+            DummyStore,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,

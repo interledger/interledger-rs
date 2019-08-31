@@ -9,6 +9,7 @@ use interledger_http::HttpStore;
 use interledger_ildcp::IldcpAccount;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, Username};
+use interledger_stream::PubStore;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::{
@@ -137,6 +138,8 @@ impl AccountStore for InMemoryStore {
         Box::new(ok(1))
     }
 }
+
+impl PubStore for InMemoryStore {}
 
 impl HttpStore for InMemoryStore {
     type Account = Account;

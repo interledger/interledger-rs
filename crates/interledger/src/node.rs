@@ -49,6 +49,10 @@ fn default_exchange_rate_poll_interval() -> u64 {
     60000
 }
 
+fn default_notifications_bind_address() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 7766))
+}
+
 use std::str::FromStr;
 fn deserialize_string_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
 where
@@ -108,6 +112,9 @@ pub struct InterledgerNode {
     /// This is used for both the API and ILP over HTTP packets
     #[serde(default = "default_http_bind_address")]
     pub http_bind_address: SocketAddr,
+
+    #[serde(default = "default_notifications_bind_address")]
+    pub notifications_bind_address: SocketAddr,
     /// IP address and port to listen for the Settlement Engine API
     #[serde(default = "default_settlement_api_bind_address")]
     pub settlement_api_bind_address: SocketAddr,
@@ -164,6 +171,7 @@ impl InterledgerNode {
         let exchange_rate_provider = self.exchange_rate_provider.clone();
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
         let exchange_rate_spread = self.exchange_rate_spread;
+        let notifications_bind_address = self.notifications_bind_address.clone();
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .connect()
@@ -216,6 +224,7 @@ impl InterledgerNode {
                                         ExpiryShortenerService::new(outgoing_service);
                                     let outgoing_service = StreamReceiverService::new(
                                         secret_seed.clone(),
+                                        store.clone(),
                                         outgoing_service,
                                     );
                                     let outgoing_service = BalanceService::new(
@@ -274,6 +283,7 @@ impl InterledgerNode {
                                         secret_seed,
                                         admin_auth_token,
                                         store.clone(),
+                                        notifications_bind_address.clone(),
                                         incoming_service.clone(),
                                     );
                                     if let Some(username) = default_spsp_account {
@@ -283,6 +293,11 @@ impl InterledgerNode {
                                         .expect("Unable to bind to HTTP address");
                                     info!("Interledger node listening on: {}", http_bind_address);
                                     spawn(api.serve(listener.incoming()));
+
+                                    let notifications_listener = TcpListener::bind(&notifications_bind_address)
+                                        .expect("Unable to bind to notifications address");
+                                    info!("Interledger node listening for notifications on: {}", notifications_bind_address);
+                                    tokio::spawn(api.sub_serve(notifications_listener.incoming()));
 
                                     // Settlement API
                                     let settlement_api = SettlementApi::new(

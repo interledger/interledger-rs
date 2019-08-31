@@ -11,6 +11,7 @@ use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 use tower_web::{impl_web, Response};
@@ -36,6 +37,7 @@ struct BalanceResponse {
 pub struct AccountsApi<T> {
     store: T,
     admin_api_token: String,
+    notifications_address: SocketAddr,
 }
 
 const MAX_RETRIES: usize = 10;
@@ -57,10 +59,11 @@ impl_web! {
     A: Account + HttpAccount + Serialize + 'static,
 
     {
-        pub fn new(admin_api_token: String, store: T) -> Self {
+        pub fn new(admin_api_token: String, store: T, notifications_address: SocketAddr) -> Self {
             AccountsApi {
                 store,
                 admin_api_token,
+                notifications_address,
             }
         }
 
@@ -357,6 +360,67 @@ impl_web! {
             .and_then(|balance| Ok(BalanceResponse {
                 balance: balance.to_string(),
             }))
+            })
+        }
+
+        #[get("/accounts/:username/incoming_payments")]
+        fn http_get_incoming_payments(&self, username: String, authorization: String) -> impl Future<Item = Response<String>, Error = Response<()>> {
+            let store = self.store.clone();
+            let store_clone = self.store.clone();
+            let is_admin = self.is_admin(&authorization);
+            let username_clone = username.clone();
+            let auth_clone = authorization.clone();
+            let notifications_address = self.notifications_address.to_string();
+            result(Username::from_str(&username))
+            .map_err(move |_| {
+                error!("Invalid username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |username| {
+                store_clone.get_account_id_from_username(&username)
+                .map_err(move |_| {
+                    error!("Error getting account id from username: {}", username_clone);
+                    Response::builder().status(500).body(()).unwrap()
+                })
+                .and_then(move |id| {
+                    if is_admin  {
+                        Either::A(store.get_accounts(vec![id])
+                            .map_err(move |_| {
+                                debug!("Account not found: {}", id);
+                                Response::error(404)
+                            })
+                            .and_then(|_accounts| Ok(())))
+                    } else {
+                        Either::B(result(AuthToken::from_str(&auth_clone))
+                            .map_err(move |_| {
+                                error!("Could not parse auth token {:?}", auth_clone);
+                                Response::error(401)
+                            })
+                            .and_then(move |auth| {
+                                store.get_account_from_http_auth(&auth.username(), &auth.password())
+                                .map_err(move |_| {
+                                    error!("No account found with auth: {}", authorization);
+                                    Response::error(401)
+                                })
+                                .and_then(move |account| {
+                                    if account.id() == id {
+                                        Ok(())
+                                    } else {
+                                        Err(Response::error(401))
+                                    }
+                                })
+                            })
+                        )
+                    }
+                })
+                .and_then(move |_| {
+                    let redirect = format!("ws://{}/accounts/{}/incoming_payments", notifications_address.clone(), username);
+                    Ok(Response::builder()
+                        .status(301)
+                        .header("Location", redirect.clone())
+                        .body(redirect)
+                        .unwrap()
+                )})
             })
         }
     }
