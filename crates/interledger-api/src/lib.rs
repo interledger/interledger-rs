@@ -3,7 +3,11 @@
 extern crate tower_web;
 
 use bytes::Bytes;
-use futures::Future;
+use futures::{
+    future::{ok, result, Either},
+    sync::mpsc::UnboundedSender,
+    Future, Sink, Stream,
+};
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
@@ -11,9 +15,25 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
+use lazy_static::lazy_static;
+use log::{debug, error, info, warn};
+use parking_lot::Mutex;
+use regex::Regex;
 use serde::Serialize;
-use std::str;
+use std::io::{Error as IoError, ErrorKind};
+use std::net::SocketAddr;
+use std::str::{self, FromStr};
+use std::sync::Arc;
+use tokio::net::tcp::Incoming;
+use tokio::spawn;
+use tokio_tungstenite::accept_hdr_async;
 use tower_web::{net::ConnectionStream, Extract, Response, ServiceBuilder};
+use tungstenite::{handshake::server::Request, Error as WebSocketError, Message};
+
+lazy_static! {
+    static ref USERNAME_FROM_PATH: Regex =
+        Regex::new(r"accounts/(?P<user>\w+)/incoming_payments$").unwrap();
+}
 
 mod routes;
 use self::routes::*;
@@ -59,6 +79,8 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         prefix: String,
         account_id: <Self::Account as AccountTrait>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    fn add_payment_notification_subscription(&self, id: String, sender: UnboundedSender<String>);
 }
 
 /// AccountSettings is a subset of the user parameters defined in
@@ -108,6 +130,7 @@ pub struct AccountDetails {
 pub struct NodeApi<S, I> {
     store: S,
     admin_api_token: String,
+    notifications_address: SocketAddr,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
     server_secret: Bytes,
@@ -135,11 +158,13 @@ where
         server_secret: Bytes,
         admin_api_token: String,
         store: S,
+        notifications_address: SocketAddr,
         incoming_handler: I,
     ) -> Self {
         NodeApi {
             store,
             admin_api_token,
+            notifications_address,
             default_spsp_account: None,
             incoming_handler,
             server_secret,
@@ -149,6 +174,82 @@ where
     pub fn default_spsp_account(&mut self, username: Username) -> &mut Self {
         self.default_spsp_account = Some(username);
         self
+    }
+
+    // TODO: implement generically rather than over Incoming
+    pub fn sub_serve(&self, incoming: Incoming) -> impl Future<Item = (), Error = ()> {
+        let store = self.store.clone();
+        incoming
+            .map_err(|e| error!("Failed to receive stream from notifications listener: {}", e))
+            .for_each(move |stream| {
+                let store_clone = store.clone();
+
+                // Used to make HTTP header details accessible to the websocket handler.
+                let details = Arc::new(Mutex::new(None));
+                let details_clone = details.clone();
+
+                // Processes a stream of incoming websocket connections while stashing relevant request details
+                accept_hdr_async(stream, move |req: &Request| {
+                    details_clone.lock().replace((
+                        req.path.clone(),
+                        req.headers.find_first("Authorization").and_then(|bytes| Some(bytes.to_vec())),
+                    ));
+                    Ok(None)
+                })
+                .map_err(|e| error!("Failed to accept websocket connection: {}", e))
+                .and_then(move |ws_stream| {
+                    let (tx, rx) = futures::sync::mpsc::unbounded::<String>();
+                    let lock = details.lock();
+                    let (ref path, ref _authorization) = lock.as_ref()
+                        .expect("Details should have been parsed from the headers");
+                    info!("Established incoming websocket connection to the resource at: {}", path);
+                    match USERNAME_FROM_PATH.captures(&path) {
+                        None => {
+                            error!("Failed to identify valid request path");
+                            Either::B(ok(()))
+                        }
+                        Some(captures) => match captures.name("user") {
+                            None => {
+                                error!("Failed to locate username in path");
+                                Either::B(ok(()))
+                            }
+                            Some(username) => Either::A(
+                                // TODO Validate authorization first
+                                result(
+                                    Username::from_str(username.as_str())
+                                    .map_err(|e| error!("Failed to parse username: {}", e))
+                                )
+                                .and_then(move |username| {
+                                    let username_clone = username.clone();
+                                    store_clone.get_account_id_from_username(&username)
+                                    .map_err(move |_| error!("Failed to find account with username: {}", username_clone))
+                                    .and_then(move |_account_id| {
+                                        // TODO: use account_id rather than username
+                                        store_clone.add_payment_notification_subscription(username.to_string(), tx);
+                                        spawn(
+                                            ws_stream
+                                                .send_all(rx.map(Message::Text).map_err(|_| {
+                                                    warn!("Websocket connection aborted");
+                                                    WebSocketError::from(IoError::from(
+                                                        ErrorKind::ConnectionAborted,
+                                                    ))
+                                                }))
+                                                .then(move |_| {
+                                                    info!("Finished forwarding subscriber to account: {}", username);
+                                                    // TODO close connection
+                                                    Ok(())
+                                                }),
+                                        );
+                                        Ok(())
+                                    })
+                                }),
+                            )
+                        }
+                    }
+                })
+            })
+            .map_err(|_| ())
+            .and_then(|_| Ok(()))
     }
 
     pub fn serve<T>(&self, incoming: T) -> impl Future<Item = (), Error = ()>
@@ -175,6 +276,7 @@ where
             .resource(AccountsApi::new(
                 self.admin_api_token.clone(),
                 self.store.clone(),
+                self.notifications_address.clone(),
             ))
             .resource(SettingsApi::new(
                 self.admin_api_token.clone(),

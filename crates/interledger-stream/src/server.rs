@@ -2,17 +2,21 @@ use super::crypto::*;
 use super::packet::*;
 use base64;
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures::future::result;
+use futures::Future;
 use hex;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
     RejectBuilder,
 };
-use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService};
+use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username};
 use log::debug;
+use serde::Serialize;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
+use std::time::SystemTime;
 
 const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_secret_generator";
 
@@ -85,6 +89,24 @@ impl ConnectionGenerator {
     }
 }
 
+#[derive(Serialize)]
+pub struct PaymentNotification {
+    pub to_username: Username,
+    pub from_username: Username,
+    pub destination: Address,
+    pub amount: u64,
+    pub timestamp: String,
+}
+
+/// A trait representing the Publish side of a pub/sub store
+pub trait PubStore {
+    fn publish_payment_notification(&self, _pmt: PaymentNotification) {
+        // Publishing a notification is an operation we care about only for its side effects,
+        // so for ease of mocking we give it a default implementation that is entirely empty.
+        // In other words: This Space Intentionally Left Blank.
+    }
+}
+
 /// An OutgoingService that fulfills incoming STREAM packets.
 ///
 /// Note this does **not** maintain STREAM state, but instead fulfills
@@ -92,30 +114,33 @@ impl ConnectionGenerator {
 ///
 /// This does not currently support handling data sent via STREAM.
 #[derive(Clone)]
-pub struct StreamReceiverService<O: OutgoingService<A>, A: Account> {
+pub struct StreamReceiverService<S, O: OutgoingService<A>, A: Account> {
     connection_generator: ConnectionGenerator,
     next: O,
     account_type: PhantomData<A>,
+    store: S,
 }
 
-impl<O, A> StreamReceiverService<O, A>
+impl<S, O, A> StreamReceiverService<S, O, A>
 where
+    S: PubStore,
     O: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(server_secret: Bytes, next: O) -> Self {
+    pub fn new(server_secret: Bytes, store: S, next: O) -> Self {
         let connection_generator = ConnectionGenerator::new(server_secret);
         StreamReceiverService {
             connection_generator,
             next,
             account_type: PhantomData,
+            store: store,
         }
     }
 }
 
-// TODO should this be an OutgoingService instead so the balance logic is applied before this is called?
-impl<O, A> OutgoingService<A> for StreamReceiverService<O, A>
+impl<S, O, A> OutgoingService<A> for StreamReceiverService<S, O, A>
 where
+    S: PubStore + Send + Sync + 'static + Clone,
     O: OutgoingService<A>,
     A: Account + IldcpAccount,
 {
@@ -128,14 +153,32 @@ where
     /// the server to check whether the Prepare packet was created with STREAM parameters
     /// that this server would have created or not.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+        let to_username = request.to.username().clone();
+        let from_username = request.from.username().clone();
+        let amount = request.prepare.amount();
+        let store = self.store.clone();
+
         let destination = request.prepare.destination();
-        let to = request.to.client_address();
+        let to_address = request.to.client_address();
         let dest: &[u8] = destination.as_ref();
-        if dest.starts_with(to.as_ref()) {
+
+        // The case where the request is bound for this server
+        if dest.starts_with(to_address.as_ref()) {
             if let Ok(shared_secret) = self.connection_generator.rederive_secret(&destination) {
-                {
-                    return Box::new(result(receive_money(&shared_secret, &to, request.prepare)));
-                }
+                return Box::new(
+                    result(receive_money(&shared_secret, &to_address, request.prepare)).and_then(
+                        move |val| {
+                            store.publish_payment_notification(PaymentNotification {
+                                to_username,
+                                from_username,
+                                amount,
+                                destination: destination.clone(),
+                                timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                            });
+                            Ok(val)
+                        },
+                    ),
+                );
             }
         }
         Box::new(self.next.send_request(request))
@@ -458,6 +501,7 @@ mod stream_receiver_service {
 
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
+            DummyStore,
             outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> BoxedIlpFuture {
                 panic!("shouldn't get here")
             }),
@@ -509,6 +553,7 @@ mod stream_receiver_service {
 
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
+            DummyStore,
             outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> BoxedIlpFuture {
                 panic!("shouldn't get here")
             }),
@@ -560,6 +605,7 @@ mod stream_receiver_service {
 
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
+            DummyStore,
             outgoing_service_fn(|_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
