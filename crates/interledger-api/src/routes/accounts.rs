@@ -8,11 +8,11 @@ use hyper::Response;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_service::{Account, AuthToken, Username};
 use interledger_service_util::BalanceStore;
-use log::{debug, error};
+use log::{debug, error, trace};
+use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
-use std::time::Duration;
 use tower_web::{impl_web, Response};
 use url::Url;
 
@@ -86,19 +86,39 @@ impl_web! {
             let se_url = body.settlement_engine_url.clone();
             self.validate_admin(authorization)
                 .and_then(move |store| store.insert_account(body)
+                .map_err(|_| Response::error(500))
                 .and_then(|account| {
                     // if the account had a SE associated with it, then register
                     // the account in the SE.
                     if let Some(se_url)  = se_url {
                         let id = account.id();
-                        let se_url = Url::parse(&se_url).map_err(|err| error!("Invalid URL: {:?}", err))?;
-                        let client: Client = Client::new(Duration::from_millis(5000), MAX_RETRIES);
-                        // TODO: Decide how we're going to handle this.
-                        client.create_engine_account(se_url, id);
+                        Either::A(result(Url::parse(&se_url))
+                        .map_err(|_| Response::error(500))
+                        .and_then(move |se_url| {
+                            let client = Client::new(Duration::from_millis(5000), MAX_RETRIES);
+                            trace!(
+                                "Sending account {} creation request to settlement engine: {:?}",
+                                id,
+                                se_url.clone()
+                            );
+                            client.create_engine_account(se_url, id)
+                            .and_then(move |status_code| {
+                                if status_code.is_success() {
+                                    trace!("Account {} created on the SE", id);
+                                } else {
+                                    error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                                }
+                                Ok(())
+                            })
+                            .map_err(|_| Response::error(500))
+                            .and_then(move |_| {
+                                Ok(json!(account))
+                            })
+                        }))
+                    } else {
+                        Either::B(ok(json!(account)))
                     }
-                    Ok(json!(account))
-                })
-                .map_err(|_| Response::builder().status(500).body(()).unwrap()))
+                }))
         }
 
         #[get("/accounts")]
