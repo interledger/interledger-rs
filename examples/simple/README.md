@@ -96,7 +96,7 @@ ILP_HTTP_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
 ILP_DEFAULT_SPSP_ACCOUNT=0 \
-./target/debug/interledger node &> logs/node_a.log &
+cargo run --package interledger -- node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
@@ -106,8 +106,7 @@ ILP_HTTP_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
 ILP_DEFAULT_SPSP_ACCOUNT=0 \
-./target/debug/interledger node &> logs/node_b.log &
-```
+cargo run --package interledger -- node &> logs/node_b.log &
 
 <!--!
 printf "\nWaiting for Interledger.rs nodes to start up...\n"
