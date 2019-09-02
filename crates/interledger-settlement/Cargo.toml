@@ -31,5 +31,5 @@ num-traits = "0.2.8"
 
 [dev-dependencies]
 parking_lot = "0.8.0"
-mockito = "0.17.1"
+mockito = "0.20.0"
 env_logger = "0.6.1"
