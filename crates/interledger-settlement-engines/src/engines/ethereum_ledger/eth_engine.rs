@@ -953,24 +953,40 @@ where
         } else if let Ok(resp) = serde_json::from_slice::<PaymentDetailsResponse>(&body) {
             debug!("Received payment details: {:?}", resp);
             let guard = self.challenges.read();
-            if let Some(challenge) = (*guard).get(&account_id) {
+            let fut = if let Some(challenge) = (*guard).get(&account_id) {
                 // if we sent them a challenge, we will verify the received
                 // signature and address, and if sig verification passes, we'll
                 // save them in our store
                 let data = prefixed_message(challenge.to_vec());
                 let challenge_hash = Sha3::digest(&data);
                 let recovered_address = resp.sig.recover(&challenge_hash);
-                if let Ok(recovered_address) = recovered_address {
-                    if recovered_address.as_bytes() == &resp.to.own_address.as_bytes()[..] {
-                        // save to the store
-                        let data = HashMap::from_iter(vec![(account_id, resp.to)]);
-                        tokio::spawn(store.save_account_addresses(data));
-                    }
-                }
-            }
+                Either::A(
+                    result(recovered_address)
+                        .map_err(move |err| {
+                            let err = format!("Could not recover address {:?}", err);
+                            error!("{}", err);
+                            (StatusCode::from_u16(502).unwrap(), err)
+                        })
+                        .and_then(move |recovered_address| {
+                            if recovered_address.as_bytes() != &resp.to.own_address.as_bytes()[..] {
+                                return Either::A(ok(()));
+                            }
+                            // save to the store
+                            let data = HashMap::from_iter(vec![(account_id, resp.to)]);
+                            Either::B(store.save_account_addresses(data).map_err(move |err| {
+                                let err = format!("Couldn't connect to store {:?}", err);
+                                error!("{}", err);
+                                (StatusCode::from_u16(500).unwrap(), err)
+                            }))
+                        }),
+                )
+            } else {
+                Either::B(ok(()))
+            };
 
-            // we always ACK even if the signature check fails
-            Box::new(ok((StatusCode::from_u16(200).unwrap(), "OK".to_string())))
+            Box::new(
+                fut.and_then(move |_| Ok((StatusCode::from_u16(200).unwrap(), "OK".to_string()))),
+            )
         } else {
             Box::new(err((
                 StatusCode::from_u16(502).unwrap(),
