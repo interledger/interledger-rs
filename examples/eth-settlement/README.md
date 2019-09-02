@@ -326,7 +326,7 @@ curl \
     -H "Authorization: Bearer alice:in_alice" \
     -H "Content-Type: application/json" \
     -d "{\"receiver\":\"http://localhost:8770/spsp/bob\",\"source_amount\":500}" \
-    http://localhost:7770/pay
+    http://localhost:7770/payments
 ```
 
 <!--! printf "\n\n" -->

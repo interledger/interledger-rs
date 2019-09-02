@@ -71,7 +71,7 @@ Admin or account-holder only.
 
 ## SPSP (Sending Payments)
 
-### POST /pay
+### POST /payments
 
 Account-holder only.
 
@@ -92,11 +92,11 @@ Account-holder only.
 }
 ```
 
-### GET /spsp/:id
+### GET /accounts/:username/spsp
 
 No authentication required.
 
-This is the SPSP receiver endpoing that others will use to pay accounts on this node.
+This is the SPSP receiver endpoint that others will use to pay accounts on this node.
 
 See the [Simple Payment Setup Protocol (SPSP) RFC](https://interledger.org/rfcs/0009-simple-payment-setup-protocol/) for more details about how this protocol works.
 
@@ -108,7 +108,7 @@ See the [Simple Payment Setup Protocol (SPSP) RFC](https://interledger.org/rfcs/
 }
 ```
 
-### GET /.well-known/pay
+### GET /.well-known/payments
 
 No authentication required.
 

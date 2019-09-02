@@ -109,7 +109,7 @@ pub struct InterledgerNode {
     #[serde(default = "default_btp_address")]
     pub btp_address: SocketAddr,
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
-    /// to <domain>/.well-known/pay. This value determines which account those payments
+    /// to <domain>/.well-known/payments. This value determines which account those payments
     /// will be sent to.
     pub default_spsp_account: Option<u64>,
     /// Interval, defined in milliseconds, on which the node will broadcast routing

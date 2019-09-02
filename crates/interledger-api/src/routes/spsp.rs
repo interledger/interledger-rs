@@ -59,7 +59,7 @@ impl_web! {
             self
         }
 
-        #[post("/pay")]
+        #[post("/payments")]
         #[content_type("application/json")]
         // TODO add a version that lets you specify the destination amount instead
         fn post_pay(&self, body: SpspPayRequest, authorization: String) -> impl Future<Item = SpspPayResponse, Error = Response<String>> {
@@ -95,7 +95,7 @@ impl_web! {
             })
         }
 
-        #[get("/spsp/:username")]
+        #[get("/accounts/:username/spsp")]
         fn get_spsp(&self, username: String) -> impl Future<Item = Response<Body>, Error = Response<()>> {
             let server_secret = self.server_secret.clone();
             let store = self.store.clone();
@@ -127,12 +127,12 @@ impl_web! {
 
         // TODO resolve payment pointers with subdomains to the correct account
         // also give accounts aliases to use in the payment pointer instead of the ids
-        #[get("/.well-known/pay")]
+        #[get("/.well-known/payments")]
         fn get_well_known(&self) -> impl Future<Item = Response<Body>, Error = Response<()>> {
             if let Some(ref account_id) = &self.default_spsp_account {
                 Either::A(self.get_spsp(account_id.to_string()))
             } else {
-                error!("Got SPSP request to /.well-known/pay endpoint but there is no default SPSP account configured");
+                error!("Got SPSP request to /.well-known/payments endpoint but there is no default SPSP account configured");
                 Either::B(err(Response::builder().status(404).body(()).unwrap()))
             }
         }

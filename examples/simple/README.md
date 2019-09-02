@@ -253,8 +253,8 @@ The following script sends a payment from Alice to Bob that is routed from Node 
 curl \
     -H "Authorization: Bearer alice:alice-password" \
     -H "Content-Type: application/json" \
-    -d '{"receiver":"http://localhost:8770/spsp/bob","source_amount":500}' \
-    http://localhost:7770/pay
+    -d '{"receiver":"http://localhost:8770/accounts/bob/spsp/","source_amount":500}' \
+    http://localhost:7770/payments
 ```
 
 <!--! printf "\n\n" -->

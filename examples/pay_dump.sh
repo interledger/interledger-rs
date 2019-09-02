@@ -21,7 +21,7 @@ fi
 if [ ! -z "$2"  ]
 then
     set -x
-    curl localhost:$PORT/pay \
+    curl localhost:$PORT/payments \
         -d "{ \"receiver\" : \"http://localhost:$RECEIVER\", \"source_amount\": $2  }" \
         -H "Authorization: Bearer $AUTH" -H "Content-Type: application/json"
     set +x

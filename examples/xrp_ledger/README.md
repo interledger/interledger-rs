@@ -185,14 +185,14 @@ connector and settlement engine's logs.
 
 Alice pays Bob:
 ```bash
-curl localhost:7770/pay \
+curl localhost:7770/payments \
         -d "{ \"receiver\" : \"http://localhost:8770\", \"source_amount\": 5  }" \
         -H "Authorization: Bearer in_alice" -H "Content-Type: application/json"
 ```
 
 Bob pays Alice:
 ```bash
-curl localhost:8770/pay \
+curl localhost:8770/payments \
         -d "{ \"receiver\" : \"http://localhost:7770\", \"source_amount\": 7  }" \
         -H "Authorization: Bearer in_bob" -H "Content-Type: application/json"
 ```

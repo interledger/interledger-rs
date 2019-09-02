@@ -297,7 +297,7 @@ pub fn run_spsp_server_http(
                 move |req: Request<Body>| -> Box<dyn Future<Item = Response<Body>, Error = Error> + Send> {
                     match (req.method(), req.uri().path(), req.headers().get(ACCEPT)) {
                         (&Method::GET, "/spsp", _) => Box::new(spsp_responder.call(req)),
-                        (&Method::GET, "/.well-known/pay", _) => Box::new(spsp_responder.call(req)),
+                        (&Method::GET, "/.well-known/payments", _) => Box::new(spsp_responder.call(req)),
                         (&Method::POST, "/ilp", _) => Box::new(http_service.call(req)),
                         (&Method::GET, _, Some(accept_header)) => {
                             if accept_header == HeaderValue::from_static("application/spsp4+json") {
