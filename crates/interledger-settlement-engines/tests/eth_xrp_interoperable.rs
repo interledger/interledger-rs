@@ -330,24 +330,20 @@ fn eth_xrp_interoperable() {
                     let bob_addr = Address::from_str("example.bob").unwrap();
                     let alice_addr = Address::from_str("example.alice").unwrap();
                     futures::future::join_all(vec![
-                        get_all_accounts(node1_http, "admin").map(accounts_to_ids),
                         get_all_accounts(node2_http, "admin").map(accounts_to_ids),
                         get_all_accounts(node3_http, "admin").map(accounts_to_ids),
                     ])
                     .and_then(move |ids| {
-                        let node1_ids = ids[0].clone();
-                        let node2_ids = ids[1].clone();
-                        let node3_ids = ids[2].clone();
+                        let node2_ids = ids[0].clone();
+                        let node3_ids = ids[1].clone();
 
-                        let bob_on_alice = node1_ids.get(&bob_addr).unwrap().to_owned();
                         let alice_on_bob = node2_ids.get(&alice_addr).unwrap().to_owned();
                         let charlie_on_bob = node2_ids.get(&charlie_addr).unwrap().to_owned();
                         let bob_on_charlie = node3_ids.get(&bob_addr).unwrap().to_owned();
 
                         // Insert accounts for the 3 nodes (4 total since node2 has
                         // eth & xrp)
-                        create_account_on_engine(node1_engine, bob_on_alice)
-                            .and_then(move |_| create_account_on_engine(node2_engine, alice_on_bob))
+                        create_account_on_engine(node2_engine, alice_on_bob)
                             .and_then(move |_| {
                                 create_account_on_engine(node2_xrp_engine_port, charlie_on_bob)
                             })

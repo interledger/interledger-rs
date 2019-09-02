@@ -790,7 +790,7 @@ where
         let store: S = self.store.clone();
         let account_id = account_id.id;
         let signer = self.signer.clone();
-        let address = self.address.clone();
+        let address = self.address;
 
         // We make a POST request to OUR connector's `messages`
         // endpoint. This will in turn send an outgoing

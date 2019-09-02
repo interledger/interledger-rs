@@ -210,91 +210,81 @@ fn eth_ledger_settlement() {
                     // create account endpoint so that they trade addresses.
                     // This would happen automatically if we inserted the
                     // accounts via the Accounts API.
-                    let bob_addr = Address::from_str("example.bob").unwrap();
-                    let bob_addr2 = bob_addr.clone();
                     let alice_addr = Address::from_str("example.alice").unwrap();
-                    join_all(vec![
-                        get_all_accounts(node1_http, "hi_alice").map(accounts_to_ids),
-                        get_all_accounts(node2_http, "admin").map(accounts_to_ids),
-                    ])
-                    .and_then(move |ids| {
-                        let node1_ids = ids[0].clone();
-                        let node2_ids = ids[1].clone();
+                    get_all_accounts(node2_http, "admin")
+                        .map(accounts_to_ids)
+                        .and_then(move |node2_ids| {
+                            let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
+                            // We can skip the creation of the account on the first
+                            // engine since the second call will create it on both
+                            // (and it happens via the RPC when peering is completed)
+                            let create2 = create_account_on_engine(node2_engine, alice);
 
-                        let bob = node1_ids.get(&bob_addr2).unwrap().to_owned();
-                        let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
+                            // Make 4 subsequent payments (we could also do a 71 payment
+                            // directly)
+                            let send1 = send_money_to_username(
+                                node1_http, node2_http, 10, "bob", "alice", "in_alice",
+                            );
+                            let send2 = send_money_to_username(
+                                node1_http, node2_http, 20, "bob", "alice", "in_alice",
+                            );
+                            let send3 = send_money_to_username(
+                                node1_http, node2_http, 39, "bob", "alice", "in_alice",
+                            );
+                            let send4 = send_money_to_username(
+                                node1_http, node2_http, 1, "bob", "alice", "in_alice",
+                            );
 
-                        // We can skip the creation of the account on the first
-                        // engine since the second call will create it on both
-                        let create1 = create_account_on_engine(node1_engine, bob);
-                        // let create2 = create_account_on_engine(node2_engine, alice);
+                            let get_balances = move || {
+                                join_all(vec![
+                                    get_balance("bob", node1_http, "alice"),
+                                    get_balance("alice", node2_http, "bob"),
+                                ])
+                            };
 
-                        // Make 4 subsequent payments (we could also do a 71 payment
-                        // directly)
-                        let send1 = send_money_to_username(
-                            node1_http, node2_http, 10, "bob", "alice", "in_alice",
-                        );
-                        let send2 = send_money_to_username(
-                            node1_http, node2_http, 20, "bob", "alice", "in_alice",
-                        );
-                        let send3 = send_money_to_username(
-                            node1_http, node2_http, 39, "bob", "alice", "in_alice",
-                        );
-                        let send4 = send_money_to_username(
-                            node1_http, node2_http, 1, "bob", "alice", "in_alice",
-                        );
-
-                        let get_balances = move || {
-                            join_all(vec![
-                                get_balance("bob", node1_http, "alice"),
-                                get_balance("alice", node2_http, "bob"),
-                            ])
-                        };
-
-                        create1
-                            // .and_then(move |_| create2)
-                            .and_then(move |_| send1)
-                            .and_then(move |_| get_balances())
-                            .and_then(move |ret| {
-                                assert_eq!(ret[0], 10);
-                                assert_eq!(ret[1], -10);
-                                Ok(())
-                            })
-                            .and_then(move |_| send2)
-                            .and_then(move |_| get_balances())
-                            .and_then(move |ret| {
-                                assert_eq!(ret[0], 30);
-                                assert_eq!(ret[1], -30);
-                                Ok(())
-                            })
-                            .and_then(move |_| send3)
-                            .and_then(move |_| get_balances())
-                            .and_then(move |ret| {
-                                assert_eq!(ret[0], 69);
-                                assert_eq!(ret[1], -69);
-                                Ok(())
-                            })
-                            // Up to here, Alice's balance should be -69 and Bob's
-                            // balance should be 69. Once we make 1 more payment, we
-                            // exceed the settle_threshold and thus a settlement is made
-                            .and_then(move |_| send4)
-                            .and_then(move |_| {
-                                // Wait a few seconds so that the receiver's engine
-                                // gets the data
-                                delay(5000)
-                                    .map_err(move |_| panic!("Weird error."))
-                                    .and_then(move |_| {
-                                        // Since the credit connection reached -70, and the
-                                        // settle_to is -10, a 60 Wei transaction is made.
-                                        get_balances().and_then(move |ret| {
-                                            assert_eq!(ret[0], 10);
-                                            assert_eq!(ret[1], -10);
-                                            ganache_pid.kill().unwrap();
-                                            Ok(())
+                            create2
+                                .and_then(move |_| send1)
+                                .and_then(move |_| get_balances())
+                                .and_then(move |ret| {
+                                    assert_eq!(ret[0], 10);
+                                    assert_eq!(ret[1], -10);
+                                    Ok(())
+                                })
+                                .and_then(move |_| send2)
+                                .and_then(move |_| get_balances())
+                                .and_then(move |ret| {
+                                    assert_eq!(ret[0], 30);
+                                    assert_eq!(ret[1], -30);
+                                    Ok(())
+                                })
+                                .and_then(move |_| send3)
+                                .and_then(move |_| get_balances())
+                                .and_then(move |ret| {
+                                    assert_eq!(ret[0], 69);
+                                    assert_eq!(ret[1], -69);
+                                    Ok(())
+                                })
+                                // Up to here, Alice's balance should be -69 and Bob's
+                                // balance should be 69. Once we make 1 more payment, we
+                                // exceed the settle_threshold and thus a settlement is made
+                                .and_then(move |_| send4)
+                                .and_then(move |_| {
+                                    // Wait a few seconds so that the receiver's engine
+                                    // gets the data
+                                    delay(5000)
+                                        .map_err(move |_| panic!("Weird error."))
+                                        .and_then(move |_| {
+                                            // Since the credit connection reached -70, and the
+                                            // settle_to is -10, a 60 Wei transaction is made.
+                                            get_balances().and_then(move |ret| {
+                                                assert_eq!(ret[0], 10);
+                                                assert_eq!(ret[1], -10);
+                                                ganache_pid.kill().unwrap();
+                                                Ok(())
+                                            })
                                         })
-                                    })
-                            })
-                    })
+                                })
+                        })
                 }),
         )
         .unwrap();
