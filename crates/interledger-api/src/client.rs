@@ -1,12 +1,13 @@
 // Adapted from the futures-retry example: https://gitlab.com/mexus/futures-retry/blob/master/examples/tcp-client-complex.rs
 use futures::future::Future;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
-use log::{debug, error, trace};
+use log::trace;
 use reqwest::r#async::Client as HTTPClient;
 use serde_json::json;
 use std::fmt::Display;
 use std::time::Duration;
 use url::Url;
+use http::StatusCode;
 
 // The account creation endpoint set by the engines in [RFC536](https://github.com/interledger/rfcs/pull/536)
 static ACCOUNTS_ENDPOINT: &str = "accounts";
@@ -29,7 +30,7 @@ impl Client {
         &self,
         engine_url: Url,
         id: T,
-    ) -> impl Future<Item = (), Error = reqwest::Error> {
+    ) -> impl Future<Item = StatusCode, Error = reqwest::Error> {
         let mut se_url = engine_url.clone();
         let timeout = self.timeout_ms;
         se_url
@@ -50,9 +51,10 @@ impl Client {
                 .json(&json!({"id" : id.to_string()}))
                 .send()
                 .and_then(move |response| {
-                    trace!("Engine responded with status code: {}", response.status());
-                    // TODO: Do something with the success status code?
-                    Ok(())
+                    // If the account is not found on the peer's connector, the
+                    // retry logic will not get triggered. When the counterparty
+                    // tries to add the account, they will complete the handshake.
+                    Ok(response.status())
                 })
         };
 
@@ -115,8 +117,9 @@ where
             // Retry timeouts and 5xx every 5 seconds
             RetryPolicy::WaitRetry(Duration::from_secs(5))
         } else {
-            // Instantly retry other errors since they may be HTTP/redirect related
-            RetryPolicy::Repeat
+            // Retry other errors slightly more frequently since they may be
+            // related to the engine not having started yet
+            RetryPolicy::WaitRetry(Duration::from_secs(1))
         }
     }
 }
