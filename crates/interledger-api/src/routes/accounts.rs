@@ -275,8 +275,8 @@ impl_web! {
             match property {
                 "ilp_address" => json!({"ilp_address" : data["ilp_address"] }),
                 "balance" => {
-                    let balance: i64 = serde_json::from_value(data["balance"].clone()).unwrap();
-                    let prepaid_amount: i64 = serde_json::from_value(data["prepaid_amount"].clone()).unwrap();
+                    let balance = data["balance"].as_i64().unwrap();
+                    let prepaid_amount = data["prepaid_amount"].as_i64().unwrap();
                     json!({"balance" : balance + prepaid_amount})
                 }
                 _ => json!(account)

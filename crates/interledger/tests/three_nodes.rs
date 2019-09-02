@@ -296,10 +296,10 @@ fn three_nodes() {
                         ])
                     };
 
-                    // // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
-                    // // while Node 3's scale is 6. This means that Node 3 will
-                    // // see 1000x less. In addition, the conversion rate is 2:1
-                    // // for 3's asset, so he will receive 2 total.
+                    // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
+                    // while Node 3's scale is 6. This means that Node 3 will
+                    // see 1000x less. In addition, the conversion rate is 2:1
+                    // for 3's asset, so he will receive 2 total.
                     send_1_to_3
                         .map_err(|err| {
                             eprintln!("Error sending from node 1 to node 3: {:?}", err);
