@@ -224,8 +224,10 @@ fn eth_ledger_settlement() {
                         let bob = node1_ids.get(&bob_addr2).unwrap().to_owned();
                         let alice = node2_ids.get(&alice_addr).unwrap().to_owned();
 
+                        // We can skip the creation of the account on the first
+                        // engine since the second call will create it on both
                         let create1 = create_account_on_engine(node1_engine, bob);
-                        let create2 = create_account_on_engine(node2_engine, alice);
+                        // let create2 = create_account_on_engine(node2_engine, alice);
 
                         // Make 4 subsequent payments (we could also do a 71 payment
                         // directly)
@@ -250,7 +252,7 @@ fn eth_ledger_settlement() {
                         };
 
                         create1
-                            .and_then(move |_| create2)
+                            // .and_then(move |_| create2)
                             .and_then(move |_| send1)
                             .and_then(move |_| get_balances())
                             .and_then(move |ret| {
