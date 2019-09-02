@@ -326,6 +326,8 @@ pub fn main() {
                         http_outgoing_token,
                         http_endpoint,
                         max_packet_amount: u64::max_value(),
+                        balance: value_t!(matches, "balance", i64).ok(),
+                        prepaid_amount: value_t!(matches, "prepaid_amount", i64).ok(),
                         min_balance: value_t!(matches, "min_balance", i64).ok(),
                         settle_threshold: value_t!(matches, "settle_threshold", i64).ok(),
                         settle_to: value_t!(matches, "settle_to", i64).ok(),

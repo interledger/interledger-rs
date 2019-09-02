@@ -350,9 +350,6 @@ impl RedisStore {
                     pipe.cmd("HMSET").arg(accounts_key(account.id)).arg(account.clone().encrypt_tokens(&encryption_key))
                         .ignore();
 
-                    // Set balance-related details
-                    pipe.hset_multiple(accounts_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
-
                     if account.send_routes {
                         pipe.sadd("send_routes_to", account.id).ignore();
                     }

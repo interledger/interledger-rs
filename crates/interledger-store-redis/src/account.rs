@@ -28,7 +28,7 @@ use std::{
 use uuid::{parser::ParseError, Uuid};
 
 use url::Url;
-const ACCOUNT_DETAILS_FIELDS: usize = 21;
+const ACCOUNT_DETAILS_FIELDS: usize = 23;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
@@ -41,6 +41,8 @@ pub struct Account {
     pub(crate) asset_scale: u8,
     pub(crate) max_packet_amount: u64,
     pub(crate) min_balance: Option<i64>,
+    pub(crate) balance: i64,
+    pub(crate) prepaid_amount: i64,
     pub(crate) http_endpoint: Option<Url>,
     #[serde(serialize_with = "optional_bytes_to_utf8")]
     pub(crate) http_incoming_token: Option<Bytes>,
@@ -129,6 +131,8 @@ impl Account {
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
             min_balance: details.min_balance,
+            balance: details.balance.unwrap_or_default(),
+            prepaid_amount: details.prepaid_amount.unwrap_or_default(),
             http_endpoint,
             http_incoming_token,
             http_outgoing_token,
@@ -254,6 +258,10 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             .write_redis_args(&mut rv);
         "round_trip_time".write_redis_args(&mut rv);
         account.round_trip_time.write_redis_args(&mut rv);
+        "balance".write_redis_args(&mut rv);
+        account.balance.write_redis_args(&mut rv);
+        "prepaid_amount".write_redis_args(&mut rv);
+        account.prepaid_amount.write_redis_args(&mut rv);
 
         // Write optional fields
         if let Some(http_endpoint) = account.http_endpoint.as_ref() {
@@ -346,6 +354,8 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 ilp_address,
                 asset_code: get_value("asset_code", &hash)?,
                 asset_scale: get_value("asset_scale", &hash)?,
+                balance: get_value("balance", &hash)?,
+                prepaid_amount: get_value("prepaid_amount", &hash)?,
                 http_endpoint: get_url_option("http_endpoint", &hash)?,
                 http_incoming_token: get_bytes_option("http_incoming_token", &hash)?,
                 http_outgoing_token: get_bytes_option("http_outgoing_token", &hash)?,
@@ -536,6 +546,8 @@ mod redis_account {
             asset_scale: 6,
             asset_code: "XYZ".to_string(),
             max_packet_amount: 1000,
+            balance: None,
+            prepaid_amount: None,
             min_balance: Some(-1000),
             http_endpoint: Some("http://example.com/ilp".to_string()),
             // we are Bob and we're using this account to peer with Alice

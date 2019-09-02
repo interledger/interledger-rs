@@ -217,6 +217,72 @@ impl_web! {
             })
         }
 
+        #[get("/accounts/:username/:property")]
+        #[content_type("application/json")]
+        fn http_get_property(&self, username: String, property: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let store = self.store.clone();
+            let self_clone = self.clone();
+            let is_admin = self.is_admin(&authorization);
+            let username_clone = username.clone();
+            let auth_clone = authorization.clone();
+            result(Username::from_str(&username))
+            .map_err(move |_| {
+                error!("Invalid username: {}", username);
+                Response::builder().status(500).body(()).unwrap()
+            })
+            .and_then(move |username| {
+            store.get_account_id_from_username(&username)
+            .map_err(move |_| {
+                error!("Error getting account id from username: {}", username_clone);
+                Response::builder().status(404).body(()).unwrap()
+            })
+            .and_then(move |id| {
+                if is_admin  {
+                    Either::A(store.get_accounts(vec![id])
+                    .map_err(move |_| {
+                        debug!("Account not found: {:?}", id);
+                        Response::error(404)
+                    })
+                    .and_then(move |mut accounts| Ok(self_clone.get_property(accounts.pop().unwrap(), &property))))
+                } else {
+                    Either::B(result(AuthToken::from_str(&auth_clone))
+                        .map_err(move |_| {
+                            error!("Could not parse auth token {:?}", auth_clone);
+                            Response::error(401)
+                        })
+                        .and_then(move |auth| {
+                            store.get_account_from_http_auth(&auth.username(), &auth.password())
+                            .map_err(move |_| {
+                                debug!("No account found with auth: {}", authorization);
+                                Response::error(401)
+                            })
+                            .and_then(move |account| {
+                                if account.id() == id {
+                                    Ok(self_clone.get_property(account, &property))
+                                } else {
+                                    Err(Response::error(401))
+                                }
+                            })
+                        })
+                    )
+                }
+            })
+            })
+        }
+
+        fn get_property(&self, account: A, property: &str) -> Value {
+            let data = json!(account);
+            match property {
+                "ilp_address" => json!({"ilp_address" : data["ilp_address"] }),
+                "balance" => {
+                    let balance: i64 = serde_json::from_value(data["balance"].clone()).unwrap();
+                    let prepaid_amount: i64 = serde_json::from_value(data["prepaid_amount"].clone()).unwrap();
+                    json!({"balance" : balance + prepaid_amount})
+                }
+                _ => json!(account)
+            }
+        }
+
         #[delete("/accounts/:username")]
         #[content_type("application/json")]
         fn http_delete_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
@@ -276,65 +342,6 @@ impl_web! {
             })
             })
 
-        }
-
-        // TODO should this be combined into the account record?
-        #[get("/accounts/:username/balance")]
-        #[content_type("application/json")]
-        fn http_get_balance(&self, username: String, authorization: String) -> impl Future<Item = BalanceResponse, Error = Response<()>> {
-            let store = self.store.clone();
-            let store_clone = self.store.clone();
-            let is_admin = self.is_admin(&authorization);
-            let username_clone = username.clone();
-            let auth_clone = authorization.clone();
-            result(Username::from_str(&username))
-            .map_err(move |_| {
-                error!("Invalid username: {}", username);
-                Response::builder().status(500).body(()).unwrap()
-            })
-            .and_then(move |username| {
-            store_clone.get_account_id_from_username(&username)
-            .map_err(move |_| {
-                error!("Error getting account id from username: {}", username_clone);
-                Response::builder().status(500).body(()).unwrap()
-            })
-            .and_then(move |id| {
-                if is_admin  {
-                    Either::A(store.get_accounts(vec![id])
-                        .map_err(move |_| {
-                            debug!("Account not found: {}", id);
-                            Response::error(404)
-                        })
-                        .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
-                } else {
-                    Either::B(result(AuthToken::from_str(&auth_clone))
-                        .map_err(move |_| {
-                            error!("Could not parse auth token {:?}", auth_clone);
-                            Response::error(401)
-                        })
-                        .and_then(move |auth| {
-                            store.get_account_from_http_auth(&auth.username(), &auth.password())
-                            .map_err(move |_| {
-                                error!("No account found with auth: {}", authorization);
-                                Response::error(401)
-                            })
-                            .and_then(move |account| {
-                                if account.id() == id {
-                                    Ok(account)
-                                } else {
-                                    Err(Response::error(401))
-                                }
-                            })
-                        })
-                    )
-                }
-            })
-            .and_then(move |account| store_clone.get_balance(account)
-            .map_err(|_| Response::error(500)))
-            .and_then(|balance| Ok(BalanceResponse {
-                balance: balance.to_string(),
-            }))
-            })
         }
     }
 }

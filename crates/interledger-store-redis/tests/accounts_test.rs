@@ -52,32 +52,19 @@ fn delete_accounts() {
 #[test]
 fn update_accounts() {
     block_on(test_store().and_then(|(store, context, accounts)| {
-        context
-            .async_connection()
-            .map_err(|err| panic!(err))
-            .and_then(move |connection| {
-                let id = accounts[0].id();
-                redis::cmd("HMSET")
-                    .arg(format!("accounts:{}", id))
-                    .arg("balance")
-                    .arg(600)
-                    .arg("prepaid_amount")
-                    .arg(400)
-                    .query_async(connection)
-                    .map_err(|err| panic!(err))
-                    .and_then(move |(_, _): (_, redis::Value)| {
-                        let mut new = ACCOUNT_DETAILS_0.clone();
-                        new.asset_code = String::from("TUV");
-                        store.update_account(id, new).and_then(move |account| {
-                            assert_eq!(account.asset_code(), "TUV");
-                            store.get_balance(account).and_then(move |balance| {
-                                assert_eq!(balance, 1000);
-                                let _ = context;
-                                Ok(())
-                            })
-                        })
-                    })
+        let id = accounts[0].id();
+        let mut new = ACCOUNT_DETAILS_0.clone();
+        new.asset_code = String::from("TUV");
+        new.balance = Some(600);
+        new.prepaid_amount = Some(400);
+        store.update_account(id, new).and_then(move |account| {
+            assert_eq!(account.asset_code(), "TUV");
+            store.get_balance(account).and_then(move |balance| {
+                assert_eq!(balance, 1000);
+                let _ = context;
+                Ok(())
             })
+        })
     }))
     .unwrap();
 }
