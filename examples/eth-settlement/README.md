@@ -256,7 +256,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null
 
 printf "Adding Alice's account on Bob's node...\n"
 curl \
@@ -278,7 +278,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null &
+    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null
 
 sleep 2
 ```

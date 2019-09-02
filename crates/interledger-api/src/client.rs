@@ -1,13 +1,13 @@
 // Adapted from the futures-retry example: https://gitlab.com/mexus/futures-retry/blob/master/examples/tcp-client-complex.rs
 use futures::future::Future;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
+use http::StatusCode;
 use log::trace;
 use reqwest::r#async::Client as HTTPClient;
 use serde_json::json;
 use std::fmt::Display;
 use std::time::Duration;
 use url::Url;
-use http::StatusCode;
 
 // The account creation endpoint set by the engines in [RFC536](https://github.com/interledger/rfcs/pull/536)
 static ACCOUNTS_ENDPOINT: &str = "accounts";

@@ -14,8 +14,8 @@ sleep 1
 
 echo "Initializing Alice SE"
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV" \
-LEDGER_SECRET="sahVoeg97nuitefnzL9GHjp2Z6kpj" \
+LEDGER_ADDRESS="rLna4iDTAn2vNs4CSBwhoz5HQ9M1Xm58F4" \
+LEDGER_SECRET="sn22GccSrAj4B2HtQN6YTk14Qwfnt" \
 CONNECTOR_URL="http://localhost:7771" \
 REDIS_PORT=6379 \
 ENGINE_PORT=3000 \
@@ -23,8 +23,8 @@ ENGINE_PORT=3000 \
 
 echo "Initializing Bob SE"
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K" \
-LEDGER_SECRET="ssnYUDNeNQrNij2EVJG6dDw258jA6" \
+LEDGER_ADDRESS="r3FugEA5WpL4q3hmkUfo8a3pjdb214wsth" \
+LEDGER_SECRET="shRjP3WyN7TLsEAbw5hns4bNGZvRY" \
 CONNECTOR_URL="http://localhost:8771" \
 REDIS_PORT=6380 \
 ENGINE_PORT=3001 \

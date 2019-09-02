@@ -211,8 +211,8 @@ cargo run --package interledger-settlement-engines -- ethereum-ledger \
 &> logs/node-bob-settlement-engine-eth.log &
 
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K" \
-LEDGER_SECRET="ssnYUDNeNQrNij2EVJG6dDw258jA6" \
+LEDGER_ADDRESS="rLna4iDTAn2vNs4CSBwhoz5HQ9M1Xm58F4" \
+LEDGER_SECRET="sn22GccSrAj4B2HtQN6YTk14Qwfnt" \
 CONNECTOR_URL="http://localhost:8771" \
 REDIS_PORT=6380 \
 ENGINE_PORT=3002 \
@@ -221,8 +221,8 @@ ilp-settlement-xrp \
 
 # Start Charlie's settlement engine (XRPL)
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV" \
-LEDGER_SECRET="sahVoeg97nuitefnzL9GHjp2Z6kpj" \
+LEDGER_ADDRESS="r3FugEA5WpL4q3hmkUfo8a3pjdb214wsth" \
+LEDGER_SECRET="shRjP3WyN7TLsEAbw5hns4bNGZvRY" \
 CONNECTOR_URL="http://localhost:9771" \
 REDIS_PORT=6381 \
 ENGINE_PORT=3003 \
@@ -349,7 +349,7 @@ curl \
     "routing_relation": "Peer",
     "send_routes": true,
     "receive_routes": true}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null
 
 printf "Adding Alice's account on Bob's node (ETH Peer relation)...\n"
 curl \
@@ -393,7 +393,7 @@ curl \
     "routing_relation": "Child",
     "send_routes": false,
     "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
+    http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
 curl \

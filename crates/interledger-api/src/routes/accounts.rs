@@ -9,10 +9,10 @@ use interledger_http::{HttpAccount, HttpStore};
 use interledger_service::{Account, AuthToken, Username};
 use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
-use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
+use std::time::Duration;
 use tower_web::{impl_web, Response};
 use url::Url;
 

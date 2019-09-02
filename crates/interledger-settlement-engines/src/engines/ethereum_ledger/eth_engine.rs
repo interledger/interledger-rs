@@ -2,11 +2,11 @@ use super::types::{Addresses, EthereumAccount, EthereumLedgerTxSigner, EthereumS
 use super::utils::{filter_transfer_logs, make_tx, sent_to_us, ERC20Transfer};
 use clarity::Signature;
 use log::{debug, error, trace};
+use parking_lot::RwLock;
 use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 use hyper::StatusCode;
 use log::info;
@@ -811,7 +811,8 @@ where
             .push("accounts")
             .push(&account_id.to_string())
             .push("messages");
-        let body = serde_json::to_string(&PaymentDetailsRequest::new(challenge_clone.clone())).unwrap();
+        let body =
+            serde_json::to_string(&PaymentDetailsRequest::new(challenge_clone.clone())).unwrap();
         let url_clone = url.clone();
         let action = move || {
             client
@@ -865,46 +866,51 @@ where
                         .and_then({
                             let payment_details = payment_details.clone();
                             move |_| {
+                                // ACK BACK
+                                if let Some(challenge) = payment_details.challenge {
+                                    // if we were challenged, we must respond
+                                    let data = prefixed_message(challenge);
+                                    let signature = signer.sign_message(&data);
+                                    let resp = {
+                                        // Respond with our address, a signature,
+                                        // and no challenge, since we already sent
+                                        // them one earlier
+                                        let ret =
+                                            PaymentDetailsResponse::new(address, signature, None);
+                                        serde_json::to_string(&ret).unwrap()
+                                    };
+                                    let idempotency_uuid =
+                                        Uuid::new_v4().to_hyphenated().to_string();
+                                    let client = Client::new();
+                                    let action = move || {
+                                        client
+                                            .post(url_clone.as_ref())
+                                            .header("Content-Type", "application/octet-stream")
+                                            .header("Idempotency-Key", idempotency_uuid.clone())
+                                            .body(resp.clone())
+                                            .send()
+                                            .map_err(|err| error!("{}", err))
+                                            .and_then(move |_| Ok(()))
+                                    };
 
-                            // ACK BACK
-                            if let Some(challenge) = payment_details.challenge { // if we were challenged, we must respond
-                                let data = prefixed_message(challenge);
-                                let signature = signer.sign_message(&data);
-                                let resp = {
-                                    // Respond with our address, a signature,
-                                    // and no challenge, since we already sent
-                                    // them one earlier
-                                    let ret = PaymentDetailsResponse::new(address, signature, None);
-                                    serde_json::to_string(&ret).unwrap()
-                                };
-                                let idempotency_uuid = Uuid::new_v4().to_hyphenated().to_string();
-                                let client = Client::new();
-                                let action = move || {
-                                    client
-                                        .post(url_clone.as_ref())
-                                        .header("Content-Type", "application/octet-stream")
-                                        .header("Idempotency-Key", idempotency_uuid.clone())
-                                        .body(resp.clone())
-                                        .send()
-                                        .map_err(|err| error!("{}", err))
-                                        .and_then(move |_| Ok(()))
-                                };
+                                    tokio::executor::spawn(
+                                        Retry::spawn(
+                                            ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+                                            action,
+                                        )
+                                        .map_err(|err| error!("{:?}", err)),
+                                    );
+                                }
 
-                                tokio::spawn(
-                                    Retry::spawn(
-                                        ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
-                                        action
-                                    ).map_err(|err| error!("{:?}", err))
-                                );
+                                let data =
+                                    HashMap::from_iter(vec![(account_id, payment_details.to)]);
+                                store.save_account_addresses(data).map_err(move |err| {
+                                    let err = format!("Couldn't connect to store {:?}", err);
+                                    error!("{}", err);
+                                    (StatusCode::from_u16(500).unwrap(), err)
+                                })
                             }
-
-                            let data = HashMap::from_iter(vec![(account_id, payment_details.to)]);
-                            store.save_account_addresses(data).map_err(move |err| {
-                                let err = format!("Couldn't connect to store {:?}", err);
-                                error!("{}", err);
-                                (StatusCode::from_u16(500).unwrap(), err)
-                            })
-                        }})
+                        })
                 })
             })
             .and_then(move |_| Ok((StatusCode::from_u16(201).unwrap(), "CREATED".to_owned()))),
@@ -927,7 +933,10 @@ where
         // provided account.
         // If we received a SYN, we respond with a signed message
         if let Ok(req) = serde_json::from_slice::<PaymentDetailsRequest>(&body) {
-            debug!("Received account creation request. Responding with our account's details {} {:?}", account_id, address);
+            debug!(
+                "Received account creation request. Responding with our account's details {} {:?}",
+                account_id, address
+            );
             // Otherwise, we save the received address
             let data = prefixed_message(req.challenge);
             let signature = self.signer.sign_message(&data);
@@ -963,7 +972,10 @@ where
             // we always ACK even if the signature check fails
             Box::new(ok((StatusCode::from_u16(200).unwrap(), "OK".to_string())))
         } else {
-            Box::new(err((StatusCode::from_u16(502).unwrap(), "Invalid message type".to_owned())))
+            Box::new(err((
+                StatusCode::from_u16(502).unwrap(),
+                "Invalid message type".to_owned(),
+            )))
         }
     }
     /// Settlement Engine's function that corresponds to the
@@ -1227,13 +1239,17 @@ mod tests {
             own_address: BOB.address,
             token_address: None,
         };
-        let c = serde_json::to_vec(&PaymentDetailsResponse::new(bob_addrs, signature, None)).unwrap();
+        let c =
+            serde_json::to_vec(&PaymentDetailsResponse::new(bob_addrs, signature, None)).unwrap();
         let ret = block_on(engine.receive_message(bob.id.to_string(), c)).unwrap();
         assert_eq!(ret.0.as_u16(), 200);
         assert_eq!(ret.1, "OK".to_owned());
 
         // check that alice's store got updated with bob's addresses
-        let addrs = store.load_account_addresses(vec![bob.id.to_string()]).wait().unwrap();
+        let addrs = store
+            .load_account_addresses(vec![bob.id.to_string()])
+            .wait()
+            .unwrap();
         assert_eq!(addrs[0], bob_addrs);
     }
 
