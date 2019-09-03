@@ -127,12 +127,12 @@ impl_web! {
 
         // TODO resolve payment pointers with subdomains to the correct account
         // also give accounts aliases to use in the payment pointer instead of the ids
-        #[get("/.well-known/payments")]
+        #[get("/.well-known/pay")]
         fn get_well_known(&self) -> impl Future<Item = Response<Body>, Error = Response<()>> {
             if let Some(ref account_id) = &self.default_spsp_account {
                 Either::A(self.get_spsp(account_id.to_string()))
             } else {
-                error!("Got SPSP request to /.well-known/payments endpoint but there is no default SPSP account configured");
+                error!("Got SPSP request to /.well-known/pay endpoint but there is no default SPSP account configured");
                 Either::B(err(Response::builder().status(404).body(()).unwrap()))
             }
         }

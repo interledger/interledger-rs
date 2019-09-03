@@ -108,7 +108,7 @@ See the [Simple Payment Setup Protocol (SPSP) RFC](https://interledger.org/rfcs/
 }
 ```
 
-### GET /.well-known/payments
+### GET /.well-known/pay
 
 No authentication required.
 
