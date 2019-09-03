@@ -387,6 +387,7 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
+        let decryption_key = self.decryption_key.clone();
 
         // Instead of storing the incoming secrets, we store the HMAC digest of them
         // (This is better than encrypting because the output is deterministic so we can look
@@ -404,23 +405,33 @@ impl RedisStore {
 
         Box::new(
             // Check to make sure an account with this ID already exists
-            redis::cmd("EXISTS")
+            redis::cmd("HGETALL")
                 .arg(accounts_key(id))
                 // TODO this needs to be atomic with the insertions later, waiting on #186
                 .query_async(connection.as_ref().clone())
                 .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
-                .and_then(move |(connection, result): (SharedConnection, bool)| {
-                    if result {
-                        Account::try_from(id, account)
-                            .and_then(move |account| Ok((connection, account)))
-                    } else {
-                        warn!(
-                            "No account exists with ID {}, cannot update account {:?}",
-                            id, account
-                        );
-                        Err(())
-                    }
-                })
+                .and_then(
+                    move |(connection, result): (
+                        SharedConnection,
+                        Option<AccountWithEncryptedTokens>,
+                    )| {
+                        if let Some(acc) = result {
+                            Account::try_from(id, account).and_then(move |mut ret_account| {
+                                // Ensure we do not overwrite the balances
+                                let acc = acc.decrypt_tokens(&decryption_key);
+                                ret_account.balance = acc.balance;
+                                ret_account.prepaid_amount = acc.prepaid_amount;
+                                Ok((connection, ret_account))
+                            })
+                        } else {
+                            warn!(
+                                "No account exists with ID {}, cannot update account {:?}",
+                                id, account
+                            );
+                            Err(())
+                        }
+                    },
+                )
                 .and_then(move |(connection, account)| {
                     let mut pipe = redis::pipe();
                     pipe.atomic();

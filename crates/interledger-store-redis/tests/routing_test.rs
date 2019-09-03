@@ -42,8 +42,6 @@ fn polls_for_route_updates() {
                                 asset_scale: 6,
                                 asset_code: "XYZ".to_string(),
                                 max_packet_amount: 1000,
-                                balance: None,
-                                prepaid_amount: None,
                                 min_balance: Some(-1000),
                                 http_endpoint: None,
                                 http_incoming_token: None,
