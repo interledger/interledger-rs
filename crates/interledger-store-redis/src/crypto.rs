@@ -28,8 +28,8 @@ impl DebugSecret for GenerationKey {}
 
 impl Zeroize for EncryptionKey {
     fn zeroize(&mut self) {
-        // Instead of clearing the memory, we create a key from an empty
-        // slice as a secret.
+        // Instead of clearing the memory, we overwrite the key with a
+        // slice filled with zeros
         let empty_key = EncryptionKey(aead::SealingKey::new(&aead::AES_256_GCM, &[0; 32]).unwrap());
         volatile_write(self, empty_key);
         atomic_fence();
@@ -44,8 +44,8 @@ impl Drop for EncryptionKey {
 
 impl Zeroize for DecryptionKey {
     fn zeroize(&mut self) {
-        // Instead of clearing the memory, we create a key from an empty
-        // slice as a secret.
+        // Instead of clearing the memory, we overwrite the key with a
+        // slice filled with zeros
         let empty_key = DecryptionKey(aead::OpeningKey::new(&aead::AES_256_GCM, &[0; 32]).unwrap());
         volatile_write(self, empty_key);
         atomic_fence();
@@ -60,8 +60,8 @@ impl Drop for DecryptionKey {
 
 impl Zeroize for GenerationKey {
     fn zeroize(&mut self) {
-        // Instead of clearing the memory, we create a key from an empty
-        // slice as a secret.
+        // Instead of clearing the memory, we overwrite the key with a
+        // slice filled with zeros
         let empty_key = GenerationKey(hmac::SigningKey::new(&digest::SHA256, &[0; 32]));
         volatile_write(self, empty_key);
         atomic_fence();
@@ -74,8 +74,13 @@ impl Drop for GenerationKey {
     }
 }
 
-// this logic is taken from: https://github.com/iqlusioninc/crates/blob/develop/zeroize/src/lib.rs#L388-L400
-// Perform a volatile write to the destination
+// this logic is taken from [here](https://github.com/iqlusioninc/crates/blob/develop/zeroize/src/lib.rs#L388-L400)
+// Perform a [volatile
+// write](https://doc.rust-lang.org/beta/std/ptr/fn.write_volatile.html) to the
+// destination. As written in the link, volatile writes are guaranteed to not be
+// re-ordered or elided by the compiler, meaning that we can be sure that the
+// memory we want to overwrite will be overwritten (and the compiler will not
+// avoid that write for whatever reason)
 #[inline]
 fn volatile_write<T>(dst: &mut T, src: T) {
     unsafe { ptr::write_volatile(dst, src) }
