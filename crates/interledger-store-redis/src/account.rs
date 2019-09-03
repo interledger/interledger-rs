@@ -72,17 +72,13 @@ where
 }
 
 fn optional_secret_bytes_to_utf8<S>(
-    bytes: &Option<SecretBytes>,
+    _bytes: &Option<SecretBytes>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    if let Some(bytes) = bytes {
-        serializer.serialize_some(str::from_utf8(bytes.expose_secret().as_ref()).unwrap_or(""))
-    } else {
-        serializer.serialize_none()
-    }
+    serializer.serialize_str("SECRET")
 }
 
 impl Account {
