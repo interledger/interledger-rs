@@ -37,8 +37,8 @@ tokio-timer = "0.2.10"
 url = { version = "2.1.0", features = ["serde"] }
 http = "0.1.17"
 uuid = { version = "0.7.4", features = ["serde"] }
-secrecy = { branch = "develop", features = ["serde", "bytes"], git = "https://github.com/iqlusioninc/crates" }
-zeroize = { git = "https://github.com/iqlusioninc/crates", branch = "develop", features = ["bytes"] }
+secrecy = { version = "0.4.0", features = ["serde", "bytes"] }
+zeroize = { version = "0.10.1", features = ["bytes"] }
 
 [dev-dependencies]
 env_logger = "0.6.1"
