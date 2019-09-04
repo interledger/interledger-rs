@@ -223,22 +223,22 @@ printf "Checking balances...\n"
 printf "\nAlice's balance: "
 curl \
 -H "Authorization: Bearer admin_a" \
-http://localhost:7770/accounts/alice/balance
+http://localhost:7770/accounts/alice?properties=balance
 
 printf "\nNode B's balance on Node A: "
 curl \
 -H "Authorization: Bearer admin_a" \
-http://localhost:7770/accounts/node_b/balance
+http://localhost:7770/accounts/node_b?properties=balance
 
 printf "\nNode A's balance on Node B: "
 curl \
 -H "Authorization: Bearer admin_b" \
-http://localhost:8770/accounts/node_a/balance
+http://localhost:8770/accounts/node_a?properties=balance
 
 printf "\nBob's balance: "
 curl \
 -H "Authorization: Bearer admin_b" \
-http://localhost:8770/accounts/bob/balance
+http://localhost:8770/accounts/bob?properties=balance
 
 printf "\n\n"
 -->
@@ -268,22 +268,22 @@ You can run the following script to print each of the accounts' balances (try do
 printf "\nAlice's balance: "
 curl \
 -H "Authorization: Bearer admin_a" \
-http://localhost:7770/accounts/alice/balance
+http://localhost:7770/accounts/alice?properties=balance
 
 printf "\nNode B's balance on Node A: "
 curl \
 -H "Authorization: Bearer admin_a" \
-http://localhost:7770/accounts/node_b/balance
+http://localhost:7770/accounts/node_b?properties=balance
 
 printf "\nNode A's balance on Node B: "
 curl \
 -H "Authorization: Bearer admin_b" \
-http://localhost:8770/accounts/node_a/balance
+http://localhost:8770/accounts/node_a?properties=balance
 
 printf "\nBob's balance: "
 curl \
 -H "Authorization: Bearer admin_b" \
-http://localhost:8770/accounts/bob/balance
+http://localhost:8770/accounts/bob?properties=balance
 ```
 
 <!--! printf "\n\n" -->

@@ -53,13 +53,11 @@ Optional fields include:
 
 Admin only.
 
-### GET /accounts/:id
+### GET /accounts/:username
 
-Admin or account-holder only.
-
-### GET /accounts/:id/balance
-
-Admin or account-holder only.
+Admin or account-holder only. You can optionally provide a query string in the
+URL to get specific fields of the account
+e.g. `GET /accounts/:username?properties=balance`
 
 #### Response
 

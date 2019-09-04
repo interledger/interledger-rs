@@ -297,22 +297,22 @@ printf "\nChecking balances...\n"
 printf "\nAlice's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
+http://localhost:7770/accounts/alice?properties=balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
+http://localhost:7770/accounts/bob?properties=balance
 
 printf "\nAlice's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance
+http://localhost:8770/accounts/alice?properties=balance
 
 printf "\nBob's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
+http://localhost:8770/accounts/bob?properties=balance
 
 printf "\n\n"
 -->
@@ -337,22 +337,22 @@ curl \
 printf "\nAlice's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
+http://localhost:7770/accounts/alice?properties=balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
+http://localhost:7770/accounts/bob?properties=balance
 
 printf "\nAlice's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance
+http://localhost:8770/accounts/alice?properties=balance
 
 printf "\nBob's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
+http://localhost:8770/accounts/bob?properties=balance
 ```
 
 <!--!
@@ -360,17 +360,17 @@ printf "Checking balances...\n"
 printf "\nAlice's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
+http://localhost:7770/accounts/alice?properties=balance
 
 printf "\nBob's balance on Alice's node: "
 curl \
 -H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
+http://localhost:7770/accounts/bob?properties=balance
 
 printf "\nAlice's balance on Bob's node: "
 AB_BALANCE=`curl \
 -H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance 2>/dev/null`
+http://localhost:8770/accounts/alice?properties=balance 2>/dev/null`
 EXPECTED_BALANCE='{"balance":"-500"}'
 if [[ $AB_BALANCE != $EXPECTED_BALANCE ]]; then
     INCOMING_NOT_SETTLED=1
@@ -382,12 +382,12 @@ fi
 printf "\nBob's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
+http://localhost:8770/accounts/bob?properties=balance
 
 if [ "$INCOMING_NOT_SETTLED" = "1" ]; then
     printf "\n\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated.\n"
     printf "Try the following command later:\n\n"
-    printf "\tcurl -H \"Authorization: Bearer bob:bob_password\" http://localhost:8770/accounts/bob/balance\e[m\n\n"
+    printf "\tcurl -H \"Authorization: Bearer bob:bob_password\" http://localhost:8770/accounts/bob?properties=balance\e[m\n\n"
 fi
 -->
 

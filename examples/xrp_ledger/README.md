@@ -203,10 +203,10 @@ opposite:
 
 ```bash
 echo "Bob's balance on Alice's store"
-curl localhost:7770/accounts/1/balance -H "Authorization: Bearer bob"
+curl localhost:7770/accounts/1?properties=balance -H "Authorization: Bearer bob"
 
 echo "Alice's balance on Bob's store"
-curl localhost:8770/accounts/1/balance -H "Authorization: Bearer alice"
+curl localhost:8770/accounts/1?properties=balance -H "Authorization: Bearer alice"
 ```
 
 Done! Full E2E test between 2 users over SPSP utilizing the new settlement

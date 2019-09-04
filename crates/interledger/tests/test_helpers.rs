@@ -108,7 +108,7 @@ pub fn get_balance<T: Display>(
     let client = reqwest::r#async::Client::new();
     client
         .get(&format!(
-            "http://localhost:{}/accounts/{}/balance",
+            "http://localhost:{}/accounts/{}?properties=balance",
             node_port, account_id
         ))
         .header("Authorization", format!("Bearer {}", admin_token))
