@@ -34,7 +34,7 @@ struct SpspQueryResponse {
 
 pub struct SpspApi<T, S> {
     store: T,
-    default_spsp_account: Option<String>,
+    default_spsp_account: Option<Username>,
     incoming_handler: S,
     server_secret: Bytes,
 }
@@ -54,8 +54,8 @@ impl_web! {
             }
         }
 
-        pub fn default_spsp_account(&mut self, account_id: String) -> &mut Self {
-            self.default_spsp_account = Some(account_id);
+        pub fn default_spsp_account(&mut self, username: Username) -> &mut Self {
+            self.default_spsp_account = Some(username);
             self
         }
 
@@ -129,8 +129,8 @@ impl_web! {
         // also give accounts aliases to use in the payment pointer instead of the ids
         #[get("/.well-known/pay")]
         fn get_well_known(&self) -> impl Future<Item = Response<Body>, Error = Response<()>> {
-            if let Some(ref account_id) = &self.default_spsp_account {
-                Either::A(self.get_spsp(account_id.to_string()))
+            if let Some(ref username) = &self.default_spsp_account {
+                Either::A(self.get_spsp(username.to_string()))
             } else {
                 error!("Got SPSP request to /.well-known/pay endpoint but there is no default SPSP account configured");
                 Either::B(err(Response::builder().status(404).body(()).unwrap()))
