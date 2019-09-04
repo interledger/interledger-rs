@@ -10,10 +10,10 @@ use interledger_service_util::BalanceStore;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::str::FromStr;
 use tokio_retry::{strategy::FixedInterval, Retry};
-use tower_web::{impl_web, Response};
+use tower_web::{impl_web, Extract, Response};
 use url::Url;
 
 #[derive(Serialize, Response, Debug)]
@@ -49,6 +49,11 @@ impl ErrorStatus for Response<()> {
     fn error(code: u16) -> Self {
         Response::builder().status(code).body(()).unwrap()
     }
+}
+
+#[derive(Extract)]
+struct QueryString {
+    properties: String,
 }
 
 impl_web! {
@@ -158,11 +163,17 @@ impl_web! {
 
         #[get("/accounts/:username")]
         #[content_type("application/json")]
-        fn http_get_account(&self, username: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+        fn http_get_account(&self, username: String, query_string: Option<QueryString>, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
             let store = self.store.clone();
+            let store_clone = self.store.clone();
             let is_admin = self.is_admin(&authorization);
             let username_clone = username.clone();
             let auth_clone = authorization.clone();
+            let props = if let Some(q) = query_string {
+                q.properties
+            } else {
+                "".to_owned()
+            };
             // TODO:
             // It seems somewhat inconsistent that get_account_from_http_auth
             // would return the Account while this method only gives the ID (and
@@ -172,115 +183,67 @@ impl_web! {
             // two ways to get the full Account details. If the next call only
             // takes the account ID, that would be fine because you could just
             // get that ID from the Account
+
             result(Username::from_str(&username))
             .map_err(move |_| {
                 error!("Invalid username: {}", username);
                 Response::builder().status(500).body(()).unwrap()
             })
             .and_then(move |username| {
-            store.get_account_id_from_username(&username)
-            .map_err(move |_| {
-                error!("Error getting account id from username: {}", username_clone);
-                Response::builder().status(404).body(()).unwrap()
-            })
-            .and_then(move |id| {
-                if is_admin  {
-                    Either::A(store.get_accounts(vec![id])
-                    .map_err(move |_| {
-                        debug!("Account not found: {:?}", id);
-                        Response::error(404)
-                    })
-                    .and_then(|mut accounts| Ok(json!(accounts.pop().unwrap()))))
-                } else {
-                    Either::B(result(AuthToken::from_str(&auth_clone))
+                store.get_account_id_from_username(&username)
+                .map_err(move |_| {
+                    error!("Error getting account id from username: {}", username_clone);
+                    Response::builder().status(404).body(()).unwrap()
+                })
+                .and_then(move |id| {
+                    let account_fut = if is_admin {
+                        Either::A(store.get_accounts(vec![id])
+                        .map_err(move |_| {
+                            debug!("Account not found in db: {:?}", id);
+                            Response::error(404)
+                        })
+                        .and_then(|mut accounts| Ok(accounts.pop().unwrap())))
+                    } else {
+                        Either::B(result(AuthToken::from_str(&authorization))
                         .map_err(move |_| {
                             error!("Could not parse auth token {:?}", auth_clone);
                             Response::error(401)
                         })
                         .and_then(move |auth| {
-                            store.get_account_from_http_auth(&auth.username(), &auth.password())
+                            store_clone.get_account_from_http_auth(&auth.username(), &auth.password())
                             .map_err(move |_| {
                                 debug!("No account found with auth: {}", authorization);
-                                Response::error(401)
+                                Response::error(404)
                             })
-                            .and_then(move |account| {
-                                if account.id() == id {
-                                    Ok(json!(account))
-                                } else {
-                                    Err(Response::error(401))
-                                }
-                            })
-                        })
-                    )
-                }
-            })
-            })
-        }
+                        }))
+                    };
 
-        #[get("/accounts/:username/:property")]
-        #[content_type("application/json")]
-        fn http_get_property(&self, username: String, property: String, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
-            let store = self.store.clone();
-            let self_clone = self.clone();
-            let is_admin = self.is_admin(&authorization);
-            let username_clone = username.clone();
-            let auth_clone = authorization.clone();
-            result(Username::from_str(&username))
-            .map_err(move |_| {
-                error!("Invalid username: {}", username);
-                Response::builder().status(500).body(()).unwrap()
-            })
-            .and_then(move |username| {
-            store.get_account_id_from_username(&username)
-            .map_err(move |_| {
-                error!("Error getting account id from username: {}", username_clone);
-                Response::builder().status(404).body(()).unwrap()
-            })
-            .and_then(move |id| {
-                if is_admin  {
-                    Either::A(store.get_accounts(vec![id])
-                    .map_err(move |_| {
-                        debug!("Account not found: {:?}", id);
-                        Response::error(404)
+                    account_fut
+                    .and_then(move |account| {
+                        let params: Vec<&str> = props.split(',').filter(|&x| x != "").collect();
+                        let data = if !params.is_empty() {
+                            let mut ret: Map<String, Value> = Map::new();
+                            // This will never fail as the accounts can always
+                            // be serialized
+                            let map = serde_json::to_value(&account).unwrap();
+                            for p in params {
+                                let elem = map.get(p);
+                                // return only keys present in the account
+                                if let Some(e) = elem {
+                                    let p = p.to_owned();
+                                    ret.insert(p, e.clone());
+                                }
+                            }
+                            json!(ret)
+                        } else {
+                            json!(account)
+                        };
+                        // Return any relevant fields only based on the query string.
+                        Ok(data)
                     })
-                    .and_then(move |mut accounts| Ok(self_clone.get_property(accounts.pop().unwrap(), &property))))
-                } else {
-                    Either::B(result(AuthToken::from_str(&auth_clone))
-                        .map_err(move |_| {
-                            error!("Could not parse auth token {:?}", auth_clone);
-                            Response::error(401)
-                        })
-                        .and_then(move |auth| {
-                            store.get_account_from_http_auth(&auth.username(), &auth.password())
-                            .map_err(move |_| {
-                                debug!("No account found with auth: {}", authorization);
-                                Response::error(401)
-                            })
-                            .and_then(move |account| {
-                                if account.id() == id {
-                                    Ok(self_clone.get_property(account, &property))
-                                } else {
-                                    Err(Response::error(401))
-                                }
-                            })
-                        })
-                    )
-                }
+                })
             })
-            })
-        }
 
-        fn get_property(&self, account: A, property: &str) -> Value {
-            let data = json!(account);
-            match property {
-                "ilp_address" => json!({"ilp_address" : data["ilp_address"] }),
-                "balance" => {
-                    let balance = data["balance"].as_i64().unwrap();
-                    let prepaid_amount = data["prepaid_amount"].as_i64().unwrap();
-                    json!({"balance" : balance + prepaid_amount})
-                }
-                _ => json!(account)
-            }
         }
 
         #[delete("/accounts/:username")]
