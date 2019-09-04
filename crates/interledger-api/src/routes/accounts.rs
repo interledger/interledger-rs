@@ -187,13 +187,13 @@ impl_web! {
             result(Username::from_str(&username))
             .map_err(move |_| {
                 error!("Invalid username: {}", username);
-                Response::builder().status(500).body(()).unwrap()
+                Response::error(500)
             })
             .and_then(move |username| {
                 store.get_account_id_from_username(&username)
                 .map_err(move |_| {
                     error!("Error getting account id from username: {}", username_clone);
-                    Response::builder().status(404).body(()).unwrap()
+                    Response::error(404)
                 })
                 .and_then(move |id| {
                     let account_fut = if is_admin {
@@ -254,13 +254,13 @@ impl_web! {
             result(Username::from_str(&username))
             .map_err(move |_| {
                 error!("Invalid username: {}", username);
-                Response::builder().status(500).body(()).unwrap()
+                Response::error(500)
             })
             .and_then(move |username| {
                 store_clone.get_account_id_from_username(&username)
                 .map_err(move |_| {
                     error!("Error getting account id from username: {}", username);
-                    Response::builder().status(500).body(()).unwrap()
+                    Response::error(500)
                 })
                 .and_then(move |id| {
                     self_clone.validate_admin(authorization)
@@ -284,13 +284,13 @@ impl_web! {
             result(Username::from_str(&username))
             .map_err(move |_| {
                 error!("Invalid username: {}", username);
-                Response::builder().status(500).body(()).unwrap()
+                Response::error(500)
             })
             .and_then(move |username| {
             self_clone.store.get_account_id_from_username(&username)
             .map_err(move |_| {
                 error!("Error getting account id from username: {}", username);
-                Response::builder().status(500).body(()).unwrap()
+                Response::error(500)
             })
             .and_then(move |id| {
                 let id = id.to_owned();
