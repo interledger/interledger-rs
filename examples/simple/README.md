@@ -85,6 +85,8 @@ When you want to watch logs, use the `tail` command. You can use the command lik
 # Turn on debug logging for all of the interledger.rs components
 export RUST_LOG=interledger=debug
 
+export CARGO_ROOT=$(git rev-parse --show-toplevel)
+
 # Start both nodes
 # Note that the configuration options can be passed as environment variables
 # or saved to a YAML file and passed to the node with the `--config` or `-c` CLI argument
@@ -95,7 +97,7 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/0 \
 ILP_HTTP_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
-cargo run --package interledger -- node &> logs/node_a.log &
+${CARGO_ROOT}/target/debug/interledger node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
@@ -104,7 +106,7 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/1 \
 ILP_HTTP_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
-cargo run --package interledger -- node &> logs/node_b.log &
+${CARGO_ROOT}/target/debug/interledger node &> logs/node_b.log &
 ```
 
 <!--!
