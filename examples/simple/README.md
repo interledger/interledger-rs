@@ -95,7 +95,6 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/0 \
 ILP_HTTP_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
 cargo run --package interledger -- node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
@@ -105,7 +104,6 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/1 \
 ILP_HTTP_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
 cargo run --package interledger -- node &> logs/node_b.log &
 ```
 
