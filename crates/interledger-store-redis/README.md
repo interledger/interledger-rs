@@ -25,9 +25,9 @@ This is tracked separately from the `balance` to avoid the ["settling back and f
 The `asset_code` and `asset_scale` for each of the accounts' balances can be found in the Account Details hash map. 
 Note that this means that accounts' balances are not directly comparable (for example if account 1's `balance` is 100 and account 2's `balance` is 1000, this does not necessarily mean that we owe accountholder 2 more than accountholder 1, because these values represent completely different assets).
 
-#### Outgoing Auth Tokens
+#### Incoming / Outgoing Auth Tokens
 
-Outgoing auth tokens are encrypted in the following manner:
+Auth tokens are encrypted in the following manner:
 - The encryption/decryption key is generated as `hmac_sha256(store_secret, "ilp_store_redis_encryption_key")`
 - Tokens are encrypted using the AES-256-GCM symmetric encryption scheme using 12-byte randomly generated nonces
 - The nonce is appended to the encrypted output (which includes the auth tag) and stored in the DB
@@ -41,15 +41,6 @@ Statically configured routes are stored as a hash map of prefix to account ID un
 ### Exchange Rates
 
 Exchange rates are stored as a hash map of currency code to rate under the key `rates:current`.
-
-### HTTP / BTP Auth Details
-
-Incoming HTTP and BTP authentication tokens are stored in hash maps (under `http_auth` and `btp_auth`, respectively) for fast lookup of which account corresponds to a given auth token.
-
-The auth tokens are stored in the following manner:
-- The HMAC key is generated as `hmac_sha256(store_secret, "ilp_store_redis_hmac_key")`
-- Only the output of `hmac_sha256(hmac_key, auth_token)` is stored in the database
-- The hash maps are mappings of the HMAC output to an account ID
 
 ### Rate Limiting
 

@@ -7,6 +7,7 @@ use interledger_store_redis::Account;
 use interledger_store_redis::AccountId;
 use redis::ConnectionInfo;
 use reqwest;
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -73,6 +74,7 @@ pub fn start_eth_engine(
     key: String,
     settlement_port: u16,
 ) -> impl Future<Item = (), Error = ()> {
+    let key = Secret::new(key);
     run_ethereum_engine(
         db,
         "http://localhost:8545".to_string(),

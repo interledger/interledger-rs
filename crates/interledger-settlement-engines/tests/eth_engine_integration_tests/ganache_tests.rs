@@ -15,12 +15,15 @@ use interledger_settlement_engines::{
 };
 
 use lazy_static::lazy_static;
+use secrecy::Secret;
 
 lazy_static! {
-    pub static ref ALICE_PK: String =
-        String::from("380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc");
-    pub static ref BOB_PK: String =
-        String::from("cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e");
+    pub static ref ALICE_PK: Secret<String> = Secret::new(String::from(
+        "380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc"
+    ));
+    pub static ref BOB_PK: Secret<String> = Secret::new(String::from(
+        "cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e"
+    ));
     pub static ref ALICE: TestAccount = TestAccount::new(
         "1".to_string(),
         "3cdb3d9e1b74692bb1e3bb5fc81938151ca64b02",
