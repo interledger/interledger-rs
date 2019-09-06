@@ -32,8 +32,10 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio_executor::spawn;
 use tokio_timer::Interval;
+
+#[cfg(not(test))]
+use tokio_executor::spawn;
 
 const DEFAULT_ROUTE_EXPIRY_TIME: u32 = 45000;
 const DEFAULT_BROADCAST_INTERVAL: u64 = 30000;
@@ -59,7 +61,6 @@ pub struct CcpRouteManagerBuilder<I, O, S> {
     store: S,
     ilp_address: Address,
     global_prefix: Bytes,
-    spawn_tasks: bool,
     broadcast_interval: u64,
 }
 
@@ -77,7 +78,6 @@ where
             next_incoming,
             outgoing,
             store,
-            spawn_tasks: true,
             broadcast_interval: DEFAULT_BROADCAST_INTERVAL,
         }
     }
@@ -93,11 +93,6 @@ where
         self
     }
 
-    pub fn disable_spawn(&mut self) -> &mut Self {
-        self.spawn_tasks = false;
-        self
-    }
-
     /// Set the broadcast interval (in milliseconds)
     pub fn broadcast_interval(&mut self, ms: u64) -> &mut Self {
         self.broadcast_interval = ms;
@@ -105,13 +100,13 @@ where
     }
 
     pub fn to_service(&self) -> CcpRouteManager<I, O, S, A> {
+        #[allow(clippy::let_and_return)]
         let service = CcpRouteManager {
             ilp_address: self.ilp_address.clone(),
             global_prefix: self.global_prefix.clone(),
             next_incoming: self.next_incoming.clone(),
             outgoing: self.outgoing.clone(),
             store: self.store.clone(),
-            spawn_tasks: self.spawn_tasks,
             forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
             forwarding_table_updates: Arc::new(RwLock::new(Vec::new())),
             last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
@@ -119,9 +114,11 @@ where
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        if self.spawn_tasks {
+        #[cfg(not(test))]
+        {
             spawn(service.start_broadcast_interval(self.broadcast_interval));
         }
+
         service
     }
 }
@@ -159,13 +156,6 @@ pub struct CcpRouteManager<I, O, S, A: Account> {
     /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
     store: S,
-    /// If true, tasks will be spawned to process Route Update Requests and respond
-    /// to Route Control Requests. If false, the response to the incoming request
-    /// will wait until the outgoing messages have been sent out.
-    /// Making requests wait is primarily intended for testing so that the tests do
-    /// not need to be run with a proper executor like Tokio. When running this for real,
-    /// it is better to respond to peer messages immediately.
-    spawn_tasks: bool,
 }
 
 impl<I, O, S, A> CcpRouteManager<I, O, S, A>
@@ -260,9 +250,10 @@ where
                 (from_epoch_index, to_epoch_index)
             };
 
-            let ilp_address = self.ilp_address.clone();
-            if !self.spawn_tasks {
-                return Either::B(
+            #[cfg(test)]
+            {
+                let ilp_address = self.ilp_address.clone();
+                return Either::B(Either::A(
                     self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
                         .map_err(move |_| {
                             RejectBuilder {
@@ -274,8 +265,11 @@ where
                             .build()
                         })
                         .and_then(|_| Ok(CCP_RESPONSE.clone())),
-                );
-            } else {
+                ));
+            }
+
+            #[cfg(not(test))]
+            {
                 spawn(self.send_route_update(
                     request.from.clone(),
                     from_epoch_index,
@@ -284,7 +278,15 @@ where
             }
         }
 
-        Either::A(ok(CCP_RESPONSE.clone()))
+        #[cfg(not(test))]
+        {
+            Either::B(ok(CCP_RESPONSE.clone()))
+        }
+
+        #[cfg(test)]
+        {
+            Either::B(Either::B(ok(CCP_RESPONSE.clone())))
+        }
     }
 
     /// Remove invalid routes before processing the Route Update Request
@@ -382,10 +384,15 @@ where
                     updated.join(", ")
                 });
                 let future = self.update_best_routes(Some(prefixes_updated));
-                if self.spawn_tasks {
+
+                #[cfg(not(test))]
+                {
                     spawn(future);
                     Box::new(ok(CCP_RESPONSE.clone()))
-                } else {
+                }
+
+                #[cfg(test)]
+                {
                     let ilp_address = self.ilp_address.clone();
                     Box::new(
                         future
@@ -417,12 +424,13 @@ where
                     table.id(),
                     table.epoch(),
                 );
-                if self.spawn_tasks {
+                #[cfg(not(test))]
+                {
                     spawn(future);
                     Box::new(err(reject))
-                } else {
-                    Box::new(future.then(move |_| Err(reject)))
                 }
+                #[cfg(test)]
+                Box::new(future.then(move |_| Err(reject)))
             }
         }
     }

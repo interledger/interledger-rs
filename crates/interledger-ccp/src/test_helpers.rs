@@ -208,7 +208,6 @@ pub fn test_service() -> CcpRouteManager<
             .build()))
         }),
     )
-    .disable_spawn()
     .ilp_address(addr)
     .to_service()
 }
@@ -267,7 +266,6 @@ pub fn test_service_with_routes() -> (
             .build()))
         }),
     )
-    .disable_spawn()
     .ilp_address(addr)
     .to_service();
     (service, outgoing_requests)
