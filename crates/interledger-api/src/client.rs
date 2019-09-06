@@ -9,7 +9,7 @@ use std::fmt::Display;
 use std::time::Duration;
 use url::Url;
 
-// The account creation endpoint set by the engines in [RFC536](https://github.com/interledger/rfcs/pull/536)
+// The account creation endpoint set by the engines in the [RFC](https://github.com/interledger/rfcs/pull/536)
 static ACCOUNTS_ENDPOINT: &str = "accounts";
 
 pub struct Client {
