@@ -7,7 +7,7 @@ Here you can find various demos of Interledger.rs' functionality:
 1. [Three-Node Payment with Ethereum and XRP On-Ledger Settlement](./eth_xrp_three_nodes/README.md)
 1. Integrating Interledger Into Your App (Coming Soon!)
 
-Have questions? Feel free to [open an issue](https://github.com/emschwartz/interledger-rs/issues/new) or ask a question [on the forum](https://forum.interledger.org/)!
+Have questions? Feel free to [open an issue](https://github.com/interledger-rs/interledger-rs/issues/new) or ask a question [on the forum](https://forum.interledger.org/)!
 
 ## Running the Examples
 The README of each example provides step-by-step instructions on how to run the example.
