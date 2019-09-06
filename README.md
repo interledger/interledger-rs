@@ -9,7 +9,7 @@
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 [![CircleCI](https://circleci.com/gh/interledger-rs/interledger-rs.svg?style=shield)](https://circleci.com/gh/interledger-rs/interledger-rs)
 ![Rust Version](https://img.shields.io/badge/rust-stable-Success)
-[![Docker Image](https://img.shields.io/docker/pulls/interledger-rs/interledger-rs.svg?maxAge=2592000)](https://hub.docker.com/r/interledger-rs/interledger-rs/)
+[![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/node/)
 
 ## Understanding Interledger.rs
 - [HTTP API](./docs/api.md)
