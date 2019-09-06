@@ -1,0 +1,11 @@
+*       @emschwartz
+
+# Settlement
+/crates/interledger-settlement-engines @gakonst @emschwartz
+/crates/interledger-settlement @gakonst @emschwartz
+
+# Examples and Docs
+/examples/ @dora-gt @emschwartz
+/scripts/ @dora-gt @emschwartz
+*.md @dora-gt @emschwartz
+Dockerfile @dora-gt @emschwartz
