@@ -51,7 +51,7 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 <!--!
 printf "Stopping Interledger nodes\n"
 
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
+if lsof -Pi :6379 -sTCP:LISTEN -t ; then
     redis-cli -p 6379 shutdown
 fi
 
@@ -85,12 +85,13 @@ First of all, let's build interledger.rs. (This may take a couple of minutes)
 
 <!--! printf "Building interledger.rs... (This may take a couple of minutes)\n" -->
 ```bash
-cargo build --bins
+cargo build --bin interledger --bin interledger-settlement-engines
 ```
 
 ### 2. Launch Redis
 
 <!--!
+printf "Starting Redis\n"
 redis-server --version > /dev/null || printf "\e[31mUh oh! You need to install redis-server before running this example\e[m\n"
 -->
 
@@ -100,6 +101,15 @@ mkdir -p logs
 
 # Start Redis
 redis-server &> logs/redis.log &
+```
+
+<!--!
+sleep 1
+-->
+
+To remove all the data in Redis, you might additionally perform:
+
+```bash
 redis-cli flushall
 ```
 
@@ -125,7 +135,7 @@ Because each node needs its own settlement engine, we need to launch both a sett
 export RUST_LOG=interledger=debug
 
 # Start Alice's settlement engine
-cargo run --package interledger-settlement-engines -- ethereum-ledger \
+cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 --key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -137,7 +147,7 @@ cargo run --package interledger-settlement-engines -- ethereum-ledger \
 &> logs/node-alice-settlement-engine.log &
 
 # Start Bob's settlement engine
-cargo run --package interledger-settlement-engines -- ethereum-ledger \
+cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 --key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -160,8 +170,7 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/0 \
 ILP_HTTP_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
-cargo run --package interledger -- node &> logs/node-alice.log &
+cargo run --bin interledger -- node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -171,8 +180,7 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/1 \
 ILP_HTTP_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
-cargo run --package interledger -- node &> logs/node-bob.log &
+cargo run --bin interledger -- node &> logs/node-bob.log &
 ```
 
 <!--!
@@ -394,7 +402,11 @@ fi
 ### 9. Kill All the Services
 Finally, you can stop all the services as follows:
 
-```bash #
+<!--!
+exec 2> /dev/null
+-->
+
+```bash
 if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
     redis-cli -p 6379 shutdown
 fi
@@ -402,24 +414,19 @@ fi
 if [ -f dump.rdb ] ; then
     rm -f dump.rdb
 fi
-
-if lsof -tPi :8545 ; then
+if lsof -tPi :8545 > /dev/null ; then
     kill `lsof -tPi :8545`
 fi
-
-if lsof -tPi :7770 ; then
+if lsof -tPi :7770 > /dev/null ; then
     kill `lsof -tPi :7770`
 fi
-
-if lsof -tPi :8770 ; then
+if lsof -tPi :8770 > /dev/null ; then
     kill `lsof -tPi :8770`
 fi
-
-if lsof -tPi :3000 ; then
+if lsof -tPi :3000 > /dev/null ; then
     kill `lsof -tPi :3000`
 fi
-
-if lsof -tPi :3001 ; then
+if lsof -tPi :3001 > /dev/null ; then
     kill `lsof -tPi :3001`
 fi
 ```

@@ -36,7 +36,7 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 <!--!
 printf "Stopping Interledger nodes\n"
 
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
+if lsof -Pi :6379 -sTCP:LISTEN -t ; then
     redis-cli -p 6379 shutdown
 fi
 
@@ -60,7 +60,7 @@ First of all, let's build interledger.rs. (This may take a couple of minutes)
 
 <!--! printf "Building interledger.rs... (This may take a couple of minutes)\n" -->
 ```bash
-cargo build --bins
+cargo build --bin interledger
 ```
 
 ### 2. Launch Redis
@@ -95,7 +95,7 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/0 \
 ILP_HTTP_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
-cargo run --package interledger -- node &> logs/node_a.log &
+cargo run --bin interledger -- node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
@@ -104,7 +104,7 @@ ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/1 \
 ILP_HTTP_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
-cargo run --package interledger -- node &> logs/node_b.log &
+cargo run --bin interledger -- node &> logs/node_b.log &
 ```
 
 <!--!
@@ -290,7 +290,10 @@ http://localhost:8770/accounts/bob/balance
 ### 7. Kill All the Services
 Finally, you can stop all the services as follows:
 
-<!--! printf "Stopping Interledger nodes\n" -->
+<!--!
+printf "Stopping Interledger nodes\n"
+exec 2> /dev/null
+-->
 
 ```bash
 if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
@@ -302,11 +305,11 @@ if [ -f dump.rdb ] ; then
     rm -f dump.rdb
 fi
 
-if lsof -tPi :7770 ; then
+if lsof -tPi :7770 > /dev/null ; then
     kill `lsof -tPi :7770`
 fi
 
-if lsof -tPi :8770 ; then
+if lsof -tPi :8770 > /dev/null ; then
     kill `lsof -tPi :8770`
 fi
 ```
