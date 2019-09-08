@@ -42,7 +42,7 @@ impl FromStr for RoutingRelation {
 
     fn from_str(string: &str) -> Result<Self, ()> {
         match string.to_lowercase().as_str() {
-            "non_routing_account" => Ok(RoutingRelation::NonRoutingAccount),
+            "nonroutingaccount" => Ok(RoutingRelation::NonRoutingAccount),
             "parent" => Ok(RoutingRelation::Parent),
             "peer" => Ok(RoutingRelation::Peer),
             "child" => Ok(RoutingRelation::Child),

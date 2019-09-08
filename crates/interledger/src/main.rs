@@ -600,8 +600,6 @@ fn run_node_accounts_add(opt: NodeAccountsAddOpt) {
         min_balance: Some(opt.min_balance),
         settle_threshold: opt.settle_threshold,
         settle_to: opt.settle_to,
-        send_routes: opt.send_routes,
-        receive_routes: opt.receive_routes,
         routing_relation: Some(opt.routing_relation.clone()),
         round_trip_time: Some(opt.round_trip_time),
         packets_per_minute_limit: opt.packets_per_minute_limit,
@@ -681,10 +679,6 @@ struct NodeAccountsAddOpt {
     http_incoming_token: Option<String>,
     settle_threshold: Option<i64>,
     settle_to: Option<i64>,
-    #[serde(default)]
-    send_routes: bool,
-    #[serde(default)]
-    receive_routes: bool,
     routing_relation: String,
     min_balance: i64,
     round_trip_time: u32,
