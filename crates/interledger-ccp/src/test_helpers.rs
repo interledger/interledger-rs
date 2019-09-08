@@ -22,16 +22,12 @@ lazy_static! {
     pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 1,
         ilp_address: Address::from_str("example.peer").unwrap(),
-        send_routes: true,
-        receive_routes: true,
         relation: RoutingRelation::Peer,
     };
     pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 2,
         ilp_address: Address::from_str("example.me.child").unwrap(),
-        send_routes: false,
-        receive_routes: false,
-        relation: RoutingRelation::Child,
+        relation: RoutingRelation::NonRoutingAccount,
     };
     pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
     pub static ref ALICE: Username = Username::from_str("alice").unwrap();
@@ -41,8 +37,6 @@ lazy_static! {
 pub struct TestAccount {
     pub id: u64,
     pub ilp_address: Address,
-    pub receive_routes: bool,
-    pub send_routes: bool,
     pub relation: RoutingRelation,
 }
 
@@ -51,8 +45,6 @@ impl TestAccount {
         TestAccount {
             id,
             ilp_address: Address::from_str(ilp_address).unwrap(),
-            receive_routes: true,
-            send_routes: true,
             relation: RoutingRelation::Peer,
         }
     }
@@ -87,14 +79,6 @@ impl IldcpAccount for TestAccount {
 impl CcpRoutingAccount for TestAccount {
     fn routing_relation(&self) -> RoutingRelation {
         self.relation
-    }
-
-    fn should_receive_routes(&self) -> bool {
-        self.receive_routes
-    }
-
-    fn should_send_routes(&self) -> bool {
-        self.send_routes
     }
 }
 
@@ -148,7 +132,7 @@ impl RouteManagerStore for TestStore {
             .values()
             .chain(self.configured.values())
             .chain(self.routes.lock().values())
-            .filter(|account| account.send_routes)
+            .filter(|account| account.should_send_routes())
             .cloned()
             .collect();
         accounts.dedup_by_key(|a| a.id());
@@ -163,7 +147,7 @@ impl RouteManagerStore for TestStore {
             .values()
             .chain(self.configured.values())
             .chain(self.routes.lock().values())
-            .filter(|account| account.receive_routes)
+            .filter(|account| account.should_receive_routes())
             .cloned()
             .collect();
         accounts.dedup_by_key(|a| a.id());
@@ -233,9 +217,7 @@ pub fn test_service_with_routes() -> (
             TestAccount {
                 id: 3,
                 ilp_address: Address::from_str("example.connector.other-local").unwrap(),
-                send_routes: false,
-                receive_routes: false,
-                relation: RoutingRelation::Child,
+                relation: RoutingRelation::NonRoutingAccount,
             },
         ),
     ]);
