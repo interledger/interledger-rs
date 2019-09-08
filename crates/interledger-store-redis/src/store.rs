@@ -16,7 +16,7 @@
 //    hgetall <key>         the flattened list of every key/value entry within a hash
 
 use super::account::*;
-use super::crypto::{generate_keys, DecryptionKey, EncryptionKey};
+use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::account::AccountId;
 use http::StatusCode;
-use interledger_api::{AccountDetails, NodeStore};
+use interledger_api::{AccountDetails, AccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::RouteManagerStore;
 use interledger_http::HttpStore;
@@ -454,6 +454,94 @@ impl RedisStore {
         )
     }
 
+    fn redis_modify_account(
+        &self,
+        id: AccountId,
+        settings: AccountSettings,
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+        let connection = self.connection.clone();
+        let encryption_key = self.encryption_key.clone();
+        let self_clone = self.clone();
+
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+
+        if let Some(ref endpoint) = settings.btp_uri {
+            pipe.hset(
+                accounts_key(id),
+                "btp_uri",
+                endpoint,
+            );
+        }
+
+        if let Some(ref endpoint) = settings.http_endpoint {
+            pipe.hset(
+                accounts_key(id),
+                "http_endpoint",
+                endpoint,
+            );
+        }
+
+        if let Some(ref token) = settings.btp_outgoing_token {
+            pipe.hset(
+                accounts_key(id),
+                "btp_outgoing_token",
+                encrypt_token(&encryption_key.expose_secret().0, token.as_ref()).as_ref(),
+            );
+        }
+
+        if let Some(ref token) = settings.http_outgoing_token {
+            pipe.hset(
+                accounts_key(id),
+                "http_outgoing_token",
+                encrypt_token(&encryption_key.expose_secret().0, token.as_ref()).as_ref(),
+            );
+        }
+
+        if let Some(ref token) = settings.btp_incoming_token {
+            pipe.hset(
+                accounts_key(id),
+                "btp_incoming_token",
+                encrypt_token(&encryption_key.expose_secret().0, token.as_ref()).as_ref(),
+            );
+        }
+
+        if let Some(ref token) = settings.http_incoming_token {
+            pipe.hset(
+                accounts_key(id),
+                "http_incoming_token",
+                encrypt_token(&encryption_key.expose_secret().0, token.as_ref()).as_ref(),
+            );
+        }
+
+        if let Some(settle_threshold) = settings.settle_threshold {
+            pipe.hset(accounts_key(id), "settle_threshold", settle_threshold);
+        }
+
+        if let Some(settle_to) = settings.settle_to {
+            pipe.hset(accounts_key(id), "settle_to", settle_to);
+        }
+
+        Box::new(
+            pipe.query_async(connection.as_ref().clone())
+                .map_err(|err| error!("Error modifying user account: {:?}", err))
+                .and_then(move |(_connection, _ret): (SharedConnection, Value)| {
+                    // return the updated account
+                    self_clone.redis_get_account(id)
+                }),
+        )
+    }
+
+    fn redis_get_account(
+        &self,
+        id: AccountId,
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+        Box::new(
+            self.redis_get_accounts(vec![id])
+                .and_then(|accounts| accounts.get(0).cloned().ok_or(())),
+        )
+    }
+
     fn redis_delete_account(
         &self,
         id: AccountId,
@@ -461,45 +549,40 @@ impl RedisStore {
         let connection = self.connection.as_ref().clone();
         let routing_table = self.routes.clone();
 
-        Box::new(
-            // TODO: a get_account API to avoid making Vecs which we only need one element of
-            self.redis_get_accounts(vec![id])
-                .and_then(|accounts| accounts.get(0).cloned().ok_or(()))
-                .and_then(|account| {
-                    let mut pipe = redis::pipe();
-                    pipe.atomic();
+        Box::new(self.redis_get_account(id).and_then(|account| {
+            let mut pipe = redis::pipe();
+            pipe.atomic();
 
-                    pipe.srem("accounts", account.id).ignore();
+            pipe.srem("accounts", account.id).ignore();
 
-                    pipe.del(accounts_key(account.id)).ignore();
-                    pipe.hdel("usernames", account.username().as_ref()).ignore();
+            pipe.del(accounts_key(account.id)).ignore();
+            pipe.hdel("usernames", account.username().as_ref()).ignore();
 
-                    if account.send_routes {
-                        pipe.srem("send_routes_to", account.id).ignore();
-                    }
+            if account.send_routes {
+                pipe.srem("send_routes_to", account.id).ignore();
+            }
 
-                    if account.receive_routes {
-                        pipe.srem("receive_routes_from", account.id).ignore();
-                    }
+            if account.receive_routes {
+                pipe.srem("receive_routes_from", account.id).ignore();
+            }
 
-                    if account.btp_uri.is_some() {
-                        pipe.srem("btp_outgoing", account.id).ignore();
-                    }
+            if account.btp_uri.is_some() {
+                pipe.srem("btp_outgoing", account.id).ignore();
+            }
 
-                    pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
-                        .ignore();
+            pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
+                .ignore();
 
-                    pipe.query_async(connection)
-                        .map_err(|err| error!("Error deleting account from DB: {:?}", err))
-                        .and_then(move |(connection, _ret): (SharedConnection, Value)| {
-                            update_routes(connection, routing_table)
-                        })
-                        .and_then(move |_| {
-                            debug!("Deleted account {}", account.id);
-                            Ok(account)
-                        })
-                }),
-        )
+            pipe.query_async(connection)
+                .map_err(|err| error!("Error deleting account from DB: {:?}", err))
+                .and_then(move |(connection, _ret): (SharedConnection, Value)| {
+                    update_routes(connection, routing_table)
+                })
+                .and_then(move |_| {
+                    debug!("Deleted account {}", account.id);
+                    Ok(account)
+                })
+        }))
     }
 
     fn redis_get_accounts(
@@ -865,6 +948,14 @@ impl NodeStore for RedisStore {
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         self.redis_update_account(id, account)
+    }
+
+    fn modify_account_settings(
+        &self,
+        id: <Self::Account as AccountTrait>::AccountId,
+        settings: AccountSettings,
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+        self.redis_modify_account(id, settings)
     }
 
     // TODO limit the number of results and page through them
