@@ -102,10 +102,6 @@ pub struct AccountDetails {
     pub btp_incoming_token: Option<String>,
     pub settle_threshold: Option<i64>,
     pub settle_to: Option<i64>,
-    #[serde(default)]
-    pub send_routes: bool,
-    #[serde(default)]
-    pub receive_routes: bool,
     pub routing_relation: Option<String>,
     pub round_trip_time: Option<u32>,
     pub amount_per_minute_limit: Option<u64>,

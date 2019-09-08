@@ -57,8 +57,6 @@ pub struct Account {
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
     pub(crate) routing_relation: RoutingRelation,
-    pub(crate) send_routes: bool,
-    pub(crate) receive_routes: bool,
     pub(crate) round_trip_time: u32,
     pub(crate) packets_per_minute_limit: Option<u32>,
     pub(crate) amount_per_minute_limit: Option<u64>,
@@ -142,10 +140,8 @@ impl Account {
             btp_uri,
             btp_incoming_token,
             btp_outgoing_token,
-            settle_threshold: details.settle_threshold,
             settle_to: details.settle_to,
-            send_routes: details.send_routes,
-            receive_routes: details.receive_routes,
+            settle_threshold: details.settle_threshold,
             routing_relation,
             round_trip_time: details.round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME),
             packets_per_minute_limit: details.packets_per_minute_limit,
@@ -335,14 +331,6 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "settle_to".write_redis_args(&mut rv);
             settle_to.write_redis_args(&mut rv);
         }
-        if account.send_routes {
-            "send_routes".write_redis_args(&mut rv);
-            account.send_routes.write_redis_args(&mut rv);
-        }
-        if account.receive_routes {
-            "receive_routes".write_redis_args(&mut rv);
-            account.receive_routes.write_redis_args(&mut rv);
-        }
         if let Some(limit) = account.packets_per_minute_limit {
             "packets_per_minute_limit".write_redis_args(&mut rv);
             limit.write_redis_args(&mut rv);
@@ -408,8 +396,6 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
                 settle_to: get_value_option("settle_to", &hash)?,
                 routing_relation,
-                send_routes: get_bool("send_routes", &hash),
-                receive_routes: get_bool("receive_routes", &hash),
                 round_trip_time,
                 packets_per_minute_limit: get_value_option("packets_per_minute_limit", &hash)?,
                 amount_per_minute_limit: get_value_option("amount_per_minute_limit", &hash)?,
@@ -465,17 +451,6 @@ fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>
     } else {
         Ok(None)
     }
-}
-
-fn get_bool(key: &str, map: &HashMap<String, Value>) -> bool {
-    if let Some(ref value) = map.get(key) {
-        if let Ok(value) = from_redis_value(value) as Result<String, RedisError> {
-            if value.to_lowercase() == "true" {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 impl AccountTrait for Account {
@@ -540,14 +515,6 @@ impl CcpRoutingAccount for Account {
     fn routing_relation(&self) -> RoutingRelation {
         self.routing_relation
     }
-
-    fn should_send_routes(&self) -> bool {
-        self.send_routes
-    }
-
-    fn should_receive_routes(&self) -> bool {
-        self.receive_routes
-    }
 }
 
 impl RoundTripTimeAccount for Account {
@@ -596,8 +563,6 @@ mod redis_account {
             btp_incoming_token: Some("alice:btp_token".to_string()),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
-            send_routes: true,
-            receive_routes: true,
             routing_relation: Some("Peer".to_string()),
             round_trip_time: Some(600),
             amount_per_minute_limit: None,
