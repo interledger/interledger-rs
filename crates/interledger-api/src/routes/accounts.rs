@@ -1,5 +1,5 @@
 use crate::client::Client;
-use crate::{AccountDetails, NodeStore, BEARER_TOKEN_START};
+use crate::{AccountDetails, AccountSettings, NodeStore, BEARER_TOKEN_START};
 use futures::{
     future::{err, ok, result, Either},
     Future,
@@ -203,6 +203,41 @@ impl_web! {
                 }
             })
             })
+        }
+
+        #[put("/accounts/:username/settings")]
+        #[content_type("application/json")]
+        fn http_edit_account(&self, username: String, body: AccountSettings, authorization: String) -> impl Future<Item = Value, Error = Response<()>> {
+            let store = self.store.clone();
+            let auth_clone = authorization.clone();
+            let username = match Username::from_str(&username) {
+                Ok(username) => username,
+                Err(_) => {
+                    error!("Invalid username: {}", username);
+                    return Either::A(err(Response::error(500)))
+                }
+            };
+            let auth = match AuthToken::from_str(&authorization) {
+                Ok(auth) => auth,
+                Err(_) => {
+                    error!("Could not parse auth token {:?}", auth_clone);
+                    return Either::A(err(Response::error(401)))
+                }
+            };
+
+            Either::B(store.get_account_from_http_auth(&username, &auth.password())
+            .map_err(move |_| {
+                debug!("No account found with auth: {}", authorization);
+                Response::error(401)
+            })
+            .and_then(move |acc| {
+                store.modify_account_settings(acc.id(), body)
+                .map_err(move |_| {
+                    debug!("Could not modify account settings");
+                    Response::error(401)
+                })
+                .and_then(move |account| Ok(json!(account)))
+            }))
         }
 
         #[delete("/accounts/:username")]
