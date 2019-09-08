@@ -49,7 +49,7 @@ pub fn send_spsp_payment_btp(
     receiver: &str,
     amount: u64,
     quiet: bool,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = (), Error = ()> + Send {
     let receiver = receiver.to_string();
     let btp_server = parse_btp_url(btp_server).unwrap();
     let account = AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
@@ -118,7 +118,7 @@ pub fn send_spsp_payment_http(
     receiver: &str,
     amount: u64,
     quiet: bool,
-) -> impl Future<Item = (), Error = ()> {
+) -> impl Future<Item = (), Error = ()> + Send {
     let receiver = receiver.to_string();
     let url = Url::parse(http_server).expect("Cannot parse HTTP URL");
     let account = if let Some(token) = url.password() {
@@ -172,7 +172,7 @@ pub fn run_spsp_server_btp(
     address: SocketAddr,
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
-    debug!("Starting SPSP server");
+    debug!("Starting SPSP server. bind address: {}", address);
     let ilp_address = Arc::new(RwLock::new(Bytes::new()));
     let btp_server = parse_btp_url(btp_server).unwrap();
     let incoming_account: Account =
@@ -256,7 +256,10 @@ pub fn run_spsp_server_http(
     let ilp_address = ildcp_info.client_address();
     let ilp_address_clone = ilp_address.clone();
     if !quiet {
-        println!("Creating SPSP server. ILP Address: {}", ilp_address)
+        println!(
+            "Creating SPSP server. ILP Address: {}, bind address: {}",
+            ilp_address, address
+        )
     }
 
     let account: Account = AccountBuilder::new(ilp_address.clone(), LOCAL_USERNAME.clone())

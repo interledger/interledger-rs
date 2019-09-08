@@ -9,16 +9,16 @@ use std::str::FromStr;
 use log::{debug, error, trace};
 
 pub struct EngineRedisStoreBuilder {
-    redis_uri: ConnectionInfo,
+    redis_url: ConnectionInfo,
 }
 
 impl EngineRedisStoreBuilder {
-    pub fn new(redis_uri: ConnectionInfo) -> Self {
-        EngineRedisStoreBuilder { redis_uri }
+    pub fn new(redis_url: ConnectionInfo) -> Self {
+        EngineRedisStoreBuilder { redis_url }
     }
 
     pub fn connect(&self) -> impl Future<Item = EngineRedisStore, Error = ()> {
-        result(Client::open(self.redis_uri.clone()))
+        result(Client::open(self.redis_url.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
             .and_then(|client| {
                 debug!("Connected to redis: {:?}", client);
