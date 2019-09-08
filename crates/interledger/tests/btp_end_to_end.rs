@@ -30,9 +30,9 @@ fn btp_end_to_end() {
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: context.get_client_connection_info(),
-        btp_address: ([127, 0, 0, 1], btp_port).into(),
-        http_address: ([127, 0, 0, 1], http_port).into(),
-        settlement_address: ([127, 0, 0, 1], settlement_port).into(),
+        btp_bind_address: ([127, 0, 0, 1], btp_port).into(),
+        http_bind_address: ([127, 0, 0, 1], http_port).into(),
+        settlement_api_bind_address: ([127, 0, 0, 1], settlement_port).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
     };

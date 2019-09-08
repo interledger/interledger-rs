@@ -186,33 +186,31 @@ export RUST_LOG=interledger=debug
 
 # Start Alice's settlement engine (ETH)
 cargo run --package interledger-settlement-engines -- ethereum-ledger \
---key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
+--private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
 --confirmations 0 \
 --poll_frequency 1000 \
---ethereum_endpoint http://127.0.0.1:8545 \
+--ethereum_url http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
---redis_uri redis://127.0.0.1:6379/0 \
+--redis_url redis://127.0.0.1:6379/0 \
 --asset_scale 6 \
---watch_incoming true \
---port 3000 \
+--settlement_api_bind_address 127.0.0.1:3000 \
 &> logs/node-alice-settlement-engine-eth.log &
 
 # Start Bob's settlement engine (ETH, XRPL)
 cargo run --package interledger-settlement-engines -- ethereum-ledger \
---key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
+--private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
 --confirmations 0 \
 --poll_frequency 1000 \
---ethereum_endpoint http://127.0.0.1:8545 \
+--ethereum_url http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
---redis_uri redis://127.0.0.1:6380/0 \
+--redis_url redis://127.0.0.1:6380/0 \
 --asset_scale 6 \
---watch_incoming true \
---port 3001 \
+--settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine-eth.log &
 
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="r3GDnYaYCk2XKzEDNYj59yMqDZ7zGih94K" \
-LEDGER_SECRET="ssnYUDNeNQrNij2EVJG6dDw258jA6" \
+LEDGER_ADDRESS="r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj" \
+LEDGER_SECRET="snun48LX8WMtTJEzHZ4ckbiEf4dVZ" \
 CONNECTOR_URL="http://localhost:8771" \
 REDIS_PORT=6380 \
 ENGINE_PORT=3002 \
@@ -221,8 +219,8 @@ ilp-settlement-xrp \
 
 # Start Charlie's settlement engine (XRPL)
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="rGCUgMH4omQV1PUuYFoMAnA7esWFhE7ZEV" \
-LEDGER_SECRET="sahVoeg97nuitefnzL9GHjp2Z6kpj" \
+LEDGER_ADDRESS="rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj" \
+LEDGER_SECRET="ssxRAdmN97CnEjSzBfYFVCKiw2wNM" \
 CONNECTOR_URL="http://localhost:9771" \
 REDIS_PORT=6381 \
 ENGINE_PORT=3003 \
@@ -237,33 +235,30 @@ ilp-settlement-xrp \
 ILP_ADDRESS=example.alice \
 ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
 ILP_ADMIN_AUTH_TOKEN=hi_alice \
-ILP_REDIS_CONNECTION=redis://127.0.0.1:6379/0 \
-ILP_HTTP_ADDRESS=127.0.0.1:7770 \
-ILP_BTP_ADDRESS=127.0.0.1:7768 \
-ILP_SETTLEMENT_ADDRESS=127.0.0.1:7771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
+ILP_REDIS_URL=redis://127.0.0.1:6379/0 \
+ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
+ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
+ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
 cargo run --package interledger -- node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
 ILP_ADMIN_AUTH_TOKEN=hi_bob \
-ILP_REDIS_CONNECTION=redis://127.0.0.1:6380/0 \
-ILP_HTTP_ADDRESS=127.0.0.1:8770 \
-ILP_BTP_ADDRESS=127.0.0.1:8768 \
-ILP_SETTLEMENT_ADDRESS=127.0.0.1:8771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
+ILP_REDIS_URL=redis://127.0.0.1:6380/0 \
+ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
+ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
+ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
 cargo run --package interledger -- node &> logs/node-bob.log &
 
 # Start Charlie's node
 ILP_ADDRESS=example.bob.charlie \
 ILP_SECRET_SEED=1232362131122139900555208458637022875563691455429373719368053354 \
 ILP_ADMIN_AUTH_TOKEN=hi_charlie \
-ILP_REDIS_CONNECTION=redis://127.0.0.1:6381/0 \
-ILP_HTTP_ADDRESS=127.0.0.1:9770 \
-ILP_BTP_ADDRESS=127.0.0.1:9768 \
-ILP_SETTLEMENT_ADDRESS=127.0.0.1:9771 \
-ILP_DEFAULT_SPSP_ACCOUNT=0 \
+ILP_REDIS_URL=redis://127.0.0.1:6381/0 \
+ILP_HTTP_BIND_ADDRESS=127.0.0.1:9770 \
+ILP_BTP_BIND_ADDRESS=127.0.0.1:9768 \
+ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:9771 \
 cargo run --package interledger -- node &> logs/node-charlie.log &
 ```
 
@@ -543,7 +538,7 @@ printf "\nAlice's balance on Bob's node: "
 AB_BALANCE=`curl \
 -H "Authorization: Bearer hi_bob" \
 http://localhost:8770/accounts/alice/balance 2>/dev/null`
-EXPECTED_BALANCE='{"balance":"-500"}'
+EXPECTED_BALANCE='{"balance":"0"}'
 if [[ $AB_BALANCE != $EXPECTED_BALANCE ]]; then
     INCOMING_NOT_SETTLED=1
     printf "\e[33m$AB_BALANCE\e[m"
@@ -560,7 +555,7 @@ printf "\nBob's balance on Charlie's node: "
 BC_BALANCE=`curl \
 -H "Authorization: Bearer hi_charlie" \
 http://localhost:9770/accounts/bob/balance 2>/dev/null`
-EXPECTED_BALANCE='{"balance":"-500"}'
+EXPECTED_BALANCE='{"balance":"0"}'
 if [[ $BC_BALANCE != $EXPECTED_BALANCE ]]; then
     INCOMING_NOT_SETTLED=1
     printf "\e[33m$BC_BALANCE\e[m"
