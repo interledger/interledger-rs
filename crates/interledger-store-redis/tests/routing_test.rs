@@ -50,8 +50,6 @@ fn polls_for_route_updates() {
                                 btp_incoming_token: None,
                                 settle_threshold: None,
                                 settle_to: None,
-                                send_routes: false,
-                                receive_routes: false,
                                 routing_relation: None,
                                 round_trip_time: None,
                                 amount_per_minute_limit: None,
