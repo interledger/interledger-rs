@@ -77,9 +77,9 @@ pub struct EthereumLedgerRedisStoreBuilder {
 }
 
 impl EthereumLedgerRedisStoreBuilder {
-    pub fn new(redis_uri: ConnectionInfo) -> Self {
+    pub fn new(redis_url: ConnectionInfo) -> Self {
         EthereumLedgerRedisStoreBuilder {
-            redis_store_builder: EngineRedisStoreBuilder::new(redis_uri),
+            redis_store_builder: EngineRedisStoreBuilder::new(redis_url),
         }
     }
 

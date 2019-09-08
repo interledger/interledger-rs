@@ -180,15 +180,15 @@ fn accounts_key(account_id: AccountId) -> String {
 }
 
 pub struct RedisStoreBuilder {
-    redis_uri: ConnectionInfo,
+    redis_url: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
 }
 
 impl RedisStoreBuilder {
-    pub fn new(redis_uri: ConnectionInfo, secret: [u8; 32]) -> Self {
+    pub fn new(redis_url: ConnectionInfo, secret: [u8; 32]) -> Self {
         RedisStoreBuilder {
-            redis_uri,
+            redis_url,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
         }
@@ -204,7 +204,7 @@ impl RedisStoreBuilder {
         self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
 
-        result(Client::open(self.redis_uri.clone()))
+        result(Client::open(self.redis_url.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
             .and_then(|client| {
                 debug!("Connected to redis: {:?}", client);

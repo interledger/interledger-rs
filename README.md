@@ -29,6 +29,10 @@ Install and Run:
 2. `cargo build` (add `--release` to compile the release version, which is slower to compile but faster to run)
 2. `cargo run` (append command line options after a `--` to use the CLI)
 
+## Operating Manuals
+
+See the [Interledger.rs Operating Manuals](./docs/operating-manuals.md).
+
 ## Running the Examples
 
 See the [examples](./examples/README.md) for demos of Interledger functionality and how to use the Interledger.rs implementation.

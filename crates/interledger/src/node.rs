@@ -31,16 +31,16 @@ use url::Url;
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 
-fn default_settlement_address() -> SocketAddr {
+fn default_settlement_api_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7771))
 }
-fn default_http_address() -> SocketAddr {
+fn default_http_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7770))
 }
-fn default_btp_address() -> SocketAddr {
+fn default_btp_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7768))
 }
-fn default_redis_uri() -> ConnectionInfo {
+fn default_redis_url() -> ConnectionInfo {
     DEFAULT_REDIS_URL.into_connection_info().unwrap()
 }
 
@@ -85,8 +85,6 @@ where
 #[derive(Deserialize, Clone)]
 pub struct InterledgerNode {
     /// ILP address of the node
-    // Rename this one because the env vars are prefixed with "ILP_"
-    #[serde(alias = "address")]
     #[serde(deserialize_with = "deserialize_string_to_address")]
     pub ilp_address: Address,
     /// Root secret used to derive encryption keys
@@ -97,19 +95,20 @@ pub struct InterledgerNode {
     /// Redis URI (for example, "redis://127.0.0.1:6379" or "unix:/tmp/redis.sock")
     #[serde(
         deserialize_with = "deserialize_redis_connection",
-        default = "default_redis_uri"
+        default = "default_redis_url",
+        alias = "redis_url"
     )]
     pub redis_connection: ConnectionInfo,
     /// IP address and port to listen for HTTP connections
     /// This is used for both the API and ILP over HTTP packets
-    #[serde(default = "default_http_address")]
-    pub http_address: SocketAddr,
+    #[serde(default = "default_http_bind_address")]
+    pub http_bind_address: SocketAddr,
     /// IP address and port to listen for the Settlement Engine API
-    #[serde(default = "default_settlement_address")]
-    pub settlement_address: SocketAddr,
+    #[serde(default = "default_settlement_api_bind_address")]
+    pub settlement_api_bind_address: SocketAddr,
     /// IP address and port to listen for BTP connections
-    #[serde(default = "default_btp_address")]
-    pub btp_address: SocketAddr,
+    #[serde(default = "default_btp_bind_address")]
+    pub btp_bind_address: SocketAddr,
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
@@ -130,9 +129,9 @@ impl InterledgerNode {
         );
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
-        let btp_address = self.btp_address;
-        let http_address = self.http_address;
-        let settlement_address = self.settlement_address;
+        let btp_bind_address = self.btp_bind_address;
+        let http_bind_address = self.http_bind_address;
+        let settlement_api_bind_address = self.settlement_api_bind_address;
         let ilp_address = self.ilp_address.clone();
         let ilp_address_clone = ilp_address.clone();
         let ilp_address_clone2 = ilp_address.clone();
@@ -171,7 +170,7 @@ impl InterledgerNode {
                     // TODO try reconnecting to those accounts later
                     connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            create_server(ilp_address_clone2, btp_address, store.clone(), btp_client_service.clone()).and_then(
+                            create_server(ilp_address_clone2, btp_bind_address, store.clone(), btp_client_service.clone()).and_then(
                                 move |btp_server_service| {
                                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
@@ -253,18 +252,18 @@ impl InterledgerNode {
                                     if let Some(username) = default_spsp_account {
                                         api.default_spsp_account(username);
                                     }
-                                    let listener = TcpListener::bind(&http_address)
+                                    let listener = TcpListener::bind(&http_bind_address)
                                         .expect("Unable to bind to HTTP address");
-                                    info!("Interledger node listening on: {}", http_address);
+                                    info!("Interledger node listening on: {}", http_bind_address);
                                     tokio::spawn(api.serve(listener.incoming()));
 
                                     let settlement_api = SettlementApi::new(
                                         store.clone(),
                                         outgoing_service.clone(),
                                     );
-                                    let listener = TcpListener::bind(&settlement_address)
+                                    let listener = TcpListener::bind(&settlement_api_bind_address)
                                         .expect("Unable to bind to Settlement API address");
-                                    info!("Settlement API listening on: {}", settlement_address);
+                                    info!("Settlement API listening on: {}", settlement_api_bind_address);
                                     tokio::spawn(settlement_api.serve(listener.incoming()));
 
                                     Ok(())
@@ -293,7 +292,7 @@ impl InterledgerNode {
 pub use interledger_api::AccountDetails;
 #[doc(hidden)]
 pub fn insert_account_redis<R>(
-    redis_uri: R,
+    redis_url: R,
     secret_seed: &[u8; 32],
     account: AccountDetails,
 ) -> impl Future<Item = AccountId, Error = ()>
@@ -301,9 +300,9 @@ where
     R: IntoConnectionInfo,
 {
     let redis_secret = generate_redis_secret(secret_seed);
-    result(redis_uri.into_connection_info())
+    result(redis_url.into_connection_info())
         .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
-        .and_then(move |redis_uri| RedisStoreBuilder::new(redis_uri, redis_secret).connect())
+        .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
         .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             store

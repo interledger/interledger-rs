@@ -2,16 +2,17 @@ use futures::{stream::Stream, Future};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_settlement_engines::engines::ethereum_ledger::run_ethereum_engine;
-use interledger_store_redis::Account;
-use interledger_store_redis::AccountId;
-use redis::ConnectionInfo;
+use interledger_settlement_engines::engines::ethereum_ledger::{
+    run_ethereum_engine, EthereumLedgerOpt,
+};
+use interledger_store_redis::{Account, AccountId, ConnectionInfo};
 use reqwest;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::net::SocketAddr;
 use std::process::Command;
 use std::str;
 use std::thread::sleep;
@@ -70,24 +71,23 @@ pub fn start_xrp_engine(
 #[allow(unused)]
 pub fn start_eth_engine(
     db: ConnectionInfo,
-    engine_port: u16,
+    http_address: SocketAddr,
     key: String,
     settlement_port: u16,
 ) -> impl Future<Item = (), Error = ()> {
-    let key = Secret::new(key);
-    run_ethereum_engine(
-        db,
-        "http://localhost:8545".to_string(),
-        engine_port,
-        key,
-        1,
-        0,
-        18,
-        1000,
-        format!("http://127.0.0.1:{}", settlement_port),
-        None,
-        true,
-    )
+    run_ethereum_engine(EthereumLedgerOpt {
+        private_key: Secret::new(key),
+        settlement_api_bind_address: http_address,
+        ethereum_url: "http://localhost:8545".to_string(),
+        token_address: None,
+        connector_url: format!("http://127.0.0.1:{}", settlement_port),
+        redis_connection: db,
+        chain_id: 1,
+        confirmations: 0,
+        asset_scale: 18,
+        poll_frequency: 1000,
+        watch_incoming: true,
+    })
 }
 
 #[allow(unused)]
