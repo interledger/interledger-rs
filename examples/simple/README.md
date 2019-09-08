@@ -171,9 +171,7 @@ curl \
     "http_outgoing_token": "node_a:node_a-password",
     "http_endpoint": "http://localhost:8770/ilp",
     "min_balance": -100000,
-    "routing_relation": "Peer",
-    "send_routes": true,
-    "receive_routes": true}' \
+    "routing_relation": "Peer"}' \
     http://localhost:7770/accounts
 
 # Insert accounts on Node B
@@ -206,9 +204,7 @@ curl \
     "http_outgoing_token": "node_b:node_b-password",
     "http_endpoint": "http://localhost:7770/ilp",
     "min_balance": -100000,
-    "routing_relation": "Peer",
-    "send_routes": true,
-    "receive_routes": true}' \
+    "routing_relation": "Peer"}' \
     http://localhost:8770/accounts
 ```
 

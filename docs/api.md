@@ -40,8 +40,6 @@ Optional fields include:
     "btp_incoming_token": "btp auth token they will use to authenticate with us",
     "settle_threshold": 1000000000,
     "settle_to": 0,
-    "send_routes": true,
-    "receive_routes": false,
     "routing_relation": "Peer",
     "round_trip_time": 500,
     "amount_per_minute_limit": 1000000000,

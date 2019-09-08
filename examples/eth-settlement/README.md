@@ -249,10 +249,8 @@ curl \
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
-    "routing_relation": "Peer",
-    "send_routes": true,
-    "receive_routes": true}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null
+    "routing_relation": "Peer"}' \
+    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
 
 printf "Adding Alice's account on Bob's node...\n"
 curl \
@@ -271,10 +269,8 @@ curl \
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
-    "routing_relation": "Peer",
-    "send_routes": true,
-    "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null
+    "routing_relation": "Peer"}' \
+    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null &
 
 sleep 2
 ```

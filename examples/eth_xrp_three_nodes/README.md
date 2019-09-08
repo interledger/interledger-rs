@@ -341,10 +341,8 @@ curl \
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
-    "routing_relation": "Peer",
-    "send_routes": true,
-    "receive_routes": true}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null
+    "routing_relation": "Peer"}' \
+    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
 
 printf "Adding Alice's account on Bob's node (ETH Peer relation)...\n"
 curl \
@@ -363,9 +361,7 @@ curl \
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
-    "routing_relation": "Peer",
-    "send_routes": true,
-    "receive_routes": true}' \
+    "routing_relation": "Peer"}' \
     http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null
 
 printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
@@ -385,10 +381,8 @@ curl \
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
-    "routing_relation": "Child",
-    "send_routes": false,
-    "receive_routes": true}' \
-    http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null
+    "routing_relation": "Child"}' \
+    http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
 curl \
@@ -407,9 +401,7 @@ curl \
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
-    "routing_relation": "Parent",
-    "send_routes": false,
-    "receive_routes": true}' \
+    "routing_relation": "Parent"}' \
     http://localhost:9770/accounts > logs/account-charlie-bob.log 2>/dev/null
 
 sleep 2
