@@ -41,6 +41,12 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
+    fn modify_account_settings(
+        &self,
+        id: <Self::Account as AccountTrait>::AccountId,
+        settings: AccountSettings,
+    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
@@ -57,6 +63,26 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         prefix: String,
         account_id: <Self::Account as AccountTrait>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+}
+
+/// AccountSettings is a subset of the user parameters defined in
+/// AccountDetails. Its purpose is to allow a user to modify certain of their
+/// parameters which they may want to re-configure in the future, such as their
+/// tokens (which act as passwords), their settlement frequency preferences, or
+/// their HTTP/BTP endpoints, since they may change their network configuration.
+#[derive(Debug, Extract, Response, Clone, Default)]
+pub struct AccountSettings {
+    pub http_incoming_token: Option<String>,
+    pub btp_incoming_token: Option<String>,
+    pub http_outgoing_token: Option<String>,
+    pub btp_outgoing_token: Option<String>,
+    pub http_endpoint: Option<String>,
+    pub btp_uri: Option<String>,
+    pub settle_threshold: Option<i64>,
+    // Note that this is intentionally an unsigned integer because users should
+    // not be able to set the settle_to value to be negative (meaning the node
+    // would pre-fund with the user)
+    pub settle_to: Option<u64>,
 }
 
 /// The Account type for the RedisStore.
