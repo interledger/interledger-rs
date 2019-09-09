@@ -28,12 +28,20 @@ pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 use serde::{Deserialize, Serialize};
 
+/// Data structure used to describe the routing relation of an account with its peers.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum RoutingRelation {
+    /// An account from which we do not receive routes from, neither broadcast
+    /// routes to
     NonRoutingAccount = 0,
+    /// An account from which we receive routes from, but do not broadcast
+    /// routes to
     Parent = 1,
+    /// An account from which we receive routes from and broadcast routes to
     Peer = 2,
+    /// An account from which we do not receive routes from, but broadcast
+    /// routes to
     Child = 3,
 }
 

@@ -26,8 +26,13 @@ lazy_static! {
     };
     pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
         id: 2,
-        ilp_address: Address::from_str("example.me.child").unwrap(),
+        ilp_address: Address::from_str("example.me.nonroutingaccount").unwrap(),
         relation: RoutingRelation::NonRoutingAccount,
+    };
+    pub static ref CHILD_ACCOUNT: TestAccount = TestAccount {
+        id: 3,
+        ilp_address: Address::from_str("example.me.child").unwrap(),
+        relation: RoutingRelation::Child,
     };
     pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
     pub static ref ALICE: Username = Username::from_str("alice").unwrap();
