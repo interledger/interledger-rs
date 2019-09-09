@@ -37,8 +37,8 @@ COPY --from=rust \
 
 WORKDIR /opt/app
 
-COPY redis.conf redis.conf
-COPY run-node-and-redis.sh run-node-and-redis.sh
+COPY ./docker/redis.conf redis.conf
+COPY ./docker/run-node-and-redis.sh run-node-and-redis.sh
 
 # ENV RUST_BACKTRACE=1
 ENV RUST_LOG=interledger/.*
@@ -50,4 +50,4 @@ ENV RUST_LOG=interledger/.*
 VOLUME [ "/config" ]
 
 ENTRYPOINT [ "/bin/sh", "./run-node-and-redis.sh" ]
-CMD [ "-c", "/config/config.yml" ]
+CMD [ "/config/config.yml" ]

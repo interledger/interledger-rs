@@ -34,81 +34,10 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 ## Instructions
 
 <!--!
-printf "Stopping Interledger nodes\n"
-
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6379 shutdown
-fi
-
-if [ -f dump.rdb ] ; then
-    rm -f dump.rdb
-fi
-
-if lsof -tPi :7770 ; then
-    kill `lsof -tPi :7770`
-fi
-
-if lsof -tPi :8770 ; then
-    kill `lsof -tPi :8770`
-fi
-
-printf "\n"
--->
-
-### 1. Build interledger.rs
-First of all, let's build interledger.rs. (This may take a couple of minutes)
-
-<!--! printf "Building interledger.rs... (This may take a couple of minutes)\n" -->
-```bash
-cargo build --bins
-```
-
-### 2. Launch Redis
-
-<!--!
-redis-server --version > /dev/null || printf "\e[31mUh oh! You need to install redis-server before running this example\e[m\n"
--->
-
-```bash
-# Create the logs directory if it doesn't already exist
-mkdir -p logs
-
-# Start Redis
-redis-server &> logs/redis.log &
-```
-
-When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis.log`
-
-### 3. Launch 2 Nodes
-
-```bash
-# Turn on debug logging for all of the interledger.rs components
-export RUST_LOG=interledger=debug
-
-# Start both nodes
-# Note that the configuration options can be passed as environment variables
-# or saved to a YAML file and passed to the node with the `--config` or `-c` CLI argument
-ILP_ADDRESS=example.node_a \
-ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
-ILP_ADMIN_AUTH_TOKEN=admin-a \
-ILP_REDIS_URL=redis://127.0.0.1:6379/0 \
-ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
-ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
-ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --package interledger -- node &> logs/node_a.log &
-
-ILP_ADDRESS=example.node_b \
-ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
-ILP_ADMIN_AUTH_TOKEN=admin-b \
-ILP_REDIS_URL=redis://127.0.0.1:6379/1 \
-ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
-ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
-ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --package interledger -- node &> logs/node_b.log &
-```
-
-<!--!
-printf "\nWaiting for Interledger.rs nodes to start up...\n"
+function error_and_exit() {
+    printf "\e[31m$1\e[m\n"
+    exit 1
+}
 
 function wait_to_serve() {
     while :
@@ -117,16 +46,192 @@ function wait_to_serve() {
         sleep 1
         curl $1 &> /dev/null
         if [ $? -eq 0 ]; then
-            break;
+            break
         fi
     done
 }
 
+if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
+    USE_DOCKER=1
+else
+    USE_DOCKER=0
+fi
+
+# define commands
+CMD_DOCKER=docker
+if [ -n "$USE_SUDO" ] && [ "$USE_SUDO" -ne "0" ]; then
+    CMD_DOCKER="sudo $CMD_DOCKER"
+fi
+
+printf "Stopping Interledger nodes\n"
+
+if [ "$USE_DOCKER" -eq 1 ]; then
+    $CMD_DOCKER --version > /dev/null || error_and_exit "Uh oh! You need to install Docker before running this example"
+    
+    $CMD_DOCKER stop \
+        interledger-rs-node_a \
+        interledger-rs-node_b \
+        redis-alice_node \
+        redis-bob_node 2>/dev/null
+    
+    printf "\n\nRemoving existing Interledger containers\n"
+    $CMD_DOCKER rm \
+        interledger-rs-node_a \
+        interledger-rs-node_b \
+        redis-alice_node \
+        redis-bob_node 2>/dev/null
+else
+    for port in 6379 6380; do
+        if lsof -Pi :${port} -sTCP:LISTEN -t ; then
+            redis-cli -p ${port} shutdown
+        fi
+    done
+    
+    if [ -f dump.rdb ] ; then
+        rm -f dump.rdb
+    fi
+    
+    for port in 8545 7770 8770; do
+        if lsof -tPi :${port} ; then
+            kill `lsof -tPi :${port}`
+        fi
+    done
+fi
+
+printf "\n"
+-->
+
+### 1. Build interledger.rs
+First of all, let's build interledger.rs. (This may take a couple of minutes)
+
+<!--!
+if [ "$USE_DOCKER" -eq 1 ]; then
+    NETWORK_ID=`$CMD_DOCKER network ls -f "name=interledger" --format="{{.ID}}"`
+    if [ -z "${NETWORK_ID}" ]; then
+        printf "Creating a docker network...\n"
+        $CMD_DOCKER network create interledger
+    fi
+else
+    printf "Building interledger.rs... (This may take a couple of minutes)\n"
+-->
+```bash
+cargo build --bin interledger
+```
+<!--!
+fi
+-->
+
+### 2. Launch Redis
+
+<!--!
+printf "\nStarting Redis...\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
+    $CMD_DOCKER run --name redis-bob_node -d -p 127.0.0.1:6380:6379 --network=interledger redis:5.0.5
+else
+    redis-server --version > /dev/null || error_and_exit "Uh oh! You need to install redis-server before running this example"
+-->
+
+```bash
+# Create the logs directory if it doesn't already exist
+mkdir -p logs
+
+# Start Redis
+redis-server --port 6379 &> logs/redis-a-node.log &
+redis-server --port 6380 &> logs/redis-b-node.log &
+```
+<!--!
+sleep 1
+-->
+
+To remove all the data in Redis, you might additionally perform:
+
+```bash
+for port in `seq 6379 6380`; do
+    redis-cli -p $port flushall
+done
+```
+<!--!
+fi
+-->
+
+When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis-a-node.log`
+
+### 3. Launch 2 Nodes
+
+<!--!
+printf "\nStarting nodes...\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    $CMD_DOCKER run \
+        -e ILP_ADDRESS=example.node_a \
+        -e ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
+        -e ILP_ADMIN_AUTH_TOKEN=admin-a \
+        -e ILP_REDIS_URL=redis://redis-alice_node:6379/ \
+        -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
+        -e ILP_BTP_BIND_ADDRESS=0.0.0.0:7768 \
+        -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
+        -p 127.0.0.1:7768:7768 \
+        -p 127.0.0.1:7770:7770 \
+        -p 127.0.0.1:7771:7771 \
+        --network=interledger \
+        --name=interledger-rs-node_a \
+        -td \
+        interledgerrs/node node
+    
+    $CMD_DOCKER run \
+        -e ILP_ADDRESS=example.node_b \
+        -e ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
+        -e ILP_ADMIN_AUTH_TOKEN=admin-b \
+        -e ILP_REDIS_URL=redis://redis-bob_node:6379/ \
+        -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
+        -e ILP_BTP_BIND_ADDRESS=0.0.0.0:7768 \
+        -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
+        -p 127.0.0.1:8768:7768 \
+        -p 127.0.0.1:8770:7770 \
+        -p 127.0.0.1:8771:7771 \
+        --network=interledger \
+        --name=interledger-rs-node_b \
+        -td \
+        interledgerrs/node node
+else
+-->
+
+```bash
+# Turn on debug logging for all of the interledger.rs components
+export RUST_LOG=interledger=debug
+
+# Start both nodes.
+# Note that the configuration options can be passed as environment variables
+# or saved to a YAML, JSON or TOML file and passed to the node as a positional argument.
+# You can also pass it from STDIN.
+ILP_ADDRESS=example.node_a \
+ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
+ILP_ADMIN_AUTH_TOKEN=admin-a \
+ILP_REDIS_URL=redis://127.0.0.1:6379/ \
+ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
+ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
+ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
+cargo run --bin interledger -- node &> logs/node_a.log &
+
+ILP_ADDRESS=example.node_b \
+ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
+ILP_ADMIN_AUTH_TOKEN=admin-b \
+ILP_REDIS_URL=redis://127.0.0.1:6380/ \
+ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
+ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
+ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
+cargo run --bin interledger -- node &> logs/node_b.log &
+```
+
+<!--!
+fi
+
+printf "\nWaiting for Interledger.rs nodes to start up...\n"
+
 wait_to_serve "http://localhost:7770"
 wait_to_serve "http://localhost:8770"
-printf "\n"
 
-printf "The Interledger.rs nodes are up and running!\n\n"
+printf "\nThe Interledger.rs nodes are up and running!\n\n"
 -->
 
 Now the Interledger.rs nodes are up and running!  
@@ -138,7 +243,74 @@ Let's create accounts on both nodes. The following script sets up accounts for t
 
 See the [HTTP API docs](../../docs/api.md) for the full list of fields that can be set on an account.
 
-<!--! printf "Creating accounts:\n\n" -->
+<!--!
+printf "Creating accounts:\n\n"
+
+if [ "$USE_DOCKER" -eq 1 ]; then
+    printf "Alice's account:\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer admin-a" \
+        -d '{
+        "ilp_address": "example.node_a.alice",
+        "username" : "alice",
+        "asset_code": "ABC",
+        "asset_scale": 9,
+        "max_packet_amount": 100,
+        "http_incoming_token": "alice-password"}' \
+        http://localhost:7770/accounts
+    
+    printf "\nNode B's account on Node A:\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer admin-a" \
+        -d '{
+        "ilp_address": "example.node_b",
+        "username" : "node_b",
+        "asset_code": "ABC",
+        "asset_scale": 9,
+        "max_packet_amount": 100,
+        "http_incoming_token": "node_b-password",
+        "http_outgoing_token": "node_a:node_a-password",
+        "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
+        "min_balance": -100000,
+        "routing_relation": "Peer"}' \
+        http://localhost:7770/accounts
+    
+    # Insert accounts on Node B
+    # One account represents Bob and the other represents Node A's account with Node B
+    
+    printf "\nBob's Account:\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer admin-b" \
+        -d '{
+        "ilp_address": "example.node_b.bob",
+        "username" : "bob",
+        "asset_code": "ABC",
+        "asset_scale": 9,
+        "max_packet_amount": 100,
+        "http_incoming_token": "bob"}' \
+        http://localhost:8770/accounts
+    
+    printf "\nNode A's account on Node B:\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer admin-b" \
+        -d '{
+        "ilp_address": "example.node_a",
+        "username" : "node_a",
+        "asset_code": "ABC",
+        "asset_scale": 9,
+        "max_packet_amount": 100,
+        "http_incoming_token": "node_a-password",
+        "http_outgoing_token": "node_b:node_b-password",
+        "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
+        "min_balance": -100000,
+        "routing_relation": "Peer"}' \
+        http://localhost:8770/accounts
+else
+-->
 
 ```bash
 # Insert accounts on Node A
@@ -208,7 +380,11 @@ curl \
     http://localhost:8770/accounts
 ```
 
-<!--! printf "\n\nCreated accounts on both nodes\n\n" -->
+<!--!
+fi
+
+printf "\n\nCreated accounts on both nodes\n\n"
+-->
 
 ### 5. Sending a Payment
 
@@ -240,7 +416,17 @@ printf "\n\n"
 
 The following script sends a payment from Alice to Bob that is routed from Node A to Node B.
 
-<!--! printf "Sending payment of 500 from Alice (on Node A) to Bob (on Node B)\n" -->
+<!--!
+printf "Sending payment of 500 from Alice (on Node A) to Bob (on Node B)\n"
+
+if [ "$USE_DOCKER" -eq 1 ]; then
+    curl \
+        -H "Authorization: Bearer alice:alice-password" \
+        -H "Content-Type: application/json" \
+        -d "{\"receiver\":\"http://interledger-rs-node_b:7770/spsp/bob\",\"source_amount\":500}" \
+        http://localhost:7770/pay
+else
+-->
 
 ```bash
 # Sending payment of 500 from Alice (on Node A) to Bob (on Node B)
@@ -251,7 +437,10 @@ curl \
     http://localhost:7770/pay
 ```
 
-<!--! printf "\n\n" -->
+<!--!
+fi
+printf "\n\n"
+-->
 
 ### 6. Check Balances
 
@@ -286,44 +475,81 @@ http://localhost:8770/accounts/bob/balance
 ### 7. Kill All the Services
 Finally, you can stop all the services as follows:
 
-<!--! printf "Stopping Interledger nodes\n" -->
+<!--!
+printf "Stopping Interledger nodes\n"
+
+if [ "$USE_DOCKER" -ne 1 ]; then
+exec 2> /dev/null
+-->
 
 ```bash
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6379 flushall
-    redis-cli -p 6379 shutdown
-fi
+for port in 6379 6380; do
+    if lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null ; then
+        redis-cli -p ${port} shutdown
+    fi
+done
 
 if [ -f dump.rdb ] ; then
     rm -f dump.rdb
 fi
 
-if lsof -tPi :7770 ; then
-    kill `lsof -tPi :7770`
-fi
-
-if lsof -tPi :8770 ; then
-    kill `lsof -tPi :8770`
-fi
+for port in 8545 7770 8770; do
+    if lsof -tPi :${port} >/dev/null ; then
+        kill `lsof -tPi :${port}` > /dev/null
+    fi
+done
 ```
+<!--!
+fi
+-->
 
-<!--! printf "\n" -->
+If you are using Docker, try the following.
+
+<!--!
+if [ "$USE_DOCKER" -eq 1 ]; then
+    $CMD_DOCKER stop \
+        interledger-rs-node_a \
+        interledger-rs-node_b \
+        redis-alice_node \
+        redis-bob_node
+fi
+printf "\n"
+-->
+```bash #
+# Depending on your OS, you might not need to prefix with `sudo` necessarily.
+sudo docker stop \
+    interledger-rs-node_a \
+    interledger-rs-node_b \
+    redis-alice_node \
+    redis-bob_node
+```
 
 ## Troubleshooting
 
-> Uh oh! You need to install redis-server before running this example
+```
+Uh oh! You need to install redis-server before running this example
+```
 
 You need to install Redis to run `redis-server` command. See [Prerequisites](#prerequisites) section.
 
-> curl: (7) Failed to connect to localhost port 7770: Connection refused
+```
+curl: (7) Failed to connect to localhost port 7770: Connection refused
+```
 
 Your interledger.rs node is not running. The reason may be:
 
-1. You tried to insert the accounts before the nodes had time to spin up. Adjust the `sleep 1` command to `sleep 3` or larger.
+1. You tried to insert the accounts before the nodes had time to spin up. Wait a second or so, and try again.
 1. You have already running interledger.rs nodes on port `7770`. Stop the nodes and retry.
 1. You have some other process running on port `7770`. Stop the process and retry.
 
 To stop the process running on port `7770`, try `` kill `lsof -i:7770 -t` ``. Since this example launches 2 nodes, the port may be other than `7770`. Adjust the port number according to the situation.
+
+```
+# When running with Docker
+Error starting userland proxy: listen tcp 0.0.0.0:6379: bind: address already in use.
+```
+
+You might have run another example. Stop them first and try again. How to stop the services is written in each example page.
 
 ## Conclusion
 
