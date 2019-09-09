@@ -101,7 +101,6 @@ fn modify_account_settings_settle_to_overflow() {
     .unwrap();
 }
 
-
 use std::default::Default;
 #[test]
 fn modify_account_settings_unchanged() {
@@ -113,8 +112,14 @@ fn modify_account_settings_unchanged() {
         store
             .modify_account_settings(id, settings)
             .and_then(move |ret| {
-                assert_eq!(account.get_http_auth_token().unwrap(), ret.get_http_auth_token().unwrap());
-                assert_eq!(account.get_btp_token().unwrap(), ret.get_btp_token().unwrap());
+                assert_eq!(
+                    account.get_http_auth_token().unwrap(),
+                    ret.get_http_auth_token().unwrap()
+                );
+                assert_eq!(
+                    account.get_btp_token().unwrap(),
+                    ret.get_btp_token().unwrap()
+                );
                 // Cannot check other parameters since they are only pub(crate).
                 let _ = context;
                 Ok(())
@@ -122,7 +127,6 @@ fn modify_account_settings_unchanged() {
     }))
     .unwrap();
 }
-
 
 #[test]
 fn starts_with_zero_balance() {
