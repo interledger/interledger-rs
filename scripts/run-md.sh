@@ -9,6 +9,8 @@
 # Markdown file but run them when the whole file is executed.
 # This is largely intended for commands that make the output more readable
 
+TMP_SCRIPT=$(mktemp -t "md.sh")
+
 {
   # if the first argument is a file, run it
   if [ -f $1  ]; then
@@ -38,4 +40,11 @@
 
   # if the line matches one line comment (<!--! foo -->), just print it
   else if ($0 ~ one_line_comment) { p = $0; sub("^<!--! *", "", p); sub(" *-->$", "", p); print p }
-}' | bash
+}' > "$TMP_SCRIPT"
+bash "$TMP_SCRIPT"
+
+if [ $? -eq 0 ]; then
+  rm "$TMP_SCRIPT"
+else
+  printf "Error running .md file: $TMP_SCRIPT"
+fi

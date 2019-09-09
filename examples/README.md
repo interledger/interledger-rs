@@ -14,10 +14,16 @@ The README of each example provides step-by-step instructions on how to run the 
 
 If you want to run all of the steps automatically, you can use the provided [`run-md.sh`](../scripts/run-md.sh) script to parse and execute the shell commands from the Markdown file:
 
-```bash
+```bash #
 # Under the example directory, for example, "simple"
 $ ../../scripts/run-md.sh README.md
 
 # It also accepts STDIN:
 $ (some command) | ../../scripts/run-md.sh
+```
+
+You could also run the examples using Docker. Try specifying `USE_DOCKER=1` as follows.
+
+```bash #
+USE_DOCKER=1 ../../scripts/run-md.sh README.md
 ```

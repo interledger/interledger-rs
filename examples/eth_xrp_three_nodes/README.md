@@ -49,7 +49,7 @@ cd settlement-xrp && npm install && npm run build && npm link
 This makes the `ilp-settlement-xrp` command available to your path.
 
 ### Redis
-The Interledger.rs nodes currently use [Redis](https://redis.io/) to store their data (SQL database support coming soon!)
+The Interledger.rs nodes and settlement engines currently use [Redis](https://redis.io/) to store their data (SQL database support coming soon!). Nodes and settlement engines don't need to share the Redis necessarily.
 
 - Compile and install from the source code
     - [Download the source code here](https://redis.io/download)
@@ -67,88 +67,141 @@ function error_and_exit() {
     exit 1
 }
 
+function wait_to_serve() {
+    while :
+    do
+        printf "."
+        sleep 1
+        curl $1 &> /dev/null
+        if [ $? -eq 0 ]; then
+            break
+        fi
+    done
+}
+
+if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
+    USE_DOCKER=1
+else
+    USE_DOCKER=0
+fi
+
 printf "Stopping Interledger nodes\n"
 
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6379 shutdown
-fi
-
-if lsof -Pi :6380 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6380 shutdown
-fi
-
-if lsof -Pi :6381 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6381 shutdown
-fi
-
-if [ -f dump.rdb ] ; then
-    rm -f dump.rdb
-fi
-
-if lsof -tPi :8545 ; then
-    kill `lsof -tPi :8545`
-fi
-
-if lsof -tPi :7770 ; then
-    kill `lsof -tPi :7770`
-fi
-
-if lsof -tPi :8770 ; then
-    kill `lsof -tPi :8770`
-fi
-
-if lsof -tPi :9770 ; then
-    kill `lsof -tPi :9770`
-fi
-
-if lsof -tPi :3000 ; then
-    kill `lsof -tPi :3000`
-fi
-
-if lsof -tPi :3001 ; then
-    kill `lsof -tPi :3001`
-fi
-
-if lsof -tPi :3002 ; then
-    kill `lsof -tPi :3002`
-fi
-
-if lsof -tPi :3003 ; then
-    kill `lsof -tPi :3003`
+if [ "$USE_DOCKER" -eq 1 ]; then
+    docker stop \
+        interledger-rs-node_a \
+        interledger-rs-node_b \
+        interledger-rs-node_c \
+        interledger-rs-se_a \
+        interledger-rs-se_b \
+        interledger-rs-se_c \
+        interledger-rs-se_d \
+        redis-alice_node \
+        redis-alice_se_eth \
+        redis-bob_node \
+        redis-bob_se_eth \
+        redis-bob_se_xrp \
+        redis-charlie_node \
+        redis-charlie_se_xrp \
+        ganache
+        
+    docker rm \
+        interledger-rs-node_a \
+        interledger-rs-node_b \
+        interledger-rs-node_c \
+        interledger-rs-se_a \
+        interledger-rs-se_b \
+        interledger-rs-se_c \
+        interledger-rs-se_d \
+        redis-alice_node \
+        redis-alice_se_eth \
+        redis-bob_node \
+        redis-bob_se_eth \
+        redis-bob_se_xrp \
+        redis-charlie_node \
+        redis-charlie_se_xrp \
+        ganache
+else
+    for port in `seq 6379 6385`; do
+        if lsof -Pi :${port} -sTCP:LISTEN -t ; then
+            redis-cli -p ${port} shutdown
+        fi
+    done
+    
+    if [ -f dump.rdb ] ; then
+        rm -f dump.rdb
+    fi
+    
+    for port in 8545 7770 8770 9770 3000 3001 3002 3003; do
+        if lsof -tPi :${port} ; then
+            kill `lsof -tPi :${port}`
+        fi
+    done
 fi
 -->
 
 ### 1. Build interledger.rs
 First of all, let's build interledger.rs. (This may take a couple of minutes)
 
-<!--! printf "Building interledger.rs... (This may take a couple of minutes)\n" -->
+<!--!
+if [ "$USE_DOCKER" -eq 1 ]; then
+    NETWORK_ID=`docker network ls -f "name=interledger" --format="{{.ID}}"`
+    if [ -z "${NETWORK_ID}" ]; then
+        printf "Creating a docker network...\n"
+        docker network create interledger
+    fi
+else
+    printf "Building interledger.rs... (This may take a couple of minutes)\n"
+-->
 ```bash
-cargo build --bins
+cargo build --bin interledger --bin interledger-settlement-engines
 ```
+<!--!
+fi
+-->
 
 ### 2. Launch Redis
 
 <!--!
-redis-server --version &> /dev/null || error_and_exit "Uh oh! You need to install redis-server before running this example"
+printf "\nStarting Redis...\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    docker start redis-alice_node || docker run --name redis-alice_node -d -p 6379:6379 --network=interledger redis:5.0.5
+    docker start redis-alice_se_eth || docker run --name redis-alice_se_eth -d -p 6380:6379 --network=interledger redis:5.0.5
+    docker start redis-bob_node || docker run --name redis-bob_node -d -p 6381:6379 --network=interledger redis:5.0.5
+    docker start redis-bob_se_eth || docker run --name redis-bob_se_eth -d -p 6382:6379 --network=interledger redis:5.0.5
+    docker start redis-bob_se_xrp || docker run --name redis-bob_se_xrp -d -p 6383:6379 --network=interledger redis:5.0.5
+    docker start redis-charlie_node || docker run --name redis-charlie_node -d -p 6384:6379 --network=interledger redis:5.0.5
+    docker start redis-charlie_se_xrp || docker run --name redis-charlie_se_xrp -d -p 6385:6379 --network=interledger redis:5.0.5
+else
+    redis-server --version &> /dev/null || error_and_exit "Uh oh! You need to install redis-server before running this example"
 -->
-
 ```bash
 # Create the logs directory if it doesn't already exist
 mkdir -p logs
 
 # Start Redis
-redis-server --port 6379 &> logs/redis-alice.log &
-redis-server --port 6380 &> logs/redis-bob.log &
-redis-server --port 6381 &> logs/redis-charlie.log &
+redis-server --port 6379 &> logs/redis-a-node.log &
+redis-server --port 6380 &> logs/redis-a-se-eth.log &
+redis-server --port 6381 &> logs/redis-b-node.log &
+redis-server --port 6382 &> logs/redis-b-se-eth.log &
+redis-server --port 6383 &> logs/redis-b-se-xrp.log &
+redis-server --port 6384 &> logs/redis-c-node.log &
+redis-server --port 6385 &> logs/redis-c-se-xrp.log &
 ```
+<!--!
+sleep 1
+-->
 
-If you want to remove all the data in Redis, try:
+To remove all the data in Redis, you might additionally perform:
 
-```bash #
-redis-cli -p 6379 flushall
-redis-cli -p 6380 flushall
-redis-cli -p 6381 flushall
+```bash
+for port in `seq 6379 6385`; do
+    redis-cli -p $port flushall
+done
 ```
+<!--!
+fi
+-->
 
 When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis-alice.log`
 
@@ -156,11 +209,30 @@ When you want to watch logs, use the `tail` command. You can use the command lik
 
 This will launch an Ethereum testnet with 10 prefunded accounts. The mnemonic is used because we want to know the keys we'll use for Alice and Bob (otherwise they are randomized).
 
+<!--!
+printf "\nStarting local Ethereum testnet\n"
+
+if [ "$USE_DOCKER" -eq 1 ]; then
+    docker start ganache ||
+    docker run \
+        -p 8545:8545 \
+        --network=interledger \
+        --name=ganache \
+        -id \
+        trufflesuite/ganache-cli \
+        -h 0.0.0.0 \
+        -p 8545 \
+        -m "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle" \
+        -i 1
+else
+-->
 ```bash
 ganache-cli -m "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle" -i 1 &> logs/ganache.log &
 ```
-
-<!--! sleep 3 -->
+<!--!
+fi
+sleep 3
+-->
 
 ### 4. Launch Settlement Engines
 In this example, we'll connect 3 Interledger nodes and each node needs its own settlement engine for each settlement ledger; We'll launch 4 settlement engines in total.
@@ -177,7 +249,74 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 Instead of using the LEDGER_ADDRESS and LEDGER_SECRET from the examples below, you can generate your own XRPL credentials at the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
 <!--!
-which ilp-settlement-xrp &> /dev/null || error_and_exit "You need to install \"ilp-settlement-xrp\"."
+printf "\nStarting settlement engines...\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    # Start Alice's settlement engine (ETH)
+    docker start interledger-rs-se_a ||
+    docker run \
+        -p 3000:3000 \
+        --network=interledger \
+        --name=interledger-rs-se_a \
+        -td \
+        interledgerrs/settlement-engine ethereum-ledger \
+        --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
+        --confirmations 0 \
+        --poll_frequency 1000 \
+        --ethereum_endpoint http://ganache:8545 \
+        --connector_url http://interledger-rs-node_a:7771 \
+        --redis_uri redis://redis-alice_se_eth:6379/0 \
+        --asset_scale 6 \
+        --http_address 0.0.0.0:3000
+    
+    # Start Bob's settlement engine (ETH, XRPL)
+    docker start interledger-rs-se_b ||
+    docker run \
+        -p 3001:3000 \
+        --network=interledger \
+        --name=interledger-rs-se_b \
+        -td \
+        interledgerrs/settlement-engine ethereum-ledger \
+        --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
+        --confirmations 0 \
+        --poll_frequency 1000 \
+        --ethereum_endpoint http://ganache:8545 \
+        --connector_url http://interledger-rs-node_b:7771 \
+        --redis_uri redis://redis-bob_se_eth:6379/0 \
+        --asset_scale 6 \
+        --http_address 0.0.0.0:3000
+    
+    docker start interledger-rs-se_c ||
+    docker run \
+        -p 3002:3000 \
+        --network=interledger \
+        --name=interledger-rs-se_c \
+        -id \
+        -e DEBUG=xrp-settlement-engine \
+        -e LEDGER_ADDRESS=r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj \
+        -e LEDGER_SECRET=snun48LX8WMtTJEzHZ4ckbiEf4dVZ \
+        -e CONNECTOR_URL=http://interledger-rs-node_b:7771 \
+        -e REDIS_HOST=redis-bob_se_xrp \
+        -e REDIS_PORT=6379 \
+        -e ENGINE_PORT=3000 \
+        interledgerjs/settlement-xrp
+    
+    # Start Charlie's settlement engine (XRPL)
+    docker start interledger-rs-se_d ||
+    docker run \
+        -p 3003:3000 \
+        --network=interledger \
+        --name=interledger-rs-se_d \
+        -id \
+        -e DEBUG=xrp-settlement-engine \
+        -e LEDGER_ADDRESS=rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj \
+        -e LEDGER_SECRET=ssxRAdmN97CnEjSzBfYFVCKiw2wNM \
+        -e CONNECTOR_URL=http://interledger-rs-node_c:7771 \
+        -e REDIS_HOST=redis-charlie_se_xrp \
+        -e REDIS_PORT=6379 \
+        -e ENGINE_PORT=3000 \
+        interledgerjs/settlement-xrp
+else
+    which ilp-settlement-xrp &> /dev/null || error_and_exit "You need to install \"ilp-settlement-xrp\"."
 -->
 
 ```bash
@@ -185,25 +324,25 @@ which ilp-settlement-xrp &> /dev/null || error_and_exit "You need to install \"i
 export RUST_LOG=interledger=debug
 
 # Start Alice's settlement engine (ETH)
-cargo run --package interledger-settlement-engines -- ethereum-ledger \
+cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
 --confirmations 0 \
 --poll_frequency 1000 \
 --ethereum_url http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:7771 \
---redis_url redis://127.0.0.1:6379/0 \
+--redis_url redis://127.0.0.1:6380/0 \
 --asset_scale 6 \
 --settlement_api_bind_address 127.0.0.1:3000 \
 &> logs/node-alice-settlement-engine-eth.log &
 
 # Start Bob's settlement engine (ETH, XRPL)
-cargo run --package interledger-settlement-engines -- ethereum-ledger \
+cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
 --confirmations 0 \
 --poll_frequency 1000 \
 --ethereum_url http://127.0.0.1:8545 \
 --connector_url http://127.0.0.1:8771 \
---redis_url redis://127.0.0.1:6380/0 \
+--redis_url redis://127.0.0.1:6382/0 \
 --asset_scale 6 \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine-eth.log &
@@ -212,7 +351,7 @@ DEBUG="xrp-settlement-engine" \
 LEDGER_ADDRESS="r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj" \
 LEDGER_SECRET="snun48LX8WMtTJEzHZ4ckbiEf4dVZ" \
 CONNECTOR_URL="http://localhost:8771" \
-REDIS_PORT=6380 \
+REDIS_PORT=6383 \
 ENGINE_PORT=3002 \
 ilp-settlement-xrp \
 &> logs/node-bob-settlement-engine-xrpl.log &
@@ -222,13 +361,75 @@ DEBUG="xrp-settlement-engine" \
 LEDGER_ADDRESS="rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj" \
 LEDGER_SECRET="ssxRAdmN97CnEjSzBfYFVCKiw2wNM" \
 CONNECTOR_URL="http://localhost:9771" \
-REDIS_PORT=6381 \
+REDIS_PORT=6385 \
 ENGINE_PORT=3003 \
 ilp-settlement-xrp \
 &> logs/node-charlie-settlement-engine-xrpl.log &
 ```
+<!--!
+fi
+-->
 
 ### 5. Launch 3 Nodes
+
+<!--!
+printf "\nStarting nodes...\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    # Start Alice's node
+    docker start interledger-rs-node_a ||
+    docker run \
+        -e ILP_ADDRESS=example.alice \
+        -e ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
+        -e ILP_ADMIN_AUTH_TOKEN=hi_alice \
+        -e ILP_REDIS_CONNECTION=redis://redis-alice_node:6379/0 \
+        -e ILP_HTTP_ADDRESS=0.0.0.0:7770 \
+        -e ILP_BTP_ADDRESS=0.0.0.0:7768 \
+        -e ILP_SETTLEMENT_ADDRESS=0.0.0.0:7771 \
+        -p 7768:7768 \
+        -p 7770:7770 \
+        -p 7771:7771 \
+        --network=interledger \
+        --name=interledger-rs-node_a \
+        -td \
+        interledgerrs/node node
+    
+    # Start Bob's node
+    docker start interledger-rs-node_b ||
+    docker run \
+        -e ILP_ADDRESS=example.bob \
+        -e ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
+        -e ILP_ADMIN_AUTH_TOKEN=hi_bob \
+        -e ILP_REDIS_CONNECTION=redis://redis-bob_node:6379/0 \
+        -e ILP_HTTP_ADDRESS=0.0.0.0:7770 \
+        -e ILP_BTP_ADDRESS=0.0.0.0:7768 \
+        -e ILP_SETTLEMENT_ADDRESS=0.0.0.0:7771 \
+        -p 8768:7768 \
+        -p 8770:7770 \
+        -p 8771:7771 \
+        --network=interledger \
+        --name=interledger-rs-node_b \
+        -td \
+        interledgerrs/node node
+    
+    # Start Charlie's node
+    docker start interledger-rs-node_c ||
+    docker run \
+        -e ILP_ADDRESS=example.charlie \
+        -e ILP_SECRET_SEED=1232362131122139900555208458637022875563691455429373719368053354 \
+        -e ILP_ADMIN_AUTH_TOKEN=hi_charlie \
+        -e ILP_REDIS_CONNECTION=redis://redis-charlie_node:6379/0 \
+        -e ILP_HTTP_ADDRESS=0.0.0.0:7770 \
+        -e ILP_BTP_ADDRESS=0.0.0.0:7768 \
+        -e ILP_SETTLEMENT_ADDRESS=0.0.0.0:7771 \
+        -p 9768:7768 \
+        -p 9770:7770 \
+        -p 9771:7771 \
+        --network=interledger \
+        --name=interledger-rs-node_c \
+        -td \
+        interledgerrs/node node
+else
+-->
 
 ```bash
 # Start Alice's node
@@ -239,43 +440,33 @@ ILP_REDIS_URL=redis://127.0.0.1:6379/0 \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --package interledger -- node &> logs/node-alice.log &
+cargo run --bin interledger -- node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
 ILP_ADMIN_AUTH_TOKEN=hi_bob \
-ILP_REDIS_URL=redis://127.0.0.1:6380/0 \
+ILP_REDIS_URL=redis://127.0.0.1:6381/0 \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --package interledger -- node &> logs/node-bob.log &
+cargo run --bin interledger -- node &> logs/node-bob.log &
 
 # Start Charlie's node
 ILP_ADDRESS=example.bob.charlie \
 ILP_SECRET_SEED=1232362131122139900555208458637022875563691455429373719368053354 \
 ILP_ADMIN_AUTH_TOKEN=hi_charlie \
-ILP_REDIS_URL=redis://127.0.0.1:6381/0 \
+ILP_REDIS_URL=redis://127.0.0.1:6384/0 \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:9770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:9768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:9771 \
-cargo run --package interledger -- node &> logs/node-charlie.log &
+cargo run --bin interledger -- node &> logs/node-charlie.log &
 ```
 
 <!--!
-printf "Waiting for nodes to start up...\n"
+fi
 
-function wait_to_serve() {
-    while :
-    do
-        printf "."
-        sleep 1
-        curl $1 &> /dev/null
-        if [ $? -eq 0 ]; then
-            break;
-        fi
-    done
-}
+printf "Waiting for nodes to start up...\n"
 
 wait_to_serve "http://localhost:7770"
 wait_to_serve "http://localhost:8770"
@@ -284,13 +475,138 @@ wait_to_serve "http://localhost:3000"
 wait_to_serve "http://localhost:3001"
 wait_to_serve "http://localhost:3002"
 wait_to_serve "http://localhost:3003"
-printf "\n"
+
+printf "\nThe Interledger.rs nodes are up and running!\n\n"
 -->
 
 ### 6. Configure the Nodes
 
-<!--! printf "Creating accounts:\n" -->
-
+<!--!
+printf "Creating accounts:\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    # Adding settlement accounts should be done at the same time because it checks each other
+    
+    printf "Adding Alice's account...\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer hi_alice" \
+        -d '{
+        "username" : "alice",
+        "ilp_address": "example.alice",
+        "asset_code": "ETH",
+        "asset_scale": 6,
+        "max_packet_amount": 100,
+        "http_incoming_token": "alice_password",
+        "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
+        "settle_to" : 0}' \
+        http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
+    
+    printf "Adding Charlie's Account...\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer hi_charlie" \
+        -d '{
+        "ilp_address": "example.bob.charlie",
+        "username" : "charlie",
+        "asset_code": "XRP",
+        "asset_scale": 6,
+        "max_packet_amount": 100,
+        "http_incoming_token": "charlie_password",
+        "http_endpoint": "http://interledger-rs-node_c:7770/ilp",
+        "settle_to" : 0}' \
+        http://localhost:9770/accounts > logs/account-charlie-charlie.log 2>/dev/null
+    
+    printf "Adding Bob's account on Alice's node (ETH Peer relation)...\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer hi_alice" \
+        -d '{
+        "ilp_address": "example.bob",
+        "username" : "bob",
+        "asset_code": "ETH",
+        "asset_scale": 6,
+        "max_packet_amount": 100,
+        "settlement_engine_url": "http://interledger-rs-se_a:3000",
+        "http_incoming_token": "bob_password",
+        "http_outgoing_token": "alice:alice_password",
+        "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
+        "settle_threshold": 500,
+        "min_balance": -1000,
+        "settle_to" : 0,
+        "routing_relation": "Peer",
+        "send_routes": true,
+        "receive_routes": true}' \
+        http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+    
+    printf "Adding Alice's account on Bob's node (ETH Peer relation)...\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer hi_bob" \
+        -d '{
+        "ilp_address": "example.alice",
+        "username": "alice",
+        "asset_code": "ETH",
+        "asset_scale": 6,
+        "max_packet_amount": 100,
+        "settlement_engine_url": "http://interledger-rs-se_b:3000",
+        "http_incoming_token": "alice_password",
+        "http_outgoing_token": "bob:bob_password",
+        "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
+        "settle_threshold": 500,
+        "min_balance": -1000,
+        "settle_to" : 0,
+        "routing_relation": "Peer",
+        "send_routes": true,
+        "receive_routes": true}' \
+        http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null
+    
+    printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer hi_bob" \
+        -d '{
+        "ilp_address": "example.bob.charlie",
+        "username" : "charlie",
+        "asset_code": "XRP",
+        "asset_scale": 6,
+        "max_packet_amount": 100,
+        "settlement_engine_url": "http://interledger-rs-se_c:3000",
+        "http_incoming_token": "charlie_password",
+        "http_outgoing_token": "bob:bob_other_password",
+        "http_endpoint": "http://interledger-rs-node_c:7770/ilp",
+        "settle_threshold": 500,
+        "min_balance": -1000,
+        "settle_to" : 0,
+        "routing_relation": "Child",
+        "send_routes": false,
+        "receive_routes": true}' \
+        http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
+    
+    printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
+    curl \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer hi_charlie" \
+        -d '{
+        "ilp_address": "example.bob",
+        "username" : "bob",
+        "asset_code": "XRP",
+        "asset_scale": 6,
+        "max_packet_amount": 100,
+        "settlement_engine_url": "http://interledger-rs-se_d:3000",
+        "http_incoming_token": "bob_other_password",
+        "http_outgoing_token": "charlie:charlie_password",
+        "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
+        "settle_threshold": 500,
+        "min_balance": -1000,
+        "settle_to" : 0,
+        "routing_relation": "Parent",
+        "send_routes": false,
+        "receive_routes": true}' \
+        http://localhost:9770/accounts > logs/account-charlie-bob.log 2>/dev/null
+    
+    sleep 2
+else
+-->
 ```bash
 # Adding settlement accounts should be done at the same time because it checks each other
 
@@ -414,6 +730,9 @@ curl \
 
 sleep 2
 ```
+<!--!
+fi
+-->
 
 Now three nodes and its settlement engines are set and accounts for each node are also set up.
 
@@ -472,8 +791,17 @@ printf "\n\n"
 
 The following script sends a payment from Alice to Charlie through Bob.
 
-<!--! printf "Sending payment of 500 from Alice to Charlie through Bob\n" -->
+<!--!
+printf "Sending payment of 500 from Alice to Charlie through Bob\n"
 
+if [ "$USE_DOCKER" -eq 1 ]; then
+    curl \
+        -H "Authorization: Bearer alice:alice_password" \
+        -H "Content-Type: application/json" \
+        -d "{\"receiver\":\"http://interledger-rs-node_c:7770/spsp/charlie\",\"source_amount\":500}" \
+        http://localhost:7770/pay
+else
+-->
 ```bash
 curl \
     -H "Authorization: Bearer alice:alice_password" \
@@ -481,8 +809,11 @@ curl \
     -d "{\"receiver\":\"http://localhost:9770/spsp/charlie\",\"source_amount\":500}" \
     http://localhost:7770/pay
 ```
+<!--!
+fi
 
-<!--! printf "\n" -->
+printf "\n\n"
+-->
 
 ### 8. Check Balances
 
@@ -582,53 +913,42 @@ fi
 Finally, you can stop all the services as follows:
 
 ```bash #
-if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6379 shutdown
-fi
-
-if lsof -Pi :6380 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6380 shutdown
-fi
-
-if lsof -Pi :6381 -sTCP:LISTEN -t >/dev/null ; then
-    redis-cli -p 6381 shutdown
-fi
+for port in `seq 6379 6385`; do
+    if lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null ; then
+        redis-cli -p ${port} shutdown
+    fi
+done
 
 if [ -f dump.rdb ] ; then
     rm -f dump.rdb
 fi
 
-if lsof -tPi :8545 ; then
-    kill `lsof -tPi :8545`
-fi
+for port in 8545 7770 8770 9770 3000 3001 3002 3003; do
+    if lsof -tPi :${port} >/dev/null ; then
+        kill `lsof -tPi :${port}`
+    fi
+done
+```
 
-if lsof -tPi :7770 ; then
-    kill `lsof -tPi :7770`
-fi
+If you are using Docker, try the following.
 
-if lsof -tPi :8770 ; then
-    kill `lsof -tPi :8770`
-fi
-
-if lsof -tPi :9770 ; then
-    kill `lsof -tPi :9770`
-fi
-
-if lsof -tPi :3000 ; then
-    kill `lsof -tPi :3000`
-fi
-
-if lsof -tPi :3001 ; then
-    kill `lsof -tPi :3001`
-fi
-
-if lsof -tPi :3002 ; then
-    kill `lsof -tPi :3002`
-fi
-
-if lsof -tPi :3003 ; then
-    kill `lsof -tPi :3003`
-fi
+```bash #
+docker stop \
+    interledger-rs-node_a \
+    interledger-rs-node_b \
+    interledger-rs-node_c \
+    interledger-rs-se_a \
+    interledger-rs-se_b \
+    interledger-rs-se_c \
+    interledger-rs-se_d \
+    redis-alice_node \
+    redis-alice_se_eth \
+    redis-bob_node \
+    redis-bob_se_eth \
+    redis-bob_se_xrp \
+    redis-charlie_node \
+    redis-charlie_se_xrp \
+    ganache
 ```
 
 ## Advanced
