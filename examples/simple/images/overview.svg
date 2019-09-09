@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="97.5 291 829 436.5" width="829" height="436.5">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="97.5 291 880.5176 372" width="880.5176" height="372">
   <defs>
     <font-face font-family="Courier" font-size="12" units-per-em="1000" underline-position="-178.22266" underline-thickness="57.61719" slope="0" x-height="456.54297" cap-height="586.91406" ascent="753.90625" descent="-246.09375" font-weight="400">
       <font-face-src>
@@ -18,23 +18,23 @@
       </g>
     </marker>
   </defs>
-  <metadata> Produced by OmniGraffle 7.10.2 
-    <dc:date>2019-07-26 06:53:16 +0000</dc:date>
+  <metadata> Produced by OmniGraffle 7.11.2 
+    <dc:date>2019-09-06 16:11:01 +0000</dc:date>
   </metadata>
-  <g id="Campus_1" stroke="none" stroke-dasharray="none" fill="none" stroke-opacity="1" fill-opacity="1">
-    <title>Campus 1</title>
-    <g id="Campus_1: Layer 1">
+  <g id="Simple" stroke="none" stroke-opacity="1" fill="none" stroke-dasharray="none" fill-opacity="1">
+    <title>Simple</title>
+    <g id="Simple: Layer 1">
       <title>Layer 1</title>
       <g id="Group_9">
         <g id="Graphic_3">
-          <path d="M 568 687.85 L 568 642.65 C 568 639.5312 599.584 637 638.5 637 C 677.416 637 709 639.5312 709 642.65 L 709 687.85 C 709 690.9688 677.416 693.5 638.5 693.5 C 599.584 693.5 568 690.9688 568 687.85" fill="white"/>
-          <path d="M 568 687.85 L 568 642.65 C 568 639.5312 599.584 637 638.5 637 C 677.416 637 709 639.5312 709 642.65 L 709 687.85 C 709 690.9688 677.416 693.5 638.5 693.5 C 599.584 693.5 568 690.9688 568 687.85 M 568 642.65 C 568 645.7688 599.584 648.3 638.5 648.3 C 677.416 648.3 709 645.7688 709 642.65" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
-          <text transform="translate(573 661.075)" fill="black">
+          <path d="M 376.75 623.35 L 376.75 578.15 C 376.75 575.0312 408.334 572.5 447.25 572.5 C 486.166 572.5 517.75 575.0312 517.75 578.15 L 517.75 623.35 C 517.75 626.4688 486.166 629 447.25 629 C 408.334 629 376.75 626.4688 376.75 623.35" fill="white"/>
+          <path d="M 376.75 623.35 L 376.75 578.15 C 376.75 575.0312 408.334 572.5 447.25 572.5 C 486.166 572.5 517.75 575.0312 517.75 578.15 L 517.75 623.35 C 517.75 626.4688 486.166 629 447.25 629 C 408.334 629 376.75 626.4688 376.75 623.35 M 376.75 578.15 C 376.75 581.2688 408.334 583.8 447.25 583.8 C 486.166 583.8 517.75 581.2688 517.75 578.15" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+          <text transform="translate(381.75 596.575)" fill="black">
             <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="15.091797" y="11">Redis Instance</tspan>
           </text>
         </g>
         <g id="Graphic_4">
-          <text transform="translate(602.49414 698.5)" fill="black">
+          <text transform="translate(411.24414 634)" fill="black">
             <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">Port: 6379</tspan>
           </text>
         </g>
@@ -48,7 +48,7 @@
         </text>
       </g>
       <g id="Graphic_8">
-        <text transform="translate(393.2412 530)" fill="black">
+        <text transform="translate(317 410)" fill="black">
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">HTTP Port: 7770</tspan>
         </text>
       </g>
@@ -61,25 +61,25 @@
         </text>
       </g>
       <g id="Graphic_10">
-        <text transform="translate(775.7412 530)" fill="black">
+        <text transform="translate(855 410)" fill="black">
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">HTTP Port: 8770</tspan>
         </text>
       </g>
       <g id="Line_12">
-        <line x1="780.9851" y1="525" x2="673.77675" y2="630.5266" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+        <line x1="829.75" y1="525" x2="829.75" y2="562.6" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
       </g>
       <g id="Graphic_13">
-        <rect x="711.6956" y="564.54475" width="44.00586" height="14" fill="white"/>
-        <text transform="translate(715.6956 564.54475)" fill="black">
-          <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">DB: 1</tspan>
+        <rect x="807.7471" y="537.6572" width="44.00586" height="14" fill="white"/>
+        <text transform="translate(811.7471 537.6572)" fill="black">
+          <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">DB: 0</tspan>
         </text>
       </g>
       <g id="Line_15">
-        <line x1="496.01494" y1="525" x2="603.22325" y2="630.5266" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+        <line x1="447.25" y1="525" x2="447.25" y2="562.6" marker-end="url(#FilledArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
       </g>
       <g id="Graphic_14">
-        <rect x="521.2985" y="564.54475" width="44.00586" height="14" fill="white"/>
-        <text transform="translate(525.2985 564.54475)" fill="black">
+        <rect x="425.24707" y="537.6572" width="44.00586" height="14" fill="white"/>
+        <text transform="translate(429.24707 537.6572)" fill="black">
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">DB: 0</tspan>
         </text>
       </g>
@@ -107,6 +107,20 @@
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">Manage nodes and pay</tspan>
           <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="25">over HTTP using curl</tspan>
         </text>
+      </g>
+      <g id="Group_27">
+        <g id="Graphic_29">
+          <path d="M 759.25 623.35 L 759.25 578.15 C 759.25 575.0312 790.834 572.5 829.75 572.5 C 868.666 572.5 900.25 575.0312 900.25 578.15 L 900.25 623.35 C 900.25 626.4688 868.666 629 829.75 629 C 790.834 629 759.25 626.4688 759.25 623.35" fill="white"/>
+          <path d="M 759.25 623.35 L 759.25 578.15 C 759.25 575.0312 790.834 572.5 829.75 572.5 C 868.666 572.5 900.25 575.0312 900.25 578.15 L 900.25 623.35 C 900.25 626.4688 868.666 629 829.75 629 C 790.834 629 759.25 626.4688 759.25 623.35 M 759.25 578.15 C 759.25 581.2688 790.834 583.8 829.75 583.8 C 868.666 583.8 900.25 581.2688 900.25 578.15" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+          <text transform="translate(764.25 596.575)" fill="black">
+            <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="15.091797" y="11">Redis Instance</tspan>
+          </text>
+        </g>
+        <g id="Graphic_28">
+          <text transform="translate(793.7441 634)" fill="black">
+            <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">Port: 6380</tspan>
+          </text>
+        </g>
       </g>
     </g>
   </g>

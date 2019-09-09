@@ -1,27 +1,32 @@
-# Interledger with Ethereum On-Ledger Settlement
-> A demo that sends payments between 2 Interledger.rs nodes and settles using Ethereum transactions.
+# Interledger with XRP On-Ledger Settlement
+> A demo that sends payments between 2 Interledger.rs nodes and settles using XRP transactions.
 
 ## Overview
-This example shows how to configure Interledger.rs nodes and use an Ethereum network (testnet or mainnet) as a settlement ledger for payments sent between the nodes. If you are new to Ethereum, you can learn about it [here](https://www.ethereum.org/beginners/). To learn about settlement in Interledger, refer to [Peering, Clearing and Settling](https://github.com/interledger/rfcs/blob/master/0032-peering-clearing-settlement/0032-peering-clearing-settlement.md).
+This example shows how to configure Interledger.rs nodes and use the XRP testnet as a settlement ledger for payments sent between the nodes. You'll find many useful resources about the XRP Ledger (XRPL) [here](https://xrpl.org). To learn about settlement in Interledger, refer to [Peering, Clearing and Settling](https://github.com/interledger/rfcs/blob/master/0032-peering-clearing-settlement/0032-peering-clearing-settlement.md).
 
 ![overview](images/overview.svg)
 
 ## Prerequisites
 
 - [Rust](#rust)
-- [An Ethereum network](#an-ethereum-network) to connect to
+- [XRP Settlement Engine](#xrp-settlement-engine)
 - [Redis](#redis)
 
 ### Rust
 
 Because Interledger.rs is written in the Rust language, you need the Rust environment. Refer to the [Getting started](https://www.rust-lang.org/learn/get-started) page or just `curl https://sh.rustup.rs -sSf | sh` and follow the instructions.
 
-### An Ethereum network
-First, you need an Ethereum network. You can either use a local testnet, a remote testnet, or the mainnet.
+### XRP Settlement Engine
+Because Interledger.rs and other settlement engines could wonderfully cooperate together, we'll utilize the [XRP Settlement Engine](https://github.com/interledgerjs/settlement-xrp/) which is written in TypeScript. The interface is being defined [here](https://github.com/interledger/rfcs/pull/536). We'll need `node` and `npm` to install and run the settlement engine. If you don't have it already, refer to [Install Node.js](#install-nodejs).
 
-For this example, we'll use [ganache-cli](https://github.com/trufflesuite/ganache-cli) which deploys a local Ethereum testnet at `localhost:8545`. To install `ganache-cli`, run `npm install -g ganache-cli`. If you do not already have Node.js installed on your computer, you can follow [the instructions below](#install-nodejs) to install it.
+Install the settlement engine as follows:
+```bash #
+# wherever you want to install the settlement engine
+git clone https://github.com/interledgerjs/settlement-xrp/
+cd settlement-xrp && npm install && npm run build && npm link
+```
 
-Advanced: You can run this against the Rinkeby Testnet by running a node that connects to Rinkeby (e.g. `geth --rinkeby --syncmode "light"`) or use a third-party node provider such as [Infura](https://infura.io/). You must also [create a wallet](https://www.myetherwallet.com/) and then obtain funds via the [Rinkeby Faucet](https://faucet.rinkeby.io/).
+This makes the `ilp-settlement-xrp` command available to your path.
 
 #### Install Node.js
 (In case you don't have Node.js) There are a few ways to install Node.js. If you work on multiple JavaScript or TypeScript projects which require different `node` versions, using `nvm` may be suitable.
@@ -33,7 +38,7 @@ Advanced: You can run this against the Rinkeby Testnet by running a node that co
     - macOS: If you use [Homebrew](https://brew.sh/), run `brew install node`
     - Ubuntu: `sudo apt-get install nodejs npm`
 
-Then you should be able to use `npm`. To install `ganache-cli`, run `npm install -g ganache-cli`.
+Then you should be able to use `npm`.
 
 ### Redis
 The Interledger.rs nodes and settlement engines currently use [Redis](https://redis.io/) to store their data (SQL database support coming soon!). Nodes and settlement engines can use different Redis instances.
@@ -114,7 +119,6 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         interledger-rs-node_b \
         interledger-rs-se_a \
         interledger-rs-se_b \
-        ganache \
         redis-alice_node \
         redis-alice_se \
         redis-bob_node \
@@ -126,7 +130,6 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         interledger-rs-node_b \
         interledger-rs-se_a \
         interledger-rs-se_b \
-        ganache \
         redis-alice_node \
         redis-alice_se \
         redis-bob_node \
@@ -164,7 +167,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --bin interledger --bin interledger-settlement-engines
+cargo build --bin interledger
 ```
 <!--!
 fi
@@ -210,36 +213,10 @@ fi
 
 When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis-a-node.log`
 
-### 3. Launch Ganache
-
-This will launch an Ethereum testnet with 10 prefunded accounts. The mnemonic is used because we want to know the keys we'll use for Alice and Bob (otherwise they are randomized).
-
-<!--!
-printf "\nStarting local Ethereum testnet\n"
-
-if [ "$USE_DOCKER" -eq 1 ]; then
-    $CMD_DOCKER run \
-        -p 127.0.0.1:8545:8545 \
-        --network=interledger \
-        --name=ganache \
-        -id \
-        trufflesuite/ganache-cli \
-        -h 0.0.0.0 \
-        -p 8545 \
-        -m "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle" \
-        -i 1
-else
--->
-```bash
-ganache-cli -m "abstract vacuum mammal awkward pudding scene penalty purchase dinner depart evoke puzzle" -i 1 &> logs/ganache.log &
-```
-<!--!
-fi
-sleep 3
--->
-
-### 4. Launch Settlement Engines
+### 3. Launch Settlement Engines
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
+
+Instead of using the LEDGER_ADDRESS and LEDGER_SECRET from the examples below, you can generate your own XRPL credentials at the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -249,30 +226,30 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -p 127.0.0.1:3000:3000 \
         --network=interledger \
         --name=interledger-rs-se_a \
-        -td \
-        interledgerrs/settlement-engine ethereum-ledger \
-        --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
-        --confirmations 0 \
-        --poll_frequency 1000 \
-        --ethereum_url http://ganache:8545 \
-        --connector_url http://interledger-rs-node_a:7771 \
-        --redis_url redis://redis-alice_se:6379/ \
-        --settlement_api_bind_address 0.0.0.0:3000
+        -id \
+        -e DEBUG=xrp-settlement-engine \
+        -e LEDGER_ADDRESS=r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj \
+        -e LEDGER_SECRET=snun48LX8WMtTJEzHZ4ckbiEf4dVZ \
+        -e CONNECTOR_URL=http://interledger-rs-node_a:7771 \
+        -e REDIS_HOST=redis-alice_se \
+        -e REDIS_PORT=6379 \
+        -e ENGINE_PORT=3000 \
+        interledgerjs/settlement-xrp
     
     # Start Bob's settlement engine
     $CMD_DOCKER run \
         -p 127.0.0.1:3001:3000 \
         --network=interledger \
         --name=interledger-rs-se_b \
-        -td \
-        interledgerrs/settlement-engine ethereum-ledger \
-        --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
-        --confirmations 0 \
-        --poll_frequency 1000 \
-        --ethereum_url http://ganache:8545 \
-        --connector_url http://interledger-rs-node_b:7771 \
-        --redis_url redis://redis-bob_se:6379/ \
-        --settlement_api_bind_address 0.0.0.0:3000
+        -id \
+        -e DEBUG=xrp-settlement-engine \
+        -e LEDGER_ADDRESS=rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj \
+        -e LEDGER_SECRET=ssxRAdmN97CnEjSzBfYFVCKiw2wNM \
+        -e CONNECTOR_URL=http://interledger-rs-node_b:7771 \
+        -e REDIS_HOST=redis-bob_se \
+        -e REDIS_PORT=6379 \
+        -e ENGINE_PORT=3000 \
+        interledgerjs/settlement-xrp
 else
 -->
 
@@ -281,25 +258,23 @@ else
 export RUST_LOG=interledger=debug
 
 # Start Alice's settlement engine
-cargo run --bin interledger-settlement-engines -- ethereum-ledger \
---private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
---confirmations 0 \
---poll_frequency 1000 \
---ethereum_url http://127.0.0.1:8545 \
---connector_url http://127.0.0.1:7771 \
---redis_url redis://127.0.0.1:6380/ \
---settlement_api_bind_address 127.0.0.1:3000 \
+DEBUG="xrp-settlement-engine" \
+LEDGER_ADDRESS="r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj" \
+LEDGER_SECRET="snun48LX8WMtTJEzHZ4ckbiEf4dVZ" \
+CONNECTOR_URL="http://localhost:7771" \
+REDIS_PORT=6380 \
+ENGINE_PORT=3000 \
+ilp-settlement-xrp \
 &> logs/node-alice-settlement-engine.log &
 
 # Start Bob's settlement engine
-cargo run --bin interledger-settlement-engines -- ethereum-ledger \
---private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
---confirmations 0 \
---poll_frequency 1000 \
---ethereum_url http://127.0.0.1:8545 \
---connector_url http://127.0.0.1:8771 \
---redis_url redis://127.0.0.1:6382/ \
---settlement_api_bind_address 127.0.0.1:3001 \
+DEBUG="xrp-settlement-engine" \
+LEDGER_ADDRESS="rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj" \
+LEDGER_SECRET="ssxRAdmN97CnEjSzBfYFVCKiw2wNM" \
+CONNECTOR_URL="http://localhost:8771" \
+REDIS_PORT=6382 \
+ENGINE_PORT=3001 \
+ilp-settlement-xrp \
 &> logs/node-bob-settlement-engine.log &
 ```
 
@@ -307,7 +282,7 @@ cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 fi
 -->
 
-### 5. Launch 2 Nodes
+### 4. Launch 2 Nodes
 
 <!--!
 printf "\nStarting nodes...\n"
@@ -383,7 +358,7 @@ wait_to_serve "http://localhost:3001"
 printf "\nThe Interledger.rs nodes are up and running!\n\n"
 -->
 
-### 6. Configure the Nodes
+### 5. Configure the Nodes
 
 <!--!
 printf "Creating accounts:\n"
@@ -397,8 +372,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -d '{
         "username": "alice",
         "ilp_address": "example.alice",
-        "asset_code": "ETH",
-        "asset_scale": 18,
+        "asset_code": "XRP",
+        "asset_scale": 6,
         "max_packet_amount": 100,
         "http_incoming_token": "in_alice",
         "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
@@ -412,8 +387,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -d '{
         "username": "bob",
         "ilp_address": "example.bob",
-        "asset_code": "ETH",
-        "asset_scale": 18,
+        "asset_code": "XRP",
+        "asset_scale": 6,
         "max_packet_amount": 100,
         "http_incoming_token": "in_bob",
         "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
@@ -427,8 +402,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -d '{
         "ilp_address": "example.bob",
         "username": "bob",
-        "asset_code": "ETH",
-        "asset_scale": 18,
+        "asset_code": "XRP",
+        "asset_scale": 6,
         "max_packet_amount": 100,
         "settlement_engine_url": "http://interledger-rs-se_a:3000",
         "http_incoming_token": "bob_password",
@@ -447,8 +422,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -d '{
         "ilp_address": "example.alice",
         "username": "alice",
-        "asset_code": "ETH",
-        "asset_scale": 18,
+        "asset_code": "XRP",
+        "asset_scale": 6,
         "max_packet_amount": 100,
         "settlement_engine_url": "http://interledger-rs-se_b:3000",
         "http_incoming_token": "alice_password",
@@ -474,8 +449,8 @@ curl \
     -d '{
     "username": "alice",
     "ilp_address": "example.alice",
-    "asset_code": "ETH",
-    "asset_scale": 18,
+    "asset_code": "XRP",
+    "asset_scale": 6,
     "max_packet_amount": 100,
     "http_incoming_token": "in_alice",
     "http_endpoint": "http://localhost:7770/ilp",
@@ -489,8 +464,8 @@ curl \
     -d '{
     "username": "bob",
     "ilp_address": "example.bob",
-    "asset_code": "ETH",
-    "asset_scale": 18,
+    "asset_code": "XRP",
+    "asset_scale": 6,
     "max_packet_amount": 100,
     "http_incoming_token": "in_bob",
     "http_endpoint": "http://localhost:8770/ilp",
@@ -504,8 +479,8 @@ curl \
     -d '{
     "ilp_address": "example.bob",
     "username": "bob",
-    "asset_code": "ETH",
-    "asset_scale": 18,
+    "asset_code": "XRP",
+    "asset_scale": 6,
     "max_packet_amount": 100,
     "settlement_engine_url": "http://localhost:3000",
     "http_incoming_token": "bob_password",
@@ -524,8 +499,8 @@ curl \
     -d '{
     "ilp_address": "example.alice",
     "username": "alice",
-    "asset_code": "ETH",
-    "asset_scale": 18,
+    "asset_code": "XRP",
+    "asset_scale": 6,
     "max_packet_amount": 100,
     "settlement_engine_url": "http://localhost:3001",
     "http_incoming_token": "alice_password",
@@ -549,7 +524,7 @@ Notice how we use Alice's settlement engine endpoint while registering Bob. This
 
 The `settle_threshold` and `settle_to` parameters control when settlements are triggered. The node will send a settlement when an account's balance reaches the `settle_threshold`, and it will settle for `balance - settle_to`.
 
-### 7. Sending a Payment
+### 6. Sending a Payment
 
 <!--!
 printf "\nChecking balances...\n"
@@ -603,7 +578,7 @@ fi
 printf "\n\n"
 -->
 
-### 8. Check Balances
+### 7. Check Balances
 
 ```bash #
 printf "\nAlice's balance on Alice's node: "
@@ -659,11 +634,11 @@ http://localhost:8770/accounts/bob/balance
 if [ "$INCOMING_NOT_SETTLED" = "1" ]; then
     printf "\n\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated.\n"
     printf "Try the following command later:\n\n"
-    printf "\tcurl -H \"Authorization: Bearer alice:alice_password\" http://localhost:8770/accounts/alice/balance\e[m"
+    printf "\tcurl -H \"Authorization: Bearer alice:alice_password\" http://localhost:8770/accounts/alice/balance\e[m\n"
 fi
 -->
 
-### 9. Kill All the Services
+### 8. Kill All the Services
 
 Finally, you can stop all the services as follows:
 
@@ -694,7 +669,6 @@ sudo docker stop \
     interledger-rs-node_b \
     interledger-rs-se_a \
     interledger-rs-se_b \
-    ganache \
     redis-alice_node \
     redis-alice_se \
     redis-bob_node \
@@ -703,37 +677,26 @@ sudo docker stop \
 
 ## Advanced
 
-### Check the Settlement Block Generation
-To check whether the settlement block is generated, we use `geth`. `geth` is the abbreviation of `go-ethereum` which is an Ethereum client written in the go language. If you don't already have `geth`, refer to the following.
+### Check the Incoming Settlement on XRPL
+You'll find incoming settlement logs in your settlement engine logs. Try:
 
-- Compile and install from the source code
-    - Refer to [Building Ethereum](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum) page.
-- Install using package managers
-    - Ubuntu: Follow the instructions [here](https://github.com/ethereum/go-ethereum/wiki/Installation-Instructions-for-Ubuntu).
-    - macOS: If you use Homebrew, run `brew tap ethereum/ethereum` and `brew install ethereum`. Details are found [here](https://github.com/ethereum/go-ethereum/wiki/Installation-Instructions-for-Mac).
-    - others: Refer to [Building Ethereum](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum) page.
-
-Then dump transaction logs as follows. You will see generated block information. Be aware that ganache takes 10 to 20 seconds to generate a block. So you will have to wait for it before you check with `geth`.
-
-<!-- # below means preventing output through run-md.sh -->
 ```bash #
-printf "Last block: "
-geth --exec "eth.getTransaction(eth.getBlock(eth.blockNumber-1).transactions[0])" attach http://localhost:8545 2>/dev/null
-printf "\nCurrent block: "
-geth --exec "eth.getTransaction(eth.getBlock(eth.blockNumber).transactions[0])" attach http://localhost:8545 2>/dev/null
+cat logs/node-bob-settlement-engine.log | grep "Got incoming XRP payment"
+```
+
+If you are using Docker, try:
+
+```bash #
+docker logs interledger-rs-se_b | grep "Got incoming XRP payment"
 ```
 
 <!--!
-printf "\n\nYou could try the following command to check if a block is generated.\nTo check, you'll need to install geth.\n\n"
-printf "To check the last block:\n\n"
-printf "\tgeth --exec \"eth.getTransaction(eth.getBlock(eth.blockNumber-1).transactions[0])\" attach http://localhost:8545 2>/dev/null\n\n"
-printf "To check the current block:\n\n"
-printf "\tgeth --exec \"eth.getTransaction(eth.getBlock(eth.blockNumber).transactions[0])\" attach http://localhost:8545 2>/dev/null\n"
--->
-
-If you inspect `ganache-cli`'s output, you will notice that the block number has increased as a result of the settlement executions as well.
-
-<!--!
+printf "\nYou could also try the following command to check if XRPL incoming payment is done.\n\n"
+if [ "$USE_DOCKER" -eq 1 ]; then
+    printf "\tdocker logs interledger-rs-se_b | grep \"Got incoming XRP payment\"\n"
+else
+    printf "\tcat logs/node-bob-settlement-engine.log | grep \"Got incoming XRP payment\"\n"
+fi
 printf "\n"
 prompt_yn "Do you want to kill the services? [y/N]" "n"
 printf "\n"
@@ -744,7 +707,6 @@ if [ "$PROMPT_ANSWER" = "y" ]; then
             interledger-rs-node_b \
             interledger-rs-se_a \
             interledger-rs-se_b \
-            ganache \
             redis-alice_node \
             redis-alice_se \
             redis-bob_node \
@@ -761,7 +723,7 @@ if [ "$PROMPT_ANSWER" = "y" ]; then
             rm -f dump.rdb
         fi
         
-        for port in 8545 7770 8770 3000 3001; do
+        for port in 7770 8770 3000 3001; do
             if lsof -tPi :${port} >/dev/null ; then
                 kill `lsof -tPi :${port}`
             fi
@@ -773,21 +735,6 @@ fi
 ## Troubleshooting
 
 ```
-# When installing ganache-cli
-gyp ERR! find Python Python is not set from command line or npm configuration
-gyp ERR! find Python Python is not set from environment variable PYTHON
-gyp ERR! find Python checking if "python" can be used
-gyp ERR! find Python - executable path is "/Users/xxxx/anaconda3/bin/python"
-gyp ERR! find Python - version is "3.6.2"
-gyp ERR! find Python - version is 3.6.2 - should be >=2.6.0 <3.0.0
-gyp ERR! find Python - THIS VERSION OF PYTHON IS NOT SUPPORTED
-gyp ERR! find Python checking if "python2" can be used
-gyp ERR! find Python - "python2" is not in PATH or produced an error
-```
-
-If you see an error like the above, you have to install Python 2.7.
-
-```
 # When installing Node.js with apt-get
 E: Unable to locate package nodejs
 E: Unable to locate package npm
@@ -795,12 +742,6 @@ E: Unable to locate package npm
 
 Try `sudo apt-get update`.
 
-```
-# When you try run-md.sh
-Fatal: Failed to start the JavaScript console: api modules: Post http://localhost:8545: context deadline exceeded
-```
-
-It seems that you failed to install `ganache-cli`. Try to install it.
 
 ```
 # When running with Docker
@@ -811,6 +752,6 @@ You might have run another example. Stop them first and try again. How to stop t
 
 ## Conclusion
 
-This example showed an SPSP payment sent between two Interledger.rs nodes that settled using on-ledger Ethereum transactions.
+This example showed an SPSP payment sent between two Interledger.rs nodes that settled using on-ledger XRP transactions.
 
 Check out the [other examples](../README.md) for more complex demos that show other features of Interledger, including multi-hop routing and cross-currency payments.

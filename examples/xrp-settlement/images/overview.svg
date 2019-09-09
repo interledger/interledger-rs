@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" version="1.1" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="97.5 291 965.0176 453.82143" width="965.0176" height="453.82143">
+<svg xmlns:xl="http://www.w3.org/1999/xlink" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="97.5 291 965.0176 453.82143" width="965.0176" height="453.82143">
   <defs>
     <font-face font-family="Courier" font-size="12" units-per-em="1000" underline-position="-178.22266" underline-thickness="57.61719" slope="0" x-height="456.54297" cap-height="586.91406" ascent="753.90625" descent="-246.09375" font-weight="400">
       <font-face-src>
@@ -19,9 +19,9 @@
     </marker>
   </defs>
   <metadata> Produced by OmniGraffle 7.11.2 
-    <dc:date>2019-09-06 14:11:42 +0000</dc:date>
+    <dc:date>2019-09-11 08:11:14 +0000</dc:date>
   </metadata>
-  <g id="eth-settlement" stroke="none" stroke-opacity="1" fill="none" stroke-dasharray="none" fill-opacity="1">
+  <g id="eth-settlement" stroke="none" fill-opacity="1" stroke-dasharray="none" stroke-opacity="1" fill="none">
     <title>eth-settlement</title>
     <g id="eth-settlement: Layer 1">
       <title>Layer 1</title>
@@ -129,12 +129,12 @@
           <path d="M 613.25 685.85 L 613.25 640.65 C 613.25 637.5312 644.834 635 683.75 635 C 722.666 635 754.25 637.5312 754.25 640.65 L 754.25 685.85 C 754.25 688.9688 722.666 691.5 683.75 691.5 C 644.834 691.5 613.25 688.9688 613.25 685.85" fill="white"/>
           <path d="M 613.25 685.85 L 613.25 640.65 C 613.25 637.5312 644.834 635 683.75 635 C 722.666 635 754.25 637.5312 754.25 640.65 L 754.25 685.85 C 754.25 688.9688 722.666 691.5 683.75 691.5 C 644.834 691.5 613.25 688.9688 613.25 685.85 M 613.25 640.65 C 613.25 643.7688 644.834 646.3 683.75 646.3 C 722.666 646.3 754.25 643.7688 754.25 640.65" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
           <text transform="translate(618.25 659.075)" fill="black">
-            <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="40.2959" y="11">Ganache</tspan>
+            <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="22.29297" y="11">XRPL Testnet</tspan>
           </text>
         </g>
         <g id="Graphic_34">
-          <text transform="translate(647.74414 696.5)" fill="black">
-            <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">Port: 8545</tspan>
+          <text transform="translate(608.1377 696.5)" fill="black">
+            <tspan font-family="Courier" font-size="12" font-weight="400" fill="black" x="0" y="11">WebSocket Port: 51233</tspan>
           </text>
         </g>
       </g>

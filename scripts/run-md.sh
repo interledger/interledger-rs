@@ -9,17 +9,21 @@
 # Markdown file but run them when the whole file is executed.
 # This is largely intended for commands that make the output more readable
 
-{
+TMP_SCRIPT=$(mktemp)
+
+if [ -n "$1" ]; then
   # if the first argument is a file, run it
-  if [ -f $1  ]; then
-    cat $1
-  elif [ -d $1 ]; then
+  if [ -f "$1"  ]; then
+    MD_FILE="$1"
+  elif [ -d "$1" ]; then
     # if the argument is a directory, run the README.md file in it
-    cat $1/README.md
-  else
-    cat -
+    MD_FILE="$1/README.md"
   fi
-} | awk 'BEGIN { one_line_comment="^<!--!(.*)-->$" }
+else
+  MD_FILE=-
+fi
+
+cat "$MD_FILE" | awk 'BEGIN { one_line_comment="^<!--!(.*)-->$" }
 {
   # cc = code block count
   # hc = html comment count
@@ -38,4 +42,11 @@
 
   # if the line matches one line comment (<!--! foo -->), just print it
   else if ($0 ~ one_line_comment) { p = $0; sub("^<!--! *", "", p); sub(" *-->$", "", p); print p }
-}' | bash
+}' > "$TMP_SCRIPT"
+bash "$TMP_SCRIPT"
+
+if [ $? -eq 0 ]; then
+  rm "$TMP_SCRIPT"
+else
+  printf "\e[31;1mError running markdown file: $MD_FILE (parsed bash script $TMP_SCRIPT)\e[m\n"
+fi
