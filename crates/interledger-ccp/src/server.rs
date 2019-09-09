@@ -1122,7 +1122,22 @@ mod handle_route_update_request {
     }
 
     #[test]
-    fn rejects_from_non_receiving_account() {
+    fn rejects_from_child_account() {
+        let result = test_service()
+            .handle_request(IncomingRequest {
+                prepare: UPDATE_REQUEST_SIMPLE.to_prepare(),
+                from: CHILD_ACCOUNT.clone(),
+            })
+            .wait();
+        assert!(result.is_err());
+        assert_eq!(
+            str::from_utf8(result.unwrap_err().message()).unwrap(),
+            "Your route broadcasts are not accepted here",
+        );
+    }
+
+    #[test]
+    fn rejects_from_non_routing_account() {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: UPDATE_REQUEST_SIMPLE.to_prepare(),
