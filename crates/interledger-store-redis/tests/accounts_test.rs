@@ -129,6 +129,42 @@ fn modify_account_settings_unchanged() {
 }
 
 #[test]
+fn modify_account_settings() {
+    block_on(test_store().and_then(|(store, context, accounts)| {
+        let settings = AccountSettings {
+            http_outgoing_token: Some("dylan:test_token".to_owned()),
+            http_incoming_token: Some("http_in_new".to_owned()),
+            btp_outgoing_token: Some("dylan:test".to_owned()),
+            btp_incoming_token: Some("btp_in_new".to_owned()),
+            http_endpoint: Some("http://example.com".to_owned()),
+            btp_uri: Some("http://example.com".to_owned()),
+            settle_threshold: Some(-50),
+            settle_to: Some(100),
+        };
+        let account = accounts[0].clone();
+
+        let id = account.id();
+        store
+            .modify_account_settings(id, settings)
+            .and_then(move |ret| {
+                println!("{:?}", ret);
+                assert_eq!(
+                    ret.get_http_auth_token().unwrap(),
+                    "dylan:test_token",
+                );
+                assert_eq!(
+                    ret.get_btp_token().unwrap(),
+                    &b"dylan:test"[..],
+                );
+                // Cannot check other parameters since they are only pub(crate).
+                let _ = context;
+                Ok(())
+            })
+    }))
+    .unwrap();
+}
+
+#[test]
 fn starts_with_zero_balance() {
     block_on(test_store().and_then(|(store, context, accs)| {
         let account0 = accs[0].clone();
