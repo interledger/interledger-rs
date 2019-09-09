@@ -467,19 +467,11 @@ impl RedisStore {
         pipe.atomic();
 
         if let Some(ref endpoint) = settings.btp_uri {
-            pipe.hset(
-                accounts_key(id),
-                "btp_uri",
-                endpoint,
-            );
+            pipe.hset(accounts_key(id), "btp_uri", endpoint);
         }
 
         if let Some(ref endpoint) = settings.http_endpoint {
-            pipe.hset(
-                accounts_key(id),
-                "http_endpoint",
-                endpoint,
-            );
+            pipe.hset(accounts_key(id), "http_endpoint", endpoint);
         }
 
         if let Some(ref token) = settings.btp_outgoing_token {
