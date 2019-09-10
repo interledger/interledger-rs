@@ -35,6 +35,8 @@ fn btp_end_to_end() {
         settlement_api_bind_address: ([127, 0, 0, 1], settlement_port).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let run = ok(()).and_then(move |_| {
         let spawn_connector = ok(tokio::spawn(node.serve())).and_then(move |_| {

@@ -13,9 +13,11 @@ use interledger_service::{
     outgoing_service_fn, Account as AccountTrait, OutgoingRequest, Username,
 };
 use interledger_service_util::{
-    BalanceService, EchoService, ExchangeRateService, ExpiryShortenerService,
+    BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
     MaxPacketAmountService, RateLimitService, ValidatorService,
 };
+// Re-export this
+pub use interledger_service_util::ExchangeRateProvider;
 use interledger_settlement::{SettlementApi, SettlementMessageService};
 use interledger_store_redis::{
     Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
@@ -24,7 +26,7 @@ use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{net::SocketAddr, str};
+use std::{net::SocketAddr, str, time::Duration};
 use tokio::{self, net::TcpListener};
 use url::Url;
 
@@ -42,6 +44,9 @@ fn default_btp_bind_address() -> SocketAddr {
 }
 fn default_redis_url() -> ConnectionInfo {
     DEFAULT_REDIS_URL.into_connection_info().unwrap()
+}
+fn default_exchange_rate_poll_interval() -> u64 {
+    60000
 }
 
 use std::str::FromStr;
@@ -116,6 +121,16 @@ pub struct InterledgerNode {
     /// Interval, defined in milliseconds, on which the node will broadcast routing
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
     pub route_broadcast_interval: Option<u64>,
+    /// Interval, defined in milliseconds, on which the node will poll the exchange rate provider.
+    /// Defaults to 60000ms (60 seconds).
+    #[serde(default = "default_exchange_rate_poll_interval")]
+    pub exchange_rate_poll_interval: u64,
+    /// API to poll for exchange rates. Currently the supported options are:
+    /// - [CoinCap](https://docs.coincap.io)
+    /// - [OpenMarketCap](https://dirtprotocol.github.io/openmarketcap-api/)
+    /// If this value is not set, the node will not poll for exchange rates and will
+    /// instead use the rates configured via the HTTP API.
+    pub exchange_rate_provider: Option<ExchangeRateProvider>,
 }
 
 impl InterledgerNode {
@@ -139,6 +154,8 @@ impl InterledgerNode {
         let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
         let route_broadcast_interval = self.route_broadcast_interval;
+        let exchange_rate_provider = self.exchange_rate_provider;
+        let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .connect()
@@ -241,6 +258,7 @@ impl InterledgerNode {
                                     btp_server_service.handle_incoming(incoming_service.clone());
                                     btp_client_service.handle_incoming(incoming_service.clone());
 
+                                    // Node HTTP API
                                     // TODO should this run the node api on a different port so it's easier to separate public/private?
                                     // Note the API also includes receiving ILP packets sent via HTTP
                                     let mut api = NodeApi::new(
@@ -257,6 +275,7 @@ impl InterledgerNode {
                                     info!("Interledger node listening on: {}", http_bind_address);
                                     tokio::spawn(api.serve(listener.incoming()));
 
+                                    // Settlement API
                                     let settlement_api = SettlementApi::new(
                                         store.clone(),
                                         outgoing_service.clone(),
@@ -265,6 +284,12 @@ impl InterledgerNode {
                                         .expect("Unable to bind to Settlement API address");
                                     info!("Settlement API listening on: {}", settlement_api_bind_address);
                                     tokio::spawn(settlement_api.serve(listener.incoming()));
+
+                                    // Exchange Rate Polling
+                                    if let Some(provider) = exchange_rate_provider {
+                                        let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, store.clone());
+                                        exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
+                                    }
 
                                     Ok(())
                                 },

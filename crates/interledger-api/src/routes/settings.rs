@@ -24,7 +24,7 @@ struct ServerStatus {
 #[web(status = "200")]
 struct Success;
 
-#[derive(Extract, Debug)]
+#[derive(Extract, Debug, Response)]
 struct Rates(HashMap<String, f64>);
 
 #[derive(Extract, Response, Debug)]
@@ -72,7 +72,7 @@ impl_web! {
             debug!("Setting exchange rates: {:?}", body);
             self.validate_admin(authorization)
                 .and_then(move |store| {
-                    store.set_rates(body.0)
+                    store.set_exchange_rates(body.0)
                         .and_then(|_| Ok(Success))
                         .map_err(|err| {
                             error!("Error setting rates: {:?}", err);

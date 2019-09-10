@@ -50,10 +50,6 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
-    fn set_rates<R>(&self, rates: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (String, f64)>;
-
     fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (String, <Self::Account as AccountTrait>::AccountId)>;

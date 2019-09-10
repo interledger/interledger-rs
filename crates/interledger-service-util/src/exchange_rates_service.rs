@@ -1,12 +1,35 @@
-use futures::{future::err, Future};
+use futures::{future::err, Future, Stream};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{Convert, ConvertDetails};
-use log::{error, trace};
-use std::marker::PhantomData;
+use lazy_static::lazy_static;
+use log::{debug, error, trace, warn};
+use reqwest::{r#async::Client, Url};
+use serde::Deserialize;
+use std::{
+    iter::{once, IntoIterator},
+    marker::PhantomData,
+    str::FromStr,
+    time::{Duration, Instant},
+};
+use tokio::{executor::spawn, timer::Interval};
 
-pub trait ExchangeRateStore {
+// TODO should this whole file be moved to its own crate?
+
+lazy_static! {
+    static ref COINCAP_URL: Url = Url::parse("https://api.coincap.io/v2/rates").unwrap();
+    // Note this is unsafe because the API does not support HTTPS
+    static ref OPENMARKETCAP_URL: Url =
+        Url::parse("http://api.openmarketcap.com/api/v1/tokens?size=500").unwrap();
+}
+
+pub trait ExchangeRateStore: Clone {
+    fn set_exchange_rates(
+        &self,
+        rates: impl IntoIterator<Item = (String, f64)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
 }
 
@@ -145,6 +168,123 @@ where
         }
 
         Box::new(self.next.send_request(request))
+    }
+}
+
+#[derive(PartialEq, Debug, Copy, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum ExchangeRateProvider {
+    OpenMarketCap,
+    CoinCap,
+}
+
+/// Poll exchange rate providers for the current exchange rates
+pub struct ExchangeRateFetcher<S> {
+    provider: ExchangeRateProvider,
+    store: S,
+    client: Client,
+}
+
+#[derive(Deserialize, Debug)]
+struct Rate {
+    symbol: String,
+    // CoinCap calls this "rateUsd" whereas OpenMarketCap uses "rate_usd"
+    #[serde(alias = "rateUsd")]
+    rate_usd: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct RateResponse {
+    data: Vec<Rate>,
+}
+
+impl<S> ExchangeRateFetcher<S>
+where
+    S: ExchangeRateStore + Send + Sync + 'static,
+{
+    pub fn new(provider: ExchangeRateProvider, store: S) -> Self {
+        ExchangeRateFetcher {
+            provider,
+            store,
+            client: Client::new(),
+        }
+    }
+
+    pub fn fetch_on_interval(self, interval: Duration) -> impl Future<Item = (), Error = ()> {
+        Interval::new(Instant::now(), interval)
+            .map_err(|err| {
+                error!(
+                    "Interval error, no longer fetching exchange rates: {:?}",
+                    err
+                );
+            })
+            .for_each(move |_| {
+                self.update_rates().then(|_| {
+                    // Ignore errors so that they don't cause the Interval to stop
+                    Ok(())
+                })
+            })
+    }
+
+    pub fn spawn_interval(self, interval: Duration) {
+        spawn(self.fetch_on_interval(interval));
+    }
+
+    fn fetch_rates(&self) -> impl Future<Item = RateResponse, Error = ()> {
+        let url: Url = if self.provider == ExchangeRateProvider::OpenMarketCap {
+            OPENMARKETCAP_URL.clone()
+        } else {
+            COINCAP_URL.clone()
+        };
+        self.client
+            .get(url)
+            .send()
+            .map_err(|err| {
+                error!("Error fetching exchange rates: {:?}", err);
+            })
+            .and_then(|res| {
+                res.error_for_status().map_err(|err| {
+                    error!("HTTP error getting exchange rates: {:?}", err);
+                })
+            })
+            .and_then(|mut res| {
+                res.json().map_err(|err| {
+                    error!(
+                        "Error getting exchange rate response body, incorrect type: {:?}",
+                        err
+                    );
+                })
+            })
+    }
+
+    fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
+        let store = self.store.clone();
+        let provider = self.provider;
+        self.fetch_rates().and_then(move |rates| {
+            trace!("Fetched exchange rates: {:?}", rates);
+            let num_rates = rates.data.len();
+            store
+                .set_exchange_rates(
+                    rates
+                        .data
+                        .into_iter()
+                        .filter_map(|record| match f64::from_str(record.rate_usd.as_str()) {
+                            Ok(rate) => Some((record.symbol.to_uppercase(), rate)),
+                            Err(err) => {
+                                warn!(
+                                    "Unable to parse {} rate as an f64: {} {:?}",
+                                    record.symbol, record.rate_usd, err
+                                );
+                                None
+                            }
+                        })
+                        .chain(once(("USD".to_string(), 1.0))),
+                )
+                .and_then(move |_| {
+                    debug!("Updated {} exchange rates from {:?}", num_rates, provider);
+                    Ok(())
+                })
+        })
     }
 }
 
@@ -290,6 +430,13 @@ mod tests {
                 return Err(());
             }
             Ok(ret)
+        }
+
+        fn set_exchange_rates(
+            &self,
+            rates: impl IntoIterator<Item = (String, f64)>,
+        ) -> Box<Future<Item = (), Error = ()> + Send> {
+            Box::new(ok(()))
         }
     }
 
