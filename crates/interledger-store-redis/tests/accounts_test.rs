@@ -147,7 +147,6 @@ fn modify_account_settings() {
         store
             .modify_account_settings(id, settings)
             .and_then(move |ret| {
-                println!("{:?}", ret);
                 assert_eq!(ret.get_http_auth_token().unwrap(), "dylan:test_token",);
                 assert_eq!(ret.get_btp_token().unwrap(), &b"dylan:test"[..],);
                 // Cannot check other parameters since they are only pub(crate).

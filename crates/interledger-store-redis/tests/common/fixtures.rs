@@ -41,7 +41,7 @@ lazy_static! {
         btp_incoming_token: Some("other_btp_token".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
-        routing_relation: None,
+        routing_relation: Some("Child".to_owned()),
         round_trip_time: None,
         amount_per_minute_limit: Some(1000),
         packets_per_minute_limit: Some(20),
