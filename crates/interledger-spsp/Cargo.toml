@@ -15,7 +15,7 @@ futures = "0.1.25"
 hyper = "0.12.25"
 interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
 interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", features = ["serde"] }
-interledger-service = { path = "../interledger-service", version = "0.2.1" }
+interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
 interledger-stream = { path = "../interledger-stream", version = "0.2.1" }
 log = "0.4.6"
 reqwest = "0.9.11"
