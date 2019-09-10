@@ -9,7 +9,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 futures = "0.1.25"
-interledger-packet = { path = "../interledger-packet", version = "0.2.1" }
+interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1"}
 serde = { version = "1.0.99", features = ["derive"] }
 base64 = "0.10.1"
 regex = "1.2.1"
