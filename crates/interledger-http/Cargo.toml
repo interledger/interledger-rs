@@ -1,6 +1,6 @@
 [package]
 name = "interledger-http"
-version = "0.2.1"
+version = "0.2.2-alpha.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "HTTP client and server services for Interledger.rs"
 license = "Apache-2.0"
