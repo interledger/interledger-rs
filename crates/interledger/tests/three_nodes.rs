@@ -4,7 +4,7 @@ use env_logger;
 use futures::Future;
 use interledger::{
     cli,
-    node::{AccountDetails, InterledgerNode},
+    node::{AccountDetails, ExchangeRateProvider, InterledgerNode},
 };
 use interledger_packet::Address;
 use interledger_service::Username;
@@ -55,6 +55,8 @@ fn three_nodes() {
         settlement_api_bind_address: ([127, 0, 0, 1], node1_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let node1_clone = node1.clone();
     runtime.spawn(
@@ -116,6 +118,8 @@ fn three_nodes() {
         settlement_api_bind_address: ([127, 0, 0, 1], node2_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let node2_clone = node2.clone();
     runtime.spawn(
@@ -189,6 +193,8 @@ fn three_nodes() {
         settlement_api_bind_address: ([127, 0, 0, 1], node3_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let node3_clone = node3.clone();
     runtime.spawn(

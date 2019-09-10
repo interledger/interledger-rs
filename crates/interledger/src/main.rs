@@ -213,6 +213,15 @@ pub fn main() {
                         .long("route_broadcast_interval")
                         .takes_value(true)
                         .help("Interval, defined in milliseconds, on which the node will broadcast routing information to other nodes using CCP. Defaults to 30000ms (30 seconds)."),
+                    Arg::with_name("exchange_rate_provider")
+                        .long("exchange_rate_provider")
+                        .takes_value(true)
+                        .possible_values(&["CoinCap", "OpenMarketCap"])
+                        .help("Exchange rate API to poll for exchange rates. If this is not set, the node will not poll for rates and will instead use the rates set via the HTTP API."),
+                    Arg::with_name("exchange_rate_poll_interval")
+                        .long("exchange_rate_poll_interval")
+                        .default_value("60000")
+                        .help("Interval, defined in milliseconds, on which the node will poll the exchange_rate_provider (if specified) for exchange rates."),
                 ])
                 .subcommand(SubCommand::with_name("accounts")
                     .setting(AppSettings::SubcommandsNegateReqs)

@@ -779,6 +779,28 @@ impl ExchangeRateStore for RedisStore {
             Err(())
         }
     }
+
+    fn set_exchange_rates(
+        &self,
+        rates: impl IntoIterator<Item = (String, f64)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let rates: Vec<(String, f64)> = rates.into_iter().collect();
+        let exchange_rates = self.exchange_rates.clone();
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .del(RATES_KEY)
+            .ignore()
+            .hset_multiple(RATES_KEY, &rates)
+            .ignore();
+        Box::new(
+            pipe.query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error setting rates: {:?}", err))
+                .and_then(move |(connection, _): (SharedConnection, Value)| {
+                    trace!("Set exchange rates: {:?}", exchange_rates);
+                    update_rates(connection, exchange_rates)
+                }),
+        )
+    }
 }
 
 impl BtpStore for RedisStore {
@@ -977,28 +999,6 @@ impl NodeStore for RedisStore {
                     },
                 )
         }))
-    }
-
-    fn set_rates<R>(&self, rates: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
-    where
-        R: IntoIterator<Item = (String, f64)>,
-    {
-        let rates: Vec<(String, f64)> = rates.into_iter().collect();
-        let exchange_rates = self.exchange_rates.clone();
-        let mut pipe = redis::pipe();
-        pipe.atomic()
-            .del(RATES_KEY)
-            .ignore()
-            .hset_multiple(RATES_KEY, &rates)
-            .ignore();
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error setting rates: {:?}", err))
-                .and_then(move |(connection, _): (SharedConnection, Value)| {
-                    trace!("Set exchange rates: {:?}", exchange_rates);
-                    update_rates(connection, exchange_rates)
-                }),
-        )
     }
 
     // TODO fix inconsistency betwen this method and set_routes which

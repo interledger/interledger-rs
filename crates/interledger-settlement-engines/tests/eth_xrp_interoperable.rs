@@ -111,6 +111,8 @@ fn eth_xrp_interoperable() {
         settlement_api_bind_address: ([127, 0, 0, 1], node1_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let node1_clone = node1.clone();
     runtime.spawn(
@@ -174,6 +176,8 @@ fn eth_xrp_interoperable() {
         settlement_api_bind_address: ([127, 0, 0, 1], node2_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let node2_clone = node2.clone();
     runtime.spawn(
@@ -254,6 +258,8 @@ fn eth_xrp_interoperable() {
         settlement_api_bind_address: ([127, 0, 0, 1], node3_settlement).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
+        exchange_rate_poll_interval: 60000,
+        exchange_rate_provider: None,
     };
     let node3_clone = node3.clone();
     runtime.spawn(

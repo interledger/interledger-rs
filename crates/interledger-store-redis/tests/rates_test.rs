@@ -13,7 +13,7 @@ fn set_rates() {
         let rates = store.get_exchange_rates(&["ABC", "XYZ"]);
         assert!(rates.is_err());
         store
-            .set_rates(vec![("ABC".to_string(), 500.0), ("XYZ".to_string(), 0.005)])
+            .set_exchange_rates(vec![("ABC".to_string(), 500.0), ("XYZ".to_string(), 0.005)])
             .and_then(move |_| {
                 let rates = store_clone.get_exchange_rates(&["XYZ", "ABC"]).unwrap();
                 assert_eq!(rates[0].to_string(), "0.005");
@@ -35,7 +35,7 @@ fn polls_for_rate_updates() {
                 assert!(store.get_exchange_rates(&["ABC", "XYZ"]).is_err());
                 store
                     .clone()
-                    .set_rates(vec![
+                    .set_exchange_rates(vec![
                         ("ABC".to_string(), 0.5f64),
                         ("DEF".to_string(), 9_999_999_999.0f64),
                     ])
