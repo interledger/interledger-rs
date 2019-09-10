@@ -16,7 +16,7 @@ futures = "0.1.25"
 interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
 interledger-settlement = { path = "../interledger-settlement", version = "0.1.0" }
 interledger-service-util = { path = "../interledger-service-util", version = "0.2.1" }
-interledger-ildcp = { path = "../interledger-ildcp", version = "0.2.1" }
+interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1"}
 ethabi = "8.0.1"
 serde = "1.0.99"
 serde_json = "1.0.40"
