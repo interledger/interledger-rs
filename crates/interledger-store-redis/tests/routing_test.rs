@@ -50,7 +50,7 @@ fn polls_for_route_updates() {
                                 btp_incoming_token: None,
                                 settle_threshold: None,
                                 settle_to: None,
-                                routing_relation: None,
+                                routing_relation: Some("Peer".to_owned()),
                                 round_trip_time: None,
                                 amount_per_minute_limit: None,
                                 packets_per_minute_limit: None,

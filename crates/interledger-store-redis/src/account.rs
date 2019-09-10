@@ -116,7 +116,7 @@ impl Account {
         let routing_relation = if let Some(ref relation) = details.routing_relation {
             RoutingRelation::from_str(relation)?
         } else {
-            RoutingRelation::Child
+            RoutingRelation::NonRoutingAccount
         };
         let settlement_engine_url =
             if let Some(settlement_engine_url) = details.settlement_engine_url {
