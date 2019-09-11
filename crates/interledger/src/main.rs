@@ -216,7 +216,7 @@ pub fn main() {
                     Arg::with_name("exchange_rate_provider")
                         .long("exchange_rate_provider")
                         .takes_value(true)
-                        .possible_values(&["CoinCap", "InsecureOpenMarketCapNoHttps"])
+                        .possible_values(&["CoinCap"])
                         .help("Exchange rate API to poll for exchange rates. If this is not set, the node will not poll for rates and will instead use the rates set via the HTTP API."),
                     Arg::with_name("exchange_rate_poll_interval")
                         .long("exchange_rate_poll_interval")

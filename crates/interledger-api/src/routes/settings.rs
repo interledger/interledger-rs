@@ -84,7 +84,6 @@ impl_web! {
 
         #[get("/rates")]
         #[content_type("application/json")]
-        // TODO should this be admin only?
         fn get_rates(&self) -> impl Future<Item = Rates, Error = Response<()>> {
             result(self.store.get_all_exchange_rates().map(Rates).map_err(|_| Response::builder().status(500).body(()).unwrap()))
         }
