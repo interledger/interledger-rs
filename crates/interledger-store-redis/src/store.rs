@@ -780,6 +780,10 @@ impl ExchangeRateStore for RedisStore {
         }
     }
 
+    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()> {
+        Ok((*self.exchange_rates.read()).clone())
+    }
+
     fn set_exchange_rates(
         &self,
         rates: impl IntoIterator<Item = (String, f64)>,

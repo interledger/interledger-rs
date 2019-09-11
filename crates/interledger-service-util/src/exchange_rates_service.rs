@@ -8,6 +8,7 @@ use log::{debug, error, trace, warn};
 use reqwest::{r#async::Client, Url};
 use serde::Deserialize;
 use std::{
+    collections::HashMap,
     iter::{once, IntoIterator},
     marker::PhantomData,
     str::FromStr,
@@ -31,6 +32,14 @@ pub trait ExchangeRateStore: Clone {
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
+
+    // TODO should this be on the API instead? That's where it's actually used
+    // TODO should we combine this method with get_exchange_rates?
+    // The downside of doing that is in this case we want a HashMap with owned values
+    // (so that we don't accidentally lock up the RwLock on the store's exchange_rates)
+    // but in the normal case of getting the rate between two assets, we don't want to
+    // copy all the rate data
+    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()>;
 }
 
 /// # Exchange Rates Service
@@ -436,7 +445,11 @@ mod tests {
             &self,
             rates: impl IntoIterator<Item = (String, f64)>,
         ) -> Box<Future<Item = (), Error = ()> + Send> {
-            Box::new(ok(()))
+            unimplemented!()
+        }
+
+        fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()> {
+            unimplemented!()
         }
     }
 
