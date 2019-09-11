@@ -190,8 +190,8 @@ where
 #[derive(PartialEq, Debug, Copy, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum ExchangeRateProvider {
-    OpenMarketCap,
     CoinCap,
+    InsecureOpenMarketCapNoHttps,
 }
 
 /// Poll exchange rate providers for the current exchange rates
@@ -219,7 +219,7 @@ where
     S: ExchangeRateStore + Send + Sync + 'static,
 {
     pub fn new(provider: ExchangeRateProvider, store: S) -> Self {
-        if provider == ExchangeRateProvider::OpenMarketCap {
+        if provider == ExchangeRateProvider::InsecureOpenMarketCapNoHttps {
             warn!(
                 "OpenMarketCap's API does not use HTTPS so it is not secure to use with real money"
             );
@@ -476,7 +476,7 @@ mod tests {
 
         fn set_exchange_rates(
             &self,
-            rates: impl IntoIterator<Item = (String, f64)>,
+            _rates: impl IntoIterator<Item = (String, f64)>,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }

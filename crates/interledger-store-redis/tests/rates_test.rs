@@ -1,7 +1,6 @@
 mod common;
 
 use common::*;
-use interledger_api::NodeStore;
 use interledger_service_util::ExchangeRateStore;
 use std::time::Duration;
 use tokio_timer::sleep;
