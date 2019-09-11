@@ -153,7 +153,7 @@ impl InterledgerNode {
         let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
         let route_broadcast_interval = self.route_broadcast_interval;
-        let exchange_rate_provider = self.exchange_rate_provider;
+        let exchange_rate_provider = self.exchange_rate_provider.clone();
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
@@ -288,6 +288,8 @@ impl InterledgerNode {
                                     if let Some(provider) = exchange_rate_provider {
                                         let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, store.clone());
                                         exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
+                                    } else {
+                                        debug!("Not using exchange rate provider. Rates must be set via the HTTP API");
                                     }
 
                                     Ok(())

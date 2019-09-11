@@ -762,14 +762,9 @@ impl ExchangeRateStore for RedisStore {
         Ok((*self.exchange_rates.read()).clone())
     }
 
-    fn set_exchange_rates(
-        &self,
-        rates: HashMap<String, f64>,
-    ) -> Result<(), ()> {
+    fn set_exchange_rates(&self, rates: HashMap<String, f64>) -> Result<(), ()> {
         // TODO publish rate updates through a pubsub mechanism to support horizontally scaling nodes
-        let num_assets = rates.len();
         (*self.exchange_rates.write()) = rates;
-        trace!("Updated rates for {} assets", num_assets);
         Ok(())
     }
 }
