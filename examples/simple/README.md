@@ -34,22 +34,9 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 ## Instructions
 
 <!--!
-function error_and_exit() {
-    printf "\e[31m$1\e[m\n"
-    exit 1
-}
-
-function wait_to_serve() {
-    while :
-    do
-        printf "."
-        sleep 1
-        curl $1 &> /dev/null
-        if [ $? -eq 0 ]; then
-            break
-        fi
-    done
-}
+# import some functions from run-md-lib.sh
+# this variable is set by run-md.sh
+source $RUN_MD_LIB
 
 if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
     USE_DOCKER=1
@@ -226,12 +213,12 @@ cargo run --bin interledger -- node &> logs/node_b.log &
 <!--!
 fi
 
-printf "\nWaiting for Interledger.rs nodes to start up...\n"
+printf "\nWaiting for Interledger.rs nodes to start up"
 
 wait_to_serve "http://localhost:7770"
 wait_to_serve "http://localhost:8770"
 
-printf "\nThe Interledger.rs nodes are up and running!\n\n"
+printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
 
 Now the Interledger.rs nodes are up and running!  
@@ -476,12 +463,12 @@ http://localhost:8770/accounts/bob/balance
 Finally, you can stop all the services as follows:
 
 <!--!
-printf "Stopping Interledger nodes\n"
-
-if [ "$USE_DOCKER" -ne 1 ]; then
-exec 2> /dev/null
+prompt_yn "Do you want to kill the services? [Y/n]" "y"
+printf "\n"
+if [ "$PROMPT_ANSWER" = "y" ]; then
+    if [ "$USE_DOCKER" -ne 1 ]; then
+        exec 2> /dev/null
 -->
-
 ```bash
 for port in 6379 6380; do
     if lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null ; then
@@ -500,18 +487,18 @@ for port in 8545 7770 8770; do
 done
 ```
 <!--!
-fi
+    else
 -->
 
 If you are using Docker, try the following.
 
 <!--!
-if [ "$USE_DOCKER" -eq 1 ]; then
-    $CMD_DOCKER stop \
-        interledger-rs-node_a \
-        interledger-rs-node_b \
-        redis-alice_node \
-        redis-bob_node
+        $CMD_DOCKER stop \
+            interledger-rs-node_a \
+            interledger-rs-node_b \
+            redis-alice_node \
+            redis-bob_node
+    fi
 fi
 printf "\n"
 -->
