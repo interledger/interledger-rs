@@ -1,6 +1,6 @@
 use crate::{NodeStore, BEARER_TOKEN_START};
 use futures::{
-    future::{err, ok, result},
+    future::{err, ok},
     Future,
 };
 use hyper::Response;
@@ -26,6 +26,7 @@ struct Success;
 
 #[derive(Extract, Debug, Response)]
 // TODO should this use stringified floats instead of JSON numbers?
+#[web(status = "200")]
 struct Rates(HashMap<String, f64>);
 
 #[derive(Extract, Response, Debug)]
@@ -85,7 +86,11 @@ impl_web! {
         #[get("/rates")]
         #[content_type("application/json")]
         fn get_rates(&self) -> impl Future<Item = Rates, Error = Response<()>> {
-            result(self.store.get_all_exchange_rates().map(Rates).map_err(|_| Response::builder().status(500).body(()).unwrap()))
+            if let Ok(rates) = self.store.get_all_exchange_rates() {
+                ok(Rates(rates))
+            } else {
+                err(Response::builder().status(500).body(()).unwrap())
+            }
         }
 
         #[get("/routes")]

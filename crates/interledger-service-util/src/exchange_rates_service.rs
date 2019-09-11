@@ -1,3 +1,4 @@
+use super::exchange_rate_providers::*;
 use futures::{
     future::{err, Either},
     Future, Stream,
@@ -6,28 +7,18 @@ use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{Convert, ConvertDetails};
-use lazy_static::lazy_static;
-use log::{debug, error, trace, warn};
-use reqwest::{r#async::Client, Url};
+use log::{debug, error, trace};
+use reqwest::r#async::Client;
+use secrecy::SecretString;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    iter::{once, FromIterator, IntoIterator},
     marker::PhantomData,
-    str::FromStr,
     time::{Duration, Instant},
 };
 use tokio::{executor::spawn, timer::Interval};
 
 // TODO should this whole file be moved to its own crate?
-
-lazy_static! {
-    // We use both endpoints because they contain different sets of rates
-    // This one has more cryptocurrencies
-    static ref COINCAP_ASSETS_URL: Url = Url::parse("https://api.coincap.io/v2/assets").unwrap();
-    // This one has more fiat currencies
-    static ref COINCAP_RATES_URL: Url = Url::parse("https://api.coincap.io/v2/rates").unwrap();
-}
 
 pub trait ExchangeRateStore: Clone {
     // TODO we may want to make this async if/when we use pubsub to broadcast
@@ -183,10 +174,12 @@ where
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExchangeRateProvider {
     CoinCap,
+    /// CryptoCompare must be configured with an API key
+    CryptoCompare(SecretString),
 }
 
 /// Poll exchange rate providers for the current exchange rates
@@ -194,18 +187,6 @@ pub struct ExchangeRateFetcher<S> {
     provider: ExchangeRateProvider,
     store: S,
     client: Client,
-}
-
-#[derive(Deserialize, Debug)]
-struct Rate {
-    symbol: String,
-    #[serde(alias = "rateUsd", alias = "priceUsd")]
-    rate_usd: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct RateResponse {
-    data: Vec<Rate>,
 }
 
 impl<S> ExchangeRateFetcher<S>
@@ -240,73 +221,29 @@ where
         spawn(self.fetch_on_interval(interval));
     }
 
-    fn query_rate_endpoint(&self, url: Url) -> impl Future<Item = RateResponse, Error = ()> {
-        self.client
-            .get(url)
-            .send()
-            .map_err(|err| {
-                error!("Error fetching exchange rates: {:?}", err);
-            })
-            .and_then(|res| {
-                res.error_for_status().map_err(|err| {
-                    error!("HTTP error getting exchange rates: {:?}", err);
-                })
-            })
-            .and_then(|mut res| {
-                res.json().map_err(|err| {
-                    error!(
-                        "Error getting exchange rate response body, incorrect type: {:?}",
-                        err
-                    );
-                })
-            })
-    }
-
-    fn fetch_rates(&self) -> impl Future<Item = RateResponse, Error = ()> {
-        self.query_rate_endpoint(COINCAP_ASSETS_URL.clone())
-            .join(self.query_rate_endpoint(COINCAP_RATES_URL.clone()))
-            .and_then(|(assets, rates)| {
-                let all_rates = assets
-                    .data
-                    .into_iter()
-                    .chain(rates.data.into_iter())
-                    .map(|record| (record.symbol, record.rate_usd));
-                // Collect it into a hashmap to deduplicate entries
-                let all_rates: HashMap<String, String> = HashMap::from_iter(all_rates);
-                Ok(RateResponse {
-                    data: all_rates
-                        .into_iter()
-                        .map(|(symbol, rate_usd)| Rate { symbol, rate_usd })
-                        .collect(),
-                })
-            })
+    fn fetch_rates(&self) -> impl Future<Item = HashMap<String, f64>, Error = ()> {
+        match self.provider {
+            ExchangeRateProvider::CryptoCompare(ref api_key) => {
+                Either::A(query_cryptocompare(&self.client, api_key))
+            }
+            ExchangeRateProvider::CoinCap => Either::B(query_coincap(&self.client)),
+        }
     }
 
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
         let store = self.store.clone();
-        let provider = self.provider;
-        self.fetch_rates().and_then(move |rates| {
+        let provider = self.provider.clone();
+        self.fetch_rates().and_then(move |mut rates| {
             trace!("Fetched exchange rates: {:?}", rates);
-            let num_rates = rates.data.len();
-            let rates = rates
-                .data
-                .into_iter()
-                .filter_map(|record| match f64::from_str(record.rate_usd.as_str()) {
-                    Ok(rate) => Some((record.symbol.to_uppercase(), rate)),
-                    Err(err) => {
-                        warn!(
-                            "Unable to parse {} rate as an f64: {} {:?}",
-                            record.symbol, record.rate_usd, err
-                        );
-                        None
-                    }
-                })
-                .chain(once(("USD".to_string(), 1.0)));
-            let rates = HashMap::from_iter(rates);
-            store.set_exchange_rates(rates).and_then(move |_| {
+            let num_rates = rates.len();
+            rates.insert("USD".to_string(), 1.0);
+            if store.set_exchange_rates(rates).is_ok() {
                 debug!("Updated {} exchange rates from {:?}", num_rates, provider);
                 Ok(())
-            })
+            } else {
+                error!("Error setting exchange rates in store");
+                Err(())
+            }
         })
     }
 }

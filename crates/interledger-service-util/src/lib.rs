@@ -4,6 +4,7 @@
 
 mod balance_service;
 mod echo_service;
+mod exchange_rate_providers;
 mod exchange_rates_service;
 mod expiry_shortener_service;
 mod max_packet_amount_service;

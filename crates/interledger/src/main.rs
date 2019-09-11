@@ -217,7 +217,8 @@ pub fn main() {
                         .long("exchange_rate_provider")
                         .takes_value(true)
                         .possible_values(&["CoinCap"])
-                        .help("Exchange rate API to poll for exchange rates. If this is not set, the node will not poll for rates and will instead use the rates set via the HTTP API."),
+                        .help("Exchange rate API to poll for exchange rates. If this is not set, the node will not poll for rates and will instead use the rates set via the HTTP API. \
+                            Note that CryptoCompare can also be used when the node is configured via a config file or stdin, because an api key must be provided to use that service."),
                     Arg::with_name("exchange_rate_poll_interval")
                         .long("exchange_rate_poll_interval")
                         .default_value("60000")
