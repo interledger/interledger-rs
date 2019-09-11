@@ -127,7 +127,7 @@ pub struct InterledgerNode {
     pub exchange_rate_poll_interval: u64,
     /// API to poll for exchange rates. Currently the supported options are:
     /// - [CoinCap](https://docs.coincap.io)
-    /// - [OpenMarketCap](https://dirtprotocol.github.io/openmarketcap-api/)
+    /// - [InsecureOpenMarketCapNoHttps](https://dirtprotocol.github.io/openmarketcap-api/)
     /// If this value is not set, the node will not poll for exchange rates and will
     /// instead use the rates configured via the HTTP API.
     pub exchange_rate_provider: Option<ExchangeRateProvider>,
