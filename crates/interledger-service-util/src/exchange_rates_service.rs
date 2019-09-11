@@ -1,4 +1,7 @@
-use futures::{future::err, Future, Stream};
+use futures::{
+    future::{err, Either},
+    Future, Stream,
+};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
@@ -9,7 +12,7 @@ use reqwest::{r#async::Client, Url};
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    iter::{once, IntoIterator},
+    iter::{once, FromIterator, IntoIterator},
     marker::PhantomData,
     str::FromStr,
     time::{Duration, Instant},
@@ -19,7 +22,11 @@ use tokio::{executor::spawn, timer::Interval};
 // TODO should this whole file be moved to its own crate?
 
 lazy_static! {
-    static ref COINCAP_URL: Url = Url::parse("https://api.coincap.io/v2/assets").unwrap();
+    // We use both endpoints because they contain different sets of rates
+    // This one has more cryptocurrencies
+    static ref COINCAP_ASSETS_URL: Url = Url::parse("https://api.coincap.io/v2/assets").unwrap();
+    // This one has more fiat currencies
+    static ref COINCAP_RATES_URL: Url = Url::parse("https://api.coincap.io/v2/rates").unwrap();
     // Note this is unsafe because the API does not support HTTPS
     static ref OPENMARKETCAP_URL: Url =
         Url::parse("http://api.openmarketcap.com/api/v1/tokens?size=500").unwrap();
@@ -198,7 +205,7 @@ pub struct ExchangeRateFetcher<S> {
 struct Rate {
     symbol: String,
     // CoinCap calls this "rateUsd" whereas OpenMarketCap uses "rate_usd"
-    #[serde(alias = "rateUsd")]
+    #[serde(alias = "rateUsd", alias = "priceUsd")]
     rate_usd: String,
 }
 
@@ -212,6 +219,11 @@ where
     S: ExchangeRateStore + Send + Sync + 'static,
 {
     pub fn new(provider: ExchangeRateProvider, store: S) -> Self {
+        if provider == ExchangeRateProvider::OpenMarketCap {
+            warn!(
+                "OpenMarketCap's API does not use HTTPS so it is not secure to use with real money"
+            );
+        }
         ExchangeRateFetcher {
             provider,
             store,
@@ -239,12 +251,7 @@ where
         spawn(self.fetch_on_interval(interval));
     }
 
-    fn fetch_rates(&self) -> impl Future<Item = RateResponse, Error = ()> {
-        let url: Url = if self.provider == ExchangeRateProvider::OpenMarketCap {
-            OPENMARKETCAP_URL.clone()
-        } else {
-            COINCAP_URL.clone()
-        };
+    fn query_rate_endpoint(&self, url: Url) -> impl Future<Item = RateResponse, Error = ()> {
         self.client
             .get(url)
             .send()
@@ -264,6 +271,32 @@ where
                     );
                 })
             })
+    }
+
+    fn fetch_rates(&self) -> impl Future<Item = RateResponse, Error = ()> {
+        if self.provider == ExchangeRateProvider::CoinCap {
+            Either::A(
+                self.query_rate_endpoint(COINCAP_ASSETS_URL.clone())
+                    .join(self.query_rate_endpoint(COINCAP_RATES_URL.clone()))
+                    .and_then(|(assets, rates)| {
+                        let all_rates = assets
+                            .data
+                            .into_iter()
+                            .chain(rates.data.into_iter())
+                            .map(|record| (record.symbol, record.rate_usd));
+                        // Collect it into a hashmap to deduplicate entries
+                        let all_rates: HashMap<String, String> = HashMap::from_iter(all_rates);
+                        Ok(RateResponse {
+                            data: all_rates
+                                .into_iter()
+                                .map(|(symbol, rate_usd)| Rate { symbol, rate_usd })
+                                .collect(),
+                        })
+                    }),
+            )
+        } else {
+            Either::B(self.query_rate_endpoint(OPENMARKETCAP_URL.clone()))
+        }
     }
 
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
@@ -444,7 +477,7 @@ mod tests {
         fn set_exchange_rates(
             &self,
             rates: impl IntoIterator<Item = (String, f64)>,
-        ) -> Box<Future<Item = (), Error = ()> + Send> {
+        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }
 

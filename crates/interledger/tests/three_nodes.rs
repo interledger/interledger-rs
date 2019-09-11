@@ -4,7 +4,7 @@ use env_logger;
 use futures::Future;
 use interledger::{
     cli,
-    node::{AccountDetails, ExchangeRateProvider, InterledgerNode},
+    node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
 use interledger_service::Username;
