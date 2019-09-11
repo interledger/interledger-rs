@@ -69,7 +69,7 @@ impl_web! {
 
         #[put("/rates")]
         #[content_type("application/json")]
-        fn post_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
+        fn put_rates(&self, body: Rates, authorization: String) -> impl Future<Item = Success, Error = Response<()>> {
             debug!("Setting exchange rates: {:?}", body);
             self.validate_admin(authorization)
                 .and_then(move |store| {

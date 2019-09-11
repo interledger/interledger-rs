@@ -168,7 +168,6 @@ lazy_static! {
 }
 
 static ROUTES_KEY: &str = "routes:current";
-static RATES_KEY: &str = "rates:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
 
 fn prefixed_idempotency_key(idempotency_key: String) -> String {
@@ -220,27 +219,6 @@ impl RedisStoreBuilder {
                     encryption_key: Arc::new(encryption_key),
                     decryption_key: Arc::new(decryption_key),
                 };
-
-                // Start polling for rate updates
-                // Note: if this behavior changes, make sure to update the Drop implementation
-                let connection_clone = Arc::downgrade(&store.connection);
-                let exchange_rates = store.exchange_rates.clone();
-                let poll_rates =
-                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                        .map_err(|err| error!("Interval error: {:?}", err))
-                        .for_each(move |_| {
-                            if let Some(connection) = connection_clone.upgrade() {
-                                Either::A(update_rates(
-                                    connection.as_ref().clone(),
-                                    exchange_rates.clone(),
-                                ))
-                            } else {
-                                debug!("Not polling rates anymore because connection was closed");
-                                // TODO make sure the interval stops
-                                Either::B(err(()))
-                            }
-                        });
-                spawn(poll_rates);
 
                 // Poll for routing table updates
                 // Note: if this behavior changes, make sure to update the Drop implementation
@@ -786,24 +764,13 @@ impl ExchangeRateStore for RedisStore {
 
     fn set_exchange_rates(
         &self,
-        rates: impl IntoIterator<Item = (String, f64)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let rates: Vec<(String, f64)> = rates.into_iter().collect();
-        let exchange_rates = self.exchange_rates.clone();
-        let mut pipe = redis::pipe();
-        pipe.atomic()
-            .del(RATES_KEY)
-            .ignore()
-            .hset_multiple(RATES_KEY, &rates)
-            .ignore();
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error setting rates: {:?}", err))
-                .and_then(move |(connection, _): (SharedConnection, Value)| {
-                    trace!("Set exchange rates: {:?}", exchange_rates);
-                    update_rates(connection, exchange_rates)
-                }),
-        )
+        rates: HashMap<String, f64>,
+    ) -> Result<(), ()> {
+        // TODO publish rate updates through a pubsub mechanism to support horizontally scaling nodes
+        let num_assets = rates.len();
+        (*self.exchange_rates.write()) = rates;
+        trace!("Updated rates for {} assets", num_assets);
+        Ok(())
     }
 }
 
@@ -1480,27 +1447,9 @@ impl SettlementStore for RedisStore {
     }
 }
 
-// TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
-fn update_rates(
-    connection: SharedConnection,
-    exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
-) -> impl Future<Item = (), Error = ()> {
-    cmd("HGETALL")
-        .arg(RATES_KEY)
-        .query_async(connection)
-        .map_err(|err| error!("Error polling for exchange rates: {:?}", err))
-        .and_then(move |(_connection, rates): (_, Vec<(String, f64)>)| {
-            let num_assets = rates.len();
-            let rates = HashMap::from_iter(rates.into_iter());
-            (*exchange_rates.write()) = rates;
-            trace!("Updated rates for {} assets", num_assets);
-            Ok(())
-        })
-}
-
-// TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 type RouteVec = Vec<(String, AccountId)>;
 
+// TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 fn update_routes(
     connection: SharedConnection,
     routing_table: Arc<RwLock<HashMap<Bytes, AccountId>>>,
