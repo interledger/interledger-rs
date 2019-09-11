@@ -33,10 +33,9 @@ lazy_static! {
 }
 
 pub trait ExchangeRateStore: Clone {
-    fn set_exchange_rates(
-        &self,
-        rates: impl IntoIterator<Item = (String, f64)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    // TODO we may want to make this async if/when we use pubsub to broadcast
+    // rate changes to different instances of a horizontally-scalable node
+    fn set_exchange_rates(&self, rates: HashMap<String, f64>) -> Result<(), ()>;
 
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
 
@@ -305,27 +304,25 @@ where
         self.fetch_rates().and_then(move |rates| {
             trace!("Fetched exchange rates: {:?}", rates);
             let num_rates = rates.data.len();
-            store
-                .set_exchange_rates(
-                    rates
-                        .data
-                        .into_iter()
-                        .filter_map(|record| match f64::from_str(record.rate_usd.as_str()) {
-                            Ok(rate) => Some((record.symbol.to_uppercase(), rate)),
-                            Err(err) => {
-                                warn!(
-                                    "Unable to parse {} rate as an f64: {} {:?}",
-                                    record.symbol, record.rate_usd, err
-                                );
-                                None
-                            }
-                        })
-                        .chain(once(("USD".to_string(), 1.0))),
-                )
-                .and_then(move |_| {
-                    debug!("Updated {} exchange rates from {:?}", num_rates, provider);
-                    Ok(())
+            let rates = rates
+                .data
+                .into_iter()
+                .filter_map(|record| match f64::from_str(record.rate_usd.as_str()) {
+                    Ok(rate) => Some((record.symbol.to_uppercase(), rate)),
+                    Err(err) => {
+                        warn!(
+                            "Unable to parse {} rate as an f64: {} {:?}",
+                            record.symbol, record.rate_usd, err
+                        );
+                        None
+                    }
                 })
+                .chain(once(("USD".to_string(), 1.0)));
+            let rates = HashMap::from_iter(rates);
+            store.set_exchange_rates(rates).and_then(move |_| {
+                debug!("Updated {} exchange rates from {:?}", num_rates, provider);
+                Ok(())
+            })
         })
     }
 }
@@ -474,10 +471,7 @@ mod tests {
             Ok(ret)
         }
 
-        fn set_exchange_rates(
-            &self,
-            _rates: impl IntoIterator<Item = (String, f64)>,
-        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        fn set_exchange_rates(&self, _rates: HashMap<String, f64>) -> Result<(), ()> {
             unimplemented!()
         }
 
