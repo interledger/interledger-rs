@@ -19,7 +19,7 @@ use tokio::{executor::spawn, timer::Interval};
 // TODO should this whole file be moved to its own crate?
 
 lazy_static! {
-    static ref COINCAP_URL: Url = Url::parse("https://api.coincap.io/v2/rates").unwrap();
+    static ref COINCAP_URL: Url = Url::parse("https://api.coincap.io/v2/assets").unwrap();
     // Note this is unsafe because the API does not support HTTPS
     static ref OPENMARKETCAP_URL: Url =
         Url::parse("http://api.openmarketcap.com/api/v1/tokens?size=500").unwrap();
