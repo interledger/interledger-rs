@@ -10,6 +10,7 @@
 # This is largely intended for commands that make the output more readable
 
 TMP_SCRIPT=$(mktemp)
+export RUN_MD_LIB="$(dirname $0)/run-md-lib.sh"
 
 if [ -n "$1" ]; then
   # if the first argument is a file, run it

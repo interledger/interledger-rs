@@ -54,47 +54,9 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 ## Instructions
 
 <!--!
-function error_and_exit() {
-    printf "\e[31m$1\e[m\n"
-    exit 1
-}
-
-function wait_to_serve() {
-    while :
-    do
-        printf "."
-        sleep 1
-        curl $1 &> /dev/null
-        if [ $? -eq 0 ]; then
-            break
-        fi
-    done
-}
-
-# $1 = prompt text
-# $2 = default value in [yn]
-# sets PROMPT_ANSWER in [yn]
-function prompt_yn() {
-    if [ $# -ne 2 ]; then
-        return 1
-    fi
-    local text=$1
-    local default=$2
-    if ! [[ $default =~ [yn] ]]; then
-        return 2
-    fi
-    read -p "$text" -n 1 answer
-    if [[ "$answer" =~ ^[^yYnN]+ ]]; then
-        printf "\n"
-        prompt_yn "$text" "$default"
-        return $?
-    fi
-    case "$answer" in
-        [Yy]) PROMPT_ANSWER=y;;
-        [Nn]) PROMPT_ANSWER=n;;
-        *) PROMPT_ANSWER=$default;;
-    esac
-}
+# import some functions from run-md-lib.sh
+# this variable is set by run-md.sh
+source $RUN_MD_LIB
 
 if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
     USE_DOCKER=1
@@ -348,14 +310,14 @@ cargo run --bin interledger -- node &> logs/node-bob.log &
 <!--!
 fi
 
-printf "\nWaiting for Interledger.rs nodes to start up...\n"
+printf "\nWaiting for Interledger.rs nodes to start up"
 
 wait_to_serve "http://localhost:7770"
 wait_to_serve "http://localhost:8770"
 wait_to_serve "http://localhost:3000"
 wait_to_serve "http://localhost:3001"
 
-printf "\nThe Interledger.rs nodes are up and running!\n\n"
+printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
 
 ### 5. Configure the Nodes
@@ -575,7 +537,12 @@ curl \
 <!--!
 fi
 
-printf "\n\n"
+printf "\n"
+
+# wait untill the settlement is done
+printf "\nWaiting for XRP ledger to be validated"
+wait_to_get '{"balance":"0"}' -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" 
+printf "done\n"
 -->
 
 ### 7. Check Balances
@@ -615,27 +582,14 @@ curl \
 http://localhost:7770/accounts/bob/balance
 
 printf "\nAlice's balance on Bob's node: "
-AB_BALANCE=`curl \
+curl \
 -H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance 2>/dev/null`
-EXPECTED_BALANCE='{"balance":"0"}'
-if [[ $AB_BALANCE != $EXPECTED_BALANCE ]]; then
-    INCOMING_NOT_SETTLED=1
-    printf "\e[33m$AB_BALANCE\e[m"
-else
-    printf $AB_BALANCE
-fi
+http://localhost:8770/accounts/alice/balance
 
 printf "\nBob's balance on Bob's node: "
 curl \
 -H "Authorization: Bearer bob:in_bob" \
 http://localhost:8770/accounts/bob/balance
-
-if [ "$INCOMING_NOT_SETTLED" = "1" ]; then
-    printf "\n\n\e[33mThis means the incoming settlement is not done yet. It will be done once the block is generated.\n"
-    printf "Try the following command later:\n\n"
-    printf "\tcurl -H \"Authorization: Bearer alice:alice_password\" http://localhost:8770/accounts/alice/balance\e[m\n"
-fi
 -->
 
 ### 8. Kill All the Services
@@ -698,7 +652,7 @@ else
     printf "\tcat logs/node-bob-settlement-engine.log | grep \"Got incoming XRP payment\"\n"
 fi
 printf "\n"
-prompt_yn "Do you want to kill the services? [y/N]" "n"
+prompt_yn "Do you want to kill the services? [Y/n]" "y"
 printf "\n"
 if [ "$PROMPT_ANSWER" = "y" ]; then
     if [ "$USE_DOCKER" -eq 1 ]; then
