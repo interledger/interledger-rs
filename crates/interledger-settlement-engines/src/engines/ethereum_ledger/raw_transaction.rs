@@ -74,6 +74,7 @@ fn ecdsa_sign(hash: &[u8], private_key: &[u8], chain_id: u8) -> EcdsaSig {
     let (v, sig_bytes) = s.sign_recoverable(&msg, &key).serialize_compact();
 
     EcdsaSig {
+       // EIP155: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md
         v: vec![v.to_i32() as u8 + chain_id * 2 + 35],
         r: sig_bytes[0..32].to_vec(),
         s: sig_bytes[32..64].to_vec(),
