@@ -2,6 +2,7 @@ use bytes::Bytes;
 use futures::future::Future;
 use http::StatusCode;
 
+#[cfg(feature = "ethereum")]
 pub mod redis_ethereum_ledger;
 pub mod redis_store_common;
 

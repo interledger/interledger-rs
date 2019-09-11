@@ -6,6 +6,7 @@ use std::io::Read;
 use std::vec::Vec;
 use tokio;
 
+#[cfg(feature = "ethereum")]
 use interledger_settlement_engines::engines::ethereum_ledger::{
     run_ethereum_engine, EthereumLedgerOpt,
 };
@@ -37,6 +38,7 @@ pub fn main() {
         // https://github.com/clap-rs/clap/issues/1536
         .after_help("")
         .subcommands(vec![
+            #[cfg(feature = "ethereum")]
             SubCommand::with_name("ethereum-ledger")
                 .about("Ethereum settlement engine which performs ledger (layer 1) transactions")
                 .setting(AppSettings::SubcommandsNegateReqs)
@@ -115,6 +117,7 @@ pub fn main() {
     }
     let matches = app.clone().get_matches();
     match matches.subcommand() {
+        #[cfg(feature = "ethereum")]
         ("ethereum-ledger", Some(ethereum_ledger_matches)) => {
             merge_args(&mut config, &ethereum_ledger_matches);
             tokio::run(run_ethereum_engine(

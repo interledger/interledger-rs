@@ -1,5 +1,5 @@
+use super::RawTransaction;
 use clarity::{PrivateKey, Signature};
-use ethereum_tx_sign::RawTransaction;
 use futures::Future;
 use sha3::{Digest, Keccak256 as Sha3};
 use std::collections::HashMap;
@@ -112,7 +112,7 @@ use secrecy::{ExposeSecret, Secret};
 
 impl EthereumLedgerTxSigner for Secret<String> {
     fn sign_raw_tx(&self, tx: RawTransaction, chain_id: u8) -> Vec<u8> {
-        tx.sign(&H256::from_str(self.expose_secret()).unwrap(), &chain_id)
+        tx.sign(&H256::from_str(self.expose_secret()).unwrap(), chain_id)
     }
 
     fn sign_message(&self, message: &[u8]) -> Signature {

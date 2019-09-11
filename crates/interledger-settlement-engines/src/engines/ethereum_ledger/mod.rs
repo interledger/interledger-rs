@@ -2,6 +2,9 @@ mod eth_engine;
 mod types;
 mod utils;
 
+mod raw_transaction;
+pub use raw_transaction::RawTransaction;
+
 #[cfg(test)]
 pub mod test_helpers;
 
