@@ -134,7 +134,22 @@ Admin only.
 
 Sets the exchange rates for the node.
 
-### Request
+#### Request
+
+```json
+{
+    "ABC": 1.0,
+    "XYZ": 2.517
+}
+```
+
+### GET /rates
+
+This is currently an open endpoint but it may become admin- and user-only in the future.
+
+Get all of the node's exchange rates.
+
+#### Response
 
 ```json
 {
@@ -149,7 +164,7 @@ Admin only.
 
 Configure static routes for the node. These will override routes received by CCP broadcast from other nodes.
 
-### Request
+#### Request
 
 ```json
 {
@@ -164,7 +179,7 @@ Admin only.
 
 Configure a single route.
 
-### Request
+#### Request
 
 ```
 "4"

@@ -1,6 +1,6 @@
 use crate::{NodeStore, BEARER_TOKEN_START};
 use futures::{
-    future::{err, ok},
+    future::{err, ok, result},
     Future,
 };
 use hyper::Response;
@@ -25,6 +25,7 @@ struct ServerStatus {
 struct Success;
 
 #[derive(Extract, Debug, Response)]
+// TODO should this use stringified floats instead of JSON numbers?
 struct Rates(HashMap<String, f64>);
 
 #[derive(Extract, Response, Debug)]
@@ -79,6 +80,13 @@ impl_web! {
                             Response::builder().status(500).body(()).unwrap()
                         })
                 })
+        }
+
+        #[get("/rates")]
+        #[content_type("application/json")]
+        // TODO should this be admin only?
+        fn get_rates(&self) -> impl Future<Item = Rates, Error = Response<()>> {
+            result(self.store.get_all_exchange_rates().map(|rates| Rates(rates)).map_err(|_| Response::builder().status(500).body(()).unwrap()))
         }
 
         #[get("/routes")]
