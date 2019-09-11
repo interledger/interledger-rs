@@ -1,5 +1,5 @@
+use super::RawTransaction;
 use ethabi::Token;
-use ethereum_tx_sign::RawTransaction;
 use lazy_static::lazy_static;
 use log::error;
 use std::str::FromStr;
