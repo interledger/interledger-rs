@@ -37,18 +37,7 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 # import some functions from run-md-lib.sh
 # this variable is set by run-md.sh
 source $RUN_MD_LIB
-
-if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
-    USE_DOCKER=1
-else
-    USE_DOCKER=0
-fi
-
-# define commands
-CMD_DOCKER=docker
-if [ -n "$USE_SUDO" ] && [ "$USE_SUDO" -ne "0" ]; then
-    CMD_DOCKER="sudo $CMD_DOCKER"
-fi
+init
 
 printf "Stopping Interledger nodes\n"
 
@@ -457,15 +446,20 @@ curl \
 http://localhost:8770/accounts/bob/balance
 ```
 
-<!--! printf "\n\n" -->
+<!--!
+printf "\n\n"
+-->
 
 ### 7. Kill All the Services
 Finally, you can stop all the services as follows:
 
 <!--!
-prompt_yn "Do you want to kill the services? [Y/n]" "y"
+run_hook_before_kill
+if [ $TEST_MODE -ne 1 ]; then
+    prompt_yn "Do you want to kill the services? [Y/n]" "y"
+fi
 printf "\n"
-if [ "$PROMPT_ANSWER" = "y" ]; then
+if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then
     if [ "$USE_DOCKER" -ne 1 ]; then
         exec 2> /dev/null
 -->
