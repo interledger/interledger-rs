@@ -52,18 +52,7 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 # import some functions from run-md-lib.sh
 # this variable is set by run-md.sh
 source $RUN_MD_LIB
-
-if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
-    USE_DOCKER=1
-else
-    USE_DOCKER=0
-fi
-
-# define commands
-CMD_DOCKER=docker
-if [ -n "$USE_SUDO" ] && [ "$USE_SUDO" -ne "0" ]; then
-    CMD_DOCKER="sudo $CMD_DOCKER"
-fi
+init
 
 printf "Stopping Interledger nodes\n"
 
@@ -566,7 +555,7 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for Ethereum block to be mined"
-wait_to_get '{"balance":"0"}' -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" 
+wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" 
 printf "done\n"
 -->
 
@@ -689,9 +678,12 @@ If you inspect `ganache-cli`'s output, you will notice that the block number has
 
 <!--!
 printf "\n"
-prompt_yn "Do you want to kill the services? [Y/n]" "y"
+run_hook_before_kill
+if [ $TEST_MODE -ne 1 ]; then
+    prompt_yn "Do you want to kill the services? [Y/n]" "y"
+fi
 printf "\n"
-if [ "$PROMPT_ANSWER" = "y" ]; then
+if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then
     if [ "$USE_DOCKER" -eq 1 ]; then
         $CMD_DOCKER stop \
             interledger-rs-node_a \
