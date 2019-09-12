@@ -7,21 +7,22 @@ use interledger::{
     node::{AccountDetails, InterledgerNode},
 };
 use interledger_packet::Address;
+use interledger_service::Username;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
-mod redis_helpers;
-use redis_helpers::*;
-
 mod test_helpers;
-use interledger_service::Username;
 use test_helpers::{
-    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
-    send_money_to_username, start_eth_engine, start_ganache, start_xrp_engine,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, redis_helpers::*,
+    send_money_to_username, start_ganache, start_xrp_engine,
 };
 
+#[cfg(feature = "ethereum")]
+use test_helpers::start_eth_engine;
+
+#[cfg(feature = "ethereum")]
 #[test]
 fn eth_xrp_interoperable() {
     let eth_decimals = 9;

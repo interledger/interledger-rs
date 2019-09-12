@@ -2,9 +2,13 @@ use futures::{stream::Stream, Future};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
+#[cfg(feature = "ethereum")]
 use interledger_settlement_engines::engines::ethereum_ledger::{
     run_ethereum_engine, EthereumLedgerOpt,
 };
+
+pub mod redis_helpers;
+
 use interledger_store_redis::{Account, AccountId, ConnectionInfo};
 use reqwest;
 use secrecy::Secret;
@@ -68,6 +72,7 @@ pub fn start_xrp_engine(
     engine_pid
 }
 
+#[cfg(feature = "ethereum")]
 #[allow(unused)]
 pub fn start_eth_engine(
     db: ConnectionInfo,

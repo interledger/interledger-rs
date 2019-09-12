@@ -181,15 +181,69 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::engines::ethereum_ledger::test_helpers::{fixtures::ALICE, test_store};
     use crate::stores::test_helpers::store_helpers::block_on;
     use lazy_static::lazy_static;
+    use parking_lot::RwLock;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     use super::*;
     use crate::ApiResponse;
 
     #[derive(Clone)]
     struct TestEngine;
+
+    #[derive(Debug, Clone)]
+    pub struct TestAccount;
+
+    #[derive(Clone)]
+    pub struct TestStore {
+        #[allow(clippy::all)]
+        pub cache: Arc<RwLock<HashMap<String, (StatusCode, String, [u8; 32])>>>,
+        pub cache_hits: Arc<RwLock<u64>>,
+    }
+
+    fn test_store() -> TestStore {
+        TestStore {
+            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache_hits: Arc::new(RwLock::new(0)),
+        }
+    }
+
+    impl IdempotentEngineStore for TestStore {
+        fn load_idempotent_data(
+            &self,
+            idempotency_key: String,
+        ) -> Box<dyn Future<Item = Option<IdempotentEngineData>, Error = ()> + Send> {
+            let cache = self.cache.read();
+            if let Some(data) = cache.get(&idempotency_key) {
+                let mut guard = self.cache_hits.write();
+                *guard += 1; // used to test how many times this branch gets executed
+                Box::new(ok(Some((data.0, Bytes::from(data.1.clone()), data.2))))
+            } else {
+                Box::new(ok(None))
+            }
+        }
+
+        fn save_idempotent_data(
+            &self,
+            idempotency_key: String,
+            input_hash: [u8; 32],
+            status_code: StatusCode,
+            data: Bytes,
+        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            let mut cache = self.cache.write();
+            cache.insert(
+                idempotency_key,
+                (
+                    status_code,
+                    String::from_utf8_lossy(&data).to_string(),
+                    input_hash,
+                ),
+            );
+            Box::new(ok(()))
+        }
+    }
 
     lazy_static! {
         pub static ref IDEMPOTENCY: String = String::from("abcd01234");
@@ -228,8 +282,8 @@ mod tests {
 
     #[test]
     fn idempotent_execute_settlement() {
-        let store = test_store(ALICE.clone(), false, false, false);
-        let engine = TestEngine;;
+        let store = test_store();
+        let engine = TestEngine;
         let api = SettlementEngineApi {
             store: store.clone(),
             engine,
@@ -304,8 +358,8 @@ mod tests {
 
     #[test]
     fn idempotent_receive_message() {
-        let store = test_store(ALICE.clone(), false, false, false);
-        let engine = TestEngine;;
+        let store = test_store();
+        let engine = TestEngine;
         let api = SettlementEngineApi {
             store: store.clone(),
             engine,
@@ -365,8 +419,8 @@ mod tests {
 
     #[test]
     fn idempotent_create_account() {
-        let store = test_store(ALICE.clone(), false, false, false);
-        let engine = TestEngine;;
+        let store = test_store();
+        let engine = TestEngine;
         let api = SettlementEngineApi {
             store: store.clone(),
             engine,

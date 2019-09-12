@@ -12,12 +12,9 @@ use interledger_service::Username;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
-mod redis_helpers;
-use redis_helpers::*;
-
 mod test_helpers;
 use test_helpers::{
-    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, redis_helpers::*,
     send_money_to_username, start_xrp_engine,
 };
 
