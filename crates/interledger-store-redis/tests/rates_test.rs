@@ -12,7 +12,7 @@ fn set_rates() {
         store
             .set_exchange_rates(
                 [("ABC".to_string(), 500.0), ("XYZ".to_string(), 0.005)]
-                    .into_iter()
+                    .iter()
                     .cloned()
                     .collect(),
             )

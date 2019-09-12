@@ -127,9 +127,17 @@ pub struct InterledgerNode {
     pub exchange_rate_poll_interval: u64,
     /// API to poll for exchange rates. Currently the supported options are:
     /// - [CoinCap](https://docs.coincap.io)
+    /// - [CryptoCompare](https://cryptocompare.com) (note this requires an API key)
     /// If this value is not set, the node will not poll for exchange rates and will
     /// instead use the rates configured via the HTTP API.
     pub exchange_rate_provider: Option<ExchangeRateProvider>,
+    // Spread, as a fraction, to add on top of the exchange rate.
+    // This amount is kept as the node operator's profit, or may cover
+    // fluctuations in exchange rates.
+    // For example, take an incoming packet with an amount of 100. If the
+    // exchange rate is 1:2 and the spread is 0.01, the amount on the
+    // outgoing packet would be 198 (instead of 200 without the spread).
+    pub exchange_rate_spread: f64,
 }
 
 impl InterledgerNode {
@@ -155,6 +163,7 @@ impl InterledgerNode {
         let route_broadcast_interval = self.route_broadcast_interval;
         let exchange_rate_provider = self.exchange_rate_provider.clone();
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
+        let exchange_rate_spread = self.exchange_rate_spread;
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .connect()
@@ -216,6 +225,7 @@ impl InterledgerNode {
                                     );
                                     let outgoing_service = ExchangeRateService::new(
                                         ilp_address.clone(),
+                                        exchange_rate_spread,
                                         store.clone(),
                                         outgoing_service,
                                     );

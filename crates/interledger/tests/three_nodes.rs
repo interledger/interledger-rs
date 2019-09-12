@@ -57,6 +57,7 @@ fn three_nodes() {
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
+        exchange_rate_spread: 0.0,
     };
     let node1_clone = node1.clone();
     runtime.spawn(
@@ -120,6 +121,7 @@ fn three_nodes() {
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
+        exchange_rate_spread: 0.0,
     };
     let node2_clone = node2.clone();
     runtime.spawn(
@@ -195,6 +197,7 @@ fn three_nodes() {
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
+        exchange_rate_spread: 0.0,
     };
     let node3_clone = node3.clone();
     runtime.spawn(
