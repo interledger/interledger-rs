@@ -30,7 +30,7 @@ lazy_static! {
 }
 
 #[doc(hidden)]
-pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static)  {
+pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
     let mut runtime = tokio::runtime::Builder::new()
         // Don't swallow panics
         .panic_handler(|err| std::panic::resume_unwind(err))

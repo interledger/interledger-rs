@@ -1,10 +1,10 @@
 use clap::{crate_version, App, AppSettings, Arg, ArgMatches, SubCommand};
 use config::{Config, FileFormat, Source, Value};
+use futures::Future;
 use libc::{c_int, isatty};
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::vec::Vec;
-use futures::Future;
 
 #[cfg(feature = "ethereum")]
 use interledger_settlement_engines::engines::ethereum_ledger::{
