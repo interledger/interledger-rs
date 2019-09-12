@@ -13,16 +13,15 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
-mod redis_helpers;
-use redis_helpers::*;
-
 mod test_helpers;
 use test_helpers::{
-    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance,
-    send_money_to_username, start_eth_engine, start_ganache,
+    accounts_to_ids, create_account_on_engine, get_all_accounts, get_balance, redis_helpers::*,
+    send_money_to_username, start_ganache,
 };
 
-#[test]
+#[cfg(feature = "ethereum")]
+use test_helpers::start_eth_engine;
+
 /// In this test we have Alice and Bob who have peered with each other and run
 /// Ethereum ledger settlement engines. Alice proceeds to make SPSP payments to
 /// Bob, until she eventually reaches Bob's `settle_threshold`. Once that's
@@ -30,6 +29,8 @@ use test_helpers::{
 /// immediately applies the balance change. Bob's engine listens for incoming
 /// transactions, and once the transaction has sufficient confirmations it
 /// lets Bob's connector know about it, so that it adjusts their credit.
+#[cfg(feature = "ethereum")]
+#[test]
 fn eth_ledger_settlement() {
     let eth_decimals = 9;
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3

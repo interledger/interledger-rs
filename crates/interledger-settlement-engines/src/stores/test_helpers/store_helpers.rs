@@ -1,7 +1,8 @@
+#[cfg(feature = "ethereum")]
 use super::super::redis_ethereum_ledger::EthereumLedgerRedisStore;
-use super::super::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
+use super::redis_helpers::TestContext;
+use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
 
-use super::redis_helpers::*;
 use env_logger;
 use futures::Future;
 use tokio::runtime::Runtime;
@@ -19,6 +20,7 @@ pub fn test_store() -> impl Future<Item = (EngineRedisStore, TestContext), Error
         .and_then(|store| Ok((store, context)))
 }
 
+#[cfg(feature = "ethereum")]
 pub fn test_eth_store() -> impl Future<Item = (EthereumLedgerRedisStore, TestContext), Error = ()> {
     let context = TestContext::new();
     EngineRedisStoreBuilder::new(context.get_client_connection_info())
