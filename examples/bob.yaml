@@ -1,8 +1,0 @@
-ilp_address: "example.bob"
-secret_seed: "1604966725982139900555208458637022875563691455429373719368053354"
-admin_auth_token: "hi_bob"
-redis_connection: "redis://127.0.0.1:6380"
-settlement_address: "127.0.0.1:8771"
-http_address: "127.0.0.1:8770"
-btp_address: "127.0.0.1:8768"
-default_spsp_account: "0"
