@@ -41,6 +41,7 @@ fn coincap() {
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: Some(ExchangeRateProvider::CoinCap),
+        exchange_rate_spread: 0.0,
     };
     runtime.spawn(node.serve());
 
@@ -109,6 +110,7 @@ fn cryptocompare() {
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: Some(ExchangeRateProvider::CryptoCompare(api_key)),
+        exchange_rate_spread: 0.0,
     };
     runtime.spawn(node.serve());
 

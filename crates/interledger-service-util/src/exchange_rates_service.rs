@@ -6,8 +6,9 @@ use futures::{
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
+// TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
 use interledger_settlement::{Convert, ConvertDetails};
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use reqwest::r#async::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -43,6 +44,7 @@ pub trait ExchangeRateStore: Clone {
 #[derive(Clone)]
 pub struct ExchangeRateService<S, O, A> {
     ilp_address: Address,
+    spread: f64,
     store: S,
     next: O,
     account_type: PhantomData<A>,
@@ -54,9 +56,10 @@ where
     O: OutgoingService<A>,
     A: IldcpAccount,
 {
-    pub fn new(ilp_address: Address, store: S, next: O) -> Self {
+    pub fn new(ilp_address: Address, spread: f64, store: S, next: O) -> Self {
         ExchangeRateService {
             ilp_address,
+            spread,
             store,
             next,
             account_type: PhantomData,
@@ -114,6 +117,19 @@ where
                     data: &[],
                 }
                 .build()));
+            };
+
+            // Apply spread
+            // TODO should this be applied differently for "local" or same-currency packets?
+            let rate = rate * (1.0 - self.spread);
+            let rate = if rate.is_finite() && rate.is_sign_positive() {
+                rate
+            } else {
+                warn!(
+                    "Exchange rate would have been {} based on rate and spread, using 0.0 instead",
+                    rate
+                );
+                0.0
             };
 
             // Can we overflow here?
@@ -230,6 +246,7 @@ where
         }
     }
 
+    // TODO if updating rates fails repeatedly, we should remove the old rates from the store
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
         let store = self.store.clone();
         let provider = self.provider.clone();
@@ -269,26 +286,48 @@ mod tests {
 
     #[test]
     fn exchange_rate_ok() {
-        let ret = exchange_rate(100, 1, 1.0, 1, 2.0);
+        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.0);
         assert_eq!(ret.1[0].prepare.amount(), 200);
 
-        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0);
+        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0, 0.0);
         assert_eq!(ret.1[0].prepare.amount(), 666_666);
     }
 
     #[test]
     fn exchange_conversion_error() {
         // rejects f64 that does not fit in u64
-        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 1, 2.0);
+        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 1, 2.0, 0.0);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject.message().starts_with(b"Could not cast"));
 
         // `Convert` errored
-        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 255, std::f64::MAX);
+        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 255, std::f64::MAX, 0.0);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject.message().starts_with(b"Could not convert"));
+    }
+
+    #[test]
+    fn applies_spread() {
+        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.01);
+        assert_eq!(ret.1[0].prepare.amount(), 198);
+
+        // Negative spread is unusual but possible
+        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, -0.01);
+        assert_eq!(ret.1[0].prepare.amount(), 202);
+
+        // Rounds down
+        let ret = exchange_rate(1, 1, 1.0, 1, 2.0, 0.01);
+        assert_eq!(ret.1[0].prepare.amount(), 1);
+
+        // Spread >= 1 means the node takes everything
+        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 1.0);
+        assert_eq!(ret.1[0].prepare.amount(), 0);
+
+        // Need to catch when spread > 1
+        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 2.0);
+        assert_eq!(ret.1[0].prepare.amount(), 0);
     }
 
     // Instantiates an exchange rate service and returns the fulfill/reject
@@ -299,6 +338,7 @@ mod tests {
         rate1: f64,
         scale2: u8,
         rate2: f64,
+        spread: f64,
     ) -> (Result<Fulfill, Reject>, Vec<OutgoingRequest<TestAccount>>) {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
@@ -310,7 +350,7 @@ mod tests {
             }
             .build()))
         });
-        let mut service = test_service(rate1, rate2, outgoing);
+        let mut service = test_service(rate1, rate2, spread, outgoing);
         let result = service
             .send_request(OutgoingRequest {
                 from: TestAccount::new("ABC".to_owned(), scale1),
@@ -410,6 +450,7 @@ mod tests {
     fn test_service(
         rate1: f64,
         rate2: f64,
+        spread: f64,
         handler: impl OutgoingService<TestAccount> + Clone + Send + Sync,
     ) -> ExchangeRateService<
         TestStore,
@@ -417,7 +458,12 @@ mod tests {
         TestAccount,
     > {
         let store = test_store(rate1, rate2);
-        ExchangeRateService::new(Address::from_str("example.bob").unwrap(), store, handler)
+        ExchangeRateService::new(
+            Address::from_str("example.bob").unwrap(),
+            spread,
+            store,
+            handler,
+        )
     }
 
 }

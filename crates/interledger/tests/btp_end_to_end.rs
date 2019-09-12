@@ -37,6 +37,7 @@ fn btp_end_to_end() {
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
+        exchange_rate_spread: 0.0,
     };
     let run = ok(()).and_then(move |_| {
         let spawn_connector = ok(tokio::spawn(node.serve())).and_then(move |_| {
