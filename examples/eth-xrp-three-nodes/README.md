@@ -457,13 +457,13 @@ fi
 
 printf "\nWaiting for nodes to start up"
 
-wait_to_serve "http://localhost:7770"
-wait_to_serve "http://localhost:8770"
-wait_to_serve "http://localhost:9770"
-wait_to_serve "http://localhost:3000"
-wait_to_serve "http://localhost:3001"
-wait_to_serve "http://localhost:3002"
-wait_to_serve "http://localhost:3003"
+wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:9770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3002" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3003" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 
 printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->

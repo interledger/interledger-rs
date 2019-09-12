@@ -215,8 +215,8 @@ fi
 
 printf "\nWaiting for Interledger.rs nodes to start up"
 
-wait_to_serve "http://localhost:7770"
-wait_to_serve "http://localhost:8770"
+wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 
 printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
