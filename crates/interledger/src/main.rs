@@ -15,7 +15,6 @@ use std::io::Read;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::vec::Vec;
-use tokio;
 use url::Url;
 
 pub fn main() {
@@ -524,14 +523,14 @@ fn run_spsp_server(opt: SpspServerOpt) {
             asset_scale: 0,
         }
         .build();
-        tokio::run(run_spsp_server_http(
+        tokio_run(run_spsp_server_http(
             ildcp_info,
             opt.get_bind_address(),
             opt.incoming_auth_token.clone(),
             opt.quiet,
         ));
     } else {
-        tokio::run(run_spsp_server_btp(
+        tokio_run(run_spsp_server_btp(
             &opt.btp_server_url,
             opt.get_bind_address(),
             opt.quiet,
@@ -542,14 +541,14 @@ fn run_spsp_server(opt: SpspServerOpt) {
 fn run_spsp_pay(opt: SpspPayOpt) {
     // Check for http_server first because btp_server has the default value of connecting to moneyd
     if let Some(http_server_url) = &opt.http_server_url {
-        tokio::run(send_spsp_payment_http(
+        tokio_run(send_spsp_payment_http(
             http_server_url,
             &opt.receiver,
             opt.amount,
             opt.quiet,
         ));
     } else if let Some(btp_server_url) = &opt.btp_server_url {
-        tokio::run(send_spsp_payment_btp(
+        tokio_run(send_spsp_payment_btp(
             btp_server_url,
             &opt.receiver,
             opt.amount,
@@ -567,7 +566,7 @@ fn run_moneyd_local(opt: MoneydLocalOpt) {
         asset_scale: opt.asset_scale,
     }
     .build();
-    tokio::run(interledger::cli::run_moneyd_local(
+    tokio_run(interledger::cli::run_moneyd_local(
         opt.get_bind_address(),
         ildcp_info,
     ));
@@ -625,7 +624,7 @@ fn run_node_accounts_add(opt: NodeAccountsAddOpt) {
         amount_per_minute_limit: opt.amount_per_minute_limit,
         settlement_engine_url: None,
     };
-    tokio::run(insert_account_redis(redis_url, &server_secret, account).and_then(move |_| Ok(())));
+    tokio_run(insert_account_redis(redis_url, &server_secret, account).and_then(move |_| Ok(())));
 }
 
 #[derive(Deserialize, Clone)]

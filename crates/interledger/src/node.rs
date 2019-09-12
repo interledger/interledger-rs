@@ -27,8 +27,9 @@ use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str, time::Duration};
-use tokio::{self, net::TcpListener};
+use tokio::{spawn, net::TcpListener};
 use url::Url;
+use super::cli::tokio_run;
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
@@ -282,7 +283,7 @@ impl InterledgerNode {
                                     let listener = TcpListener::bind(&http_bind_address)
                                         .expect("Unable to bind to HTTP address");
                                     info!("Interledger node listening on: {}", http_bind_address);
-                                    tokio::spawn(api.serve(listener.incoming()));
+                                    spawn(api.serve(listener.incoming()));
 
                                     // Settlement API
                                     let settlement_api = SettlementApi::new(
@@ -292,7 +293,7 @@ impl InterledgerNode {
                                     let listener = TcpListener::bind(&settlement_api_bind_address)
                                         .expect("Unable to bind to Settlement API address");
                                     info!("Settlement API listening on: {}", settlement_api_bind_address);
-                                    tokio::spawn(settlement_api.serve(listener.incoming()));
+                                    spawn(settlement_api.serve(listener.incoming()));
 
                                     // Exchange Rate Polling
                                     if let Some(provider) = exchange_rate_provider {
@@ -313,7 +314,7 @@ impl InterledgerNode {
 
     /// Run the node on the default Tokio runtime
     pub fn run(&self) {
-        tokio::run(self.serve());
+        tokio_run(self.serve());
     }
 
     pub fn insert_account(

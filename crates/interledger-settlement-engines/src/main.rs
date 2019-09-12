@@ -4,7 +4,7 @@ use libc::{c_int, isatty};
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::vec::Vec;
-use tokio;
+use futures::Future;
 
 #[cfg(feature = "ethereum")]
 use interledger_settlement_engines::engines::ethereum_ledger::{
@@ -120,7 +120,7 @@ pub fn main() {
         #[cfg(feature = "ethereum")]
         ("ethereum-ledger", Some(ethereum_ledger_matches)) => {
             merge_args(&mut config, &ethereum_ledger_matches);
-            tokio::run(run_ethereum_engine(
+            tokio_run(run_ethereum_engine(
                 config.try_into::<EthereumLedgerOpt>().unwrap(),
             ));
         }
@@ -268,4 +268,17 @@ fn is_fd_tty(file_descriptor: c_int) -> bool {
         result = isatty(file_descriptor);
     }
     result == 1
+}
+
+#[doc(hidden)]
+pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
+    let mut runtime = tokio::runtime::Builder::new()
+        // Don't swallow panics
+        .panic_handler(|err| std::panic::resume_unwind(err))
+        .name_prefix("interledger-rs-worker-")
+        .build()
+        .expect("failed to start new runtime");
+
+    runtime.spawn(fut);
+    runtime.shutdown_on_idle().wait().unwrap();
 }
