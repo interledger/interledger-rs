@@ -56,17 +56,17 @@ fn query_coincap_endpoint(
         .get(url)
         .send()
         .map_err(|err| {
-            error!("Error fetching exchange rates: {:?}", err);
+            error!("Error fetching exchange rates from CoinCap: {:?}", err);
         })
         .and_then(|res| {
             res.error_for_status().map_err(|err| {
-                error!("HTTP error getting exchange rates: {:?}", err);
+                error!("HTTP error getting exchange rates from CoinCap: {:?}", err);
             })
         })
         .and_then(|mut res| {
             res.json().map_err(|err| {
                 error!(
-                    "Error getting exchange rate response body, incorrect type: {:?}",
+                    "Error getting exchange rate response body from CoinCap, incorrect type: {:?}",
                     err
                 );
             })

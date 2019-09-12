@@ -246,22 +246,33 @@ where
         }
     }
 
-    // TODO if updating rates fails repeatedly, we should remove the old rates from the store
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
         let store = self.store.clone();
+        let store_clone = self.store.clone();
         let provider = self.provider.clone();
-        self.fetch_rates().and_then(move |mut rates| {
-            trace!("Fetched exchange rates: {:?}", rates);
-            let num_rates = rates.len();
-            rates.insert("USD".to_string(), 1.0);
-            if store.set_exchange_rates(rates).is_ok() {
-                debug!("Updated {} exchange rates from {:?}", num_rates, provider);
-                Ok(())
-            } else {
-                error!("Error setting exchange rates in store");
-                Err(())
-            }
-        })
+        self.fetch_rates()
+            .map_err(move |_| {
+                // TODO this is very aggressive that a single polling failure will cause it
+                // to wipe the old rates. We may want to make it slightly less aggressive
+                // (though it's tricky because operating with old rates is potentially very dangerous)
+                error!("Error updating exchange rates, removing old rates for safety");
+                // Clear out all of the old rates
+                if store.set_exchange_rates(HashMap::new()).is_err() {
+                    error!("Unable to update exchange rates in the store");
+                }
+            })
+            .and_then(move |mut rates| {
+                trace!("Fetched exchange rates: {:?}", rates);
+                let num_rates = rates.len();
+                rates.insert("USD".to_string(), 1.0);
+                if store_clone.set_exchange_rates(rates).is_ok() {
+                    debug!("Updated {} exchange rates from {:?}", num_rates, provider);
+                    Ok(())
+                } else {
+                    error!("Error setting exchange rates in store");
+                    Err(())
+                }
+            })
     }
 }
 
