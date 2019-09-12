@@ -312,10 +312,10 @@ fi
 
 printf "\nWaiting for Interledger.rs nodes to start up"
 
-wait_to_serve "http://localhost:7770"
-wait_to_serve "http://localhost:8770"
-wait_to_serve "http://localhost:3000"
-wait_to_serve "http://localhost:3001"
+wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 
 printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
@@ -645,7 +645,7 @@ docker logs interledger-rs-se_b | grep "Got incoming XRP payment"
 ```
 
 <!--!
-printf "\nYou could also try the following command to check if XRPL incoming payment is done.\n\n"
+printf "\n\nYou could also try the following command to check if XRPL incoming payment is done.\n\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     printf "\tdocker logs interledger-rs-se_b | grep \"Got incoming XRP payment\"\n"
 else

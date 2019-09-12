@@ -49,5 +49,5 @@ bash "$TMP_SCRIPT"
 if [ $? -eq 0 ]; then
   rm "$TMP_SCRIPT"
 else
-  printf "\e[31;1mError running markdown file: $MD_FILE (parsed bash script $TMP_SCRIPT)\e[m\n"
+  printf "\e[31;1mError running markdown file: $MD_FILE (parsed bash script $TMP_SCRIPT)\e[m\n" 1>&2
 fi
