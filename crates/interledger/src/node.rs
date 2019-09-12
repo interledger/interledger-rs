@@ -1,3 +1,4 @@
+use super::cli::tokio_run;
 use bytes::Bytes;
 use futures::{future::result, Future};
 use hex::FromHex;
@@ -12,12 +13,11 @@ use interledger_router::Router;
 use interledger_service::{
     outgoing_service_fn, Account as AccountTrait, OutgoingRequest, Username,
 };
+pub use interledger_service_util::ExchangeRateProvider; // Note this is re-exported
 use interledger_service_util::{
     BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
     MaxPacketAmountService, RateLimitService, ValidatorService,
 };
-// Re-export this
-pub use interledger_service_util::ExchangeRateProvider;
 use interledger_settlement::{SettlementApi, SettlementMessageService};
 use interledger_store_redis::{
     Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
@@ -27,9 +27,8 @@ use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str, time::Duration};
-use tokio::{spawn, net::TcpListener};
+use tokio::{net::TcpListener, spawn};
 use url::Url;
-use super::cli::tokio_run;
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
