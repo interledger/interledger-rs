@@ -5,7 +5,6 @@ use futures::{
 };
 use hyper::{Body, Response};
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_ildcp::IldcpAccount;
 use interledger_service::{AccountStore, AuthToken, IncomingService, Username};
 use interledger_spsp::{pay, SpspResponder};
 use log::{debug, error};
@@ -43,7 +42,7 @@ impl_web! {
     impl<T, S, A> SpspApi<T, S>
     where T: HttpStore<Account = A> + AccountStore<Account = A>,
     S: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: IldcpAccount + HttpAccount + 'static,
+    A: HttpAccount + 'static,
     {
         pub fn new(server_secret: Bytes, store: T, incoming_handler: S) -> Self {
             SpspApi {

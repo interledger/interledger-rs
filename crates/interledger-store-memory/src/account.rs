@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use interledger_btp::BtpAccount;
 use interledger_http::HttpAccount;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::{Account as AccountTrait, Username};
 use interledger_service_util::MaxPacketAmountAccount;
@@ -155,9 +154,7 @@ impl AccountTrait for Account {
     fn username(&self) -> &Username {
         &self.inner.username
     }
-}
 
-impl IldcpAccount for Account {
     fn client_address(&self) -> &Address {
         &self.inner.ilp_address
     }

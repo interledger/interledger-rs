@@ -1,5 +1,4 @@
 use futures::{stream::Stream, Future};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_store_redis::Account;

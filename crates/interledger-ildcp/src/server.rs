@@ -1,5 +1,5 @@
 use super::packet::*;
-use super::IldcpAccount;
+use super::Account;
 use futures::future::ok;
 use interledger_packet::*;
 use interledger_service::*;
@@ -17,7 +17,7 @@ pub struct IldcpService<I, A> {
 impl<I, A> IldcpService<I, A>
 where
     I: IncomingService<A>,
-    A: IldcpAccount,
+    A: Account,
 {
     pub fn new(next: I) -> Self {
         IldcpService {
@@ -30,7 +30,7 @@ where
 impl<I, A> IncomingService<A> for IldcpService<I, A>
 where
     I: IncomingService<A>,
-    A: IldcpAccount,
+    A: Account,
 {
     type Future = BoxedIlpFuture;
 

@@ -4,7 +4,6 @@ use base64;
 use bytes::Bytes;
 use futures::future::result;
 use hex;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
     RejectBuilder,
@@ -117,7 +116,7 @@ where
 impl<O, A> OutgoingService<A> for StreamReceiverService<O, A>
 where
     O: OutgoingService<A>,
-    A: Account + IldcpAccount,
+    A: Account,
 {
     type Future = BoxedIlpFuture;
 

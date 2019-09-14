@@ -27,7 +27,7 @@
 //! HttpServerService --> ValidatorService --> StreamReceiverService
 
 use futures::{Future, IntoFuture};
-use interledger_packet::{Fulfill, Prepare, Reject};
+use interledger_packet::{Address, Fulfill, Prepare, Reject};
 use std::{
     cmp::Eq,
     fmt::{Debug, Display},
@@ -52,6 +52,9 @@ pub trait Account: Clone + Send + Sized + Debug {
 
     fn id(&self) -> Self::AccountId;
     fn username(&self) -> &Username;
+    fn client_address(&self) -> &Address;
+    fn asset_scale(&self) -> u8;
+    fn asset_code(&self) -> &str;
 }
 
 /// A struct representing an incoming ILP Prepare packet or an outgoing one before the next hop is set.

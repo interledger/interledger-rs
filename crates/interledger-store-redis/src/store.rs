@@ -31,6 +31,7 @@ use interledger_api::{AccountDetails, AccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
 use interledger_http::HttpStore;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};

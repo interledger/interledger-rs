@@ -170,6 +170,7 @@ use std::str::FromStr;
 #[cfg(test)]
 lazy_static! {
     pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+    pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
 }
 #[cfg(test)]
 #[derive(Clone, Debug)]
@@ -184,6 +185,19 @@ impl Account for TestAccount {
 
     fn username(&self) -> &Username {
         &ALICE
+    }
+
+    fn asset_code(&self) -> &str {
+        "XYZ"
+    }
+
+    // All connector accounts use asset scale = 9.
+    fn asset_scale(&self) -> u8 {
+        9
+    }
+
+    fn client_address(&self) -> &Address {
+        &EXAMPLE_ADDRESS
     }
 }
 
