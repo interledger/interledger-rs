@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     str::{self, FromStr},
 };
 use uuid::{parser::ParseError, Uuid};
@@ -80,7 +79,11 @@ where
 }
 
 impl Account {
-    pub fn try_from(id: AccountId, details: AccountDetails) -> Result<Account, ()> {
+    pub(crate) fn try_from(id: AccountId, details: AccountDetails) -> Result<Account, ()> {
+        let ilp_address = match details.configured_ilp_address {
+            Some(a) => a,
+            None => return Err(()),
+        };
         let http_endpoint = if let Some(ref url) = details.http_endpoint {
             Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
         } else {
@@ -127,9 +130,7 @@ impl Account {
         Ok(Account {
             id,
             username: details.username,
-            ilp_address: Address::try_from(details.ilp_address.as_ref()).map_err(|err| {
-                error!("Invalid ILP Address when creating Redis account: {:?}", err)
-            })?,
+            ilp_address,
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
@@ -547,7 +548,7 @@ mod redis_account {
 
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
-            ilp_address: Address::from_str("example.alice").unwrap(),
+            configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
             username: Username::from_str("alice").unwrap(),
             asset_scale: 6,
             asset_code: "XYZ".to_string(),

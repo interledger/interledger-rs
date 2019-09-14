@@ -58,6 +58,8 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         prefix: String,
         account_id: <Self::Account as AccountTrait>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    fn set_ilp_address(&self, ilp_address: Address); 
 }
 
 /// AccountSettings is a subset of the user parameters defined in
@@ -81,9 +83,9 @@ pub struct AccountSettings {
 }
 
 /// The Account type for the RedisStore.
-#[derive(Debug, Extract, Response, Clone)]
+#[derive(Debug, Extract, Response, Clone, Serialize)]
 pub struct AccountDetails {
-    pub ilp_address: Address,
+    pub configured_ilp_address: Option<Address>,
     pub username: Username,
     pub asset_code: String,
     pub asset_scale: u8,
@@ -121,14 +123,7 @@ where
         + RouterStore
         + ExchangeRateStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: AccountTrait
-        + HttpAccount
-        + IldcpAccount
-        + SettlementAccount
-        + Serialize
-        + Send
-        + Sync
-        + 'static,
+    A: AccountTrait + HttpAccount + SettlementAccount + Serialize + Send + Sync + 'static,
 {
     pub fn new(
         server_secret: Bytes,
@@ -182,3 +177,4 @@ where
             .serve(incoming)
     }
 }
+
