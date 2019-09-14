@@ -16,8 +16,9 @@ use tokio_timer::sleep;
 fn polls_for_route_updates() {
     let context = TestContext::new();
     block_on(
-        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32], Username::from_str("node").unwrap())
             .poll_interval(1)
+            .node_ilp_address(Address::from_str("example.node").unwrap())
             .connect()
             .and_then(|store| {
                 let connection = context.async_connection();

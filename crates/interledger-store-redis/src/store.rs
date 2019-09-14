@@ -183,15 +183,24 @@ pub struct RedisStoreBuilder {
     redis_url: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
+    node_ilp_address: Address,
+    username: Username,
 }
 
 impl RedisStoreBuilder {
-    pub fn new(redis_url: ConnectionInfo, secret: [u8; 32]) -> Self {
+    pub fn new(redis_url: ConnectionInfo, secret: [u8; 32], username: Username) -> Self {
         RedisStoreBuilder {
             redis_url,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
+            node_ilp_address: Address::from_str("local.host").unwrap(),
+            username,
         }
+    }
+
+    pub fn node_ilp_address(&mut self, node_ilp_address: Address) -> &mut Self {
+        self.node_ilp_address = node_ilp_address;
+        self
     }
 
     pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
@@ -203,6 +212,9 @@ impl RedisStoreBuilder {
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
+        let username = self.username.clone();
+        let username_clone = self.username.clone();
+        let ilp_address = self.node_ilp_address.clone();
 
         result(Client::open(self.redis_url.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -213,7 +225,29 @@ impl RedisStoreBuilder {
                     .map_err(|err| error!("Error connecting to Redis: {:?}", err))
             })
             .and_then(move |connection| {
+                // Before initializing the store, check if we have a parent and
+                // use its address. If no parent was found, use the builder's
+                // provided address (local.host) or the one we decided to
+                // override with
+                redis::cmd("GET")
+                    .arg("parent")
+                    .query_async(connection.clone())
+                    .map_err(|err| error!("Error checking whether we have a parent configured: {:?}", err))
+                    .and_then(move |(_, address): (SharedConnection, Option<String>)| {
+                        println!("got address {:?}", address);
+                        let ilp_address = if let Some(address) = address {
+                            // append our username to the parent's address
+                            let parent_address = Address::from_str(&address).unwrap();
+                            parent_address.with_suffix(username_clone.as_bytes()).unwrap()
+                        } else {
+                            ilp_address
+                        };
+                        Ok(ilp_address)
+                    })
+                .and_then(move |node_ilp_address| {
                 let store = RedisStore {
+                    username,
+                    ilp_address: Arc::new(RwLock::new(node_ilp_address)),
                     connection: Arc::new(connection),
                     exchange_rates: Arc::new(RwLock::new(HashMap::new())),
                     routes: Arc::new(RwLock::new(HashMap::new())),
@@ -244,6 +278,7 @@ impl RedisStoreBuilder {
 
                 Ok(store)
             })
+        })
     }
 }
 
@@ -255,6 +290,8 @@ impl RedisStoreBuilder {
 /// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
+    pub username: Username,
+    pub ilp_address: Arc<RwLock<Address>>,
     connection: Arc<SharedConnection>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
@@ -263,6 +300,7 @@ pub struct RedisStore {
 }
 
 impl RedisStore {
+
     pub fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
         let mut pipe = redis::pipe();
         pipe.smembers("accounts");
@@ -318,7 +356,8 @@ impl RedisStore {
                     pipe.hset("usernames", account.username().as_ref(), id).ignore();
 
                     if account.routing_relation == RoutingRelation::Parent {
-                        pipe.set("parent", id).ignore();
+                        pipe.set("parent", account.client_address().as_bytes()).ignore();
+                        self_clone.set_ilp_address(account.client_address().clone());
                     }
 
                     // Set account details
@@ -540,25 +579,14 @@ impl RedisStore {
             pipe.del(accounts_key(account.id)).ignore();
             pipe.hdel("usernames", account.username().as_ref()).ignore();
 
-<<<<<<< HEAD
+            if account.routing_relation == RoutingRelation::Parent {
+                pipe.del("parent").ignore();
+                self_clone.set_ilp_address(Address::from_str("local.host").unwrap());
+            }
+
             if account.should_send_routes() {
                 pipe.srem("send_routes_to", account.id).ignore();
             }
-||||||| merged common ancestors
-                    if account.send_routes {
-                        pipe.srem("send_routes_to", account.id).ignore();
-                    }
-=======
-                    if account.routing_relation == RoutingRelation::Parent {
-                        // We removed our only Parent node. What should we
-                        // update our ILP Address to?
-                        pipe.del("parent").ignore();
-                    }
-
-                    if account.send_routes {
-                        pipe.srem("send_routes_to", account.id).ignore();
-                    }
->>>>>>> feat(redis): Allow only 1 Parent account
 
             if account.should_receive_routes() {
                 pipe.srem("receive_routes_from", account.id).ignore();
@@ -1068,6 +1096,10 @@ impl NodeStore for RedisStore {
             })
         )
     }
+
+    fn set_ilp_address(&self, ilp_address: Address) {
+        *(self.ilp_address.write()) = ilp_address;
+    }
 }
 
 type RoutingTable<A> = HashMap<Bytes, A>;
@@ -1520,6 +1552,7 @@ mod tests {
                         RedisStoreBuilder::new(
                             "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
                             [0; 32],
+                            Username::from_str("node").unwrap(),
                         )
                         .connect()
                         .then(|result| {

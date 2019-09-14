@@ -5,13 +5,54 @@ use common::*;
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::{BtpAccount, BtpStore};
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
 use std::str::FromStr;
+use redis::Client;
+use log::{error, debug};
+use futures::future::result;
+
+#[test]
+fn picks_up_parent_during_initialization() {
+    let context = TestContext::new();
+    block_on(
+        result(Client::open(context.get_client_connection_info()))
+            .map_err(|err| error!("Error creating Redis client: {:?}", err))
+            .and_then(|client| {
+                debug!("Connected to redis: {:?}", client);
+                client
+                    .get_shared_async_connection()
+                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            })
+            .and_then(move |connection| {
+                // we set a parent that was already configured via perhaps a
+                // previous account insertion. that means that when we connect
+                // to the store we will always get the configured parent (if
+                // there was one))
+                redis::cmd("SET")
+                    .arg("parent")
+                    .arg("example.bob")
+                    .query_async(connection)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(_, _): (_, redis::Value)| {
+                        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32], Username::from_str("node").unwrap())
+                            .node_ilp_address(Address::from_str("example.node").unwrap())
+                            .connect()
+                            .and_then(move |store| {
+                                // the store's ilp address is the store's
+                                // username appended to the parent's address
+                                assert_eq!(*store.ilp_address.read(), Address::from_str("example.bob.node").unwrap());
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+    }))
+    .unwrap();
+}
+
 
 #[test]
 fn insert_accounts() {
