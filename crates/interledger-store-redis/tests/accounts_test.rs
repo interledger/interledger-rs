@@ -2,6 +2,7 @@ mod common;
 
 use common::*;
 
+use futures::future::result;
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::{BtpAccount, BtpStore};
 use interledger_http::{HttpAccount, HttpStore};
@@ -10,10 +11,9 @@ use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
-use std::str::FromStr;
+use log::{debug, error};
 use redis::Client;
-use log::{error, debug};
-use futures::future::result;
+use std::str::FromStr;
 
 #[test]
 fn picks_up_parent_during_initialization() {
@@ -38,21 +38,28 @@ fn picks_up_parent_during_initialization() {
                     .query_async(connection)
                     .map_err(|err| panic!(err))
                     .and_then(move |(_, _): (_, redis::Value)| {
-                        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32], Username::from_str("node").unwrap())
-                            .node_ilp_address(Address::from_str("example.node").unwrap())
-                            .connect()
-                            .and_then(move |store| {
-                                // the store's ilp address is the store's
-                                // username appended to the parent's address
-                                assert_eq!(*store.ilp_address.read(), Address::from_str("example.bob.node").unwrap());
-                                let _ = context;
-                                Ok(())
-                            })
+                        RedisStoreBuilder::new(
+                            context.get_client_connection_info(),
+                            [0; 32],
+                            Username::from_str("node").unwrap(),
+                        )
+                        .node_ilp_address(Address::from_str("example.node").unwrap())
+                        .connect()
+                        .and_then(move |store| {
+                            // the store's ilp address is the store's
+                            // username appended to the parent's address
+                            assert_eq!(
+                                *store.ilp_address.read(),
+                                Address::from_str("example.bob.node").unwrap()
+                            );
+                            let _ = context;
+                            Ok(())
+                        })
                     })
-    }))
+            }),
+    )
     .unwrap();
 }
-
 
 #[test]
 fn insert_accounts() {

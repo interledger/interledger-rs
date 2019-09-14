@@ -16,103 +16,103 @@ use tokio_timer::sleep;
 fn polls_for_route_updates() {
     let context = TestContext::new();
     block_on(
-        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32], Username::from_str("node").unwrap())
-            .poll_interval(1)
-            .node_ilp_address(Address::from_str("example.node").unwrap())
-            .connect()
-            .and_then(|store| {
-                let connection = context.async_connection();
-                assert_eq!(store.routing_table().len(), 0);
-                let store_clone_1 = store.clone();
-                let store_clone_2 = store.clone();
-                store
-                    .clone()
-                    .insert_account(ACCOUNT_DETAILS_0.clone())
-                    .and_then(move |alice| {
-                        let routing_table = store_clone_1.routing_table();
-                        assert_eq!(routing_table.len(), 1);
-                        assert_eq!(
-                            *routing_table.get(&Bytes::from("example.alice")).unwrap(),
-                            alice.id()
-                        );
-                        store_clone_1
-                            .insert_account(AccountDetails {
-                                configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
-                                username: Username::from_str("bob").unwrap(),
-                                asset_scale: 6,
-                                asset_code: "XYZ".to_string(),
-                                max_packet_amount: 1000,
-                                min_balance: Some(-1000),
-                                http_endpoint: None,
-                                http_incoming_token: None,
-                                http_outgoing_token: None,
-                                btp_uri: None,
-                                btp_incoming_token: None,
-                                settle_threshold: None,
-                                settle_to: None,
-                                routing_relation: Some("Peer".to_owned()),
-                                round_trip_time: None,
-                                amount_per_minute_limit: None,
-                                packets_per_minute_limit: None,
-                                settlement_engine_url: None,
-                            })
-                            .and_then(move |bob| {
-                                let routing_table = store_clone_2.routing_table();
-                                assert_eq!(routing_table.len(), 2);
-                                assert_eq!(
-                                    *routing_table.get(&Bytes::from("example.bob")).unwrap(),
-                                    bob.id(),
-                                );
-                                let alice_id = alice.id();
-                                let bob_id = bob.id();
-                                connection
-                                    .map_err(|err| panic!(err))
-                                    .and_then(move |connection| {
-                                        redis::cmd("HMSET")
-                                            .arg("routes:current")
-                                            .arg("example.alice")
-                                            .arg(bob_id)
-                                            .arg("example.charlie")
-                                            .arg(alice_id)
-                                            .query_async(connection)
-                                            .and_then(
-                                                |(_connection, _result): (_, redis::Value)| Ok(()),
-                                            )
-                                            .map_err(|err| panic!(err))
-                                            .and_then(|_| {
-                                                sleep(Duration::from_millis(10)).then(|_| Ok(()))
-                                            })
-                                    })
-                                    .and_then(move |_| {
-                                        let routing_table = store_clone_2.routing_table();
-                                        assert_eq!(routing_table.len(), 3);
-                                        assert_eq!(
-                                            *routing_table
-                                                .get(&Bytes::from("example.alice"))
-                                                .unwrap(),
-                                            bob_id
-                                        );
-                                        assert_eq!(
-                                            *routing_table
-                                                .get(&Bytes::from("example.bob"))
-                                                .unwrap(),
-                                            bob.id(),
-                                        );
-                                        assert_eq!(
-                                            *routing_table
-                                                .get(&Bytes::from("example.charlie"))
-                                                .unwrap(),
-                                            alice_id,
-                                        );
-                                        assert!(routing_table
-                                            .get(&Bytes::from("example.other"))
-                                            .is_none());
-                                        let _ = context;
-                                        Ok(())
-                                    })
-                            })
-                    })
-            }),
+        RedisStoreBuilder::new(
+            context.get_client_connection_info(),
+            [0; 32],
+            Username::from_str("node").unwrap(),
+        )
+        .poll_interval(1)
+        .node_ilp_address(Address::from_str("example.node").unwrap())
+        .connect()
+        .and_then(|store| {
+            let connection = context.async_connection();
+            assert_eq!(store.routing_table().len(), 0);
+            let store_clone_1 = store.clone();
+            let store_clone_2 = store.clone();
+            store
+                .clone()
+                .insert_account(ACCOUNT_DETAILS_0.clone())
+                .and_then(move |alice| {
+                    let routing_table = store_clone_1.routing_table();
+                    assert_eq!(routing_table.len(), 1);
+                    assert_eq!(
+                        *routing_table.get(&Bytes::from("example.alice")).unwrap(),
+                        alice.id()
+                    );
+                    store_clone_1
+                        .insert_account(AccountDetails {
+                            configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
+                            username: Username::from_str("bob").unwrap(),
+                            asset_scale: 6,
+                            asset_code: "XYZ".to_string(),
+                            max_packet_amount: 1000,
+                            min_balance: Some(-1000),
+                            http_endpoint: None,
+                            http_incoming_token: None,
+                            http_outgoing_token: None,
+                            btp_uri: None,
+                            btp_incoming_token: None,
+                            settle_threshold: None,
+                            settle_to: None,
+                            routing_relation: Some("Peer".to_owned()),
+                            round_trip_time: None,
+                            amount_per_minute_limit: None,
+                            packets_per_minute_limit: None,
+                            settlement_engine_url: None,
+                        })
+                        .and_then(move |bob| {
+                            let routing_table = store_clone_2.routing_table();
+                            assert_eq!(routing_table.len(), 2);
+                            assert_eq!(
+                                *routing_table.get(&Bytes::from("example.bob")).unwrap(),
+                                bob.id(),
+                            );
+                            let alice_id = alice.id();
+                            let bob_id = bob.id();
+                            connection
+                                .map_err(|err| panic!(err))
+                                .and_then(move |connection| {
+                                    redis::cmd("HMSET")
+                                        .arg("routes:current")
+                                        .arg("example.alice")
+                                        .arg(bob_id)
+                                        .arg("example.charlie")
+                                        .arg(alice_id)
+                                        .query_async(connection)
+                                        .and_then(
+                                            |(_connection, _result): (_, redis::Value)| Ok(()),
+                                        )
+                                        .map_err(|err| panic!(err))
+                                        .and_then(|_| {
+                                            sleep(Duration::from_millis(10)).then(|_| Ok(()))
+                                        })
+                                })
+                                .and_then(move |_| {
+                                    let routing_table = store_clone_2.routing_table();
+                                    assert_eq!(routing_table.len(), 3);
+                                    assert_eq!(
+                                        *routing_table.get(&Bytes::from("example.alice")).unwrap(),
+                                        bob_id
+                                    );
+                                    assert_eq!(
+                                        *routing_table.get(&Bytes::from("example.bob")).unwrap(),
+                                        bob.id(),
+                                    );
+                                    assert_eq!(
+                                        *routing_table
+                                            .get(&Bytes::from("example.charlie"))
+                                            .unwrap(),
+                                        alice_id,
+                                    );
+                                    assert!(routing_table
+                                        .get(&Bytes::from("example.other"))
+                                        .is_none());
+                                    let _ = context;
+                                    Ok(())
+                                })
+                        })
+                })
+        }),
     )
     .unwrap();
 }
@@ -174,8 +174,12 @@ fn saves_routes_to_db() {
         let get_connection = context.async_connection();
         let account0_id = AccountId::new();
         let account1_id = AccountId::new();
-        let account0 = store.details_to_account(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
-        let account1 = store.details_to_account(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+        let account0 = store
+            .details_to_account(account0_id, ACCOUNT_DETAILS_0.clone())
+            .unwrap();
+        let account1 = store
+            .details_to_account(account1_id, ACCOUNT_DETAILS_1.clone())
+            .unwrap();
         store
             .set_routes(vec![
                 (Bytes::from("example.a"), account0.clone()),
@@ -210,8 +214,12 @@ fn updates_local_routes() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let account0_id = AccountId::new();
         let account1_id = AccountId::new();
-        let account0 = store.details_to_account(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
-        let account1 = store.details_to_account(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+        let account0 = store
+            .details_to_account(account0_id, ACCOUNT_DETAILS_0.clone())
+            .unwrap();
+        let account1 = store
+            .details_to_account(account1_id, ACCOUNT_DETAILS_1.clone())
+            .unwrap();
         store
             .clone()
             .set_routes(vec![
@@ -278,7 +286,9 @@ fn static_routes_override_others() {
             ])
             .and_then(move |_| {
                 let account1_id = AccountId::new();
-                let account1 = store.details_to_account(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+                let account1 = store
+                    .details_to_account(account1_id, ACCOUNT_DETAILS_1.clone())
+                    .unwrap();
                 store_clone
                     .set_routes(vec![
                         (Bytes::from("example.a"), account1.clone()),

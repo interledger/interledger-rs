@@ -59,7 +59,7 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         account_id: <Self::Account as AccountTrait>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
-    fn set_ilp_address(&self, ilp_address: Address); 
+    fn set_ilp_address(&self, ilp_address: Address);
 }
 
 /// AccountSettings is a subset of the user parameters defined in
@@ -177,4 +177,3 @@ where
             .serve(incoming)
     }
 }
-

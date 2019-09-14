@@ -206,29 +206,29 @@ fn three_nodes() {
     runtime.spawn(
         // Wait a bit to make sure the other node's BTP server is listening
         delay(50).map_err(|err| panic!(err)).and_then(move |_| {
-            node3_clone.insert_account(AccountDetails {
-                configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
-                username: Username::from_str("bob").unwrap(),
-                asset_code: "ABC".to_string(),
-                asset_scale: 6,
-                btp_incoming_token: None,
-                btp_uri: Some(format!("btp+ws://charlie:three@localhost:{}", node2_btp)),
-                http_endpoint: None,
-                http_incoming_token: None,
-                http_outgoing_token: None,
-                max_packet_amount: u64::max_value(),
-                min_balance: Some(-1_000_000_000),
-                settle_threshold: None,
-                settle_to: None,
-                routing_relation: Some("Parent".to_string()),
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-                settlement_engine_url: None,
-            })
-            .and_then(move |_| {
-                node3_clone
-                    .insert_account(AccountDetails {
+            node3_clone
+                .insert_account(AccountDetails {
+                    configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
+                    username: Username::from_str("bob").unwrap(),
+                    asset_code: "ABC".to_string(),
+                    asset_scale: 6,
+                    btp_incoming_token: None,
+                    btp_uri: Some(format!("btp+ws://charlie:three@localhost:{}", node2_btp)),
+                    http_endpoint: None,
+                    http_incoming_token: None,
+                    http_outgoing_token: None,
+                    max_packet_amount: u64::max_value(),
+                    min_balance: Some(-1_000_000_000),
+                    settle_threshold: None,
+                    settle_to: None,
+                    routing_relation: Some("Parent".to_string()),
+                    round_trip_time: None,
+                    packets_per_minute_limit: None,
+                    amount_per_minute_limit: None,
+                    settlement_engine_url: None,
+                })
+                .and_then(move |_| {
+                    node3_clone.insert_account(AccountDetails {
                         // Can we add our account w/o specifying the ilp address
                         // here?
                         // Maybe add a username to the InterledgerNode, if the
@@ -253,8 +253,8 @@ fn three_nodes() {
                         amount_per_minute_limit: None,
                         settlement_engine_url: None,
                     })
-            })
-            .and_then(move |_| node3.serve())
+                })
+                .and_then(move |_| node3.serve())
         }),
     );
 

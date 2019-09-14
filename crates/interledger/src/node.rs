@@ -26,8 +26,8 @@ use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{net::SocketAddr, str, time::Duration, fmt::Debug};
 use std::str::FromStr;
+use std::{fmt::Debug, net::SocketAddr, str, time::Duration};
 use tokio::{self, net::TcpListener};
 use url::Url;
 
@@ -53,16 +53,15 @@ fn default_ilp_address() -> Address {
     Address::from_str("local.host").unwrap()
 }
 
-fn deserialize_string<'de, D, T >(deserializer: D) -> Result<T, D::Error>
+fn deserialize_string<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: FromStr,
-    <T as FromStr>::Err: Debug, 
+    <T as FromStr>::Err: Debug,
 {
     T::from_str(&String::deserialize(deserializer)?)
         .map_err(|err| DeserializeError::custom(format!("Invalid format: {:?}", err)))
 }
-
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
@@ -334,7 +333,13 @@ impl InterledgerNode {
         &self,
         account: AccountDetails,
     ) -> impl Future<Item = AccountId, Error = ()> {
-        insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account, self.username.clone(), self.ilp_address.clone())
+        insert_account_redis(
+            self.redis_connection.clone(),
+            &self.secret_seed,
+            account,
+            self.username.clone(),
+            self.ilp_address.clone(),
+        )
     }
 }
 

@@ -233,35 +233,44 @@ impl RedisStoreBuilder {
                 redis::cmd("GET")
                     .arg("parent")
                     .query_async(connection.clone())
-                    .map_err(|err| error!("Error checking whether we have a parent configured: {:?}", err))
+                    .map_err(|err| {
+                        error!(
+                            "Error checking whether we have a parent configured: {:?}",
+                            err
+                        )
+                    })
                     .and_then(move |(_, address): (SharedConnection, Option<String>)| {
                         println!("got address {:?}", address);
                         let ilp_address = if let Some(address) = address {
                             // append our username to the parent's address
                             let parent_address = Address::from_str(&address).unwrap();
-                            parent_address.with_suffix(username_clone.as_bytes()).unwrap()
+                            parent_address
+                                .with_suffix(username_clone.as_bytes())
+                                .unwrap()
                         } else {
                             ilp_address
                         };
                         Ok(ilp_address)
                     })
-                .and_then(move |node_ilp_address| {
-                let store = RedisStore {
-                    username,
-                    ilp_address: Arc::new(RwLock::new(node_ilp_address)),
-                    connection: Arc::new(connection),
-                    exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                    routes: Arc::new(RwLock::new(HashMap::new())),
-                    encryption_key: Arc::new(encryption_key),
-                    decryption_key: Arc::new(decryption_key),
-                };
+                    .and_then(move |node_ilp_address| {
+                        let store = RedisStore {
+                            username,
+                            ilp_address: Arc::new(RwLock::new(node_ilp_address)),
+                            connection: Arc::new(connection),
+                            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
+                            routes: Arc::new(RwLock::new(HashMap::new())),
+                            encryption_key: Arc::new(encryption_key),
+                            decryption_key: Arc::new(decryption_key),
+                        };
 
-                // Poll for routing table updates
-                // Note: if this behavior changes, make sure to update the Drop implementation
-                let connection_clone = Arc::downgrade(&store.connection);
-                let routing_table = store.routes.clone();
-                let poll_routes =
-                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
+                        // Poll for routing table updates
+                        // Note: if this behavior changes, make sure to update the Drop implementation
+                        let connection_clone = Arc::downgrade(&store.connection);
+                        let routing_table = store.routes.clone();
+                        let poll_routes = Interval::new(
+                            Instant::now(),
+                            Duration::from_millis(poll_interval),
+                        )
                         .map_err(|err| error!("Interval error: {:?}", err))
                         .for_each(move |_| {
                             if let Some(connection) = connection_clone.upgrade() {
@@ -275,11 +284,11 @@ impl RedisStoreBuilder {
                                 Either::B(err(()))
                             }
                         });
-                spawn(poll_routes);
+                        spawn(poll_routes);
 
-                Ok(store)
+                        Ok(store)
+                    })
             })
-        })
     }
 }
 
@@ -301,7 +310,6 @@ pub struct RedisStore {
 }
 
 impl RedisStore {
-
     pub fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
         let mut pipe = redis::pipe();
         pipe.smembers("accounts");
@@ -319,7 +327,7 @@ impl RedisStore {
             // If the account is not a child they should always be providing an address
             if let Some(ref relation) = account.routing_relation {
                 if relation.to_lowercase() != "child" {
-                    return Err(())
+                    return Err(());
                 }
             }
 
@@ -329,10 +337,11 @@ impl RedisStore {
             if account.username == self.username {
                 account.configured_ilp_address = Some(address.clone())
             } else {
-            // otherwise, since they are a child, append their username to our
-            // node's address
+                // otherwise, since they are a child, append their username to our
+                // node's address
                 account.configured_ilp_address = Some(
-                    address.clone()
+                    address
+                        .clone()
                         .with_suffix(account.username.as_bytes())
                         .unwrap(),
                 )
@@ -349,7 +358,11 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
         let id = AccountId::new();
-        debug!("Generated account id for {}: {}", account.username.clone(), id);
+        debug!(
+            "Generated account id for {}: {}",
+            account.username.clone(),
+            id
+        );
         let self_clone = self.clone();
         Box::new(
             result(self.details_to_account(id, account))
