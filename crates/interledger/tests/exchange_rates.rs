@@ -30,6 +30,7 @@ fn coincap() {
     let http_port = get_open_port(Some(3010));
 
     let node = InterledgerNode {
+        username: Username::from_str("one").unwrap(),
         ilp_address: Address::from_str("example.one").unwrap(),
         default_spsp_account: Some(Username::from_str("one").unwrap()),
         admin_auth_token: "admin".to_string(),
@@ -99,6 +100,7 @@ fn cryptocompare() {
     let http_port = get_open_port(Some(3011));
 
     let node = InterledgerNode {
+        username: Username::from_str("one").unwrap(),
         ilp_address: Address::from_str("example.one").unwrap(),
         default_spsp_account: Some(Username::from_str("one").unwrap()),
         admin_auth_token: "admin".to_string(),

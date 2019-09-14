@@ -215,6 +215,7 @@ impl RedisStoreBuilder {
         let username = self.username.clone();
         let username_clone = self.username.clone();
         let ilp_address = self.node_ilp_address.clone();
+        println!("OUR ADDRESS {:?}", ilp_address);
 
         result(Client::open(self.redis_url.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -315,17 +316,27 @@ impl RedisStore {
         mut account: AccountDetails,
     ) -> Result<Account, ()> {
         if account.configured_ilp_address.is_none() {
-            // If the account is not a child this should never happen
-            // if let Some(relation) = account.routing_relation {
-            //     if relation.to_lowercase() != "child" {
-            //         return Err(())
-            //     }
-            // }
-            account.configured_ilp_address = Some(
-                (*self.ilp_address.read())
-                    .with_suffix(account.username.as_bytes())
-                    .unwrap(),
-            )
+            // If the account is not a child they should always be providing an address
+            if let Some(ref relation) = account.routing_relation {
+                if relation.to_lowercase() != "child" {
+                    return Err(())
+                }
+            }
+
+            let address = self.ilp_address.read();
+            // if the account's username is our node's username, then just use
+            // our node's address
+            if account.username == self.username {
+                account.configured_ilp_address = Some(address.clone())
+            } else {
+            // otherwise, since they are a child, append their username to our
+            // node's address
+                account.configured_ilp_address = Some(
+                    address.clone()
+                        .with_suffix(account.username.as_bytes())
+                        .unwrap(),
+                )
+            }
         }
         Account::try_from(id, account)
     }
@@ -338,7 +349,7 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
         let id = AccountId::new();
-        debug!("Generated account: {}", id);
+        debug!("Generated account id for {}: {}", account.username.clone(), id);
         let self_clone = self.clone();
         Box::new(
             result(self.details_to_account(id, account))

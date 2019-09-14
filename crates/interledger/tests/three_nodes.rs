@@ -46,8 +46,9 @@ fn three_nodes() {
         .unwrap();
 
     let node1 = InterledgerNode {
-        ilp_address: Address::from_str("example.one").unwrap(),
-        default_spsp_account: Some(Username::from_str("one").unwrap()),
+        username: Username::from_str("alice").unwrap(),
+        ilp_address: Address::from_str("example.alice").unwrap(),
+        default_spsp_account: Some(Username::from_str("alice").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -64,7 +65,7 @@ fn three_nodes() {
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.one").unwrap(),
+                configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
                 username: Username::from_str("alice").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
@@ -87,7 +88,7 @@ fn three_nodes() {
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.two").unwrap(),
+                configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
                 username: Username::from_str("bob").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
@@ -110,8 +111,9 @@ fn three_nodes() {
     );
 
     let node2 = InterledgerNode {
-        ilp_address: Address::from_str("example.two").unwrap(),
-        default_spsp_account: Some(Username::from_str("two").unwrap()),
+        username: Username::from_str("bob").unwrap(),
+        ilp_address: Address::from_str("example.bob").unwrap(),
+        default_spsp_account: Some(Username::from_str("bob").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
         btp_bind_address: ([127, 0, 0, 1], node2_btp).into(),
@@ -127,7 +129,7 @@ fn three_nodes() {
     runtime.spawn(
         node2_clone
             .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.one").unwrap(),
+                configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
                 username: Username::from_str("alice").unwrap(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
@@ -148,7 +150,7 @@ fn three_nodes() {
             })
             .and_then(move |_| {
                 node2_clone.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.two.three").unwrap(),
+                    configured_ilp_address: None,
                     username: Username::from_str("charlie").unwrap(),
                     asset_code: "ABC".to_string(),
                     asset_scale: 6,
@@ -186,8 +188,9 @@ fn three_nodes() {
     );
 
     let node3 = InterledgerNode {
-        ilp_address: Address::from_str("example.two.three").unwrap(),
-        default_spsp_account: Some(Username::from_str("three").unwrap()),
+        username: Username::from_str("charlie").unwrap(),
+        ilp_address: Address::from_str("local.host").unwrap(), // Once a parent is added it will auto-configure itself
+        default_spsp_account: Some(Username::from_str("charlie").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -203,50 +206,55 @@ fn three_nodes() {
     runtime.spawn(
         // Wait a bit to make sure the other node's BTP server is listening
         delay(50).map_err(|err| panic!(err)).and_then(move |_| {
-            node3_clone
-                .insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.two.three").unwrap(),
-                    username: Username::from_str("charlie").unwrap(),
-                    asset_code: "ABC".to_string(),
-                    asset_scale: 6,
-                    btp_incoming_token: None,
-                    btp_uri: None,
-                    http_endpoint: None,
-                    http_incoming_token: Some("default account holder".to_string()),
-                    http_outgoing_token: None,
-                    max_packet_amount: u64::max_value(),
-                    min_balance: None,
-                    settle_threshold: None,
-                    settle_to: None,
-                    routing_relation: None,
-                    round_trip_time: None,
-                    packets_per_minute_limit: None,
-                    amount_per_minute_limit: None,
-                    settlement_engine_url: None,
-                })
-                .and_then(move |_| {
-                    node3_clone.insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.two").unwrap(),
-                        username: Username::from_str("bob").unwrap(),
+            node3_clone.insert_account(AccountDetails {
+                configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
+                username: Username::from_str("bob").unwrap(),
+                asset_code: "ABC".to_string(),
+                asset_scale: 6,
+                btp_incoming_token: None,
+                btp_uri: Some(format!("btp+ws://charlie:three@localhost:{}", node2_btp)),
+                http_endpoint: None,
+                http_incoming_token: None,
+                http_outgoing_token: None,
+                max_packet_amount: u64::max_value(),
+                min_balance: Some(-1_000_000_000),
+                settle_threshold: None,
+                settle_to: None,
+                routing_relation: Some("Parent".to_string()),
+                round_trip_time: None,
+                packets_per_minute_limit: None,
+                amount_per_minute_limit: None,
+                settlement_engine_url: None,
+            })
+            .and_then(move |_| {
+                node3_clone
+                    .insert_account(AccountDetails {
+                        // Can we add our account w/o specifying the ilp address
+                        // here?
+                        // Maybe add a username to the InterledgerNode, if the
+                        // username mathces the one in the node, it should use the
+                        // node's ilp address?
+                        configured_ilp_address: None,
+                        username: Username::from_str("charlie").unwrap(),
                         asset_code: "ABC".to_string(),
                         asset_scale: 6,
                         btp_incoming_token: None,
-                        btp_uri: Some(format!("btp+ws://charlie:three@localhost:{}", node2_btp)),
+                        btp_uri: None,
                         http_endpoint: None,
-                        http_incoming_token: None,
+                        http_incoming_token: Some("default account holder".to_string()),
                         http_outgoing_token: None,
                         max_packet_amount: u64::max_value(),
-                        min_balance: Some(-1_000_000_000),
+                        min_balance: None,
                         settle_threshold: None,
                         settle_to: None,
-                        routing_relation: Some("Parent".to_string()),
+                        routing_relation: None,
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
                         settlement_engine_url: None,
                     })
-                })
-                .and_then(move |_| node3.serve())
+            })
+            .and_then(move |_| node3.serve())
         }),
     );
 

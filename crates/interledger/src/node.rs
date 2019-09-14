@@ -26,7 +26,8 @@ use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{net::SocketAddr, str, time::Duration};
+use std::{net::SocketAddr, str, time::Duration, fmt::Debug};
+use std::str::FromStr;
 use tokio::{self, net::TcpListener};
 use url::Url;
 
@@ -48,15 +49,20 @@ fn default_redis_url() -> ConnectionInfo {
 fn default_exchange_rate_poll_interval() -> u64 {
     60000
 }
+fn default_ilp_address() -> Address {
+    Address::from_str("local.host").unwrap()
+}
 
-use std::str::FromStr;
-fn deserialize_string_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
+fn deserialize_string<'de, D, T >(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
+    T: FromStr,
+    <T as FromStr>::Err: Debug, 
 {
-    Address::from_str(&String::deserialize(deserializer)?)
-        .map_err(|err| DeserializeError::custom(format!("Invalid address: {:?}", err)))
+    T::from_str(&String::deserialize(deserializer)?)
+        .map_err(|err| DeserializeError::custom(format!("Invalid format: {:?}", err)))
 }
+
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
@@ -90,8 +96,13 @@ where
 #[derive(Deserialize, Clone)]
 pub struct InterledgerNode {
     /// ILP address of the node
-    #[serde(deserialize_with = "deserialize_string_to_address")]
+    // Rename this one because the env vars are prefixed with "ILP_"
+    #[serde(alias = "address")]
+    #[serde(default = "default_ilp_address")]
+    #[serde(deserialize_with = "deserialize_string")]
     pub ilp_address: Address,
+    #[serde(deserialize_with = "deserialize_string")]
+    pub username: Username,
     /// Root secret used to derive encryption keys
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
     pub secret_seed: [u8; 32],
@@ -145,18 +156,11 @@ impl InterledgerNode {
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
-        debug!(
-            "Starting Interledger node with ILP address: {}",
-            str::from_utf8(self.ilp_address.as_ref()).unwrap_or("<not utf8>")
-        );
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
         let btp_bind_address = self.btp_bind_address;
         let http_bind_address = self.http_bind_address;
         let settlement_api_bind_address = self.settlement_api_bind_address;
-        let ilp_address = self.ilp_address.clone();
-        let ilp_address_clone = ilp_address.clone();
-        let ilp_address_clone2 = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
@@ -165,10 +169,20 @@ impl InterledgerNode {
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
         let exchange_rate_spread = self.exchange_rate_spread;
 
-        RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
-        .connect()
+        RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret, self.username.clone())
+            .node_ilp_address(self.ilp_address.clone())
+            .connect()
         .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
+                //  Get the ILP Address to be used in all the services from the
+                //  store. This guarantees that it will be set properly, based
+                //  on if we have a parent account registered or not.
+                let ilp_address = store.ilp_address.read().clone();
+                let ilp_address2 = ilp_address.clone();
+                debug!(
+                    "Starting Interledger node with ILP address: {:?}",
+                    ilp_address,
+                );
                 store.clone().get_btp_outgoing_accounts()
                 .map_err(|_| error!("Error getting accounts"))
                 .and_then(move |btp_accounts| {
@@ -184,7 +198,7 @@ impl InterledgerNode {
                                     request.prepare.destination(),
                                 )
                                 .as_bytes(),
-                                triggered_by: Some(&ilp_address_clone),
+                                triggered_by: Some(&ilp_address2.clone()),
                                 data: &[],
                             }
                             .build())
@@ -193,9 +207,9 @@ impl InterledgerNode {
                     // Connect to all of the accounts that have outgoing btp_uris configured
                     // but don't fail if we are unable to connect
                     // TODO try reconnecting to those accounts later
-                    connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
+                    connect_client(ilp_address.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            create_server(ilp_address_clone2, btp_bind_address, store.clone(), btp_client_service.clone()).and_then(
+                            create_server(ilp_address.clone(), btp_bind_address, store.clone(), btp_client_service.clone()).and_then(
                                 move |btp_server_service| {
                                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
@@ -320,7 +334,7 @@ impl InterledgerNode {
         &self,
         account: AccountDetails,
     ) -> impl Future<Item = AccountId, Error = ()> {
-        insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account)
+        insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account, self.username.clone(), self.ilp_address.clone())
     }
 }
 
@@ -328,17 +342,23 @@ impl InterledgerNode {
 pub use interledger_api::AccountDetails;
 #[doc(hidden)]
 pub fn insert_account_redis<R>(
-    redis_url: R,
+    redis_uri: R,
     secret_seed: &[u8; 32],
     account: AccountDetails,
+    username: Username,
+    ilp_address: Address,
 ) -> impl Future<Item = AccountId, Error = ()>
 where
     R: IntoConnectionInfo,
 {
     let redis_secret = generate_redis_secret(secret_seed);
-    result(redis_url.into_connection_info())
+    result(redis_uri.into_connection_info())
         .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
-        .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
+        .and_then(move |redis_uri| {
+            RedisStoreBuilder::new(redis_uri, redis_secret, username)
+                .node_ilp_address(ilp_address)
+                .connect()
+        })
         .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {
             store

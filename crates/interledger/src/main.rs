@@ -176,8 +176,12 @@ pub fn main() {
                     Arg::with_name("ilp_address")
                         .long("ilp_address")
                         .takes_value(true)
-                        .required(true)
                         .help("ILP Address of this account"),
+                    Arg::with_name("username")
+                        .long("username")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Username of this account"),
                     Arg::with_name("secret_seed")
                         .long("secret_seed")
                         .takes_value(true)
@@ -603,7 +607,9 @@ fn run_node_accounts_add(opt: NodeAccountsAddOpt) {
         server_secret
     };
     let account = AccountDetails {
-        ilp_address: Address::from_str(&opt.ilp_address).unwrap(),
+        configured_ilp_address: opt
+            .ilp_address
+            .map(|addr| Address::from_str(&addr).unwrap()),
         username: Username::from_str(&opt.username).unwrap(),
         asset_code: opt.asset_code.clone(),
         asset_scale: opt.asset_scale,
@@ -625,7 +631,17 @@ fn run_node_accounts_add(opt: NodeAccountsAddOpt) {
         amount_per_minute_limit: opt.amount_per_minute_limit,
         settlement_engine_url: None,
     };
-    tokio::run(insert_account_redis(redis_url, &server_secret, account).and_then(move |_| Ok(())));
+    tokio::run(
+        insert_account_redis(
+            redis_url,
+            &server_secret,
+            account,
+            // TODO: When adding children via the CLI provide also the parent address?
+            Username::from_str("local").unwrap(),
+            Address::from_str("local.host").unwrap(),
+        )
+        .and_then(move |_| Ok(())),
+    );
 }
 
 #[derive(Deserialize, Clone)]
@@ -688,7 +704,7 @@ impl MoneydLocalOpt {
 struct NodeAccountsAddOpt {
     redis_url: String,
     secret_seed: String,
-    ilp_address: String,
+    ilp_address: Option<String>,
     username: String,
     asset_code: String,
     asset_scale: u8,

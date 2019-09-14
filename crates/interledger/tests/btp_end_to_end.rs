@@ -26,6 +26,7 @@ fn btp_end_to_end() {
     let http_port = get_open_port(Some(7770));
     let settlement_port = get_open_port(Some(7771));
     let node = InterledgerNode {
+        username: Username::from_str("node").unwrap(),
         ilp_address: Address::from_str("example.node").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
@@ -43,8 +44,8 @@ fn btp_end_to_end() {
         let spawn_connector = ok(tokio::spawn(node.serve())).and_then(move |_| {
             join_all(vec![
                 node.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.node.one").unwrap(),
-                    username: Username::from_str("alice").unwrap(),
+                    configured_ilp_address: None,
+                    username: Username::from_str("one").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-one".to_string()),
@@ -56,15 +57,15 @@ fn btp_end_to_end() {
                     min_balance: None,
                     settle_threshold: None,
                     settle_to: None,
-                    routing_relation: None,
+                    routing_relation: Some("Child".to_owned()),
                     round_trip_time: None,
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
                     settlement_engine_url: None,
                 }),
                 node.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.node.two").unwrap(),
-                    username: Username::from_str("bob").unwrap(),
+                    configured_ilp_address: None,
+                    username: Username::from_str("two").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                     btp_incoming_token: Some("token-two".to_string()),
@@ -76,7 +77,7 @@ fn btp_end_to_end() {
                     min_balance: None,
                     settle_threshold: None,
                     settle_to: None,
-                    routing_relation: None,
+                    routing_relation: Some("Child".to_owned()),
                     round_trip_time: None,
                     packets_per_minute_limit: None,
                     amount_per_minute_limit: None,
@@ -88,7 +89,7 @@ fn btp_end_to_end() {
         let spsp_server_port = get_open_port(Some(3000));
         let spawn_spsp_server = move |_| {
             debug!("Spawning SPSP server");
-            let auth = format!("{}:{}", "alice", "token-one");
+            let auth = format!("{}:{}", "one", "token-one");
             let spsp_server = cli::run_spsp_server_btp(
                 &format!("btp+ws://:{}@localhost:{}", auth, btp_port),
                 ([127, 0, 0, 1], spsp_server_port).into(),
@@ -103,7 +104,7 @@ fn btp_end_to_end() {
             .and_then(spawn_spsp_server)
             .and_then(|_| delay(200))
             .and_then(move |_| {
-                let auth = format!("{}:{}", "bob", "token-two");
+                let auth = format!("{}:{}", "two", "token-two");
                 cli::send_spsp_payment_btp(
                     &format!("btp+ws://:{}@localhost:{}", auth, btp_port),
                     &format!("http://localhost:{}", spsp_server_port),
