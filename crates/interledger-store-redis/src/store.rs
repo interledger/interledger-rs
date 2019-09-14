@@ -309,6 +309,27 @@ impl RedisStore {
             .and_then(|(_conn, account_ids): (_, Vec<Vec<AccountId>>)| Ok(account_ids[0].clone()))
     }
 
+    pub fn details_to_account(
+        &self,
+        id: AccountId,
+        mut account: AccountDetails,
+    ) -> Result<Account, ()> {
+        if account.configured_ilp_address.is_none() {
+            // If the account is not a child this should never happen
+            // if let Some(relation) = account.routing_relation {
+            //     if relation.to_lowercase() != "child" {
+            //         return Err(())
+            //     }
+            // }
+            account.configured_ilp_address = Some(
+                (*self.ilp_address.read())
+                    .with_suffix(account.username.as_bytes())
+                    .unwrap(),
+            )
+        }
+        Account::try_from(id, account)
+    }
+
     fn redis_insert_account(
         &self,
         account: AccountDetails,
@@ -316,11 +337,11 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
-
         let id = AccountId::new();
         debug!("Generated account: {}", id);
+        let self_clone = self.clone();
         Box::new(
-            result(Account::try_from(id, account))
+            result(self.details_to_account(id, account))
                 .and_then(move |account| {
                     // Check that there isn't already an account with values that MUST be unique
                     let mut pipe = redis::pipe();
@@ -404,6 +425,7 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
+        let self_clone = self.clone();
 
         Box::new(
             // Check to make sure an account with this ID already exists
@@ -418,7 +440,8 @@ impl RedisStore {
                 .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
                 .and_then(move |(connection, result): (SharedConnection, bool)| {
                     if result {
-                        Account::try_from(id, account)
+                        self_clone
+                            .details_to_account(id, account)
                             .and_then(move |account| Ok((connection, account)))
                     } else {
                         warn!(
@@ -569,8 +592,8 @@ impl RedisStore {
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let connection = self.connection.as_ref().clone();
         let routing_table = self.routes.clone();
-
-        Box::new(self.redis_get_account(id).and_then(|account| {
+        let self_clone = self.clone();
+        Box::new(self.redis_get_account(id).and_then(move |account| {
             let mut pipe = redis::pipe();
             pipe.atomic();
 

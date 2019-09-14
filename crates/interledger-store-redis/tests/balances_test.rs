@@ -28,8 +28,9 @@ fn get_balance() {
                     .query_async(connection)
                     .map_err(|err| panic!(err))
                     .and_then(move |(_, _): (_, redis::Value)| {
-                        let account =
-                            Account::try_from(account_id, ACCOUNT_DETAILS_0.clone()).unwrap();
+                        let account = store
+                            .details_to_account(account_id, ACCOUNT_DETAILS_0.clone())
+                            .unwrap();
                         store.get_balance(account).and_then(move |balance| {
                             assert_eq!(balance, 1000);
                             let _ = context;

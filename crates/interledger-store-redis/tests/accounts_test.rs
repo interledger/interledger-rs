@@ -62,7 +62,10 @@ fn insert_accounts() {
             .and_then(move |account| {
                 assert_eq!(
                     *account.client_address(),
-                    Address::from_str("example.charlie").unwrap()
+                    // note that charlie was added as a child, hence his
+                    // username is appended to the node's address instead of
+                    // using any address
+                    Address::from_str("example.alice.charlie").unwrap()
                 );
                 let _ = context;
                 Ok(())
@@ -76,27 +79,28 @@ fn only_one_parent_allowed() {
     let mut acc = ACCOUNT_DETAILS_2.clone();
     acc.routing_relation = Some("Parent".to_owned());
     acc.username = Username::from_str("another_name").unwrap();
-    acc.ilp_address = Address::from_str("example.another_name").unwrap();
+    acc.configured_ilp_address = Some(Address::from_str("example.another_name").unwrap());
     block_on(test_store().and_then(|(store, context, accs)| {
-        store
-            .insert_account(acc.clone())
-            .then(move |res| {
-                // This should fail
-                assert!(res.is_err());
-                // remove account 0 and try again
-                store.delete_account(accs[0].id())
-                .and_then(move |_| {
-                    store
-                        .insert_account(acc).and_then(move |account| {
-                            assert_eq!(
-                                *account.client_address(),
-                                Address::from_str("example.another_name").unwrap()
-                            );
-                            let _ = context;
-                            Ok(())
-                        })
+        // check that the store's ilp address is <parent address>.username
+        // assert_eq!(store.ilp
+        store.insert_account(acc.clone()).then(move |res| {
+            // This should fail
+            assert!(res.is_err());
+            // remove account 0 and try again
+            store.delete_account(accs[0].id()).and_then(move |_| {
+                // the store's ilp address should be back to local.host
+                store.insert_account(acc).and_then(move |account| {
+                    assert_eq!(
+                        *account.client_address(),
+                        Address::from_str("example.another_name").unwrap()
+                    );
+
+                    // the store's ilp address should be <new parent address>.username
+                    let _ = context;
+                    Ok(())
                 })
             })
+        })
     }))
     .unwrap();
 }

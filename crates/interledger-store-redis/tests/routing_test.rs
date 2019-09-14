@@ -125,7 +125,7 @@ fn gets_accounts_to_send_routes_to() {
             .and_then(move |accounts| {
                 assert_eq!(
                     *accounts[0].client_address(),
-                    Address::from_str("example.bob").unwrap()
+                    Address::from_str("example.alice.bob").unwrap()
                 );
                 assert_eq!(accounts.len(), 1);
                 let _ = context;
@@ -174,8 +174,8 @@ fn saves_routes_to_db() {
         let get_connection = context.async_connection();
         let account0_id = AccountId::new();
         let account1_id = AccountId::new();
-        let account0 = Account::try_from(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
-        let account1 = Account::try_from(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+        let account0 = store.details_to_account(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
+        let account1 = store.details_to_account(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
         store
             .set_routes(vec![
                 (Bytes::from("example.a"), account0.clone()),
@@ -210,8 +210,8 @@ fn updates_local_routes() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let account0_id = AccountId::new();
         let account1_id = AccountId::new();
-        let account0 = Account::try_from(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
-        let account1 = Account::try_from(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+        let account0 = store.details_to_account(account0_id, ACCOUNT_DETAILS_0.clone()).unwrap();
+        let account1 = store.details_to_account(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
         store
             .clone()
             .set_routes(vec![
@@ -278,7 +278,7 @@ fn static_routes_override_others() {
             ])
             .and_then(move |_| {
                 let account1_id = AccountId::new();
-                let account1 = Account::try_from(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
+                let account1 = store.details_to_account(account1_id, ACCOUNT_DETAILS_1.clone()).unwrap();
                 store_clone
                     .set_routes(vec![
                         (Bytes::from("example.a"), account1.clone()),

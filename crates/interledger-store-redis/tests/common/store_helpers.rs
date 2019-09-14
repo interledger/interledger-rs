@@ -3,9 +3,12 @@ use super::redis_helpers::*;
 use env_logger;
 use futures::Future;
 use interledger_api::NodeStore;
+use interledger_service::Username;
+use interledger_packet::Address;
 use interledger_store_redis::{Account, RedisStore, RedisStoreBuilder};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use std::str::FromStr;
 use tokio::runtime::Runtime;
 
 lazy_static! {
@@ -14,24 +17,29 @@ lazy_static! {
 
 pub fn test_store() -> impl Future<Item = (RedisStore, TestContext, Vec<Account>), Error = ()> {
     let context = TestContext::new();
-    RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
-        .connect()
-        .and_then(|store| {
-            let store_clone = store.clone();
-            let mut accs = Vec::new();
-            store
-                .clone()
-                .insert_account(ACCOUNT_DETAILS_0.clone())
-                .and_then(move |acc| {
-                    accs.push(acc.clone());
-                    store_clone
-                        .insert_account(ACCOUNT_DETAILS_1.clone())
-                        .and_then(move |acc| {
-                            accs.push(acc.clone());
-                            Ok((store, context, accs))
-                        })
-                })
-        })
+    RedisStoreBuilder::new(
+        context.get_client_connection_info(),
+        [0; 32],
+        Username::from_str("node").unwrap(),
+    )
+    .node_ilp_address(Address::from_str("example.node").unwrap())
+    .connect()
+    .and_then(|store| {
+        let store_clone = store.clone();
+        let mut accs = Vec::new();
+        store
+            .clone()
+            .insert_account(ACCOUNT_DETAILS_0.clone())
+            .and_then(move |acc| {
+                accs.push(acc.clone());
+                store_clone
+                    .insert_account(ACCOUNT_DETAILS_1.clone())
+                    .and_then(move |acc| {
+                        accs.push(acc.clone());
+                        Ok((store, context, accs))
+                    })
+            })
+    })
 }
 
 pub fn block_on<F>(f: F) -> Result<F::Item, F::Error>
