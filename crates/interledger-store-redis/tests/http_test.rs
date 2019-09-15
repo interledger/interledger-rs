@@ -17,7 +17,7 @@ fn gets_account_from_http_bearer_token() {
             )
             .and_then(move |account| {
                 assert_eq!(
-                    *account.client_address(),
+                    *account.ilp_address(),
                     Address::from_str("example.alice").unwrap()
                 );
                 // this account is in Dylan's connector

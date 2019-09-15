@@ -68,7 +68,7 @@ pub fn send_spsp_payment_btp(
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &format!(
                     "No route found for address: {:?}",
-                    request.from.client_address(),
+                    request.from.ilp_address(),
                 )
                 .as_bytes(),
                 triggered_by: Some(&LOCAL_ILP_ADDRESS),
@@ -142,7 +142,7 @@ pub fn send_spsp_payment_http(
         outgoing_service_fn(|request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
-                message: &format!("No outgoing route for: {:?}", request.from.client_address())
+                message: &format!("No outgoing route for: {:?}", request.from.ilp_address())
                     .as_bytes(),
                 triggered_by: Some(&LOCAL_ILP_ADDRESS),
                 data: &[],
@@ -175,7 +175,7 @@ pub fn run_spsp_server_btp(
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
     debug!("Starting SPSP server. bind address: {}", address);
-    let ilp_address = Arc::new(RwLock::new(Bytes::new()));
+    let local_ilp_address = Arc::new(RwLock::new(Bytes::new()));
     let btp_server = parse_btp_url(btp_server).unwrap();
     let incoming_account: Account =
         AccountBuilder::new(LOCAL_ILP_ADDRESS.clone(), LOCAL_USERNAME.clone())
@@ -187,7 +187,7 @@ pub fn run_spsp_server_btp(
     let store = InMemoryStore::from_accounts(vec![incoming_account.clone()]);
 
     // Can we get better syntax than .read()[..] here? Doesn't seem too intuitive.
-    let ilp_addr = Address::try_from(&ilp_address.read()[..]).ok();
+    let ilp_addr = Address::try_from(&local_ilp_address.read()[..]).ok();
     connect_client(
         LOCAL_ILP_ADDRESS.clone(), // Is this correct? ilp_addr is an option for which there seems to be no clear value. Maybe running a btp server should require specifying an ILP address?
         vec![incoming_account.clone()],
@@ -195,7 +195,7 @@ pub fn run_spsp_server_btp(
         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
             Err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
-                message: &format!("No outgoing route for: {:?}", request.from.client_address(),)
+                message: &format!("No outgoing route for: {:?}", request.from.ilp_address(),)
                     .as_bytes(),
                 triggered_by: ilp_addr.as_ref(),
                 data: &[],
@@ -220,17 +220,16 @@ pub fn run_spsp_server_btp(
 
         get_ildcp_info(&mut incoming_service, incoming_account.clone()).and_then(move |info| {
             debug!("SPSP server got ILDCP info: {:?}", info);
-            let client_address = info.client_address();
+            let ilp_address = info.ilp_address();
             // Update the ILP Address with the ildcp info request's address
-            *ilp_address.write() = client_address.to_bytes();
+            *local_ilp_address.write() = ilp_address.to_bytes();
 
-            let receiver_account =
-                AccountBuilder::new(client_address.clone(), LOCAL_USERNAME.clone())
-                    .asset_code(String::from_utf8(info.asset_code().to_vec()).unwrap_or_default())
-                    .asset_scale(info.asset_scale())
-                    // Send all outgoing packets to this account
-                    .additional_routes(&[&b""[..]])
-                    .build();
+            let receiver_account = AccountBuilder::new(ilp_address.clone(), LOCAL_USERNAME.clone())
+                .asset_code(String::from_utf8(info.asset_code().to_vec()).unwrap_or_default())
+                .asset_scale(info.asset_scale())
+                // Send all outgoing packets to this account
+                .additional_routes(&[&b""[..]])
+                .build();
             store.add_account(receiver_account);
 
             if !quiet {
@@ -238,9 +237,9 @@ pub fn run_spsp_server_btp(
             }
             debug!(
                 "SPSP server listening on {} with ILP address {}",
-                &address, client_address,
+                &address, ilp_address,
             );
-            let spsp_responder = SpspResponder::new(client_address, server_secret);
+            let spsp_responder = SpspResponder::new(ilp_address, server_secret);
             Server::bind(&address)
                 .serve(move || spsp_responder.clone())
                 .map_err(|e| eprintln!("Server error: {:?}", e))
@@ -255,7 +254,7 @@ pub fn run_spsp_server_http(
     auth_token: String,
     quiet: bool,
 ) -> impl Future<Item = (), Error = ()> {
-    let ilp_address = ildcp_info.client_address();
+    let ilp_address = ildcp_info.ilp_address();
     let ilp_address_clone = ilp_address.clone();
     if !quiet {
         println!(
@@ -330,7 +329,7 @@ pub fn run_moneyd_local(
     address: SocketAddr,
     ildcp_info: IldcpResponse,
 ) -> impl Future<Item = (), Error = ()> {
-    let ilp_address = ildcp_info.client_address();
+    let ilp_address = ildcp_info.ilp_address();
     let ilp_address_clone = ilp_address.clone();
     let store = InMemoryStore::default();
     // TODO this needs a reference to the BtpService so it can send outgoing packets

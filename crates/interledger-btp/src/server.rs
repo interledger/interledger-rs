@@ -230,7 +230,7 @@ where
                             Err(_) => return Either::A(err(())),
                         }
                     };
-                    let ilp_address = ildcp_info.client_address();
+                    let ilp_address = ildcp_info.ilp_address();
                     // auth.username is always a valid suffix, enforced by the
                     // Username type, hence we can unwrap safely here.
                     let ilp_address = ilp_address.with_suffix(local_part.as_bytes()).unwrap();

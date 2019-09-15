@@ -415,7 +415,7 @@ mod tests {
             self.asset_scale
         }
 
-        fn client_address(&self) -> &Address {
+        fn ilp_address(&self) -> &Address {
             &self.ilp_address
         }
     }

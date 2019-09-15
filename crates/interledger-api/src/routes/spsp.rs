@@ -116,7 +116,7 @@ impl_web! {
                 }))
                 .and_then(move |accounts| {
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
-                    Ok(SpspResponder::new(accounts[0].client_address().clone(), server_secret)
+                    Ok(SpspResponder::new(accounts[0].ilp_address().clone(), server_secret)
                         .generate_http_response())
                     })
             })

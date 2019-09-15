@@ -155,7 +155,7 @@ impl AccountTrait for Account {
         &self.inner.username
     }
 
-    fn client_address(&self) -> &Address {
+    fn ilp_address(&self) -> &Address {
         &self.inner.ilp_address
     }
 
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(account.get_http_auth_token(), None);
         assert_eq!(account.max_packet_amount(), u64::max_value());
         assert_eq!(
-            *account.client_address(),
+            *account.ilp_address(),
             Address::from_str("example.address").unwrap()
         );
         assert_eq!(account.username(), &Username::from_str("username").unwrap());
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(account.get_btp_token(), Some(&b"token"[..]));
         assert_eq!(account.get_http_auth_token(), Some("sodgiuoixfugoiudf"));
         assert_eq!(account.max_packet_amount(), 7777);
-        assert_eq!(account.client_address(), &b"example.address"[..]);
+        assert_eq!(account.ilp_address(), &b"example.address"[..]);
         assert_eq!(account.username(), &Username::from_str("username").unwrap());
     }
 }

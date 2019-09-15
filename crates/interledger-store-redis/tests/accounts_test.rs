@@ -68,7 +68,7 @@ fn insert_accounts() {
             .insert_account(ACCOUNT_DETAILS_2.clone())
             .and_then(move |account| {
                 assert_eq!(
-                    *account.client_address(),
+                    *account.ilp_address(),
                     // note that charlie was added as a child, hence his
                     // username is appended to the node's address instead of
                     // using any address
@@ -98,7 +98,7 @@ fn only_one_parent_allowed() {
                 // the store's ilp address should be back to local.host
                 store.insert_account(acc).and_then(move |account| {
                     assert_eq!(
-                        *account.client_address(),
+                        *account.ilp_address(),
                         Address::from_str("example.another_name").unwrap()
                     );
 
@@ -382,7 +382,7 @@ fn gets_single_account() {
         store_clone
             .get_accounts(vec![acc.id()])
             .and_then(move |accounts| {
-                assert_eq!(accounts[0].client_address(), acc.client_address(),);
+                assert_eq!(accounts[0].ilp_address(), acc.ilp_address(),);
                 let _ = context;
                 Ok(())
             })
@@ -400,8 +400,8 @@ fn gets_multiple() {
             .get_accounts(account_ids)
             .and_then(move |accounts| {
                 // note reverse order is intentional
-                assert_eq!(accounts[0].client_address(), accs[1].client_address());
-                assert_eq!(accounts[1].client_address(), accs[0].client_address());
+                assert_eq!(accounts[0].ilp_address(), accs[1].ilp_address());
+                assert_eq!(accounts[1].ilp_address(), accs[0].ilp_address());
                 let _ = context;
                 Ok(())
             })

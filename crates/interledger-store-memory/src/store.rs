@@ -213,7 +213,7 @@ impl BtpOpenSignupStore for InMemoryStore {
         .build();
 
         (*self.accounts.write()).insert(account_id, account.clone());
-        let ilp_address = account.client_address().clone();
+        let ilp_address = account.ilp_address().clone();
         (*self.routing_table.write()).insert(ilp_address.to_bytes(), account_id);
         (*self.btp_auth.write()).insert(
             account.inner.btp_incoming_token.clone().unwrap(),

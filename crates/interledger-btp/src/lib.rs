@@ -114,7 +114,7 @@ mod client_server {
             "XYZ"
         }
 
-        fn client_address(&self) -> &Address {
+        fn ilp_address(&self) -> &Address {
             &EXAMPLE_ADDRESS
         }
     }

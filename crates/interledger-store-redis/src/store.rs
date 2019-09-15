@@ -401,8 +401,8 @@ impl RedisStore {
                     pipe.hset("usernames", account.username().as_ref(), id).ignore();
 
                     if account.routing_relation == RoutingRelation::Parent {
-                        pipe.set("parent", account.client_address().as_bytes()).ignore();
-                        self_clone.set_ilp_address(account.client_address().clone());
+                        pipe.set("parent", account.ilp_address().as_bytes()).ignore();
+                        self_clone.set_ilp_address(account.ilp_address().clone());
                     }
 
                     // Set account details

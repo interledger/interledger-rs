@@ -104,7 +104,7 @@ impl TryFrom<Bytes> for IldcpResponse {
 }
 
 impl IldcpResponse {
-    pub fn client_address(&self) -> Address {
+    pub fn ilp_address(&self) -> Address {
         self.ilp_address.clone()
     }
 
@@ -123,8 +123,8 @@ impl fmt::Debug for IldcpResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "IldcpResponse {{ client_address: \"{:?}\", asset_code: \"{}\", asset_scale: {} }}",
-            self.client_address(),
+            "IldcpResponse {{ ilp_address: \"{:?}\", asset_code: \"{}\", asset_scale: {} }}",
+            self.ilp_address(),
             str::from_utf8(self.asset_code()).unwrap_or("<not utf8>"),
             self.asset_scale
         )
@@ -133,20 +133,20 @@ impl fmt::Debug for IldcpResponse {
 
 #[derive(Debug, PartialEq)]
 pub struct IldcpResponseBuilder<'a> {
-    pub client_address: &'a Address,
+    pub ilp_address: &'a Address,
     pub asset_scale: u8,
     pub asset_code: &'a str,
 }
 
 impl<'a> IldcpResponseBuilder<'a> {
     pub fn build(&self) -> IldcpResponse {
-        let address_size = predict_var_octet_string(self.client_address.len());
+        let address_size = predict_var_octet_string(self.ilp_address.len());
         let asset_code_size = predict_var_octet_string(self.asset_code.len());
         let buf_size = ASSET_SCALE_LEN + address_size + asset_code_size;
         let mut buffer = BytesMut::with_capacity(buf_size);
 
-        buffer.put_var_octet_string_length(self.client_address.len());
-        buffer.put_slice(self.client_address.as_ref());
+        buffer.put_var_octet_string_length(self.ilp_address.len());
+        buffer.put_slice(self.ilp_address.as_ref());
         buffer.put_u8(self.asset_scale);
         buffer.put_var_octet_string_length(self.asset_code.len());
         buffer.put_slice(self.asset_code.as_bytes());
@@ -155,7 +155,7 @@ impl<'a> IldcpResponseBuilder<'a> {
             buffer: buffer.freeze(),
             asset_scale: self.asset_scale,
             asset_code_offset: address_size + ASSET_SCALE_LEN,
-            ilp_address: self.client_address.clone(),
+            ilp_address: self.ilp_address.clone(),
         }
     }
 }

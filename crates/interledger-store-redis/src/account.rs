@@ -465,7 +465,7 @@ impl AccountTrait for Account {
         &self.username
     }
 
-    fn client_address(&self) -> &Address {
+    fn ilp_address(&self) -> &Address {
         &self.ilp_address
     }
 

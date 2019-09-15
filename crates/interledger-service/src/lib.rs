@@ -52,7 +52,7 @@ pub trait Account: Clone + Send + Sized + Debug {
 
     fn id(&self) -> Self::AccountId;
     fn username(&self) -> &Username;
-    fn client_address(&self) -> &Address;
+    fn ilp_address(&self) -> &Address;
     fn asset_scale(&self) -> u8;
     fn asset_code(&self) -> &str;
 }

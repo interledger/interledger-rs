@@ -523,7 +523,7 @@ fn is_fd_tty(file_descriptor: c_int) -> bool {
 fn run_spsp_server(opt: SpspServerOpt) {
     if opt.ilp_over_http {
         let ildcp_info = IldcpResponseBuilder {
-            client_address: &Address::from_str(&opt.ilp_address).unwrap(),
+            ilp_address: &Address::from_str(&opt.ilp_address).unwrap(),
             asset_code: "",
             asset_scale: 0,
         }
@@ -566,7 +566,7 @@ fn run_spsp_pay(opt: SpspPayOpt) {
 
 fn run_moneyd_local(opt: MoneydLocalOpt) {
     let ildcp_info = IldcpResponseBuilder {
-        client_address: &Address::from_str(&opt.ilp_address).unwrap(),
+        ilp_address: &Address::from_str(&opt.ilp_address).unwrap(),
         asset_code: &opt.asset_code,
         asset_scale: opt.asset_scale,
     }
