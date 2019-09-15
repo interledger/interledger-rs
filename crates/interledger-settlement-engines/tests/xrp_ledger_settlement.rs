@@ -75,6 +75,7 @@ fn xrp_ledger_settlement() {
 
     let node1_secret = cli::random_secret();
     let node1 = InterledgerNode {
+        username: Username::from_str("alice").unwrap(),
         ilp_address: Address::from_str("example.alice").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "hi_alice".to_string(),
@@ -93,7 +94,7 @@ fn xrp_ledger_settlement() {
         // TODO insert the accounts via HTTP request
         node1_clone
             .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.alice").unwrap(),
+                configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
                 username: Username::from_str("alice").unwrap(),
                 asset_code: "XRP".to_string(),
                 asset_scale: xrp_decimals,
@@ -114,7 +115,7 @@ fn xrp_ledger_settlement() {
             })
             .and_then(move |_| {
                 node1_clone.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.bob").unwrap(),
+                    configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
                     username: Username::from_str("bob").unwrap(),
                     asset_code: "XRP".to_string(),
                     asset_scale: xrp_decimals,
@@ -139,6 +140,7 @@ fn xrp_ledger_settlement() {
 
     let node2_secret = cli::random_secret();
     let node2 = InterledgerNode {
+        username: Username::from_str("bob").unwrap(),
         ilp_address: Address::from_str("example.bob").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
@@ -155,7 +157,7 @@ fn xrp_ledger_settlement() {
     runtime.spawn(
         node2
             .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.bob").unwrap(),
+                configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
                 username: Username::from_str("bob").unwrap(),
                 asset_code: "XRP".to_string(),
                 asset_scale: xrp_decimals,
@@ -177,7 +179,7 @@ fn xrp_ledger_settlement() {
             .and_then(move |_| {
                 node2
                     .insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.alice").unwrap(),
+                        configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
                         username: Username::from_str("alice").unwrap(),
                         asset_code: "XRP".to_string(),
                         asset_scale: xrp_decimals,

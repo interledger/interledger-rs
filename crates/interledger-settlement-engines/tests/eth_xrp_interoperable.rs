@@ -103,6 +103,7 @@ fn eth_xrp_interoperable() {
         .unwrap();
 
     let node1 = InterledgerNode {
+        username: Username::from_str("alice").unwrap(),
         ilp_address: Address::from_str("example.alice").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
@@ -122,7 +123,7 @@ fn eth_xrp_interoperable() {
         node1_eth_engine_fut.and_then(move |_| {
             node1_clone
                 .insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.alice").unwrap(),
+                    configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
                     username: Username::from_str("alice").unwrap(),
                     asset_code: "ETH".to_string(),
                     asset_scale: eth_decimals,
@@ -145,7 +146,7 @@ fn eth_xrp_interoperable() {
             // TODO insert the accounts via HTTP request
             node1_clone
                 .insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.bob").unwrap(),
+                    configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
                     username: Username::from_str("bob").unwrap(),
                     asset_code: "ETH".to_string(),
                     asset_scale: eth_decimals,
@@ -170,6 +171,7 @@ fn eth_xrp_interoperable() {
 
     let node2 = InterledgerNode {
         ilp_address: Address::from_str("example.bob").unwrap(),
+        username: Username::from_str("bob").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
@@ -188,7 +190,7 @@ fn eth_xrp_interoperable() {
             .and_then(move |_| {
                 node2_clone
                     .insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.alice").unwrap(),
+                        configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
                         username: Username::from_str("alice").unwrap(),
                         asset_code: "ETH".to_string(),
                         asset_scale: eth_decimals,
@@ -209,7 +211,7 @@ fn eth_xrp_interoperable() {
                     })
                     .and_then(move |_| {
                         node2_clone.insert_account(AccountDetails {
-                            ilp_address: Address::from_str("example.bob.charlie").unwrap(),
+                            configured_ilp_address: None,
                             username: Username::from_str("charlie").unwrap(),
                             asset_code: "XRP".to_string(),
                             asset_scale: xrp_decimals,
@@ -252,7 +254,8 @@ fn eth_xrp_interoperable() {
     );
 
     let node3 = InterledgerNode {
-        ilp_address: Address::from_str("example.bob.charlie").unwrap(),
+        ilp_address: Address::from_str("local.host").unwrap(),
+        username: Username::from_str("charlie").unwrap(),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
@@ -273,48 +276,48 @@ fn eth_xrp_interoperable() {
             .and_then(move |_| {
                 node3_clone
                     .insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.bob.charlie").unwrap(),
-                        username: Username::from_str("charlie").unwrap(),
+                        configured_ilp_address: Some(Address::from_str("example.bob").unwrap()),
+                        username: Username::from_str("bob").unwrap(),
                         asset_code: "XRP".to_string(),
                         asset_scale: xrp_decimals,
                         btp_incoming_token: None,
                         btp_uri: None,
-                        http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
-                        http_incoming_token: Some("in_charlie".to_string()),
-                        http_outgoing_token: None,
+                        http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
+                        http_incoming_token: Some("charlie".to_string()),
+                        http_outgoing_token: Some("charlie:bob".to_string()),
                         max_packet_amount: u64::max_value(),
-                        min_balance: None,
+                        min_balance: Some(-100_000),
                         settle_threshold: None,
                         settle_to: None,
-                        routing_relation: None,
+                        routing_relation: Some("Parent".to_string()),
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,
-                        settlement_engine_url: None,
+                        settlement_engine_url: Some(format!(
+                            "http://localhost:{}",
+                            node3_xrp_engine_port
+                        )),
                     })
                     .and_then(move |_| {
                         node3_clone.insert_account(AccountDetails {
-                            ilp_address: Address::from_str("example.bob").unwrap(),
-                            username: Username::from_str("bob").unwrap(),
+                            configured_ilp_address: None,
+                            username: Username::from_str("charlie").unwrap(),
                             asset_code: "XRP".to_string(),
                             asset_scale: xrp_decimals,
                             btp_incoming_token: None,
                             btp_uri: None,
-                            http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                            http_incoming_token: Some("charlie".to_string()),
-                            http_outgoing_token: Some("charlie:bob".to_string()),
+                            http_endpoint: Some(format!("http://localhost:{}/ilp", node3_http)),
+                            http_incoming_token: Some("in_charlie".to_string()),
+                            http_outgoing_token: None,
                             max_packet_amount: u64::max_value(),
-                            min_balance: Some(-100_000),
+                            min_balance: None,
                             settle_threshold: None,
                             settle_to: None,
-                            routing_relation: Some("Parent".to_string()),
+                            routing_relation: None,
                             round_trip_time: None,
                             packets_per_minute_limit: None,
                             amount_per_minute_limit: None,
-                            settlement_engine_url: Some(format!(
-                                "http://localhost:{}",
-                                node3_xrp_engine_port
-                            )),
+                            settlement_engine_url: None,
                         })
                     })
             })

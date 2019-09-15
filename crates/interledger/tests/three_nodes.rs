@@ -247,7 +247,7 @@ fn three_nodes() {
                         min_balance: None,
                         settle_threshold: None,
                         settle_to: None,
-                        routing_relation: None,
+                        routing_relation: Some("NonRoutingAccount".to_owned()),
                         round_trip_time: None,
                         packets_per_minute_limit: None,
                         amount_per_minute_limit: None,

@@ -215,7 +215,6 @@ impl RedisStoreBuilder {
         let username = self.username.clone();
         let username_clone = self.username.clone();
         let ilp_address = self.node_ilp_address.clone();
-        println!("OUR ADDRESS {:?}", ilp_address);
 
         result(Client::open(self.redis_url.clone()))
             .map_err(|err| error!("Error creating Redis client: {:?}", err))
@@ -240,7 +239,6 @@ impl RedisStoreBuilder {
                         )
                     })
                     .and_then(move |(_, address): (SharedConnection, Option<String>)| {
-                        println!("got address {:?}", address);
                         let ilp_address = if let Some(address) = address {
                             // append our username to the parent's address
                             let parent_address = Address::from_str(&address).unwrap();
@@ -323,20 +321,22 @@ impl RedisStore {
         id: AccountId,
         mut account: AccountDetails,
     ) -> Result<Account, ()> {
-        if account.configured_ilp_address.is_none() {
-            // If the account is not a child they should always be providing an address
-            if let Some(ref relation) = account.routing_relation {
-                if relation.to_lowercase() != "child" {
-                    return Err(());
+        // if the account's username is our node's username, then just use
+        // our node's address
+        let address = self.ilp_address.read();
+        if account.username == self.username {
+            account.configured_ilp_address = Some(address.clone())
+        } else {
+            // if they did not provide an address, we must set it based on child
+            // rules
+            if account.configured_ilp_address.is_none() {
+                // If the account is not a child they should always be providing an address
+                if let Some(ref relation) = account.routing_relation {
+                    if relation.to_lowercase() != "child" {
+                        return Err(());
+                    }
                 }
-            }
 
-            let address = self.ilp_address.read();
-            // if the account's username is our node's username, then just use
-            // our node's address
-            if account.username == self.username {
-                account.configured_ilp_address = Some(address.clone())
-            } else {
                 // otherwise, since they are a child, append their username to our
                 // node's address
                 account.configured_ilp_address = Some(

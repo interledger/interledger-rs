@@ -9,7 +9,7 @@ use interledger_service_util::BalanceStore;
 use std::str::FromStr;
 
 use interledger_service::Account as AccountTrait;
-use interledger_store_redis::{Account, AccountId};
+use interledger_store_redis::AccountId;
 
 #[test]
 fn get_balance() {
