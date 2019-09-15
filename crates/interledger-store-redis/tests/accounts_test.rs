@@ -33,7 +33,7 @@ fn picks_up_parent_during_initialization() {
                 // to the store we will always get the configured parent (if
                 // there was one))
                 redis::cmd("SET")
-                    .arg("parent")
+                    .arg("parent_node_account_address")
                     .arg("example.bob")
                     .query_async(connection)
                     .map_err(|err| panic!(err))

@@ -230,7 +230,7 @@ impl RedisStoreBuilder {
                 // provided address (local.host) or the one we decided to
                 // override with
                 redis::cmd("GET")
-                    .arg("parent")
+                    .arg("parent_node_account_address")
                     .query_async(connection.clone())
                     .map_err(|err| {
                         error!(
@@ -372,7 +372,7 @@ impl RedisStore {
                     pipe.exists(accounts_key(account.id));
                     pipe.hexists("usernames", account.username().as_ref());
                     if account.routing_relation == RoutingRelation::Parent {
-                        pipe.exists("parent");
+                        pipe.exists("parent_node_account_address");
                     }
 
                     pipe.query_async(connection.as_ref().clone())
@@ -401,7 +401,7 @@ impl RedisStore {
                     pipe.hset("usernames", account.username().as_ref(), id).ignore();
 
                     if account.routing_relation == RoutingRelation::Parent {
-                        pipe.set("parent", account.ilp_address().as_bytes()).ignore();
+                        pipe.set("parent_node_account_address", account.ilp_address().as_bytes()).ignore();
                         self_clone.set_ilp_address(account.ilp_address().clone());
                     }
 
@@ -627,7 +627,7 @@ impl RedisStore {
             pipe.hdel("usernames", account.username().as_ref()).ignore();
 
             if account.routing_relation == RoutingRelation::Parent {
-                pipe.del("parent").ignore();
+                pipe.del("parent_node_account_address").ignore();
                 self_clone.set_ilp_address(Address::from_str("local.host").unwrap());
             }
 
