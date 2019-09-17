@@ -19,8 +19,8 @@ use interledger_service_util::{
 // Re-export this
 pub use interledger_service_util::ExchangeRateProvider;
 use interledger_settlement::{SettlementApi, SettlementMessageService};
-use interledger_store_redis::{
-    Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
+use interledger_store::{
+    Account, AccountId, ConnectionInfo, IntoConnectionInfo, InterledgerStore,
 };
 use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
@@ -168,9 +168,13 @@ impl InterledgerNode {
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
         let exchange_rate_spread = self.exchange_rate_spread;
 
-        RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret, self.username.clone())
-            .node_ilp_address(self.ilp_address.clone())
-            .connect()
+        InterledgerStore::new_redis_store(
+            self.redis_connection.clone(),
+            redis_secret, 
+            self.username.clone(),
+            Some(self.ilp_address.clone()),
+            None,
+        )
         .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
                 //  Get the ILP Address to be used in all the services from the
@@ -360,9 +364,13 @@ where
     result(redis_uri.into_connection_info())
         .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
         .and_then(move |redis_uri| {
-            RedisStoreBuilder::new(redis_uri, redis_secret, username)
-                .node_ilp_address(ilp_address)
-                .connect()
+            InterledgerStore::new_redis_store(
+                redis_uri,
+                redis_secret, 
+                username,
+                Some(ilp_address),
+                None,
+            )
         })
         .map_err(|err| error!("Error connecting to Redis: {:?}", err))
         .and_then(move |store| {

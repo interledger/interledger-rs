@@ -8,7 +8,7 @@ use interledger_settlement_engines::engines::ethereum_ledger::{
 
 pub mod redis_helpers;
 
-use interledger_store_redis::{Account, AccountId, ConnectionInfo};
+use interledger_store::{Account, AccountId, ConnectionInfo};
 use reqwest;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};

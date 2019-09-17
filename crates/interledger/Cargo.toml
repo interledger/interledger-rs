@@ -24,7 +24,7 @@ cli = [
     "interledger-router",
     "interledger-service-util",
     "interledger-settlement",
-    "interledger-store-redis",
+    "interledger-store",
     "interledger-api",
 ]
 btp = ["interledger-btp"]
@@ -57,7 +57,7 @@ interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1
 interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1", optional = true }
 interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", optional = true }
 interledger-store-memory = { path = "../interledger-store-memory", version = "^0.2.2-alpha.1", optional = true }
-interledger-store-redis = { path = "../interledger-store-redis", version = "^0.2.2-alpha.1", optional = true}
+interledger-store = { path = "../interledger-store", version = "^0.2.2-alpha.1", optional = true}
 log = "0.4.6"
 parking_lot = "0.7.1"
 ring = "0.14.6"

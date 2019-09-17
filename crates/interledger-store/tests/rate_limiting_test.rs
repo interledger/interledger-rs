@@ -2,7 +2,7 @@ mod common;
 use common::*;
 use futures::future::join_all;
 use interledger_service_util::{RateLimitError, RateLimitStore};
-use interledger_store_redis::AccountId;
+use interledger_store::AccountId;
 
 #[test]
 fn rate_limits_number_of_packets() {

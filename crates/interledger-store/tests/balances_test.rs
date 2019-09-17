@@ -10,7 +10,7 @@ use redis_crate as redis;
 use std::str::FromStr;
 
 use interledger_service::Account as AccountTrait;
-use interledger_store_redis::AccountId;
+use interledger_store::AccountId;
 
 #[test]
 fn get_balance() {

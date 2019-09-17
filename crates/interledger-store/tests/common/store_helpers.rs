@@ -5,7 +5,7 @@ use futures::Future;
 use interledger_api::NodeStore;
 use interledger_packet::Address;
 use interledger_service::Username;
-use interledger_store_redis::{Account, InterledgerStore, RedisStore};
+use interledger_store::{Account, InterledgerStore, RedisStore};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::str::FromStr;

@@ -27,6 +27,7 @@ type RoutingTable<A> = HashMap<Bytes, A>;
 #[derive(Clone)]
 pub struct InterledgerStore<S, A> {
     db: S,
+    // Todo: Optional cache & pubsub
     account_type: PhantomData<A>,
     node_ilp_address: Option<Address>,
     username: Username,

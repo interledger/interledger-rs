@@ -10,7 +10,7 @@ use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
-use interledger_store_redis::AccountId;
+use interledger_store::AccountId;
 use log::{debug, error};
 use redis_crate as redis;
 use redis_crate::Client;
