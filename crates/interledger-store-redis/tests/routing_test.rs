@@ -8,6 +8,7 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, Username};
 use interledger_store_redis::AccountId;
+use redis_crate as redis;
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;

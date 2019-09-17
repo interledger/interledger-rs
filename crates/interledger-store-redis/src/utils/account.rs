@@ -11,9 +11,6 @@ use interledger_service_util::{
 };
 use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
 use log::error;
-use redis::{
-    from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
-};
 
 use ring::aead;
 use serde::Serializer;
@@ -30,6 +27,11 @@ const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
 use secrecy::ExposeSecret;
 use secrecy::SecretBytes;
+
+#[cfg(feature = "redis")]
+use redis_crate::{
+    from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
@@ -210,7 +212,6 @@ impl AccountWithEncryptedTokens {
     }
 }
 
-// Uuid does not implement ToRedisArgs and FromRedisValue.
 // Rust does not allow implementing foreign traits on foreign data types.
 // As a result, we wrap Uuid in a local data type, and implement the necessary
 // traits for that.
@@ -239,12 +240,14 @@ impl Display for AccountId {
     }
 }
 
+#[cfg(feature = "redis")]
 impl ToRedisArgs for AccountId {
     fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
         out.write_arg(self.0.to_hyphenated().to_string().as_bytes().as_ref());
     }
 }
 
+#[cfg(feature = "redis")]
 impl FromRedisValue for AccountId {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let account_id = String::from_redis_value(v)?;
@@ -254,6 +257,7 @@ impl FromRedisValue for AccountId {
     }
 }
 
+#[cfg(feature = "redis")]
 impl ToRedisArgs for AccountWithEncryptedTokens {
     fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
         let mut rv = Vec::with_capacity(ACCOUNT_DETAILS_FIELDS * 2);
@@ -356,6 +360,7 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
     }
 }
 
+#[cfg(feature = "redis")]
 impl FromRedisValue for AccountWithEncryptedTokens {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
@@ -406,6 +411,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
     }
 }
 
+#[cfg(feature = "redis")]
 fn get_value<V>(key: &str, map: &HashMap<String, Value>) -> Result<V, RedisError>
 where
     V: FromRedisValue,
@@ -421,6 +427,7 @@ where
     }
 }
 
+#[cfg(feature = "redis")]
 fn get_value_option<V>(key: &str, map: &HashMap<String, Value>) -> Result<Option<V>, RedisError>
 where
     V: FromRedisValue,
@@ -432,6 +439,7 @@ where
     }
 }
 
+#[cfg(feature = "redis")]
 fn get_bytes_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Bytes>, RedisError> {
     if let Some(ref value) = map.get(key) {
         let vec: Vec<u8> = from_redis_value(value)?;
@@ -441,6 +449,7 @@ fn get_bytes_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<By
     }
 }
 
+#[cfg(feature = "redis")]
 fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>, RedisError> {
     if let Some(ref value) = map.get(key) {
         let value: String = from_redis_value(value)?;

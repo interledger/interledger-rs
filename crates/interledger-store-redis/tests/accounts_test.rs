@@ -12,7 +12,8 @@ use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
 use log::{debug, error};
-use redis::Client;
+use redis_crate as redis;
+use redis_crate::Client;
 use std::str::FromStr;
 
 #[test]

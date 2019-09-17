@@ -1,7 +1,7 @@
 // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
 #![allow(dead_code)]
 
-use redis;
+use redis_crate as redis;
 
 use std::env;
 use std::fs;

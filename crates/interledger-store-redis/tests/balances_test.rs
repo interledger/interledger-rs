@@ -6,6 +6,7 @@ use interledger_api::NodeStore;
 use interledger_packet::Address;
 use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
+use redis_crate as redis;
 use std::str::FromStr;
 
 use interledger_service::Account as AccountTrait;

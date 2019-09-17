@@ -1,11 +1,17 @@
-//! # interledger-store-redis
+//! # interledger-store
 //!
-//! A Store that uses [Redis](https://redis.io/) as the database for storing account details, balances, the routing table, etc.
+//! Stores account details, balances, the routing table, etc.
+//! Supported backends:  
+//! 1. [Redis](https://redis.io/)
 
-mod account;
-mod crypto;
+mod backends;
 mod store;
+pub(crate) mod utils;
+pub use store::*;
 
-pub use account::{Account, AccountId};
-pub use redis::{ConnectionInfo, IntoConnectionInfo};
-pub use store::{RedisStore, RedisStoreBuilder};
+pub use utils::account::{Account, AccountId};
+
+#[cfg(feature = "redis")]
+pub use backends::redis::{RedisStore, RedisStoreBuilder};
+#[cfg(feature = "redis")]
+pub use redis_crate::{ConnectionInfo, IntoConnectionInfo};

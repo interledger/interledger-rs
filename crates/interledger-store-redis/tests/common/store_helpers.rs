@@ -5,7 +5,7 @@ use futures::Future;
 use interledger_api::NodeStore;
 use interledger_packet::Address;
 use interledger_service::Username;
-use interledger_store_redis::{Account, RedisStore, RedisStoreBuilder};
+use interledger_store_redis::{Account, InterledgerStore, RedisStore};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::str::FromStr;
@@ -15,15 +15,22 @@ lazy_static! {
     static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
 }
 
-pub fn test_store() -> impl Future<Item = (RedisStore, TestContext, Vec<Account>), Error = ()> {
+pub fn test_store() -> impl Future<
+    Item = (
+        InterledgerStore<RedisStore, Account>,
+        TestContext,
+        Vec<Account>,
+    ),
+    Error = (),
+> {
     let context = TestContext::new();
-    RedisStoreBuilder::new(
+    InterledgerStore::new_redis_store(
         context.get_client_connection_info(),
         [0; 32],
         Username::from_str("node").unwrap(),
+        Some(Address::from_str("example.node").unwrap()),
+        None,
     )
-    .node_ilp_address(Address::from_str("example.node").unwrap())
-    .connect()
     .and_then(|store| {
         let store_clone = store.clone();
         let mut accs = Vec::new();
