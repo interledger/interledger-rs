@@ -177,14 +177,16 @@ where
     }
 
     // TODO: implement generically rather than over Incoming
-    pub fn sub_serve(&self, incoming: Incoming) -> impl Future<Item = (), Error = ()> {
+    pub fn serve_notifications(&self, incoming: Incoming) -> impl Future<Item = (), Error = ()> {
         let store = self.store.clone();
         incoming
-            .map_err(|e| error!("Failed to receive stream from notifications listener: {}", e))
+            .map_err(|e| error!("Failed to handle incoming connection: {}", e))
             .for_each(move |stream| {
                 let store_clone = store.clone();
 
                 // Used to make HTTP header details accessible to the websocket handler.
+                // This is necessary because while the method for accepting websockets is async,
+                // the callback used to process headers isn't.
                 let details = Arc::new(Mutex::new(None));
                 let details_clone = details.clone();
 
@@ -236,7 +238,6 @@ where
                                                 }))
                                                 .then(move |_| {
                                                     info!("Finished forwarding subscriber to account: {}", username);
-                                                    // TODO close connection
                                                     Ok(())
                                                 }),
                                         );
@@ -248,8 +249,6 @@ where
                     }
                 })
             })
-            .map_err(|_| ())
-            .and_then(|_| Ok(()))
     }
 
     pub fn serve<T>(&self, incoming: T) -> impl Future<Item = (), Error = ()>
@@ -275,8 +274,8 @@ where
             })
             .resource(AccountsApi::new(
                 self.admin_api_token.clone(),
-                self.store.clone(),
                 self.notifications_address.clone(),
+                self.store.clone(),
             ))
             .resource(SettingsApi::new(
                 self.admin_api_token.clone(),

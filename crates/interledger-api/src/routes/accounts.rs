@@ -59,7 +59,7 @@ impl_web! {
     A: Account + HttpAccount + Serialize + 'static,
 
     {
-        pub fn new(admin_api_token: String, store: T, notifications_address: SocketAddr) -> Self {
+        pub fn new(admin_api_token: String, notifications_address: SocketAddr, store: T) -> Self {
             AccountsApi {
                 store,
                 admin_api_token,
