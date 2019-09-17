@@ -1,3 +1,11 @@
+# Cache spec
+# - cargo-cache-1
+#    - contents: .cargo
+#    - based on: Cargo.toml
+# - cargo-cache-2
+#    - contents: .cargo
+#    - based on: Cargo.lock
+
 version: 2
 jobs:
   build:
@@ -10,9 +18,9 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}
-            - cargo-cache-1-
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
       - run:
           name: Install Cargo Extensions
           command: |
@@ -79,6 +87,75 @@ jobs:
       #     name: Upload Code Coverage
       #     command: "bash <(curl -s https://codecov.io/bash)"
       - save_cache:
-          key: cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
           paths:
             - /home/circleci/.cargo
+  test-md:
+    docker:
+      - image: interledgerrs/circleci-rust-dind:latest
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - restore_cache:
+          keys:
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
+      - run:
+          # builds dev profile images because these images are not going to be released
+          name: Build docker images
+          command: scripts/docker-build.sh node settlement-engines
+      - run:
+          name: Run run-md test
+          command: scripts/run-md-test.sh
+      - store_artifacts:
+          path: /tmp/run-md-test
+          destination: run-md-test
+      - save_cache:
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+          paths:
+            - /home/circleci/.cargo
+  update-docker-images:
+    docker:
+      - image: interledgerrs/circleci-rust-dind:latest
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - restore_cache:
+          keys:
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
+      - run:
+          # builds release profile images to be released
+          name: Build docker images
+          command: scripts/docker-build.sh node settlement-engines
+          environment:
+            PROFILE: "release"
+      - run:
+          name: Push to DockerHub
+          command: |
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+            docker push interledgerrs/node:latest
+            docker push interledgerrs/settlement-engines:latest
+      - save_cache:
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+          paths:
+            - /home/circleci/.cargo
+
+workflows:
+  version: 2
+  build_and_test-md:
+    jobs:
+      - build
+      - test-md
+      - update-docker-images: # updates docker images on DockerHub, only if the branch is master
+          filters:
+            branches:
+              only:
+                - master
+          requires:
+            - build
+            - test-md
