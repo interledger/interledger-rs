@@ -314,7 +314,7 @@ cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 --redis_url redis://127.0.0.1:6380/ \
 --asset_scale 6 \
 --settlement_api_bind_address 127.0.0.1:3000 \
-&> logs/node-alice-settlement-engine-eth.log &
+&> logs/redis-a-se-eth.log &
 
 # Start Bob's settlement engine (ETH, XRPL)
 cargo run --bin interledger-settlement-engines -- ethereum-ledger \
@@ -326,7 +326,7 @@ cargo run --bin interledger-settlement-engines -- ethereum-ledger \
 --redis_url redis://127.0.0.1:6382/ \
 --asset_scale 6 \
 --settlement_api_bind_address 127.0.0.1:3001 \
-&> logs/node-bob-settlement-engine-eth.log &
+&> logs/redis-b-se-eth.log &
 
 DEBUG="xrp-settlement-engine" \
 LEDGER_ADDRESS="r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj" \
@@ -335,7 +335,7 @@ CONNECTOR_URL="http://localhost:8771" \
 REDIS_PORT=6383 \
 ENGINE_PORT=3002 \
 ilp-settlement-xrp \
-&> logs/node-bob-settlement-engine-xrpl.log &
+&> logs/redis-b-se-xrp.log &
 
 # Start Charlie's settlement engine (XRPL)
 DEBUG="xrp-settlement-engine" \
@@ -345,7 +345,7 @@ CONNECTOR_URL="http://localhost:9771" \
 REDIS_PORT=6385 \
 ENGINE_PORT=3003 \
 ilp-settlement-xrp \
-&> logs/node-charlie-settlement-engine-xrpl.log &
+&> logs/redis-c-se-xrp.log &
 ```
 <!--!
 fi
@@ -418,7 +418,7 @@ ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --bin interledger -- node &> logs/node-alice.log &
+cargo run --bin interledger -- node &> logs/redis-a-node.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -428,7 +428,7 @@ ILP_REDIS_URL=redis://127.0.0.1:6381/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --bin interledger -- node &> logs/node-bob.log &
+cargo run --bin interledger -- node &> logs/redis-b-node.log &
 
 # Start Charlie's node
 ILP_ADDRESS=example.bob.charlie \
@@ -438,7 +438,7 @@ ILP_REDIS_URL=redis://127.0.0.1:6384/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:9770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:9768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:9771 \
-cargo run --bin interledger -- node &> logs/node-charlie.log &
+cargo run --bin interledger -- node &> logs/redis-c-node.log &
 ```
 
 <!--!
