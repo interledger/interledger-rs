@@ -1037,3 +1037,17 @@ You might have run another example. Stop them first and try again. How to stop t
 This example showed an SPSP payment sent between three Interledger.rs nodes that settled using on-ledger Ethereum and XRPL transactions.
 
 More examples that enhance your integration with ILP are coming soon!
+
+<!--!
+# For integration tests
+function hook_before_kill() {
+    if [ $TEST_MODE -eq 1 ]; then
+        test_equals_or_exit '{"balance":"-500"}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/bob/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/alice/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/charlie/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/bob/balance
+        test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/charlie/balance
+    fi
+}
+-->

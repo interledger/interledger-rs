@@ -40,52 +40,47 @@ function clear_redis_file() {
     fi
 }
 
-# $1 = example name
+# $1 = target directory
 # $2 = docker mode in [01]
 #
-# test_example eth-settlement
-#
-# This heavily depends on the naming convention.
-# - "run-md-tests/examples/$1.sh" MUST exist
-# - "$BASE_DIR/../examples/$1" MUST exist
+# test_example examples/eth-settlement 0
 function test_example() {
-    local target_name=$1
+    local target_directory=$1
     local docker_mode=$2
+    local target_name=$(basename $target_directory)
 
-    # doing in a sub-shell because we want to load `hook_before_kill` many times
-    (
-        cd $BASE_DIR/../examples/$target_name
-        source ../../scripts/run-md-tests/examples/${target_name}.sh
-        export -f hook_before_kill
-        if [ $docker_mode -eq 1 ]; then
-            printf "\e[33;1m%b [%d/%d]\e[m\n" "Testing \"${target_name}\" on docker mode." "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
-            init_test; TEST_MODE=1 USE_DOCKER=1 $RUN_MD .
-            return $?
-        else
-            printf "\e[33;1m%b [%d/%d]\e[m\n" "Testing \"${target_name}\" on non-docker mode." "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
-            init_test; TEST_MODE=1 $RUN_MD .
-            return $?
-        fi
-    )
+    cd $target_directory
+    if [ $docker_mode -eq 1 ]; then
+        printf "\e[33;1m%b [%d/%d]\e[m\n" "Testing \"${target_name}\" on docker mode." "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
+        init_test; USE_DOCKER=1 $RUN_MD .
+        return $?
+    else
+        printf "\e[33;1m%b [%d/%d]\e[m\n" "Testing \"${target_name}\" on non-docker mode." "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
+        init_test; $RUN_MD .
+        return $?
+    fi
+}
+
+# Adds all directories in `examples` directory as test targets.
+function add_example_tests() {
+    # This will add tests like "test_example eth-settlement 0" which means an example test of
+    # eth-settlement in non-docker mode.
+    for directory in $(find $BASE_DIR/../examples/* -type d -maxdepth 0); do
+        TESTS+=("test_example ${directory} 0") # this cannot contain space in the directory path
+        TESTS+=("test_example ${directory} 1")
+    done
 }
 
 BASE_DIR=$(cd $(dirname $0); pwd)
 RUN_MD=$BASE_DIR/run-md.sh
 
-tests=()
-tests+=("test_example eth-settlement 0")
-tests+=("test_example eth-settlement 1")
-tests+=("test_example eth-xrp-three-nodes 0")
-tests+=("test_example eth-xrp-three-nodes 1")
-tests+=("test_example simple 0")
-tests+=("test_example simple 1")
-tests+=("test_example xrp-settlement 0")
-tests+=("test_example xrp-settlement 1")
-TESTS_TOTAL=${#tests[@]}
+TESTS=()
+add_example_tests
+TESTS_TOTAL=${#TESTS[@]}
 TESTS_FAILED=0
 TESTING_INDEX=0
-for test in "${tests[@]}"; do
-    $test
+for test in "${TESTS[@]}"; do
+    TEST_MODE=1 $test
     if [ $? -ne 0 ]; then
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi

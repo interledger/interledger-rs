@@ -537,3 +537,15 @@ You might have run another example. Stop them first and try again. How to stop t
 That's it for this example! You've learned how to set up Interledger.rs nodes, connect them together, and how to send a payment from one to the other.
 
 Check out the [other examples](../README.md) for more complex demos that show other features of Interledger, including settlement, multi-hop routing, and cross-currency payments.
+
+<!--!
+# For integration tests
+function hook_before_kill() {
+    if [ $TEST_MODE -eq 1 ]; then
+        test_equals_or_exit '{"balance":"-500"}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/node_b/balance
+        test_equals_or_exit '{"balance":"-500"}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/node_a/balance
+        test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/bob/balance
+    fi
+}
+-->
