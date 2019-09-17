@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 #[cfg(feature = "redis")]
-use crate::backends::redis::{RedisStore, RedisStoreBuilder};
+use crate::backends::redis::db::{RedisStore, RedisStoreBuilder};
 #[cfg(feature = "redis")]
 use redis_crate::ConnectionInfo;
 

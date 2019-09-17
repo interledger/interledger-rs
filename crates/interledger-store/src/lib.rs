@@ -12,6 +12,6 @@ pub use store::*;
 pub use utils::account::{Account, AccountId};
 
 #[cfg(feature = "redis")]
-pub use backends::redis::{RedisStore, RedisStoreBuilder};
+pub use backends::redis::db::{RedisStore, RedisStoreBuilder};
 #[cfg(feature = "redis")]
 pub use redis_crate::{ConnectionInfo, IntoConnectionInfo};
