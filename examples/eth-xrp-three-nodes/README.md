@@ -1,3 +1,57 @@
+<!--!
+# For integration tests
+function pre_test_hook() {
+    if [ $TEST_MODE -eq 1 ] && [ "${CIRCLECI}" = "true" ] && [ "${USE_DOCKER}" = "1" ]; then
+        # Make tunnels to DOCKER_HOST containers if run on CircleCI.
+        # This is because the docker is not running on the CI container and
+        # we have to connect the following two:
+        #   - 127.0.0.1:xxxx (on CI container)
+        #   - 127.0.0.1:xxxx (on DOCKER_HOST's container:xxxx)
+        # so that we could `curl localhost:xxxx` to connect to DOCKER_HOST's containers.
+        printf "Setting tunnels..."
+        # node
+        ncat -l -k -c "docker exec -i interledger-rs-node_a nc 127.0.0.1 7770" -p 7770 &
+        ncat -l -k -c "docker exec -i interledger-rs-node_b nc 127.0.0.1 7770" -p 8770 &
+        ncat -l -k -c "docker exec -i interledger-rs-node_c nc 127.0.0.1 7770" -p 9770 &
+        # se
+        ncat -l -k -c "docker exec -i interledger-rs-se_a nc 127.0.0.1 3000" -p 3000 &
+        ncat -l -k -c "docker exec -i interledger-rs-se_b nc 127.0.0.1 3000" -p 3001 &
+        ncat -l -k -c "docker exec -i interledger-rs-se_c nc 127.0.0.1 3000" -p 3002 &
+        ncat -l -k -c "docker exec -i interledger-rs-se_d nc 127.0.0.1 3000" -p 3003 &
+        printf "done\n"
+     fi
+}
+
+function post_test_hook() {
+    if [ $TEST_MODE -eq 1 ]; then
+        test_equals_or_exit '{"balance":"-500"}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/bob/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/alice/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/charlie/balance
+        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/bob/balance
+        test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/charlie/balance
+        
+        if [ ${USE_DOCKER} -eq 1 ]; then
+            docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
+            docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
+            docker logs interledger-rs-node_c &> logs/interledger-rs-node_c.log
+            docker logs interledger-rs-se_a &> logs/interledger-rs-se_a.log
+            docker logs interledger-rs-se_b &> logs/interledger-rs-se_b.log
+            docker logs interledger-rs-se_c &> logs/interledger-rs-se_c.log
+            docker logs interledger-rs-se_d &> logs/interledger-rs-se_d.log
+            docker logs ganache &> logs/ganache.log
+            docker logs redis-alice_node &> logs/redis-alice_node.log
+            docker logs redis-alice_se_eth &> logs/redis-alice_se_eth.log
+            docker logs redis-bob_node &> logs/redis-bob_node.log
+            docker logs redis-bob_se_eth &> logs/redis-bob_se_eth.log
+            docker logs redis-bob_se_xrp &> logs/redis-bob_se_xrp.log
+            docker logs redis-charlie_node &> logs/redis-charlie_node.log
+            docker logs redis-charlie_se_xrp &> logs/redis-charlie_se_xrp.log
+        fi
+    fi
+}
+-->
+
 # Interledger with Ethereum and XRP On-Ledger Settlement
 
 > A demo that sends payments between 3 Interledger.rs nodes and settles using Ethereum transactions and XRP transactions.
@@ -129,6 +183,8 @@ else
         fi
     done
 fi
+
+run_pre_test_hook
 -->
 
 ### 1. Build interledger.rs
@@ -157,8 +213,9 @@ fi
 ### 2. Launch Redis
 
 <!--!
-printf "\nStarting Redis...\n"
+printf "\Starting Redis instances..."
 if [ "$USE_DOCKER" -eq 1 ]; then
+    printf "\n"
     $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
     $CMD_DOCKER run --name redis-alice_se_eth -d -p 127.0.0.1:6380:6379 --network=interledger redis:5.0.5
     $CMD_DOCKER run --name redis-bob_node -d -p 127.0.0.1:6381:6379 --network=interledger redis:5.0.5
@@ -184,12 +241,16 @@ redis-server --port 6384 &> logs/redis-c-node.log &
 redis-server --port 6385 &> logs/redis-c-se-xrp.log &
 ```
 
-<!--!
-sleep 1
--->
-
 To remove all the data in Redis, you might additionally perform:
 
+<!--!
+fi
+
+sleep 2
+printf "done\n"
+
+if [ "$USE_DOCKER" -eq 0 ]; then
+-->
 ```bash
 for port in `seq 6379 6385`; do
     redis-cli -p $port flushall
@@ -971,7 +1032,7 @@ else
     printf "\tcat logs/node-charlie-settlement-engine-xrpl.log | grep \"Received incoming XRP payment\"\n"
 fi
 printf "\n"
-run_hook_before_kill
+run_post_test_hook
 if [ $TEST_MODE -ne 1 ]; then
     prompt_yn "Do you want to kill the services? [Y/n]" "y"
 fi
@@ -1059,17 +1120,3 @@ You might have run another example. Stop them first and try again. How to stop t
 This example showed an SPSP payment sent between three Interledger.rs nodes that settled using on-ledger Ethereum and XRPL transactions.
 
 More examples that enhance your integration with ILP are coming soon!
-
-<!--!
-# For integration tests
-function hook_before_kill() {
-    if [ $TEST_MODE -eq 1 ]; then
-        test_equals_or_exit '{"balance":"-500"}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/alice/balance
-        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/bob/balance
-        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/alice/balance
-        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/charlie/balance
-        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/bob/balance
-        test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/charlie/balance
-    fi
-}
--->
