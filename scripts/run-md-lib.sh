@@ -21,12 +21,21 @@ function init() {
     fi
 }
 
-# run hook_before_kill function only if it exists
-function run_hook_before_kill {
+# run pre_test_hook function only if it exists
+function run_pre_test_hook {
     # only when the hook is defined
-    type hook_before_kill &>/dev/null
+    type pre_test_hook &>/dev/null
     if [ $? -eq 0 ]; then
-        hook_before_kill
+        pre_test_hook
+    fi
+}
+
+# run post_test_hook function only if it exists
+function run_post_test_hook {
+    # only when the hook is defined
+    type post_test_hook &>/dev/null
+    if [ $? -eq 0 ]; then
+        post_test_hook
     fi
 }
 
@@ -50,7 +59,6 @@ function wait_to_serve() {
     while :
     do
         printf "."
-        sleep 1
         curl $1 &> /dev/null
         if [ $? -eq 0 ]; then
             break
@@ -58,6 +66,7 @@ function wait_to_serve() {
         if [ $timeout -ge 0 ] && [ $(($SECONDS - $start)) -ge $timeout ]; then
           return 1
         fi
+        sleep 1
     done
     return 0
 }
@@ -75,7 +84,6 @@ function wait_to_get_http_response_body() {
     while :
     do
         printf "."
-        sleep 1
         local json=$(curl "$@" 2> /dev/null)
         if [ "$json" = "$expected" ]; then
             break
@@ -83,6 +91,7 @@ function wait_to_get_http_response_body() {
         if [ $timeout -ge 0 ] && [ $(($SECONDS - $start)) -ge $timeout ]; then
           return 1
         fi
+        sleep 1
     done
     return 0
 }
