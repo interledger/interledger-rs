@@ -1,3 +1,51 @@
+<!--!
+# For integration tests
+function pre_test_hook() {
+    if [ $TEST_MODE -eq 1 ] && [ "${CIRCLECI}" = "true" ] && [ "${USE_DOCKER}" = "1" ]; then
+        # Make tunnels to DOCKER_HOST containers if run on CircleCI.
+        # This is because the docker is not running on the CI container and
+        # we have to connect the following two:
+        #   - 127.0.0.1:xxxx (on CI container)
+        #   - 127.0.0.1:xxxx (on DOCKER_HOST's container:xxxx)
+        # so that we could `curl localhost:xxxx` to connect to DOCKER_HOST's containers.
+        printf "Setting tunnels..."
+        # node
+        ncat -l -k -c "docker exec -i interledger-rs-node_a nc 127.0.0.1 7770" -p 7770 &
+        ncat -l -k -c "docker exec -i interledger-rs-node_b nc 127.0.0.1 7770" -p 8770 &
+        # se
+        ncat -l -k -c "docker exec -i interledger-rs-se_a nc 127.0.0.1 3000" -p 3000 &
+        ncat -l -k -c "docker exec -i interledger-rs-se_b nc 127.0.0.1 3000" -p 3001 &
+        printf "done\n"
+    fi
+    if [ $TEST_MODE -eq 1 ] && [ ${USE_DOCKER} -eq 1 ]; then
+        trap 'output_docker_logs; exit;' 0
+    fi
+}
+
+function post_test_hook() {
+    if [ $TEST_MODE -eq 1 ]; then
+        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
+        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
+        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
+    fi
+}
+
+function output_docker_logs() {
+    printf "\e[33m%s\e[m" "Writing docker logs..." 1>&2
+    mkdir -p logs
+    docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
+    docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
+    docker logs interledger-rs-se_a &> logs/interledger-rs-se_a.log
+    docker logs interledger-rs-se_b &> logs/interledger-rs-se_b.log
+    docker logs redis-alice_node &> logs/redis-alice_node.log
+    docker logs redis-alice_se &> logs/redis-alice_se.log
+    docker logs redis-bob_node &> logs/redis-bob_node.log
+    docker logs redis-bob_se &> logs/redis-bob_se.log
+    printf "\e[33m%s\e[m\n" "done" 1>&2
+}
+-->
+
 # Interledger with XRP On-Ledger Settlement
 
 > A demo that sends payments between 2 Interledger.rs nodes and settles using XRP transactions.
@@ -24,7 +72,7 @@ Interledger.rs and settlement engines written in other languages are fully inter
 
 Install the settlement engine as follows:
 
-```bash
+```bash #
 npm i -g ilp-settlement-xrp
 ```
 
@@ -107,11 +155,12 @@ else
     done
 fi
 
+run_pre_test_hook
+
 # Aliases don't play nicely with scripts, so this is our faux-alias
 function ilp-cli {
     cargo run --quiet --bin ilp-cli -- $@
 }
-
 -->
 
 ### 1. Build interledger.rs
@@ -140,8 +189,9 @@ fi
 ### 2. Launch Redis
 
 <!--!
-printf "\n\nStarting Redis instances...\n\n"
+printf "\nStarting Redis instances..."
 if [ "$USE_DOCKER" -eq 1 ]; then
+    printf "\n"
     $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
     $CMD_DOCKER run --name redis-alice_se -d -p 127.0.0.1:6380:6379 --network=interledger redis:5.0.5
     $CMD_DOCKER run --name redis-bob_node -d -p 127.0.0.1:6381:6379 --network=interledger redis:5.0.5
@@ -161,12 +211,16 @@ redis-server --port 6381 &> logs/redis-b-node.log &
 redis-server --port 6382 &> logs/redis-b-se.log &
 ```
 
-<!--!
-sleep 1
--->
-
 To remove all the data in Redis, you might additionally perform:
 
+<!--!
+fi
+
+sleep 2
+printf "done\n"
+
+if [ "$USE_DOCKER" -eq 0 ]; then
+-->
 ```bash
 for port in `seq 6379 6382`; do
     redis-cli -p $port flushall
@@ -299,8 +353,8 @@ printf "\nWaiting for Interledger.rs nodes to start up"
 
 wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
+wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
 
 printf " done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
@@ -310,7 +364,7 @@ printf " done\nThe Interledger.rs nodes are up and running!\n\n"
 <!--!
 printf "Creating accounts:\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
-    # Adding settlement accounts should be done at the same time because it checks each other
+    export ILP_CLI_API_AUTH=hi_alice
 
     printf "Adding Alice's account...\n"
     curl \
@@ -389,10 +443,7 @@ else
 ```bash
 # This alias makes our CLI invocations more natural
 alias ilp-cli="cargo run --quiet --bin ilp-cli --"
-
 export ILP_CLI_API_AUTH=hi_alice
-
-# Adding settlement accounts should be done at the same time because it checks each other
 
 printf "Adding Alice's account...\n"
 ilp-cli accounts create alice \
@@ -467,13 +518,13 @@ printf "\n\nChecking balances prior to payment...\n"
 printf "\nAlice's balance on Alice's node: "
 ilp-cli accounts balance alice
 
-printf "\nBob's balance on Alice's node: "
+printf "Bob's balance on Alice's node: "
 ilp-cli accounts balance bob
 
-printf "\nAlice's balance on Bob's node: "
+printf "Alice's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
-printf "\nBob's balance on Bob's node: "
+printf "Bob's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 
 printf "\n\n"
@@ -507,7 +558,7 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance"
+wait_to_get_http_response_body '{"balance":0}' 20 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
@@ -521,13 +572,13 @@ printf "Checking balances after payment...\n"
 printf "\nAlice's balance on Alice's node: "
 ilp-cli accounts balance alice
 
-printf "\nBob's balance on Alice's node: "
+printf "Bob's balance on Alice's node: "
 ilp-cli accounts balance bob
 
-printf "\nAlice's balance on Bob's node: "
+printf "Alice's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
-printf "\nBob's balance on Bob's node: "
+printf "Bob's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 ```
 
@@ -592,7 +643,7 @@ else
     printf "\tcat logs/node-bob-settlement-engine.log | grep \"Received incoming XRP payment\"\n"
 fi
 printf "\n"
-run_hook_before_kill
+run_post_test_hook
 if [ $TEST_MODE -ne 1 ]; then
     prompt_yn "Do you want to kill the services? [Y/n] " "y"
 fi
@@ -651,15 +702,3 @@ You might have run another example. Stop them first and try again. How to stop t
 This example showed an SPSP payment sent between two Interledger.rs nodes that settled using on-ledger XRP transactions.
 
 Check out the [other examples](../README.md) for more complex demos that show other features of Interledger, including multi-hop routing and cross-currency payments.
-
-<!--!
-# For integration tests
-function hook_before_kill() {
-    if [ $TEST_MODE -eq 1 ]; then
-        test_equals_or_exit '{"balance":"-500"}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
-        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
-        test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
-        test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
-    fi
-}
--->

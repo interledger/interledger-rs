@@ -1,8 +1,16 @@
+# Cache spec
+# - cargo-cache-1
+#    - contents: .cargo
+#    - based on: Cargo.toml
+# - cargo-cache-2
+#    - contents: .cargo
+#    - based on: Cargo.lock
+
 version: 2
 jobs:
   build:
     docker:
-      - image: circleci/rust
+      - image: interledgerrs/circleci-rust-dind:latest
         environment:
           CARGO_HOME: /home/circleci/.cargo
     resource_class: medium+
@@ -10,25 +18,9 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}
-            - cargo-cache-1-
-      - run:
-          name: Install Cargo Extensions
-          command: |
-            # cargo-audit started requiring libcurl3
-            echo "deb http://security.ubuntu.com/ubuntu xenial-security main" | sudo tee -a /etc/apt/sources.list
-            sudo apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 3B4FE6ACC0B21F32
-            sudo apt-get update
-            sudo apt-get install libcurl3 -y
-            cargo install --quiet cargo-audit || true # cargo-kcov
-            rustup component add rustfmt clippy || true
-      - run:
-          name: Install Redis
-          command: |
-            sudo apt-get update
-            sudo apt-get install redis-server
-            redis-server --version
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
       - run:
           name: Reduce codegen units
           # If we don't include this, the linker runs out of memory when building
@@ -80,6 +72,96 @@ jobs:
       #     name: Upload Code Coverage
       #     command: "bash <(curl -s https://codecov.io/bash)"
       - save_cache:
-          key: cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
           paths:
             - /home/circleci/.cargo
+  test-md:
+    docker:
+      - image: interledgerrs/circleci-rust-dind:latest
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      # If something wrong is cached, use these lines
+      #- run:
+      #    name: Clear docker cache
+      #    command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs --no-run-if-empty docker rmi
+      - restore_cache:
+          keys:
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
+      - run:
+          name: Set Default Target musl
+          command: |
+            mkdir -p .cargo
+            printf "[build]\ntarget = \"x86_64-unknown-linux-musl\"\n" > .cargo/config
+      - run:
+          name: Build
+          command: cargo build --bin ilp-node --bin ilp-cli
+      - run:
+          # builds dev profile images because these images are not going to be released
+          # also, we have to copy binaries so remove target from .dockerignore
+          name: Build docker images
+          command: |
+            dockerignore=$(cat .dockerignore | sed /^target/d)
+            echo "$dockerignore" > .dockerignore
+            echo "target/**/*.d" >> .dockerignore
+            echo "target/**/*.rlib" >> .dockerignore
+            echo "target/**/deps" >> .dockerignore
+            echo "target/**/incremental" >> .dockerignore
+            docker/docker-build.sh ci-node ci-ilp-cli
+      - run:
+          name: Run run-md test
+          command: scripts/run-md-test.sh
+      - store_artifacts:
+          path: /tmp/run-md-test
+          destination: run-md-test
+      - save_cache:
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+          paths:
+            - /home/circleci/.cargo
+  update-docker-images:
+    docker:
+      - image: interledgerrs/circleci-rust-dind:latest
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - restore_cache:
+          keys:
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
+      - run:
+          # builds release profile images to be released
+          name: Build docker images
+          command: docker/docker-build.sh node ilp-cli
+          environment:
+            PROFILE: "release"
+      - run:
+          name: Push to DockerHub
+          # TODO tag properly
+          command: |
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+            docker push interledgerrs/node:latest
+            docker push interledgerrs/ilp-cli:latest
+      - save_cache:
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+          paths:
+            - /home/circleci/.cargo
+
+workflows:
+  version: 2
+  build_and_test-md:
+    jobs:
+      - build
+      - test-md
+      - update-docker-images: # updates docker images on DockerHub, only if the branch is master
+          filters:
+            branches:
+              only:
+                - master
+          requires:
+            - build
+            - test-md
