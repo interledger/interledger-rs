@@ -99,8 +99,8 @@ pub struct PaymentNotification {
 }
 
 /// A trait representing the Publish side of a pub/sub store
-pub trait PubStore {
-    fn publish_payment_notification(&self, _pmt: PaymentNotification) {
+pub trait StreamNotificationsStore {
+    fn publish_payment_notification(&self, _payment: PaymentNotification) {
         // Publishing a notification is an operation we care about only for its side effects,
         // so for ease of mocking we give it a default implementation that is entirely empty.
         // In other words: This Space Intentionally Left Blank.
@@ -123,7 +123,7 @@ pub struct StreamReceiverService<S, O: OutgoingService<A>, A: Account> {
 
 impl<S, O, A> StreamReceiverService<S, O, A>
 where
-    S: PubStore,
+    S: StreamNotificationsStore,
     O: OutgoingService<A>,
     A: Account,
 {
@@ -140,7 +140,7 @@ where
 
 impl<S, O, A> OutgoingService<A> for StreamReceiverService<S, O, A>
 where
-    S: PubStore + Send + Sync + 'static + Clone,
+    S: StreamNotificationsStore + Send + Sync + 'static + Clone,
     O: OutgoingService<A>,
     A: Account + IldcpAccount,
 {
@@ -167,7 +167,7 @@ where
             if let Ok(shared_secret) = self.connection_generator.rederive_secret(&destination) {
                 return Box::new(
                     result(receive_money(&shared_secret, &to_address, request.prepare)).and_then(
-                        move |val| {
+                        move |fulfill| {
                             store.publish_payment_notification(PaymentNotification {
                                 to_username,
                                 from_username,
@@ -175,7 +175,7 @@ where
                                 destination: destination.clone(),
                                 timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
                             });
-                            Ok(val)
+                            Ok(fulfill)
                         },
                     ),
                 );

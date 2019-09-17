@@ -50,7 +50,7 @@ fn default_exchange_rate_poll_interval() -> u64 {
 }
 
 fn default_notifications_bind_address() -> SocketAddr {
-    SocketAddr::from(([127, 0, 0, 1], 7766))
+    SocketAddr::from(([127, 0, 0, 1], 7772))
 }
 
 use std::str::FromStr;
@@ -297,7 +297,7 @@ impl InterledgerNode {
                                     let notifications_listener = TcpListener::bind(&notifications_bind_address)
                                         .expect("Unable to bind to notifications address");
                                     info!("Interledger node listening for notifications on: {}", notifications_bind_address);
-                                    tokio::spawn(api.sub_serve(notifications_listener.incoming()));
+                                    tokio::spawn(api.serve_notifications(notifications_listener.incoming()));
 
                                     // Settlement API
                                     let settlement_api = SettlementApi::new(

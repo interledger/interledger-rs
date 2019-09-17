@@ -13,7 +13,9 @@ mod server;
 
 pub use client::send_money;
 pub use error::Error;
-pub use server::{ConnectionGenerator, PaymentNotification, PubStore, StreamReceiverService};
+pub use server::{
+    ConnectionGenerator, PaymentNotification, StreamNotificationsStore, StreamReceiverService,
+};
 
 #[cfg(test)]
 pub mod test_helpers {
@@ -71,7 +73,7 @@ pub mod test_helpers {
     #[derive(Clone)]
     pub struct DummyStore;
 
-    impl super::PubStore for DummyStore {}
+    impl super::StreamNotificationsStore for DummyStore {}
 
     #[derive(Clone)]
     pub struct TestStore {

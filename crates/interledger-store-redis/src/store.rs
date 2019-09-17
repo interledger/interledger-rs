@@ -36,7 +36,7 @@ use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
-use interledger_stream::{PaymentNotification, PubStore};
+use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use redis::{
@@ -257,7 +257,11 @@ impl RedisStoreBuilder {
                         });
                 spawn(poll_routes);
 
-                let subs_clone = store.subscriptions.clone();
+                // Here we spawn a worker thread to listen for incoming messages on Redis pub/sub,
+                // running a callback for each message received.
+                // This currently must be a thread rather than a task due to the redis-rs driver
+                // not yet supporting asynchronous subscriptions.
+                let subscriptions_clone = store.subscriptions.clone();
                 std::thread::spawn(move || {
                     let sub_status =
                         sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
@@ -270,9 +274,8 @@ impl RedisStoreBuilder {
                                 }
                             };
                             debug!("Subscribed message received for {:?}", channel[1]);
-                            match subs_clone.read().get(channel[1]) {
+                            match subscriptions_clone.read().get(channel[1]) {
                                 Some(sender) => {
-                                    debug!("Mailboxes looking for {:?}: {:?}", channel[1], sender);
                                     if let Err(e) = sender.unbounded_send(message) {
                                         error!("Failed to send message: {}", e);
                                     }
@@ -665,10 +668,10 @@ impl AccountStore for RedisStore {
     }
 }
 
-impl PubStore for RedisStore {
-    fn publish_payment_notification(&self, pmt: PaymentNotification) {
-        let channel = format!("paid:{}", pmt.to_username);
-        let message: String = json!(pmt).to_string();
+impl StreamNotificationsStore for RedisStore {
+    fn publish_payment_notification(&self, payment: PaymentNotification) {
+        let channel = format!("paid:{}", payment.to_username);
+        let message: String = json!(payment).to_string();
         let connection = self.connection.as_ref().clone();
         spawn(lazy(move || {
             debug!("Publishing message {} to channel {}", message, channel);
