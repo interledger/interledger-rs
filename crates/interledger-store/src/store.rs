@@ -24,6 +24,10 @@ use redis_crate::ConnectionInfo;
 
 type RoutingTable<A> = HashMap<Bytes, A>;
 
+use std::sync::Arc;
+use crate::utils::crypto::{EncryptionKey, DecryptionKey, generate_keys};
+use secrecy::{Secret, ExposeSecret};
+
 #[derive(Clone)]
 pub struct InterledgerStore<S, A> {
     db: S,
@@ -31,15 +35,20 @@ pub struct InterledgerStore<S, A> {
     account_type: PhantomData<A>,
     node_ilp_address: Option<Address>,
     username: Username,
+    decryption_key: Arc<Secret<DecryptionKey>>,
+    encryption_key: Arc<Secret<EncryptionKey>>,
 }
 
 impl<S, A> InterledgerStore<S, A> {
     pub fn new(db: S, username: Username, node_ilp_address: Option<Address>) -> Self {
+        let (encryption_key, decryption_key) = generate_keys(&[0]);
         Self {
             db,
             username,
             node_ilp_address,
             account_type: PhantomData,
+            decryption_key: Arc::new(decryption_key),
+            encryption_key: Arc::new(encryption_key),
         }
     }
     // TODO: Add new_inmemory_store(...) & delete ILP Store Memory crate
@@ -270,23 +279,52 @@ where
     }
 }
 
+use crate::utils::{
+    encrypted_account::AccountWithEncryptedTokens,
+    account::Account
+};
+
 impl<S, A> RouteManagerStore for InterledgerStore<S, A>
 where
-    S: RouteManagerStore<Account = A>,
+    S: RouteManagerStore<Account = AccountWithEncryptedTokens>,
     A: CcpRoutingAccount + Sync + 'static,
 {
-    type Account = A;
+    type Account = Account;
 
     fn get_accounts_to_send_routes_to(
         &self,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
-        self.db.get_accounts_to_send_routes_to()
+        let decryption_key = self.decryption_key.clone();
+        Box::new(self.db.get_accounts_to_send_routes_to()
+        .and_then(move |accounts| {
+            let accounts: Vec<Self::Account> = accounts
+                .into_iter()
+                .map(|account| {
+                    account.decrypt_tokens(
+                        &decryption_key.expose_secret().0,
+                    )
+                })
+                .collect();
+            Ok(accounts)
+        }))
     }
 
     fn get_accounts_to_receive_routes_from(
         &self,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
-        self.db.get_accounts_to_receive_routes_from()
+        let decryption_key = self.decryption_key.clone();
+        Box::new(self.db.get_accounts_to_receive_routes_from()
+        .and_then(move |accounts| {
+            let accounts: Vec<Self::Account> = accounts
+                .into_iter()
+                .map(|account| {
+                    account.decrypt_tokens(
+                        &decryption_key.expose_secret().0,
+                    )
+                })
+                .collect();
+            Ok(accounts)
+        }))
     }
 
     fn get_local_and_configured_routes(
@@ -295,14 +333,34 @@ where
         dyn Future<Item = (RoutingTable<Self::Account>, RoutingTable<Self::Account>), Error = ()>
             + Send,
     > {
-        self.db.get_local_and_configured_routes()
+        let decryption_key = self.decryption_key.clone();
+        Box::new(self.db.get_local_and_configured_routes()
+        .and_then(move |routes| {
+            // Decrypt the routes
+            let local: RoutingTable<AccountWithEncryptedTokens> = routes.0;
+            let mut local_decrypted = HashMap::new();
+            for (k, v) in local.into_iter() {
+                local_decrypted.insert(k, v.decrypt_tokens(&decryption_key.expose_secret().0));
+            }
+
+            let configured: RoutingTable<AccountWithEncryptedTokens> = routes.1;
+            let mut configured_decrypted = HashMap::new();
+            for (k, v) in configured.into_iter() {
+                configured_decrypted.insert(k, v.decrypt_tokens(&decryption_key.expose_secret().0));
+            }
+            Ok((local_decrypted, configured_decrypted))
+        }))
     }
 
     fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (Bytes, Self::Account)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        self.db.set_routes(routes)
+        let mut encrypted_routes = HashMap::new();
+        for (k, v) in routes.into_iter() {
+            encrypted_routes.insert(k, v.encrypt_tokens(&self.encryption_key.expose_secret().0));
+        }
+        self.db.set_routes(encrypted_routes)
     }
 }
 

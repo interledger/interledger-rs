@@ -16,6 +16,7 @@
 //    hgetall <key>         the flattened list of every key/value entry within a hash
 
 use crate::utils::account::*;
+use crate::utils::encrypted_account::AccountWithEncryptedTokens;
 use crate::utils::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
@@ -1151,12 +1152,11 @@ impl NodeStore for RedisStore {
 type RoutingTable<A> = HashMap<Bytes, A>;
 
 impl RouteManagerStore for RedisStore {
-    type Account = Account;
+    type Account = AccountWithEncryptedTokens;
 
     fn get_accounts_to_send_routes_to(
         &self,
-    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
-        let decryption_key = self.decryption_key.clone();
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         Box::new(
             cmd("SMEMBERS")
                 .arg("send_routes_to")
@@ -1184,14 +1184,6 @@ impl RouteManagerStore for RedisStore {
                                             SharedConnection,
                                             Vec<AccountWithEncryptedTokens>,
                                         )| {
-                                            let accounts: Vec<Account> = accounts
-                                                .into_iter()
-                                                .map(|account| {
-                                                    account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
-                                                    )
-                                                })
-                                                .collect();
                                             Ok(accounts)
                                         },
                                     ),
@@ -1204,7 +1196,7 @@ impl RouteManagerStore for RedisStore {
 
     fn get_accounts_to_receive_routes_from(
         &self,
-    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("SMEMBERS")
@@ -1238,14 +1230,6 @@ impl RouteManagerStore for RedisStore {
                                             SharedConnection,
                                             Vec<AccountWithEncryptedTokens>,
                                         )| {
-                                            let accounts: Vec<Account> = accounts
-                                                .into_iter()
-                                                .map(|account| {
-                                                    account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
-                                                    )
-                                                })
-                                                .collect();
                                             Ok(accounts)
                                         },
                                     ),
@@ -1258,8 +1242,9 @@ impl RouteManagerStore for RedisStore {
 
     fn get_local_and_configured_routes(
         &self,
-    ) -> Box<dyn Future<Item = (RoutingTable<Account>, RoutingTable<Account>), Error = ()> + Send>
+    ) -> Box<dyn Future<Item = (RoutingTable<Self::Account>, RoutingTable<Self::Account>), Error = ()> + Send>
     {
+        let encryption_key = self.encryption_key.clone();
         let get_static_routes = cmd("HGETALL")
             .arg(STATIC_ROUTES_KEY)
             .query_async(self.connection.as_ref().clone())
@@ -1270,15 +1255,22 @@ impl RouteManagerStore for RedisStore {
                 },
             );
         Box::new(self.get_all_accounts().join(get_static_routes).and_then(
-            |(accounts, static_routes)| {
+            move |(accounts, static_routes)| {
+                // hack TODO remove this
+                let accounts: Vec<Self::Account> = accounts.clone()
+                    .into_iter()
+                    .map(|account| {
+                        account.encrypt_tokens(&encryption_key.expose_secret().0)
+                    })
+                    .collect();
                 let local_table = HashMap::from_iter(
                     accounts
                         .iter()
-                        .map(|account| (account.ilp_address.to_bytes(), account.clone())),
+                        .map(|account| (account.ilp_address().to_bytes(), account.clone())),
                 );
 
-                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
-                let configured_table: HashMap<Bytes, Account> = HashMap::from_iter(static_routes.into_iter()
+                let account_map: HashMap<AccountId, &Self::Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id(), account)));
+                let configured_table: HashMap<Bytes, Self::Account> = HashMap::from_iter(static_routes.into_iter()
                     .filter_map(|(prefix, account_id)| {
                         if let Some(account) = account_map.get(&account_id) {
                             Some((Bytes::from(prefix), (*account).clone()))
@@ -1295,13 +1287,13 @@ impl RouteManagerStore for RedisStore {
 
     fn set_routes(
         &mut self,
-        routes: impl IntoIterator<Item = (Bytes, Account)>,
+        routes: impl IntoIterator<Item = (Bytes, Self::Account)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routes: Vec<(String, AccountId)> = routes
             .into_iter()
             .filter_map(|(prefix, account)| {
                 if let Ok(prefix) = String::from_utf8(prefix.to_vec()) {
-                    Some((prefix, account.id))
+                    Some((prefix, account.id()))
                 } else {
                     None
                 }

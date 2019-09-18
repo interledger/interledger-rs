@@ -1,4 +1,5 @@
-use super::crypto::{decrypt_token, encrypt_token};
+use super::encrypted_account::AccountWithEncryptedTokens;
+use super::crypto::encrypt_token;
 use bytes::Bytes;
 use interledger_api::AccountDetails;
 use interledger_btp::BtpAccount;
@@ -178,32 +179,6 @@ impl Account {
     }
 }
 
-pub struct AccountWithEncryptedTokens {
-    pub(crate) account: Account,
-}
-
-impl AccountWithEncryptedTokens {
-    pub fn decrypt_tokens(mut self, decryption_key: &aead::OpeningKey) -> Account {
-        if let Some(ref encrypted) = self.account.btp_outgoing_token {
-            self.account.btp_outgoing_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
-        }
-        if let Some(ref encrypted) = self.account.http_outgoing_token {
-            self.account.http_outgoing_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
-        }
-        if let Some(ref encrypted) = self.account.btp_incoming_token {
-            self.account.btp_incoming_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
-        }
-        if let Some(ref encrypted) = self.account.http_incoming_token {
-            self.account.http_incoming_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
-        }
-
-        self.account
-    }
-}
 
 // Rust does not allow implementing foreign traits on foreign data types.
 // As a result, we wrap Uuid in a local data type, and implement the necessary

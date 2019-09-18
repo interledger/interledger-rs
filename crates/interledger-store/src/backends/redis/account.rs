@@ -19,7 +19,8 @@ use redis_crate::{
     from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
 };
 
-use crate::utils::account::{Account, AccountId, AccountWithEncryptedTokens};
+use crate::utils::account::{Account, AccountId};
+use crate::utils::encrypted_account::AccountWithEncryptedTokens;
 
 impl ToRedisArgs for AccountId {
     fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
