@@ -8,8 +8,8 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-bytes = "0.4.12"
-futures = "0.1.25"
+bytes = { version = "0.4.12", default-features = false }
+futures = { version = "0.1.25", default-features = false }
 interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1"}
 interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1"}
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1"}
@@ -17,5 +17,5 @@ interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1
 interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
 interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1"}
 interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1"}
-parking_lot = "0.7.1"
-url = "2.1.0"
+parking_lot = { version = "0.7.1", default-features = false }
+url = { version = "2.1.0", default-features = false }

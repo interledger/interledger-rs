@@ -18,6 +18,3 @@ members = [
   "./crates/interledger-stream",
   "./crates/interledger-settlement-engines",
 ]
-
-[profile.dev]
-codegen-units = 1
