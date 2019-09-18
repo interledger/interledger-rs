@@ -760,16 +760,16 @@ if [ "$USE_DOCKER" -eq 1 ]; then
     curl \
         -H "Authorization: Bearer alice:alice_password" \
         -H "Content-Type: application/json" \
-        -d "{\"receiver\":\"http://interledger-rs-node_c:7770/spsp/charlie\",\"source_amount\":500}" \
-        http://localhost:7770/pay
+        -d "{\"receiver\":\"http://interledger-rs-node_c:7770/accounts/charlie/spsp\",\"source_amount\":500}" \
+        http://localhost:7770/accounts/alice/payments
 else
 -->
 ```bash
 curl \
     -H "Authorization: Bearer alice:alice_password" \
     -H "Content-Type: application/json" \
-    -d "{\"receiver\":\"http://localhost:9770/spsp/charlie\",\"source_amount\":500}" \
-    http://localhost:7770/pay
+    -d "{\"receiver\":\"http://localhost:9770/accounts/charlie/spsp\",\"source_amount\":500}" \
+    http://localhost:7770/accounts/alice/payments
 ```
 <!--!
 fi

@@ -187,7 +187,6 @@ ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-ILP_NOTIFICATIONS_BIND_ADDRESS=127.0.0.1:7772 \
 cargo run --bin interledger -- node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
@@ -197,7 +196,6 @@ ILP_REDIS_URL=redis://127.0.0.1:6380/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-ILP_NOTIFICATIONS_BIND_ADDRESS=127.0.0.1:8772 \
 cargo run --bin interledger -- node &> logs/node_b.log &
 ```
 
@@ -401,8 +399,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
     curl \
         -H "Authorization: Bearer alice:alice-password" \
         -H "Content-Type: application/json" \
-        -d "{\"receiver\":\"http://interledger-rs-node_b:7770/spsp/bob\",\"source_amount\":500}" \
-        http://localhost:7770/pay
+        -d "{\"receiver\":\"http://interledger-rs-node_b:7770/accounts/bob/spsp\",\"source_amount\":500}" \
+        http://localhost:7770/accounts/alice/payments
 else
 -->
 
@@ -411,8 +409,8 @@ else
 curl \
     -H "Authorization: Bearer alice:alice-password" \
     -H "Content-Type: application/json" \
-    -d '{"receiver":"http://localhost:8770/spsp/bob","source_amount":500}' \
-    http://localhost:7770/pay
+    -d '{"receiver":"http://localhost:8770/accounts/bob/spsp","source_amount":500}' \
+    http://localhost:7770/accounts/alice/payments
 ```
 
 <!--!
