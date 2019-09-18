@@ -133,7 +133,7 @@ where
             connection_generator,
             next,
             account_type: PhantomData,
-            store: store,
+            store,
         }
     }
 }

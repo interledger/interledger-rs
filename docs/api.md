@@ -51,11 +51,11 @@ Optional fields include:
 
 Admin only.
 
-### GET /accounts/:id
+### GET /accounts/:username
 
 Admin or account-holder only.
 
-### GET /accounts/:id/balance
+### GET /accounts/:username/balance
 
 Admin or account-holder only.
 
@@ -69,7 +69,7 @@ Admin or account-holder only.
 
 ## SPSP (Sending Payments)
 
-### POST /pay
+### POST /accounts/:username/payments
 
 Account-holder only.
 
@@ -90,7 +90,7 @@ Account-holder only.
 }
 ```
 
-### GET /spsp/:id
+### GET /accounts/:username/spsp
 
 No authentication required.
 
