@@ -3,7 +3,7 @@ use futures::future::Future;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
 use http::StatusCode;
 use log::trace;
-use reqwest::r#async::Client as HTTPClient;
+use reqwest::r#async::Client as HttpClient;
 use serde_json::json;
 use std::fmt::Display;
 use std::time::Duration;
@@ -12,16 +12,17 @@ use url::Url;
 // The account creation endpoint set by the engines in the [RFC](https://github.com/interledger/rfcs/pull/536)
 static ACCOUNTS_ENDPOINT: &str = "accounts";
 
+#[derive(Clone)]
 pub struct Client {
-    timeout_ms: Duration,
     max_retries: usize,
+    client: HttpClient,
 }
 
 impl Client {
     /// Timeout duration is in millisecodns
-    pub fn new(timeout_ms: Duration, max_retries: usize) -> Self {
+    pub fn new(timeout: Duration, max_retries: usize) -> Self {
         Client {
-            timeout_ms,
+            client: HttpClient::builder().timeout(timeout).build().unwrap(),
             max_retries,
         }
     }
@@ -32,7 +33,6 @@ impl Client {
         id: T,
     ) -> impl Future<Item = StatusCode, Error = reqwest::Error> {
         let mut se_url = engine_url.clone();
-        let timeout = self.timeout_ms;
         se_url
             .path_segments_mut()
             .expect("Invalid settlement engine URL")
@@ -44,8 +44,8 @@ impl Client {
         );
 
         // The actual HTTP request which gets made to the engine
+        let client = self.client.clone();
         let create_settlement_engine_account = move || {
-            let client = HTTPClient::builder().timeout(timeout).build().unwrap();
             client
                 .post(se_url.as_ref())
                 .json(&json!({"id" : id.to_string()}))

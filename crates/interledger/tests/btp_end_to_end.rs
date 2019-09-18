@@ -33,7 +33,6 @@ fn btp_end_to_end() {
         btp_bind_address: ([127, 0, 0, 1], btp_port).into(),
         http_bind_address: ([127, 0, 0, 1], http_port).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], settlement_port).into(),
-        notifications_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         secret_seed: cli::random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
