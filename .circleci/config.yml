@@ -10,7 +10,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/rust
+      - image: interledgerrs/circleci-rust-dind:latest
         environment:
           CARGO_HOME: /home/circleci/.cargo
     resource_class: medium+
@@ -21,22 +21,6 @@ jobs:
             - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
             - cargo-cache-2-{{ checksum "Cargo.lock" }}
             - cargo-cache-2-
-      - run:
-          name: Install Cargo Extensions
-          command: |
-            # cargo-audit started requiring libcurl3
-            echo "deb http://security.ubuntu.com/ubuntu xenial-security main" | sudo tee -a /etc/apt/sources.list
-            sudo apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 3B4FE6ACC0B21F32
-            sudo apt-get update
-            sudo apt-get install libcurl3 -y
-            cargo install --quiet cargo-audit || true # cargo-kcov
-            rustup component add rustfmt clippy || true
-      - run:
-          name: Install Redis
-          command: |
-            sudo apt-get update
-            sudo apt-get install redis-server
-            redis-server --version
       - run:
           name: Reduce codegen units
           # If we don't include this, the linker runs out of memory when building
@@ -103,9 +87,25 @@ jobs:
             - cargo-cache-2-{{ checksum "Cargo.lock" }}
             - cargo-cache-2-
       - run:
+          name: Set Default Target musl
+          command: |
+            mkdir -p .cargo
+            printf "[build]\ntarget = \"x86_64-unknown-linux-musl\"\n" > .cargo/config
+      - run:
+          name: Build
+          command: cargo build --bin interledger --bin interledger-settlement-engines --all-features
+      - run:
           # builds dev profile images because these images are not going to be released
+          # also, we have to copy binaries so remove target from .dockerignore
           name: Build docker images
-          command: scripts/docker-build.sh node settlement-engines
+          command: |
+            dockerignore=$(cat .dockerignore | sed /^target/d)
+            echo "$dockerignore" > .dockerignore
+            echo "target/**/*.d" >> .dockerignore
+            echo "target/**/*.rlib" >> .dockerignore
+            echo "target/**/deps" >> .dockerignore
+            echo "target/**/incremental" >> .dockerignore
+            scripts/docker-build.sh ci-node ci-settlement-engines
       - run:
           name: Run run-md test
           command: scripts/run-md-test.sh
