@@ -34,6 +34,7 @@ pub(crate) mod client;
 const MAX_RETRIES: usize = 10;
 // TODO use the exact max size of a packet
 const MAX_PACKET_SIZE: u64 = 40000;
+const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_millis(5000);
 
 pub trait NodeStore: Clone + Send + Sync + 'static {
     type Account: Account;
@@ -187,27 +188,26 @@ where
     }
 }
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug)]
-enum Error {
+enum ApiError {
     AccountNotFound,
     BadRequest,
     InternalServerError,
     Unauthorized,
 }
 
-impl Display for Error {
+impl Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
-            Error::AccountNotFound => "Account not found",
-            Error::BadRequest => "Bad request",
-            Error::InternalServerError => "Internal server error",
-            Error::Unauthorized => "Unauthorized",
+            ApiError::AccountNotFound => "Account not found",
+            ApiError::BadRequest => "Bad request",
+            ApiError::InternalServerError => "Internal server error",
+            ApiError::Unauthorized => "Unauthorized",
         })
     }
 }
 
-impl StdError for Error {}
+impl StdError for ApiError {}
 
 fn node_api<I, S, A>(
     server_secret: Bytes,
@@ -230,13 +230,15 @@ where
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
     let admin_only = warp::header::<String>("authorization")
-        .and_then(move |authorization| {
+        .and_then(move |authorization| -> Result<(), warp::Rejection> {
             if authorization == admin_auth_header {
                 Ok(())
             } else {
-                Err(warp::reject::custom(Error::Unauthorized))
+                Err(warp::reject::custom(ApiError::Unauthorized))
             }
         })
+        // This call makes it so we do not pass on a () value on
+        // success to the next filter, it just gets rid of it
         .untuple_one();
     let with_store = warp::any().map(move || store.clone());
     let with_incoming_handler = warp::any().map(move || incoming_handler.clone());
@@ -252,7 +254,7 @@ where
                     .map_err(move |_| {
                         // TODO differentiate between server error and not found
                         error!("Error getting account id from username: {}", username);
-                        warp::reject::custom(Error::AccountNotFound)
+                        warp::reject::custom(ApiError::AccountNotFound)
                     })
             });
     let valid_account_authorization = warp::header::<AuthToken>("authorization")
@@ -265,19 +267,21 @@ where
                         "Invalid authorization provided for user: {}",
                         auth.username()
                     );
-                    warp::reject::custom(Error::Unauthorized)
+                    warp::reject::custom(ApiError::Unauthorized)
                 })
         });
     let authorized_account_from_path = account_username
         .and(valid_account_authorization.clone())
-        .and_then(|path_username: Username, authorized_account: A| {
-            // Check that the user is authorized for this route
-            if &path_username == authorized_account.username() {
-                Ok(authorized_account)
-            } else {
-                Err(warp::reject::custom(Error::Unauthorized))
-            }
-        });
+        .and_then(
+            |path_username: Username, authorized_account: A| -> Result<A, warp::Rejection> {
+                // Check that the user is authorized for this route
+                if &path_username == authorized_account.username() {
+                    Ok(authorized_account)
+                } else {
+                    Err(warp::reject::custom(ApiError::Unauthorized))
+                }
+            },
+        );
     let admin_or_authorized_account = admin_only
         .clone()
         .and(account_username_to_id.clone())
@@ -288,7 +292,7 @@ where
         .unify();
 
     // POST /accounts
-    let http_client = Client::new(Duration::from_millis(5000), MAX_RETRIES);
+    let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
     let post_accounts = warp::post2()
         .and(accounts_index)
         .and(admin_only.clone())
@@ -299,7 +303,7 @@ where
             let http_client = http_client.clone();
             store.insert_account(account_details)
                 .map_err(|_| {
-                    warp::reject::custom(Error::InternalServerError)
+                    warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(move |account: A| {
                     let http_client = http_client.clone();
@@ -308,31 +312,33 @@ where
                     if let Some(se_url) = settlement_engine_url {
                         let id = account.id();
                         Either::A(result(Url::parse(&se_url))
-                        .map_err(|_| {
-                            // TODO include a more specific error message
-                            warp::reject::custom(Error::BadRequest)
-                        })
-                        .and_then(move |se_url| {
-                            let http_client = http_client.clone();
-                            trace!(
-                                "Sending account {} creation request to settlement engine: {:?}",
-                                id,
-                                se_url.clone()
-                            );
-                            http_client.create_engine_account(se_url, id)
-                            .and_then(move |status_code| {
-                                if status_code.is_success() {
-                                    trace!("Account {} created on the SE", id);
-                                } else {
-                                    error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
-                                }
-                                Ok(())
+                            .map_err(|_| {
+                                // TODO include a more specific error message
+                                warp::reject::custom(ApiError::BadRequest)
                             })
-                            .map_err(|_| warp::reject::custom(Error::InternalServerError))
-                            .and_then(move |_| {
-                                Ok(account)
-                            })
-                        }))
+                            .and_then(move |se_url| {
+                                let http_client = http_client.clone();
+                                trace!(
+                                    "Sending account {} creation request to settlement engine: {:?}",
+                                    id,
+                                    se_url.clone()
+                                );
+                                http_client.create_engine_account(se_url, id)
+                                    .and_then(move |status_code| {
+                                        if status_code.is_success() {
+                                            trace!("Account {} created on the SE", id);
+                                        } else {
+                                            error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                                        }
+                                        Ok(())
+                                    })
+                                .map_err(|_| {
+                                    warp::reject::custom(ApiError::InternalServerError)
+                                })
+                                .and_then(move |_| {
+                                    Ok(account)
+                                })
+                            }))
                     } else {
                         Either::B(ok(account))
                     }
@@ -350,7 +356,7 @@ where
         .and_then(|store: S| {
             store
                 .get_all_accounts()
-                .map_err(|_| warp::reject::custom(Error::InternalServerError))
+                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
                 .and_then(|accounts| Ok(warp::reply::json(&accounts)))
         });
 
@@ -365,7 +371,7 @@ where
             |id: A::AccountId, account_details: AccountDetails, store: S| {
                 store
                     .update_account(id, account_details)
-                    .map_err(move |_| warp::reject::custom(Error::InternalServerError))
+                    .map_err(move |_| warp::reject::custom(ApiError::InternalServerError))
                     .and_then(move |account| Ok(warp::reply::json(&account)))
             },
         );
@@ -398,7 +404,7 @@ where
                         .get_balance(accounts.pop().unwrap())
                         .map_err(move |_| {
                             error!("Error getting balance for account: {}", id);
-                            warp::reject::custom(Error::InternalServerError)
+                            warp::reject::custom(ApiError::InternalServerError)
                         })
                 })
                 .and_then(|balance: i64| {
@@ -419,7 +425,7 @@ where
                 .delete_account(id)
                 .map_err(move |_| {
                     error!("Error deleting account {}", id);
-                    warp::reject::custom(Error::InternalServerError)
+                    warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(|account| Ok(warp::reply::json(&account)))
         });
@@ -436,7 +442,7 @@ where
                 .modify_account_settings(id, settings)
                 .map_err(move |_| {
                     error!("Error updating account settings {}", id);
-                    warp::reject::custom(Error::InternalServerError)
+                    warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(|settings| Ok(warp::reply::json(&settings)))
         });
@@ -461,6 +467,7 @@ where
         });
 
     // POST /ilp
+    // This is for [HTTP-over-ILP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md)
     // TODO should this be under /accounts?
     let post_ilp = warp::post2()
         .and(warp::path("ilp"))
@@ -493,7 +500,7 @@ where
                 )
             } else {
                 error!("Body was not a valid Prepare packet");
-                Either::B(err(warp::reject::custom(Error::BadRequest)))
+                Either::B(err(warp::reject::custom(ApiError::BadRequest)))
             }
         });
 
@@ -524,7 +531,7 @@ where
                 .map_err(|err| {
                     error!("Error sending SPSP payment: {:?}", err);
                     // TODO give a different error message depending on what type of error it is
-                    warp::reject::custom(Error::InternalServerError)
+                    warp::reject::custom(ApiError::InternalServerError)
                 })
             },
         );
@@ -540,7 +547,7 @@ where
             let server_secret_clone = server_secret_clone.clone();
             store
                 .get_accounts(vec![id])
-                .map_err(|_| warp::reject::custom(Error::InternalServerError))
+                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
                 .and_then(move |accounts| {
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
                     Ok(SpspResponder::new(
@@ -552,7 +559,9 @@ where
         });
 
     // GET /.well-known/pay
-    let server_secret_clone2 = server_secret.clone();
+    // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
+    // with no path resolves to
+    let server_secret_clone = server_secret.clone();
     let get_spsp_well_known = warp::get2()
         .and(warp::path(".well-known"))
         .and(warp::path("pay"))
@@ -561,7 +570,7 @@ where
         .and_then(move |store: S| {
             // TODO don't clone this
             if let Some(username) = default_spsp_account.clone() {
-                let server_secret_clone2 = server_secret_clone2.clone();
+                let server_secret_clone = server_secret_clone.clone();
                 Either::A(
                     store
                         .get_account_id_from_username(&username)
@@ -573,14 +582,14 @@ where
                             // TODO this shouldn't take multiple store calls
                             store
                                 .get_accounts(vec![id])
-                                .map_err(|_| warp::reject::custom(Error::InternalServerError))
+                                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
                                 .map(|mut accounts| accounts.pop().unwrap())
                         })
                         .and_then(move |account| {
                             // TODO return the response without instantiating an SpspResponder (use a simple fn)
                             Ok(SpspResponder::new(
                                 account.client_address().clone(),
-                                server_secret_clone2.clone(),
+                                server_secret_clone.clone(),
                             )
                             .generate_http_response())
                         }),
@@ -610,7 +619,7 @@ where
                 Ok(warp::reply::json(&rates))
             } else {
                 error!("Error setting exchange rates");
-                Err(warp::reject::custom(Error::InternalServerError))
+                Err(warp::reject::custom(ApiError::InternalServerError))
             }
         });
 
@@ -624,7 +633,7 @@ where
                 Ok(warp::reply::json(&rates))
             } else {
                 error!("Error getting exchange rates");
-                Err(warp::reject::custom(Error::InternalServerError))
+                Err(warp::reject::custom(ApiError::InternalServerError))
             }
         });
 
@@ -662,7 +671,7 @@ where
                     parsed.insert(prefix, id);
                 } else {
                     error!("Invalid Account ID: {}", id);
-                    return Either::B(err(warp::reject::custom(Error::BadRequest)));
+                    return Either::B(err(warp::reject::custom(ApiError::BadRequest)));
                 }
             }
             Either::A(
@@ -670,7 +679,7 @@ where
                     .set_static_routes(parsed.clone())
                     .map_err(|_| {
                         error!("Error setting static routes");
-                        warp::reject::custom(Error::InternalServerError)
+                        warp::reject::custom(ApiError::InternalServerError)
                     })
                     .map(move |_| warp::reply::json(&parsed)),
             )
@@ -692,14 +701,14 @@ where
                             .set_static_route(prefix, id)
                             .map_err(|_| {
                                 error!("Error setting static route");
-                                warp::reject::custom(Error::InternalServerError)
+                                warp::reject::custom(ApiError::InternalServerError)
                             })
                             .map(move |_| id.to_string()),
                     );
                 }
             }
             error!("Body was not a valid Account ID");
-            Either::B(err(warp::reject::custom(Error::BadRequest)))
+            Either::B(err(warp::reject::custom(ApiError::BadRequest)))
         });
 
     let api = post_ilp
@@ -723,12 +732,12 @@ where
 
     api.with(warp::log("interledger-api"))
         .recover(|err: warp::Rejection| {
-            if let Some(&err) = err.find_cause::<Error>() {
+            if let Some(&err) = err.find_cause::<ApiError>() {
                 let code = match err {
-                    Error::AccountNotFound => warp::http::StatusCode::NOT_FOUND,
-                    Error::BadRequest => warp::http::StatusCode::BAD_REQUEST,
-                    Error::InternalServerError => warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    Error::Unauthorized => warp::http::StatusCode::UNAUTHORIZED,
+                    ApiError::AccountNotFound => warp::http::StatusCode::NOT_FOUND,
+                    ApiError::BadRequest => warp::http::StatusCode::BAD_REQUEST,
+                    ApiError::InternalServerError => warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiError::Unauthorized => warp::http::StatusCode::UNAUTHORIZED,
                 };
                 Ok(warp::reply::with_status(warp::reply(), code))
             } else {
