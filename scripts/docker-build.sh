@@ -37,6 +37,8 @@ for build_target in "${build_targets[@]}"; do
                 --build-arg RUST_BIN_DIR_NAME="${RUST_BIN_DIR_NAME}" \
                 . ;;
         "testnet-bundle") docker build -f ./docker/Dockerfile -t interledgerrs/testnet-bundle:latest . ;;
-        "circleci-rust-dind") docker build -f ./docker/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:latest . ;;
+        "ci-node") docker build -f ./docker/CI/node.dockerfile -t interledgerrs/node:latest . ;;
+        "ci-settlement-engines") docker build -f ./docker/CI/settlement-engines.dockerfile -t interledgerrs/settlement-engines:latest . ;;
+        "circleci-rust-dind") docker build -f ./docker/CI/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:latest . ;;
     esac
 done
