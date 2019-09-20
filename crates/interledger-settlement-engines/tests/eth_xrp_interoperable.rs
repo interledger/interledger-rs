@@ -23,8 +23,6 @@ use test_helpers::start_eth_engine;
 #[cfg(feature = "ethereum")]
 #[test]
 fn eth_xrp_interoperable() {
-    let eth_decimals = 9;
-    let xrp_decimals = 6;
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
     let _ = env_logger::try_init();
     let context = TestContext::new();

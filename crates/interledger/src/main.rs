@@ -406,7 +406,7 @@ fn run_node_accounts_add(opt: NodeAccountsAddOpt) {
         server_secret
     };
     let account = AccountDetails {
-        ilp_address: Address::from_str(&opt.ilp_address).unwrap(),
+        configured_ilp_address: Some(Address::from_str(&opt.ilp_address).unwrap()),
         username: Username::from_str(&opt.username).unwrap(),
         asset_code: opt.asset_code.clone(),
         asset_scale: opt.asset_scale,

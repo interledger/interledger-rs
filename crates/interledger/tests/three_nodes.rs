@@ -1,7 +1,7 @@
 #![recursion_limit = "128"]
 
-use futures::Future;
-use interledger::node::{random_secret, AccountDetails, InterledgerNode};
+use futures::{future::join_all, Future};
+use interledger::node::{random_secret, InterledgerNode};
 use interledger_packet::Address;
 use interledger_service::Username;
 use serde_json::json;
@@ -41,9 +41,67 @@ fn three_nodes() {
         .build()
         .unwrap();
 
+    let alice_on_alice = json!({
+        "configured_ilp_address": "example.alice",
+        "username": "alice",
+        "asset_code": "XYZ",
+        "asset_scale": 9,
+        "http_incoming_token" : "default account holder",
+    });
+    let bob_on_alice = json!({
+        "configured_ilp_address": "example.bob",
+        "username": "bob",
+        "asset_code": "XYZ",
+        "asset_scale": 9,
+        "http_endpoint": format!("http://localhost:{}/ilp", node2_http),
+        "http_incoming_token" : "two",
+        "http_outgoing_token" : "alice:one",
+        "min_balance": -1_000_000_000,
+        "routing_relation": "Peer",
+    });
+
+    let alice_on_bob = json!({
+        "configured_ilp_address": "example.alice",
+        "username": "alice",
+        "asset_code": "XYZ",
+        "asset_scale": 9,
+        "http_endpoint": format!("http://localhost:{}/ilp", node1_http),
+        "http_incoming_token" : "one",
+        "http_outgoing_token" : "bob:two",
+        "routing_relation": "Peer",
+    });
+    let charlie_on_bob = json!({
+        "username": "charlie",
+        "asset_code": "ABC",
+        "asset_scale": 6,
+        "btp_incoming_token" : "three",
+        "http_incoming_token" : "three",
+        "min_balance": -1_000_000_000,
+        "routing_relation": "Child",
+    });
+
+    let charlie_on_charlie = json!({
+        "username": "charlie",
+        "asset_code": "ABC",
+        "asset_scale": 6,
+        "http_incoming_token" : "default account holder",
+    });
+    let bob_on_charlie = json!({
+        "configured_ilp_address": "example.bob",
+        "username": "bob",
+        "asset_code": "ABC",
+        "asset_scale": 6,
+        "http_incoming_token" : "two",
+        "http_outgoing_token": "charlie:three",
+        "http_endpoint": format!("http://localhost:{}/ilp", node2_http),
+        "btp_uri": format!("btp+ws://charlie:three@localhost:{}", node2_btp),
+        "min_balance": -1_000_000_000,
+        "routing_relation": "Parent",
+    });
+
     let node1 = InterledgerNode {
-        ilp_address: Address::from_str("example.one").unwrap(),
-        default_spsp_account: Some(Username::from_str("one").unwrap()),
+        ilp_address: Address::from_str("example.alice").unwrap(),
+        default_spsp_account: Some(Username::from_str("alice").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -55,59 +113,10 @@ fn three_nodes() {
         exchange_rate_provider: None,
         exchange_rate_spread: 0.0,
     };
-    let node1_clone = node1.clone();
-    runtime.spawn(
-        // TODO insert the accounts via HTTP request
-        node1_clone
-            .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.one").unwrap(),
-                username: Username::from_str("alice").unwrap(),
-                asset_code: "XYZ".to_string(),
-                asset_scale: 9,
-                btp_incoming_token: None,
-                btp_uri: None,
-                http_endpoint: None,
-                http_incoming_token: Some("default account holder".to_string()),
-                http_outgoing_token: None,
-                max_packet_amount: u64::max_value(),
-                min_balance: None,
-                settle_threshold: None,
-                settle_to: None,
-                routing_relation: None,
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-                settlement_engine_url: None,
-            })
-            .and_then(move |_|
-        // TODO insert the accounts via HTTP request
-        node1_clone
-            .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.two").unwrap(),
-                username: Username::from_str("bob").unwrap(),
-                asset_code: "XYZ".to_string(),
-                asset_scale: 9,
-                btp_incoming_token: None,
-                btp_uri: None,
-                http_endpoint: Some(format!("http://localhost:{}/ilp", node2_http)),
-                http_incoming_token: Some("two".to_string()), // usrename from other party
-                http_outgoing_token: Some("alice:one".to_string()), // our username
-                max_packet_amount: u64::max_value(),
-                min_balance: Some(-1_000_000_000),
-                settle_threshold: None,
-                settle_to: None,
-                routing_relation: Some("Peer".to_string()),
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-                settlement_engine_url: None,
-            }))
-            .and_then(move |_| node1.serve()),
-    );
 
     let node2 = InterledgerNode {
-        ilp_address: Address::from_str("example.two").unwrap(),
-        default_spsp_account: Some(Username::from_str("two").unwrap()),
+        ilp_address: Address::from_str("example.bob").unwrap(),
+        default_spsp_account: Some(Username::from_str("bob").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
         btp_bind_address: ([127, 0, 0, 1], node2_btp).into(),
@@ -119,71 +128,10 @@ fn three_nodes() {
         exchange_rate_provider: None,
         exchange_rate_spread: 0.0,
     };
-    let node2_clone = node2.clone();
-    runtime.spawn(
-        node2_clone
-            .insert_account(AccountDetails {
-                ilp_address: Address::from_str("example.one").unwrap(),
-                username: Username::from_str("alice").unwrap(),
-                asset_code: "XYZ".to_string(),
-                asset_scale: 9,
-                btp_incoming_token: None,
-                btp_uri: None,
-                http_endpoint: Some(format!("http://localhost:{}/ilp", node1_http)),
-                http_incoming_token: Some("one".to_string()),
-                http_outgoing_token: Some("bob:two".to_string()),
-                max_packet_amount: u64::max_value(),
-                min_balance: None,
-                settle_threshold: None,
-                settle_to: None,
-                routing_relation: Some("Peer".to_string()),
-                round_trip_time: None,
-                packets_per_minute_limit: None,
-                amount_per_minute_limit: None,
-                settlement_engine_url: None,
-            })
-            .and_then(move |_| {
-                node2_clone.insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.two.three").unwrap(),
-                    username: Username::from_str("charlie").unwrap(),
-                    asset_code: "ABC".to_string(),
-                    asset_scale: 6,
-                    btp_incoming_token: Some("three".to_string()),
-                    btp_uri: None,
-                    http_endpoint: None,
-                    http_incoming_token: Some("three".to_string()),
-                    http_outgoing_token: None,
-                    max_packet_amount: u64::max_value(),
-                    min_balance: Some(-1_000_000_000),
-                    settle_threshold: None,
-                    settle_to: None,
-                    routing_relation: Some("Child".to_string()),
-                    round_trip_time: None,
-                    packets_per_minute_limit: None,
-                    amount_per_minute_limit: None,
-                    settlement_engine_url: None,
-                })
-            })
-            .and_then(move |_| node2.serve())
-            .and_then(move |_| {
-                let client = reqwest::r#async::Client::new();
-                client
-                    .put(&format!("http://localhost:{}/rates", node2_http))
-                    .header("Authorization", "Bearer admin")
-                    .json(&json!({"ABC": 2, "XYZ": 1}))
-                    .send()
-                    .map_err(|err| panic!(err))
-                    .and_then(|res| {
-                        res.error_for_status()
-                            .expect("Error setting exchange rates");
-                        Ok(())
-                    })
-            }),
-    );
 
     let node3 = InterledgerNode {
-        ilp_address: Address::from_str("example.two.three").unwrap(),
-        default_spsp_account: Some(Username::from_str("three").unwrap()),
+        ilp_address: Address::from_str("local.host").unwrap(), // We should set this to local.host. Adding a parent should update our address by making an ILDCP request, followed by updating our routing table by making a RouteControlRequest to which the parent responds with a RouteUpdateRequest
+        default_spsp_account: Some(Username::from_str("charlie").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
@@ -195,61 +143,53 @@ fn three_nodes() {
         exchange_rate_provider: None,
         exchange_rate_spread: 0.0,
     };
-    let node3_clone = node3.clone();
+
+    let alice_fut = join_all(vec![
+        create_account_on_node(node1_http, alice_on_alice, "admin"),
+        create_account_on_node(node1_http, bob_on_alice, "admin"),
+    ]);
+
     runtime.spawn(
-        // Wait a bit to make sure the other node's BTP server is listening
-        delay(50).map_err(|err| panic!(err)).and_then(move |_| {
-            node3_clone
-                .insert_account(AccountDetails {
-                    ilp_address: Address::from_str("example.two.three").unwrap(),
-                    username: Username::from_str("charlie").unwrap(),
-                    asset_code: "ABC".to_string(),
-                    asset_scale: 6,
-                    btp_incoming_token: None,
-                    btp_uri: None,
-                    http_endpoint: None,
-                    http_incoming_token: Some("default account holder".to_string()),
-                    http_outgoing_token: None,
-                    max_packet_amount: u64::max_value(),
-                    min_balance: None,
-                    settle_threshold: None,
-                    settle_to: None,
-                    routing_relation: None,
-                    round_trip_time: None,
-                    packets_per_minute_limit: None,
-                    amount_per_minute_limit: None,
-                    settlement_engine_url: None,
-                })
-                .and_then(move |_| {
-                    node3_clone.insert_account(AccountDetails {
-                        ilp_address: Address::from_str("example.two").unwrap(),
-                        username: Username::from_str("bob").unwrap(),
-                        asset_code: "ABC".to_string(),
-                        asset_scale: 6,
-                        btp_incoming_token: None,
-                        btp_uri: Some(format!("btp+ws://charlie:three@localhost:{}", node2_btp)),
-                        http_endpoint: None,
-                        http_incoming_token: None,
-                        http_outgoing_token: None,
-                        max_packet_amount: u64::max_value(),
-                        min_balance: Some(-1_000_000_000),
-                        settle_threshold: None,
-                        settle_to: None,
-                        routing_relation: Some("Parent".to_string()),
-                        round_trip_time: None,
-                        packets_per_minute_limit: None,
-                        amount_per_minute_limit: None,
-                        settlement_engine_url: None,
-                    })
-                })
-                .and_then(move |_| node3.serve())
-        }),
+        node1
+            .serve()
+            .and_then(move |_| alice_fut)
+            .and_then(move |_| Ok(())),
+    );
+
+    let bob_fut = join_all(vec![
+        create_account_on_node(node2_http, alice_on_bob, "admin"),
+        create_account_on_node(node2_http, charlie_on_bob, "admin"),
+    ]);
+
+    runtime.spawn(node2.serve().and_then(move |_| bob_fut).and_then(move |_| {
+        let client = reqwest::r#async::Client::new();
+        client
+            .put(&format!("http://localhost:{}/rates", node2_http))
+            .header("Authorization", "Bearer admin")
+            .json(&json!({"ABC": 2, "XYZ": 1}))
+            .send()
+            .map_err(|err| panic!(err))
+            .and_then(|res| {
+                res.error_for_status()
+                    .expect("Error setting exchange rates");
+                Ok(())
+            })
+    }));
+
+    let charlie_fut = create_account_on_node(node3_http, bob_on_charlie, "admin")
+        .and_then(move |_| create_account_on_node(node3_http, charlie_on_charlie, "admin"));
+
+    runtime.spawn(
+        node3
+            .serve()
+            .and_then(move |_| charlie_fut)
+            .and_then(move |_| Ok(())),
     );
 
     runtime
         .block_on(
             // Wait for the nodes to spin up
-            delay(500)
+            delay(1000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     let send_1_to_3 = send_money_to_username(
