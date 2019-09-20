@@ -168,6 +168,7 @@ impl InterledgerNode {
         let exchange_rate_spread = self.exchange_rate_spread;
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
+        .node_ilp_address(ilp_address.clone())
         .connect()
         .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
@@ -199,6 +200,7 @@ impl InterledgerNode {
                         move |btp_client_service| {
                             create_server(ilp_address_clone2, btp_bind_address, store.clone(), btp_client_service.clone()).and_then(
                                 move |btp_server_service| {
+                                    let btp = btp_server_service.clone();
                                     // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                                     // service to others like the router and then call handle_incoming on it to set up the incoming handler
                                     let outgoing_service = btp_server_service.clone();
@@ -278,6 +280,8 @@ impl InterledgerNode {
                                         admin_auth_token,
                                         store.clone(),
                                         incoming_service.clone(),
+                                        outgoing_service.clone(),
+                                        btp.clone(),
                                     );
                                     if let Some(username) = default_spsp_account {
                                         api.default_spsp_account(username);
