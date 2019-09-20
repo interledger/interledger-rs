@@ -1,15 +1,15 @@
 use crate::client::Client;
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, Bytes};
 use futures::{
     future::{err, ok, result, Either},
     sync::mpsc::UnboundedSender,
     Future, Stream,
 };
-use interledger_http::{HttpAccount, HttpStore};
+use interledger_http::{HttpAccount, HttpServer as IlpOverHttpServer, HttpStore};
 use interledger_ildcp::IldcpAccount;
-use interledger_packet::{Address, Prepare};
+use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, AuthToken, IncomingRequest, IncomingService, Username};
+use interledger_service::{Account, AuthToken, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_spsp::{pay, SpspResponder};
@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     error::Error as StdError,
     fmt::{self, Display},
     iter::FromIterator,
@@ -32,8 +31,6 @@ use warp::{self, Filter};
 pub(crate) mod client;
 
 const MAX_RETRIES: usize = 10;
-// TODO use the exact max size of a packet
-const MAX_PACKET_SIZE: u64 = 40000;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_millis(5000);
 
 pub trait NodeStore: Clone + Send + Sync + 'static {
@@ -174,13 +171,20 @@ where
     }
 
     pub fn into_warp_filter(self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
-        node_api(
-            self.server_secret,
-            self.admin_api_token,
-            self.default_spsp_account,
-            self.incoming_handler,
-            self.store,
-        )
+        // POST /ilp is the route for ILP-over-HTTP
+        let ilp_over_http = warp::path("ilp")
+            .and(warp::path::end())
+            .and(IlpOverHttpServer::new(self.incoming_handler.clone(), self.store.clone()).as_filter());
+
+        ilp_over_http
+            .or(node_api(
+                self.server_secret,
+                self.admin_api_token,
+                self.default_spsp_account,
+                self.incoming_handler,
+                self.store,
+            ))
+            .boxed()
     }
 
     pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
@@ -466,44 +470,6 @@ where
             })
         });
 
-    // POST /ilp
-    // This is for [HTTP-over-ILP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md)
-    // TODO should this be under /accounts?
-    let post_ilp = warp::post2()
-        .and(warp::path("ilp"))
-        .and(warp::path::end())
-        .and(valid_account_authorization.clone())
-        .and(warp::body::content_length_limit(MAX_PACKET_SIZE))
-        .and(warp::body::concat())
-        .and(with_incoming_handler.clone())
-        .and_then(|account: A, body: warp::body::FullBody, mut incoming: I| {
-            // TODO don't copy ILP packet
-            let buffer = BytesMut::from(body.bytes());
-            if let Ok(prepare) = Prepare::try_from(buffer) {
-                Either::A(
-                    incoming
-                        .handle_request(IncomingRequest {
-                            from: account,
-                            prepare,
-                        })
-                        .then(|result| {
-                            let bytes: BytesMut = match result {
-                                Ok(fulfill) => fulfill.into(),
-                                Err(reject) => reject.into(),
-                            };
-                            Ok(warp::http::Response::builder()
-                                .header("Content-Type", "application/octet-stream")
-                                .status(200)
-                                .body(bytes.freeze())
-                                .unwrap())
-                        }),
-                )
-            } else {
-                error!("Body was not a valid Prepare packet");
-                Either::B(err(warp::reject::custom(ApiError::BadRequest)))
-            }
-        });
-
     // POST /accounts/:username/payments
     let post_payments = warp::post2()
         .and(authorized_account_from_path.clone())
@@ -711,8 +677,7 @@ where
             Either::B(err(warp::reject::custom(ApiError::BadRequest)))
         });
 
-    let api = post_ilp
-        .or(get_spsp)
+    let api = get_spsp
         .or(get_spsp_well_known)
         .or(post_accounts)
         .or(get_accounts)
