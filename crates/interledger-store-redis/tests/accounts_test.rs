@@ -2,15 +2,59 @@ mod common;
 
 use common::*;
 
+use futures::future::{result, Either};
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::{BtpAccount, BtpStore};
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_service::{AccountStore, Username};
+use interledger_service::{AccountStore, AddressStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
+use log::{debug, error};
+use redis::Client;
 use std::str::FromStr;
+
+#[test]
+fn picks_up_parent_during_initialization() {
+    let context = TestContext::new();
+    block_on(
+        result(Client::open(context.get_client_connection_info()))
+            .map_err(|err| error!("Error creating Redis client: {:?}", err))
+            .and_then(|client| {
+                debug!("Connected to redis: {:?}", client);
+                client
+                    .get_shared_async_connection()
+                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            })
+            .and_then(move |connection| {
+                // we set a parent that was already configured via perhaps a
+                // previous account insertion. that means that when we connect
+                // to the store we will always get the configured parent (if
+                // there was one))
+                redis::cmd("SET")
+                    .arg("parent_node_account_address")
+                    .arg("example.bob.node")
+                    .query_async(connection)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(_, _): (_, redis::Value)| {
+                        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+                            .connect()
+                            .and_then(move |store| {
+                                // the store's ilp address is the store's
+                                // username appended to the parent's address
+                                assert_eq!(
+                                    *store.ilp_address.read(),
+                                    Address::from_str("example.bob.node").unwrap()
+                                );
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+            }),
+    )
+    .unwrap();
+}
 
 #[test]
 fn insert_accounts() {
@@ -20,11 +64,46 @@ fn insert_accounts() {
             .and_then(move |account| {
                 assert_eq!(
                     *account.ilp_address(),
-                    Address::from_str("example.charlie").unwrap()
+                    Address::from_str("example.alice.user1.charlie").unwrap()
                 );
                 let _ = context;
                 Ok(())
             })
+    }))
+    .unwrap();
+}
+
+#[test]
+fn only_one_parent_allowed() {
+    let mut acc = ACCOUNT_DETAILS_2.clone();
+    acc.routing_relation = Some("Parent".to_owned());
+    acc.username = Username::from_str("another_name").unwrap();
+    acc.configured_ilp_address = Some(Address::from_str("example.another_name").unwrap());
+    block_on(test_store().and_then(|(store, context, accs)| {
+        // check that the store's ilp address is <parent address>.username
+        // assert_eq!(store.ilp
+        store.insert_account(acc.clone()).then(move |res| {
+            // This should fail
+            assert!(res.is_err());
+            // remove account 0 and try again -- must also clear the ILP address
+            // since this was a parent account
+            futures::future::join_all(vec![
+                Either::A(store.delete_account(accs[0].id()).and_then(|_| Ok(()))),
+                Either::B(store.clear_ilp_address()),
+            ])
+            .and_then(move |_| {
+                store.insert_account(acc).and_then(move |account| {
+                    assert_eq!(
+                        *account.ilp_address(),
+                        Address::from_str("example.another_name").unwrap()
+                    );
+
+                    // the store's ilp address should be <new parent address>.username
+                    let _ = context;
+                    Ok(())
+                })
+            })
+        })
     }))
     .unwrap();
 }

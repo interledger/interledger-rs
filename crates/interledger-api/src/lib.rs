@@ -3,7 +3,7 @@ use futures::Future;
 use interledger_http::{HttpAccount, HttpServer as IlpOverHttpServer, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, IncomingService, Username};
+use interledger_service::{Account, AddressStore, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
@@ -18,7 +18,7 @@ mod routes;
 
 pub(crate) mod http_retry;
 
-pub trait NodeStore: Clone + Send + Sync + 'static {
+pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     type Account: Account;
 
     fn insert_account(
@@ -79,9 +79,9 @@ pub struct AccountSettings {
 }
 
 /// The Account type for the RedisStore.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountDetails {
-    pub ilp_address: Address,
+    pub configured_ilp_address: Option<Address>,
     pub username: Username,
     pub asset_code: String,
     pub asset_scale: u8,

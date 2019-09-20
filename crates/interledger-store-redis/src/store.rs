@@ -30,7 +30,7 @@ use super::account::AccountId;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, NodeStore};
 use interledger_btp::BtpStore;
-use interledger_ccp::{CcpRoutingAccount, RouteManagerStore};
+use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
 use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
@@ -370,16 +370,23 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
-
         let id = AccountId::new();
-        debug!("Generated account: {}", id);
+        let ilp_address = self.get_ilp_address();
+        debug!(
+            "Generated account id for {}: {}",
+            account.username.clone(),
+            id
+        );
         Box::new(
-            result(Account::try_from(id, account))
+            result(Account::try_from(id, account, ilp_address))
                 .and_then(move |account| {
                     // Check that there isn't already an account with values that MUST be unique
                     let mut pipe = redis::pipe();
                     pipe.exists(accounts_key(account.id));
                     pipe.hexists("usernames", account.username().as_ref());
+                    if account.routing_relation == RoutingRelation::Parent {
+                        pipe.exists(PARENT_ILP_KEY);
+                    }
 
                     pipe.query_async(connection.as_ref().clone())
                         .map_err(|err| {
@@ -429,6 +436,9 @@ impl RedisStore {
                     pipe.hset(ROUTES_KEY, account.ilp_address.to_bytes().to_vec(), account.id)
                         .ignore();
 
+                    // The parent account settings are done via the API. We just
+                    // had to check for the existence of a parent
+
                     pipe.query_async(connection)
                         .map_err(|err| error!("Error inserting account into DB: {:?}", err))
                         .and_then(move |(connection, _ret): (SharedConnection, Value)| {
@@ -450,17 +460,22 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encryption_key = self.encryption_key.clone();
+        let ilp_address = self.get_ilp_address().clone();
 
         Box::new(
             // Check to make sure an account with this ID already exists
             redis::cmd("EXISTS")
                 .arg(accounts_key(id))
-                // TODO this needs to be atomic with the insertions later, waiting on #186
+                // TODO this needs to be atomic with the insertions later,
+                // waiting on #186
+                // TODO: Do not allow this update to happen if
+                // AccountDetails.RoutingRelation == Parent and parent is
+                // already set
                 .query_async(connection.as_ref().clone())
                 .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
                 .and_then(move |(connection, result): (SharedConnection, bool)| {
                     if result {
-                        Account::try_from(id, account)
+                        Account::try_from(id, account, ilp_address)
                             .and_then(move |account| Ok((connection, account)))
                     } else {
                         warn!(
@@ -611,8 +626,7 @@ impl RedisStore {
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let connection = self.connection.as_ref().clone();
         let routing_table = self.routes.clone();
-
-        Box::new(self.redis_get_account(id).and_then(|account| {
+        Box::new(self.redis_get_account(id).and_then(move |account| {
             let mut pipe = redis::pipe();
             pipe.atomic();
 

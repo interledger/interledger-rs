@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     str::{self, FromStr},
 };
 use uuid::{parser::ParseError, Uuid};
@@ -61,6 +60,7 @@ pub struct Account {
     pub(crate) amount_per_minute_limit: Option<u64>,
     pub(crate) settlement_engine_url: Option<Url>,
 }
+
 fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -79,7 +79,32 @@ where
 }
 
 impl Account {
-    pub fn try_from(id: AccountId, details: AccountDetails) -> Result<Account, ()> {
+    pub fn try_from(
+        id: AccountId,
+        details: AccountDetails,
+        parent_ilp_address: Address,
+    ) -> Result<Account, ()> {
+        let ilp_address = match details.configured_ilp_address {
+            Some(a) => a,
+            None => {
+                // if parent address ends with username, do not suffix
+                if details.username.to_string()
+                    == parent_ilp_address.segments().rev().next().unwrap()
+                {
+                    parent_ilp_address
+                } else {
+                    parent_ilp_address
+                        .with_suffix(details.username.as_bytes())
+                        .map_err(|_| {
+                            error!(
+                                "Could not append username {} to address {}",
+                                details.username, parent_ilp_address
+                            )
+                        })?
+                }
+            }
+        };
+
         let http_endpoint = if let Some(ref url) = details.http_endpoint {
             Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
         } else {
@@ -126,9 +151,7 @@ impl Account {
         Ok(Account {
             id,
             username: details.username,
-            ilp_address: Address::try_from(details.ilp_address.as_ref()).map_err(|err| {
-                error!("Invalid ILP Address when creating Redis account: {:?}", err)
-            })?,
+            ilp_address,
             asset_code: details.asset_code.to_uppercase(),
             asset_scale: details.asset_scale,
             max_packet_amount: details.max_packet_amount,
@@ -546,7 +569,7 @@ mod redis_account {
 
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
-            ilp_address: Address::from_str("example.alice").unwrap(),
+            configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
             username: Username::from_str("alice").unwrap(),
             asset_scale: 6,
             asset_code: "XYZ".to_string(),
@@ -571,7 +594,12 @@ mod redis_account {
     #[test]
     fn from_account_details() {
         let id = AccountId::new();
-        let account = Account::try_from(id, ACCOUNT_DETAILS.clone()).unwrap();
+        let account = Account::try_from(
+            id,
+            ACCOUNT_DETAILS.clone(),
+            Address::from_str("local.host").unwrap(),
+        )
+        .unwrap();
         assert_eq!(account.id(), id);
         assert_eq!(
             account.get_http_auth_token().unwrap(),
