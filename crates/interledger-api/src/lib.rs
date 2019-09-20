@@ -243,24 +243,25 @@ where
         })
         // This call makes it so we do not pass on a () value on
         // success to the next filter, it just gets rid of it
-        .untuple_one();
-    let with_store = warp::any().map(move || store.clone());
-    let with_incoming_handler = warp::any().map(move || incoming_handler.clone());
+        .untuple_one()
+        .boxed();
+    let with_store = warp::any().map(move || store.clone()).boxed();
+    let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
     let accounts = warp::path("accounts");
     let accounts_index = accounts.and(warp::path::end());
     let account_username = accounts.and(warp::path::param2::<Username>());
-    let account_username_to_id =
-        account_username
-            .and(with_store.clone())
-            .and_then(|username: Username, store: S| {
-                store
-                    .get_account_id_from_username(&username)
-                    .map_err(move |_| {
-                        // TODO differentiate between server error and not found
-                        error!("Error getting account id from username: {}", username);
-                        warp::reject::custom(ApiError::AccountNotFound)
-                    })
-            });
+    let account_username_to_id = account_username
+        .and(with_store.clone())
+        .and_then(|username: Username, store: S| {
+            store
+                .get_account_id_from_username(&username)
+                .map_err(move |_| {
+                    // TODO differentiate between server error and not found
+                    error!("Error getting account id from username: {}", username);
+                    warp::reject::custom(ApiError::AccountNotFound)
+                })
+        })
+        .boxed();
     let valid_account_authorization = warp::header::<AuthToken>("authorization")
         .and(with_store.clone())
         .and_then(|auth: AuthToken, store: S| {
@@ -273,7 +274,8 @@ where
                     );
                     warp::reject::custom(ApiError::Unauthorized)
                 })
-        });
+        })
+        .boxed();
     let authorized_account_from_path = account_username
         .and(valid_account_authorization.clone())
         .and_then(
@@ -285,7 +287,8 @@ where
                     Err(warp::reject::custom(ApiError::Unauthorized))
                 }
             },
-        );
+        )
+        .boxed();
     let admin_or_authorized_account = admin_only
         .clone()
         .and(account_username_to_id.clone())
@@ -293,7 +296,8 @@ where
         .or(authorized_account_from_path
             .clone()
             .map(|account: A| account.id()))
-        .unify();
+        .unify()
+        .boxed();
 
     // POST /accounts
     let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
@@ -350,7 +354,7 @@ where
                 .and_then(|account: A| {
                     Ok(warp::reply::json(&account))
                 })
-        });
+        }).boxed();
 
     // GET /accounts
     let get_accounts = warp::get2()
@@ -362,7 +366,8 @@ where
                 .get_all_accounts()
                 .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
                 .and_then(|accounts| Ok(warp::reply::json(&accounts)))
-        });
+        })
+        .boxed();
 
     // PUT /accounts/:username
     let put_account = warp::put2()
@@ -378,7 +383,8 @@ where
                     .map_err(move |_| warp::reject::custom(ApiError::InternalServerError))
                     .and_then(move |account| Ok(warp::reply::json(&account)))
             },
-        );
+        )
+        .boxed();
 
     // GET /accounts/:username
     let get_account = warp::get2()
@@ -390,7 +396,8 @@ where
                 .get_accounts(vec![id])
                 .map_err(|_| warp::reject::not_found())
                 .and_then(|accounts| Ok(warp::reply::json(&accounts[0])))
-        });
+        })
+        .boxed();
 
     // GET /accounts/:username/balance
     let get_account_balance = warp::get2()
@@ -416,7 +423,8 @@ where
                         "balance": balance.to_string(),
                     })))
                 })
-        });
+        })
+        .boxed();
 
     // DELETE /accounts/:username
     let delete_account = warp::delete2()
@@ -432,7 +440,8 @@ where
                     warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(|account| Ok(warp::reply::json(&account)))
-        });
+        })
+        .boxed();
 
     // PUT /accounts/:username/settings
     let put_account_settings = warp::put2()
@@ -449,7 +458,8 @@ where
                     warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(|settings| Ok(warp::reply::json(&settings)))
-        });
+        })
+        .boxed();
 
     // (Websocket) /accounts/:username/payments/incoming
     let incoming_payment_notifications = warp::ws2()
@@ -468,7 +478,8 @@ where
                     .map(|_| ())
                     .map_err(|err| error!("Error forwarding notifications to websocket: {:?}", err))
             })
-        });
+        })
+        .boxed();
 
     // POST /accounts/:username/payments
     let post_payments = warp::post2()
@@ -500,7 +511,8 @@ where
                     warp::reject::custom(ApiError::InternalServerError)
                 })
             },
-        );
+        )
+        .boxed();
 
     // GET /accounts/:username/spsp
     let server_secret_clone = server_secret.clone();
@@ -522,7 +534,8 @@ where
                     )
                     .generate_http_response())
                 })
-        });
+        })
+        .boxed();
 
     // GET /.well-known/pay
     // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
@@ -563,15 +576,19 @@ where
             } else {
                 Either::B(err(warp::reject::not_found()))
             }
-        });
+        })
+        .boxed();
 
     // GET /
-    let get_root = warp::get2().and(warp::path::end()).map(|| {
-        // TODO add more to this response
-        warp::reply::json(&json!({
-            "status": "Ready".to_string(),
-        }))
-    });
+    let get_root = warp::get2()
+        .and(warp::path::end())
+        .map(|| {
+            // TODO add more to this response
+            warp::reply::json(&json!({
+                "status": "Ready".to_string(),
+            }))
+        })
+        .boxed();
 
     // PUT /rates
     let put_rates = warp::put2()
@@ -587,7 +604,8 @@ where
                 error!("Error setting exchange rates");
                 Err(warp::reject::custom(ApiError::InternalServerError))
             }
-        });
+        })
+        .boxed();
 
     // GET /rates
     let get_rates = warp::get2()
@@ -601,7 +619,8 @@ where
                 error!("Error getting exchange rates");
                 Err(warp::reject::custom(ApiError::InternalServerError))
             }
-        });
+        })
+        .boxed();
 
     // GET /routes
     let get_routes = warp::get2()
@@ -621,7 +640,8 @@ where
                     },
                 ));
             warp::reply::json(&routes)
-        });
+        })
+        .boxed();
 
     // PUT /routes/static
     let put_static_routes = warp::put2()
@@ -649,7 +669,8 @@ where
                     })
                     .map(move |_| warp::reply::json(&parsed)),
             )
-        });
+        })
+        .boxed();
 
     // PUT /routes/static/:prefix
     let put_static_route = warp::put2()
@@ -675,7 +696,8 @@ where
             }
             error!("Body was not a valid Account ID");
             Either::B(err(warp::reject::custom(ApiError::BadRequest)))
-        });
+        })
+        .boxed();
 
     let api = get_spsp
         .or(get_spsp_well_known)
