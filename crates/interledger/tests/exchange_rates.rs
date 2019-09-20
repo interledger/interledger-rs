@@ -1,9 +1,6 @@
 use env_logger;
 use futures::Future;
-use interledger::{
-    cli,
-    node::{ExchangeRateProvider, InterledgerNode},
-};
+use interledger::node::{random_secret, ExchangeRateProvider, InterledgerNode};
 use interledger_packet::Address;
 use interledger_service::Username;
 use log::error;
@@ -37,7 +34,7 @@ fn coincap() {
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], http_port).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
-        secret_seed: cli::random_secret(),
+        secret_seed: random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: Some(ExchangeRateProvider::CoinCap),
@@ -106,7 +103,7 @@ fn cryptocompare() {
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], http_port).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
-        secret_seed: cli::random_secret(),
+        secret_seed: random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: Some(ExchangeRateProvider::CryptoCompare(api_key)),
