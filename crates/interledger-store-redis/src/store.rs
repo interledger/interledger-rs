@@ -19,7 +19,7 @@ use super::account::*;
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
-    future::{err, lazy, ok, result, Either},
+    future::{err, ok, result, Either},
     sync::mpsc::UnboundedSender,
     Future, Stream,
 };
@@ -670,18 +670,33 @@ impl AccountStore for RedisStore {
 
 impl StreamNotificationsStore for RedisStore {
     fn publish_payment_notification(&self, payment: PaymentNotification) {
-        let channel = format!("paid:{}", payment.to_username);
+        let username = payment.to_username.clone();
         let message: String = json!(payment).to_string();
         let connection = self.connection.as_ref().clone();
-        spawn(lazy(move || {
-            debug!("Publishing message {} to channel {}", message, channel);
-            redis::cmd("PUBLISH")
-                .arg(channel)
-                .arg(message)
-                .query_async(connection)
-                .map_err(|_| ())
-                .and_then(|(_, _): (_, i32)| Ok(()))
-        }));
+        spawn(
+            self.get_account_id_from_username(&username)
+                .map_err(move |_| {
+                    error!(
+                        "Failed to find account ID corresponding to username: {}",
+                        username
+                    )
+                })
+                .and_then(move |account_id| {
+                    redis::cmd("PUBLISH")
+                        .arg(format!("paid:{}", account_id))
+                        .arg(message.clone())
+                        .query_async(connection)
+                        .then(move |res| {
+                            debug!("Publishing message {} for ID {}", message, account_id);
+                            res
+                        })
+                        .map_err(move |_| error!("Failed to publish message"))
+                        .and_then(move |(_, _): (_, i32)| {
+                            debug!("Successfully published message");
+                            Ok(())
+                        })
+                }),
+        );
     }
 }
 
