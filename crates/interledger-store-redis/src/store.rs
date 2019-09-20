@@ -23,7 +23,7 @@ use futures::{
     sync::mpsc::UnboundedSender,
     Future, Stream,
 };
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, trace, warn};
 use std::collections::{HashMap, HashSet};
 
 use super::account::AccountId;
@@ -43,7 +43,7 @@ use redis::{
     self, aio::SharedConnection, cmd, Client, ConnectionInfo, ControlFlow, PipelineCommands,
     PubSubCommands, Script, Value,
 };
-use serde_json::json;
+use serde_json;
 use std::{
     iter::FromIterator,
     str,
@@ -173,6 +173,7 @@ lazy_static! {
 
 static ROUTES_KEY: &str = "routes:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
+static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
 
 fn prefixed_idempotency_key(idempotency_key: String) -> String {
     format!("idempotency-key:{}", idempotency_key)
@@ -260,33 +261,41 @@ impl RedisStoreBuilder {
                 // Here we spawn a worker thread to listen for incoming messages on Redis pub/sub,
                 // running a callback for each message received.
                 // This currently must be a thread rather than a task due to the redis-rs driver
-                // not yet supporting asynchronous subscriptions.
+                // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
                 let subscriptions_clone = store.subscriptions.clone();
                 std::thread::spawn(move || {
                     let sub_status =
                         sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
-                            let channel: Vec<_> = msg.get_channel_name().split(':').collect();
-                            let message: String = match msg.get_payload() {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    error!("Failed to get payload from subscription: {}", e);
-                                    return ControlFlow::Continue;
-                                }
-                            };
-                            debug!("Subscribed message received for {:?}", channel[1]);
-                            match subscriptions_clone.read().get(channel[1]) {
-                                Some(sender) => {
-                                    if let Err(e) = sender.unbounded_send(message) {
-                                        error!("Failed to send message: {}", e);
+                            let channel_name = msg.get_channel_name();
+                            if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
+                                if let Ok(account_id) = AccountId::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
+                                    let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
+                                        Ok(s) => s,
+                                        Err(e) => {
+                                            error!("Failed to get payload from subscription: {}", e);
+                                            return ControlFlow::Continue;
+                                        }
+                                    };
+                                    debug!("Subscribed message received for {:?}", account_id);
+                                    match subscriptions_clone.read().get(&account_id) {
+                                        Some(sender) => {
+                                            if let Err(err) = sender.unbounded_send(message) {
+                                                error!("Failed to send message: {}", err);
+                                            }
+                                        }
+                                        None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
                                     }
+                                } else {
+                                    error!("Invalid AccountId in channel name: {}", channel_name);
                                 }
-                                None => debug!("No mailboxes looking for {:?}", channel[1]),
+                            } else {
+                                warn!("Ignoring unexpected message from Redis subscription for channel: {}", channel_name);
                             }
                             ControlFlow::Continue
                         });
                     match sub_status {
                         Err(e) => warn!("Could not issue psubscribe to Redis: {}", e),
-                        Ok(_) => info!("Successfully issued psubscribe to Redis"),
+                        Ok(_) => debug!("Successfully issued psubscribe to Redis"),
                     }
                 });
 
@@ -304,7 +313,7 @@ impl RedisStoreBuilder {
 #[derive(Clone)]
 pub struct RedisStore {
     connection: Arc<SharedConnection>,
-    subscriptions: Arc<RwLock<HashMap<String, UnboundedSender<String>>>>,
+    subscriptions: Arc<RwLock<HashMap<AccountId, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
     encryption_key: Arc<Secret<EncryptionKey>>,
@@ -669,9 +678,20 @@ impl AccountStore for RedisStore {
 }
 
 impl StreamNotificationsStore for RedisStore {
+    type Account = Account;
+
+    fn add_payment_notification_subscription(
+        &self,
+        id: AccountId,
+        sender: UnboundedSender<PaymentNotification>,
+    ) {
+        trace!("Added payment notification listener for {}", id);
+        self.subscriptions.write().insert(id, sender);
+    }
+
     fn publish_payment_notification(&self, payment: PaymentNotification) {
         let username = payment.to_username.clone();
-        let message: String = json!(payment).to_string();
+        let message = serde_json::to_string(&payment).unwrap();
         let connection = self.connection.as_ref().clone();
         spawn(
             self.get_account_id_from_username(&username)
@@ -682,15 +702,12 @@ impl StreamNotificationsStore for RedisStore {
                     )
                 })
                 .and_then(move |account_id| {
+                    debug!("Publishing message {} for ID {}", message, account_id);
                     redis::cmd("PUBLISH")
-                        .arg(format!("paid:{}", account_id))
-                        .arg(message.clone())
+                        .arg(format!("{}{}", STREAM_NOTIFICATIONS_PREFIX, account_id))
+                        .arg(message)
                         .query_async(connection)
-                        .then(move |res| {
-                            debug!("Publishing message {} for ID {}", message, account_id);
-                            res
-                        })
-                        .map_err(move |_| error!("Failed to publish message"))
+                        .map_err(move |err| error!("Error publish message to Redis: {:?}", err))
                         .and_then(move |(_, _): (_, i32)| {
                             debug!("Successfully published message");
                             Ok(())
@@ -1121,15 +1138,6 @@ impl NodeStore for RedisStore {
                     })
             })
         )
-    }
-
-    fn add_payment_notification_subscription(
-        &self,
-        id: AccountId,
-        sender: UnboundedSender<String>,
-    ) {
-        info!("Added listener for {}", id);
-        self.subscriptions.write().insert(id.to_string(), sender);
     }
 }
 

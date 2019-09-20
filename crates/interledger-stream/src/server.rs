@@ -3,8 +3,7 @@ use super::packet::*;
 use base64;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::future::result;
-use futures::Future;
+use futures::{future::result, sync::mpsc::UnboundedSender, Future};
 use hex;
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::{
@@ -13,7 +12,7 @@ use interledger_packet::{
 };
 use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username};
 use log::debug;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::time::SystemTime;
@@ -89,7 +88,7 @@ impl ConnectionGenerator {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct PaymentNotification {
     pub to_username: Username,
     pub from_username: Username,
@@ -100,11 +99,15 @@ pub struct PaymentNotification {
 
 /// A trait representing the Publish side of a pub/sub store
 pub trait StreamNotificationsStore {
-    fn publish_payment_notification(&self, _payment: PaymentNotification) {
-        // Publishing a notification is an operation we care about only for its side effects,
-        // so for ease of mocking we give it a default implementation that is entirely empty.
-        // In other words: This Space Intentionally Left Blank.
-    }
+    type Account: Account;
+
+    fn add_payment_notification_subscription(
+        &self,
+        account_id: <Self::Account as Account>::AccountId,
+        sender: UnboundedSender<PaymentNotification>,
+    );
+
+    fn publish_payment_notification(&self, _payment: PaymentNotification);
 }
 
 /// An OutgoingService that fulfills incoming STREAM packets.
@@ -123,7 +126,7 @@ pub struct StreamReceiverService<S, O: OutgoingService<A>, A: Account> {
 
 impl<S, O, A> StreamReceiverService<S, O, A>
 where
-    S: StreamNotificationsStore,
+    S: StreamNotificationsStore<Account = A>,
     O: OutgoingService<A>,
     A: Account,
 {
