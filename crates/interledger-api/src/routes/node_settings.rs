@@ -5,7 +5,6 @@ use futures::{
     Future,
 };
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_ildcp::IldcpAccount;
 use interledger_router::RouterStore;
 use interledger_service::Account;
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
@@ -29,7 +28,7 @@ where
         + BalanceStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
-    A: Account + IldcpAccount + HttpAccount + Serialize + 'static,
+    A: Account + HttpAccount + Serialize + 'static,
 {
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);

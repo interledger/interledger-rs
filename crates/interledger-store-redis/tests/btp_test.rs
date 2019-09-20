@@ -3,9 +3,8 @@ mod common;
 use common::*;
 use interledger_btp::{BtpAccount, BtpStore};
 use interledger_http::HttpAccount;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
-use interledger_service::Username;
+use interledger_service::{Username, Account};
 use std::str::FromStr;
 
 #[test]
@@ -15,7 +14,7 @@ fn gets_account_from_btp_auth() {
             .get_account_from_btp_auth(&Username::from_str("bob").unwrap(), "other_btp_token")
             .and_then(move |account| {
                 assert_eq!(
-                    *account.client_address(),
+                    *account.ilp_address(),
                     Address::from_str("example.bob").unwrap()
                 );
                 let _ = context;

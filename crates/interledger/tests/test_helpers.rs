@@ -1,5 +1,4 @@
 use futures::{stream::Stream, Future};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_store_redis::Account;
@@ -97,7 +96,7 @@ pub fn get_all_accounts(
 pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, AccountId> {
     let mut map = HashMap::new();
     for a in accounts {
-        map.insert(a.client_address().clone(), a.id());
+        map.insert(a.ilp_address().clone(), a.id());
     }
     map
 }
