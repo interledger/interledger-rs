@@ -183,3 +183,16 @@ where
         Box::new((self.handler)(request).into_future())
     }
 }
+
+pub trait AddressStore: Clone {
+    /// Saves the ILP Address in the store's memory and database
+    fn set_ilp_address(
+        &self,
+        ilp_address: Address,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    /// Get's the store's ilp address from memory
+    fn get_ilp_address(&self) -> Address;
+}

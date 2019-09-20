@@ -32,8 +32,9 @@ use interledger_api::{AccountDetails, AccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::{CcpRoutingAccount, RouteManagerStore};
 use interledger_http::HttpStore;
+use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore, Username};
+use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{IdempotentData, IdempotentStore, SettlementStore};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
@@ -58,6 +59,7 @@ use secrecy::{ExposeSecret, Secret};
 use zeroize::Zeroize;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
+static PARENT_ILP_KEY: &str = "parent_node_account_address";
 
 // The following are Lua scripts that are used to atomically execute the given logic
 // inside Redis. This allows for more complex logic without needing multiple round
@@ -187,6 +189,7 @@ pub struct RedisStoreBuilder {
     redis_url: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
+    node_ilp_address: Address,
 }
 
 impl RedisStoreBuilder {
@@ -195,7 +198,13 @@ impl RedisStoreBuilder {
             redis_url,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
+            node_ilp_address: Address::from_str("local.host").unwrap(),
         }
+    }
+
+    pub fn node_ilp_address(&mut self, node_ilp_address: Address) -> &mut Self {
+        self.node_ilp_address = node_ilp_address;
+        self
     }
 
     pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
@@ -208,6 +217,7 @@ impl RedisStoreBuilder {
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
+        let ilp_address = self.node_ilp_address.clone();
 
         result(Client::open(redis_info.clone()))
             .map_err(|err| error!("Error creating shared Redis client: {:?}", err))
@@ -228,79 +238,102 @@ impl RedisStoreBuilder {
                     }),
             )
             .and_then(move |(shared_connection, mut sub_connection)| {
-                let store = RedisStore {
-                    connection: Arc::new(shared_connection),
-                    subscriptions: Arc::new(RwLock::new(HashMap::new())),
-                    exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                    routes: Arc::new(RwLock::new(HashMap::new())),
-                    encryption_key: Arc::new(encryption_key),
-                    decryption_key: Arc::new(decryption_key),
-                };
+                // Before initializing the store, check if we have an address
+                // that was configured due to adding a parent. If no parent was
+                // found, use the builder's provided address (local.host) or the
+                // one we decided to override it with
+                redis::cmd("GET")
+                    .arg(PARENT_ILP_KEY)
+                    .query_async(shared_connection.clone())
+                    .map_err(|err| {
+                        error!(
+                            "Error checking whether we have a parent configured: {:?}",
+                            err
+                        )
+                    })
+                    .and_then(move |(_, address): (SharedConnection, Option<String>)| {
+                        Ok(if let Some(address) = address {
+                            Address::from_str(&address).unwrap()
+                        } else {
+                            ilp_address
+                        })
+                    })
+                    .and_then(move |node_ilp_address| {
+                        let store = RedisStore {
+                            ilp_address: Arc::new(RwLock::new(node_ilp_address)),
+                            connection: Arc::new(shared_connection),
+                            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+                            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
+                            routes: Arc::new(RwLock::new(HashMap::new())),
+                            encryption_key: Arc::new(encryption_key),
+                            decryption_key: Arc::new(decryption_key),
+                        };
 
-                // Poll for routing table updates
-                // Note: if this behavior changes, make sure to update the Drop implementation
-                let connection_clone = Arc::downgrade(&store.connection);
-                let routing_table = store.routes.clone();
-                let poll_routes =
-                    Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                        .map_err(|err| error!("Interval error: {:?}", err))
-                        .for_each(move |_| {
-                            if let Some(connection) = connection_clone.upgrade() {
-                                Either::A(update_routes(
-                                    connection.as_ref().clone(),
-                                    routing_table.clone(),
-                                ))
-                            } else {
-                                debug!("Not polling routes anymore because connection was closed");
-                                // TODO make sure the interval stops
-                                Either::B(err(()))
-                            }
-                        });
-                spawn(poll_routes);
-
-                // Here we spawn a worker thread to listen for incoming messages on Redis pub/sub,
-                // running a callback for each message received.
-                // This currently must be a thread rather than a task due to the redis-rs driver
-                // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
-                let subscriptions_clone = store.subscriptions.clone();
-                std::thread::spawn(move || {
-                    let sub_status =
-                        sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
-                            let channel_name = msg.get_channel_name();
-                            if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
-                                if let Ok(account_id) = AccountId::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
-                                    let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
-                                        Ok(s) => s,
-                                        Err(e) => {
-                                            error!("Failed to get payload from subscription: {}", e);
-                                            return ControlFlow::Continue;
-                                        }
-                                    };
-                                    debug!("Subscribed message received for {:?}", account_id);
-                                    match subscriptions_clone.read().get(&account_id) {
-                                        Some(sender) => {
-                                            if let Err(err) = sender.unbounded_send(message) {
-                                                error!("Failed to send message: {}", err);
-                                            }
-                                        }
-                                        None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
+                        // Poll for routing table updates
+                        // Note: if this behavior changes, make sure to update the Drop implementation
+                        let connection_clone = Arc::downgrade(&store.connection);
+                        let routing_table = store.routes.clone();
+                        let poll_routes =
+                            Interval::new(Instant::now(), Duration::from_millis(poll_interval))
+                                .map_err(|err| error!("Interval error: {:?}", err))
+                                .for_each(move |_| {
+                                    if let Some(connection) = connection_clone.upgrade() {
+                                        Either::A(update_routes(
+                                            connection.as_ref().clone(),
+                                            routing_table.clone(),
+                                        ))
+                                    } else {
+                                        debug!("Not polling routes anymore because connection was closed");
+                                        // TODO make sure the interval stops
+                                        Either::B(err(()))
                                     }
-                                } else {
-                                    error!("Invalid AccountId in channel name: {}", channel_name);
-                                }
-                            } else {
-                                warn!("Ignoring unexpected message from Redis subscription for channel: {}", channel_name);
+                                });
+                        spawn(poll_routes);
+
+                        // Here we spawn a worker thread to listen for incoming messages on Redis pub/sub,
+                        // running a callback for each message received.
+                        // This currently must be a thread rather than a task due to the redis-rs driver
+                        // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
+                        let subscriptions_clone = store.subscriptions.clone();
+                        std::thread::spawn(move || {
+                            let sub_status =
+                                sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
+                                    let channel_name = msg.get_channel_name();
+                                    if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
+                                        if let Ok(account_id) = AccountId::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
+                                            let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
+                                                Ok(s) => s,
+                                                Err(e) => {
+                                                    error!("Failed to get payload from subscription: {}", e);
+                                                    return ControlFlow::Continue;
+                                                }
+                                            };
+                                            debug!("Subscribed message received for {:?}", account_id);
+                                            match subscriptions_clone.read().get(&account_id) {
+                                                Some(sender) => {
+                                                    if let Err(err) = sender.unbounded_send(message) {
+                                                        error!("Failed to send message: {}", err);
+                                                    }
+                                                }
+                                                None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
+                                            }
+                                        } else {
+                                            error!("Invalid AccountId in channel name: {}", channel_name);
+                                        }
+                                    } else {
+                                        warn!("Ignoring unexpected message from Redis subscription for channel: {}", channel_name);
+                                    }
+                                    ControlFlow::Continue
+                                });
+                            match sub_status {
+                                Err(e) => warn!("Could not issue psubscribe to Redis: {}", e),
+                                Ok(_) => debug!("Successfully issued psubscribe to Redis"),
                             }
-                            ControlFlow::Continue
                         });
-                    match sub_status {
-                        Err(e) => warn!("Could not issue psubscribe to Redis: {}", e),
-                        Ok(_) => debug!("Successfully issued psubscribe to Redis"),
-                    }
-                });
 
                 Ok(store)
             })
+        })
     }
 }
 
@@ -312,6 +345,7 @@ impl RedisStoreBuilder {
 /// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
+    pub ilp_address: Arc<RwLock<Address>>,
     connection: Arc<SharedConnection>,
     subscriptions: Arc<RwLock<HashMap<AccountId, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
@@ -1138,6 +1172,45 @@ impl NodeStore for RedisStore {
                     })
             })
         )
+    }
+}
+
+impl AddressStore for RedisStore {
+    fn set_ilp_address(
+        &self,
+        ilp_address: Address,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let self_clone = self.clone();
+        Box::new(
+            cmd("SET")
+                .arg(PARENT_ILP_KEY)
+                .arg(ilp_address.as_bytes())
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error setting static route: {:?}", err))
+                .and_then(move |(_, _): (SharedConnection, Value)| {
+                    *(self_clone.ilp_address.write()) = ilp_address;
+                    Ok(())
+                }),
+        )
+    }
+
+    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let self_clone = self.clone();
+        Box::new(
+            cmd("DEL")
+                .arg(PARENT_ILP_KEY)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error setting static route: {:?}", err))
+                .and_then(move |(_, _): (SharedConnection, Value)| {
+                    *(self_clone.ilp_address.write()) = Address::from_str("local.host").unwrap();
+                    Ok(())
+                }),
+        )
+    }
+
+    fn get_ilp_address(&self) -> Address {
+        // read consumes the Arc<RwLock<T>> so we cannot return a reference
+        self.ilp_address.read().clone()
     }
 }
 
