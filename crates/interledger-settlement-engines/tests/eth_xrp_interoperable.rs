@@ -2,10 +2,7 @@
 
 use env_logger;
 use futures::Future;
-use interledger::{
-    cli,
-    node::{AccountDetails, InterledgerNode},
-};
+use interledger::node::{random_secret, AccountDetails, InterledgerNode};
 use interledger_packet::Address;
 use interledger_service::Username;
 use serde_json::json;
@@ -110,7 +107,7 @@ fn eth_xrp_interoperable() {
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], node1_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node1_settlement).into(),
-        secret_seed: cli::random_secret(),
+        secret_seed: random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
@@ -176,7 +173,7 @@ fn eth_xrp_interoperable() {
         btp_bind_address: ([127, 0, 0, 1], node2_btp).into(),
         http_bind_address: ([127, 0, 0, 1], node2_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node2_settlement).into(),
-        secret_seed: cli::random_secret(),
+        secret_seed: random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
@@ -259,7 +256,7 @@ fn eth_xrp_interoperable() {
         btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], node3_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node3_settlement).into(),
-        secret_seed: cli::random_secret(),
+        secret_seed: random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
