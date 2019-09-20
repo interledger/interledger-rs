@@ -114,6 +114,27 @@ pub fn create_account_on_engine<T: Serialize>(
 }
 
 #[allow(unused)]
+pub fn create_account_on_node<T: Serialize>(
+    api_port: u16,
+    data: T,
+    auth: &str,
+) -> impl Future<Item = String, Error = ()> {
+    let client = reqwest::r#async::Client::new();
+    client
+        .post(&format!("http://localhost:{}/accounts", api_port))
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", auth))
+        .json(&data)
+        .send()
+        .and_then(move |res| res.error_for_status())
+        .and_then(move |res| res.into_body().concat2())
+        .map_err(|err| {
+            eprintln!("Error creating account on node: {:?}", err);
+        })
+        .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
+}
+
+#[allow(unused)]
 pub fn send_money_to_username<T: Display + Debug>(
     from_port: u16,
     to_port: u16,
