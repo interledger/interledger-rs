@@ -8,7 +8,6 @@ use futures::{
     Future,
 };
 use hyper::{Response, StatusCode};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
 use log::{debug, error};
@@ -41,7 +40,7 @@ impl_web! {
     where
         S: SettlementStore<Account = A> + IdempotentStore + AccountStore<Account = A> + Clone + Send + Sync + 'static,
         O: OutgoingService<A> + Clone + Send + Sync + 'static,
-        A: SettlementAccount + IldcpAccount + Send + Sync + 'static,
+        A: SettlementAccount + Send + Sync + 'static,
     {
         pub fn new(store: S, outgoing_handler: O) -> Self {
             SettlementApi {

@@ -5,7 +5,6 @@ use futures::{
     Future, Stream,
 };
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_ildcp::IldcpAccount;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AuthToken, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
@@ -42,7 +41,7 @@ where
         + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
-    A: Account + IldcpAccount + HttpAccount + Serialize + 'static,
+    A: Account + HttpAccount + Serialize + 'static,
 {
     // TODO can we make any of the Filters const or put them in lazy_static?
 
@@ -346,7 +345,7 @@ where
                 .and_then(move |accounts| {
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
                     Ok(SpspResponder::new(
-                        accounts[0].client_address().clone(),
+                        accounts[0].ilp_address().clone(),
                         server_secret_clone.clone(),
                     )
                     .generate_http_response())
@@ -384,7 +383,7 @@ where
                         .and_then(move |account| {
                             // TODO return the response without instantiating an SpspResponder (use a simple fn)
                             Ok(SpspResponder::new(
-                                account.client_address().clone(),
+                                account.ilp_address().clone(),
                                 server_secret_clone.clone(),
                             )
                             .generate_http_response())

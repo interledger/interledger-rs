@@ -1,5 +1,4 @@
 use futures::Future;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
@@ -51,7 +50,7 @@ impl<S, O, A> BalanceService<S, O, A>
 where
     S: BalanceStore<Account = A> + SettlementStore<Account = A>,
     O: OutgoingService<A>,
-    A: Account + SettlementAccount + IldcpAccount,
+    A: Account + SettlementAccount,
 {
     pub fn new(ilp_address: Address, store: S, next: O) -> Self {
         BalanceService {
@@ -68,7 +67,7 @@ impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
 where
     S: BalanceStore<Account = A> + SettlementStore<Account = A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
-    A: Account + IldcpAccount + SettlementAccount + 'static,
+    A: SettlementAccount + 'static,
 {
     type Future = BoxedIlpFuture;
 

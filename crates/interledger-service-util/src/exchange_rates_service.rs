@@ -3,7 +3,6 @@ use futures::{
     future::{err, Either},
     Future, Stream,
 };
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 // TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
@@ -54,7 +53,7 @@ impl<S, O, A> ExchangeRateService<S, O, A>
 where
     S: ExchangeRateStore,
     O: OutgoingService<A>,
-    A: IldcpAccount,
+    A: Account,
 {
     pub fn new(ilp_address: Address, spread: f64, store: S, next: O) -> Self {
         ExchangeRateService {
@@ -72,7 +71,7 @@ where
     // TODO can we make these non-'static?
     S: ExchangeRateStore + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
-    A: IldcpAccount + Sync + 'static,
+    A: Account + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -280,7 +279,6 @@ where
 mod tests {
     use super::*;
     use futures::{future::ok, Future};
-    use interledger_ildcp::IldcpAccount;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::{outgoing_service_fn, Account};
     use lazy_static::lazy_static;
@@ -408,9 +406,7 @@ mod tests {
         fn username(&self) -> &Username {
             &ALICE
         }
-    }
 
-    impl IldcpAccount for TestAccount {
         fn asset_code(&self) -> &str {
             &self.asset_code
         }
@@ -419,7 +415,7 @@ mod tests {
             self.asset_scale
         }
 
-        fn client_address(&self) -> &Address {
+        fn ilp_address(&self) -> &Address {
             &self.ilp_address
         }
     }

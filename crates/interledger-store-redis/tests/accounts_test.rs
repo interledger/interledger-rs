@@ -5,7 +5,6 @@ use common::*;
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::{BtpAccount, BtpStore};
 use interledger_http::{HttpAccount, HttpStore};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountStore, Username};
@@ -20,7 +19,7 @@ fn insert_accounts() {
             .insert_account(ACCOUNT_DETAILS_2.clone())
             .and_then(move |account| {
                 assert_eq!(
-                    *account.client_address(),
+                    *account.ilp_address(),
                     Address::from_str("example.charlie").unwrap()
                 );
                 let _ = context;
@@ -300,7 +299,7 @@ fn gets_single_account() {
         store_clone
             .get_accounts(vec![acc.id()])
             .and_then(move |accounts| {
-                assert_eq!(accounts[0].client_address(), acc.client_address(),);
+                assert_eq!(accounts[0].ilp_address(), acc.ilp_address());
                 let _ = context;
                 Ok(())
             })
@@ -318,8 +317,8 @@ fn gets_multiple() {
             .get_accounts(account_ids)
             .and_then(move |accounts| {
                 // note reverse order is intentional
-                assert_eq!(accounts[0].client_address(), accs[1].client_address());
-                assert_eq!(accounts[1].client_address(), accs[0].client_address());
+                assert_eq!(accounts[0].ilp_address(), accs[1].ilp_address());
+                assert_eq!(accounts[1].ilp_address(), accs[0].ilp_address());
                 let _ = context;
                 Ok(())
             })

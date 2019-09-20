@@ -624,7 +624,7 @@ where
                     debug!("Sending route updates to accounts: {}", {
                         let account_list: Vec<String> = accounts
                             .iter()
-                            .map(|a| format!("{} ({})", a.id(), a.client_address()))
+                            .map(|a| format!("{} ({})", a.id(), a.ilp_address()))
                             .collect();
                         account_list.join(", ")
                     });
@@ -775,7 +775,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
             return Some((
                 account.clone(),
                 Route {
-                    prefix: account.client_address().to_bytes(),
+                    prefix: account.ilp_address().to_bytes(),
                     auth: [0; 32],
                     path: Vec::new(),
                     props: Vec::new(),
@@ -788,7 +788,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: account.client_address().to_bytes(),
+                prefix: account.ilp_address().to_bytes(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),

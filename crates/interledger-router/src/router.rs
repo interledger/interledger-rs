@@ -152,6 +152,7 @@ mod tests {
 
     lazy_static! {
         pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
     }
 
     impl Account for TestAccount {
@@ -162,6 +163,18 @@ mod tests {
 
         fn username(&self) -> &Username {
             &ALICE
+        }
+
+        fn asset_scale(&self) -> u8 {
+            9
+        }
+
+        fn asset_code(&self) -> &str {
+            "XYZ"
+        }
+
+        fn ilp_address(&self) -> &Address {
+            &EXAMPLE_ADDRESS
         }
     }
 

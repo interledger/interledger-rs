@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use futures::Future;
 use interledger_http::{HttpAccount, HttpServer as IlpOverHttpServer, HttpStore};
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, IncomingService, Username};
@@ -143,7 +142,7 @@ where
         + RouterStore
         + ExchangeRateStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: Account + HttpAccount + IldcpAccount + SettlementAccount + Serialize + Send + Sync + 'static,
+    A: Account + HttpAccount + SettlementAccount + Serialize + Send + Sync + 'static,
 {
     pub fn new(
         server_secret: Bytes,

@@ -4,7 +4,6 @@ use interledger_api::AccountDetails;
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
-use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
 use interledger_service::{Account as AccountTrait, Username};
 use interledger_service_util::{
@@ -463,10 +462,8 @@ impl AccountTrait for Account {
     fn username(&self) -> &Username {
         &self.username
     }
-}
 
-impl IldcpAccount for Account {
-    fn client_address(&self) -> &Address {
+    fn ilp_address(&self) -> &Address {
         &self.ilp_address
     }
 

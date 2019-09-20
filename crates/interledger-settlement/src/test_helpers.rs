@@ -4,7 +4,6 @@ use futures::{
     future::{err, ok},
     Future,
 };
-use interledger_ildcp::IldcpAccount;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService,
     OutgoingService, Username,
@@ -44,19 +43,7 @@ impl Account for TestAccount {
     fn username(&self) -> &Username {
         &ALICE
     }
-}
-impl SettlementAccount for TestAccount {
-    fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
-        if self.no_details {
-            return None;
-        }
-        Some(SettlementEngineDetails {
-            url: self.url.clone(),
-        })
-    }
-}
 
-impl IldcpAccount for TestAccount {
     fn asset_code(&self) -> &str {
         "XYZ"
     }
@@ -66,8 +53,18 @@ impl IldcpAccount for TestAccount {
         9
     }
 
-    fn client_address(&self) -> &Address {
+    fn ilp_address(&self) -> &Address {
         &self.ilp_address
+    }
+}
+impl SettlementAccount for TestAccount {
+    fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
+        if self.no_details {
+            return None;
+        }
+        Some(SettlementEngineDetails {
+            url: self.url.clone(),
+        })
     }
 }
 
