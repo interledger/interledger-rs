@@ -14,9 +14,6 @@ pub mod service {
     pub use interledger_service::*;
 }
 
-#[doc(hidden)]
-#[cfg(feature = "cli")]
-pub mod cli;
 #[cfg(feature = "cli")]
 pub mod node;
 
