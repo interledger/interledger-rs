@@ -56,10 +56,9 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         account_id: <Self::Account as Account>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
-    // TODO this should take an AccountId instead of a String
     fn add_payment_notification_subscription(
         &self,
-        account_id: String,
+        account_id: <Self::Account as Account>::AccountId,
         sender: UnboundedSender<String>,
     );
 }
