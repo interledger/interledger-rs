@@ -15,7 +15,7 @@ fn gets_account_from_btp_auth() {
             .and_then(move |account| {
                 assert_eq!(
                     *account.ilp_address(),
-                    Address::from_str("example.bob").unwrap()
+                    Address::from_str("example.alice.user1.bob").unwrap()
                 );
                 let _ = context;
                 Ok(())
