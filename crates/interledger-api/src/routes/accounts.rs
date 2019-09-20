@@ -284,7 +284,7 @@ where
         .map(|ws: warp::ws::Ws2, id: A::AccountId, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
                 let (tx, rx) = futures::sync::mpsc::unbounded::<String>();
-                store.add_payment_notification_subscription(id.to_string(), tx);
+                store.add_payment_notification_subscription(id, tx);
                 rx.map_err(|_| -> warp::Error { unreachable!("unbounded rx never errors") })
                     .map(warp::ws::Message::text)
                     .forward(ws)

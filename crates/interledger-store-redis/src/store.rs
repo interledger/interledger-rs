@@ -1123,9 +1123,13 @@ impl NodeStore for RedisStore {
         )
     }
 
-    fn add_payment_notification_subscription(&self, id: String, sender: UnboundedSender<String>) {
+    fn add_payment_notification_subscription(
+        &self,
+        id: AccountId,
+        sender: UnboundedSender<String>,
+    ) {
         info!("Added listener for {}", id);
-        self.subscriptions.write().insert(id, sender);
+        self.subscriptions.write().insert(id.to_string(), sender);
     }
 }
 
