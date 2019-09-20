@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::{sync::mpsc::UnboundedSender, Future};
+use futures::Future;
 use interledger_http::{HttpAccount, HttpServer as IlpOverHttpServer, HttpStore};
 use interledger_ildcp::IldcpAccount;
 use interledger_packet::Address;
@@ -7,6 +7,7 @@ use interledger_router::RouterStore;
 use interledger_service::{Account, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
+use interledger_stream::StreamNotificationsStore;
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error as StdError,
@@ -55,12 +56,6 @@ pub trait NodeStore: Clone + Send + Sync + 'static {
         prefix: String,
         account_id: <Self::Account as Account>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
-
-    fn add_payment_notification_subscription(
-        &self,
-        account_id: <Self::Account as Account>::AccountId,
-        sender: UnboundedSender<String>,
-    );
 }
 
 /// AccountSettings is a subset of the user parameters defined in
@@ -144,6 +139,7 @@ where
         + HttpStore<Account = A>
         + BalanceStore<Account = A>
         + SettlementStore<Account = A>
+        + StreamNotificationsStore<Account = A>
         + RouterStore
         + ExchangeRateStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,

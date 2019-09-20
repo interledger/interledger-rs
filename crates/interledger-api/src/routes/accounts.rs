@@ -10,6 +10,7 @@ use interledger_router::RouterStore;
 use interledger_service::{Account, AuthToken, IncomingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_spsp::{pay, SpspResponder};
+use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,6 +39,7 @@ where
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
         + BalanceStore<Account = A>
+        + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
     A: Account + IldcpAccount + HttpAccount + Serialize + 'static,
@@ -283,10 +285,12 @@ where
         .and(with_store.clone())
         .map(|ws: warp::ws::Ws2, id: A::AccountId, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
-                let (tx, rx) = futures::sync::mpsc::unbounded::<String>();
+                let (tx, rx) = futures::sync::mpsc::unbounded::<PaymentNotification>();
                 store.add_payment_notification_subscription(id, tx);
                 rx.map_err(|_| -> warp::Error { unreachable!("unbounded rx never errors") })
-                    .map(warp::ws::Message::text)
+                    .map(|notification| {
+                        warp::ws::Message::text(serde_json::to_string(&notification).unwrap())
+                    })
                     .forward(ws)
                     .map(|_| ())
                     .map_err(|err| error!("Error forwarding notifications to websocket: {:?}", err))

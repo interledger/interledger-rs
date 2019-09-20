@@ -19,8 +19,9 @@ pub use server::{
 
 #[cfg(test)]
 pub mod test_helpers {
+    use super::*;
     use bytes::Bytes;
-    use futures::{future::ok, Future};
+    use futures::{future::ok, sync::mpsc::UnboundedSender, Future};
     use interledger_ildcp::IldcpAccount;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
@@ -73,7 +74,18 @@ pub mod test_helpers {
     #[derive(Clone)]
     pub struct DummyStore;
 
-    impl super::StreamNotificationsStore for DummyStore {}
+    impl super::StreamNotificationsStore for DummyStore {
+        type Account = TestAccount;
+
+        fn add_payment_notification_subscription(
+            &self,
+            _account_id: u64,
+            _sender: UnboundedSender<PaymentNotification>,
+        ) {
+        }
+
+        fn publish_payment_notification(&self, _payment: PaymentNotification) {}
+    }
 
     #[derive(Clone)]
     pub struct TestStore {
