@@ -1,4 +1,5 @@
 #![recursion_limit = "128"]
+#![allow(unused_imports)]
 
 use env_logger;
 use futures::Future;

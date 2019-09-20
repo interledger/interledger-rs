@@ -1,10 +1,16 @@
-use clap::{crate_version, App, AppSettings, Arg, ArgMatches, SubCommand};
-use config::{Config, FileFormat, Source, Value};
+use clap::{crate_version, App, AppSettings, ArgMatches};
+use config::{Config, FileFormat, Source};
 use futures::Future;
 use libc::{c_int, isatty};
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::vec::Vec;
+
+#[cfg(feature = "ethereum")]
+use clap::{Arg, SubCommand};
+
+#[cfg(feature = "ethereum")]
+use config::Value;
 
 #[cfg(feature = "ethereum")]
 use interledger_settlement_engines::engines::ethereum_ledger::{
@@ -184,6 +190,7 @@ fn merge_std_in(config: &mut Config) {
     }
 }
 
+#[cfg(feature = "ethereum")]
 fn merge_args(config: &mut Config, matches: &ArgMatches) {
     for (key, value) in &matches.args {
         if config.get_str(key).is_ok() {
