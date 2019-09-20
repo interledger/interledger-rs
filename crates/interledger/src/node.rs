@@ -1,4 +1,3 @@
-use super::cli::tokio_run;
 use bytes::Bytes;
 use futures::{future::result, Future};
 use hex::FromHex;
@@ -357,4 +356,17 @@ pub fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
     );
     redis_secret.copy_from_slice(sig.as_ref());
     redis_secret
+}
+
+#[doc(hidden)]
+pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
+    let mut runtime = tokio::runtime::Builder::new()
+        // Don't swallow panics
+        .panic_handler(|err| std::panic::resume_unwind(err))
+        .name_prefix("interledger-rs-worker-")
+        .build()
+        .expect("failed to start new runtime");
+
+    runtime.spawn(fut);
+    runtime.shutdown_on_idle().wait().unwrap();
 }
