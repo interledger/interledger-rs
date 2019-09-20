@@ -3,10 +3,7 @@
 use env_logger;
 use futures::future::join_all;
 use futures::Future;
-use interledger::{
-    cli,
-    node::{AccountDetails, InterledgerNode},
-};
+use interledger::node::{random_secret, AccountDetails, InterledgerNode};
 use interledger_packet::Address;
 use interledger_service::Username;
 use std::net::SocketAddr;
@@ -61,7 +58,7 @@ fn eth_ledger_settlement() {
         .build()
         .unwrap();
 
-    let node1_secret = cli::random_secret();
+    let node1_secret = random_secret();
     let node1 = InterledgerNode {
         ilp_address: Address::from_str("example.alice").unwrap(),
         default_spsp_account: None,
@@ -133,7 +130,7 @@ fn eth_ledger_settlement() {
         }),
     );
 
-    let node2_secret = cli::random_secret();
+    let node2_secret = random_secret();
     let node2 = InterledgerNode {
         ilp_address: Address::from_str("example.bob").unwrap(),
         default_spsp_account: None,

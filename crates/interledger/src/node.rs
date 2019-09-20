@@ -23,7 +23,10 @@ use interledger_store_redis::{
 };
 use interledger_stream::StreamReceiverService;
 use log::{debug, error, info, trace};
-use ring::{digest, hmac};
+use ring::{
+    digest, hmac,
+    rand::{SecureRandom, SystemRandom},
+};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str, time::Duration};
 use tokio::{net::TcpListener, spawn};
@@ -369,4 +372,11 @@ pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
 
     runtime.spawn(fut);
     runtime.shutdown_on_idle().wait().unwrap();
+}
+
+#[doc(hidden)]
+pub fn random_secret() -> [u8; 32] {
+    let mut bytes: [u8; 32] = [0; 32];
+    SystemRandom::new().fill(&mut bytes).unwrap();
+    bytes
 }

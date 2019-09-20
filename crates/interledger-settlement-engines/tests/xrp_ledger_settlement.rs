@@ -1,12 +1,8 @@
 #![recursion_limit = "128"]
 
-use env_logger;
 use futures::future::join_all;
 use futures::Future;
-use interledger::{
-    cli,
-    node::{AccountDetails, InterledgerNode},
-};
+use interledger::node::{random_secret, AccountDetails, InterledgerNode};
 use interledger_packet::Address;
 use interledger_service::Username;
 use std::str::FromStr;
@@ -73,7 +69,7 @@ fn xrp_ledger_settlement() {
         .build()
         .unwrap();
 
-    let node1_secret = cli::random_secret();
+    let node1_secret = random_secret();
     let node1 = InterledgerNode {
         ilp_address: Address::from_str("example.alice").unwrap(),
         default_spsp_account: None,
@@ -137,7 +133,7 @@ fn xrp_ledger_settlement() {
             .and_then(move |_| node1.serve()),
     );
 
-    let node2_secret = cli::random_secret();
+    let node2_secret = random_secret();
     let node2 = InterledgerNode {
         ilp_address: Address::from_str("example.bob").unwrap(),
         default_spsp_account: None,
