@@ -12,10 +12,8 @@ RUN cargo build --release --package interledger
 FROM alpine
 
 # Expose ports for HTTP and BTP
-# - 7768: BTP
 # - 7770: HTTP - ILP over HTTP, API
 # - 7771: HTTP - settlement
-EXPOSE 7768
 EXPOSE 7770
 EXPOSE 7771
 
