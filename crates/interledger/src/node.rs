@@ -2,7 +2,7 @@ use bytes::Bytes;
 use futures::{future::result, Future};
 use hex::FromHex;
 use interledger_api::{NodeApi, NodeStore};
-use interledger_btp::{connect_client, create_server, BtpStore};
+use interledger_btp::{btp_server, connect_client, BtpStore};
 use interledger_ccp::CcpRouteManagerBuilder;
 use interledger_http::HttpClientService;
 use interledger_ildcp::IldcpService;
@@ -31,6 +31,7 @@ use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{net::SocketAddr, str, time::Duration};
 use tokio::{net::TcpListener, spawn};
 use url::Url;
+use warp::{self, Filter};
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
@@ -40,9 +41,6 @@ fn default_settlement_api_bind_address() -> SocketAddr {
 }
 fn default_http_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7770))
-}
-fn default_btp_bind_address() -> SocketAddr {
-    SocketAddr::from(([127, 0, 0, 1], 7768))
 }
 fn default_redis_url() -> ConnectionInfo {
     DEFAULT_REDIS_URL.into_connection_info().unwrap()
@@ -113,9 +111,6 @@ pub struct InterledgerNode {
     /// IP address and port to listen for the Settlement Engine API
     #[serde(default = "default_settlement_api_bind_address")]
     pub settlement_api_bind_address: SocketAddr,
-    /// IP address and port to listen for BTP connections
-    #[serde(default = "default_btp_bind_address")]
-    pub btp_bind_address: SocketAddr,
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
@@ -153,7 +148,6 @@ impl InterledgerNode {
         );
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
-        let btp_bind_address = self.btp_bind_address;
         let http_bind_address = self.http_bind_address;
         let settlement_api_bind_address = self.settlement_api_bind_address;
         let ilp_address = self.ilp_address.clone();
@@ -198,117 +192,122 @@ impl InterledgerNode {
                     // TODO try reconnecting to those accounts later
                     connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            create_server(ilp_address_clone2, btp_bind_address, store.clone(), btp_client_service.clone()).and_then(
-                                move |btp_server_service| {
-                                    let btp = btp_server_service.clone();
-                                    // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
-                                    // service to others like the router and then call handle_incoming on it to set up the incoming handler
-                                    let outgoing_service = btp_server_service.clone();
-                                    let outgoing_service = ValidatorService::outgoing(
-                                        ilp_address.clone(),
-                                        outgoing_service
-                                    );
-                                    let outgoing_service = HttpClientService::new(
-                                        ilp_address.clone(),
-                                        store.clone(),
-                                        outgoing_service,
-                                    );
+                            let (btp_server_service, btp_filter) = btp_server(ilp_address_clone2, store.clone(), btp_client_service.clone());
+                            let btp = btp_client_service.clone();
 
-                                    // Note: the expiry shortener must come after the Validator so that the expiry duration
-                                    // is shortened before we check whether there is enough time left
-                                    let outgoing_service =
-                                        ExpiryShortenerService::new(outgoing_service);
-                                    let outgoing_service = StreamReceiverService::new(
-                                        secret_seed.clone(),
-                                        store.clone(),
-                                        outgoing_service,
-                                    );
-                                    let outgoing_service = BalanceService::new(
-                                        ilp_address.clone(),
-                                        store.clone(),
-                                        outgoing_service,
-                                    );
-                                    let outgoing_service = ExchangeRateService::new(
-                                        ilp_address.clone(),
-                                        exchange_rate_spread,
-                                        store.clone(),
-                                        outgoing_service,
-                                    );
+                            // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
+                            // service to others like the router and then call handle_incoming on it to set up the incoming handler
+                            let outgoing_service = btp_server_service.clone();
+                            let outgoing_service = ValidatorService::outgoing(
+                                ilp_address.clone(),
+                                outgoing_service
+                            );
+                            let outgoing_service = HttpClientService::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                outgoing_service,
+                            );
 
-                                    // Set up the Router and Routing Manager
-                                    let incoming_service = Router::new(
-                                        ilp_address.clone(),
-                                        store.clone(),
-                                        outgoing_service.clone()
-                                    );
-                                    let mut ccp_builder = CcpRouteManagerBuilder::new(
-                                        ilp_address.clone(),
-                                        store.clone(),
-                                        outgoing_service.clone(),
-                                        incoming_service,
-                                    );
-                                    ccp_builder.ilp_address(ilp_address.clone());
-                                    if let Some(ms) = route_broadcast_interval {
-                                        ccp_builder.broadcast_interval(ms);
-                                    }
-                                    let incoming_service = ccp_builder.to_service();
-                                    let incoming_service = EchoService::new(ilp_address.clone(), incoming_service);
-                                    let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
-                                    let incoming_service = IldcpService::new(incoming_service);
-                                    let incoming_service =
-                                        MaxPacketAmountService::new(
-                                            ilp_address.clone(),
-                                            incoming_service
-                                    );
-                                    let incoming_service =
-                                        ValidatorService::incoming(ilp_address.clone(), incoming_service);
-                                    let incoming_service = RateLimitService::new(
-                                        ilp_address.clone(),
-                                        store.clone(),
-                                        incoming_service,
-                                    );
+                            // Note: the expiry shortener must come after the Validator so that the expiry duration
+                            // is shortened before we check whether there is enough time left
+                            let outgoing_service =
+                                ExpiryShortenerService::new(outgoing_service);
+                            let outgoing_service = StreamReceiverService::new(
+                                secret_seed.clone(),
+                                store.clone(),
+                                outgoing_service,
+                            );
+                            let outgoing_service = BalanceService::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                outgoing_service,
+                            );
+                            let outgoing_service = ExchangeRateService::new(
+                                ilp_address.clone(),
+                                exchange_rate_spread,
+                                store.clone(),
+                                outgoing_service,
+                            );
 
-                                    // Handle incoming packets sent via BTP
-                                    btp_server_service.handle_incoming(incoming_service.clone());
-                                    btp_client_service.handle_incoming(incoming_service.clone());
+                            // Set up the Router and Routing Manager
+                            let incoming_service = Router::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                outgoing_service.clone()
+                            );
+                            let mut ccp_builder = CcpRouteManagerBuilder::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                outgoing_service.clone(),
+                                incoming_service,
+                            );
+                            ccp_builder.ilp_address(ilp_address.clone());
+                            if let Some(ms) = route_broadcast_interval {
+                                ccp_builder.broadcast_interval(ms);
+                            }
+                            let incoming_service = ccp_builder.to_service();
+                            let incoming_service = EchoService::new(ilp_address.clone(), incoming_service);
+                            let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
+                            let incoming_service = IldcpService::new(incoming_service);
+                            let incoming_service =
+                                MaxPacketAmountService::new(
+                                    ilp_address.clone(),
+                                    incoming_service
+                            );
+                            let incoming_service =
+                                ValidatorService::incoming(ilp_address.clone(), incoming_service);
+                            let incoming_service = RateLimitService::new(
+                                ilp_address.clone(),
+                                store.clone(),
+                                incoming_service,
+                            );
 
-                                    // Node HTTP API
-                                    // TODO should this run the node api on a different port so it's easier to separate public/private?
-                                    // Note the API also includes receiving ILP packets sent via HTTP
-                                    let mut api = NodeApi::new(
-                                        secret_seed,
-                                        admin_auth_token,
-                                        store.clone(),
-                                        incoming_service.clone(),
-                                        outgoing_service.clone(),
-                                        btp.clone(),
-                                    );
-                                    if let Some(username) = default_spsp_account {
-                                        api.default_spsp_account(username);
-                                    }
-                                    spawn(api.bind(http_bind_address));
+                            // Handle incoming packets sent via BTP
+                            btp_server_service.handle_incoming(incoming_service.clone());
+                            btp_client_service.handle_incoming(incoming_service.clone());
 
-                                    // Settlement API
-                                    let settlement_api = SettlementApi::new(
-                                        store.clone(),
-                                        outgoing_service.clone(),
-                                    );
-                                    let listener = TcpListener::bind(&settlement_api_bind_address)
-                                        .expect("Unable to bind to Settlement API address");
-                                    info!("Settlement API listening on: {}", settlement_api_bind_address);
-                                    spawn(settlement_api.serve(listener.incoming()));
+                            // Node HTTP API
+                            let mut api = NodeApi::new(
+                                secret_seed,
+                                admin_auth_token,
+                                store.clone(),
+                                incoming_service.clone(),
+                                outgoing_service.clone(),
+                                btp.clone(),
+                            );
+                            if let Some(username) = default_spsp_account {
+                                api.default_spsp_account(username);
+                            }
 
-                                    // Exchange Rate Polling
-                                    if let Some(provider) = exchange_rate_provider {
-                                        let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, store.clone());
-                                        exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
-                                    } else {
-                                        debug!("Not using exchange rate provider. Rates must be set via the HTTP API");
-                                    }
+                            // Mount the BTP endpoint at /btp
+                            let btp_endpoint = warp::path("btp")
+                                .and(warp::path::end())
+                                .and(btp_filter);
+                            // Note that other endpoints added to the API must come first
+                            // because the API includes error handling and consumes the request.
+                            // TODO should we just make BTP part of the API?
+                            let api = btp_endpoint.or(api.into_warp_filter()).boxed();
+                            spawn(warp::serve(api).bind(http_bind_address));
 
-                                    Ok(())
-                                },
-                            )
+                            // Settlement API
+                            let settlement_api = SettlementApi::new(
+                                store.clone(),
+                                outgoing_service.clone(),
+                            );
+                            let listener = TcpListener::bind(&settlement_api_bind_address)
+                                .expect("Unable to bind to Settlement API address");
+                            info!("Settlement API listening on: {}", settlement_api_bind_address);
+                            spawn(settlement_api.serve(listener.incoming()));
+
+                            // Exchange Rate Polling
+                            if let Some(provider) = exchange_rate_provider {
+                                let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, store.clone());
+                                exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
+                            } else {
+                                debug!("Not using exchange rate provider. Rates must be set via the HTTP API");
+                            }
+
+                            Ok(())
                         },
                     )
                 })

@@ -1,4 +1,4 @@
-use super::packet::*;
+use super::{packet::*, BtpAccount};
 use bytes::BytesMut;
 use futures::{
     future::err,
@@ -14,7 +14,9 @@ use rand::random;
 use std::collections::HashMap;
 use std::{
     convert::TryFrom,
-    io::{Error as IoError, ErrorKind},
+    error::Error,
+    fmt::{Display, Formatter, Result as FormatResult},
+    io,
     iter::IntoIterator,
     marker::PhantomData,
     sync::Arc,
@@ -23,12 +25,42 @@ use std::{
 use stream_cancel::{Trigger, Valve};
 use tokio_executor::spawn;
 use tokio_timer::Interval;
-use tungstenite::{error::Error as WebSocketError, Message};
+use tungstenite::Message;
+use warp;
 
 const PING_INTERVAL: u64 = 30; // seconds
 
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
+
+#[derive(Debug)]
+pub enum WsError {
+    Tungstenite(tungstenite::Error),
+    Warp(warp::Error),
+}
+
+impl Display for WsError {
+    fn fmt(&self, f: &mut Formatter) -> FormatResult {
+        match self {
+            WsError::Tungstenite(err) => err.fmt(f),
+            WsError::Warp(err) => err.fmt(f),
+        }
+    }
+}
+
+impl Error for WsError {}
+
+impl From<tungstenite::Error> for WsError {
+    fn from(err: tungstenite::Error) -> Self {
+        WsError::Tungstenite(err)
+    }
+}
+
+impl From<warp::Error> for WsError {
+    fn from(err: warp::Error) -> Self {
+        WsError::Warp(err)
+    }
+}
 
 /// A container for BTP/WebSocket connections that implements OutgoingService
 /// for sending outgoing ILP Prepare packets over one of the connected BTP connections.
@@ -48,7 +80,7 @@ pub struct BtpOutgoingService<O, A: Account> {
 impl<O, A> BtpOutgoingService<O, A>
 where
     O: OutgoingService<A> + Clone,
-    A: Account + 'static,
+    A: BtpAccount + 'static,
 {
     pub fn new(ilp_address: Address, next: O) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
@@ -80,8 +112,8 @@ where
     pub(crate) fn add_connection(
         &self,
         account: A,
-        connection: impl Stream<Item = Message, Error = WebSocketError>
-            + Sink<SinkItem = Message, SinkError = WebSocketError>
+        connection: impl Stream<Item = Message, Error = WsError>
+            + Sink<SinkItem = Message, SinkError = WsError>
             + Send
             + 'static,
     ) {
@@ -94,11 +126,9 @@ where
         let stream = valve.wrap(stream);
         let stream = self.stream_valve.wrap(stream);
         let forward_to_connection = sink
-            .send_all(
-                rx.map_err(|_err| {
-                    WebSocketError::from(IoError::from(ErrorKind::ConnectionAborted))
-                }),
-            )
+            .send_all(rx.map_err(|_err| {
+                WsError::Tungstenite(io::Error::from(io::ErrorKind::ConnectionAborted).into())
+            }))
             .then(move |_| {
                 debug!(
                     "Finished forwarding to WebSocket stream for account: {}",
@@ -270,7 +300,7 @@ where
 impl<O, A> OutgoingService<A> for BtpOutgoingService<O, A>
 where
     O: OutgoingService<A> + Clone,
-    A: Account + 'static,
+    A: BtpAccount + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -344,11 +374,13 @@ where
                     Box::new(err(reject))
                 }
             }
-        } else {
+        } else if request.to.get_btp_uri().is_some() || request.to.get_btp_token().is_some() {
             trace!(
                 "No open connection for account: {}, forwarding request to the next service",
                 request.to.id()
             );
+            Box::new(self.next.send_request(request))
+        } else {
             Box::new(self.next.send_request(request))
         }
     }
@@ -364,7 +396,7 @@ impl<I, O, A> BtpService<I, O, A>
 where
     I: IncomingService<A> + Clone + Send + 'static,
     O: OutgoingService<A> + Clone,
-    A: Account + 'static,
+    A: BtpAccount + 'static,
 {
     /// Close all of the open WebSocket connections
     pub fn close(&self) {
@@ -375,7 +407,7 @@ where
 impl<I, O, A> OutgoingService<A> for BtpService<I, O, A>
 where
     O: OutgoingService<A> + Clone + Send + 'static,
-    A: Account + 'static,
+    A: BtpAccount + 'static,
 {
     type Future = BoxedIlpFuture;
 

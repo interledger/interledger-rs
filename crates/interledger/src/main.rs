@@ -30,7 +30,6 @@ pub fn main() {
     //     - `btp_server_url`
     // - Addresses to which ILP over HTTP or BTP servers are bound
     //     - `http_bind_address`
-    //     - `btp_bind_address`
     // - Addresses to which other services are bound
     //     - `xxx_bind_address`
     let mut app = App::new("interledger")
@@ -79,10 +78,6 @@ pub fn main() {
                         .long("settlement_api_bind_address")
                         .takes_value(true)
                         .help("IP address and port to listen for the Settlement Engine API"),
-                    Arg::with_name("btp_bind_address")
-                        .long("btp_bind_address")
-                        .takes_value(true)
-                        .help("IP address and port to listen for BTP connections"),
                     Arg::with_name("default_spsp_account")
                         .long("default_spsp_account")
                         .takes_value(true)
