@@ -62,11 +62,11 @@ impl TryFrom<u8> for Mode {
 
 #[derive(Clone, PartialEq)]
 pub struct RouteControlRequest {
-    pub(crate) mode: Mode,
+    pub mode: Mode,
     // TODO change debug to format this as hex
-    pub(crate) last_known_routing_table_id: [u8; 16],
-    pub(crate) last_known_epoch: u32,
-    pub(crate) features: Vec<String>,
+    pub last_known_routing_table_id: [u8; 16],
+    pub last_known_epoch: u32,
+    pub features: Vec<String>,
 }
 
 impl Debug for RouteControlRequest {

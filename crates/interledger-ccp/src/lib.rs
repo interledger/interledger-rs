@@ -23,6 +23,7 @@ mod server;
 #[cfg(test)]
 mod test_helpers;
 
+pub use packet::{Mode, RouteControlRequest};
 pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 use serde::{Deserialize, Serialize};
@@ -69,7 +70,7 @@ impl ToString for RoutingRelation {
     }
 }
 
-/// DefineCcpAccountethods Account types need to be used by the CCP Service
+/// Define CcpAccount methods and Account types that need to be used by the CCP Service
 pub trait CcpRoutingAccount: Account {
     /// The type of relationship we have with this account
     fn routing_relation(&self) -> RoutingRelation;

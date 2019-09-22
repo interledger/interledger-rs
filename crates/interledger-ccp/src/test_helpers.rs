@@ -8,8 +8,8 @@ use futures::{
 };
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, BoxedIlpFuture, IncomingService, OutgoingRequest,
-    OutgoingService, Username,
+    incoming_service_fn, outgoing_service_fn, AddressStore, BoxedIlpFuture, IncomingService,
+    OutgoingRequest, OutgoingService, Username,
 };
 #[cfg(test)]
 use lazy_static::lazy_static;
@@ -114,6 +114,25 @@ impl TestStore {
 }
 
 type RoutingTable<A> = HashMap<Bytes, A>;
+
+impl AddressStore for TestStore {
+    /// Saves the ILP Address in the store's memory and database
+    fn set_ilp_address(
+        &self,
+        _ilp_address: Address,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unimplemented!()
+    }
+
+    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unimplemented!()
+    }
+
+    /// Get's the store's ilp address from memory
+    fn get_ilp_address(&self) -> Address {
+        Address::from_str("example.connector").unwrap()
+    }
+}
 
 impl RouteManagerStore for TestStore {
     type Account = TestAccount;
