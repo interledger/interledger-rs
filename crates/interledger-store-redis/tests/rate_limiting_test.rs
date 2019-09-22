@@ -1,7 +1,6 @@
 mod common;
 use common::*;
 use futures::future::join_all;
-use interledger_api::NodeStore;
 use interledger_service::AddressStore;
 use interledger_service_util::{RateLimitError, RateLimitStore};
 use interledger_store_redis::AccountId;
