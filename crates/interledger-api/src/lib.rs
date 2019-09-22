@@ -15,7 +15,8 @@ use std::{
 };
 use warp::{self, Filter};
 mod routes;
-use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
+use interledger_btp::{BtpAccount, BtpOutgoingService};
+use interledger_ccp::CcpRoutingAccount;
 
 pub(crate) mod http_retry;
 
@@ -125,16 +126,17 @@ impl Display for ApiError {
 
 impl StdError for ApiError {}
 
-pub struct NodeApi<S, I, O> {
+pub struct NodeApi<S, I, O, B, A: Account> {
     store: S,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
     outgoing_handler: O,
+    btp: BtpOutgoingService<B, A>,
     server_secret: Bytes,
 }
 
-impl<S, I, O, A> NodeApi<S, I, O>
+impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
 where
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
@@ -145,7 +147,9 @@ where
         + ExchangeRateStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: CcpRoutingAccount
+    B: OutgoingService<A> + Clone + Send + Sync + 'static,
+    A: BtpAccount
+        + CcpRoutingAccount
         + Account
         + HttpAccount
         + SettlementAccount
@@ -160,6 +164,7 @@ where
         store: S,
         incoming_handler: I,
         outgoing_handler: O,
+        btp: BtpOutgoingService<B, A>,
     ) -> Self {
         NodeApi {
             store,
@@ -167,6 +172,7 @@ where
             default_spsp_account: None,
             incoming_handler,
             outgoing_handler,
+            btp,
             server_secret,
         }
     }
@@ -189,6 +195,7 @@ where
                 self.default_spsp_account,
                 self.incoming_handler,
                 self.outgoing_handler,
+                self.btp,
                 self.store.clone(),
             ))
             .or(routes::node_settings_api(self.admin_api_token, self.store))

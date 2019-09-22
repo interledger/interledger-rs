@@ -107,3 +107,68 @@ where
         Ok(service)
     })
 }
+
+pub fn connect_to_service_account<O, A>(
+    account: A,
+    service: BtpOutgoingService<O, A>,
+) -> impl Future<Item = (), Error = ()>
+where
+    O: OutgoingService<A> + Clone + 'static,
+    A: BtpAccount + 'static,
+{
+    let account_id = account.id();
+    let mut url = account
+        .get_btp_uri()
+        .expect("Accounts must have BTP URLs")
+        .clone();
+    if url.scheme().starts_with("btp+") {
+        url.set_scheme(&url.scheme().replace("btp+", "")).unwrap();
+    }
+    let token = account
+        .get_btp_token()
+        .map(|s| s.to_vec())
+        .unwrap_or_default();
+    debug!("Connecting to {}", url);
+    connect_async(url.clone())
+        .map_err(move |err| {
+            error!(
+                "Error connecting to WebSocket server for account: {} {:?}",
+                account_id, err
+            )
+        })
+        .and_then(move |(connection, _)| {
+            trace!(
+                "Connected to account {} (URI: {}), sending auth packet",
+                account_id,
+                url
+            );
+            // Send BTP authentication
+            let auth_packet = Message::Binary(
+                BtpPacket::Message(BtpMessage {
+                    request_id: random(),
+                    protocol_data: vec![
+                        ProtocolData {
+                            protocol_name: String::from("auth"),
+                            content_type: ContentType::ApplicationOctetStream,
+                            data: vec![],
+                        },
+                        ProtocolData {
+                            protocol_name: String::from("auth_token"),
+                            content_type: ContentType::TextPlainUtf8,
+                            data: token,
+                        },
+                    ],
+                })
+                .to_bytes(),
+            );
+
+            connection
+                .send(auth_packet)
+                .map_err(move |_| error!("Error sending auth packet on connection: {}", url))
+                .and_then(move |connection| {
+                    debug!("Connected to account {}'s server", account.id());
+                    service.add_connection(account, connection);
+                    Ok(())
+                })
+        })
+}
