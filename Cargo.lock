@@ -997,6 +997,7 @@ dependencies = [
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-retry 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "http 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "interledger-ccp 0.1.1-alpha.1",
  "interledger-http 0.2.2-alpha.1",
  "interledger-ildcp 0.2.2-alpha.1",
  "interledger-packet 0.2.2-alpha.1",
