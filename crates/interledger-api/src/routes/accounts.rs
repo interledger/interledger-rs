@@ -4,6 +4,7 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
+use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_ildcp::IldcpRequest;
@@ -32,24 +33,26 @@ struct SpspPayRequest {
     source_amount: u64,
 }
 
-pub fn accounts_api<I, O, S, A>(
+pub fn accounts_api<I, O, S, A, B>(
     server_secret: Bytes,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
     outgoing_handler: O,
+    btp: BtpOutgoingService<B, A>,
     store: S,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    B: OutgoingService<A> + Clone + Send + Sync + 'static,
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
         + BalanceStore<Account = A>
         + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
-    A: CcpRoutingAccount + Account + HttpAccount + Serialize + Send + Sync + 'static,
+    A: BtpAccount + CcpRoutingAccount + Account + HttpAccount + Serialize + Send + Sync + 'static,
 {
     // TODO can we make any of the Filters const or put them in lazy_static?
 
@@ -133,12 +136,29 @@ where
             let handler = outgoing_handler.clone();
             let settlement_engine_url = account_details.settlement_engine_url.clone();
             let http_client = http_client.clone();
+            let btp = btp.clone();
             store.insert_account(account_details)
                 .map_err(|_| {
                     warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(move |account: A| {
-                    let fut = if account.routing_relation() == RoutingRelation::Parent {
+                    // Try to connect to the account's BTP socket if they have
+                    // one configured
+                    let btp_connect_fut = if account.get_btp_uri().is_some() {
+                        Either::A(
+                            connect_to_service_account(account.clone(), btp)
+                            .map_err(|_| {
+                                warp::reject::custom(ApiError::InternalServerError)
+                            })
+                        )
+                    } else {
+                        Either::B(ok(()))
+                    };
+
+                    btp_connect_fut.and_then(move |_| {
+                    // If we added a parent, get the address assigned to us by
+                    // them and update all of our routes
+                    let get_ilp_address_fut = if account.routing_relation() == RoutingRelation::Parent {
                         Either::A(
                             get_address_from_parent_and_update_routes(handler, account.clone(), store_clone)
                             .map_err(|_| {
@@ -151,7 +171,7 @@ where
                     let http_client = http_client.clone();
                     // Register the account with the settlement engine
                     // if a settlement_engine_url was configured on the account
-                    fut.and_then(move |_|
+                    get_ilp_address_fut.and_then(move |_|
                     if let Some(se_url) = settlement_engine_url {
                         let id = account.id();
                         Either::A(result(Url::parse(&se_url))
@@ -184,7 +204,7 @@ where
                             }))
                     } else {
                         Either::B(ok(account))
-                    })
+                    })})
                 })
                 .and_then(|account: A| {
                     Ok(warp::reply::json(&account))
