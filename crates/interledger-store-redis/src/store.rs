@@ -1190,21 +1190,46 @@ impl NodeStore for RedisStore {
 }
 
 impl AddressStore for RedisStore {
+    // Updates the ILP address of the store & iterates over all children and
+    // updates their ILP Address to match the new address.
     fn set_ilp_address(
         &self,
         ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let self_clone = self.clone();
+        let conn = self.connection.clone();
+        let ilp_address_clone = ilp_address.clone();
         Box::new(
             cmd("SET")
                 .arg(PARENT_ILP_KEY)
                 .arg(ilp_address.as_bytes())
                 .query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error setting static route: {:?}", err))
+                .map_err(|err| error!("Error setting static ilp address {:?}", err))
                 .and_then(move |(_, _): (SharedConnection, Value)| {
                     *(self_clone.ilp_address.write()) = ilp_address;
                     Ok(())
-                }),
+                })
+                .join(self.get_all_accounts().and_then(move |accounts| {
+                    let mut pipe = redis::pipe();
+                    for account in accounts {
+                        // Update the address of all children.
+                        if account.routing_relation() == RoutingRelation::Child {
+                            let new_ilp_address = ilp_address_clone
+                                .with_suffix(account.username().as_bytes())
+                                .unwrap();
+                            pipe.hset(
+                                accounts_key(account.id()),
+                                "ilp_address",
+                                new_ilp_address.as_bytes(),
+                            )
+                            .ignore();
+                        }
+                    }
+                    pipe.query_async(conn.as_ref().clone())
+                        .map_err(|err| error!("Error updating children: {:?}", err))
+                        .and_then(move |(_, _): (SharedConnection, Value)| Ok(()))
+                }))
+                .and_then(move |_| Ok(())),
         )
     }
 

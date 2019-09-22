@@ -5,6 +5,7 @@ use common::*;
 use futures::future::{result, Either};
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::{BtpAccount, BtpStore};
+use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
@@ -68,6 +69,48 @@ fn insert_accounts() {
                 );
                 let _ = context;
                 Ok(())
+            })
+    }))
+    .unwrap();
+}
+
+#[test]
+fn update_ilp_and_children_addresses() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let mut accs = accs.clone();
+        accs.sort_by(|a, b| {
+            a.username()
+                .as_bytes()
+                .partial_cmp(b.username().as_bytes())
+                .unwrap()
+        });
+        let ilp_address = Address::from_str("test.parent.our_address").unwrap();
+        store
+            .set_ilp_address(ilp_address.clone())
+            .and_then(move |_| {
+                let ret = store.get_ilp_address();
+                assert_eq!(ilp_address, ret);
+                store.get_all_accounts().and_then(move |accounts: Vec<_>| {
+                    let mut accounts = accounts.clone();
+                    accounts.sort_by(|a, b| {
+                        a.username()
+                            .as_bytes()
+                            .partial_cmp(b.username().as_bytes())
+                            .unwrap()
+                    });
+                    for (a, b) in accounts.into_iter().zip(&accs) {
+                        if a.routing_relation() == RoutingRelation::Child {
+                            assert_eq!(
+                                *a.ilp_address(),
+                                ilp_address.with_suffix(a.username().as_bytes()).unwrap()
+                            );
+                        } else {
+                            assert_eq!(a.ilp_address(), b.ilp_address());
+                        }
+                    }
+                    let _ = context;
+                    Ok(())
+                })
             })
     }))
     .unwrap();
