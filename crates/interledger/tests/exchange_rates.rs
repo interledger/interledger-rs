@@ -44,7 +44,7 @@ fn coincap() {
 
     runtime
         .block_on(
-            delay(1000)
+            delay(2000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     Client::new()

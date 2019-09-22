@@ -129,7 +129,7 @@ fn eth_xrp_interoperable() {
         "http_endpoint": format!("http://localhost:{}/ilp", node2_http),
         "http_incoming_token" : "bob_password",
         "http_outgoing_token" : "alice:alice_password",
-        "min_balance": -1000000000,
+        "min_balance": -1_000_000_000,
         "settle_threshold": 70000,
         "settle_to": 10000,
         "settlement_engine_url": format!("http://localhost:{}", node1_engine),
