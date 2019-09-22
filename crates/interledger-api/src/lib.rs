@@ -3,7 +3,7 @@ use futures::Future;
 use interledger_http::{HttpAccount, HttpServer as IlpOverHttpServer, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, AddressStore, IncomingService, Username};
+use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
@@ -15,6 +15,7 @@ use std::{
 };
 use warp::{self, Filter};
 mod routes;
+use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 
 pub(crate) mod http_retry;
 
@@ -124,15 +125,16 @@ impl Display for ApiError {
 
 impl StdError for ApiError {}
 
-pub struct NodeApi<S, I> {
+pub struct NodeApi<S, I, O> {
     store: S,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
+    outgoing_handler: O,
     server_secret: Bytes,
 }
 
-impl<S, I, A> NodeApi<S, I>
+impl<S, I, O, A> NodeApi<S, I, O>
 where
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
@@ -142,19 +144,29 @@ where
         + RouterStore
         + ExchangeRateStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: Account + HttpAccount + SettlementAccount + Serialize + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    A: CcpRoutingAccount
+        + Account
+        + HttpAccount
+        + SettlementAccount
+        + Serialize
+        + Send
+        + Sync
+        + 'static,
 {
     pub fn new(
         server_secret: Bytes,
         admin_api_token: String,
         store: S,
         incoming_handler: I,
+        outgoing_handler: O,
     ) -> Self {
         NodeApi {
             store,
             admin_api_token,
             default_spsp_account: None,
             incoming_handler,
+            outgoing_handler,
             server_secret,
         }
     }
@@ -176,6 +188,7 @@ where
                 self.admin_api_token.clone(),
                 self.default_spsp_account,
                 self.incoming_handler,
+                self.outgoing_handler,
                 self.store.clone(),
             ))
             .or(routes::node_settings_api(self.admin_api_token, self.store))

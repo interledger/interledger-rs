@@ -4,15 +4,21 @@ use futures::{
     future::{err, ok, result, Either},
     Future, Stream,
 };
+use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
 use interledger_http::{HttpAccount, HttpStore};
+use interledger_ildcp::IldcpRequest;
+use interledger_ildcp::IldcpResponse;
 use interledger_router::RouterStore;
-use interledger_service::{Account, AuthToken, IncomingService, Username};
+use interledger_service::{
+    Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
+};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::convert::TryFrom;
 use std::time::Duration;
 use url::Url;
 use warp::{self, Filter};
@@ -26,22 +32,24 @@ struct SpspPayRequest {
     source_amount: u64,
 }
 
-pub fn accounts_api<I, S, A>(
+pub fn accounts_api<I, O, S, A>(
     server_secret: Bytes,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
+    outgoing_handler: O,
     store: S,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
         + BalanceStore<Account = A>
         + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
-    A: Account + HttpAccount + Serialize + 'static,
+    A: CcpRoutingAccount + Account + HttpAccount + Serialize + Send + Sync + 'static,
 {
     // TODO can we make any of the Filters const or put them in lazy_static?
 
@@ -121,6 +129,8 @@ where
         .and(warp::body::json())
         .and(with_store.clone())
         .and_then(move |account_details: AccountDetails, store: S| {
+            let store_clone = store.clone();
+            let handler = outgoing_handler.clone();
             let settlement_engine_url = account_details.settlement_engine_url.clone();
             let http_client = http_client.clone();
             store.insert_account(account_details)
@@ -128,9 +138,20 @@ where
                     warp::reject::custom(ApiError::InternalServerError)
                 })
                 .and_then(move |account: A| {
+                    let fut = if account.routing_relation() == RoutingRelation::Parent {
+                        Either::A(
+                            get_address_from_parent_and_update_routes(handler, account.clone(), store_clone)
+                            .map_err(|_| {
+                                warp::reject::custom(ApiError::InternalServerError)
+                            })
+                        )
+                    } else {
+                        Either::B(ok(()))
+                    };
                     let http_client = http_client.clone();
                     // Register the account with the settlement engine
                     // if a settlement_engine_url was configured on the account
+                    fut.and_then(move |_|
                     if let Some(se_url) = settlement_engine_url {
                         let id = account.id();
                         Either::A(result(Url::parse(&se_url))
@@ -163,7 +184,7 @@ where
                             }))
                     } else {
                         Either::B(ok(account))
-                    }
+                    })
                 })
                 .and_then(|account: A| {
                     Ok(warp::reply::json(&account))
@@ -407,4 +428,60 @@ where
         .or(incoming_payment_notifications)
         .or(post_payments)
         .boxed()
+}
+
+fn get_address_from_parent_and_update_routes<S, A, T>(
+    mut service: S,
+    parent: A,
+    store: T,
+) -> impl Future<Item = (), Error = ()>
+where
+    S: OutgoingService<A> + Clone + Send + Sync + 'static,
+    A: CcpRoutingAccount + Clone + Send + Sync + 'static,
+    T: AddressStore + Clone + Send + Sync + 'static,
+{
+    let prepare = IldcpRequest {}.to_prepare();
+    service
+        .send_request(OutgoingRequest {
+            from: parent.clone(), // Does not matter what we put here, they will get the account from the HTTP/BTP credentials
+            to: parent.clone(),
+            prepare,
+            original_amount: 0,
+        })
+        .map_err(|err| error!("Error getting ILDCP info: {:?}", err))
+        .and_then(|fulfill| {
+            let response = IldcpResponse::try_from(fulfill.into_data().freeze()).map_err(|err| {
+                error!(
+                    "Unable to parse ILDCP response from fulfill packet: {:?}",
+                    err
+                );
+            });
+            debug!("Got ILDCP response: {:?}", response);
+            let ilp_address = match response {
+                Ok(info) => info.ilp_address(),
+                Err(_) => return err(()),
+            };
+            ok(ilp_address)
+        })
+        .and_then(move |ilp_address| store.set_ilp_address(ilp_address))
+        .and_then(move |_| {
+            // Get the parent's routes for us
+            let prepare = RouteControlRequest {
+                mode: Mode::Sync,
+                last_known_epoch: 0,
+                last_known_routing_table_id: [0; 16],
+                features: Vec::new(),
+            }
+            .to_prepare();
+            debug!("Asking for routes from {:?}", parent.clone());
+            service
+                .send_request(OutgoingRequest {
+                    from: parent.clone(),
+                    to: parent.clone(),
+                    original_amount: prepare.amount(),
+                    prepare: prepare.clone(),
+                })
+                .map_err(move |err| error!("Got error when trying to update routes {:?}", err))
+        })
+        .and_then(move |_| Ok(()))
 }
