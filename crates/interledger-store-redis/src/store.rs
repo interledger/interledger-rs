@@ -1210,6 +1210,14 @@ impl AddressStore for RedisStore {
                     Ok(())
                 })
                 .join(self.get_all_accounts().and_then(move |accounts| {
+                    // TODO: This can be an expensive operation if this function
+                    // gets called often. This currently only gets called when
+                    // inserting a new parent account in the API. It'd be nice
+                    // if we could generate a child's ILP address on the fly,
+                    // instead of having to store the username appended to the
+                    // node's ilp address. Currently this is not possible, as
+                    // account.ilp_address() cannot access any state that exists
+                    // on the store.
                     let mut pipe = redis::pipe();
                     for account in accounts {
                         // Update the address of all children.
