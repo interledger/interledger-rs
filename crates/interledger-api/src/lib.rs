@@ -80,6 +80,22 @@ pub struct AccountSettings {
     pub settle_to: Option<u64>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EncryptedAccountSettings {
+    // TODO these should be Secret types
+    pub http_incoming_token: Option<Bytes>,
+    pub btp_incoming_token: Option<Bytes>,
+    pub http_outgoing_token: Option<Bytes>,
+    pub btp_outgoing_token: Option<Bytes>,
+    pub http_endpoint: Option<String>,
+    pub btp_uri: Option<String>,
+    pub settle_threshold: Option<i64>,
+    // Note that this is intentionally an unsigned integer because users should
+    // not be able to set the settle_to value to be negative (meaning the node
+    // would pre-fund with the user)
+    pub settle_to: Option<u64>,
+}
+
 /// The Account type for the RedisStore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountDetails {
