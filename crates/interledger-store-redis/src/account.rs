@@ -195,8 +195,9 @@ impl Account {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AccountWithEncryptedTokens {
-    account: Account,
+    pub(super) account: Account,
 }
 
 impl AccountWithEncryptedTokens {
