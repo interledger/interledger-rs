@@ -677,13 +677,16 @@ impl AccountStore for RedisStore {
         &self,
         username: &Username,
     ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+        let username = username.clone();
         Box::new(
             cmd("HGET")
                 .arg("usernames")
                 .arg(username.as_ref())
                 .query_async(self.connection.as_ref().clone())
                 .map_err(move |err| error!("Error getting account id: {:?}", err))
-                .and_then(|(_connection, id): (_, AccountId)| Ok(id)),
+                .and_then(|(_connection, id): (_, Option<AccountId>)| {
+                    id.ok_or_else(move || debug!("Username not found: {}", username))
+                }),
         )
     }
 }
