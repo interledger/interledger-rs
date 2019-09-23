@@ -14,20 +14,21 @@ By default, the API is available on port `7770`.
 
 #### Request
 
-The request must include:
+At minimum the request must include the following parameters:
 
 ```json
 {
-    "ilp_address": "example.other-node",
+    "username": "other_node",
     "asset_code": "ABC",
     "asset_scale": 9
 }
 ```
 
-Optional fields include:
+The comprehensive list of possible parameters is as follows:
 
 ```json
 {
+    "username": "other_node",
     "ilp_address": "example.other-node",
     "asset_code": "ABC",
     "asset_scale": 9,
