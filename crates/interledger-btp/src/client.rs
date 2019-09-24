@@ -108,6 +108,7 @@ where
                 .then(move |result| match result {
                     Ok(connection) => {
                         debug!("Connected to account {}'s server", account.id());
+                        let connection = connection.from_err().sink_from_err();
                         service.add_connection(account, connection);
                         Ok(())
                     }
