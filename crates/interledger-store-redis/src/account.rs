@@ -86,23 +86,14 @@ impl Account {
     ) -> Result<Account, ()> {
         let ilp_address = match details.ilp_address {
             Some(a) => a,
-            None => {
-                // if parent address ends with username, do not suffix
-                if details.username.to_string()
-                    == parent_ilp_address.segments().rev().next().unwrap()
-                {
-                    parent_ilp_address
-                } else {
-                    parent_ilp_address
-                        .with_suffix(details.username.as_bytes())
-                        .map_err(|_| {
-                            error!(
-                                "Could not append username {} to address {}",
-                                details.username, parent_ilp_address
-                            )
-                        })?
-                }
-            }
+            None => parent_ilp_address
+                .with_suffix(details.username.as_bytes())
+                .map_err(|_| {
+                    error!(
+                        "Could not append username {} to address {}",
+                        details.username, parent_ilp_address
+                    )
+                })?,
         };
 
         let http_endpoint = if let Some(ref url) = details.http_endpoint {
