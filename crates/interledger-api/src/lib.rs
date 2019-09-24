@@ -80,9 +80,12 @@ pub struct AccountSettings {
     pub settle_to: Option<u64>,
 }
 
+/// EncryptedAccountSettings is created by encrypting the incoming and outgoing
+/// HTTP and BTP tokens of an AccountSettings object. The rest of the fields
+/// remain the same. It is intended to be consumed by the internal store
+/// implementation which operates only on encrypted data.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EncryptedAccountSettings {
-    // TODO these should be Secret types
     pub http_incoming_token: Option<Bytes>,
     pub btp_incoming_token: Option<Bytes>,
     pub http_outgoing_token: Option<Bytes>,
@@ -90,9 +93,6 @@ pub struct EncryptedAccountSettings {
     pub http_endpoint: Option<String>,
     pub btp_uri: Option<String>,
     pub settle_threshold: Option<i64>,
-    // Note that this is intentionally an unsigned integer because users should
-    // not be able to set the settle_to value to be negative (meaning the node
-    // would pre-fund with the user)
     pub settle_to: Option<u64>,
 }
 
