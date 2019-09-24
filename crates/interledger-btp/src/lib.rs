@@ -18,7 +18,7 @@ mod server;
 mod service;
 
 pub use self::client::{connect_client, connect_to_service_account, parse_btp_url};
-pub use self::server::btp_server;
+pub use self::server::create_btp_service_and_filter;
 pub use self::service::{BtpOutgoingService, BtpService};
 
 pub trait BtpAccount: Account {
@@ -214,7 +214,7 @@ mod client_server {
                     }]),
                 };
                 let server_address = Address::from_str("example.server").unwrap();
-                let (btp_service, filter) = btp_server(
+                let (btp_service, filter) = create_btp_service_and_filter(
                     server_address.clone(),
                     server_store,
                     outgoing_service_fn(move |_| {

@@ -2,7 +2,7 @@ use bytes::Bytes;
 use futures::{future::result, Future};
 use hex::FromHex;
 use interledger_api::{NodeApi, NodeStore};
-use interledger_btp::{btp_server, connect_client, BtpStore};
+use interledger_btp::{connect_client, create_btp_service_and_filter, BtpStore};
 use interledger_ccp::CcpRouteManagerBuilder;
 use interledger_http::HttpClientService;
 use interledger_ildcp::IldcpService;
@@ -192,7 +192,7 @@ impl InterledgerNode {
                     // TODO try reconnecting to those accounts later
                     connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            let (btp_server_service, btp_filter) = btp_server(ilp_address_clone2, store.clone(), btp_client_service.clone());
+                            let (btp_server_service, btp_filter) = create_btp_service_and_filter(ilp_address_clone2, store.clone(), btp_client_service.clone());
                             let btp = btp_client_service.clone();
 
                             // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing

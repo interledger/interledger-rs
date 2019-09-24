@@ -13,13 +13,7 @@ use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::collections::HashMap;
 use std::{
-    convert::TryFrom,
-    error::Error,
-    fmt::{Display, Formatter, Result as FormatResult},
-    io,
-    iter::IntoIterator,
-    marker::PhantomData,
-    sync::Arc,
+    convert::TryFrom, error::Error, fmt, io, iter::IntoIterator, marker::PhantomData, sync::Arc,
     time::Duration,
 };
 use stream_cancel::{Trigger, Valve};
@@ -39,8 +33,8 @@ pub enum WsError {
     Warp(warp::Error),
 }
 
-impl Display for WsError {
-    fn fmt(&self, f: &mut Formatter) -> FormatResult {
+impl fmt::Display for WsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             WsError::Tungstenite(err) => err.fmt(f),
             WsError::Warp(err) => err.fmt(f),
