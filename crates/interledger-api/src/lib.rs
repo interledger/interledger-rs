@@ -83,7 +83,7 @@ pub struct AccountSettings {
 /// The Account type for the RedisStore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountDetails {
-    pub configured_ilp_address: Option<Address>,
+    pub ilp_address: Option<Address>,
     pub username: Username,
     pub asset_code: String,
     pub asset_scale: u8,

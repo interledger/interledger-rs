@@ -42,14 +42,14 @@ fn three_nodes() {
         .unwrap();
 
     let alice_on_alice = json!({
-        "configured_ilp_address": "example.alice",
+        "ilp_address": "example.alice",
         "username": "alice",
         "asset_code": "XYZ",
         "asset_scale": 9,
         "http_incoming_token" : "default account holder",
     });
     let bob_on_alice = json!({
-        "configured_ilp_address": "example.bob",
+        "ilp_address": "example.bob",
         "username": "bob",
         "asset_code": "XYZ",
         "asset_scale": 9,
@@ -61,7 +61,7 @@ fn three_nodes() {
     });
 
     let alice_on_bob = json!({
-        "configured_ilp_address": "example.alice",
+        "ilp_address": "example.alice",
         "username": "alice",
         "asset_code": "XYZ",
         "asset_scale": 9,
@@ -87,7 +87,7 @@ fn three_nodes() {
         "http_incoming_token" : "default account holder",
     });
     let bob_on_charlie = json!({
-        "configured_ilp_address": "example.bob",
+        "ilp_address": "example.bob",
         "username": "bob",
         "asset_code": "ABC",
         "asset_scale": 6,

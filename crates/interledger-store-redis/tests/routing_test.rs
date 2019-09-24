@@ -37,9 +37,7 @@ fn polls_for_route_updates() {
                         );
                         store_clone_1
                             .insert_account(AccountDetails {
-                                configured_ilp_address: Some(
-                                    Address::from_str("example.bob").unwrap(),
-                                ),
+                                ilp_address: Some(Address::from_str("example.bob").unwrap()),
                                 username: Username::from_str("bob").unwrap(),
                                 asset_scale: 6,
                                 asset_code: "XYZ".to_string(),

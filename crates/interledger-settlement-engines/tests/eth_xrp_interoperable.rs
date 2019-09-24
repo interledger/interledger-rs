@@ -113,7 +113,7 @@ fn eth_xrp_interoperable() {
         exchange_rate_spread: 0.0,
     };
     let alice_on_alice = json!({
-        "configured_ilp_address": "example.alice",
+        "ilp_address": "example.alice",
         "username": "alice",
         "asset_code": "ETH",
         "asset_scale": 9,
@@ -122,7 +122,7 @@ fn eth_xrp_interoperable() {
     });
 
     let bob_on_alice = json!({
-        "configured_ilp_address": "example.bob",
+        "ilp_address": "example.bob",
         "username": "bob",
         "asset_code": "ETH",
         "asset_scale": 9,
@@ -162,7 +162,7 @@ fn eth_xrp_interoperable() {
     };
 
     let alice_on_bob = json!({
-        "configured_ilp_address": "example.alice",
+        "ilp_address": "example.alice",
         "username": "alice",
         "asset_code": "ETH",
         "asset_scale": 9,
@@ -219,7 +219,7 @@ fn eth_xrp_interoperable() {
         "http_endpoint": format!("http://localhost:{}/ilp", node3_http),
     });
     let bob_on_charlie = json!({
-        "configured_ilp_address": "example.bob",
+        "ilp_address": "example.bob",
         "username": "bob",
         "asset_code": "XRP",
         "asset_scale": 6,
@@ -261,7 +261,7 @@ fn eth_xrp_interoperable() {
     runtime
         .block_on(
             // Wait for the nodes to spin up
-            delay(5000)
+            delay(1000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     send_money_to_username(

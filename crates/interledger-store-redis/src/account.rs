@@ -84,7 +84,7 @@ impl Account {
         details: AccountDetails,
         parent_ilp_address: Address,
     ) -> Result<Account, ()> {
-        let ilp_address = match details.configured_ilp_address {
+        let ilp_address = match details.ilp_address {
             Some(a) => a,
             None => {
                 // if parent address ends with username, do not suffix
@@ -569,7 +569,7 @@ mod redis_account {
 
     lazy_static! {
         static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
-            configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
+            ilp_address: Some(Address::from_str("example.alice").unwrap()),
             username: Username::from_str("alice").unwrap(),
             asset_scale: 6,
             asset_code: "XYZ".to_string(),
