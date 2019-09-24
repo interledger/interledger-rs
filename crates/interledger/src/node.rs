@@ -279,8 +279,9 @@ impl InterledgerNode {
                                 api.default_spsp_account(username);
                             }
 
-                            // Mount the BTP endpoint at /btp
-                            let btp_endpoint = warp::path("btp")
+                            // Mount the BTP endpoint at /ilp/btp
+                            let btp_endpoint = warp::path("ilp")
+                                .and(warp::path("btp"))
                                 .and(warp::path::end())
                                 .and(btp_filter);
                             // Note that other endpoints added to the API must come first

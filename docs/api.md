@@ -114,7 +114,7 @@ This is the "default" SPSP receiver account on this node. This endpoint is only 
 
 Same response as above.
 
-## Bilateral Node-to-Node Communication
+## Bilateral Node-to-Node Communication for ILP Packets
 
 ### POST /ilp - ILP-over-HTTP
 
@@ -124,7 +124,7 @@ This endpoint is used by nodes to send ILP packets over HTTP requests, as the na
 
 Note this endpoint is the one referred to as `http_endpoint` in the `AccountSettings`.
 
-### (Websocket) /btp - Bilateral Transfer Protocol (BTP)
+### (Websocket) /ilp/btp - Bilateral Transfer Protocol (BTP)
 
 Account-holder only.
 
