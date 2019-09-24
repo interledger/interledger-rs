@@ -382,7 +382,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
             RoutingRelation::from_str(relation.as_str())
                 .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid Routing Relation")))?
         } else {
-            RoutingRelation::Child
+            RoutingRelation::NonRoutingAccount
         };
         let round_trip_time: Option<u32> = get_value_option("round_trip_time", &hash)?;
         let round_trip_time: u32 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
