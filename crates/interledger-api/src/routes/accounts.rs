@@ -1,7 +1,7 @@
 use crate::{http_retry::Client, AccountDetails, AccountSettings, ApiError, NodeStore};
 use bytes::Bytes;
 use futures::{
-    future::{err, ok, result, Either},
+    future::{err, join_all, ok, result, Either},
     Future, Stream,
 };
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
@@ -483,9 +483,7 @@ where
             };
             ok(ilp_address)
         })
-        .and_then(move |ilp_address| store.set_ilp_address(ilp_address))
-        .and_then(move |_| {
-            // Get the parent's routes for us
+        .and_then(move |ilp_address| {
             let prepare = RouteControlRequest {
                 mode: Mode::Sync,
                 last_known_epoch: 0,
@@ -494,14 +492,24 @@ where
             }
             .to_prepare();
             debug!("Asking for routes from {:?}", parent.clone());
-            service
-                .send_request(OutgoingRequest {
-                    from: parent.clone(),
-                    to: parent.clone(),
-                    original_amount: prepare.amount(),
-                    prepare: prepare.clone(),
-                })
-                .map_err(move |err| error!("Got error when trying to update routes {:?}", err))
+            join_all(vec![
+                // Update our store's address
+                store.set_ilp_address(ilp_address),
+                // Get the parent's routes for us
+                Box::new(
+                    service
+                        .send_request(OutgoingRequest {
+                            from: parent.clone(),
+                            to: parent.clone(),
+                            original_amount: prepare.amount(),
+                            prepare: prepare.clone(),
+                        })
+                        .and_then(move |_| Ok(()))
+                        .map_err(move |err| {
+                            error!("Got error when trying to update routes {:?}", err)
+                        }),
+                ),
+            ])
         })
         .and_then(move |_| Ok(()))
 }

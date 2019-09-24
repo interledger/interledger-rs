@@ -131,7 +131,11 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
+    // The outgoing service is included so that the API can send outgoing
+    // requests to specific accounts (namely ILDCP requests)
     outgoing_handler: O,
+    // The BTP service is included here so that we can add a new client
+    // connection when an account is added with BTP details
     btp: BtpOutgoingService<B, A>,
     server_secret: Bytes,
 }
