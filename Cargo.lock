@@ -973,7 +973,6 @@ dependencies = [
  "interledger-service-util 0.2.2-alpha.1",
  "interledger-settlement 0.1.1-alpha.1",
  "interledger-spsp 0.2.2-alpha.1",
- "interledger-store-memory 0.2.2-alpha.1",
  "interledger-store-redis 0.2.2-alpha.1",
  "interledger-stream 0.2.2-alpha.1",
  "libc 0.2.62 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1261,24 +1260,6 @@ dependencies = [
  "serde 1.0.101 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.101 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "interledger-store-memory"
-version = "0.2.2-alpha.1"
-dependencies = [
- "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
- "interledger-btp 0.2.2-alpha.1",
- "interledger-http 0.2.2-alpha.1",
- "interledger-ildcp 0.2.2-alpha.1",
- "interledger-packet 0.2.2-alpha.1",
- "interledger-router 0.2.2-alpha.1",
- "interledger-service 0.2.2-alpha.1",
- "interledger-service-util 0.2.2-alpha.1",
- "interledger-stream 0.2.2-alpha.1",
- "parking_lot 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
