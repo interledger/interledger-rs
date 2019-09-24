@@ -16,7 +16,7 @@ lazy_static! {
         http_endpoint: Some("http://example.com/ilp".to_string()),
         http_incoming_token: Some("incoming_auth_token".to_string()),
         http_outgoing_token: Some("dylan:outgoing_auth_token".to_string()),
-        btp_uri: Some("btp+ws://dylan:btp_token@example.com/btp".to_string()),
+        btp_uri: Some("btp+ws://dylan:btp_token@example.com/ilp/btp".to_string()),
         btp_incoming_token: Some("btp_token".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),
@@ -37,7 +37,7 @@ lazy_static! {
         // incoming token has is the account's username concatenated wiht the password
         http_incoming_token: Some("incoming_auth_token".to_string()),
         http_outgoing_token: Some("dylan:outgoing_auth_token".to_string()),
-        btp_uri: Some("btp+ws://dylan:btp_token@example.com/btp".to_string()),
+        btp_uri: Some("btp+ws://dylan:btp_token@example.com/ilp/btp".to_string()),
         btp_incoming_token: Some("other_btp_token".to_string()),
         settle_threshold: Some(0),
         settle_to: Some(-1000),

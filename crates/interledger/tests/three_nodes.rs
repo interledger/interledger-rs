@@ -93,7 +93,7 @@ fn three_nodes() {
         "http_incoming_token" : "two",
         "http_outgoing_token": "charlie:three",
         "http_endpoint": format!("http://localhost:{}/ilp", node2_http),
-        "btp_uri": format!("btp+ws://charlie:three@localhost:{}/btp", node2_http),
+        "btp_uri": format!("btp+ws://charlie:three@localhost:{}/ilp/btp", node2_http),
         "min_balance": -1_000_000_000,
         "routing_relation": "Parent",
     });
