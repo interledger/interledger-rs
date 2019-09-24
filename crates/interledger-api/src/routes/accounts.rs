@@ -1,7 +1,7 @@
 use crate::{http_retry::Client, AccountDetails, AccountSettings, ApiError, NodeStore};
 use bytes::Bytes;
 use futures::{
-    future::{err, join_all, ok, result, Either},
+    future::{err, join_all, ok, Either},
     Future, Stream,
 };
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
@@ -14,6 +14,7 @@ use interledger_service::{
     Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
+use interledger_settlement::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
@@ -21,7 +22,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
 use std::time::Duration;
-use url::Url;
 use warp::{self, Filter};
 
 const MAX_RETRIES: usize = 10;
@@ -52,7 +52,15 @@ where
         + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
-    A: BtpAccount + CcpRoutingAccount + Account + HttpAccount + Serialize + Send + Sync + 'static,
+    A: BtpAccount
+        + CcpRoutingAccount
+        + SettlementAccount
+        + Account
+        + HttpAccount
+        + Serialize
+        + Send
+        + Sync
+        + 'static,
 {
     // TODO can we make any of the Filters const or put them in lazy_static?
 
@@ -125,7 +133,8 @@ where
         .boxed();
 
     // POST /accounts
-    let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
+    let btp_clone = btp.clone();
+    let outgoing_handler_clone = outgoing_handler.clone();
     let post_accounts = warp::post2()
         .and(accounts_index)
         .and(admin_only.clone())
@@ -133,83 +142,17 @@ where
         .and(with_store.clone())
         .and_then(move |account_details: AccountDetails, store: S| {
             let store_clone = store.clone();
-            let handler = outgoing_handler.clone();
-            let settlement_engine_url = account_details.settlement_engine_url.clone();
-            let http_client = http_client.clone();
-            let btp = btp.clone();
-            store.insert_account(account_details)
-                .map_err(|_| {
-                    warp::reject::custom(ApiError::InternalServerError)
+            let handler = outgoing_handler_clone.clone();
+            let btp = btp_clone.clone();
+            store
+                .insert_account(account_details)
+                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
+                .and_then(move |account| {
+                    connect_to_external_services(handler, account, store_clone, btp)
                 })
-                .and_then(move |account: A| {
-                    // Try to connect to the account's BTP socket if they have
-                    // one configured
-                    let btp_connect_fut = if account.get_btp_uri().is_some() {
-                        Either::A(
-                            connect_to_service_account(account.clone(), true, btp)
-                            .map_err(|_| {
-                                warp::reject::custom(ApiError::InternalServerError)
-                            })
-                        )
-                    } else {
-                        Either::B(ok(()))
-                    };
-
-                    btp_connect_fut.and_then(move |_| {
-                    // If we added a parent, get the address assigned to us by
-                    // them and update all of our routes
-                    let get_ilp_address_fut = if account.routing_relation() == RoutingRelation::Parent {
-                        Either::A(
-                            get_address_from_parent_and_update_routes(handler, account.clone(), store_clone)
-                            .map_err(|_| {
-                                warp::reject::custom(ApiError::InternalServerError)
-                            })
-                        )
-                    } else {
-                        Either::B(ok(()))
-                    };
-                    let http_client = http_client.clone();
-                    // Register the account with the settlement engine
-                    // if a settlement_engine_url was configured on the account
-                    get_ilp_address_fut.and_then(move |_|
-                    if let Some(se_url) = settlement_engine_url {
-                        let id = account.id();
-                        Either::A(result(Url::parse(&se_url))
-                            .map_err(|_| {
-                                // TODO include a more specific error message
-                                warp::reject::custom(ApiError::BadRequest)
-                            })
-                            .and_then(move |se_url| {
-                                let http_client = http_client.clone();
-                                trace!(
-                                    "Sending account {} creation request to settlement engine: {:?}",
-                                    id,
-                                    se_url.clone()
-                                );
-                                http_client.create_engine_account(se_url, id)
-                                    .and_then(move |status_code| {
-                                        if status_code.is_success() {
-                                            trace!("Account {} created on the SE", id);
-                                        } else {
-                                            error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
-                                        }
-                                        Ok(())
-                                    })
-                                .map_err(|_| {
-                                    warp::reject::custom(ApiError::InternalServerError)
-                                })
-                                .and_then(move |_| {
-                                    Ok(account)
-                                })
-                            }))
-                    } else {
-                        Either::B(ok(account))
-                    })})
-                })
-                .and_then(|account: A| {
-                    Ok(warp::reply::json(&account))
-                })
-        }).boxed();
+                .and_then(|account: A| Ok(warp::reply::json(&account)))
+        })
+        .boxed();
 
     // GET /accounts
     let get_accounts = warp::get2()
@@ -232,11 +175,17 @@ where
         .and(warp::body::json())
         .and(with_store.clone())
         .and_then(
-            |id: A::AccountId, account_details: AccountDetails, store: S| {
+            move |id: A::AccountId, account_details: AccountDetails, store: S| {
+                let store_clone = store.clone();
+                let handler = outgoing_handler.clone();
+                let btp = btp.clone();
                 store
                     .update_account(id, account_details)
                     .map_err(move |_| warp::reject::custom(ApiError::InternalServerError))
-                    .and_then(move |account| Ok(warp::reply::json(&account)))
+                    .and_then(move |account| {
+                        connect_to_external_services(handler, account, store_clone, btp)
+                    })
+                    .and_then(|account: A| Ok(warp::reply::json(&account)))
             },
         )
         .boxed();
@@ -512,4 +461,74 @@ where
             ])
         })
         .and_then(move |_| Ok(()))
+}
+
+fn connect_to_external_services<S, A, T, B>(
+    service: S,
+    account: A,
+    store: T,
+    btp: BtpOutgoingService<B, A>,
+) -> impl Future<Item = A, Error = warp::reject::Rejection>
+where
+    S: OutgoingService<A> + Clone + Send + Sync + 'static,
+    A: CcpRoutingAccount + BtpAccount + SettlementAccount + Clone + Send + Sync + 'static,
+    T: AddressStore + Clone + Send + Sync + 'static,
+    B: OutgoingService<A> + Clone + 'static,
+{
+    // Try to connect to the account's BTP socket if they have
+    // one configured
+    let btp_connect_fut = if account.get_btp_uri().is_some() {
+        Either::A(
+            connect_to_service_account(account.clone(), true, btp)
+                .map_err(|_| warp::reject::custom(ApiError::InternalServerError)),
+        )
+    } else {
+        Either::B(ok(()))
+    };
+
+    btp_connect_fut.and_then(move |_| {
+    // If we added a parent, get the address assigned to us by
+    // them and update all of our routes
+    let get_ilp_address_fut = if account.routing_relation() == RoutingRelation::Parent {
+        Either::A(
+            get_address_from_parent_and_update_routes(service, account.clone(), store)
+            .map_err(|_| {
+                warp::reject::custom(ApiError::InternalServerError)
+            })
+        )
+    } else {
+        Either::B(ok(()))
+    };
+
+    // Register the account with the settlement engine
+    // if a settlement_engine_url was configured on the account
+    get_ilp_address_fut.and_then(move |_|
+    if let Some(se_details) = account.settlement_engine_details() {
+        let se_url = se_details.url;
+        let id = account.id();
+        let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
+        trace!(
+            "Sending account {} creation request to settlement engine: {:?}",
+            id,
+            se_url.clone()
+        );
+        Either::A(
+            http_client.create_engine_account(se_url, id)
+            .map_err(|_| {
+                warp::reject::custom(ApiError::InternalServerError)
+            })
+            .and_then(move |status_code| {
+                if status_code.is_success() {
+                    trace!("Account {} created on the SE", id);
+                } else {
+                    error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                }
+                Ok(())
+            })
+            .and_then(move |_| {
+                Ok(account)
+            }))
+    } else {
+        Either::B(ok(account))
+    })})
 }
