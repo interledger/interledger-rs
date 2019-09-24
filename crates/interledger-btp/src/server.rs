@@ -152,7 +152,6 @@ where
 
 struct Auth {
     request_id: u32,
-    username: Option<Username>,
     token: String,
 }
 
@@ -230,31 +229,18 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
             match BtpMessage::from_bytes(message.as_bytes()) {
                 Ok(message) => {
                     let request_id = message.request_id;
-                    let mut username: Option<Username> = None;
                     let mut token: Option<String> = None;
                     for protocol_data in message.protocol_data.iter() {
-                        match (
+                        if let ("auth_token", _) = (
                             protocol_data.protocol_name.as_ref(),
                             !protocol_data.data.is_empty(),
                         ) {
-                            ("auth_token", _) => {
-                                token = String::from_utf8(protocol_data.data.clone()).ok()
-                            }
-                            ("auth_username", true) => {
-                                username = String::from_utf8(protocol_data.data.clone())
-                                    .ok()
-                                    .and_then(|username| Username::from_str(&username).ok())
-                            }
-                            _ => {}
+                            token = String::from_utf8(protocol_data.data.clone()).ok();
                         }
                     }
 
                     if let Some(token) = token {
-                        return Some(Auth {
-                            request_id,
-                            token,
-                            username,
-                        });
+                        return Some(Auth { request_id, token });
                     } else {
                         warn!("BTP packet is missing auth token");
                     }
