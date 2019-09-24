@@ -9,19 +9,23 @@ use tungstenite;
 use warp::{
     self,
     ws::{Message, WebSocket, Ws2},
-    Error, Filter,
+    Filter,
 };
 
 // const MAX_MESSAGE_SIZE: usize = 40000;
 
-/// Returns a BtpOutgoingService that wraps all BTP/WebSocket connections that come
+/// Returns a BtpOutgoingService and a warp Filter.
+///
+/// The BtpOutgoingService wraps all BTP/WebSocket connections that come
 /// in on the given address. Calling `handle_incoming` with an `IncomingService` will
 /// turn the returned BtpOutgoingService into a bidirectional handler.
-///
 /// The separation is designed to enable the returned BtpOutgoingService to be passed
 /// to another service like the Router, and _then_ for the Router to be passed as the
 /// IncomingService to the BTP server.
-pub fn btp_server<O, S, A>(
+///
+/// The warp filter handles the websocket upgrades and adds incoming connections
+/// to the BTP service so that it will handle each of the messages.
+pub fn create_btp_service_and_filter<O, S, A>(
     ilp_address: Address,
     store: S,
     next_outgoing: O,
@@ -32,7 +36,7 @@ pub fn btp_server<O, S, A>(
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     S: BtpStore<Account = A> + Clone + Send + Sync + 'static,
-    A: BtpAccount + Account + 'static,
+    A: BtpAccount + 'static,
 {
     let service = BtpOutgoingService::new(ilp_address, next_outgoing);
     let service_clone = service.clone();
@@ -69,7 +73,8 @@ struct WsWrap<W> {
 
 impl<W> Stream for WsWrap<W>
 where
-    W: Stream<Item = Message, Error = Error> + Sink<SinkItem = Message, SinkError = Error>,
+    W: Stream<Item = Message, Error = warp::Error>
+        + Sink<SinkItem = Message, SinkError = warp::Error>,
 {
     type Item = tungstenite::Message;
     type Error = WsError;
@@ -103,7 +108,8 @@ where
 
 impl<W> Sink for WsWrap<W>
 where
-    W: Stream<Item = Message, Error = Error> + Sink<SinkItem = Message, SinkError = Error>,
+    W: Stream<Item = Message, Error = warp::Error>
+        + Sink<SinkItem = Message, SinkError = warp::Error>,
 {
     type SinkItem = tungstenite::Message;
     type SinkError = WsError;
@@ -152,16 +158,18 @@ where
 
 struct Auth {
     request_id: u32,
-    token: String,
+    token: AuthToken,
 }
 
 fn validate_auth<S, A>(
     store: S,
-    connection: impl Stream<Item = Message, Error = Error> + Sink<SinkItem = Message, SinkError = Error>,
+    connection: impl Stream<Item = Message, Error = warp::Error>
+        + Sink<SinkItem = Message, SinkError = warp::Error>,
 ) -> impl Future<
     Item = (
         A,
-        impl Stream<Item = Message, Error = Error> + Sink<SinkItem = Message, SinkError = Error>,
+        impl Stream<Item = Message, Error = warp::Error>
+            + Sink<SinkItem = Message, SinkError = warp::Error>,
     ),
     Error = (),
 >
@@ -170,35 +178,33 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
-        result(AuthToken::from_str(&auth.token).map_err(|_| ())).and_then(move |auth_token| {
-            store
-                .get_account_from_btp_auth(&auth_token.username(), &auth_token.password())
-                .map_err(move |_| {
-                    warn!("Got BTP connection that does not correspond to an account")
-                })
-                .and_then(move |account| {
-                    let auth_response = Message::binary(
-                        BtpResponse {
-                            request_id: auth.request_id,
-                            protocol_data: Vec::new(),
-                        }
-                        .to_bytes(),
-                    );
-                    connection
-                        .send(auth_response)
-                        .map_err(|_err| error!("Error sending auth response"))
-                        .and_then(|connection| Ok((account, connection)))
-                })
-        })
+        store
+            .get_account_from_btp_auth(&auth.token.username(), &auth.token.password())
+            .map_err(move |_| warn!("Got BTP connection that does not correspond to an account"))
+            .and_then(move |account| {
+                let auth_response = Message::binary(
+                    BtpResponse {
+                        request_id: auth.request_id,
+                        protocol_data: Vec::new(),
+                    }
+                    .to_bytes(),
+                );
+                connection
+                    .send(auth_response)
+                    .map_err(|_err| error!("warp::Error sending auth response"))
+                    .and_then(|connection| Ok((account, connection)))
+            })
     })
 }
 
 fn get_auth(
-    connection: impl Stream<Item = Message, Error = Error> + Sink<SinkItem = Message, SinkError = Error>,
+    connection: impl Stream<Item = Message, Error = warp::Error>
+        + Sink<SinkItem = Message, SinkError = warp::Error>,
 ) -> impl Future<
     Item = (
         Auth,
-        impl Stream<Item = Message, Error = Error> + Sink<SinkItem = Message, SinkError = Error>,
+        impl Stream<Item = Message, Error = warp::Error>
+            + Sink<SinkItem = Message, SinkError = warp::Error>,
     ),
     Error = (),
 > {
@@ -229,24 +235,36 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
             match BtpMessage::from_bytes(message.as_bytes()) {
                 Ok(message) => {
                     let request_id = message.request_id;
+                    let mut username: Option<String> = None;
                     let mut token: Option<String> = None;
                     for protocol_data in message.protocol_data.iter() {
-                        if let ("auth_token", _) = (
-                            protocol_data.protocol_name.as_ref(),
-                            !protocol_data.data.is_empty(),
-                        ) {
+                        let protocol_name: &str = protocol_data.protocol_name.as_ref();
+                        if protocol_name == "auth_token" {
                             token = String::from_utf8(protocol_data.data.clone()).ok();
+                        } else if protocol_name == "auth_username" {
+                            username = String::from_utf8(protocol_data.data.clone()).ok();
                         }
                     }
 
-                    if let Some(token) = token {
-                        return Some(Auth { request_id, token });
-                    } else {
-                        warn!("BTP packet is missing auth token");
+                    match (username, token) {
+                        (Some(ref username), Some(ref token)) => {
+                            return AuthToken::new(username, token)
+                                .ok()
+                                .map(|token| Auth { request_id, token });
+                        }
+                        (None, Some(ref token)) => {
+                            return AuthToken::from_str(token)
+                                .ok()
+                                .map(|token| Auth { request_id, token });;
+                        }
+                        _ => warn!("BTP packet is missing auth token"),
                     }
                 }
                 Err(err) => {
-                    warn!("Error parsing BTP packet from Websocket message: {:?}", err);
+                    warn!(
+                        "warp::Error parsing BTP packet from Websocket message: {:?}",
+                        err
+                    );
                 }
             }
         } else {
