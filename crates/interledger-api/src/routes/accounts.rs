@@ -146,7 +146,7 @@ where
                     // one configured
                     let btp_connect_fut = if account.get_btp_uri().is_some() {
                         Either::A(
-                            connect_to_service_account(account.clone(), btp)
+                            connect_to_service_account(account.clone(), true, btp)
                             .map_err(|_| {
                                 warp::reject::custom(ApiError::InternalServerError)
                             })
