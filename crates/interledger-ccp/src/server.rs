@@ -186,14 +186,19 @@ where
     }
 
     fn update_ilp_address(&self) {
+        let current_ilp_address = self.ilp_address.read();
         let ilp_address = self.store.get_ilp_address();
-        *self.global_prefix.write() = ilp_address
-            .to_bytes()
-            .iter()
-            .position(|c| c == &b'.')
-            .map(|index| ilp_address.to_bytes().slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.to_bytes().clone());
-        *self.ilp_address.write() = ilp_address;
+        if ilp_address != *current_ilp_address {
+            // release the read lock
+            drop(current_ilp_address);
+            *self.global_prefix.write() = ilp_address
+                .to_bytes()
+                .iter()
+                .position(|c| c == &b'.')
+                .map(|index| ilp_address.to_bytes().slice_to(index + 1))
+                .unwrap_or_else(|| ilp_address.to_bytes().clone());
+            *self.ilp_address.write() = ilp_address;
+        }
     }
 
     pub fn broadcast_routes(&self) -> impl Future<Item = (), Error = ()> {
