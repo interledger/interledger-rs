@@ -7,7 +7,7 @@ use std::str::FromStr;
 lazy_static! {
     // We are dylan starting a connection with all these accounts
     pub static ref ACCOUNT_DETAILS_0: AccountDetails = AccountDetails {
-        configured_ilp_address: Some(Address::from_str("example.alice").unwrap()),
+        ilp_address: Some(Address::from_str("example.alice").unwrap()),
         username: Username::from_str("alice").unwrap(),
         asset_scale: 6,
         asset_code: "XYZ".to_string(),
@@ -27,7 +27,7 @@ lazy_static! {
         settlement_engine_url: None,
     };
     pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
-        configured_ilp_address: None,
+        ilp_address: None,
         username: Username::from_str("bob").unwrap(),
         asset_scale: 9,
         asset_code: "ABC".to_string(),
@@ -48,7 +48,7 @@ lazy_static! {
         settlement_engine_url: None,
     };
     pub static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
-        configured_ilp_address: None,
+        ilp_address: None,
         username: Username::from_str("charlie").unwrap(),
         asset_scale: 9,
         asset_code: "XRP".to_string(),

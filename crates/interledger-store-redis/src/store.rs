@@ -1247,7 +1247,7 @@ impl AddressStore for RedisStore {
             cmd("DEL")
                 .arg(PARENT_ILP_KEY)
                 .query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error setting static route: {:?}", err))
+                .map_err(|err| error!("Error removing parent address: {:?}", err))
                 .and_then(move |(_, _): (SharedConnection, Value)| {
                     *(self_clone.ilp_address.write()) = Address::from_str("local.host").unwrap();
                     Ok(())

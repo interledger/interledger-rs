@@ -121,7 +121,7 @@ fn only_one_parent_allowed() {
     let mut acc = ACCOUNT_DETAILS_2.clone();
     acc.routing_relation = Some("Parent".to_owned());
     acc.username = Username::from_str("another_name").unwrap();
-    acc.configured_ilp_address = Some(Address::from_str("example.another_name").unwrap());
+    acc.ilp_address = Some(Address::from_str("example.another_name").unwrap());
     block_on(test_store().and_then(|(store, context, accs)| {
         store.insert_account(acc.clone()).then(move |res| {
             // This should fail
