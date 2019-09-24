@@ -1197,6 +1197,7 @@ impl AddressStore for RedisStore {
         ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let self_clone = self.clone();
+        let routing_table = self.routes.clone();
         let conn = self.connection.clone();
         let ilp_address_clone = ilp_address.clone();
         Box::new(
@@ -1220,8 +1221,12 @@ impl AddressStore for RedisStore {
                     // on the store.
                     let mut pipe = redis::pipe();
                     for account in accounts {
-                        // Update the address of all children.
+                        // Update the address and routes of all children.
                         if account.routing_relation() == RoutingRelation::Child {
+                            // remove the old route
+                            pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
+                                .ignore();
+
                             let new_ilp_address = ilp_address_clone
                                 .with_suffix(account.username().as_bytes())
                                 .unwrap();
@@ -1231,11 +1236,16 @@ impl AddressStore for RedisStore {
                                 new_ilp_address.as_bytes(),
                             )
                             .ignore();
+
+                            pipe.hset(ROUTES_KEY, new_ilp_address.as_bytes(), account.id())
+                                .ignore();
                         }
                     }
                     pipe.query_async(conn.as_ref().clone())
                         .map_err(|err| error!("Error updating children: {:?}", err))
-                        .and_then(move |(_, _): (SharedConnection, Value)| Ok(()))
+                        .and_then(move |(connection, _): (SharedConnection, Value)| {
+                            update_routes(connection, routing_table)
+                        })
                 }))
                 .and_then(move |_| Ok(())),
         )
