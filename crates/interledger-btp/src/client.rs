@@ -100,6 +100,8 @@ where
                 .to_bytes(),
             );
 
+            // TODO check that the response is a success before proceeding
+            // (right now we just assume they'll close the connection if the auth didn't work)
             connection
                 .send(auth_packet)
                 .map_err(move |_| error!("Error sending auth packet on connection: {}", url))

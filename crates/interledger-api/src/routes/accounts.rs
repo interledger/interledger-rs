@@ -433,6 +433,7 @@ where
             ok(ilp_address)
         })
         .and_then(move |ilp_address| {
+            // TODO we may want to make this trigger the CcpRouteManager to request
             let prepare = RouteControlRequest {
                 mode: Mode::Sync,
                 last_known_epoch: 0,
@@ -463,6 +464,16 @@ where
         .and_then(move |_| Ok(()))
 }
 
+// Helper function which gets called whenever a new account is added or
+// modified.
+// Performed actions:
+// 1. If they have a BTP uri configured: connect to their BTP socket
+// 2. If they are a parent:
+// 2a. Perform an ILDCP Request to get the address assigned to us by them, and
+// update our store's address to that value
+// 2b. Perform a RouteControl Request to make them send us any new routes
+// 3. If they have a settlement engine endpoitn configured: Make a POST to the
+//    engine's account creation endpoint with the account's id
 fn connect_to_external_services<S, A, T, B>(
     service: S,
     account: A,
