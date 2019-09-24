@@ -18,7 +18,6 @@ cli = [
     "btp",
     "ccp",
     "http",
-    "store-memory",
     "ildcp",
     "spsp",
     "interledger-router",
@@ -30,7 +29,6 @@ cli = [
 btp = ["interledger-btp"]
 ccp = ["interledger-ccp"]
 http = ["interledger-http"]
-store-memory = ["interledger-store-memory"]
 ildcp = ["interledger-ildcp"]
 spsp = ["interledger-spsp", "stream"]
 stream = ["interledger-stream", "ildcp"]
@@ -55,7 +53,6 @@ interledger-service-util = { path = "../interledger-service-util", version = "^0
 interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1", optional = true }
 interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1", optional = true }
 interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", optional = true }
-interledger-store-memory = { path = "../interledger-store-memory", version = "^0.2.2-alpha.1", optional = true }
 interledger-store-redis = { path = "../interledger-store-redis", version = "^0.2.2-alpha.1", optional = true}
 log = "0.4.6"
 ring = "0.14.6"

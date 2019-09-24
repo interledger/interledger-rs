@@ -13,7 +13,6 @@ members = [
   "./crates/interledger-service-util",
   "./crates/interledger-settlement",
   "./crates/interledger-spsp",
-  "./crates/interledger-store-memory",
   "./crates/interledger-store-redis",
   "./crates/interledger-stream",
   "./crates/interledger-settlement-engines",

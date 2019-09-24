@@ -3,19 +3,12 @@
 //! A CLI and library bundle for the Rust implementation of the Interledger Protocol stack.
 #![recursion_limit = "128"]
 
-#[cfg(feature = "cli")]
-/// ILP Packet (De)Serialization
-pub mod packet {
-    pub use interledger_packet::*;
-}
+pub mod node;
 
 /// The core abstractions used by Interledger.rs: IncomingService and OutgoingService
 pub mod service {
     pub use interledger_service::*;
 }
-
-#[cfg(feature = "cli")]
-pub mod node;
 
 /// Bilateral Transport Protocol (BTP) client and server
 #[cfg(feature = "btp")]
@@ -65,17 +58,6 @@ pub mod stream {
     //!
     //! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
     pub use interledger_stream::*;
-}
-
-/// In-memory data store
-#[cfg(feature = "store-memory")]
-pub mod store_memory {
-    //! # interledger-store-memory
-    //!
-    //! A simple in-memory store intended primarily for testing and
-    //! stateless sender/receiver services that are passed all of the
-    //! relevant account details when the store is instantiated.
-    pub use interledger_store_memory::*;
 }
 
 /// Interledger Dynamic Configuration Protocol (ILDCP)
