@@ -99,7 +99,7 @@ fn three_nodes() {
     });
 
     let node1 = InterledgerNode {
-        ilp_address: Address::from_str("example.alice").unwrap(),
+        ilp_address: Some(Address::from_str("example.alice").unwrap()),
         default_spsp_account: Some(Username::from_str("alice").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
@@ -113,7 +113,7 @@ fn three_nodes() {
     };
 
     let node2 = InterledgerNode {
-        ilp_address: Address::from_str("example.bob").unwrap(),
+        ilp_address: Some(Address::from_str("example.bob").unwrap()),
         default_spsp_account: Some(Username::from_str("bob").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
@@ -127,7 +127,7 @@ fn three_nodes() {
     };
 
     let node3 = InterledgerNode {
-        ilp_address: Address::from_str("local.host").unwrap(), // We should set this to local.host. Adding a parent should update our address by making an ILDCP request, followed by updating our routing table by making a RouteControlRequest to which the parent responds with a RouteUpdateRequest
+        ilp_address: None, // Adding a parent should update our address by making an ILDCP request, followed by updating our routing table by making a RouteControlRequest to which the parent responds with a RouteUpdateRequest
         default_spsp_account: Some(Username::from_str("charlie").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,

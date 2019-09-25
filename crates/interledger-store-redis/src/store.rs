@@ -67,6 +67,8 @@ static PARENT_ILP_KEY: &str = "parent_node_account_address";
 // process is accessing Redis at the same time.
 // For more information on scripting in Redis, see https://redis.io/commands/eval
 lazy_static! {
+    static ref DEFAULT_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
+
     // This lua script fetches an account associated with a username. The client
     // MUST ensure that the returned account is authenticated.
     static ref ACCOUNT_FROM_USERNAME: Script = Script::new("
@@ -198,7 +200,7 @@ impl RedisStoreBuilder {
             redis_url,
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
-            node_ilp_address: Address::from_str("local.host").unwrap(),
+            node_ilp_address: DEFAULT_ILP_ADDRESS.clone(),
         }
     }
 
@@ -1292,7 +1294,7 @@ impl AddressStore for RedisStore {
                 .query_async(self.connection.as_ref().clone())
                 .map_err(|err| error!("Error removing parent address: {:?}", err))
                 .and_then(move |(_, _): (SharedConnection, Value)| {
-                    *(self_clone.ilp_address.write()) = Address::from_str("local.host").unwrap();
+                    *(self_clone.ilp_address.write()) = DEFAULT_ILP_ADDRESS.clone();
                     Ok(())
                 }),
         )

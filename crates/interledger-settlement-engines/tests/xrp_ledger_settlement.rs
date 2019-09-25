@@ -71,7 +71,7 @@ fn xrp_ledger_settlement() {
 
     let node1_secret = random_secret();
     let node1 = InterledgerNode {
-        ilp_address: Address::from_str("example.alice").unwrap(),
+        ilp_address: Some(Address::from_str("example.alice").unwrap()),
         default_spsp_account: None,
         admin_auth_token: "hi_alice".to_string(),
         redis_connection: connection_info1.clone(),
@@ -134,7 +134,7 @@ fn xrp_ledger_settlement() {
 
     let node2_secret = random_secret();
     let node2 = InterledgerNode {
-        ilp_address: Address::from_str("example.bob").unwrap(),
+        ilp_address: Some(Address::from_str("example.bob").unwrap()),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2.clone(),

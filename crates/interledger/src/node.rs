@@ -22,19 +22,23 @@ use interledger_store_redis::{
     Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
 };
 use interledger_stream::StreamReceiverService;
+use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
 use ring::{
     digest, hmac,
     rand::{SecureRandom, SystemRandom},
 };
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{net::SocketAddr, str, time::Duration};
+use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::{net::TcpListener, spawn};
 use url::Url;
 use warp::{self, Filter};
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
+lazy_static! {
+    static ref DEFAULT_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
+}
 
 fn default_settlement_api_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7771))
@@ -49,13 +53,17 @@ fn default_exchange_rate_poll_interval() -> u64 {
     60000
 }
 
-use std::str::FromStr;
-fn deserialize_string_to_address<'de, D>(deserializer: D) -> Result<Address, D::Error>
+fn deserialize_optional_address<'de, D>(deserializer: D) -> Result<Option<Address>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Address::from_str(&String::deserialize(deserializer)?)
-        .map_err(|err| DeserializeError::custom(format!("Invalid address: {:?}", err)))
+    if let Ok(address) = Bytes::deserialize(deserializer) {
+        Address::try_from(address)
+            .map(Some)
+            .map_err(|err| DeserializeError::custom(format!("Invalid address: {:?}", err)))
+    } else {
+        Ok(None)
+    }
 }
 
 fn deserialize_32_bytes_hex<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
@@ -90,8 +98,9 @@ where
 #[derive(Deserialize, Clone)]
 pub struct InterledgerNode {
     /// ILP address of the node
-    #[serde(deserialize_with = "deserialize_string_to_address")]
-    pub ilp_address: Address,
+    #[serde(deserialize_with = "deserialize_optional_address")]
+    #[serde(default)]
+    pub ilp_address: Option<Address>,
     /// Root secret used to derive encryption keys
     #[serde(deserialize_with = "deserialize_32_bytes_hex")]
     pub secret_seed: [u8; 32],
@@ -142,15 +151,15 @@ impl InterledgerNode {
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
-        debug!(
-            "Starting Interledger node with ILP address: {}",
-            str::from_utf8(self.ilp_address.as_ref()).unwrap_or("<not utf8>")
-        );
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
         let http_bind_address = self.http_bind_address;
         let settlement_api_bind_address = self.settlement_api_bind_address;
-        let ilp_address = self.ilp_address.clone();
+        let ilp_address = if let Some(address) = &self.ilp_address {
+            address.clone()
+        } else {
+            DEFAULT_ILP_ADDRESS.clone()
+        };
         let ilp_address_clone = ilp_address.clone();
         let ilp_address_clone2 = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
@@ -160,6 +169,11 @@ impl InterledgerNode {
         let exchange_rate_provider = self.exchange_rate_provider.clone();
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
         let exchange_rate_spread = self.exchange_rate_spread;
+
+        debug!(
+            "Starting Interledger node with ILP address: {}",
+            ilp_address
+        );
 
         RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .node_ilp_address(ilp_address.clone())
