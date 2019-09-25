@@ -47,7 +47,6 @@ fn eth_xrp_interoperable() {
     let node2_engine = get_open_port(Some(3022));
     let node2_engine_address = SocketAddr::from(([127, 0, 0, 1], node2_engine));
     let node2_xrp_engine_port = get_open_port(Some(3023));
-    let node2_btp = get_open_port(Some(3024));
 
     let node3_http = get_open_port(Some(3030));
     let node3_settlement = get_open_port(Some(3031));
@@ -99,11 +98,10 @@ fn eth_xrp_interoperable() {
         .unwrap();
 
     let node1 = InterledgerNode {
-        ilp_address: Address::from_str("example.alice").unwrap(),
+        ilp_address: Some(Address::from_str("example.alice").unwrap()),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
-        btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], node1_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node1_settlement).into(),
         secret_seed: random_secret(),
@@ -147,11 +145,10 @@ fn eth_xrp_interoperable() {
     );
 
     let node2 = InterledgerNode {
-        ilp_address: Address::from_str("example.bob").unwrap(),
+        ilp_address: Some(Address::from_str("example.bob").unwrap()),
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
-        btp_bind_address: ([127, 0, 0, 1], node2_btp).into(),
         http_bind_address: ([127, 0, 0, 1], node2_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node2_settlement).into(),
         secret_seed: random_secret(),
@@ -235,11 +232,10 @@ fn eth_xrp_interoperable() {
         .and_then(move |_| create_account_on_node(node3_http, charlie_on_charlie, "admin"));
 
     let node3 = InterledgerNode {
-        ilp_address: Address::from_str("local.host").unwrap(),
+        ilp_address: None,
         default_spsp_account: None,
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
-        btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], node3_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node3_settlement).into(),
         secret_seed: random_secret(),

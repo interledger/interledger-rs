@@ -1,7 +1,7 @@
 use super::packet::*;
 use super::service::BtpOutgoingService;
 use super::BtpAccount;
-use futures::{future::join_all, Future, Sink};
+use futures::{future::join_all, Future, Sink, Stream};
 use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, trace};
@@ -108,6 +108,7 @@ where
                 .then(move |result| match result {
                     Ok(connection) => {
                         debug!("Connected to account {}'s server", account.id());
+                        let connection = connection.from_err().sink_from_err();
                         service.add_connection(account, connection);
                         Ok(())
                     }

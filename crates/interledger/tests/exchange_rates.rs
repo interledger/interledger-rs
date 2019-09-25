@@ -27,11 +27,10 @@ fn coincap() {
     let http_port = get_open_port(Some(3010));
 
     let node = InterledgerNode {
-        ilp_address: Address::from_str("example.one").unwrap(),
+        ilp_address: Some(Address::from_str("example.one").unwrap()),
         default_spsp_account: Some(Username::from_str("one").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: context.get_client_connection_info(),
-        btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], http_port).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         secret_seed: random_secret(),
@@ -96,11 +95,10 @@ fn cryptocompare() {
     let http_port = get_open_port(Some(3011));
 
     let node = InterledgerNode {
-        ilp_address: Address::from_str("example.one").unwrap(),
+        ilp_address: Some(Address::from_str("example.one").unwrap()),
         default_spsp_account: Some(Username::from_str("one").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: context.get_client_connection_info(),
-        btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], http_port).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         secret_seed: random_secret(),

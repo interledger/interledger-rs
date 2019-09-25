@@ -116,15 +116,23 @@ This is the "default" SPSP receiver account on this node. This endpoint is only 
 
 Same response as above.
 
-## Bilateral Node-to-Node Communication
+## Bilateral Node-to-Node Communication for ILP Packets
 
-### POST /ilp (ILP-over-HTTP)
+### POST /ilp - ILP-over-HTTP
 
 Account-holder only.
 
 This endpoint is used by nodes to send ILP packets over HTTP requests, as the name suggests. This protocol is specified in [IL-RFC 35: ILP-over-HTTP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md).
 
-Note this endpoint is the one referred to in the `AccountSettings` `http_endpoint` field.
+Note this endpoint is the one referred to as `http_endpoint` in the `AccountSettings`.
+
+### (Websocket) /ilp/btp - Bilateral Transfer Protocol (BTP)
+
+Account-holder only.
+
+This endpoint implements BTP, a WebSocket-based protocol for sending and receiving ILP packets. This protocol is specified in [IL-RFC 22: Bilateral Transfer Protocol 2.0 (BTP/2.0)](https://github.com/interledger/rfcs/blob/master/0023-bilateral-transfer-protocol/0023-bilateral-transfer-protocol.md).
+
+Note this endpoint is the one referred to as `btp_uri` in the `AccountSettings`.
 
 ## Node Settings
 

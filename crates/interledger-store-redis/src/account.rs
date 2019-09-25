@@ -195,8 +195,9 @@ impl Account {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AccountWithEncryptedTokens {
-    account: Account,
+    pub(super) account: Account,
 }
 
 impl AccountWithEncryptedTokens {
@@ -570,7 +571,7 @@ mod redis_account {
             // we are Bob and we're using this account to peer with Alice
             http_incoming_token: Some("incoming_auth_token".to_string()),
             http_outgoing_token: Some("bob:outgoing_auth_token".to_string()),
-            btp_uri: Some("btp+ws://bob:btp_token@example.com/btp".to_string()),
+            btp_uri: Some("btp+ws://bob:btp_token@example.com/ilp/btp".to_string()),
             btp_incoming_token: Some("alice:btp_token".to_string()),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
@@ -588,7 +589,7 @@ mod redis_account {
         let account = Account::try_from(
             id,
             ACCOUNT_DETAILS.clone(),
-            Address::from_str("local.host").unwrap(),
+            Address::from_str("example.account").unwrap(),
         )
         .unwrap();
         assert_eq!(account.id(), id);
@@ -602,7 +603,7 @@ mod redis_account {
         );
         assert_eq!(
             account.get_btp_uri().unwrap().to_string(),
-            "btp+ws://example.com/btp",
+            "btp+ws://example.com/ilp/btp",
         );
         assert_eq!(account.routing_relation(), RoutingRelation::Peer);
     }

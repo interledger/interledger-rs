@@ -12,8 +12,7 @@ RUN cargo build --release --package interledger
 
 FROM alpine
 
-# Expose ports for HTTP and BTP
-EXPOSE 7768
+# Expose ports for HTTP server
 EXPOSE 7770
 
 # To save the node's data across runs, mount a volume called "/data".

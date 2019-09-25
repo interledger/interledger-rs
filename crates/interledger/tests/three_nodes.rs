@@ -32,7 +32,6 @@ fn three_nodes() {
     let node1_settlement = get_open_port(Some(3011));
     let node2_http = get_open_port(Some(3020));
     let node2_settlement = get_open_port(Some(3021));
-    let node2_btp = get_open_port(Some(3022));
     let node3_http = get_open_port(Some(3030));
     let node3_settlement = get_open_port(Some(3031));
 
@@ -94,17 +93,16 @@ fn three_nodes() {
         "http_incoming_token" : "two",
         "http_outgoing_token": "charlie:three",
         "http_endpoint": format!("http://localhost:{}/ilp", node2_http),
-        "btp_uri": format!("btp+ws://charlie:three@localhost:{}", node2_btp),
+        "btp_uri": format!("btp+ws://charlie:three@localhost:{}/ilp/btp", node2_http),
         "min_balance": -1_000_000_000,
         "routing_relation": "Parent",
     });
 
     let node1 = InterledgerNode {
-        ilp_address: Address::from_str("example.alice").unwrap(),
+        ilp_address: Some(Address::from_str("example.alice").unwrap()),
         default_spsp_account: Some(Username::from_str("alice").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info1,
-        btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], node1_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node1_settlement).into(),
         secret_seed: random_secret(),
@@ -115,11 +113,10 @@ fn three_nodes() {
     };
 
     let node2 = InterledgerNode {
-        ilp_address: Address::from_str("example.bob").unwrap(),
+        ilp_address: Some(Address::from_str("example.bob").unwrap()),
         default_spsp_account: Some(Username::from_str("bob").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info2,
-        btp_bind_address: ([127, 0, 0, 1], node2_btp).into(),
         http_bind_address: ([127, 0, 0, 1], node2_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node2_settlement).into(),
         secret_seed: random_secret(),
@@ -130,11 +127,10 @@ fn three_nodes() {
     };
 
     let node3 = InterledgerNode {
-        ilp_address: Address::from_str("local.host").unwrap(), // We should set this to local.host. Adding a parent should update our address by making an ILDCP request, followed by updating our routing table by making a RouteControlRequest to which the parent responds with a RouteUpdateRequest
+        ilp_address: None, // Adding a parent should update our address by making an ILDCP request, followed by updating our routing table by making a RouteControlRequest to which the parent responds with a RouteUpdateRequest
         default_spsp_account: Some(Username::from_str("charlie").unwrap()),
         admin_auth_token: "admin".to_string(),
         redis_connection: connection_info3,
-        btp_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
         http_bind_address: ([127, 0, 0, 1], node3_http).into(),
         settlement_api_bind_address: ([127, 0, 0, 1], node3_settlement).into(),
         secret_seed: random_secret(),

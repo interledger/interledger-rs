@@ -31,9 +31,8 @@ pub fn main() {
     // - ILP over HTTP or BTP server URLs which accept ILP packets
     //     - `http_server_url`
     //     - `btp_server_url`
-    // - Addresses to which ILP over HTTP or BTP servers are bound
+    // - Addresses to which ILP over HTTP servers are bound
     //     - `http_bind_address`
-    //     - `btp_bind_address`
     // - Addresses to which other services are bound
     //     - `xxx_bind_address`
     let mut app = App::new("interledger-settlement-engines")

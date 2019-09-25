@@ -144,9 +144,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -e ILP_ADMIN_AUTH_TOKEN=admin-a \
         -e ILP_REDIS_URL=redis://redis-alice_node:6379/ \
         -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
-        -e ILP_BTP_BIND_ADDRESS=0.0.0.0:7768 \
         -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
-        -p 127.0.0.1:7768:7768 \
         -p 127.0.0.1:7770:7770 \
         -p 127.0.0.1:7771:7771 \
         --network=interledger \
@@ -160,9 +158,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -e ILP_ADMIN_AUTH_TOKEN=admin-b \
         -e ILP_REDIS_URL=redis://redis-bob_node:6379/ \
         -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
-        -e ILP_BTP_BIND_ADDRESS=0.0.0.0:7768 \
         -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
-        -p 127.0.0.1:8768:7768 \
         -p 127.0.0.1:8770:7770 \
         -p 127.0.0.1:8771:7771 \
         --network=interledger \
@@ -185,7 +181,6 @@ ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604
 ILP_ADMIN_AUTH_TOKEN=admin-a \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
-ILP_BTP_BIND_ADDRESS=127.0.0.1:7768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
 cargo run --bin interledger -- node &> logs/node_a.log &
 
@@ -194,7 +189,6 @@ ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354
 ILP_ADMIN_AUTH_TOKEN=admin-b \
 ILP_REDIS_URL=redis://127.0.0.1:6380/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
-ILP_BTP_BIND_ADDRESS=127.0.0.1:8768 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
 cargo run --bin interledger -- node &> logs/node_b.log &
 ```
