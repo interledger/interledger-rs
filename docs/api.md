@@ -39,6 +39,7 @@ The comprehensive list of possible parameters is as follows:
     "http_outgoing_token": "http bearer token we will use to authenticate with them",
     "btp_uri": "btp+wss://:auth-token@peer-btp-endpoint",
     "btp_incoming_token": "btp auth token they will use to authenticate with us",
+    "settlement_engine_url": "http://settlement-engine-for-this-account:3000",
     "settle_threshold": 1000000000,
     "settle_to": 0,
     "routing_relation": "Peer",
