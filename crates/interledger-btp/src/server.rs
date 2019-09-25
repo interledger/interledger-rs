@@ -4,13 +4,18 @@ use futures::{future::result, Async, AsyncSink, Future, Poll, Sink, Stream};
 use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, warn};
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
+use tokio_timer::Timeout;
 use tungstenite;
 use warp::{
     self,
     ws::{Message, WebSocket, Ws2},
     Filter,
 };
+
+// Close the incoming websocket connection if the auth details
+// have not been received within this timeout
+const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
 
 // const MAX_MESSAGE_SIZE: usize = 40000;
 
@@ -47,7 +52,7 @@ where
             ws.on_upgrade(move |ws: WebSocket| {
                 // TODO set max_message_size once https://github.com/seanmonstar/warp/pull/272 is merged
                 let service_clone = service_clone.clone();
-                validate_auth(store, ws)
+                Timeout::new(validate_auth(store, ws), WEBSOCKET_TIMEOUT)
                     .and_then(move |(account, connection)| {
                         debug!("Added connection for account {}", account.id());
                         service_clone.add_connection(account, WsWrap { connection });
