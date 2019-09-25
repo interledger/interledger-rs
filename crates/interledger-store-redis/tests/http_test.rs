@@ -26,7 +26,7 @@ fn gets_account_from_http_bearer_token() {
                     &format!("{}:outgoing_auth_token", "dylan")
                 );
                 assert_eq!(
-                    &account.get_btp_token().unwrap(),
+                    &account.get_ilp_over_btp_outgoing_token().unwrap(),
                     &format!("{}:btp_token", "dylan").as_bytes()
                 );
                 let _ = context;
@@ -50,7 +50,7 @@ fn decrypts_outgoing_tokens_http() {
                     &format!("{}:outgoing_auth_token", "dylan")
                 );
                 assert_eq!(
-                    &account.get_btp_token().unwrap(),
+                    &account.get_ilp_over_btp_outgoing_token().unwrap(),
                     &format!("{}:btp_token", "dylan").as_bytes()
                 );
                 let _ = context;

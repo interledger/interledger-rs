@@ -420,7 +420,7 @@ impl RedisStore {
                     pipe.sadd("receive_routes_from", account.id).ignore();
                 }
 
-                if account.btp_uri.is_some() {
+                if account.ilp_over_btp_url.is_some() {
                     pipe.sadd("btp_outgoing", account.id).ignore();
                 }
 
@@ -488,7 +488,7 @@ impl RedisStore {
                         pipe.sadd("receive_routes_from", account.id).ignore();
                     }
 
-                    if account.btp_uri.is_some() {
+                    if account.ilp_over_btp_url.is_some() {
                         pipe.sadd("btp_outgoing", account.id).ignore();
                     }
 
@@ -529,28 +529,44 @@ impl RedisStore {
         let mut pipe = redis::pipe();
         pipe.atomic();
 
-        if let Some(ref endpoint) = settings.btp_uri {
-            pipe.hset(accounts_key(id), "btp_uri", endpoint);
+        if let Some(ref endpoint) = settings.ilp_over_btp_url {
+            pipe.hset(accounts_key(id), "ilp_over_btp_url", endpoint);
         }
 
-        if let Some(ref endpoint) = settings.http_endpoint {
-            pipe.hset(accounts_key(id), "http_endpoint", endpoint);
+        if let Some(ref endpoint) = settings.ilp_over_http_url {
+            pipe.hset(accounts_key(id), "ilp_over_http_url", endpoint);
         }
 
-        if let Some(ref token) = settings.btp_outgoing_token {
-            pipe.hset(accounts_key(id), "btp_outgoing_token", token.as_ref());
+        if let Some(ref token) = settings.ilp_over_btp_outgoing_token {
+            pipe.hset(
+                accounts_key(id),
+                "ilp_over_btp_outgoing_token",
+                token.as_ref(),
+            );
         }
 
-        if let Some(ref token) = settings.http_outgoing_token {
-            pipe.hset(accounts_key(id), "http_outgoing_token", token.as_ref());
+        if let Some(ref token) = settings.ilp_over_http_outgoing_token {
+            pipe.hset(
+                accounts_key(id),
+                "ilp_over_http_outgoing_token",
+                token.as_ref(),
+            );
         }
 
-        if let Some(ref token) = settings.btp_incoming_token {
-            pipe.hset(accounts_key(id), "btp_incoming_token", token.as_ref());
+        if let Some(ref token) = settings.ilp_over_btp_incoming_token {
+            pipe.hset(
+                accounts_key(id),
+                "ilp_over_btp_incoming_token",
+                token.as_ref(),
+            );
         }
 
-        if let Some(ref token) = settings.http_incoming_token {
-            pipe.hset(accounts_key(id), "http_incoming_token", token.as_ref());
+        if let Some(ref token) = settings.ilp_over_http_incoming_token {
+            pipe.hset(
+                accounts_key(id),
+                "ilp_over_http_incoming_token",
+                token.as_ref(),
+            );
         }
 
         if let Some(settle_threshold) = settings.settle_threshold {
@@ -605,7 +621,7 @@ impl RedisStore {
                 pipe.srem("receive_routes_from", account.id).ignore();
             }
 
-            if account.btp_uri.is_some() {
+            if account.ilp_over_btp_url.is_some() {
                 pipe.srem("btp_outgoing", account.id).ignore();
             }
 
@@ -906,7 +922,7 @@ impl BtpStore for RedisStore {
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
                             let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-                            if let Some(t) = account.btp_incoming_token.clone() {
+                            if let Some(t) = account.ilp_over_btp_incoming_token.clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
                                     Ok(account)
@@ -997,7 +1013,7 @@ impl HttpStore for RedisStore {
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
                             let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-                            if let Some(t) = account.http_incoming_token.clone() {
+                            if let Some(t) = account.ilp_over_http_incoming_token.clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
                                     Ok(account)
@@ -1096,20 +1112,32 @@ impl NodeStore for RedisStore {
         let settings = EncryptedAccountSettings {
             settle_to: settings.settle_to,
             settle_threshold: settings.settle_threshold,
-            btp_uri: settings.btp_uri,
-            http_endpoint: settings.http_endpoint,
-            btp_incoming_token: settings
-                .btp_incoming_token
-                .map(|token| encrypt_token(&encryption_key.expose_secret().0, token.as_ref())),
-            http_incoming_token: settings
-                .http_incoming_token
-                .map(|token| encrypt_token(&encryption_key.expose_secret().0, token.as_ref())),
-            btp_outgoing_token: settings
-                .btp_outgoing_token
-                .map(|token| encrypt_token(&encryption_key.expose_secret().0, token.as_ref())),
-            http_outgoing_token: settings
-                .http_outgoing_token
-                .map(|token| encrypt_token(&encryption_key.expose_secret().0, token.as_ref())),
+            ilp_over_btp_url: settings.ilp_over_btp_url,
+            ilp_over_http_url: settings.ilp_over_http_url,
+            ilp_over_btp_incoming_token: settings.ilp_over_btp_incoming_token.map(|token| {
+                encrypt_token(
+                    &encryption_key.expose_secret().0,
+                    token.expose_secret().as_bytes(),
+                )
+            }),
+            ilp_over_http_incoming_token: settings.ilp_over_http_incoming_token.map(|token| {
+                encrypt_token(
+                    &encryption_key.expose_secret().0,
+                    token.expose_secret().as_bytes(),
+                )
+            }),
+            ilp_over_btp_outgoing_token: settings.ilp_over_btp_outgoing_token.map(|token| {
+                encrypt_token(
+                    &encryption_key.expose_secret().0,
+                    token.expose_secret().as_bytes(),
+                )
+            }),
+            ilp_over_http_outgoing_token: settings.ilp_over_http_outgoing_token.map(|token| {
+                encrypt_token(
+                    &encryption_key.expose_secret().0,
+                    token.expose_secret().as_bytes(),
+                )
+            }),
         };
 
         Box::new(

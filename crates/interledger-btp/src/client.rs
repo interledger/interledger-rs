@@ -56,14 +56,14 @@ where
 {
     let account_id = account.id();
     let mut url = account
-        .get_btp_uri()
+        .get_ilp_over_btp_url()
         .expect("Accounts must have BTP URLs")
         .clone();
     if url.scheme().starts_with("btp+") {
         url.set_scheme(&url.scheme().replace("btp+", "")).unwrap();
     }
     let token = account
-        .get_btp_token()
+        .get_ilp_over_btp_outgoing_token()
         .map(|s| s.to_vec())
         .unwrap_or_default();
     debug!("Connecting to {}", url);

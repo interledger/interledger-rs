@@ -118,7 +118,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --bin interledger
+cargo build --all-features --bin interledger
 ```
 <!--!
 fi
@@ -278,7 +278,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_alice \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --bin interledger -- node &> logs/node-alice.log &
+cargo run --all-features --bin interledger -- node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -287,7 +287,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_bob \
 ILP_REDIS_URL=redis://127.0.0.1:6381/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --bin interledger -- node &> logs/node-bob.log &
+cargo run --all-features --bin interledger -- node &> logs/node-bob.log &
 ```
 
 <!--!
@@ -320,8 +320,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_code": "XRP",
         "asset_scale": 6,
         "max_packet_amount": 100,
-        "http_incoming_token": "in_alice",
-        "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
+        "ilp_over_http_incoming_token": "in_alice",
+        "ilp_over_http_url": "http://interledger-rs-node_a:7770/ilp",
         "settle_to" : 0}' \
         http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
     
@@ -335,8 +335,8 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_code": "XRP",
         "asset_scale": 6,
         "max_packet_amount": 100,
-        "http_incoming_token": "in_bob",
-        "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
+        "ilp_over_http_incoming_token": "in_bob",
+        "ilp_over_http_url": "http://interledger-rs-node_b:7770/ilp",
         "settle_to" : 0}' \
         http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
     
@@ -351,9 +351,9 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_scale": 6,
         "max_packet_amount": 100,
         "settlement_engine_url": "http://interledger-rs-se_a:3000",
-        "http_incoming_token": "bob_password",
-        "http_outgoing_token": "alice:alice_password",
-        "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
+        "ilp_over_http_incoming_token": "bob_password",
+        "ilp_over_http_outgoing_token": "alice:alice_password",
+        "ilp_over_http_url": "http://interledger-rs-node_b:7770/ilp",
         "settle_threshold": 500,
         "min_balance": -1000,
         "settle_to" : 0,
@@ -371,9 +371,9 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_scale": 6,
         "max_packet_amount": 100,
         "settlement_engine_url": "http://interledger-rs-se_b:3000",
-        "http_incoming_token": "alice_password",
-        "http_outgoing_token": "bob:bob_password",
-        "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
+        "ilp_over_http_incoming_token": "alice_password",
+        "ilp_over_http_outgoing_token": "bob:bob_password",
+        "ilp_over_http_url": "http://interledger-rs-node_a:7770/ilp",
         "settle_threshold": 500,
         "min_balance": -1000,
         "settle_to" : 0,
@@ -397,8 +397,8 @@ curl \
     "asset_code": "XRP",
     "asset_scale": 6,
     "max_packet_amount": 100,
-    "http_incoming_token": "in_alice",
-    "http_endpoint": "http://localhost:7770/ilp",
+    "ilp_over_http_incoming_token": "in_alice",
+    "ilp_over_http_url": "http://localhost:7770/ilp",
     "settle_to" : 0}' \
     http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
 
@@ -412,8 +412,8 @@ curl \
     "asset_code": "XRP",
     "asset_scale": 6,
     "max_packet_amount": 100,
-    "http_incoming_token": "in_bob",
-    "http_endpoint": "http://localhost:8770/ilp",
+    "ilp_over_http_incoming_token": "in_bob",
+    "ilp_over_http_url": "http://localhost:8770/ilp",
     "settle_to" : 0}' \
     http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
 
@@ -428,9 +428,9 @@ curl \
     "asset_scale": 6,
     "max_packet_amount": 100,
     "settlement_engine_url": "http://localhost:3000",
-    "http_incoming_token": "bob_password",
-    "http_outgoing_token": "alice:alice_password",
-    "http_endpoint": "http://localhost:8770/ilp",
+    "ilp_over_http_incoming_token": "bob_password",
+    "ilp_over_http_outgoing_token": "alice:alice_password",
+    "ilp_over_http_url": "http://localhost:8770/ilp",
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,
@@ -448,9 +448,9 @@ curl \
     "asset_scale": 6,
     "max_packet_amount": 100,
     "settlement_engine_url": "http://localhost:3001",
-    "http_incoming_token": "alice_password",
-    "http_outgoing_token": "bob:bob_password",
-    "http_endpoint": "http://localhost:7770/ilp",
+    "ilp_over_http_incoming_token": "alice_password",
+    "ilp_over_http_outgoing_token": "bob:bob_password",
+    "ilp_over_http_url": "http://localhost:7770/ilp",
     "settle_threshold": 500,
     "min_balance": -1000,
     "settle_to" : 0,

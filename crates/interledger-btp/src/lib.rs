@@ -22,8 +22,8 @@ pub use self::server::create_btp_service_and_filter;
 pub use self::service::{BtpOutgoingService, BtpService};
 
 pub trait BtpAccount: Account {
-    fn get_btp_uri(&self) -> Option<&Url>;
-    fn get_btp_token(&self) -> Option<&[u8]>;
+    fn get_ilp_over_btp_url(&self) -> Option<&Url>;
+    fn get_ilp_over_btp_outgoing_token(&self) -> Option<&[u8]>;
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
@@ -37,7 +37,7 @@ pub trait BtpStore {
         token: &str,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
-    /// Load accounts that have a btp_uri configured
+    /// Load accounts that have a ilp_over_btp_url configured
     fn get_btp_outgoing_accounts(
         &self,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
@@ -79,9 +79,9 @@ mod client_server {
     #[derive(Clone, Debug)]
     pub struct TestAccount {
         pub id: u64,
-        pub btp_incoming_token: Option<String>,
-        pub btp_outgoing_token: Option<String>,
-        pub btp_uri: Option<Url>,
+        pub ilp_over_btp_incoming_token: Option<String>,
+        pub ilp_over_btp_outgoing_token: Option<String>,
+        pub ilp_over_btp_url: Option<Url>,
     }
 
     impl Account for TestAccount {
@@ -109,12 +109,12 @@ mod client_server {
     }
 
     impl BtpAccount for TestAccount {
-        fn get_btp_uri(&self) -> Option<&Url> {
-            self.btp_uri.as_ref()
+        fn get_ilp_over_btp_url(&self) -> Option<&Url> {
+            self.ilp_over_btp_url.as_ref()
         }
 
-        fn get_btp_token(&self) -> Option<&[u8]> {
-            if let Some(ref token) = self.btp_outgoing_token {
+        fn get_ilp_over_btp_outgoing_token(&self) -> Option<&[u8]> {
+            if let Some(ref token) = self.ilp_over_btp_outgoing_token {
                 Some(token.as_bytes())
             } else {
                 None
@@ -174,7 +174,7 @@ mod client_server {
                 self.accounts
                     .iter()
                     .find(|account| {
-                        if let Some(account_token) = &account.btp_incoming_token {
+                        if let Some(account_token) = &account.ilp_over_btp_incoming_token {
                             account_token == &saved_token
                         } else {
                             false
@@ -191,7 +191,7 @@ mod client_server {
             Box::new(ok(self
                 .accounts
                 .iter()
-                .filter(|account| account.btp_uri.is_some())
+                .filter(|account| account.ilp_over_btp_url.is_some())
                 .cloned()
                 .collect()))
         }
@@ -208,9 +208,9 @@ mod client_server {
                 let server_store = TestStore {
                     accounts: Arc::new(vec![TestAccount {
                         id: 0,
-                        btp_incoming_token: Some("alice:test_auth_token".to_string()),
-                        btp_outgoing_token: None,
-                        btp_uri: None,
+                        ilp_over_btp_incoming_token: Some("alice:test_auth_token".to_string()),
+                        ilp_over_btp_outgoing_token: None,
+                        ilp_over_btp_url: None,
                     }]),
                 };
                 let server_address = Address::from_str("example.server").unwrap();
@@ -238,9 +238,9 @@ mod client_server {
 
                 let account = TestAccount {
                     id: 0,
-                    btp_uri: Some(Url::parse(&format!("btp+ws://{}", bind_addr)).unwrap()),
-                    btp_outgoing_token: Some("alice:test_auth_token".to_string()),
-                    btp_incoming_token: None,
+                    ilp_over_btp_url: Some(Url::parse(&format!("btp+ws://{}", bind_addr)).unwrap()),
+                    ilp_over_btp_outgoing_token: Some("alice:test_auth_token".to_string()),
+                    ilp_over_btp_incoming_token: None,
                 };
                 let accounts = vec![account.clone()];
                 let addr = Address::from_str("example.address").unwrap();

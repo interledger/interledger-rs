@@ -29,6 +29,7 @@ serde_json = "1.0.39"
 reqwest = "0.9.18"
 url = "2.1.0"
 warp = "0.1.19"
+secrecy = { version = "0.4.0", features = ["serde"] }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }

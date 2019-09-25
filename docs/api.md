@@ -34,11 +34,12 @@ The comprehensive list of possible parameters is as follows:
     "asset_scale": 9,
     "max_packet_amount": 100000000000,
     "min_balance": 0,
-    "http_incoming_token": "http bearer token they will use to authenticate with us",
-    "http_endpoint": "https://peer-ilp-over-http-endpoint.example/ilp",
-    "http_outgoing_token": "http bearer token we will use to authenticate with them",
-    "btp_uri": "btp+wss://:auth-token@peer-btp-endpoint",
-    "btp_incoming_token": "btp auth token they will use to authenticate with us",
+    "ilp_over_http_url": "https://peer-ilp-over-http-endpoint.example/ilp",
+    "ilp_over_http_incoming_token": "http bearer token they will use to authenticate with us",
+    "ilp_over_http_outgoing_token": "http bearer token we will use to authenticate with them",
+    "ilp_over_btp_url": "btp+wss://peer-btp-endpoint",
+    "ilp_over_btp_outgoing_token": "btp auth token we will use to authenticate with them",
+    "ilp_over_btp_incoming_token": "btp auth token they will use to authenticate with us",
     "settlement_engine_url": "http://settlement-engine-for-this-account:3000",
     "settle_threshold": 1000000000,
     "settle_to": 0,
@@ -124,7 +125,7 @@ Account-holder only.
 
 This endpoint is used by nodes to send ILP packets over HTTP requests, as the name suggests. This protocol is specified in [IL-RFC 35: ILP-over-HTTP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md).
 
-Note this endpoint is the one referred to as `http_endpoint` in the `AccountSettings`.
+Note this endpoint is the one referred to as `ilp_over_http_url` in the `AccountSettings`.
 
 ### (Websocket) /ilp/btp - Bilateral Transfer Protocol (BTP)
 
@@ -132,7 +133,7 @@ Account-holder only.
 
 This endpoint implements BTP, a WebSocket-based protocol for sending and receiving ILP packets. This protocol is specified in [IL-RFC 22: Bilateral Transfer Protocol 2.0 (BTP/2.0)](https://github.com/interledger/rfcs/blob/master/0023-bilateral-transfer-protocol/0023-bilateral-transfer-protocol.md).
 
-Note this endpoint is the one referred to as `btp_uri` in the `AccountSettings`.
+Note this endpoint is the one referred to as `ilp_over_btp_url` in the `AccountSettings`.
 
 ## Node Settings
 

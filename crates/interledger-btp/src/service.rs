@@ -368,7 +368,9 @@ where
                     Box::new(err(reject))
                 }
             }
-        } else if request.to.get_btp_uri().is_some() || request.to.get_btp_token().is_some() {
+        } else if request.to.get_ilp_over_btp_url().is_some()
+            || request.to.get_ilp_over_btp_outgoing_token().is_some()
+        {
             trace!(
                 "No open connection for account: {}, forwarding request to the next service",
                 request.to.id()
