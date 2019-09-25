@@ -164,26 +164,32 @@ pub fn main() {
                             Arg::with_name("ilp_over_http_incoming_bearer_token")
                                 .long("ilp_over_http_incoming_bearer_token")
                                 .takes_value(true)
+                                .conflicts_with_all(&["ilp_over_http_incoming_username", "ilp_over_http_incoming_password"])
                                 .help("Bearer token this account will use to authenticate HTTP requests sent to this server"),
                             Arg::with_name("ilp_over_http_incoming_username")
                                 .long("ilp_over_http_incoming_username")
                                 .takes_value(true)
+                                .requires("ilp_over_http_incoming_password")
                                 .help("Basic auth username this account will use to authenticate HTTP requests sent to this server"),
-                            Arg::with_name("ilp_over_http_incoming_token")
-                                .long("ilp_over_http_incoming_token")
+                            Arg::with_name("ilp_over_http_incoming_password")
+                                .long("ilp_over_http_incoming_password")
                                 .takes_value(true)
+                                .requires("ilp_over_http_incoming_username")
                                 .help("Basic auth password this account will use to authenticate HTTP requests sent to this server"),
                             Arg::with_name("ilp_over_http_outgoing_bearer_token")
                                 .long("ilp_over_http_outgoing_bearer_token")
                                 .takes_value(true)
+                                .conflicts_with_all(&["ilp_over_http_outgoing_username", "ilp_over_http_outgoing_password"])
                                 .help("Bearer token this account will use to authenticate HTTP requests sent to their server"),
                             Arg::with_name("ilp_over_http_outgoing_username")
                                 .long("ilp_over_http_outgoing_username")
                                 .takes_value(true)
+                                .requires("ilp_over_http_outgoing_password")
                                 .help("Basic auth username this account will use to authenticate HTTP requests sent to their server"),
-                            Arg::with_name("ilp_over_http_outgoing_token")
-                                .long("ilp_over_http_outgoing_token")
+                            Arg::with_name("ilp_over_http_outgoing_password")
+                                .long("ilp_over_http_outgoing_password")
                                 .takes_value(true)
+                                .requires("ilp_over_http_outgoing_username")
                                 .help("Basic auth password this account will use to authenticate HTTP requests sent to their server"),
                             Arg::with_name("settle_threshold")
                                 .long("settle_threshold")
@@ -442,10 +448,10 @@ struct NodeAccountsAddOpt {
     ilp_over_http_url: Option<String>,
     ilp_over_http_incoming_bearer_token: Option<SecretString>,
     ilp_over_http_incoming_username: Option<String>,
-    ilp_over_http_incoming_token: Option<SecretString>,
+    ilp_over_http_incoming_password: Option<SecretString>,
     ilp_over_http_outgoing_bearer_token: Option<SecretString>,
     ilp_over_http_outgoing_username: Option<String>,
-    ilp_over_http_outgoing_token: Option<SecretString>,
+    ilp_over_http_outgoing_password: Option<SecretString>,
     settle_threshold: Option<i64>,
     settle_to: Option<i64>,
     routing_relation: String,
@@ -466,7 +472,7 @@ impl NodeAccountsAddOpt {
             let userinfo = base64::encode(&format!(
                 "{}:{}",
                 self.ilp_over_http_incoming_username.clone().unwrap(),
-                match &self.ilp_over_http_incoming_token {
+                match &self.ilp_over_http_incoming_password {
                     Some(password) => password.expose_secret(),
                     None => "",
                 }
@@ -494,7 +500,7 @@ impl NodeAccountsAddOpt {
             let userinfo = base64::encode(&format!(
                 "{}:{}",
                 self.ilp_over_http_outgoing_username.clone().unwrap(),
-                match &self.ilp_over_http_outgoing_token {
+                match &self.ilp_over_http_outgoing_password {
                     Some(password) => password.expose_secret(),
                     None => "",
                 }
