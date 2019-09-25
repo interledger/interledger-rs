@@ -589,7 +589,7 @@ mod redis_account {
         let account = Account::try_from(
             id,
             ACCOUNT_DETAILS.clone(),
-            Address::from_str("local.host").unwrap(),
+            Address::from_str("example.account").unwrap(),
         )
         .unwrap();
         assert_eq!(account.id(), id);

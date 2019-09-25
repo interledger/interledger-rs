@@ -53,7 +53,6 @@ pub fn main() {
                     Arg::with_name("ilp_address")
                         .long("ilp_address")
                         .takes_value(true)
-                        .required(true)
                         .help("ILP Address of this account"),
                     Arg::with_name("secret_seed")
                         .long("secret_seed")
