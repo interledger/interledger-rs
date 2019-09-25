@@ -17,6 +17,7 @@ use warp::{self, Filter};
 mod routes;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
+use secrecy::SecretString;
 
 pub(crate) mod http_retry;
 
@@ -66,13 +67,12 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
 /// their HTTP/BTP endpoints, since they may change their network configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AccountSettings {
-    // TODO these should be Secret types
-    pub http_incoming_token: Option<String>,
-    pub btp_incoming_token: Option<String>,
-    pub http_outgoing_token: Option<String>,
-    pub btp_outgoing_token: Option<String>,
-    pub http_endpoint: Option<String>,
-    pub btp_uri: Option<String>,
+    pub ilp_over_http_incoming_token: Option<SecretString>,
+    pub ilp_over_btp_incoming_token: Option<SecretString>,
+    pub ilp_over_http_outgoing_token: Option<SecretString>,
+    pub ilp_over_btp_outgoing_token: Option<SecretString>,
+    pub ilp_over_http_url: Option<String>,
+    pub ilp_over_btp_url: Option<String>,
     pub settle_threshold: Option<i64>,
     // Note that this is intentionally an unsigned integer because users should
     // not be able to set the settle_to value to be negative (meaning the node
@@ -86,12 +86,12 @@ pub struct AccountSettings {
 /// implementation which operates only on encrypted data.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EncryptedAccountSettings {
-    pub http_incoming_token: Option<Bytes>,
-    pub btp_incoming_token: Option<Bytes>,
-    pub http_outgoing_token: Option<Bytes>,
-    pub btp_outgoing_token: Option<Bytes>,
-    pub http_endpoint: Option<String>,
-    pub btp_uri: Option<String>,
+    pub ilp_over_http_incoming_token: Option<Bytes>,
+    pub ilp_over_btp_incoming_token: Option<Bytes>,
+    pub ilp_over_http_outgoing_token: Option<Bytes>,
+    pub ilp_over_btp_outgoing_token: Option<Bytes>,
+    pub ilp_over_http_url: Option<String>,
+    pub ilp_over_btp_url: Option<String>,
     pub settle_threshold: Option<i64>,
     pub settle_to: Option<u64>,
 }
@@ -106,12 +106,12 @@ pub struct AccountDetails {
     #[serde(default = "u64::max_value")]
     pub max_packet_amount: u64,
     pub min_balance: Option<i64>,
-    pub http_endpoint: Option<String>,
-    // TODO use Secrets here
-    pub http_incoming_token: Option<String>,
-    pub http_outgoing_token: Option<String>,
-    pub btp_uri: Option<String>,
-    pub btp_incoming_token: Option<String>,
+    pub ilp_over_http_url: Option<String>,
+    pub ilp_over_http_incoming_token: Option<SecretString>,
+    pub ilp_over_http_outgoing_token: Option<SecretString>,
+    pub ilp_over_btp_url: Option<String>,
+    pub ilp_over_btp_outgoing_token: Option<SecretString>,
+    pub ilp_over_btp_incoming_token: Option<SecretString>,
     pub settle_threshold: Option<i64>,
     pub settle_to: Option<i64>,
     pub routing_relation: Option<String>,

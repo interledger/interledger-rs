@@ -488,7 +488,7 @@ where
 {
     // Try to connect to the account's BTP socket if they have
     // one configured
-    let btp_connect_fut = if account.get_btp_uri().is_some() {
+    let btp_connect_fut = if account.get_ilp_over_btp_url().is_some() {
         Either::A(
             connect_to_service_account(account.clone(), true, btp)
                 .map_err(|_| warp::reject::custom(ApiError::InternalServerError)),

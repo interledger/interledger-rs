@@ -29,8 +29,8 @@ pub fn main() {
     //     - Use `xxx_bind_address` because it becomes more flexible than just binding it to
     //       `127.0.0.1` with a given port.
     // - ILP over HTTP or BTP server URLs which accept ILP packets
-    //     - `http_server_url`
-    //     - `btp_server_url`
+    //     - `ilp_over_http_url`
+    //     - `ilp_over_btp_url`
     // - Addresses to which ILP over HTTP servers are bound
     //     - `http_bind_address`
     // - Addresses to which other services are bound

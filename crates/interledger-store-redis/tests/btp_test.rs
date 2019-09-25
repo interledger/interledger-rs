@@ -36,7 +36,7 @@ fn decrypts_outgoing_tokens_btp() {
                     &format!("{}:outgoing_auth_token", "dylan"),
                 );
                 assert_eq!(
-                    &account.get_btp_token().unwrap(),
+                    &account.get_ilp_over_btp_outgoing_token().unwrap(),
                     &format!("{}:btp_token", "dylan").as_bytes(),
                 );
                 let _ = context;

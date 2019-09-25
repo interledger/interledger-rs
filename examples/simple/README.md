@@ -91,7 +91,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --bin interledger
+cargo build --all-features --bin interledger
 ```
 <!--!
 fi
@@ -182,7 +182,7 @@ ILP_ADMIN_AUTH_TOKEN=admin-a \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --bin interledger -- node &> logs/node_a.log &
+cargo run --all-features --bin interledger -- node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
@@ -190,7 +190,7 @@ ILP_ADMIN_AUTH_TOKEN=admin-b \
 ILP_REDIS_URL=redis://127.0.0.1:6380/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --bin interledger -- node &> logs/node_b.log &
+cargo run --all-features --bin interledger -- node &> logs/node_b.log &
 ```
 
 <!--!
@@ -227,7 +227,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_code": "ABC",
         "asset_scale": 9,
         "max_packet_amount": 100,
-        "http_incoming_token": "alice-password"}' \
+        "ilp_over_http_incoming_token": "alice-password"}' \
         http://localhost:7770/accounts
     
     printf "\nNode B's account on Node A:\n"
@@ -240,9 +240,9 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_code": "ABC",
         "asset_scale": 9,
         "max_packet_amount": 100,
-        "http_incoming_token": "node_b-password",
-        "http_outgoing_token": "node_a:node_a-password",
-        "http_endpoint": "http://interledger-rs-node_b:7770/ilp",
+        "ilp_over_http_incoming_token": "node_b-password",
+        "ilp_over_http_outgoing_token": "node_a:node_a-password",
+        "ilp_over_http_url": "http://interledger-rs-node_b:7770/ilp",
         "min_balance": -100000,
         "routing_relation": "Peer"}' \
         http://localhost:7770/accounts
@@ -260,7 +260,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_code": "ABC",
         "asset_scale": 9,
         "max_packet_amount": 100,
-        "http_incoming_token": "bob"}' \
+        "ilp_over_http_incoming_token": "bob"}' \
         http://localhost:8770/accounts
     
     printf "\nNode A's account on Node B:\n"
@@ -273,9 +273,9 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_code": "ABC",
         "asset_scale": 9,
         "max_packet_amount": 100,
-        "http_incoming_token": "node_a-password",
-        "http_outgoing_token": "node_b:node_b-password",
-        "http_endpoint": "http://interledger-rs-node_a:7770/ilp",
+        "ilp_over_http_incoming_token": "node_a-password",
+        "ilp_over_http_outgoing_token": "node_b:node_b-password",
+        "ilp_over_http_url": "http://interledger-rs-node_a:7770/ilp",
         "min_balance": -100000,
         "routing_relation": "Peer"}' \
         http://localhost:8770/accounts
@@ -296,7 +296,7 @@ curl \
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "alice-password"}' \
+    "ilp_over_http_incoming_token": "alice-password"}' \
     http://localhost:7770/accounts
 
 printf "\nNode B's account on Node A:\n"
@@ -309,9 +309,9 @@ curl \
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "node_b-password",
-    "http_outgoing_token": "node_a:node_a-password",
-    "http_endpoint": "http://localhost:8770/ilp",
+    "ilp_over_http_incoming_token": "node_b-password",
+    "ilp_over_http_outgoing_token": "node_a:node_a-password",
+    "ilp_over_http_url": "http://localhost:8770/ilp",
     "min_balance": -100000,
     "routing_relation": "Peer"}' \
     http://localhost:7770/accounts
@@ -329,7 +329,7 @@ curl \
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "bob"}' \
+    "ilp_over_http_incoming_token": "bob"}' \
     http://localhost:8770/accounts
 
 printf "\nNode A's account on Node B:\n"
@@ -342,9 +342,9 @@ curl \
     "asset_code": "ABC",
     "asset_scale": 9,
     "max_packet_amount": 100,
-    "http_incoming_token": "node_a-password",
-    "http_outgoing_token": "node_b:node_b-password",
-    "http_endpoint": "http://localhost:7770/ilp",
+    "ilp_over_http_incoming_token": "node_a-password",
+    "ilp_over_http_outgoing_token": "node_b:node_b-password",
+    "ilp_over_http_url": "http://localhost:7770/ilp",
     "min_balance": -100000,
     "routing_relation": "Peer"}' \
     http://localhost:8770/accounts

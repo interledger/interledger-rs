@@ -201,7 +201,7 @@ impl InterledgerNode {
                             .build())
                         });
 
-                    // Connect to all of the accounts that have outgoing btp_uris configured
+                    // Connect to all of the accounts that have outgoing ilp_over_btp_urls configured
                     // but don't fail if we are unable to connect
                     // TODO try reconnecting to those accounts later
                     connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(

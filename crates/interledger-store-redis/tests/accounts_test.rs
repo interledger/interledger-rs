@@ -14,6 +14,7 @@ use interledger_service_util::BalanceStore;
 use interledger_store_redis::AccountId;
 use log::{debug, error};
 use redis::Client;
+use secrecy::SecretString;
 use std::str::FromStr;
 
 #[test]
@@ -231,8 +232,8 @@ fn modify_account_settings_unchanged() {
                     ret.get_http_auth_token().unwrap()
                 );
                 assert_eq!(
-                    account.get_btp_token().unwrap(),
-                    ret.get_btp_token().unwrap()
+                    account.get_ilp_over_btp_outgoing_token().unwrap(),
+                    ret.get_ilp_over_btp_outgoing_token().unwrap()
                 );
                 // Cannot check other parameters since they are only pub(crate).
                 let _ = context;
@@ -246,12 +247,12 @@ fn modify_account_settings_unchanged() {
 fn modify_account_settings() {
     block_on(test_store().and_then(|(store, context, accounts)| {
         let settings = AccountSettings {
-            http_outgoing_token: Some("dylan:test_token".to_owned()),
-            http_incoming_token: Some("http_in_new".to_owned()),
-            btp_outgoing_token: Some("dylan:test".to_owned()),
-            btp_incoming_token: Some("btp_in_new".to_owned()),
-            http_endpoint: Some("http://example.com".to_owned()),
-            btp_uri: Some("http://example.com".to_owned()),
+            ilp_over_http_outgoing_token: Some(SecretString::new("dylan:test_token".to_owned())),
+            ilp_over_http_incoming_token: Some(SecretString::new("http_in_new".to_owned())),
+            ilp_over_btp_outgoing_token: Some(SecretString::new("dylan:test".to_owned())),
+            ilp_over_btp_incoming_token: Some(SecretString::new("btp_in_new".to_owned())),
+            ilp_over_http_url: Some("http://example.com".to_owned()),
+            ilp_over_btp_url: Some("http://example.com".to_owned()),
             settle_threshold: Some(-50),
             settle_to: Some(100),
         };
@@ -262,7 +263,10 @@ fn modify_account_settings() {
             .modify_account_settings(id, settings)
             .and_then(move |ret| {
                 assert_eq!(ret.get_http_auth_token().unwrap(), "dylan:test_token",);
-                assert_eq!(ret.get_btp_token().unwrap(), &b"dylan:test"[..],);
+                assert_eq!(
+                    ret.get_ilp_over_btp_outgoing_token().unwrap(),
+                    &b"dylan:test"[..],
+                );
                 // Cannot check other parameters since they are only pub(crate).
                 let _ = context;
                 Ok(())
@@ -301,7 +305,8 @@ fn fetches_account_from_username() {
 #[test]
 fn duplicate_http_incoming_auth_works() {
     let mut duplicate = ACCOUNT_DETAILS_2.clone();
-    duplicate.http_incoming_token = Some("incoming_auth_token".to_string());
+    duplicate.ilp_over_http_incoming_token =
+        Some(SecretString::new("incoming_auth_token".to_string()));
     block_on(test_store().and_then(|(store, context, accs)| {
         let original = accs[0].clone();
         let original_id = original.id();
@@ -368,7 +373,7 @@ fn gets_account_from_http_auth() {
 #[test]
 fn duplicate_btp_incoming_auth_works() {
     let mut charlie = ACCOUNT_DETAILS_2.clone();
-    charlie.btp_incoming_token = Some("btp_token".to_string());
+    charlie.ilp_over_btp_incoming_token = Some(SecretString::new("btp_token".to_string()));
     block_on(test_store().and_then(|(store, context, accs)| {
         let alice = accs[0].clone();
         let alice_id = alice.id();
@@ -454,8 +459,8 @@ fn decrypts_outgoing_tokens_acc() {
                     acc.get_http_auth_token().unwrap(),
                 );
                 assert_eq!(
-                    account.get_btp_token().unwrap(),
-                    acc.get_btp_token().unwrap(),
+                    account.get_ilp_over_btp_outgoing_token().unwrap(),
+                    acc.get_ilp_over_btp_outgoing_token().unwrap(),
                 );
                 let _ = context;
                 Ok(())
