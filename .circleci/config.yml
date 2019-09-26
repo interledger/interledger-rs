@@ -49,6 +49,12 @@ jobs:
               cd settlement-xrp && npm install
               ./node_modules/typescript/bin/tsc && npm link && cd ../
       - run:
+          name: Reduce codegen units
+          # If we don't include this, the linker runs out of memory when building
+          # the project on CI. We don't include this normally though because
+          # it should be able to build with more units on other machines
+          command: printf "[profile.dev]\ncodegen-units = 1\n" >> Cargo.toml
+      - run:
           name: Build
           command: cargo build --all-features --all-targets
       - run:
