@@ -1,13 +1,24 @@
 //! # Interledger.rs
 //!
-//! A CLI and library bundle for the Rust implementation of the Interledger Protocol stack.
-#![recursion_limit = "128"]
-
-pub mod node;
+//! A library bundle for the Rust implementation of the Interledger Protocol stack.
 
 /// The core abstractions used by Interledger.rs: IncomingService and OutgoingService
 pub mod service {
     pub use interledger_service::*;
+}
+/// Implementation of the core Interledger v4 packet format.
+pub mod packet {
+    pub use interledger_packet::*;
+}
+
+/// HTTP API for interacting with the Interledger.rs components.
+#[cfg(feature = "api")]
+pub mod api {
+    //! # interledger-api
+    //!
+    //! HTTP API for interacting with the Interledger.rs components.
+    //! See the interledger-node for how this is used in practice.
+    pub use interledger_api::*;
 }
 
 /// Bilateral Transport Protocol (BTP) client and server
@@ -49,17 +60,6 @@ pub mod http {
     pub use interledger_http::*;
 }
 
-/// STREAM Protocol sender and receiver
-#[cfg(feature = "stream")]
-pub mod stream {
-    //! # interledger-stream
-    //!
-    //! Client and server implementations of the Interledger [STREAM](https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md) transport protocol.
-    //!
-    //! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
-    pub use interledger_stream::*;
-}
-
 /// Interledger Dynamic Configuration Protocol (ILDCP)
 #[cfg(feature = "ildcp")]
 pub mod ildcp {
@@ -90,6 +90,18 @@ pub mod router {
     pub use interledger_router::*;
 }
 
+/// Miscellaneous services
+#[cfg(feature = "service-util")]
+pub mod service_util {
+    pub use interledger_service_util::*;
+}
+
+/// Implementation of the Settlement Engine API (on the connector/node side)
+#[cfg(feature = "settlement")]
+pub mod settlement {
+    pub use interledger_settlement::*;
+}
+
 /// Simple Payment Setup Protocol (SPSP) sender and query responder
 #[cfg(feature = "spsp")]
 pub mod spsp {
@@ -102,8 +114,19 @@ pub mod spsp {
     pub use interledger_spsp::*;
 }
 
-/// Miscellaneous services
-#[cfg(feature = "service-util")]
-pub mod service_util {
-    pub use interledger_service_util::*;
+/// Store implementation backed by Redis
+#[cfg(feature = "store-redis")]
+pub mod store_redis {
+    pub use interledger_store_redis::*;
+}
+
+/// STREAM Protocol sender and receiver
+#[cfg(feature = "stream")]
+pub mod stream {
+    //! # interledger-stream
+    //!
+    //! Client and server implementations of the Interledger [STREAM](https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md) transport protocol.
+    //!
+    //! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
+    pub use interledger_stream::*;
 }

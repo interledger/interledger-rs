@@ -457,5 +457,4 @@ mod tests {
         assert_eq!(cached_data.0, 201);
         assert_eq!(cached_data.1, "CREATED".to_string());
     }
-
 }

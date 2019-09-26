@@ -1,8 +1,7 @@
 use env_logger;
 use futures::Future;
-use interledger::node::{random_secret, ExchangeRateProvider, InterledgerNode};
-use interledger_packet::Address;
-use interledger_service::Username;
+use interledger::{packet::Address, service::Username};
+use interledger_node::{random_secret, ExchangeRateProvider, InterledgerNode};
 use log::error;
 use reqwest::r#async::Client;
 use secrecy::SecretString;

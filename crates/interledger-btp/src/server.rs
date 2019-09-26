@@ -260,7 +260,7 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
                         (None, Some(ref token)) => {
                             return AuthToken::from_str(token)
                                 .ok()
-                                .map(|token| Auth { request_id, token });;
+                                .map(|token| Auth { request_id, token });
                         }
                         _ => warn!("BTP packet is missing auth token"),
                     }

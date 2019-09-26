@@ -7,6 +7,7 @@ members = [
   "./crates/interledger-ccp",
   "./crates/interledger-http",
   "./crates/interledger-ildcp",
+  "./crates/interledger-node",
   "./crates/interledger-packet",
   "./crates/interledger-router",
   "./crates/interledger-service",
@@ -17,6 +18,3 @@ members = [
   "./crates/interledger-stream",
   "./crates/interledger-settlement-engines",
 ]
-
-[profile.dev]
-codegen-units = 1

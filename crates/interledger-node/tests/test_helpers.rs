@@ -1,8 +1,9 @@
 use futures::{stream::Stream, Future};
-use interledger_packet::Address;
-use interledger_service::Account as AccountTrait;
-use interledger_store_redis::Account;
-use interledger_store_redis::AccountId;
+use interledger::{
+    packet::Address,
+    service::Account as AccountTrait,
+    store_redis::{Account, AccountId},
+};
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
