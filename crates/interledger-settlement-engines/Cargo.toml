@@ -55,7 +55,7 @@ net2 = "0.2.33"
 os_type = "2.2.0"
 rand = "0.7.0"
 interledger = { path = "../interledger", version = "^0.4.1-alpha.1"}
-interledger-node = { path = "../interledger-node", version = "^0.4.1-alpha.1"}
+ilp-node = { path = "../ilp-node", version = "^0.4.1-alpha.1"}
 
 [features]
 ethereum = ["tiny-keccak", "secp256k1", "rlp", "ethereum-types"]

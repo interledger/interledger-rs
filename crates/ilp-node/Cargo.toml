@@ -1,11 +1,12 @@
 [package]
-name = "interledger-node"
+name = "ilp-node"
 version = "0.4.1-alpha.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger node (sender, connector, receiver bundle)"
 license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
+default-run = "ilp-node"
 
 [dependencies]
 bytes = "0.4.12"

@@ -2,8 +2,8 @@
 
 use futures::future::join_all;
 use futures::Future;
+use ilp_node::{random_secret, InterledgerNode};
 use interledger::{api::AccountDetails, packet::Address, service::Username};
-use interledger_node::{random_secret, InterledgerNode};
 use secrecy::SecretString;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
