@@ -16,6 +16,7 @@ use std::{
     iter::FromIterator,
     str::{self, FromStr},
 };
+use url::Url;
 use warp::{self, Filter};
 
 pub fn node_settings_api<S, A>(
@@ -166,11 +167,31 @@ where
         })
         .boxed();
 
+    // PUT /settlement/engines
+    let put_settlement_engines = warp::put2()
+        .and(warp::path("settlement"))
+        .and(warp::path("engines"))
+        .and(warp::path::end())
+        .and(warp::body::json())
+        .and(with_store.clone())
+        .and_then(|asset_to_url_map: HashMap<String, Url>, store: S| {
+            let reply = warp::reply::json(&asset_to_url_map);
+            store
+                .set_settlement_engines(asset_to_url_map)
+                .map_err(|_| {
+                    error!("Error setting static route");
+                    warp::reject::custom(ApiError::InternalServerError)
+                })
+                .and_then(move |_| Ok(reply))
+        })
+        .boxed();
+
     get_root
         .or(put_rates)
         .or(get_rates)
         .or(get_routes)
         .or(put_static_routes)
         .or(put_static_route)
+        .or(put_settlement_engines)
         .boxed()
 }
