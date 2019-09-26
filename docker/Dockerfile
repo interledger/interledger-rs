@@ -7,8 +7,8 @@ COPY ./crates /usr/src/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
-RUN cargo build --release --package interledger
-# RUN cargo build --package interledger
+RUN cargo build --release --package ilp-node
+# RUN cargo build --package ilp-node
 
 FROM alpine
 
@@ -28,11 +28,11 @@ RUN apk --no-cache add \
 
 # Copy Interledger binary
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/release/interledger \
-    /usr/local/bin/interledger
+    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-node \
+    /usr/local/bin/ilp-node
 # COPY --from=rust \
-#     /usr/src/target/x86_64-unknown-linux-musl/debug/interledger \
-#     /usr/local/bin/interledger
+#     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
+#     /usr/local/bin/ilp-node
 
 WORKDIR /opt/app
 
@@ -40,7 +40,7 @@ COPY ./docker/redis.conf redis.conf
 COPY ./docker/run-node-and-redis.sh run-node-and-redis.sh
 
 # ENV RUST_BACKTRACE=1
-ENV RUST_LOG=interledger/.*
+ENV RUST_LOG=ilp,interledger
 
 # In order for the node to access the config file, you need to mount
 # the directory with the node's config.yml file as a Docker volume

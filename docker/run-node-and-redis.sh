@@ -5,4 +5,4 @@ set -m
 
 redis-server --dir /data &
 sleep 1
-interledger node $@
+ilp-node $@

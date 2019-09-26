@@ -140,7 +140,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --all-features --bin interledger --bin interledger-settlement-engines
+cargo build --all-features --bin ilp-node --bin interledger-settlement-engines
 ```
 <!--!
 fi
@@ -369,7 +369,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_a \
         -td \
-        interledgerrs/node node
+        interledgerrs/node
     
     # Start Bob's node
     $CMD_DOCKER run \
@@ -384,7 +384,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_b \
         -td \
-        interledgerrs/node node
+        interledgerrs/node
     
     # Start Charlie's node
     $CMD_DOCKER run \
@@ -399,7 +399,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_c \
         -td \
-        interledgerrs/node node
+        interledgerrs/node
 else
 -->
 
@@ -411,7 +411,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_alice \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --all-features --bin interledger -- node &> logs/node-alice.log &
+cargo run --bin ilp-node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -420,7 +420,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_bob \
 ILP_REDIS_URL=redis://127.0.0.1:6381/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --all-features --bin interledger -- node &> logs/node-bob.log &
+cargo run --bin ilp-node &> logs/node-bob.log &
 
 # Start Charlie's node
 ILP_ADDRESS=example.bob.charlie \
@@ -429,7 +429,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_charlie \
 ILP_REDIS_URL=redis://127.0.0.1:6384/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:9770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:9771 \
-cargo run --all-features --bin interledger -- node &> logs/node-charlie.log &
+cargo run --bin ilp-node &> logs/node-charlie.log &
 ```
 
 <!--!

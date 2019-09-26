@@ -5,8 +5,8 @@ WORKDIR /usr/src
 COPY ./Cargo.toml /usr/src/Cargo.toml
 COPY ./crates /usr/src/crates
 
-RUN cargo build --release --package interledger
-# RUN cargo build --package interledger
+RUN cargo build --release --package ilp-node
+# RUN cargo build --package ilp-node
 
 # Deploy compiled binary to another container
 FROM alpine
@@ -22,16 +22,16 @@ RUN apk --no-cache add ca-certificates
 
 # Copy Interledger binary
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/release/interledger \
-    /usr/local/bin/interledger
+    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-node \
+    /usr/local/bin/ilp-node
 # COPY --from=rust \
-#     /usr/src/target/x86_64-unknown-linux-musl/debug/interledger \
-#     /usr/local/bin/interledger
+#     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
+#     /usr/local/bin/ilp-node
 
 WORKDIR /opt/app
 
 # ENV RUST_BACKTRACE=1
-ENV RUST_LOG=interledger=debug
+ENV RUST_LOG=ilp,interledger=debug
 
-ENTRYPOINT [ "/usr/local/bin/interledger" ]
+ENTRYPOINT [ "/usr/local/bin/ilp-node" ]
 CMD [ "node" ]
