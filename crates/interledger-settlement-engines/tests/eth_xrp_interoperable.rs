@@ -3,8 +3,8 @@
 
 use env_logger;
 use futures::Future;
+use ilp_node::{random_secret, InterledgerNode};
 use interledger::{api::AccountSettings, packet::Address, service::Username};
-use interledger_node::{random_secret, InterledgerNode};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::str::FromStr;

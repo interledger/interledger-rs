@@ -1,13 +1,13 @@
 [workspace]
 
 members = [
+  "./crates/ilp-node",
   "./crates/interledger",
   "./crates/interledger-api",
   "./crates/interledger-btp",
   "./crates/interledger-ccp",
   "./crates/interledger-http",
   "./crates/interledger-ildcp",
-  "./crates/interledger-node",
   "./crates/interledger-packet",
   "./crates/interledger-router",
   "./crates/interledger-service",

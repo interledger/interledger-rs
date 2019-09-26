@@ -17,7 +17,7 @@ pub mod api {
     //! # interledger-api
     //!
     //! HTTP API for interacting with the Interledger.rs components.
-    //! See the interledger-node for how this is used in practice.
+    //! See the ilp-node for how this is used in practice.
     pub use interledger_api::*;
 }
 

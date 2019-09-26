@@ -4,8 +4,8 @@
 use env_logger;
 use futures::future::join_all;
 use futures::Future;
+use ilp_node::{random_secret, InterledgerNode};
 use interledger::{api::AccountDetails, packet::Address, service::Username};
-use interledger_node::{random_secret, InterledgerNode};
 use secrecy::{ExposeSecret, SecretBytes, SecretString};
 use std::net::SocketAddr;
 use std::str::FromStr;
