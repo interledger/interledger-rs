@@ -44,6 +44,7 @@ use redis::{
     self, aio::SharedConnection, cmd, Client, ConnectionInfo, ControlFlow, PipelineCommands,
     PubSubCommands, Script, Value,
 };
+use secrecy::{ExposeSecret, Secret};
 use serde_json;
 use std::{
     iter::FromIterator,
@@ -54,12 +55,24 @@ use std::{
 };
 use tokio_executor::spawn;
 use tokio_timer::Interval;
-
-use secrecy::{ExposeSecret, Secret};
+use url::Url;
 use zeroize::Zeroize;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
+
 static PARENT_ILP_KEY: &str = "parent_node_account_address";
+static ROUTES_KEY: &str = "routes:current";
+static STATIC_ROUTES_KEY: &str = "routes:static";
+static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
+static SETTLEMENT_ENGINES_KEY: &str = "settlement_engines";
+
+fn prefixed_idempotency_key(idempotency_key: String) -> String {
+    format!("idempotency-key:{}", idempotency_key)
+}
+
+fn accounts_key(account_id: AccountId) -> String {
+    format!("accounts:{}", account_id)
+}
 
 // The following are Lua scripts that are used to atomically execute the given logic
 // inside Redis. This allows for more complex logic without needing multiple round
@@ -73,8 +86,11 @@ lazy_static! {
     // MUST ensure that the returned account is authenticated.
     static ref ACCOUNT_FROM_USERNAME: Script = Script::new("
     local acc_id = redis.call('HGET', 'usernames', ARGV[1])
-    local id_key = 'accounts:' .. acc_id
-    return redis.call('HGETALL', id_key)");
+    if acc_id == nil then
+        return nil
+    else
+        return redis.call('HGETALL', 'accounts:' .. acc_id)
+    end");
 
     static ref PROCESS_PREPARE: Script = Script::new("
     local from_id = ARGV[1]
@@ -173,18 +189,6 @@ lazy_static! {
     end
 
     return balance + prepaid_amount");
-}
-
-static ROUTES_KEY: &str = "routes:current";
-static STATIC_ROUTES_KEY: &str = "routes:static";
-static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
-
-fn prefixed_idempotency_key(idempotency_key: String) -> String {
-    format!("idempotency-key:{}", idempotency_key)
-}
-
-fn accounts_key(account_id: AccountId) -> String {
-    format!("accounts:{}", account_id)
 }
 
 pub struct RedisStoreBuilder {
@@ -592,8 +596,8 @@ impl RedisStore {
         id: AccountId,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
         Box::new(
-            self.redis_get_accounts(vec![id])
-                .and_then(|accounts| accounts.get(0).cloned().ok_or(())),
+            load_accounts(self.connection.as_ref().clone(), vec![id])
+                .and_then(|(_, mut accounts)| accounts.pop().ok_or(())),
         )
     }
 
@@ -639,28 +643,6 @@ impl RedisStore {
                 })
         }))
     }
-
-    fn redis_get_accounts(
-        &self,
-        account_ids: Vec<AccountId>,
-    ) -> Box<dyn Future<Item = Vec<AccountWithEncryptedTokens>, Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        for account_id in account_ids.iter() {
-            pipe.hgetall(accounts_key(*account_id));
-        }
-        Box::new(
-            pipe.query_async(self.connection.as_ref().clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error querying details for accounts: {:?} {:?}",
-                        account_ids, err
-                    )
-                })
-                .and_then(
-                    move |(_conn, accounts): (_, Vec<AccountWithEncryptedTokens>)| Ok(accounts),
-                ),
-        )
-    }
 }
 
 impl AccountStore for RedisStore {
@@ -674,8 +656,8 @@ impl AccountStore for RedisStore {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
         Box::new(
-            self.redis_get_accounts(account_ids)
-                .and_then(move |accounts| {
+            load_accounts(self.connection.as_ref().clone(), account_ids).and_then(
+                move |(_, accounts)| {
                     if accounts.len() == num_accounts {
                         let accounts = accounts
                             .into_iter()
@@ -687,7 +669,8 @@ impl AccountStore for RedisStore {
                     } else {
                         Err(())
                     }
-                }),
+                },
+            ),
         )
     }
 
@@ -955,12 +938,8 @@ impl BtpStore for RedisStore {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
-                            let mut pipe = redis::pipe();
-                            for id in account_ids {
-                                pipe.hgetall(accounts_key(id));
-                            }
                             Either::B(
-                                pipe.query_async(connection)
+                                load_accounts(connection, account_ids)
                                     .map_err(|err| {
                                         error!(
                                         "Error getting accounts with outgoing BTP details: {:?}",
@@ -1155,25 +1134,15 @@ impl NodeStore for RedisStore {
         let connection = self.connection.clone();
         pipe.smembers("accounts");
         Box::new(self.get_all_accounts_ids().and_then(move |account_ids| {
-            let mut pipe = redis::pipe();
-            for account_id in account_ids {
-                pipe.hgetall(accounts_key(account_id));
-            }
-
-            pipe.query_async(connection.as_ref().clone())
+            load_accounts(connection.as_ref().clone(), account_ids)
                 .map_err(|err| error!("Error getting account ids: {:?}", err))
-                .and_then(
-                    move |(_, accounts): (_, Vec<Option<AccountWithEncryptedTokens>>)| {
-                        let accounts: Vec<Account> = accounts
-                            .into_iter()
-                            .filter_map(|a| a)
-                            .map(|account| {
-                                account.decrypt_tokens(&decryption_key.expose_secret().0)
-                            })
-                            .collect();
-                        Ok(accounts)
-                    },
-                )
+                .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
+                    let accounts: Vec<Account> = accounts
+                        .into_iter()
+                        .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
+                        .collect();
+                    Ok(accounts)
+                })
         }))
     }
 
@@ -1248,6 +1217,25 @@ impl NodeStore for RedisStore {
                         update_routes(connection, routing_table)
                     })
             })
+        )
+    }
+
+    fn set_settlement_engines(
+        &self,
+        asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let asset_to_url_map: Vec<(String, String)> = asset_to_url_map
+            .into_iter()
+            .map(|(asset_code, url)| (asset_code, url.to_string()))
+            .collect();
+        debug!("Setting settlement engines to {:?}", asset_to_url_map);
+        Box::new(
+            cmd("HMSET")
+                .arg(SETTLEMENT_ENGINES_KEY)
+                .arg(asset_to_url_map)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error setting settlement engines: {:?}", err))
+                .and_then(|(_, _): (SharedConnection, Value)| Ok(())),
         )
     }
 }
@@ -1353,12 +1341,8 @@ impl RouteManagerStore for RedisStore {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
-                            let mut pipe = redis::pipe();
-                            for id in account_ids {
-                                pipe.hgetall(accounts_key(id));
-                            }
                             Either::B(
-                                pipe.query_async(connection)
+                                load_accounts(connection, account_ids)
                                     .map_err(|err| {
                                         error!(
                                             "Error getting accounts to send routes to: {:?}",
@@ -1407,12 +1391,8 @@ impl RouteManagerStore for RedisStore {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
-                            let mut pipe = redis::pipe();
-                            for id in account_ids {
-                                pipe.hgetall(accounts_key(id));
-                            }
                             Either::B(
-                                pipe.query_async(connection)
+                                load_accounts(connection, account_ids)
                                     .map_err(|err| {
                                         error!(
                                             "Error getting accounts to receive routes from: {:?}",
@@ -1763,6 +1743,55 @@ fn update_routes(
                 trace!("Routing table is: {:?}", routes);
                 *routing_table.write() = routes;
                 Ok(())
+            },
+        )
+}
+
+type LoadSettlementEnginesResult = (SharedConnection, HashMap<String, String>);
+type LoadAccountsResult = (SharedConnection, Vec<AccountWithEncryptedTokens>);
+/// Load accounts from Redis
+/// Also, if an account does not have a settlement_engine_url configured
+/// but there is one configured globally for that account's asset_code,
+/// then set the account's settlement_engine_url to the global one
+fn load_accounts(
+    connection: SharedConnection,
+    account_ids: Vec<AccountId>,
+) -> impl Future<Item = (SharedConnection, Vec<AccountWithEncryptedTokens>), Error = ()> + Send {
+    // TODO can we make these two calls with one pipeline call
+    let load_settlement_engines = cmd("HGETALL")
+        .arg(SETTLEMENT_ENGINES_KEY)
+        .query_async(connection.clone());
+
+    let mut load_accounts = redis::pipe();
+    for id in account_ids.into_iter() {
+        load_accounts.hgetall(accounts_key(id));
+    }
+    let load_accounts = load_accounts.query_async(connection);
+    load_settlement_engines
+        .join(load_accounts)
+        .map_err(|err| error!("Error getting accounts: {:?}", err))
+        .and_then(
+            |((connection, settlement_engines), (_, mut accounts)): (
+                LoadSettlementEnginesResult,
+                LoadAccountsResult,
+            )| {
+                debug!(
+                    "settlement engines: {:?}, accounts: {:?}",
+                    settlement_engines, accounts
+                );
+                for account in accounts.iter_mut() {
+                    if account.account.settlement_engine_url.is_none() {
+                        debug!("account {} does not have se", account.account.username);
+                        if let Some(url) =
+                            settlement_engines.get(account.account.asset_code.as_str())
+                        {
+                            // TODO only parse the URL once
+                            account.account.settlement_engine_url = Url::parse(url).ok();
+                        }
+                    }
+                }
+
+                Ok((connection, accounts))
             },
         )
 }

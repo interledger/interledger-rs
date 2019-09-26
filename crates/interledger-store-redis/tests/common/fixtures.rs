@@ -26,7 +26,7 @@ lazy_static! {
         round_trip_time: None,
         amount_per_minute_limit: Some(1000),
         packets_per_minute_limit: Some(2),
-        settlement_engine_url: None,
+        settlement_engine_url: Some("http://settlement.example".to_string()),
     };
     pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
         ilp_address: None,

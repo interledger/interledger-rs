@@ -19,6 +19,7 @@ mod routes;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
 use secrecy::SecretString;
+use url::Url;
 
 pub(crate) mod http_retry;
 
@@ -94,6 +95,11 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         &self,
         prefix: String,
         account_id: <Self::Account as Account>::AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    fn set_settlement_engines(
+        &self,
+        asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 

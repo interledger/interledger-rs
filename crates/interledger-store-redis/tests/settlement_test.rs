@@ -3,10 +3,12 @@ mod common;
 use bytes::Bytes;
 use common::*;
 use http::StatusCode;
-use interledger_service::Account;
-use interledger_settlement::{IdempotentStore, SettlementStore};
+use interledger_api::NodeStore;
+use interledger_service::{Account, AccountStore};
+use interledger_settlement::{IdempotentStore, SettlementAccount, SettlementStore};
 use lazy_static::lazy_static;
 use redis::{aio::SharedConnection, cmd};
+use url::Url;
 
 lazy_static! {
     static ref IDEMPOTENCY_KEY: String = String::from("AJKJNUjM0oyiAN46");
@@ -261,6 +263,63 @@ fn clears_balance_owed_and_puts_remainder_as_prepaid() {
                                     )
                             })
                     })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn loads_globally_configured_settlement_engine_url() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        assert!(accs[0].settlement_engine_details().is_some());
+        assert!(accs[1].settlement_engine_details().is_none());
+        let account_ids = vec![accs[0].id(), accs[1].id()];
+        store
+            .clone()
+            .get_accounts(account_ids.clone())
+            .and_then(move |accounts| {
+                assert!(accounts[0].settlement_engine_details().is_some());
+                assert!(accounts[1].settlement_engine_details().is_none());
+
+                store
+                    .clone()
+                    .set_settlement_engines(vec![
+                        (
+                            "ABC".to_string(),
+                            Url::parse("http://settle-abc.example").unwrap(),
+                        ),
+                        (
+                            "XYZ".to_string(),
+                            Url::parse("http://settle-xyz.example").unwrap(),
+                        ),
+                    ])
+                    .and_then(move |_| {
+                        store.get_accounts(account_ids).and_then(move |accounts| {
+                            // It should not overwrite the one that was individually configured
+                            assert_eq!(
+                                accounts[0]
+                                    .settlement_engine_details()
+                                    .unwrap()
+                                    .url
+                                    .as_str(),
+                                "http://settlement.example/"
+                            );
+
+                            // It should set the URL for the account that did not have one configured
+                            assert!(accounts[1].settlement_engine_details().is_some());
+                            assert_eq!(
+                                accounts[1]
+                                    .settlement_engine_details()
+                                    .unwrap()
+                                    .url
+                                    .as_str(),
+                                "http://settle-abc.example/"
+                            );
+                            let _ = context;
+                            Ok(())
+                        })
+                    })
+                // store.set_settlement_engines
             })
     }))
     .unwrap()

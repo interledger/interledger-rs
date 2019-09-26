@@ -207,3 +207,20 @@ Configure a single route.
 ```
 
 ### GET /routes
+
+### PUT /settlement/engines
+
+Admin only.
+
+Configure the default settlement engines to use for the given asset codes. 
+If an account is not configured with a `settlement_engine_url` but the account's `asset_code`
+has a settlement engine configured here, the account will automatically be set up to use that settlement engine.
+
+#### Request
+
+```
+{
+    "ABC": "http://localhost:30001",
+    "XYZ": "http://localhost:3002"
+}
+```
