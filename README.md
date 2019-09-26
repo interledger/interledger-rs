@@ -30,7 +30,7 @@ Install
 
 Run
 
-1. `docker run -it interledgerrs/node` (append `help node` to see the available options)
+1. `docker run -it interledgerrs/node`
 
 ### Building From Source
 
@@ -45,7 +45,7 @@ Install
 
 Run
 
-`cargo run -- node`
+`cargo run`
 
 Append the `--help` flag to see available options.
 
@@ -64,7 +64,7 @@ The priority is: Environment Variables > stdin > configuration files > command l
 # 1.
 # Passing by command line arguments.
 # --{parameter name} {value}
-cargo run -- node --ilp_address example.alice
+cargo run -- --admin_auth_token super-secret
 
 # 2.
 # Passing by a configuration file in JSON, TOML, YAML format.
@@ -83,7 +83,7 @@ some_command | cargo run -- node
 # note that the parameter names MUST begin with a prefix of "ILP_" e.g. ILP_SECRET_SEED
 ILP_ADDRESS=example.alice \
 ILP_OTHER_PARAMETER=other_value \
-cargo run -- node
+cargo run
 ```
 
 ## Examples

@@ -91,7 +91,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --all-features --bin interledger
+cargo build --bin ilp-node
 ```
 <!--!
 fi
@@ -150,7 +150,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_a \
         -td \
-        interledgerrs/node node
+        interledgerrs/node
     
     $CMD_DOCKER run \
         -e ILP_ADDRESS=example.node_b \
@@ -164,7 +164,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_b \
         -td \
-        interledgerrs/node node
+        interledgerrs/node
 else
 -->
 
@@ -182,7 +182,7 @@ ILP_ADMIN_AUTH_TOKEN=admin-a \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --all-features --bin interledger -- node &> logs/node_a.log &
+cargo run --bin ilp-node &> logs/node_a.log &
 
 ILP_ADDRESS=example.node_b \
 ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
@@ -190,7 +190,7 @@ ILP_ADMIN_AUTH_TOKEN=admin-b \
 ILP_REDIS_URL=redis://127.0.0.1:6380/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --all-features --bin interledger -- node &> logs/node_b.log &
+cargo run --bin ilp-node &> logs/node_b.log &
 ```
 
 <!--!
