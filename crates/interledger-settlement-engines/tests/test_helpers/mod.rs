@@ -1,6 +1,9 @@
 use futures::{stream::Stream, Future};
-use interledger_packet::Address;
-use interledger_service::Account as AccountTrait;
+use interledger::{
+    packet::Address,
+    service::Account as AccountTrait,
+    store_redis::{Account, AccountId, ConnectionInfo},
+};
 #[cfg(feature = "ethereum")]
 use interledger_settlement_engines::engines::ethereum_ledger::{
     run_ethereum_engine, EthereumLedgerOpt,
@@ -8,7 +11,6 @@ use interledger_settlement_engines::engines::ethereum_ledger::{
 
 pub mod redis_helpers;
 
-use interledger_store_redis::{Account, AccountId, ConnectionInfo};
 use reqwest;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};

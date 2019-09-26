@@ -6,42 +6,34 @@ description = "Interledger client library"
 license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
-default-run = "interledger"
-
-[lib]
-name = "interledger"
-path = "src/lib.rs"
 
 [features]
-default = ["cli"]
-cli = [
+default = [
+    "api",
     "btp",
     "ccp",
     "http",
     "ildcp",
+    "router",
+    "service-util",
+    "settlement",
     "spsp",
-    "interledger-router",
-    "interledger-service-util",
-    "interledger-settlement",
-    "interledger-store-redis",
-    "interledger-api",
-    "warp",
+    "store-redis",
+    "stream",
 ]
+api = ["interledger-api"]
 btp = ["interledger-btp"]
 ccp = ["interledger-ccp"]
 http = ["interledger-http"]
 ildcp = ["interledger-ildcp"]
+router = ["interledger-router"]
+service-util = ["interledger-service-util"]
+settlement = ["interledger-settlement" ]
 spsp = ["interledger-spsp", "stream"]
+store-redis = ["interledger-store-redis"]
 stream = ["interledger-stream", "ildcp"]
 
 [dependencies]
-base64 = "0.10.1"
-bytes = "0.4.12"
-clap = "2.32.0"
-config = "0.9.3"
-env_logger = "0.6.1"
-futures = "0.1.25"
-hex = "0.3.2"
 interledger-api = { path = "../interledger-api", version = "^0.1.1-alpha.1", optional = true }
 interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1", optional = true }
 interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1", optional = true }
@@ -55,23 +47,6 @@ interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1
 interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1", optional = true }
 interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", optional = true }
 interledger-store-redis = { path = "../interledger-store-redis", version = "^0.2.2-alpha.1", optional = true}
-lazy_static = "1.4.0"
-log = "0.4.6"
-ring = "0.14.6"
-serde = "1.0.99"
-tokio = "0.1.20"
-url = "2.1.0"
-libc = "0.2.62"
-warp = { version = "0.1.20", optional = true }
-secrecy = { version = "0.4.0", features = ["serde"] }
-
-[dev-dependencies]
-net2 = "0.2.33"
-rand = "0.6.5"
-redis = "0.12.0"
-reqwest = "0.9.16"
-serde_json = "1.0.39"
-secrecy = "0.4.0"
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }

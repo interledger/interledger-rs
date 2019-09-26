@@ -1,9 +1,6 @@
-#![recursion_limit = "128"]
-
 use futures::{future::join_all, Future};
-use interledger::node::{random_secret, InterledgerNode};
-use interledger_packet::Address;
-use interledger_service::Username;
+use interledger::{packet::Address, service::Username};
+use interledger_node::{random_secret, InterledgerNode};
 use serde_json::json;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;

@@ -127,8 +127,8 @@ where
                 if has_throughput_limit {
                     Either::A(store.refund_throughput_limit(account_clone, prepare_amount)
                         .then(|result| {
-                            if result.is_err() {
-                                error!("Error refunding throughput limit: {:?}", result.unwrap_err());
+                            if let Err(err) = result {
+                                error!("Error refunding throughput limit: {:?}", err);
                             }
                             Err(reject)
                         }))

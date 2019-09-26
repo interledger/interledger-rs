@@ -1,27 +1,28 @@
 use bytes::Bytes;
 use futures::{future::result, Future};
 use hex::FromHex;
-use interledger_api::{NodeApi, NodeStore};
-use interledger_btp::{connect_client, create_btp_service_and_filter, BtpStore};
-use interledger_ccp::CcpRouteManagerBuilder;
-use interledger_http::HttpClientService;
-use interledger_ildcp::IldcpService;
-use interledger_packet::Address;
-use interledger_packet::{ErrorCode, RejectBuilder};
-use interledger_router::Router;
-use interledger_service::{
-    outgoing_service_fn, Account as AccountTrait, OutgoingRequest, Username,
+#[doc(hidden)]
+pub use interledger::api::AccountDetails;
+pub use interledger::service_util::ExchangeRateProvider;
+
+use interledger::{
+    api::{NodeApi, NodeStore},
+    btp::{connect_client, create_btp_service_and_filter, BtpStore},
+    ccp::CcpRouteManagerBuilder,
+    http::HttpClientService,
+    ildcp::IldcpService,
+    packet::Address,
+    packet::{ErrorCode, RejectBuilder},
+    router::Router,
+    service::{outgoing_service_fn, Account as AccountTrait, OutgoingRequest, Username},
+    service_util::{
+        BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
+        ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
+    },
+    settlement::{SettlementApi, SettlementMessageService},
+    store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    stream::StreamReceiverService,
 };
-pub use interledger_service_util::ExchangeRateProvider; // Note this is re-exported
-use interledger_service_util::{
-    BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
-    MaxPacketAmountService, RateLimitService, ValidatorService,
-};
-use interledger_settlement::{SettlementApi, SettlementMessageService};
-use interledger_store_redis::{
-    Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder,
-};
-use interledger_stream::StreamReceiverService;
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
 use ring::{
@@ -334,42 +335,30 @@ impl InterledgerNode {
         tokio_run(self.serve());
     }
 
+    #[doc(hidden)]
+    #[allow(dead_code)]
     pub fn insert_account(
         &self,
         account: AccountDetails,
     ) -> impl Future<Item = AccountId, Error = ()> {
-        insert_account_redis(self.redis_connection.clone(), &self.secret_seed, account)
+        let redis_secret = generate_redis_secret(&self.secret_seed);
+        result(self.redis_connection.clone().into_connection_info())
+            .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
+            .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
+            .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            .and_then(move |store| {
+                store
+                    .insert_account(account)
+                    .map_err(|_| error!("Unable to create account"))
+                    .and_then(|account| {
+                        debug!("Created account: {}", account.id());
+                        Ok(account.id())
+                    })
+            })
     }
 }
 
-#[doc(hidden)]
-pub use interledger_api::AccountDetails;
-#[doc(hidden)]
-pub fn insert_account_redis<R>(
-    redis_url: R,
-    secret_seed: &[u8; 32],
-    account: AccountDetails,
-) -> impl Future<Item = AccountId, Error = ()>
-where
-    R: IntoConnectionInfo,
-{
-    let redis_secret = generate_redis_secret(secret_seed);
-    result(redis_url.into_connection_info())
-        .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
-        .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
-        .map_err(|err| error!("Error connecting to Redis: {:?}", err))
-        .and_then(move |store| {
-            store
-                .insert_account(account)
-                .map_err(|_| error!("Unable to create account"))
-                .and_then(|account| {
-                    debug!("Created account: {}", account.id());
-                    Ok(account.id())
-                })
-        })
-}
-
-pub fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
+fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
     let mut redis_secret: [u8; 32] = [0; 32];
     let sig = hmac::sign(
         &hmac::SigningKey::new(&digest::SHA256, secret_seed),
@@ -393,6 +382,7 @@ pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
 }
 
 #[doc(hidden)]
+#[allow(dead_code)]
 pub fn random_secret() -> [u8; 32] {
     let mut bytes: [u8; 32] = [0; 32];
     SystemRandom::new().fill(&mut bytes).unwrap();

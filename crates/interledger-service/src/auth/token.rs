@@ -127,5 +127,4 @@ mod tests {
             "Bearer interledger:rust"
         );
     }
-
 }
