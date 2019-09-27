@@ -1,4 +1,4 @@
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 
 #[macro_use]
 extern crate tower_web;
@@ -96,6 +96,29 @@ pub trait IdempotentStore {
         status_code: StatusCode,
         data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+}
+
+pub trait LeftoversStore {
+    type AccountId;
+    type AssetType: ToString;
+
+    /// Saves the leftover data
+    fn save_uncredited_settlement_amount(
+        &self,
+        // The account id that for which there was a precision loss
+        account_id: Self::AccountId,
+        // The amount for which precision loss occurred, along with their scale
+        uncredited_settlement_amount: (Self::AssetType, u8),
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    /// Returns the leftover data scaled to `local_scale` from the saved scale.
+    /// If any precision loss occurs during the scaling, it should be saved as
+    /// the new leftover value.
+    fn load_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+        local_scale: u8,
+    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
 }
 
 #[derive(Debug)]
