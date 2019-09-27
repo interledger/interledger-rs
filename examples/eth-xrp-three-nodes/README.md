@@ -411,7 +411,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_alice \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --bin ilp-node &> logs/node-alice.log &
+cargo run --all-features --bin ilp-node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -420,7 +420,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_bob \
 ILP_REDIS_URL=redis://127.0.0.1:6381/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --bin ilp-node &> logs/node-bob.log &
+cargo run --all-features --bin ilp-node &> logs/node-bob.log &
 
 # Start Charlie's node
 ILP_ADDRESS=example.bob.charlie \
@@ -429,7 +429,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_charlie \
 ILP_REDIS_URL=redis://127.0.0.1:6384/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:9770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:9771 \
-cargo run --bin ilp-node &> logs/node-charlie.log &
+cargo run --all-features --bin ilp-node &> logs/node-charlie.log &
 ```
 
 <!--!
