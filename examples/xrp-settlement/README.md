@@ -63,7 +63,7 @@ Make sure your Redis is empty. You could run `redis-cli flushall` to clear all t
 source $RUN_MD_LIB
 init
 
-printf "Stopping Interledger nodes\n"
+printf "Stopping Interledger nodes...\n"
 
 if [ "$USE_DOCKER" -eq 1 ]; then
     $CMD_DOCKER --version > /dev/null || error_and_exit "Uh oh! You need to install Docker before running this example"
@@ -106,6 +106,10 @@ else
         fi
     done
 fi
+
+# later on we create a symlink, here make sure it's deleted
+rm ilp-cli &> /dev/null
+
 -->
 
 ### 1. Build interledger.rs
@@ -120,11 +124,11 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         $CMD_DOCKER network create interledger
     fi
 else
-    printf "Building interledger.rs... (This may take a couple of minutes)\n"
+    printf "\nBuilding interledger.rs... (This may take a couple of minutes)\n\n"
 -->
 
 ```bash
-cargo build --bin ilp-node
+cargo build --bin ilp-node --bin ilp-cli
 ```
 
 <!--!
@@ -134,7 +138,7 @@ fi
 ### 2. Launch Redis
 
 <!--!
-printf "\nStarting Redis...\n"
+printf "\n\nStarting Redis instances...\n\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
     $CMD_DOCKER run --name redis-alice_se -d -p 127.0.0.1:6380:6379 --network=interledger redis:5.0.5
@@ -232,7 +236,7 @@ fi
 ### 4. Launch 2 Nodes
 
 <!--!
-printf "\nStarting nodes...\n"
+printf "\n\nStarting Interledger nodes...\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     # Start Alice's node
     $CMD_DOCKER run \
@@ -296,7 +300,7 @@ wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up 
 wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 
-printf "done\nThe Interledger.rs nodes are up and running!\n\n"
+printf " done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
 
 ### 5. Configure the Nodes
@@ -381,77 +385,60 @@ else
 -->
 
 ```bash
+ln -s ../../target/debug/ilp-cli ilp-cli
+export ILP_CLI_API_AUTH=hi_alice
+
 # Adding settlement accounts should be done at the same time because it checks each other
 
 printf "Adding Alice's account...\n"
-curl \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer hi_alice" \
-    -d '{
-    "username": "alice",
-    "ilp_address": "example.alice",
-    "asset_code": "XRP",
-    "asset_scale": 6,
-    "max_packet_amount": 100,
-    "ilp_over_http_incoming_token": "in_alice",
-    "ilp_over_http_url": "http://localhost:7770/ilp",
-    "settle_to" : 0}' \
-    http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
+./ilp-cli accounts create alice \
+    --ilp-address example.alice \
+    --asset-code XRP \
+    --asset-scale 6 \
+    --max-packet-amount 100 \
+    --ilp-over-http-incoming-token in_alice \
+    --ilp-over-http-url http://localhost:7770/ilp \
+    --settle-to 0 > logs/account-alice-alice.log
 
 printf "Adding Bob's Account...\n"
-curl \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer hi_bob" \
-    -d '{
-    "username": "bob",
-    "ilp_address": "example.bob",
-    "asset_code": "XRP",
-    "asset_scale": 6,
-    "max_packet_amount": 100,
-    "ilp_over_http_incoming_token": "in_bob",
-    "ilp_over_http_url": "http://localhost:8770/ilp",
-    "settle_to" : 0}' \
-    http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
+./ilp-cli --auth hi_bob --node http://localhost:8770 accounts create bob \
+    --ilp-address example.bob \
+    --asset-code XRP \
+    --asset-scale 6 \
+    --max-packet-amount 100 \
+    --ilp-over-http-incoming-token in_bob \
+    --ilp-over-http-url http://localhost:8770/ilp \
+    --settle-to 0 > logs/account-bob-bob.log
 
 printf "Adding Bob's account on Alice's node...\n"
-curl \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer hi_alice" \
-    -d '{
-    "ilp_address": "example.bob",
-    "username": "bob",
-    "asset_code": "XRP",
-    "asset_scale": 6,
-    "max_packet_amount": 100,
-    "settlement_engine_url": "http://localhost:3000",
-    "ilp_over_http_incoming_token": "bob_password",
-    "ilp_over_http_outgoing_token": "alice:alice_password",
-    "ilp_over_http_url": "http://localhost:8770/ilp",
-    "settle_threshold": 500,
-    "min_balance": -1000,
-    "settle_to" : 0,
-    "routing_relation": "Peer"}' \
-    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+./ilp-cli accounts create bob \
+    --ilp-address example.bob \
+    --asset-code XRP \
+    --asset-scale 6 \
+    --max-packet-amount 100 \
+    --settlement-engine-url http://localhost:3000 \
+    --ilp-over-http-incoming-token bob_password \
+    --ilp-over-http-outgoing-token alice:alice_password \
+    --ilp-over-http-url http://localhost:8770/ilp \
+    --settle-threshold 500 \
+    --min-balance -1000 \
+    --settle-to 0 \
+    --routing-relation Peer > logs/account-alice-bob.log &
 
 printf "Adding Alice's account on Bob's node...\n"
-curl \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer hi_bob" \
-    -d '{
-    "ilp_address": "example.alice",
-    "username": "alice",
-    "asset_code": "XRP",
-    "asset_scale": 6,
-    "max_packet_amount": 100,
-    "settlement_engine_url": "http://localhost:3001",
-    "ilp_over_http_incoming_token": "alice_password",
-    "ilp_over_http_outgoing_token": "bob:bob_password",
-    "ilp_over_http_url": "http://localhost:7770/ilp",
-    "settle_threshold": 500,
-    "min_balance": -1000,
-    "settle_to" : 0,
-    "routing_relation": "Peer"}' \
-    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null &
+./ilp-cli --auth hi_bob --node http://localhost:8770 accounts create alice \
+    --ilp-address example.alice \
+    --asset-code XRP \
+    --asset-scale 6 \
+    --max-packet-amount 100 \
+    --settlement-engine-url http://localhost:3001 \
+    --ilp-over-http-incoming-token alice_password \
+    --ilp-over-http-outgoing-token bob:bob_password \
+    --ilp-over-http-url http://localhost:7770/ilp \
+    --settle-threshold 500 \
+    --min-balance -1000 \
+    --settle-to 0 \
+    --routing-relation Peer > logs/account-bob-alice.log &
 
 sleep 2
 ```
@@ -469,27 +456,19 @@ The `settle_threshold` and `settle_to` parameters control when settlements are t
 ### 6. Sending a Payment
 
 <!--!
-printf "\nChecking balances...\n"
+printf "\n\nChecking balances prior to payment...\n"
 
 printf "\nAlice's balance on Alice's node: "
-curl \
--H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
+./ilp-cli accounts balance alice
 
 printf "\nBob's balance on Alice's node: "
-curl \
--H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
+./ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-curl \
--H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance
+./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance alice
 
 printf "\nBob's balance on Bob's node: "
-curl \
--H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
+./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance bob
 
 printf "\n\n"
 -->
@@ -509,11 +488,9 @@ else
 -->
 
 ```bash
-curl \
-    -H "Authorization: Bearer alice:in_alice" \
-    -H "Content-Type: application/json" \
-    -d "{\"receiver\":\"http://localhost:8770/accounts/bob/spsp\",\"source_amount\":500}" \
-    http://localhost:7770/accounts/alice/payments
+./ilp-cli --auth in_alice pay alice \
+    --source-amount 500 \
+    --receiver http://localhost:8770/accounts/bob/spsp
 ```
 
 <!--!
@@ -529,50 +506,23 @@ printf "done\n"
 
 ### 7. Check Balances
 
-```bash #
-printf "\nAlice's balance on Alice's node: "
-curl \
--H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
-
-printf "\nBob's balance on Alice's node: "
-curl \
--H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
-
-printf "\nAlice's balance on Bob's node: "
-curl \
--H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance
-
-printf "\nBob's balance on Bob's node: "
-curl \
--H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
-```
-
 <!--!
-printf "Checking balances...\n"
+printf "Checking balances after payment...\n"
+-->
+
+```bash
 printf "\nAlice's balance on Alice's node: "
-curl \
--H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
+./ilp-cli accounts balance alice
 
 printf "\nBob's balance on Alice's node: "
-curl \
--H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
+./ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-curl \
--H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance
+./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance alice
 
 printf "\nBob's balance on Bob's node: "
-curl \
--H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
--->
+./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance bob
+```
 
 ### 8. Kill All the Services
 
@@ -637,7 +587,7 @@ fi
 printf "\n"
 run_hook_before_kill
 if [ $TEST_MODE -ne 1 ]; then
-    prompt_yn "Do you want to kill the services? [Y/n]" "y"
+    prompt_yn "Do you want to kill the services? [Y/n] " "y"
 fi
 printf "\n"
 if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then

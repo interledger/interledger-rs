@@ -17,4 +17,5 @@ members = [
   "./crates/interledger-store-redis",
   "./crates/interledger-stream",
   "./crates/interledger-settlement-engines",
+  "./crates/ilp-cli",
 ]
