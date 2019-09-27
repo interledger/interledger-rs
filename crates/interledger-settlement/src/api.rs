@@ -10,7 +10,7 @@ use futures::{
 use hyper::{Response, StatusCode};
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
-use log::{debug, error};
+use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use num_traits::Zero;
@@ -150,24 +150,36 @@ impl_web! {
 
         fn do_receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
             let store = self.store.clone();
-            let amount = body.amount;
+            let store_clone = self.store.clone();
+            let engine_amount = body.amount;
             let engine_scale = body.scale;
-            Box::new(result(A::AccountId::from_str(&account_id)
-            .map_err(move |_err| {
-                let error_msg = format!("Unable to parse account id: {}", account_id);
-                error!("{}", error_msg);
-                (StatusCode::from_u16(400).unwrap(), error_msg)
-            }))
-            .and_then({
-                let store = store.clone();
-                move |account_id| {
-                store.get_accounts(vec![account_id])
-                .map_err(move |_err| {
-                    let error_msg = format!("Error getting account: {}", account_id);
+
+            // Convert to the desired data types
+            let account_id = match A::AccountId::from_str(&account_id) {
+                Ok(a) => a,
+                Err(_) => {
+                    let error_msg = format!("Unable to parse account id: {}", account_id);
                     error!("{}", error_msg);
-                    (StatusCode::from_u16(404).unwrap(), error_msg)
-                })
-            }})
+                    return Box::new(err((StatusCode::from_u16(400).unwrap(), error_msg)))
+                }
+            };
+
+            let engine_amount = match BigUint::from_str(&engine_amount) {
+                Ok(a) => a,
+                Err(_) => {
+                    let error_msg = format!("Could not convert amount: {:?}", engine_amount);
+                    error!("{}", error_msg);
+                    return Box::new(err((StatusCode::from_u16(500).unwrap(), error_msg)))
+                }
+            };
+
+            Box::new(
+            store.get_accounts(vec![account_id])
+            .map_err(move |_err| {
+                let error_msg = format!("Error getting account: {}", account_id);
+                error!("{}", error_msg);
+                (StatusCode::from_u16(404).unwrap(), error_msg)
+            })
             .and_then(move |accounts| {
                 let account = &accounts[0];
                 if account.settlement_engine_details().is_some() {
@@ -179,42 +191,41 @@ impl_web! {
                 }
             })
             .and_then(move |account| {
-                result(BigUint::from_str(&amount))
-                .map_err(move |_| {
-                    let error_msg = format!("Could not convert amount: {:?}", amount);
+                let account_id = account.id();
+                let asset_scale = account.asset_scale();
+                // scale to account's scale from the engine's scale
+                let (scaled_engine_amount, precision_loss) = scale_with_precision_loss(engine_amount, asset_scale, engine_scale);
+
+                // load the leftovers and downscale them to the account's asset scale
+                store_clone.load_uncredited_settlement_amount(account_id, asset_scale)
+                .map_err(move |_err| {
+                    let error_msg = format!("Error getting uncredited settlement amount for: {}", account.id());
                     error!("{}", error_msg);
                     (StatusCode::from_u16(500).unwrap(), error_msg)
                 })
-                .and_then(move |amount_from_engine| {
-                    let account_id = account.id();
-                    let amount = amount_from_engine.normalize_scale(ConvertDetails {
-                        from: engine_scale,
-                        to: account.asset_scale(),
-                    });
-                    result(amount.clone())
+                .and_then(move |scaled_leftover_amount| {
+                    // add the leftovers to the scaled engine amount
+                    let total_amount = scaled_engine_amount.clone() + scaled_leftover_amount;
+                    let engine_amount_u64 = total_amount.to_u64().unwrap_or(std::u64::MAX);
+
+                    futures::future::join_all(vec![
+                        // update the account's balance in the store
+                        store.update_balance_for_incoming_settlement(account_id, engine_amount_u64, idempotency_key),
+                        // save any precision loss that occurred during the
+                        // scaling of the engine's amount to the account's scale
+                        store.save_uncredited_settlement_amount(account_id, (precision_loss, engine_scale))
+                    ])
                     .map_err(move |_| {
-                        let error_msg = format!("Could not convert amount: {:?}", amount);
+                        let error_msg = format!("Error updating the balance and leftovers of account: {}", account_id);
                         error!("{}", error_msg);
                         (StatusCode::from_u16(500).unwrap(), error_msg)
                     })
-                    .and_then(move |amount| {
-                        // If we'd overflow, settle for the maximum u64 value
-                        let amount = if let Some(amount_u64) = amount.to_u64() {
-                            amount_u64
-                        } else {
-                            debug!("Amount settled from engine overflowed during conversion to connector scale: {:?}. Settling for u64::MAX", amount);
-                            std::u64::MAX
-                        };
-                        store.update_balance_for_incoming_settlement(account_id, amount, idempotency_key)
-                        .map_err(move |_| {
-                            let error_msg = format!("Error updating balance of account: {} for incoming settlement of amount: {}", account_id, amount);
-                            error!("{}", error_msg);
-                            (StatusCode::from_u16(500).unwrap(), error_msg)
-                        })
-                        .and_then(move |_| {
-                            let quantity = json!(Quantity::new(amount, account.asset_scale()));
-                            Ok((StatusCode::OK, quantity.to_string().into()))
-                        })
+                    .and_then(move |_| {
+                        // the connector "lies" and tells the engine that it
+                        // settled the full amount. Precision loss is handled by
+                        // the connector.
+                        let quantity = json!(Quantity::new(total_amount, asset_scale));
+                        Ok((StatusCode::OK, quantity.to_string().into()))
                     })
                 })
             }))
@@ -304,6 +315,7 @@ impl_web! {
                 .serve(incoming)
         }
     }
+}
 
 pub fn scale_with_precision_loss(
     amount: BigUint,
