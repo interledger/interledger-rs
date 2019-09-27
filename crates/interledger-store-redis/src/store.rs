@@ -46,8 +46,9 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use parking_lot::RwLock;
 use redis::{
-    self, aio::SharedConnection, cmd, Client, ConnectionInfo, ControlFlow, PipelineCommands,
-    PubSubCommands, RedisWrite, Script, ToRedisArgs, Value,
+    self, aio::SharedConnection, cmd, Client, ConnectionInfo, ControlFlow, ErrorKind,
+    FromRedisValue, PipelineCommands, PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs,
+    Value,
 };
 use secrecy::{ExposeSecret, Secret};
 use serde_json;
@@ -1913,6 +1914,74 @@ impl ToRedisArgs for AmountWithScale {
     }
 }
 
+impl AmountWithScale {
+    fn parse_multi_values(items: &[Value]) -> Option<Self> {
+        // We have to iterate over all values because in this case we're making
+        // an lrange call. This returns all the tuple elements in 1 array, and
+        // it cannot differentiate between 1 AmountWithScale value or multiple
+        // ones. This looks like a limitation of redis.rs
+        let len = items.len();
+        let mut iter = items.iter();
+
+        let mut max_scale = 0;
+        let mut amounts = Vec::new();
+        // if redis.rs could parse this properly, we could remove this loop,
+        // take 2 elements from the items iterator and return. Then we'd perform
+        // the summation and scaling in the consumer of the returned vector.
+        for _ in (0..len).step_by(2) {
+            let num: String = match iter.next().map(FromRedisValue::from_redis_value) {
+                Some(Ok(n)) => n,
+                _ => return None,
+            };
+            let num = match BigUint::from_str(&num) {
+                Ok(a) => a,
+                Err(_) => return None,
+            };
+
+            let scale: u8 = match iter.next().map(FromRedisValue::from_redis_value) {
+                Some(Ok(c)) => c,
+                _ => return None,
+            };
+
+            if scale > max_scale {
+                max_scale = scale;
+            }
+            amounts.push((num, scale));
+        }
+
+        // We must scale them to the largest scale, and then add them together
+        let mut sum = BigUint::from(0u32);
+        for amount in &amounts {
+            sum += amount
+                .0
+                .normalize_scale(ConvertDetails {
+                    from: amount.1,
+                    to: max_scale,
+                })
+                .unwrap();
+        }
+
+        Some(AmountWithScale {
+            num: sum,
+            scale: max_scale,
+        })
+    }
+}
+
+impl FromRedisValue for AmountWithScale {
+    fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
+        if let Value::Bulk(ref items) = *v {
+            if let Some(result) = Self::parse_multi_values(items) {
+                return Ok(result);
+            }
+        }
+        Err(RedisError::from((
+            ErrorKind::TypeError,
+            "Cannot parse amount with scale",
+        )))
+    }
+}
+
 impl LeftoversStore for RedisStore {
     type AccountId = AccountId;
     type AssetType = BigUint;
@@ -1922,57 +1991,15 @@ impl LeftoversStore for RedisStore {
         account_id: Self::AccountId,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
         let mut pipe = redis::pipe();
+        pipe.atomic();
         pipe.lrange(uncredited_amount_key(account_id.to_string()), 0, -1);
         Box::new(
             pipe.query_async(self.connection.as_ref().clone())
                 .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
-                // todo: There must be some way to properly deserialize this when
-                // called with lrange instead of us having to manually parse it as
-                // a list of strings here. FromRedisValue did not seem to work very well.
-                .and_then(move |(_, values): (_, Vec<Vec<String>>)| {
-                    let len = values[0].len();
-                    let mut values = values[0].iter();
-                    let mut amounts = Vec::new();
-                    let mut max_scale = 0;
-                    for _ in (0..len).step_by(2) {
-                        let scale = match values.next() {
-                            Some(s) => s,
-                            None => return Either::A(err(())),
-                        };
-                        let scale: u8 = match scale.parse() {
-                            Ok(s) => s,
-                            Err(_) => return Either::A(err(())),
-                        };
-
-                        let amount = match values.next() {
-                            Some(a) => a,
-                            None => return Either::A(err(())),
-                        };
-                        let amount = match BigUint::from_str(&amount) {
-                            Ok(a) => a,
-                            Err(_) => return Either::A(err(())),
-                        };
-
-                        // save the max scale
-                        if scale > max_scale {
-                            max_scale = scale;
-                        }
-                        amounts.push((amount, scale))
-                    }
-
-                    // We must scale them to the largest scale, and then add them together
-                    let mut sum = BigUint::from(0u32);
-                    for amount in &amounts {
-                        sum += amount
-                            .0
-                            .normalize_scale(ConvertDetails {
-                                from: amount.1,
-                                to: max_scale,
-                            })
-                            .unwrap();
-                    }
-
-                    Either::B(ok((sum, max_scale)))
+                .and_then(move |(_, amounts): (_, Vec<AmountWithScale>)| {
+                    // this call will only return 1 element
+                    let amount = amounts[0].clone();
+                    Ok((amount.num, amount.scale))
                 }),
         )
     }
@@ -1988,11 +2015,12 @@ impl LeftoversStore for RedisStore {
             uncredited_settlement_amount
         );
         let mut pipe = redis::pipe();
+        pipe.atomic();
         // We store these amounts as lists of strings
         // because we cannot do BigNumber arithmetic in the store
         // When loading the amounts, we convert them to the appropriate data
         // type and sum them up.
-        pipe.lpush(
+        pipe.rpush(
             uncredited_amount_key(account_id),
             AmountWithScale {
                 num: uncredited_settlement_amount.0,
@@ -2022,8 +2050,9 @@ impl LeftoversStore for RedisStore {
                     let (scaled_amount, precision_loss) =
                         scale_with_precision_loss(amount.0, local_scale, amount.1);
                     let mut pipe = redis::pipe();
+                    pipe.atomic();
                     pipe.del(uncredited_amount_key(account_id)).ignore();
-                    pipe.lpush(
+                    pipe.rpush(
                         uncredited_amount_key(account_id),
                         AmountWithScale {
                             num: precision_loss,

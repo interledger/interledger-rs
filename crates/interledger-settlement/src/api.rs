@@ -193,10 +193,17 @@ impl_web! {
             .and_then(move |account| {
                 let account_id = account.id();
                 let asset_scale = account.asset_scale();
-                // scale to account's scale from the engine's scale
+                // Scale to account's scale from the engine's scale
+                // If we're downscaling we might have some precision error which
+                // we must save as leftovers. Upscaling is OK since we're using
+                // biguint's.
                 let (scaled_engine_amount, precision_loss) = scale_with_precision_loss(engine_amount, asset_scale, engine_scale);
 
-                // load the leftovers and downscale them to the account's asset scale
+                // This will load any leftovers (which are saved in the highest
+                // so far received scale by the engine), will scale them to
+                // the account's asset scale and return them. If there was any
+                // precision loss due to downscaling, it will also update the
+                // leftovers to the new leftovers value
                 store_clone.load_uncredited_settlement_amount(account_id, asset_scale)
                 .map_err(move |_err| {
                     let error_msg = format!("Error getting uncredited settlement amount for: {}", account.id());
@@ -322,6 +329,7 @@ pub fn scale_with_precision_loss(
     local_scale: u8,
     remote_scale: u8,
 ) -> (BigUint, BigUint) {
+    // It's safe to unwrap here since BigUint's normalize_scale cannot fail.
     let scaled = amount
         .normalize_scale(ConvertDetails {
             from: remote_scale,
@@ -330,7 +338,9 @@ pub fn scale_with_precision_loss(
         .unwrap();
 
     if local_scale < remote_scale {
-        // Upscale it again, and return any precision loss
+        // If we ended up downscaling, scale the value back up back,
+        // and return any precision loss
+        // note that `from` and `to` are reversed compared to the previous call
         let upscaled = scaled
             .normalize_scale(ConvertDetails {
                 from: local_scale,
@@ -344,6 +354,7 @@ pub fn scale_with_precision_loss(
         };
         (scaled, precision_loss)
     } else {
+        // there is no need to do anything further if we upscaled
         (scaled, Zero::zero())
     }
 }
