@@ -420,7 +420,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
     }
 }
 
-pub fn get_value<V>(key: &str, map: &HashMap<String, Value>) -> Result<V, RedisError>
+fn get_value<V>(key: &str, map: &HashMap<String, Value>) -> Result<V, RedisError>
 where
     V: FromRedisValue,
 {
