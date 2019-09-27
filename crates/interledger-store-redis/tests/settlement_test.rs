@@ -2,16 +2,58 @@ mod common;
 
 use bytes::Bytes;
 use common::*;
+use futures::future::join_all;
 use http::StatusCode;
-use interledger_api::NodeStore;
 use interledger_service::{Account, AccountStore};
-use interledger_settlement::{IdempotentStore, SettlementAccount, SettlementStore};
+use interledger_api::NodeStore;
+use interledger_settlement::{IdempotentStore, LeftoversStore, SettlementAccount, SettlementStore};
+use interledger_store_redis::AccountId;
 use lazy_static::lazy_static;
+use num_bigint::BigUint;
 use redis::{aio::SharedConnection, cmd};
 use url::Url;
 
 lazy_static! {
     static ref IDEMPOTENCY_KEY: String = String::from("AJKJNUjM0oyiAN46");
+}
+
+#[test]
+fn saves_and_gets_uncredited_settlement_amount_properly() {
+    block_on(test_store().and_then(|(store, context, _accs)| {
+        let amounts = vec![
+            (BigUint::from(5u32), 11),   // 5
+            (BigUint::from(855u32), 12), // 905
+            (BigUint::from(1u32), 10),   // 1005 total
+        ];
+        let acc = AccountId::new();
+        let mut f = Vec::new();
+        for a in amounts {
+            let s = store.clone();
+            f.push(s.save_uncredited_settlement_amount(acc, a));
+        }
+        join_all(f)
+            .map_err(|err| eprintln!("Redis error: {:?}", err))
+            .and_then(move |_| {
+                store
+                    .load_uncredited_settlement_amount(acc, 9)
+                    .map_err(|err| eprintln!("Redis error: {:?}", err))
+                    .and_then(move |ret| {
+                        // 1 uncredited unit for scale 9
+                        assert_eq!(ret, BigUint::from(1u32));
+                        // rest should be in the leftovers store
+                        store
+                            .get_uncredited_settlement_amount(acc)
+                            .map_err(|err| eprintln!("Redis error: {:?}", err))
+                            .and_then(move |ret| {
+                                // 1 uncredited unit for scale 9
+                                assert_eq!(ret, (BigUint::from(5u32), 12));
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+            })
+    }))
+    .unwrap()
 }
 
 #[test]
