@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 
 use env_logger;
-use futures::Future;
+use futures::{future::join_all, Future};
 use ilp_node::{random_secret, InterledgerNode};
 use interledger::{api::AccountSettings, packet::Address, service::Username};
 use serde_json::json;
@@ -13,7 +13,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 mod test_helpers;
 use test_helpers::{
     accounts_to_ids, create_account_on_node, get_all_accounts, get_balance, redis_helpers::*,
-    send_money_to_username, start_ganache, start_xrp_engine,
+    send_money_to_username, set_node_settlement_engines, start_ganache, start_xrp_engine,
 };
 
 #[cfg(feature = "ethereum")]
@@ -157,6 +157,12 @@ fn eth_xrp_interoperable() {
         exchange_rate_spread: 0.0,
     };
 
+    // Instead of using settlement engines configured for each account,
+    // Bob uses globally-configured settlement engines for each currency
+    let bob_settlement_engines = json!({
+        "ETH": format!("http://localhost:{}", node2_engine),
+        "XRP": format!("http://localhost:{}", node2_xrp_engine_port),
+    });
     let alice_on_bob = json!({
         "ilp_address": "example.alice",
         "username": "alice",
@@ -167,7 +173,6 @@ fn eth_xrp_interoperable() {
         "ilp_over_http_outgoing_token" : "bob:bob_password",
         "min_balance": -100_000,
         "routing_relation": "Peer",
-        "settlement_engine_url": format!("http://localhost:{}", node2_engine),
     });
     let charlie_on_bob = json!({
         "username": "charlie",
@@ -180,11 +185,11 @@ fn eth_xrp_interoperable() {
         "settle_threshold": 70000,
         "settle_to": 5000,
         "routing_relation": "Child",
-        "settlement_engine_url": format!("http://localhost:{}", node2_xrp_engine_port),
     });
 
-    let bob_fut = create_account_on_node(node2_http, alice_on_bob, "admin")
-        .and_then(move |_| create_account_on_node(node2_http, charlie_on_bob, "admin"));
+    let bob_fut = set_node_settlement_engines(node2_http, bob_settlement_engines, "admin")
+        .join(create_account_on_node(node2_http, alice_on_bob, "admin"))
+        .join(create_account_on_node(node2_http, charlie_on_bob, "admin"));
 
     runtime.spawn(
         node2_eth_engine_fut

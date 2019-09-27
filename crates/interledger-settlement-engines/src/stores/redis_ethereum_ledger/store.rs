@@ -128,18 +128,15 @@ impl LeftoversStore for EthereumLedgerRedisStore {
             account_id,
             uncredited_settlement_amount
         );
-        let mut pipe = redis::pipe();
         // We store these amounts as lists of strings
         // because we cannot do BigNumber arithmetic in the store
         // When loading the amounts, we convert them to the appropriate data
         // type and sum them up.
-        pipe.lpush(
-            ethereum_uncredited_amount_key(account_id.clone()),
-            uncredited_settlement_amount.to_string(),
-        )
-        .ignore();
         Box::new(
-            pipe.query_async(self.connection.clone())
+            cmd("LPUSH")
+                .arg(ethereum_uncredited_amount_key(account_id.clone()))
+                .arg(uncredited_settlement_amount.to_string())
+                .query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error saving uncredited_settlement_amount {:?}: {:?}",
@@ -317,16 +314,11 @@ impl EthereumStore for EthereumLedgerRedisStore {
         let mut pipe = redis::pipe();
         pipe.get(RECENTLY_OBSERVED_BLOCK_KEY);
         Box::new(
-            pipe.query_async(self.connection.clone())
+            cmd("GET")
+                .arg(RECENTLY_OBSERVED_BLOCK_KEY)
+                .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
-                .and_then(move |(_conn, block): (_, Vec<u64>)| {
-                    if !block.is_empty() {
-                        let block = U256::from(block[0]);
-                        ok(Some(block))
-                    } else {
-                        ok(None)
-                    }
-                }),
+                .map(|(_connnection, block): (_, Option<u64>)| block.map(U256::from)),
         )
     }
 
@@ -334,12 +326,19 @@ impl EthereumStore for EthereumLedgerRedisStore {
         &self,
         eth_address: EthereumAddresses,
     ) -> Box<dyn Future<Item = String, Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.get(addrs_to_key(eth_address));
         Box::new(
-            pipe.query_async(self.connection.clone())
+            cmd("GET")
+                .arg(addrs_to_key(eth_address))
+                .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading account data: {:?}", err))
-                .and_then(move |(_conn, account_id): (_, Vec<String>)| ok(account_id[0].clone())),
+                .and_then(move |(_conn, account_id): (_, Option<String>)| {
+                    if let Some(id) = account_id {
+                        Ok(id)
+                    } else {
+                        error!("Account not found for address: {:?}", eth_address);
+                        Err(())
+                    }
+                }),
         )
     }
 
