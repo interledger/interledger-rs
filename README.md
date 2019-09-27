@@ -19,33 +19,46 @@
 
 ## Installation and Usage
 
-### Docker
+### Using Docker
 
-Prerequisites:
+#### Prerequisites
+
 - Docker
 
-Install
+#### Install
 
-1. `docker pull interledgerrs/node`
+```bash #
+docker pull interledgerrs/node
+```
 
-Run
+#### Run
 
-1. `docker run -it interledgerrs/node`
+```bash #
+docker run -it interledgerrs/node
+```
 
 ### Building From Source
 
-Prerequisites:
+#### Prerequisites
+
 - Git
 - [Rust](https://www.rust-lang.org/tools/install) - latest stable version
 
-Install
+#### Install
 
-1. `git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs`
-2. `cargo build` (add `--release` to compile the release version, which is slower to compile but faster to run)
+```bash # 
+# 1. Clone the repsitory and change the working directory
+git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs
 
-Run
+# 2. Build interledger-rs (add `--release` to compile the release version, which is slower to compile but faster to run)
+cargo build 
+```
 
-`cargo run`
+#### Run
+
+```bash #
+cargo run
+```
 
 Append the `--help` flag to see available options.
 
@@ -53,38 +66,43 @@ Append the `--help` flag to see available options.
 
 Interledger.rs commands such as `node` and `ethereum-ledger` accept configuration options in the following ways:
 
-1. Environment variables
-1. Standard In (stdin)
-1. Configuration files
-1. Command line arguments
-
-The priority is: Environment Variables > stdin > configuration files > command line arguments.
+#### Environment variables
 
 ```bash #
-# 1.
-# Passing by command line arguments.
-# --{parameter name} {value}
-cargo run -- --admin_auth_token super-secret
-
-# 2.
-# Passing by a configuration file in JSON, TOML, YAML format.
-# The first argument after subcommands such as `node` is the path to the configuration file.
-# Note that in order for a docker image to have access to a local file, it must be included in
-# a directory that is mounted as a Volume at `/config`
-cargo run -- node config.yml
-
-# 3.
-# Passing from STDIN in JSON, TOML, YAML format.
-some_command | cargo run -- node
-
-# 4.
-# passing as environment variables
+# Passing as environment variables
 # {parameter name (typically in capital)}={value}
 # note that the parameter names MUST begin with a prefix of "ILP_" e.g. ILP_SECRET_SEED
 ILP_ADDRESS=example.alice \
 ILP_OTHER_PARAMETER=other_value \
 cargo run
 ```
+
+#### Standard In (stdin)
+
+```bash #
+# Passing from STDIN in JSON, TOML, YAML format.
+some_command | cargo run -- node
+```
+
+#### Configuration files
+
+```bash #
+# Passing by a configuration file in JSON, TOML, YAML format.
+# The first argument after subcommands such as `node` is the path to the configuration file.
+# Note that in order for a docker image to have access to a local file, it must be included in
+# a directory that is mounted as a Volume at `/config`
+cargo run -- node config.yml
+```
+
+#### Command line arguments
+
+```bash #
+# Passing by command line arguments.
+# --{parameter name} {value}
+cargo run -- --admin_auth_token super-secret
+```
+
+__Note:__ The priority is: Environment Variables > stdin > configuration files > command line arguments.
 
 ## Examples
 
