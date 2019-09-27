@@ -345,7 +345,6 @@ mod tests {
         block_on, test_eth_store as test_store,
     };
     use super::*;
-    use futures::future::join_all;
     use std::iter::FromIterator;
     use std::str::FromStr;
 
