@@ -22,7 +22,7 @@ mod test_helpers;
 use num_bigint::BigUint;
 use std::ops::{Div, Mul};
 
-pub use api::SettlementApi;
+pub use api::{scale_with_precision_loss, SettlementApi};
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
@@ -119,6 +119,12 @@ pub trait LeftoversStore {
         account_id: Self::AccountId,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
+
+    // Gets the current amount of leftovers in the store
+    fn get_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send>;
 }
 
 #[derive(Debug)]

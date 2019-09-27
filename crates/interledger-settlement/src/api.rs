@@ -1,6 +1,6 @@
 use super::{
-    Convert, ConvertDetails, IdempotentData, IdempotentStore, Quantity, SettlementAccount,
-    SettlementStore, SE_ILP_ADDRESS,
+    Convert, ConvertDetails, IdempotentData, IdempotentStore, LeftoversStore, Quantity,
+    SettlementAccount, SettlementStore, SE_ILP_ADDRESS,
 };
 use bytes::Bytes;
 use futures::{
@@ -9,10 +9,11 @@ use futures::{
 };
 use hyper::{Response, StatusCode};
 use interledger_packet::PrepareBuilder;
-use interledger_service::{AccountStore, OutgoingRequest, OutgoingService};
+use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::{debug, error};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
+use num_traits::Zero;
 use ring::digest::{digest, SHA256};
 use serde_json::json;
 use std::{
@@ -38,7 +39,7 @@ pub struct SettlementApi<S, O, A> {
 impl_web! {
     impl<S, O, A> SettlementApi<S, O, A>
     where
-        S: SettlementStore<Account = A> + IdempotentStore + AccountStore<Account = A> + Clone + Send + Sync + 'static,
+        S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint> + SettlementStore<Account = A> + IdempotentStore + AccountStore<Account = A> + Clone + Send + Sync + 'static,
         O: OutgoingService<A> + Clone + Send + Sync + 'static,
         A: SettlementAccount + Send + Sync + 'static,
     {
@@ -304,6 +305,35 @@ impl_web! {
         }
     }
 
+pub fn scale_with_precision_loss(
+    amount: BigUint,
+    local_scale: u8,
+    remote_scale: u8,
+) -> (BigUint, BigUint) {
+    let scaled = amount
+        .normalize_scale(ConvertDetails {
+            from: remote_scale,
+            to: local_scale,
+        })
+        .unwrap();
+
+    if local_scale < remote_scale {
+        // Upscale it again, and return any precision loss
+        let upscaled = scaled
+            .normalize_scale(ConvertDetails {
+                from: local_scale,
+                to: remote_scale,
+            })
+            .unwrap();
+        let precision_loss = if upscaled < amount {
+            amount - upscaled
+        } else {
+            Zero::zero()
+        };
+        (scaled, precision_loss)
+    } else {
+        (scaled, Zero::zero())
+    }
 }
 
 fn get_hash_of(preimage: &[u8]) -> [u8; 32] {
@@ -317,6 +347,24 @@ mod tests {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
+
+    #[test]
+    fn precision_loss() {
+        assert_eq!(
+            scale_with_precision_loss(BigUint::from(905u32), 9, 11),
+            (BigUint::from(9u32), BigUint::from(5u32))
+        );
+
+        assert_eq!(
+            scale_with_precision_loss(BigUint::from(8053u32), 9, 12),
+            (BigUint::from(8u32), BigUint::from(53u32))
+        );
+
+        assert_eq!(
+            scale_with_precision_loss(BigUint::from(1u32), 9, 6),
+            (BigUint::from(1000u32), BigUint::from(0u32))
+        );
+    }
 
     // Settlement Tests
     mod settlement_tests {
@@ -407,6 +455,100 @@ mod tests {
             assert_eq!(cached_data.0, StatusCode::OK);
             let quantity: Quantity = serde_json::from_slice(&cached_data.1).unwrap();
             assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
+        }
+
+        #[test]
+        // The connector must save the difference each time there's precision
+        // loss and try to add it the amount it's being notified to settle for the next time.
+        fn settlement_leftovers() {
+            let id = TEST_ACCOUNT_0.clone().id.to_string();
+            let store = test_store(false, true);
+            let api = test_api(store.clone(), false);
+
+            // Send 205 with scale 11, 2 decimals lost -> 0.05 leftovers
+            let ret: Response<_> = api
+                .receive_settlement(id.clone(), Quantity::new(205, 11), None)
+                .wait()
+                .unwrap();
+            assert_eq!(ret.status(), 200);
+
+            // balance should be 2
+            assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 2);
+            assert_eq!(
+                store
+                    .get_uncredited_settlement_amount(TEST_ACCOUNT_0.id)
+                    .wait()
+                    .unwrap(),
+                (BigUint::from(5u32), 11)
+            );
+
+            // Send 855 with scale 12, 3 decimals lost -> 0.855 leftovers,
+            let ret: Response<_> = api
+                .receive_settlement(id.clone(), Quantity::new(855, 12), None)
+                .wait()
+                .unwrap();
+            assert_eq!(ret.status(), 200);
+            // balance should remain unchanged since the leftovers were smaller
+            // than a unit's worth
+            assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 2);
+            // total leftover: 0.905 = 0.05 + 0.855
+            assert_eq!(
+                store
+                    .get_uncredited_settlement_amount(TEST_ACCOUNT_0.id)
+                    .wait()
+                    .unwrap(),
+                (BigUint::from(905u32), 12)
+            );
+
+            // send 110 with scale 11, 2 decimals lost -> 0.1 leftover
+            let ret: Response<_> = api
+                .receive_settlement(id.clone(), Quantity::new(110, 11), None)
+                .wait()
+                .unwrap();
+            assert_eq!(ret.status(), 200);
+            // total leftover 1.005 = 0.905 + 0.1
+            // leftovers will get applied on the next settlement
+            assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 3);
+            assert_eq!(
+                store
+                    .get_uncredited_settlement_amount(TEST_ACCOUNT_0.id)
+                    .wait()
+                    .unwrap(),
+                (BigUint::from(1005u32), 12)
+            );
+
+            // send 5 with scale 9, will consume the leftovers and increase
+            // total balance by 6 while updating the rest of the leftovers
+            let ret: Response<_> = api
+                .receive_settlement(id.clone(), Quantity::new(5, 9), None)
+                .wait()
+                .unwrap();
+            assert_eq!(ret.status(), 200);
+            // 5 from this call + 3 from before + 1 from leftovers = 9
+            assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 9);
+            assert_eq!(
+                store
+                    .get_uncredited_settlement_amount(TEST_ACCOUNT_0.id)
+                    .wait()
+                    .unwrap(),
+                (BigUint::from(5u32), 12)
+            );
+
+            // we send a payment with a smaller scale than the account now
+            let ret: Response<_> = api
+                .receive_settlement(id.clone(), Quantity::new(2, 7), None)
+                .wait()
+                .unwrap();
+            assert_eq!(ret.status(), 200);
+            assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 209);
+            // leftovers are still the same
+            assert_eq!(
+                store
+                    .get_uncredited_settlement_amount(TEST_ACCOUNT_0.id)
+                    .wait()
+                    .unwrap(),
+                (BigUint::from(5u32), 12)
+            );
         }
 
         #[test]
