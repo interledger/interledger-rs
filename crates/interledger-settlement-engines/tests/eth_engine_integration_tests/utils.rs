@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use hyper::StatusCode;
-use num_traits::Zero;
 use std::process::Command;
 use std::str::FromStr;
 use std::thread::sleep;
@@ -22,8 +21,9 @@ use interledger_settlement_engines::engines::ethereum_ledger::{
     EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner, EthereumStore,
 };
 use interledger_settlement_engines::stores::{
-    IdempotentEngineData, IdempotentEngineStore, LeftoversStore,
+    IdempotentEngineData, IdempotentEngineStore,
 };
+use interledger_settlement::{LeftoversStore, scale_with_precision_loss, Convert, ConvertDetails};
 use num_bigint::BigUint;
 
 #[derive(Debug, Clone)]
@@ -64,34 +64,86 @@ pub struct TestStore {
     pub last_observed_block: Arc<RwLock<U256>>,
     pub saved_hashes: Arc<RwLock<HashMap<H256, bool>>>,
     pub cache_hits: Arc<RwLock<u64>>,
-    pub uncredited_settlement_amount: Arc<RwLock<HashMap<String, BigUint>>>,
+    pub uncredited_settlement_amount: Arc<RwLock<HashMap<String, (BigUint, u8)>>>,
 }
 
 impl LeftoversStore for TestStore {
+    type AccountId = String;
     type AssetType = BigUint;
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: String,
-        uncredited_settlement_amount: Self::AssetType,
+        account_id: Self::AccountId,
+        uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
-        (*guard).insert(account_id, uncredited_settlement_amount);
+        if let Some(leftovers) = (*guard).get_mut(&account_id) {
+            if leftovers.1 > uncredited_settlement_amount.1 {
+                // the current leftovers maintain the scale so we just need to
+                // upscale the provided leftovers to the existing leftovers' scale
+                let scaled = uncredited_settlement_amount
+                    .0
+                    .normalize_scale(ConvertDetails {
+                        from: uncredited_settlement_amount.1,
+                        to: leftovers.1,
+                    })
+                    .unwrap();
+                *leftovers = (leftovers.0.clone() + scaled, leftovers.1);
+            } else if leftovers.1 == uncredited_settlement_amount.1 {
+                *leftovers = (
+                    leftovers.0.clone() + uncredited_settlement_amount.0,
+                    leftovers.1,
+                );
+            } else {
+                // if the scale of the provided leftovers is bigger than
+                // existing scale then we update the scale of the leftovers'
+                // scale
+                let scaled = leftovers
+                    .0
+                    .normalize_scale(ConvertDetails {
+                        from: leftovers.1,
+                        to: uncredited_settlement_amount.1,
+                    })
+                    .unwrap();
+                *leftovers = (
+                    uncredited_settlement_amount.0 + scaled,
+                    uncredited_settlement_amount.1,
+                );
+            }
+        } else {
+            (*guard).insert(account_id, uncredited_settlement_amount);
+        }
         Box::new(ok(()))
     }
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: String,
+        account_id: Self::AccountId,
+        local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
-        if let Some(l) = guard.get(&account_id) {
-            let l = l.clone();
-            (*guard).insert(account_id, Zero::zero());
-            Box::new(ok(l.clone()))
+        if let Some(l) = guard.get_mut(&account_id) {
+            let ret = l.clone();
+            let (scaled_leftover_amount, leftover_precision_loss) =
+                scale_with_precision_loss(ret.0, local_scale, ret.1);
+            // save the new leftovers
+            *l = (leftover_precision_loss, std::cmp::max(local_scale, ret.1));
+            Box::new(ok(scaled_leftover_amount))
         } else {
-            Box::new(ok(Zero::zero()))
+            Box::new(ok(BigUint::from(0u32)))
         }
+    }
+
+    fn get_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
+        let leftovers = self.uncredited_settlement_amount.read();
+        Box::new(ok(if let Some(a) = leftovers.get(&account_id) {
+            a.clone()
+        } else {
+            (BigUint::from(0u32), 1)
+        }))
     }
 }
 
@@ -277,7 +329,7 @@ pub fn test_engine<Si, S, A>(
 where
     Si: EthereumLedgerTxSigner + Clone + Send + Sync + 'static,
     S: EthereumStore<Account = A>
-        + LeftoversStore<AssetType = BigUint>
+        + LeftoversStore<AccountId = String, AssetType = BigUint>
         + IdempotentEngineStore
         + Clone
         + Send
