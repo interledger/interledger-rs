@@ -6,7 +6,9 @@ use web3::contract::{Contract, Options};
 use web3::{api::Web3, futures::future::Future, transports::Http, types::U256};
 
 use super::utils::*;
+use interledger_settlement::LeftoversStore;
 use interledger_settlement::Quantity;
+use num_bigint::BigUint;
 use std::iter::FromIterator;
 
 use interledger_settlement_engines::{
@@ -181,7 +183,7 @@ fn test_send_eth() {
 
     let bob_mock = mockito::mock("POST", "/accounts/42/settlements")
         .match_body(mockito::Matcher::JsonString(
-            json!(Quantity::new(100_000_000_000u64, 18)).to_string(),
+            json!(Quantity::new(100_000_000_001u64, 18)).to_string(),
         ))
         .with_status(200)
         .with_body(json!(Quantity::new(100, 9)).to_string())
@@ -208,9 +210,48 @@ fn test_send_eth() {
         false, // alice sends the transaction to bob (set it up so that she doesn't listen for inc txs)
     );
 
+    // Connector sends an amount that's smaller than what the engine can
+    // process, leftovers must be stored
+    let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(9, 19))).unwrap();
+    assert_eq!(ret.0.as_u16(), 200);
+    assert_eq!(ret.1, "OK");
+
+    // The leftovers must be set
+    assert_eq!(
+        alice_store
+            .get_uncredited_settlement_amount(bob.id.to_string())
+            .wait()
+            .unwrap(),
+        (BigUint::from(9u32), 19)
+    );
+
+    // the connector sends one more request, still less than the minimum amount,
+    // but this puts the leftovers over the min amount for the next call
+    let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(11, 20))).unwrap();
+    assert_eq!(ret.0.as_u16(), 200);
+    assert_eq!(ret.1, "OK");
+
+    // The leftovers must be set
+    assert_eq!(
+        alice_store
+            .get_uncredited_settlement_amount(bob.id.to_string())
+            .wait()
+            .unwrap(),
+        (BigUint::from(101u32), 20)
+    );
+
     let ret = block_on(alice_engine.send_money(bob.id.to_string(), Quantity::new(100, 9))).unwrap();
     assert_eq!(ret.0.as_u16(), 200);
     assert_eq!(ret.1, "OK");
+
+    // the remaining leftovers are correctly set
+    assert_eq!(
+        alice_store
+            .get_uncredited_settlement_amount(bob.id.to_string())
+            .wait()
+            .unwrap(),
+        (BigUint::from(1u32), 20)
+    );
 
     std::thread::sleep(Duration::from_millis(2000)); // wait a few seconds so that the receiver's engine that does the polling
 
@@ -219,8 +260,8 @@ fn test_send_eth() {
     let web3 = Web3::new(transport);
     let alice_balance = web3.eth().balance(alice.address, None).wait().unwrap();
     let bob_balance = web3.eth().balance(bob.address, None).wait().unwrap();
-    let expected_alice = U256::from_dec_str("99999579900000000000").unwrap(); // 99ether - 21k gas - 100 gwei
-    let expected_bob = U256::from_dec_str("100000000100000000000").unwrap(); // 100 ether + 100 gwei
+    let expected_alice = U256::from_dec_str("99999579899999999999").unwrap(); // 99ether - 21k gas - 100 gwei - 1 wei (only 1 tranasaction was made, despite the 2 zero-value settlement requests)
+    let expected_bob = U256::from_dec_str("100000000100000000001").unwrap(); // 100 ether + 100 gwei + 1 wei
     assert_eq!(alice_balance, expected_alice);
     assert_eq!(bob_balance, expected_bob);
 

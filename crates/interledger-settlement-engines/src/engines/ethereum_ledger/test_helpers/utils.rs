@@ -18,7 +18,7 @@ use crate::engines::ethereum_ledger::{
     EthereumLedgerSettlementEngineBuilder, EthereumLedgerTxSigner, EthereumStore,
 };
 use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
-use interledger_settlement::{LeftoversStore, Convert, ConvertDetails, scale_with_precision_loss};
+use interledger_settlement::{scale_with_precision_loss, Convert, ConvertDetails, LeftoversStore};
 
 #[derive(Debug, Clone)]
 pub struct TestAccount {
