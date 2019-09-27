@@ -102,7 +102,11 @@ cargo run -- node config.yml
 cargo run -- --admin_auth_token super-secret
 ```
 
-__Note:__ The priority is: Environment Variables > stdin > configuration files > command line arguments.
+Note that configurations are applied in the following order of priority: 
+1. Environment Variables 
+1. Stdin 
+1. Configuration files
+1. Command line arguments.
 
 ## Examples
 
