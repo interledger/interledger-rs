@@ -2,11 +2,21 @@ use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
 use bytes::Bytes;
 use futures::{future::result, Future};
 use http::StatusCode;
-use redis::{self, aio::SharedConnection, cmd, Client, ConnectionInfo, PipelineCommands};
+use interledger_settlement::{scale_with_precision_loss, Convert, ConvertDetails, LeftoversStore};
+use num_bigint::BigUint;
+use redis::{
+    self, aio::SharedConnection, cmd, Client, ConnectionInfo, ErrorKind, FromRedisValue,
+    PipelineCommands, RedisError, RedisWrite, ToRedisArgs, Value,
+};
 use std::collections::HashMap as SlowHashMap;
 use std::str::FromStr;
 
 use log::{debug, error, trace};
+
+static UNCREDITED_AMOUNT_KEY: &str = "uncredited_engine_settlement_amount";
+fn uncredited_amount_key(account_id: String) -> String {
+    format!("{}:{}", UNCREDITED_AMOUNT_KEY, account_id)
+}
 
 pub struct EngineRedisStoreBuilder {
     redis_url: ConnectionInfo,
@@ -109,6 +119,181 @@ impl IdempotentEngineStore for EngineRedisStore {
                         data,
                     );
                     Ok(())
+                }),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AmountWithScale {
+    num: BigUint,
+    scale: u8,
+}
+
+impl ToRedisArgs for AmountWithScale {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + RedisWrite,
+    {
+        let mut rv = Vec::new();
+        self.num.to_string().write_redis_args(&mut rv);
+        self.scale.to_string().write_redis_args(&mut rv);
+        ToRedisArgs::make_arg_vec(&rv, out);
+    }
+}
+
+impl AmountWithScale {
+    fn parse_multi_values(items: &[Value]) -> Option<Self> {
+        // We have to iterate over all values because in this case we're making
+        // an lrange call. This returns all the tuple elements in 1 array, and
+        // it cannot differentiate between 1 AmountWithScale value or multiple
+        // ones. This looks like a limitation of redis.rs
+        let len = items.len();
+        let mut iter = items.iter();
+
+        let mut max_scale = 0;
+        let mut amounts = Vec::new();
+        // if redis.rs could parse this properly, we could remove this loop,
+        // take 2 elements from the items iterator and return. Then we'd perform
+        // the summation and scaling in the consumer of the returned vector.
+        for _ in (0..len).step_by(2) {
+            let num: String = match iter.next().map(FromRedisValue::from_redis_value) {
+                Some(Ok(n)) => n,
+                _ => return None,
+            };
+            let num = match BigUint::from_str(&num) {
+                Ok(a) => a,
+                Err(_) => return None,
+            };
+
+            let scale: u8 = match iter.next().map(FromRedisValue::from_redis_value) {
+                Some(Ok(c)) => c,
+                _ => return None,
+            };
+
+            if scale > max_scale {
+                max_scale = scale;
+            }
+            amounts.push((num, scale));
+        }
+
+        // We must scale them to the largest scale, and then add them together
+        let mut sum = BigUint::from(0u32);
+        for amount in &amounts {
+            sum += amount
+                .0
+                .normalize_scale(ConvertDetails {
+                    from: amount.1,
+                    to: max_scale,
+                })
+                .unwrap();
+        }
+
+        Some(AmountWithScale {
+            num: sum,
+            scale: max_scale,
+        })
+    }
+}
+
+impl FromRedisValue for AmountWithScale {
+    fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
+        if let Value::Bulk(ref items) = *v {
+            if let Some(result) = Self::parse_multi_values(items) {
+                return Ok(result);
+            }
+        }
+        Err(RedisError::from((
+            ErrorKind::TypeError,
+            "Cannot parse amount with scale",
+        )))
+    }
+}
+
+impl LeftoversStore for EngineRedisStore {
+    type AccountId = String;
+    type AssetType = BigUint;
+
+    fn get_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        pipe.lrange(uncredited_amount_key(account_id.to_string()), 0, -1);
+        Box::new(
+            pipe.query_async(self.connection.clone())
+                .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
+                .and_then(move |(_, amounts): (_, Vec<AmountWithScale>)| {
+                    // this call will only return 1 element
+                    let amount = amounts[0].clone();
+                    Ok((amount.num, amount.scale))
+                }),
+        )
+    }
+
+    fn save_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+        uncredited_settlement_amount: (Self::AssetType, u8),
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        trace!(
+            "Saving uncredited_settlement_amount {:?} {:?}",
+            account_id,
+            uncredited_settlement_amount
+        );
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        // We store these amounts as lists of strings
+        // because we cannot do BigNumber arithmetic in the store
+        // When loading the amounts, we convert them to the appropriate data
+        // type and sum them up.
+        pipe.rpush(
+            uncredited_amount_key(account_id),
+            AmountWithScale {
+                num: uncredited_settlement_amount.0,
+                scale: uncredited_settlement_amount.1,
+            },
+        )
+        .ignore();
+        Box::new(
+            pipe.query_async(self.connection.clone())
+                .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
+                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
+        )
+    }
+
+    fn load_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+        local_scale: u8,
+    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
+        let connection = self.connection.clone();
+        trace!("Loading uncredited_settlement_amount {:?}", account_id);
+        Box::new(
+            self.get_uncredited_settlement_amount(account_id.clone())
+                .and_then(move |amount| {
+                    // scale the amount from the max scale to the local scale, and then
+                    // save any potential leftovers to the store
+                    let (scaled_amount, precision_loss) =
+                        scale_with_precision_loss(amount.0, local_scale, amount.1);
+                    let mut pipe = redis::pipe();
+                    pipe.atomic();
+                    pipe.del(uncredited_amount_key(account_id.clone())).ignore();
+                    pipe.rpush(
+                        uncredited_amount_key(account_id),
+                        AmountWithScale {
+                            num: precision_loss,
+                            scale: std::cmp::max(local_scale, amount.1),
+                        },
+                    )
+                    .ignore();
+
+                    pipe.query_async(connection.clone())
+                        .map_err(move |err| {
+                            error!("Error saving uncredited_settlement_amount: {:?}", err)
+                        })
+                        .and_then(move |(_conn, _ret): (_, Value)| Ok(scaled_amount))
                 }),
         )
     }

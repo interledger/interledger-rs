@@ -6,18 +6,17 @@ use futures::{
 use bytes::Bytes;
 use http::StatusCode;
 use std::collections::HashMap;
-use std::str::FromStr;
 use web3::types::{Address as EthAddress, H256, U256};
 
 use crate::engines::ethereum_ledger::{EthereumAccount, EthereumAddresses, EthereumStore};
-use num_traits::Zero;
+use num_bigint::BigUint;
 use redis::{self, aio::SharedConnection, cmd, ConnectionInfo, PipelineCommands, Value};
 
 use log::{error, trace};
 
 use crate::stores::redis_store_common::{EngineRedisStore, EngineRedisStoreBuilder};
-use crate::stores::{IdempotentEngineData, IdempotentEngineStore, LeftoversStore};
-use num_bigint::BigUint;
+use crate::stores::{IdempotentEngineData, IdempotentEngineStore};
+use interledger_settlement::LeftoversStore;
 
 // Key for the latest observed block and balance. The data is stored in order to
 // avoid double crediting transactions which have already been processed, and in
@@ -27,7 +26,6 @@ static SAVED_TRANSACTIONS_KEY: &str = "transactions";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement";
 static LEDGER_KEY: &str = "ledger";
 static ETHEREUM_KEY: &str = "eth";
-static UNCREDITED_AMOUNT_KEY: &str = "uncredited_settlement_amount";
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Account {
@@ -47,13 +45,6 @@ fn ethereum_ledger_key(account_id: &str) -> String {
     format!(
         "{}:{}:{}:{}",
         ETHEREUM_KEY, LEDGER_KEY, SETTLEMENT_ENGINES_KEY, account_id
-    )
-}
-
-fn ethereum_uncredited_amount_key(account_id: String) -> String {
-    format!(
-        "{}:{}:{}:{}",
-        ETHEREUM_KEY, LEDGER_KEY, UNCREDITED_AMOUNT_KEY, account_id,
     )
 }
 
@@ -116,76 +107,33 @@ impl EthereumLedgerRedisStore {
 }
 
 impl LeftoversStore for EthereumLedgerRedisStore {
+    type AccountId = String;
     type AssetType = BigUint;
+
+    fn get_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
+        self.redis_store
+            .get_uncredited_settlement_amount(account_id)
+    }
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: String,
-        uncredited_settlement_amount: Self::AssetType,
+        account_id: Self::AccountId,
+        uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        trace!(
-            "Saving uncredited_settlement_amount {:?} {:?}",
-            account_id,
-            uncredited_settlement_amount
-        );
-        // We store these amounts as lists of strings
-        // because we cannot do BigNumber arithmetic in the store
-        // When loading the amounts, we convert them to the appropriate data
-        // type and sum them up.
-        Box::new(
-            cmd("LPUSH")
-                .arg(ethereum_uncredited_amount_key(account_id.clone()))
-                .arg(uncredited_settlement_amount.to_string())
-                .query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error saving uncredited_settlement_amount {:?}: {:?}",
-                        uncredited_settlement_amount, err
-                    )
-                })
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
+        self.redis_store
+            .save_uncredited_settlement_amount(account_id, uncredited_settlement_amount)
     }
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: String,
+        account_id: Self::AccountId,
+        local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
-        trace!("Loading uncredited_settlement_amount {:?}", account_id);
-        let mut pipe = redis::pipe();
-        // Loads the value and resets it to 0
-        pipe.lrange(ethereum_uncredited_amount_key(account_id.clone()), 0, -1);
-        pipe.del(format!("uncredited_settlement_amount:{}", account_id))
-            .ignore();
-        Box::new(
-            pipe.query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!("Error loading uncredited_settlement_amount {:?}: ", err)
-                })
-                .and_then(
-                    move |(_conn, uncredited_settlement_amounts): (_, Vec<Vec<String>>)| {
-                        if uncredited_settlement_amounts.len() == 1 {
-                            let uncredited_settlement_amounts =
-                                uncredited_settlement_amounts[0].clone();
-                            let mut total_amount = BigUint::zero();
-                            for uncredited_settlement_amount in uncredited_settlement_amounts {
-                                let amount = if let Ok(amount) =
-                                    BigUint::from_str(&uncredited_settlement_amount)
-                                {
-                                    amount
-                                } else {
-                                    // could not convert to bigint
-                                    return Box::new(err(()));
-                                };
-                                total_amount += amount;
-                            }
-                            Box::new(ok(total_amount))
-                        } else {
-                            Box::new(ok(Zero::zero()))
-                        }
-                    },
-                ),
-        )
+        self.redis_store
+            .load_uncredited_settlement_amount(account_id, local_scale)
     }
 }
 
@@ -400,32 +348,6 @@ mod tests {
     use futures::future::join_all;
     use std::iter::FromIterator;
     use std::str::FromStr;
-
-    #[test]
-    fn saves_and_pops_uncredited_settlement_amount_properly() {
-        block_on(test_store().and_then(|(store, context)| {
-            let amount = BigUint::from_str("10000000000000000000").unwrap();
-            let ret_amount = BigUint::from_str("30000000000000000000").unwrap();
-            let acc = "0".to_string();
-            join_all(vec![
-                store.save_uncredited_settlement_amount(acc.clone(), amount.clone()),
-                store.save_uncredited_settlement_amount(acc.clone(), amount.clone()),
-                store.save_uncredited_settlement_amount(acc.clone(), amount.clone()),
-            ])
-            .map_err(|err| eprintln!("Redis error: {:?}", err))
-            .and_then(move |_| {
-                store
-                    .load_uncredited_settlement_amount(acc)
-                    .map_err(|err| eprintln!("Redis error: {:?}", err))
-                    .and_then(move |ret| {
-                        assert_eq!(ret, ret_amount);
-                        let _ = context;
-                        Ok(())
-                    })
-            })
-        }))
-        .unwrap()
-    }
 
     #[test]
     fn saves_and_loads_ethereum_addreses_properly() {
