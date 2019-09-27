@@ -82,8 +82,8 @@ fn accounts_key(account_id: AccountId) -> String {
 lazy_static! {
     static ref DEFAULT_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
 
-    // This lua script fetches an account associated with a username. The client
-    // MUST ensure that the returned account is authenticated.
+    /// This lua script fetches an account associated with a username. The client
+    /// MUST ensure that the returned account is authenticated.
     static ref ACCOUNT_FROM_USERNAME: Script = Script::new("
     local acc_id = redis.call('HGET', 'usernames', ARGV[1])
     if acc_id == nil then
@@ -91,6 +91,56 @@ lazy_static! {
     else
         return redis.call('HGETALL', 'accounts:' .. acc_id)
     end");
+
+    /// Load a list of accounts
+    /// If an account does not have a settlement_engine_url set
+    /// but there is one configured for that account's currency,
+    /// it will use the globally configured url
+    static ref LOAD_ACCOUNTS: Script = Script::new("
+    -- borrowed from https://stackoverflow.com/a/34313599
+    local function into_dictionary(flat_map)
+        local result = {}
+        for i = 1, #flat_map, 2 do
+            result[flat_map[i]] = flat_map[i + 1]
+        end
+        return result
+    end
+
+    local settlement_engines = into_dictionary(redis.call('HGETALL', 'settlement_engines'))
+    local accounts = {}
+
+    -- TODO get rid of the two representations of account
+    -- For some reason, the result from HGETALL returns
+    -- a bulk value type that we can return but that
+    -- we cannot index into with string keys. In contrast,
+    -- the result from into_dictionary can be indexed into
+    -- but if we try to return it, redis thinks it is a
+    -- '(empty list or set)'. There _should_ be some better way to do
+    -- this simple operation and a less janky way to insert the
+    -- settlement_engine_url into the account we are going to return
+    local account
+    local account_dict
+    for index, id in ipairs(ARGV) do
+        account = redis.call('HGETALL', 'accounts:' .. id)
+
+        if account ~= nil then
+            account_dict = into_dictionary(account)
+
+            -- If the account does not have a settlement_engine_url specified
+            -- but there is one configured for that currency, set the
+            -- account to use that url
+            if account_dict.settlement_engine_url == nil then
+                local url = settlement_engines[account_dict.asset_code]
+                if url ~= nil then
+                    table.insert(account, 'settlement_engine_url')
+                    table.insert(account, url)
+                end
+            end
+
+            table.insert(accounts, account)
+        end
+    end
+    return accounts");
 
     static ref PROCESS_PREPARE: Script = Script::new("
     local from_id = ARGV[1]
@@ -596,8 +646,13 @@ impl RedisStore {
         id: AccountId,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
         Box::new(
-            load_accounts(self.connection.as_ref().clone(), vec![id])
-                .and_then(|(_, mut accounts)| accounts.pop().ok_or(())),
+            LOAD_ACCOUNTS
+                .arg(id.to_string())
+                .invoke_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error loading accounts: {:?}", err))
+                .and_then(|(_, mut accounts): (_, Vec<AccountWithEncryptedTokens>)| {
+                    accounts.pop().ok_or(())
+                }),
         )
     }
 
@@ -655,9 +710,15 @@ impl AccountStore for RedisStore {
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
+        let mut script = LOAD_ACCOUNTS.prepare_invoke();
+        for id in account_ids.iter() {
+            script.arg(id.to_string());
+        }
         Box::new(
-            load_accounts(self.connection.as_ref().clone(), account_ids).and_then(
-                move |(_, accounts)| {
+            script
+                .invoke_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error loading accounts: {:?}", err))
+                .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
                     if accounts.len() == num_accounts {
                         let accounts = accounts
                             .into_iter()
@@ -669,8 +730,7 @@ impl AccountStore for RedisStore {
                     } else {
                         Err(())
                     }
-                },
-            ),
+                }),
         )
     }
 
@@ -938,8 +998,13 @@ impl BtpStore for RedisStore {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
+                            let mut script = LOAD_ACCOUNTS.prepare_invoke();
+                            for id in account_ids.iter() {
+                                script.arg(id.to_string());
+                            }
                             Either::B(
-                                load_accounts(connection, account_ids)
+                                script
+                                    .invoke_async(connection)
                                     .map_err(|err| {
                                         error!(
                                         "Error getting accounts with outgoing BTP details: {:?}",
@@ -1131,10 +1196,15 @@ impl NodeStore for RedisStore {
     fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let mut pipe = redis::pipe();
-        let connection = self.connection.clone();
+        let connection = self.connection.as_ref().clone();
         pipe.smembers("accounts");
         Box::new(self.get_all_accounts_ids().and_then(move |account_ids| {
-            load_accounts(connection.as_ref().clone(), account_ids)
+            let mut script = LOAD_ACCOUNTS.prepare_invoke();
+            for id in account_ids.iter() {
+                script.arg(id.to_string());
+            }
+            script
+                .invoke_async(connection)
                 .map_err(|err| error!("Error getting account ids: {:?}", err))
                 .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
                     let accounts: Vec<Account> = accounts
@@ -1368,8 +1438,13 @@ impl RouteManagerStore for RedisStore {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
+                            let mut script = LOAD_ACCOUNTS.prepare_invoke();
+                            for id in account_ids.iter() {
+                                script.arg(id.to_string());
+                            }
                             Either::B(
-                                load_accounts(connection, account_ids)
+                                script
+                                    .invoke_async(connection)
                                     .map_err(|err| {
                                         error!(
                                             "Error getting accounts to send routes to: {:?}",
@@ -1418,8 +1493,13 @@ impl RouteManagerStore for RedisStore {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
+                            let mut script = LOAD_ACCOUNTS.prepare_invoke();
+                            for id in account_ids.iter() {
+                                script.arg(id.to_string());
+                            }
                             Either::B(
-                                load_accounts(connection, account_ids)
+                                script
+                                    .invoke_async(connection)
                                     .map_err(|err| {
                                         error!(
                                             "Error getting accounts to receive routes from: {:?}",
@@ -1770,55 +1850,6 @@ fn update_routes(
                 trace!("Routing table is: {:?}", routes);
                 *routing_table.write() = routes;
                 Ok(())
-            },
-        )
-}
-
-type LoadSettlementEnginesResult = (SharedConnection, HashMap<String, String>);
-type LoadAccountsResult = (SharedConnection, Vec<AccountWithEncryptedTokens>);
-/// Load accounts from Redis
-/// Also, if an account does not have a settlement_engine_url configured
-/// but there is one configured globally for that account's asset_code,
-/// then set the account's settlement_engine_url to the global one
-fn load_accounts(
-    connection: SharedConnection,
-    account_ids: Vec<AccountId>,
-) -> impl Future<Item = (SharedConnection, Vec<AccountWithEncryptedTokens>), Error = ()> + Send {
-    // TODO can we make these two calls with one pipeline call
-    let load_settlement_engines = cmd("HGETALL")
-        .arg(SETTLEMENT_ENGINES_KEY)
-        .query_async(connection.clone());
-
-    let mut load_accounts = redis::pipe();
-    for id in account_ids.into_iter() {
-        load_accounts.hgetall(accounts_key(id));
-    }
-    let load_accounts = load_accounts.query_async(connection);
-    load_settlement_engines
-        .join(load_accounts)
-        .map_err(|err| error!("Error getting accounts: {:?}", err))
-        .and_then(
-            |((connection, settlement_engines), (_, mut accounts)): (
-                LoadSettlementEnginesResult,
-                LoadAccountsResult,
-            )| {
-                debug!(
-                    "settlement engines: {:?}, accounts: {:?}",
-                    settlement_engines, accounts
-                );
-                for account in accounts.iter_mut() {
-                    if account.account.settlement_engine_url.is_none() {
-                        debug!("account {} does not have se", account.account.username);
-                        if let Some(url) =
-                            settlement_engines.get(account.account.asset_code.as_str())
-                        {
-                            // TODO only parse the URL once
-                            account.account.settlement_engine_url = Url::parse(url).ok();
-                        }
-                    }
-                }
-
-                Ok((connection, accounts))
             },
         )
 }
