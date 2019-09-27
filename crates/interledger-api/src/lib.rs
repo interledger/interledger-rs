@@ -59,6 +59,11 @@ where
     }
 }
 
+// TODO should the methods from this trait be split up and put into the
+// traits that are more specific to what they're doing?
+// One argument against doing that is that the NodeStore allows admin-only
+// modifications to the values, whereas many of the other traits mostly
+// read from the configured values.
 pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     type Account: Account;
 
@@ -101,6 +106,11 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         &self,
         asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    fn get_asset_settlement_engine(
+        &self,
+        asset_code: &str,
+    ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send>;
 }
 
 /// AccountSettings is a subset of the user parameters defined in

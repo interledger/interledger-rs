@@ -1238,6 +1238,33 @@ impl NodeStore for RedisStore {
                 .and_then(|(_, _): (SharedConnection, Value)| Ok(())),
         )
     }
+
+    fn get_asset_settlement_engine(
+        &self,
+        asset_code: &str,
+    ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send> {
+        Box::new(
+            cmd("HGET")
+                .arg(SETTLEMENT_ENGINES_KEY)
+                .arg(asset_code)
+                .query_async(self.connection.as_ref().clone())
+                .map_err(|err| error!("Error getting settlement engine: {:?}", err))
+                .map(|(_, url): (_, Option<String>)| {
+                    if let Some(url) = url {
+                        Url::parse(url.as_str())
+                            .map_err(|err| {
+                                error!(
+                                "Settlement engine URL loaded from Redis was not a valid URL: {:?}",
+                                err
+                            )
+                            })
+                            .ok()
+                    } else {
+                        None
+                    }
+                }),
+        )
+    }
 }
 
 impl AddressStore for RedisStore {

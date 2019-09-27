@@ -402,15 +402,15 @@ where
         .boxed()
 }
 
-fn get_address_from_parent_and_update_routes<S, A, T>(
-    mut service: S,
+fn get_address_from_parent_and_update_routes<O, A, S>(
+    mut service: O,
     parent: A,
-    store: T,
+    store: S,
 ) -> impl Future<Item = (), Error = ()>
 where
-    S: OutgoingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Clone + Send + Sync + 'static,
-    T: AddressStore + Clone + Send + Sync + 'static,
+    S: AddressStore + Clone + Send + Sync + 'static,
 {
     let prepare = IldcpRequest {}.to_prepare();
     service
@@ -477,16 +477,16 @@ where
 // 2b. Perform a RouteControl Request to make them send us any new routes
 // 3. If they have a settlement engine endpoitn configured: Make a POST to the
 //    engine's account creation endpoint with the account's id
-fn connect_to_external_services<S, A, T, B>(
-    service: S,
+fn connect_to_external_services<O, A, S, B>(
+    service: O,
     account: A,
-    store: T,
+    store: S,
     btp: BtpOutgoingService<B, A>,
 ) -> impl Future<Item = A, Error = warp::reject::Rejection>
 where
-    S: OutgoingService<A> + Clone + Send + Sync + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + BtpAccount + SettlementAccount + Clone + Send + Sync + 'static,
-    T: AddressStore + Clone + Send + Sync + 'static,
+    S: NodeStore<Account = A> + AddressStore + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + 'static,
 {
     // Try to connect to the account's BTP socket if they have
@@ -501,48 +501,57 @@ where
     };
 
     btp_connect_fut.and_then(move |_| {
-    // If we added a parent, get the address assigned to us by
-    // them and update all of our routes
-    let get_ilp_address_fut = if account.routing_relation() == RoutingRelation::Parent {
-        Either::A(
-            get_address_from_parent_and_update_routes(service, account.clone(), store)
-            .map_err(|_| {
-                warp::reject::custom(ApiError::InternalServerError)
-            })
-        )
-    } else {
-        Either::B(ok(()))
-    };
+        // If we added a parent, get the address assigned to us by
+        // them and update all of our routes
+        let get_ilp_address_fut = if account.routing_relation() == RoutingRelation::Parent {
+            Either::A(
+                get_address_from_parent_and_update_routes(service, account.clone(), store.clone())
+                .map_err(|_| {
+                    warp::reject::custom(ApiError::InternalServerError)
+                })
+            )
+        } else {
+            Either::B(ok(()))
+        };
 
-    // Register the account with the settlement engine
-    // if a settlement_engine_url was configured on the account
-    get_ilp_address_fut.and_then(move |_|
-    if let Some(se_details) = account.settlement_engine_details() {
-        let se_url = se_details.url;
-        let id = account.id();
-        let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
-        trace!(
-            "Sending account {} creation request to settlement engine: {:?}",
-            id,
-            se_url.clone()
-        );
-        Either::A(
-            http_client.create_engine_account(se_url, id)
+        let default_settlement_engine_fut = store.get_asset_settlement_engine(account.asset_code())
             .map_err(|_| {
                 warp::reject::custom(ApiError::InternalServerError)
-            })
-            .and_then(move |status_code| {
-                if status_code.is_success() {
-                    trace!("Account {} created on the SE", id);
-                } else {
-                    error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
-                }
-                Ok(())
-            })
-            .and_then(move |_| {
-                Ok(account)
-            }))
-    } else {
-        Either::B(ok(account))
-    })})
+            });
+
+        // Register the account with the settlement engine
+        // if a settlement_engine_url was configured on the account
+        // of if there is a settlement engine configured for that
+        // account's asset_code
+        default_settlement_engine_fut.join(get_ilp_address_fut).and_then(move |(default_settlement_engine, _)| {
+            let settlement_engine_url = account.settlement_engine_details().map(|details| details.url).or(default_settlement_engine);
+            if let Some(se_url) = settlement_engine_url {
+                let id = account.id();
+                let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
+                trace!(
+                    "Sending account {} creation request to settlement engine: {:?}",
+                    id,
+                    se_url.clone()
+                );
+                Either::A(
+                    http_client.create_engine_account(se_url, id)
+                    .map_err(|_| {
+                        warp::reject::custom(ApiError::InternalServerError)
+                    })
+                    .and_then(move |status_code| {
+                        if status_code.is_success() {
+                            trace!("Account {} created on the SE", id);
+                        } else {
+                            error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                        }
+                        Ok(())
+                    })
+                    .and_then(move |_| {
+                        Ok(account)
+                    }))
+            } else {
+                Either::B(ok(account))
+            }
+        })
+    })
 }
