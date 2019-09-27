@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "128"]
 
 #[macro_use]
 extern crate tower_web;
