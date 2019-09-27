@@ -39,7 +39,7 @@ use web3::{
 
 use crate::stores::{redis_ethereum_ledger::*, LeftoversStore};
 use crate::{ApiResponse, CreateAccount, SettlementEngine, SettlementEngineApi};
-use interledger_settlement::{Convert, ConvertDetails, Quantity};
+use interledger_settlement::{scale_with_precision_loss, Convert, ConvertDetails, Quantity};
 use secrecy::Secret;
 
 const MAX_RETRIES: usize = 10;
@@ -538,151 +538,34 @@ where
             .push("settlements");
         debug!("Making POST to {:?} {:?} about {:?}", url, amount, tx_hash);
 
-        // settle for amount + uncredited_settlement_amount
         let account_id_clone = account_id.clone();
-        let full_amount_fut = self
-            .store
-            .load_uncredited_settlement_amount(account_id.clone())
-            .and_then(move |uncredited_settlement_amount| {
-                let full_amount_fut2 = result(BigUint::from_str(&amount).map_err(move |err| {
-                    let error_msg = format!("Error converting to BigUint {:?}", err);
-                    error!("{:?}", error_msg);
-                }))
-                .and_then(move |amount| {
-                    debug!("Loaded uncredited amount {}", uncredited_settlement_amount);
-                    let full_amount = amount + uncredited_settlement_amount;
-                    debug!(
-                        "Notifying accounting system about full amount: {}",
-                        full_amount
+        let action = move || {
+            let client = Client::new();
+            let account_id = account_id.clone();
+            let amount = amount.clone();
+            client
+                .post(url.as_ref())
+                .header("Idempotency-Key", tx_hash.to_string())
+                .json(&json!(Quantity::new(amount, engine_scale)))
+                .send()
+                .map_err(move |err| {
+                    error!(
+                        "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
+                        account_id, amount, err
                     );
-                    ok(full_amount)
-                });
-                ok(full_amount_fut2)
-            })
-            .flatten();
-
-        let self_clone = self.clone();
-        let ping_connector_fut = full_amount_fut.and_then(move |full_amount| {
-            let url = url.clone();
-            let account_id = account_id_clone.clone();
-            let account_id2 = account_id_clone.clone();
-            let full_amount2 = full_amount.clone();
-
-            let action = move || {
-                let client = Client::new();
-                let account_id = account_id.clone();
-                let full_amount = full_amount.clone();
-                let full_amount_clone = full_amount.clone();
-                client
-                    .post(url.as_ref())
-                    .header("Idempotency-Key", tx_hash.to_string())
-                    .json(&json!(Quantity::new(full_amount.clone(), engine_scale)))
-                    .send()
-                    .map_err(move |err| {
-                        error!(
-                            "Error notifying Accounting System's account: {:?}, amount: {:?}: {:?}",
-                            account_id, full_amount_clone, err
-                        );
-                    })
-                    .and_then(move |ret| {
-                        ok((ret, full_amount))
-                    })
-            };
-            Retry::spawn(
-                ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
-                action,
-            )
-            .map_err(move |_| {
-                error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id2, full_amount2, tx_hash)
-            })
-        });
-
-        ping_connector_fut.and_then(move |ret| {
-            trace!("Accounting system responded with {:?}", ret.0);
-            self_clone.process_connector_response(account_id, ret.0, ret.1)
+                })
+        };
+        Retry::spawn(
+            ExponentialBackoff::from_millis(10).take(MAX_RETRIES),
+            action,
+        )
+        .map_err(move |_| {
+            error!("Exceeded max retries when notifying connector about account {:?} for amount {:?} and transaction hash {:?}. Please check your API.", account_id, amount, tx_hash)
         })
-    }
-
-    /// Parses a response from a connector into a Quantity type and calls a
-    /// function to further process the parsed data to check if the store's
-    /// uncredited settlement amount should be updated.
-    fn process_connector_response(
-        &self,
-        account_id: String,
-        response: HttpResponse,
-        engine_amount: BigUint,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let self_clone = self.clone();
-        if !response.status().is_success() {
-            return Box::new(err(()));
-        }
-        Box::new(
-            response
-                .into_body()
-                .concat2()
-                .map_err(|err| {
-                    let err = format!("Couldn't retrieve body {:?}", err);
-                    error!("{}", err);
-                })
-                .and_then(move |body| {
-                    // Get the amount stored by the connector and
-                    // check for any precision loss / overflow
-                    serde_json::from_slice::<Quantity>(&body).map_err(|err| {
-                        let err = format!("Couldn't parse body {:?} into Quantity {:?}", body, err);
-                        error!("{}", err);
-                    })
-                })
-                .and_then(move |quantity: Quantity| {
-                    self_clone.process_received_quantity(account_id, quantity, engine_amount)
-                }),
-        )
-    }
-
-    // Normalizes a received Quantity object against the local engine scale, and
-    // if the normalized value is less than what the engine originally sent, it
-    // stores it as uncredited settlement amount in the store.
-    fn process_received_quantity(
-        &self,
-        account_id: String,
-        quantity: Quantity,
-        engine_amount: BigUint,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let store = self.store.clone();
-        let engine_scale = self.asset_scale;
-        Box::new(
-            result(BigUint::from_str(&quantity.amount))
-                .map_err(|err| {
-                    let error_msg = format!("Error converting to BigUint {:?}", err);
-                    error!("{:?}", error_msg);
-                })
-                .and_then(move |connector_amount: BigUint| {
-                    // Scale the amount settled by the
-                    // connector back up to our scale
-                    result(connector_amount.normalize_scale(ConvertDetails {
-                        from: quantity.scale,
-                        to: engine_scale,
-                    }))
-                    .and_then(move |scaled_connector_amount| {
-                        debug!(
-                            "Engine settled to connector {}. Connector settled {}. Will save the difference: {}",
-                            engine_amount, scaled_connector_amount, engine_amount > scaled_connector_amount,
-                        );
-                        if engine_amount > scaled_connector_amount {
-                            let diff = engine_amount - scaled_connector_amount;
-                            // connector settled less than we
-                            // instructed it to, so we must save
-                            // the difference
-                            Either::A(store.save_uncredited_settlement_amount(account_id, diff.clone())
-                            .and_then(move |_| {
-                                debug!("Saved uncredited settlement amount {}", diff);
-                                Ok(())
-                            }))
-                        } else {
-                            Either::B(ok(()))
-                        }
-                    })
-                }),
-        )
+        .and_then(move |ret| {
+            trace!("Accounting system responded with {:?}", ret);
+            Ok(())
+        })
     }
 
     /// Helper function which submits an Ethereum ledger transaction to `to` for `amount`.
