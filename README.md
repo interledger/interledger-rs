@@ -19,33 +19,46 @@
 
 ## Installation and Usage
 
-### Docker
+### Using Docker
 
-Prerequisites:
+#### Prerequisites
+
 - Docker
 
-Install
+#### Install
 
-1. `docker pull interledgerrs/node`
+```bash #
+docker pull interledgerrs/node
+```
 
-Run
+#### Run
 
-1. `docker run -it interledgerrs/node`
+```bash #
+docker run -it interledgerrs/node
+```
 
 ### Building From Source
 
-Prerequisites:
+#### Prerequisites
+
 - Git
 - [Rust](https://www.rust-lang.org/tools/install) - latest stable version
 
-Install
+#### Install
 
-1. `git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs`
-2. `cargo build` (add `--release` to compile the release version, which is slower to compile but faster to run)
+```bash # 
+# 1. Clone the repsitory and change the working directory
+git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs
 
-Run
+# 2. Build interledger-rs (add `--release` to compile the release version, which is slower to compile but faster to run)
+cargo build 
+```
 
-`cargo run`
+#### Run
+
+```bash #
+cargo run
+```
 
 Append the `--help` flag to see available options.
 
