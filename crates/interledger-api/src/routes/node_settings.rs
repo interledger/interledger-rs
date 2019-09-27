@@ -113,6 +113,7 @@ where
 
     // PUT /routes/static
     let put_static_routes = warp::put2()
+        .and(admin_only.clone())
         .and(warp::path("routes"))
         .and(warp::path("static"))
         .and(warp::path::end())
@@ -142,6 +143,7 @@ where
 
     // PUT /routes/static/:prefix
     let put_static_route = warp::put2()
+        .and(admin_only.clone())
         .and(warp::path("routes"))
         .and(warp::path("static"))
         .and(warp::path::param2::<String>())
@@ -169,6 +171,7 @@ where
 
     // PUT /settlement/engines
     let put_settlement_engines = warp::put2()
+        .and(admin_only.clone())
         .and(warp::path("settlement"))
         .and(warp::path("engines"))
         .and(warp::path::end())
