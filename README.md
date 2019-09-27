@@ -81,7 +81,7 @@ cargo run
 
 ```bash #
 # Passing from STDIN in JSON, TOML, YAML format.
-some_command | cargo run -- node
+some_command | cargo run
 ```
 
 #### Configuration files
@@ -91,7 +91,7 @@ some_command | cargo run -- node
 # The first argument after subcommands such as `node` is the path to the configuration file.
 # Note that in order for a docker image to have access to a local file, it must be included in
 # a directory that is mounted as a Volume at `/config`
-cargo run -- node config.yml
+cargo run -- config.yml
 ```
 
 #### Command line arguments
