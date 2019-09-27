@@ -7,11 +7,12 @@ use interledger_service::{Account, AddressStore, IncomingService, OutgoingServic
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::{
     error::Error as StdError,
     fmt::{self, Display},
     net::SocketAddr,
+    str::FromStr,
 };
 use warp::{self, Filter};
 mod routes;
@@ -20,6 +21,42 @@ use interledger_ccp::CcpRoutingAccount;
 use secrecy::SecretString;
 
 pub(crate) mod http_retry;
+
+// This enum and the following two functions are used to allow clients to send either
+// numbers or strings and have them be properly deserialized into the appropriate
+// integer type.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NumOrStr<T> {
+    Num(T),
+    Str(String),
+}
+
+pub fn number_or_string<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: de::Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    <T as FromStr>::Err: Display,
+{
+    match NumOrStr::deserialize(deserializer)? {
+        NumOrStr::Num(n) => Ok(n),
+        NumOrStr::Str(s) => T::from_str(&s).map_err(de::Error::custom),
+    }
+}
+
+pub fn optional_number_or_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: de::Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    <T as FromStr>::Err: Display,
+{
+    match NumOrStr::deserialize(deserializer)? {
+        NumOrStr::Num(n) => Ok(Some(n)),
+        NumOrStr::Str(s) => T::from_str(&s)
+            .map_err(de::Error::custom)
+            .and_then(|n| Ok(Some(n))),
+    }
+}
 
 pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     type Account: Account;
@@ -102,9 +139,11 @@ pub struct AccountDetails {
     pub ilp_address: Option<Address>,
     pub username: Username,
     pub asset_code: String,
+    #[serde(deserialize_with = "number_or_string")]
     pub asset_scale: u8,
-    #[serde(default = "u64::max_value")]
+    #[serde(default = "u64::max_value", deserialize_with = "number_or_string")]
     pub max_packet_amount: u64,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub min_balance: Option<i64>,
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_http_incoming_token: Option<SecretString>,
@@ -112,11 +151,16 @@ pub struct AccountDetails {
     pub ilp_over_btp_url: Option<String>,
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     pub ilp_over_btp_incoming_token: Option<SecretString>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_threshold: Option<i64>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_to: Option<i64>,
     pub routing_relation: Option<String>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub round_trip_time: Option<u32>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub amount_per_minute_limit: Option<u64>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub packets_per_minute_limit: Option<u32>,
     pub settlement_engine_url: Option<String>,
 }

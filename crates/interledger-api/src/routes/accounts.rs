@@ -1,4 +1,6 @@
-use crate::{http_retry::Client, AccountDetails, AccountSettings, ApiError, NodeStore};
+use crate::{
+    http_retry::Client, number_or_string, AccountDetails, AccountSettings, ApiError, NodeStore,
+};
 use bytes::Bytes;
 use futures::{
     future::{err, join_all, ok, Either},
@@ -30,6 +32,7 @@ const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_millis(5000);
 #[derive(Deserialize, Debug)]
 struct SpspPayRequest {
     receiver: String,
+    #[serde(deserialize_with = "number_or_string")]
     source_amount: u64,
 }
 
