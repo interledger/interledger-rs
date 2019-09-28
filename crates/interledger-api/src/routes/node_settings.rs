@@ -1,4 +1,5 @@
-use crate::{http_retry::Client, ApiError, ExchangeRates, NodeStore};
+use crate::error::{ApiError, ApiErrorType, ProblemType};
+use crate::{deserialize_json, http_retry::Client, NodeStore, ExchangeRates};
 use bytes::Buf;
 use futures::{
     future::{err, join_all, Either},
@@ -18,7 +19,7 @@ use std::{
     str::{self, FromStr},
 };
 use url::Url;
-use warp::{self, Filter};
+use warp::{self, Filter, Rejection};
 
 pub fn node_settings_api<S, A>(
     admin_api_token: String,
@@ -35,11 +36,11 @@ where
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
     let admin_only = warp::header::<String>("authorization")
-        .and_then(move |authorization| -> Result<(), warp::Rejection> {
+        .and_then(move |authorization| -> Result<(), Rejection> {
             if authorization == admin_auth_header {
                 Ok(())
             } else {
-                Err(warp::reject::custom(ApiError::Unauthorized))
+                Err(ApiError::default_unauthorized().into())
             }
         })
         // This call makes it so we do not pass on a () value on
@@ -75,14 +76,14 @@ where
         .and(admin_only.clone())
         .and(warp::path("rates"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|rates: ExchangeRates, store: S| {
+        .and_then(|rates: ExchangeRates, store: S| -> Result<_, Rejection> {
             if store.set_exchange_rates(rates.0.clone()).is_ok() {
                 Ok(warp::reply::json(&rates))
             } else {
                 error!("Error setting exchange rates");
-                Err(warp::reject::custom(ApiError::InternalServerError))
+                Err(ApiError::default_internal_server_error().into())
             }
         })
         .boxed();
@@ -92,12 +93,12 @@ where
         .and(warp::path("rates"))
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(|store: S| {
+        .and_then(|store: S| -> Result<_, Rejection> {
             if let Ok(rates) = store.get_all_exchange_rates() {
                 Ok(warp::reply::json(&rates))
             } else {
                 error!("Error getting exchange rates");
-                Err(warp::reject::custom(ApiError::InternalServerError))
+                Err(ApiError::default_internal_server_error().into())
             }
         })
         .boxed();
@@ -129,7 +130,7 @@ where
         .and(warp::path("routes"))
         .and(warp::path("static"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|routes: HashMap<String, String>, store: S| {
             let mut parsed = HashMap::with_capacity(routes.len());
@@ -138,15 +139,15 @@ where
                     parsed.insert(prefix, id);
                 } else {
                     error!("Invalid Account ID: {}", id);
-                    return Either::B(err(warp::reject::custom(ApiError::BadRequest)));
+                    return Either::B(err(ApiError::invalid_account_id(Some(&id)).into()));
                 }
             }
             Either::A(
                 store
                     .set_static_routes(parsed.clone())
-                    .map_err(|_| {
+                    .map_err::<_, Rejection>(|_| {
                         error!("Error setting static routes");
-                        warp::reject::custom(ApiError::InternalServerError)
+                        ApiError::default_internal_server_error().into()
                     })
                     .map(move |_| warp::reply::json(&parsed)),
             )
@@ -168,16 +169,18 @@ where
                     return Either::A(
                         store
                             .set_static_route(prefix, id)
-                            .map_err(|_| {
+                            .map_err::<_, Rejection>(|_| {
                                 error!("Error setting static route");
-                                warp::reject::custom(ApiError::InternalServerError)
+                                ApiError::default_internal_server_error().into()
                             })
                             .map(move |_| id.to_string()),
                     );
+                } else {
+                    return Either::B(err(ApiError::invalid_account_id(Some(&string)).into()));
                 }
             }
             error!("Body was not a valid Account ID");
-            Either::B(err(warp::reject::custom(ApiError::BadRequest)))
+            Either::B(err(ApiError::invalid_account_id(None).into()))
         })
         .boxed();
 
@@ -187,15 +190,15 @@ where
         .and(warp::path("settlement"))
         .and(warp::path("engines"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|asset_to_url_map: HashMap<String, Url>, store: S| {
             let asset_to_url_map_clone = asset_to_url_map.clone();
             store
                 .set_settlement_engines(asset_to_url_map.clone())
-                .map_err(|_| {
+                .map_err::<_, Rejection>(|_| {
                     error!("Error setting settlement engines");
-                    warp::reject::custom(ApiError::InternalServerError)
+                    ApiError::default_internal_server_error().into()
                 })
                 .and_then(move |_| {
                     // Create the accounts on the settlement engines for any
@@ -209,7 +212,7 @@ where
                     // (even if this isn't called often, it could crash the node at some point)
                     store.get_all_accounts()
                         .map_err(|_| {
-                            warp::reject::custom(ApiError::InternalServerError)
+                            ApiError::default_internal_server_error().into()
                         })
                     .and_then(move |accounts| {
                         let client = Client::default();
@@ -222,7 +225,7 @@ where
                                     if Some(&details.url) == asset_to_url_map.get(account.asset_code()) {
                                         return Some(client.create_engine_account(details.url, account.id())
                                             .map_err(|_| {
-                                                warp::reject::custom(ApiError::InternalServerError)
+                                                ApiError::default_internal_server_error().into()
                                             })
                                             .and_then(move |status_code| {
                                                 if status_code.is_success() {
@@ -251,4 +254,20 @@ where
         .or(put_static_route)
         .or(put_settlement_engines)
         .boxed()
+}
+
+// Settings specific error
+const INVALID_ACCOUNT_ID_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::InterledgerHttpApi("settings/invalid-account-id"),
+    title: "Invalid Account Id",
+};
+
+impl ApiError {
+    fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
+        let detail = match invalid_account_id {
+            Some(invalid_account_id) => format!("{} is an invalid account ID", invalid_account_id),
+            None => "Invalid string was given as an account ID".to_owned(),
+        };
+        ApiError::bad_request(&INVALID_ACCOUNT_ID_TYPE, Some(detail), None, None)
+    }
 }

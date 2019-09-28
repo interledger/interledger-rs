@@ -8,20 +8,18 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    error::Error as StdError,
-    fmt::{self, Display},
-    net::SocketAddr,
-    str::FromStr,
-};
+use std::{fmt::Display, net::SocketAddr, str::FromStr, collections::HashMap};
 use warp::{self, Filter};
 mod routes;
+use bytes::Buf;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
 use secrecy::SecretString;
+use serde::de::DeserializeOwned;
 use url::Url;
+use warp::{filters::body::FullBody, Rejection, Reply};
 
+pub(crate) mod error;
 pub(crate) mod http_retry;
 
 // This enum and the following functions are used to allow clients to send either
@@ -207,27 +205,6 @@ pub struct AccountDetails {
     pub settlement_engine_url: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum ApiError {
-    AccountNotFound,
-    BadRequest,
-    InternalServerError,
-    Unauthorized,
-}
-
-impl Display for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            ApiError::AccountNotFound => "Account not found",
-            ApiError::BadRequest => "Bad request",
-            ApiError::InternalServerError => "Internal server error",
-            ApiError::Unauthorized => "Unauthorized",
-        })
-    }
-}
-
-impl StdError for ApiError {}
-
 pub struct NodeApi<S, I, O, B, A: Account> {
     store: S,
     admin_api_token: String,
@@ -306,16 +283,12 @@ where
             ))
             .or(routes::node_settings_api(self.admin_api_token, self.store))
             .recover(|err: warp::Rejection| {
-                if let Some(&err) = err.find_cause::<ApiError>() {
-                    let code = match err {
-                        ApiError::AccountNotFound => warp::http::StatusCode::NOT_FOUND,
-                        ApiError::BadRequest => warp::http::StatusCode::BAD_REQUEST,
-                        ApiError::InternalServerError => {
-                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                        }
-                        ApiError::Unauthorized => warp::http::StatusCode::UNAUTHORIZED,
-                    };
-                    Ok(warp::reply::with_status(warp::reply(), code))
+                if let Some(api_error) = err.find_cause::<error::ApiError>() {
+                    Ok(api_error.clone().into_response())
+                } else if let Some(json_error) = err.find_cause::<error::JsonDeserializeError>() {
+                    Ok(json_error.clone().into_response())
+                } else if err.status() == http::status::StatusCode::METHOD_NOT_ALLOWED {
+                    Ok(error::ApiError::default_method_not_allowed().into_response())
                 } else {
                     Err(err)
                 }
@@ -326,6 +299,22 @@ where
     pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
         warp::serve(self.into_warp_filter()).bind(addr)
     }
+}
+
+fn deserialize_json<T: DeserializeOwned + Send>(
+) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
+    warp::header::exact("content-type", "application/json")
+        .and(warp::body::concat())
+        .and_then(|buf: FullBody| {
+            let deserializer = &mut serde_json::Deserializer::from_slice(&buf.bytes());
+            serde_path_to_error::deserialize(deserializer).map_err(|err| {
+                warp::reject::custom(error::JsonDeserializeError {
+                    category: err.inner().classify(),
+                    detail: err.inner().to_string(),
+                    path: err.path().clone(),
+                })
+            })
+        })
 }
 
 #[cfg(test)]
