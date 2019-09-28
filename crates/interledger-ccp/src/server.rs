@@ -477,7 +477,11 @@ where
             last_known_epoch,
             features: Vec::new(),
         };
-        debug!("Sending Route Control Request to account: {}, last known table id: {}, last known epoch: {}", account_id, hex::encode(&last_known_routing_table_id[..]), last_known_epoch);
+        debug!("Sending Route Control Request to account: {} (id: {}), last known table id: {}, last known epoch: {}",
+            account.username(),
+            account_id,
+            hex::encode(&last_known_routing_table_id[..]),
+            last_known_epoch);
         let prepare = control.to_prepare();
         self.clone()
             .outgoing
@@ -496,8 +500,6 @@ where
                         "Error sending Route Control Request to account {}: {:?}",
                         account_id, err
                     )
-                } else {
-                    trace!("Sent Route Control Request to account: {}", account_id);
                 }
                 Ok(())
             })
@@ -596,7 +598,7 @@ where
                         let correct_global_prefix = route.prefix.starts_with(&global_prefix[..])
                             && route.prefix != *global_prefix;
                         // We do want to advertise our address
-                        let is_our_address = &route.prefix == (ilp_address.as_ref() as &Bytes);
+                        let is_our_address = route.prefix == (ilp_address.as_ref() as &Bytes);
                         // Don't advertise local routes because advertising only our address
                         // will be enough to ensure the packet gets to us and we can route it
                         // to the correct account on our node
@@ -674,7 +676,14 @@ where
                     debug!("Sending route updates to accounts: {}", {
                         let account_list: Vec<String> = accounts
                             .iter()
-                            .map(|a| format!("{} ({})", a.id(), a.ilp_address()))
+                            .map(|a| {
+                                format!(
+                                    "{} (id: {}, ilp_address: {})",
+                                    a.username(),
+                                    a.id(),
+                                    a.ilp_address()
+                                )
+                            })
                             .collect();
                         account_list.join(", ")
                     });
@@ -726,6 +735,21 @@ where
         // Merge the new routes and withdrawn routes from all of the given epochs
         let mut new_routes: Vec<Route> = Vec::with_capacity(epochs_to_take);
         let mut withdrawn_routes: Vec<Bytes> = Vec::new();
+
+        // Include our own prefix if its the first update
+        // TODO this might not be the right place to send our prefix
+        // (the reason we don't include our prefix in the forwarding table
+        // or the updates is that there isn't necessarily an Account that
+        // corresponds to this ILP address)
+        if start == 0 {
+            new_routes.push(Route {
+                prefix: self.ilp_address.read().to_bytes(),
+                path: Vec::new(),
+                // TODO what should we include here?
+                auth: [0; 32],
+                props: Vec::new(),
+            });
+        }
 
         // Iterate through each of the given epochs
         for (new, withdrawn) in forwarding_table_updates
@@ -1114,7 +1138,7 @@ mod handle_route_control_request {
         assert_eq!(update.from_epoch_index, 0);
         assert_eq!(update.to_epoch_index, 1);
         assert_eq!(update.current_epoch_index, 1);
-        assert_eq!(update.new_routes.len(), 2);
+        assert_eq!(update.new_routes.len(), 3);
     }
 
     #[test]
@@ -1142,7 +1166,7 @@ mod handle_route_control_request {
         assert_eq!(update.from_epoch_index, 0);
         assert_eq!(update.to_epoch_index, 1);
         assert_eq!(update.current_epoch_index, 1);
-        assert_eq!(update.new_routes.len(), 2);
+        assert_eq!(update.new_routes.len(), 3);
     }
 }
 
@@ -1567,7 +1591,9 @@ mod create_route_update {
         assert_eq!(update.from_epoch_index, 0);
         assert_eq!(update.to_epoch_index, 0);
         assert_eq!(update.current_epoch_index, 0);
-        assert!(update.new_routes.is_empty());
+        // Connector's own route is always included in the 0 epoch
+        assert_eq!(update.new_routes.len(), 1);
+        assert_eq!(update.new_routes[0].prefix, "example.connector");
         assert!(update.withdrawn_routes.is_empty());
     }
 
@@ -1659,7 +1685,7 @@ mod send_route_updates {
 
         service.send_route_updates().wait().unwrap();
         let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
-        assert_eq!(update.new_routes.len(), 2);
+        assert_eq!(update.new_routes.len(), 3);
         let prefixes: Vec<&str> = update
             .new_routes
             .iter()
@@ -1701,7 +1727,7 @@ mod send_route_updates {
 
         service.send_route_updates().wait().unwrap();
         let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
-        assert_eq!(update.new_routes.len(), 3);
+        assert_eq!(update.new_routes.len(), 4);
         let prefixes: Vec<&str> = update
             .new_routes
             .iter()
@@ -1761,7 +1787,7 @@ mod send_route_updates {
 
         service.send_route_updates().wait().unwrap();
         let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
-        assert_eq!(update.new_routes.len(), 2);
+        assert_eq!(update.new_routes.len(), 3);
         let prefixes: Vec<&str> = update
             .new_routes
             .iter()
