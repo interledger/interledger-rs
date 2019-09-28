@@ -248,8 +248,9 @@ where
                     prepare,
                 };
                 trace!(
-                    "Handling incoming request {} from account {}",
+                    "Handling incoming request {} from account: {} (id: {})",
                     request_id,
+                    request.from.username(),
                     request.from.id()
                 );
                 incoming_handler_clone
