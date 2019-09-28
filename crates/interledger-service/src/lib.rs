@@ -30,7 +30,7 @@ use futures::{Future, IntoFuture};
 use interledger_packet::{Address, Fulfill, Prepare, Reject};
 use std::{
     cmp::Eq,
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display},
     hash::Hash,
     marker::PhantomData,
     str::FromStr,
@@ -58,19 +58,49 @@ pub trait Account: Clone + Send + Sized + Debug {
 }
 
 /// A struct representing an incoming ILP Prepare packet or an outgoing one before the next hop is set.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct IncomingRequest<A: Account> {
     pub from: A,
     pub prepare: Prepare,
 }
 
+// Use a custom debug implementation to specify the order of the fields
+impl<A> Debug for IncomingRequest<A>
+where
+    A: Account,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("IncomingRequest")
+            .field("prepare", &self.prepare)
+            .field("from", &self.from)
+            .finish()
+    }
+}
+
 /// A struct representing an ILP Prepare packet with the incoming and outgoing accounts set.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OutgoingRequest<A: Account> {
     pub from: A,
     pub to: A,
     pub original_amount: u64,
     pub prepare: Prepare,
+}
+
+// Use a custom debug implementation to specify the order of the fields
+impl<A> Debug for OutgoingRequest<A>
+where
+    A: Account,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("OutgoingRequest")
+            .field("prepare", &self.prepare)
+            .field("original_amount", &self.original_amount)
+            .field("to", &self.to)
+            .field("from", &self.from)
+            .finish()
+    }
 }
 
 /// Set the `to` Account and turn this into an OutgoingRequest
