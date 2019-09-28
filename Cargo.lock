@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "ilp-node"
-version = "0.4.1-alpha.1"
+version = "0.4.1-beta.1"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1217,7 +1217,7 @@ dependencies = [
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "http 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.12.35 (registry+https://github.com/rust-lang/crates.io-index)",
- "ilp-node 0.4.1-alpha.1",
+ "ilp-node 0.4.1-beta.1",
  "interledger 0.4.1-beta.1",
  "interledger-ildcp 0.2.2-beta.1",
  "interledger-service 0.2.2-beta.1",
