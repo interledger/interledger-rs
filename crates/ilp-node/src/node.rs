@@ -176,7 +176,7 @@ impl InterledgerNode {
             ilp_address
         );
 
-        RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
+        Box::new(RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .node_ilp_address(ilp_address.clone())
         .connect()
         .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
@@ -186,8 +186,8 @@ impl InterledgerNode {
                 .and_then(move |btp_accounts| {
                     let outgoing_service =
                         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
-                            error!("No route found for outgoing account {}", request.to.id());
-                            trace!("Rejecting request to account {}, prepare packet: {:?}", request.to.id(), request.prepare);
+                            error!("No route found for outgoing account {} (id: {})", request.to.username(), request.to.id());
+                            trace!("Rejecting request to account {:?}, prepare packet: {:?}", request.to, request.prepare);
                             Err(RejectBuilder {
                                 code: ErrorCode::F02_UNREACHABLE,
                                 message: &format!(
@@ -302,7 +302,7 @@ impl InterledgerNode {
                             // Note that other endpoints added to the API must come first
                             // because the API includes error handling and consumes the request.
                             // TODO should we just make BTP part of the API?
-                            let api = btp_endpoint.or(api.into_warp_filter()).boxed();
+                            let api = btp_endpoint.or(api.into_warp_filter()).with(warp::log("interledger-api")).boxed();
                             spawn(warp::serve(api).bind(http_bind_address));
 
                             // Settlement API
@@ -327,7 +327,7 @@ impl InterledgerNode {
                         },
                     )
                 })
-        })
+        }))
     }
 
     /// Run the node on the default Tokio runtime
