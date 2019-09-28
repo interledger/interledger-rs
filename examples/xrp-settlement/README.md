@@ -1,7 +1,9 @@
 # Interledger with XRP On-Ledger Settlement
+
 > A demo that sends payments between 2 Interledger.rs nodes and settles using XRP transactions.
 
 ## Overview
+
 This example shows how to configure Interledger.rs nodes and use the XRP testnet as a settlement ledger for payments sent between the nodes. You'll find many useful resources about the XRP Ledger (XRPL) [here](https://xrpl.org). To learn about settlement in Interledger, refer to [Peering, Clearing and Settling](https://github.com/interledger/rfcs/blob/master/0032-peering-clearing-settlement/0032-peering-clearing-settlement.md).
 
 ![overview](images/overview.svg)
@@ -17,37 +19,39 @@ This example shows how to configure Interledger.rs nodes and use the XRP testnet
 Because Interledger.rs is written in the Rust language, you need the Rust environment. Refer to the [Getting started](https://www.rust-lang.org/learn/get-started) page or just `curl https://sh.rustup.rs -sSf | sh` and follow the instructions.
 
 ### XRP Settlement Engine
-Because Interledger.rs and other settlement engines could wonderfully cooperate together, we'll utilize the [XRP Settlement Engine](https://github.com/interledgerjs/settlement-xrp/) which is written in TypeScript. The interface is being defined [here](https://github.com/interledger/rfcs/pull/536). We'll need `node` and `npm` to install and run the settlement engine. If you don't have it already, refer to [Install Node.js](#install-nodejs).
+
+Interledger.rs and settlement engines written in other languages are fully interoperable. Here, we'll use the [XRP Ledger Settlement Engine](https://github.com/interledgerjs/settlement-xrp/), which is written in TypeScript. We'll need `node` and `npm` to install and run the settlement engine. If you don't have it already, refer to [Install Node.js](#install-nodejs).
 
 Install the settlement engine as follows:
-```bash #
-# wherever you want to install the settlement engine
-git clone https://github.com/interledgerjs/settlement-xrp/
-cd settlement-xrp && npm install && npm run build && npm link
+
+```bash
+npm i -g ilp-settlement-xrp
 ```
 
-This makes the `ilp-settlement-xrp` command available to your path.
+(This makes the `ilp-settlement-xrp` command available to your PATH.)
 
 #### Install Node.js
+
 (In case you don't have Node.js) There are a few ways to install Node.js. If you work on multiple JavaScript or TypeScript projects which require different `node` versions, using `nvm` may be suitable.
 
 - [`nvm`](https://github.com/nvm-sh/nvm) (node version manager)
-    - macOS: If you use [Homebrew](https://brew.sh/), run `brew install nvm` and you'll see some additional instructions. Follow it and `nvm install node` and `nvm use node`.
-    - others: Refer to [`nvm`](https://github.com/nvm-sh/nvm) site.
+  - macOS: If you use [Homebrew](https://brew.sh/), run `brew install nvm` and you'll see some additional instructions. Follow it and `nvm install node` and `nvm use node`.
+  - others: Refer to [`nvm`](https://github.com/nvm-sh/nvm) site.
 - Install independently
-    - macOS: If you use [Homebrew](https://brew.sh/), run `brew install node`
-    - Ubuntu: `sudo apt-get install nodejs npm`
+  - macOS: If you use [Homebrew](https://brew.sh/), run `brew install node`
+  - Ubuntu: `sudo apt-get install nodejs npm`
 
 Then you should be able to use `npm`.
 
 ### Redis
+
 The Interledger.rs nodes and settlement engines currently use [Redis](https://redis.io/) to store their data (SQL database support coming soon!). Nodes and settlement engines can use different Redis instances.
 
 - Compile and install from the source code
-    - [Download the source code here](https://redis.io/download)
+  - [Download the source code here](https://redis.io/download)
 - Install using package managers
-    - Ubuntu: run `sudo apt-get install redis-server`
-    - macOS: If you use Homebrew, run `brew install redis`
+  - Ubuntu: run `sudo apt-get install redis-server`
+  - macOS: If you use Homebrew, run `brew install redis`
 
 Make sure your Redis is empty. You could run `redis-cli flushall` to clear all the data.
 
@@ -64,7 +68,7 @@ printf "Stopping Interledger nodes\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     $CMD_DOCKER --version > /dev/null || error_and_exit "Uh oh! You need to install Docker before running this example"
     mkdir -p logs
-    
+
     $CMD_DOCKER stop \
         interledger-rs-node_a \
         interledger-rs-node_b \
@@ -74,7 +78,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         redis-alice_se \
         redis-bob_node \
         redis-bob_se 2>/dev/null
-    
+
     printf "\n\nRemoving existing Interledger containers\n"
     $CMD_DOCKER rm \
         interledger-rs-node_a \
@@ -91,11 +95,11 @@ else
             redis-cli -p ${port} shutdown
         fi
     done
-    
+
     if [ -f dump.rdb ] ; then
         rm -f dump.rdb
     fi
-    
+
     for port in 8545 7770 8770 3000 3001; do
         if lsof -tPi :${port} ; then
             kill `lsof -tPi :${port}`
@@ -105,6 +109,7 @@ fi
 -->
 
 ### 1. Build interledger.rs
+
 First of all, let's build interledger.rs. (This may take a couple of minutes)
 
 <!--!
@@ -117,9 +122,11 @@ if [ "$USE_DOCKER" -eq 1 ]; then
 else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
+
 ```bash
 cargo build --bin ilp-node
 ```
+
 <!--!
 fi
 -->
@@ -147,6 +154,7 @@ redis-server --port 6380 &> logs/redis-a-se.log &
 redis-server --port 6381 &> logs/redis-b-node.log &
 redis-server --port 6382 &> logs/redis-b-se.log &
 ```
+
 <!--!
 sleep 1
 -->
@@ -158,6 +166,7 @@ for port in `seq 6379 6382`; do
     redis-cli -p $port flushall
 done
 ```
+
 <!--!
 fi
 -->
@@ -165,9 +174,10 @@ fi
 When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis-a-node.log`
 
 ### 3. Launch Settlement Engines
+
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
-Instead of using the LEDGER_ADDRESS and LEDGER_SECRET from the examples below, you can generate your own XRPL credentials at the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
+By default, the XRP settlement engine generates new testnet XRPL testnet accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -178,29 +188,21 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-se_a \
         -id \
-        -e DEBUG=xrp-settlement-engine \
-        -e LEDGER_ADDRESS=r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj \
-        -e LEDGER_SECRET=snun48LX8WMtTJEzHZ4ckbiEf4dVZ \
+        -e DEBUG=settlement* \
         -e CONNECTOR_URL=http://interledger-rs-node_a:7771 \
-        -e REDIS_HOST=redis-alice_se \
-        -e REDIS_PORT=6379 \
-        -e ENGINE_PORT=3000 \
-        interledgerjs/settlement-xrp
-    
+        -e REDIS_URI=redis-alice_se \
+        ilp-settlement-xrp
+
     # Start Bob's settlement engine
     $CMD_DOCKER run \
         -p 127.0.0.1:3001:3000 \
         --network=interledger \
         --name=interledger-rs-se_b \
         -id \
-        -e DEBUG=xrp-settlement-engine \
-        -e LEDGER_ADDRESS=rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj \
-        -e LEDGER_SECRET=ssxRAdmN97CnEjSzBfYFVCKiw2wNM \
+        -e DEBUG=settlement* \
         -e CONNECTOR_URL=http://interledger-rs-node_b:7771 \
-        -e REDIS_HOST=redis-bob_se \
-        -e REDIS_PORT=6379 \
-        -e ENGINE_PORT=3000 \
-        interledgerjs/settlement-xrp
+        -e REDIS_URI=redis-bob_se \
+        ilp-settlement-xrp
 else
 -->
 
@@ -210,20 +212,14 @@ export RUST_LOG=interledger=debug
 
 # Start Alice's settlement engine
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="r4f94XM93wMXdmnUg9hkE4maq8kryD9Yhj" \
-LEDGER_SECRET="snun48LX8WMtTJEzHZ4ckbiEf4dVZ" \
-CONNECTOR_URL="http://localhost:7771" \
-REDIS_PORT=6380 \
-ENGINE_PORT=3000 \
+REDIS_URI=127.0.0.1:6380 \
 ilp-settlement-xrp \
 &> logs/node-alice-settlement-engine.log &
 
 # Start Bob's settlement engine
 DEBUG="xrp-settlement-engine" \
-LEDGER_ADDRESS="rPh1Bc42tjeg3waow1m1dzo31mBoaqTDjj" \
-LEDGER_SECRET="ssxRAdmN97CnEjSzBfYFVCKiw2wNM" \
 CONNECTOR_URL="http://localhost:8771" \
-REDIS_PORT=6382 \
+REDIS_URI=127.0.0.1:6382 \
 ENGINE_PORT=3001 \
 ilp-settlement-xrp \
 &> logs/node-bob-settlement-engine.log &
@@ -252,7 +248,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --name=interledger-rs-node_a \
         -td \
         interledgerrs/node
-    
+
     # Start Bob's node
     $CMD_DOCKER run \
         -e ILP_ADDRESS=example.bob \
@@ -309,7 +305,7 @@ printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 printf "Creating accounts:\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     # Adding settlement accounts should be done at the same time because it checks each other
-    
+
     printf "Adding Alice's account...\n"
     curl \
         -H "Content-Type: application/json" \
@@ -324,7 +320,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "ilp_over_http_url": "http://interledger-rs-node_a:7770/ilp",
         "settle_to" : 0}' \
         http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
-    
+
     printf "Adding Bob's Account...\n"
     curl \
         -H "Content-Type: application/json" \
@@ -339,7 +335,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "ilp_over_http_url": "http://interledger-rs-node_b:7770/ilp",
         "settle_to" : 0}' \
         http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
-    
+
     printf "Adding Bob's account on Alice's node...\n"
     curl \
         -H "Content-Type: application/json" \
@@ -359,7 +355,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "settle_to" : 0,
         "routing_relation": "Peer"}' \
         http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
-    
+
     printf "Adding Alice's account on Bob's node...\n"
     curl \
         -H "Content-Type: application/json" \
@@ -379,7 +375,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "settle_to" : 0,
         "routing_relation": "Peer"}' \
         http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null &
-    
+
     sleep 2
 else
 -->
@@ -459,6 +455,7 @@ curl \
 
 sleep 2
 ```
+
 <!--!
 fi
 -->
@@ -510,6 +507,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         http://localhost:7770/accounts/alice/payments
 else
 -->
+
 ```bash
 curl \
     -H "Authorization: Bearer alice:in_alice" \
@@ -517,6 +515,7 @@ curl \
     -d "{\"receiver\":\"http://localhost:8770/accounts/bob/spsp\",\"source_amount\":500}" \
     http://localhost:7770/accounts/alice/payments
 ```
+
 <!--!
 fi
 
@@ -524,7 +523,7 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" 
+wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance"
 printf "done\n"
 -->
 
@@ -615,24 +614,25 @@ sudo docker stop \
 ## Advanced
 
 ### Check the Incoming Settlement on XRPL
+
 You'll find incoming settlement logs in your settlement engine logs. Try:
 
 ```bash #
-cat logs/node-bob-settlement-engine.log | grep "Got incoming XRP payment"
+cat logs/node-bob-settlement-engine.log | grep "Received incoming XRP payment"
 ```
 
 If you are using Docker, try:
 
 ```bash #
-docker logs interledger-rs-se_b | grep "Got incoming XRP payment"
+docker logs interledger-rs-se_b | grep "Received incoming XRP payment"
 ```
 
 <!--!
 printf "\n\nYou could also try the following command to check if XRPL incoming payment is done.\n\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
-    printf "\tdocker logs interledger-rs-se_b | grep \"Got incoming XRP payment\"\n"
+    printf "\tdocker logs interledger-rs-se_b | grep \"Received incoming XRP payment\"\n"
 else
-    printf "\tcat logs/node-bob-settlement-engine.log | grep \"Got incoming XRP payment\"\n"
+    printf "\tcat logs/node-bob-settlement-engine.log | grep \"Received incoming XRP payment\"\n"
 fi
 printf "\n"
 run_hook_before_kill
@@ -658,11 +658,11 @@ if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then
                 redis-cli -p ${port} shutdown
             fi
         done
-        
+
         if [ -f dump.rdb ] ; then
             rm -f dump.rdb
         fi
-        
+
         for port in 7770 8770 3000 3001; do
             if lsof -tPi :${port} >/dev/null ; then
                 kill `lsof -tPi :${port}`
@@ -681,7 +681,6 @@ E: Unable to locate package npm
 ```
 
 Try `sudo apt-get update`.
-
 
 ```
 # When running with Docker
