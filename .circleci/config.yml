@@ -33,21 +33,17 @@ jobs:
             sudo apt-get install redis-server
             redis-server --version
       - run:
-          name: Install node and ganache
+          name: Install Node.js
           command: |
               curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
               source ~/.nvm/nvm.sh
               nvm install node
-              npm install -g ganache-cli
+      - run:
+          name: Install Ganache CLI
+          command: npm i -g ganache-cli
       - run:
           name: Install the XRP Engine
-          command: |
-              sudo apt-get install git
-              git clone https://github.com/interledgerjs/settlement-xrp
-              # make the engine globally available
-              source ~/.nvm/nvm.sh
-              cd settlement-xrp && npm install
-              ./node_modules/typescript/bin/tsc && npm link && cd ../
+          command: npm i -g ilp-settlement-xrp
       - run:
           name: Reduce codegen units
           # If we don't include this, the linker runs out of memory when building
@@ -59,7 +55,7 @@ jobs:
           command: cargo build --all-features --all-targets
       - run:
           name: Test
-          # Note the timeout is included to make sure that they 
+          # Note the timeout is included to make sure that they
           # do not run for more than 10 minutes under any circumstances
           # (We have had issues with bugs causing the tests to "run"
           # for 5 hours, wasting a ton of compute credits)

@@ -52,18 +52,14 @@ pub fn start_ganache() -> std::process::Child {
 pub fn start_xrp_engine(
     connector_url: &str,
     redis_port: u16,
-    engine_port: u16,
-    xrp_address: &str,
-    xrp_secret: &str,
+    engine_port: u16
 ) -> std::process::Child {
     let mut engine = Command::new("ilp-settlement-xrp");
     engine
-        .env("DEBUG", "ilp-settlement-xrp")
+        .env("DEBUG", "settlement*")
         .env("CONNECTOR_URL", connector_url)
-        .env("REDIS_PORT", redis_port.to_string())
-        .env("ENGINE_PORT", engine_port.to_string())
-        .env("LEDGER_ADDRESS", xrp_address)
-        .env("LEDGER_SECRET", xrp_secret);
+        .env("REDIS_URI", &format!("127.0.0.1:{}/1", redis_port.to_string()))
+        .env("ENGINE_PORT", engine_port.to_string());
     let engine_pid = engine
         // .stderr(std::process::Stdio::null())
         // .stdout(std::process::Stdio::null())
@@ -255,18 +251,4 @@ struct FaucetResponse {
 pub struct XrpCredentials {
     pub address: String,
     pub secret: String,
-}
-
-#[allow(unused)]
-pub fn get_xrp_credentials() -> XrpCredentials {
-    // TODO make this async
-    let client = reqwest::Client::new();
-    let mut res = client
-        .post(XRP_FAUCET_URL)
-        .send()
-        .expect("Unable to get new XRP testnet credentials");
-    let body: FaucetResponse = res
-        .json()
-        .expect("Got unexpected response from XRP testnet faucet");
-    body.account
 }
