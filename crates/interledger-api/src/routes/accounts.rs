@@ -412,6 +412,11 @@ where
     A: CcpRoutingAccount + Clone + Send + Sync + 'static,
     S: AddressStore + Clone + Send + Sync + 'static,
 {
+    debug!(
+        "Getting ILP address from parent account: {} (id: {})",
+        parent.username(),
+        parent.id()
+    );
     let prepare = IldcpRequest {}.to_prepare();
     service
         .send_request(OutgoingRequest {
@@ -428,7 +433,7 @@ where
                     err
                 );
             });
-            debug!("Got ILDCP response: {:?}", response);
+            debug!("Got ILDCP response from parent: {:?}", response);
             let ilp_address = match response {
                 Ok(info) => info.ilp_address(),
                 Err(_) => return err(()),
@@ -436,6 +441,7 @@ where
             ok(ilp_address)
         })
         .and_then(move |ilp_address| {
+            debug!("ILP address is now: {}", ilp_address);
             // TODO we may want to make this trigger the CcpRouteManager to request
             let prepare = RouteControlRequest {
                 mode: Mode::Sync,
@@ -492,6 +498,7 @@ where
     // Try to connect to the account's BTP socket if they have
     // one configured
     let btp_connect_fut = if account.get_ilp_over_btp_url().is_some() {
+        trace!("Newly inserted account has a BTP URL configured, will try to connect");
         Either::A(
             connect_to_service_account(account.clone(), true, btp)
                 .map_err(|_| warp::reject::custom(ApiError::InternalServerError)),

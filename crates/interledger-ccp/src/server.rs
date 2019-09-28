@@ -250,7 +250,8 @@ where
         }
         let control = control.unwrap();
         debug!(
-            "Got route control request from account {}: {:?}",
+            "Got route control request from account {} (id: {}): {:?}",
+            request.from.username(),
             request.from.id(),
             control
         );

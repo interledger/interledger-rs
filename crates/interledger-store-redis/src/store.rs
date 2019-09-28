@@ -364,7 +364,7 @@ impl RedisStoreBuilder {
                                                     return ControlFlow::Continue;
                                                 }
                                             };
-                                            debug!("Subscribed message received for {:?}", account_id);
+                                            trace!("Subscribed message received for account {}: {:?}", account_id, message);
                                             match subscriptions_clone.read().get(&account_id) {
                                                 Some(sender) => {
                                                     if let Err(err) = sender.unbounded_send(message) {
@@ -562,8 +562,8 @@ impl RedisStore {
                             })
                             .and_then(move |_| {
                                 debug!(
-                                    "Inserted account {} (ILP address: {})",
-                                    account.id, account.ilp_address
+                                    "Inserted account {} (id: {}, ILP address: {})",
+                                    account.username, account.id, account.ilp_address
                                 );
                                 Ok(encrypted)
                             }),
@@ -777,16 +777,16 @@ impl StreamNotificationsStore for RedisStore {
                     )
                 })
                 .and_then(move |account_id| {
-                    debug!("Publishing message {} for ID {}", message, account_id);
+                    debug!(
+                        "Publishing payment notification {} for account {}",
+                        message, account_id
+                    );
                     redis::cmd("PUBLISH")
                         .arg(format!("{}{}", STREAM_NOTIFICATIONS_PREFIX, account_id))
                         .arg(message)
                         .query_async(connection)
                         .map_err(move |err| error!("Error publish message to Redis: {:?}", err))
-                        .and_then(move |(_, _): (_, i32)| {
-                            debug!("Successfully published message");
-                            Ok(())
-                        })
+                        .and_then(move |(_, _): (_, i32)| Ok(()))
                 }),
         );
     }
@@ -852,10 +852,6 @@ impl BalanceStore for RedisStore {
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
         if outgoing_amount > 0 {
-            debug!(
-                "To: {}, Amount paid: {}",
-                to_account.ilp_address, outgoing_amount
-            );
             let to_account_id = to_account.id;
             Box::new(
                 PROCESS_FULFILL
@@ -970,9 +966,17 @@ impl BtpStore for RedisStore {
                                 if t == Bytes::from(token) {
                                     Ok(account)
                                 } else {
+                                    debug!(
+                                        "Found account {} but BTP auth token was wrong",
+                                        account.username
+                                    );
                                     Err(())
                                 }
                             } else {
+                                debug!(
+                                    "Account {} does not have an incoming btp token configured",
+                                    account.username
+                                );
                                 Err(())
                             }
                         } else {
@@ -1344,20 +1348,22 @@ impl AddressStore for RedisStore {
         &self,
         ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let self_clone = self.clone();
+        debug!("Setting ILP address to: {}", ilp_address);
         let routing_table = self.routes.clone();
         let conn = self.connection.clone();
         let ilp_address_clone = ilp_address.clone();
+
+        // Set the ILP address we have in memory
+        (*self.ilp_address.write()) = ilp_address.clone();
+
+        // Save it to Redis
         Box::new(
             cmd("SET")
                 .arg(PARENT_ILP_KEY)
                 .arg(ilp_address.as_bytes())
                 .query_async(self.connection.as_ref().clone())
-                .map_err(|err| error!("Error setting static ilp address {:?}", err))
-                .and_then(move |(_, _): (SharedConnection, Value)| {
-                    *(self_clone.ilp_address.write()) = ilp_address;
-                    Ok(())
-                })
+                .map_err(|err| error!("Error setting ILP address {:?}", err))
+                .and_then(move |(_, _): (SharedConnection, Value)| Ok(()))
                 .join(self.get_all_accounts().and_then(move |accounts| {
                     // TODO: This can be an expensive operation if this function
                     // gets called often. This currently only gets called when
