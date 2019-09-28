@@ -294,7 +294,6 @@ where
                     Err(err)
                 }
             })
-            .with(warp::log("interledger-api"))
             .boxed()
     }
 
