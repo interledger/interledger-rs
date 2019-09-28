@@ -1,5 +1,7 @@
+use crate::error::*;
 use crate::{
-    http_retry::Client, number_or_string, AccountDetails, AccountSettings, ApiError, NodeStore,
+    deserialize_json, http_retry::Client, number_or_string, AccountDetails, AccountSettings,
+    NodeStore,
 };
 use bytes::Bytes;
 use futures::{
@@ -23,7 +25,7 @@ use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
-use warp::{self, Filter};
+use warp::{self, Filter, Rejection};
 
 #[derive(Deserialize, Debug)]
 struct SpspPayRequest {
@@ -66,11 +68,11 @@ where
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
     let admin_only = warp::header::<String>("authorization")
-        .and_then(move |authorization| -> Result<(), warp::Rejection> {
+        .and_then(move |authorization| -> Result<(), Rejection> {
             if authorization == admin_auth_header {
                 Ok(())
             } else {
-                Err(warp::reject::custom(ApiError::Unauthorized))
+                Err(ApiError::default_unauthorized().into())
             }
         })
         // This call makes it so we do not pass on a () value on
@@ -87,10 +89,10 @@ where
         .and_then(|username: Username, store: S| {
             store
                 .get_account_id_from_username(&username)
-                .map_err(move |_| {
+                .map_err::<_, Rejection>(move |_| {
                     // TODO differentiate between server error and not found
                     error!("Error getting account id from username: {}", username);
-                    warp::reject::custom(ApiError::AccountNotFound)
+                    ApiError::account_not_found(Some(&username)).into()
                 })
         })
         .boxed();
@@ -99,24 +101,24 @@ where
         .and_then(|auth: AuthToken, store: S| {
             store
                 .get_account_from_http_auth(auth.username(), auth.password())
-                .map_err(move |_| {
+                .map_err::<_, Rejection>(move |_| {
                     error!(
                         "Invalid authorization provided for user: {}",
                         auth.username()
                     );
-                    warp::reject::custom(ApiError::Unauthorized)
+                    ApiError::default_unauthorized().into()
                 })
         })
         .boxed();
     let authorized_account_from_path = account_username
         .and(valid_account_authorization.clone())
         .and_then(
-            |path_username: Username, authorized_account: A| -> Result<A, warp::Rejection> {
+            |path_username: Username, authorized_account: A| -> Result<A, Rejection> {
                 // Check that the user is authorized for this route
                 if &path_username == authorized_account.username() {
                     Ok(authorized_account)
                 } else {
-                    Err(warp::reject::custom(ApiError::Unauthorized))
+                    Err(ApiError::default_unauthorized().into())
                 }
             },
         )
@@ -137,7 +139,7 @@ where
     let post_accounts = warp::post2()
         .and(accounts_index)
         .and(admin_only.clone())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(move |account_details: AccountDetails, store: S| {
             let store_clone = store.clone();
@@ -147,7 +149,7 @@ where
                 .insert_account(account_details.clone())
                 .map_err(move |_| {
                     error!("Error inserting account into store: {:?}", account_details);
-                    warp::reject::custom(ApiError::InternalServerError)
+                    ApiError::default_internal_server_error().into()
                 })
                 .and_then(move |account| {
                     connect_to_external_services(handler, account, store_clone, btp)
@@ -164,7 +166,7 @@ where
         .and_then(|store: S| {
             store
                 .get_all_accounts()
-                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
+                .map_err::<_, Rejection>(|_| ApiError::default_internal_server_error().into())
                 .and_then(|accounts| Ok(warp::reply::json(&accounts)))
         })
         .boxed();
@@ -174,7 +176,7 @@ where
         .and(account_username_to_id.clone())
         .and(warp::path::end())
         .and(admin_only.clone())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(
             move |id: A::AccountId, account_details: AccountDetails, store: S| {
@@ -183,7 +185,9 @@ where
                 let btp = btp.clone();
                 store
                     .update_account(id, account_details)
-                    .map_err(move |_| warp::reject::custom(ApiError::InternalServerError))
+                    .map_err::<_, Rejection>(move |_| {
+                        ApiError::default_internal_server_error().into()
+                    })
                     .and_then(move |account| {
                         connect_to_external_services(handler, account, store_clone, btp)
                     })
@@ -200,7 +204,8 @@ where
         .and_then(|id: A::AccountId, store: S| {
             store
                 .get_accounts(vec![id])
-                .map_err(|_| warp::reject::not_found())
+                // TODO return username
+                .map_err::<_, Rejection>(|_| ApiError::account_not_found(None).into())
                 .and_then(|accounts| Ok(warp::reply::json(&accounts[0])))
         })
         .boxed();
@@ -221,7 +226,7 @@ where
                         .get_balance(accounts.pop().unwrap())
                         .map_err(move |_| {
                             error!("Error getting balance for account: {}", id);
-                            warp::reject::custom(ApiError::InternalServerError)
+                            ApiError::default_internal_server_error().into()
                         })
                 })
                 .and_then(|balance: i64| {
@@ -241,9 +246,9 @@ where
         .and_then(|id: A::AccountId, store: S| {
             store
                 .delete_account(id)
-                .map_err(move |_| {
+                .map_err::<_, Rejection>(move |_| {
                     error!("Error deleting account {}", id);
-                    warp::reject::custom(ApiError::InternalServerError)
+                    ApiError::default_internal_server_error().into()
                 })
                 .and_then(|account| Ok(warp::reply::json(&account)))
         })
@@ -254,14 +259,14 @@ where
         .and(admin_or_authorized_account.clone())
         .and(warp::path("settings"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, settings: AccountSettings, store: S| {
             store
                 .modify_account_settings(id, settings)
-                .map_err(move |_| {
+                .map_err::<_, Rejection>(move |_| {
                     error!("Error updating account settings {}", id);
-                    warp::reject::custom(ApiError::InternalServerError)
+                    ApiError::default_internal_server_error().into()
                 })
                 .and_then(|settings| Ok(warp::reply::json(&settings)))
         })
@@ -294,7 +299,7 @@ where
         .and(authorized_account_from_path.clone())
         .and(warp::path("payments"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_incoming_handler.clone())
         .and_then(
             |account: A, pay_request: SpspPayRequest, incoming_handler: I| {
@@ -313,10 +318,10 @@ where
                         "delivered_amount": delivered_amount
                     })))
                 })
-                .map_err(|err| {
+                .map_err::<_, Rejection>(|err| {
                     error!("Error sending SPSP payment: {:?}", err);
                     // TODO give a different error message depending on what type of error it is
-                    warp::reject::custom(ApiError::InternalServerError)
+                    ApiError::default_internal_server_error().into()
                 })
             },
         )
@@ -333,7 +338,7 @@ where
             let server_secret_clone = server_secret_clone.clone();
             store
                 .get_accounts(vec![id])
-                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
+                .map_err::<_, Rejection>(|_| ApiError::default_internal_server_error().into())
                 .and_then(move |accounts| {
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
                     Ok(SpspResponder::new(
@@ -369,7 +374,7 @@ where
                             // TODO this shouldn't take multiple store calls
                             store
                                 .get_accounts(vec![id])
-                                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
+                                .map_err(|_| ApiError::default_internal_server_error().into())
                                 .map(|mut accounts| accounts.pop().unwrap())
                         })
                         .and_then(move |account| {
@@ -382,7 +387,7 @@ where
                         }),
                 )
             } else {
-                Either::B(err(warp::reject::not_found()))
+                Either::B(err(ApiError::default_not_found().into()))
             }
         })
         .boxed();
@@ -503,7 +508,7 @@ where
         trace!("Newly inserted account has a BTP URL configured, will try to connect");
         Either::A(
             connect_to_service_account(account.clone(), true, btp)
-                .map_err(|_| warp::reject::custom(ApiError::InternalServerError)),
+                .map_err(|_| ApiError::default_internal_server_error().into()),
         )
     } else {
         Either::B(ok(()))
@@ -516,7 +521,7 @@ where
             Either::A(
                 get_address_from_parent_and_update_routes(service, account.clone(), store.clone())
                 .map_err(|_| {
-                    warp::reject::custom(ApiError::InternalServerError)
+                    ApiError::default_internal_server_error().into()
                 })
             )
         } else {
@@ -525,7 +530,7 @@ where
 
         let default_settlement_engine_fut = store.get_asset_settlement_engine(account.asset_code())
             .map_err(|_| {
-                warp::reject::custom(ApiError::InternalServerError)
+                ApiError::default_internal_server_error().into()
             });
 
         // Register the account with the settlement engine
@@ -545,7 +550,7 @@ where
                 Either::A(
                     http_client.create_engine_account(se_url, id)
                     .map_err(|_| {
-                        warp::reject::custom(ApiError::InternalServerError)
+                        ApiError::default_internal_server_error().into()
                     })
                     .and_then(move |status_code| {
                         if status_code.is_success() {
@@ -563,4 +568,24 @@ where
             }
         })
     })
+}
+
+// Account specific errors
+const ACCOUNT_NOT_FOUND_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::InterledgerHttpApi("accounts/account-not-found"),
+    title: "Account Not Found",
+};
+
+impl ApiError {
+    fn account_not_found(not_found_account: Option<&str>) -> Self {
+        ApiError::not_found(
+            &ACCOUNT_NOT_FOUND_TYPE,
+            Some(match not_found_account {
+                Some(account) => format!("{} was not found.", account),
+                None => "Username was not found.".to_owned(),
+            }),
+            None,
+            None,
+        )
+    }
 }
