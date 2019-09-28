@@ -1375,8 +1375,10 @@ impl AddressStore for RedisStore {
                     // on the store.
                     let mut pipe = redis::pipe();
                     for account in accounts {
-                        // Update the address and routes of all children.
-                        if account.routing_relation() == RoutingRelation::Child {
+                        // Update the address and routes of all children and non-routing accounts.
+                        if account.routing_relation() != RoutingRelation::Parent
+                            && account.routing_relation() != RoutingRelation::Peer
+                        {
                             // remove the old route
                             pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
                                 .ignore();
