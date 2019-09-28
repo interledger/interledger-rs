@@ -189,6 +189,10 @@ where
         let current_ilp_address = self.ilp_address.read();
         let ilp_address = self.store.get_ilp_address();
         if ilp_address != *current_ilp_address {
+            debug!(
+                "Changing ILP address from {} to {}",
+                *current_ilp_address, ilp_address
+            );
             // release the read lock
             drop(current_ilp_address);
             *self.global_prefix.write() = ilp_address
@@ -198,6 +202,9 @@ where
                 .map(|index| ilp_address.to_bytes().slice_to(index + 1))
                 .unwrap_or_else(|| ilp_address.to_bytes().clone());
             *self.ilp_address.write() = ilp_address;
+
+            // TODO should we reset our routes and request new ones
+            // if the global prefix changes?
         }
     }
 
@@ -521,16 +528,18 @@ where
                     let incoming_tables = incoming_tables.read();
 
                     // Either check the given prefixes or check all of our local and configured routes
-                    let prefixes_to_check: Box<dyn Iterator<Item = Bytes>> = if let Some(prefixes) = prefixes {
-                        Box::new(prefixes.into_iter())
-                    } else {
-                        let routes = configured_routes.iter().chain(local_routes.iter());
-                        Box::new(routes.map(|(prefix, _account)| prefix.clone()))
-                    };
+                    let prefixes_to_check: Box<dyn Iterator<Item = Bytes>> =
+                        if let Some(prefixes) = prefixes {
+                            Box::new(prefixes.into_iter())
+                        } else {
+                            let routes = configured_routes.iter().chain(local_routes.iter());
+                            Box::new(routes.map(|(prefix, _account)| prefix.clone()))
+                        };
 
                     // Check all the prefixes to see which ones we have different routes for
                     // and which ones we don't have routes for anymore
-                    let mut better_routes: Vec<(Bytes, A, Route)> = Vec::with_capacity(prefixes_to_check.size_hint().0);
+                    let mut better_routes: Vec<(Bytes, A, Route)> =
+                        Vec::with_capacity(prefixes_to_check.size_hint().0);
                     let mut withdrawn_routes: Vec<Bytes> = Vec::new();
                     for prefix in prefixes_to_check {
                         // See which prefixes there is now a better route for
@@ -540,11 +549,17 @@ where
                             &incoming_tables,
                             prefix.as_ref(),
                         ) {
-                            if let Some((ref next_account, ref route)) = local_table.get_route(&prefix) {
+                            if let Some((ref next_account, ref route)) =
+                                local_table.get_route(&prefix)
+                            {
                                 if next_account.id() == best_next_account.id() {
-                                    continue
+                                    continue;
                                 } else {
-                                    better_routes.push((prefix.clone(), next_account.clone(), route.clone()));
+                                    better_routes.push((
+                                        prefix.clone(),
+                                        next_account.clone(),
+                                        route.clone(),
+                                    ));
                                 }
                             } else {
                                 better_routes.push((prefix.clone(), best_next_account, best_route));
@@ -567,36 +582,51 @@ where
 
                     for (prefix, account, mut route) in better_routes {
                         debug!(
-                            "Setting new route for prefix: {} -> Account {}",
+                            "Setting new route for prefix: {} -> Account: {} (id: {})",
                             str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
+                            account.username(),
                             account.id(),
                         );
                         local_table.set_route(prefix.clone(), account.clone(), route.clone());
 
                         // Update the forwarding table
-                        // Don't advertise routes that don't start with the global prefix
-                        if route.prefix.starts_with(&global_prefix[..])
-                            // Don't advertise the global prefix
-                            && route.prefix != *global_prefix
-                            // Don't advertise completely local routes because advertising our own
-                            // prefix will make sure we get packets sent to them
-                            && !(route.prefix.starts_with(ilp_address.as_ref()) && route.path.is_empty())
-                            // Don't include routes we're also withdrawing
-                            && !withdrawn_routes.contains(&prefix) {
 
-                                let old_route = forwarding_table.get_route(&prefix);
-                                if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                                    route.path.insert(0, ilp_address.to_bytes());
-                                    // Each hop hashes the auth before forwarding
-                                    route.auth = hash(&route.auth);
-                                    forwarding_table.set_route(prefix.clone(), account.clone(), route.clone());
-                                    new_routes.push(route);
-                                }
+                        // Don't advertise routes that don't start with the global prefix
+                        // or that advertise the whole global prefix
+                        let correct_global_prefix = route.prefix.starts_with(&global_prefix[..])
+                            && route.prefix != *global_prefix;
+                        // We do want to advertise our address
+                        let is_our_address = &route.prefix == (ilp_address.as_ref() as &Bytes);
+                        // Don't advertise local routes because advertising only our address
+                        // will be enough to ensure the packet gets to us and we can route it
+                        // to the correct account on our node
+                        let is_local_route =
+                            route.prefix.starts_with(ilp_address.as_ref()) && route.path.is_empty();
+                        let not_local_route = is_our_address || !is_local_route;
+                        // Don't include routes we're also withdrawing
+                        let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
+
+                        if correct_global_prefix && not_local_route && not_withdrawn_route {
+                            let old_route = forwarding_table.get_route(&prefix);
+                            if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
+                                route.path.insert(0, ilp_address.to_bytes());
+                                // Each hop hashes the auth before forwarding
+                                route.auth = hash(&route.auth);
+                                forwarding_table.set_route(
+                                    prefix.clone(),
+                                    account.clone(),
+                                    route.clone(),
+                                );
+                                new_routes.push(route);
+                            }
                         }
                     }
 
                     for prefix in withdrawn_routes.iter() {
-                        debug!("Removed route for prefix: {}", str::from_utf8(&prefix[..]).unwrap_or("<not utf8>"));
+                        debug!(
+                            "Removed route for prefix: {}",
+                            str::from_utf8(&prefix[..]).unwrap_or("<not utf8>")
+                        );
                         local_table.delete_route(prefix);
                         forwarding_table.delete_route(prefix);
                     }
@@ -696,6 +726,7 @@ where
         // Merge the new routes and withdrawn routes from all of the given epochs
         let mut new_routes: Vec<Route> = Vec::with_capacity(epochs_to_take);
         let mut withdrawn_routes: Vec<Bytes> = Vec::new();
+
         // Iterate through each of the given epochs
         for (new, withdrawn) in forwarding_table_updates
             .iter()
