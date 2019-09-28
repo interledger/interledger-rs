@@ -985,7 +985,7 @@ dependencies = [
  "interledger-api 0.1.1-alpha.1",
  "interledger-btp 0.2.2-beta.1",
  "interledger-ccp 0.1.1-beta.1",
- "interledger-http 0.2.2-alpha.1",
+ "interledger-http 0.2.2-beta.1",
  "interledger-ildcp 0.2.2-beta.1",
  "interledger-packet 0.2.2-beta.2",
  "interledger-router 0.2.2-alpha.1",
@@ -1007,7 +1007,7 @@ dependencies = [
  "http 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "interledger-btp 0.2.2-beta.1",
  "interledger-ccp 0.1.1-beta.1",
- "interledger-http 0.2.2-alpha.1",
+ "interledger-http 0.2.2-beta.1",
  "interledger-ildcp 0.2.2-beta.1",
  "interledger-packet 0.2.2-beta.2",
  "interledger-router 0.2.2-alpha.1",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-http"
-version = "0.2.2-alpha.1"
+version = "0.2.2-beta.1"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1286,7 +1286,7 @@ dependencies = [
  "interledger-api 0.1.1-alpha.1",
  "interledger-btp 0.2.2-beta.1",
  "interledger-ccp 0.1.1-beta.1",
- "interledger-http 0.2.2-alpha.1",
+ "interledger-http 0.2.2-beta.1",
  "interledger-ildcp 0.2.2-beta.1",
  "interledger-packet 0.2.2-beta.2",
  "interledger-router 0.2.2-alpha.1",
