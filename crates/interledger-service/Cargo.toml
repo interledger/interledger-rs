@@ -1,6 +1,6 @@
 [package]
 name = "interledger-service"
-version = "0.2.2-alpha.1"
+version = "0.2.2-beta.1"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "The core abstraction for the Interledger.rs implementation"
 license = "Apache-2.0"
