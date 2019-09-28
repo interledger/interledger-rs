@@ -54,12 +54,16 @@ where
                 let service_clone = service_clone.clone();
                 Timeout::new(validate_auth(store, ws), WEBSOCKET_TIMEOUT)
                     .and_then(move |(account, connection)| {
-                        debug!("Added connection for account {}", account.id());
+                        debug!(
+                            "Added connection for account {}: (id: {})",
+                            account.username(),
+                            account.id()
+                        );
                         service_clone.add_connection(account, WsWrap { connection });
                         Ok(())
                     })
                     .or_else(|_| {
-                        warn!("Closing Websocket connection because it encountered an error");
+                        warn!("Closing Websocket connection because of an error");
                         Ok(())
                     })
             })
@@ -183,9 +187,10 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
+        debug!("Got BTP connection for username: {}", auth.token.username());
         store
             .get_account_from_btp_auth(&auth.token.username(), &auth.token.password())
-            .map_err(move |_| warn!("Got BTP connection that does not correspond to an account"))
+            .map_err(move |_| warn!("BTP connection does not correspond to an account"))
             .and_then(move |account| {
                 let auth_response = Message::binary(
                     BtpResponse {

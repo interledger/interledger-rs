@@ -37,21 +37,32 @@ where
     // TODO can/should we avoid cloning the account?
     get_ildcp_info(&mut service.clone(), from_account.clone())
         .map_err(|_err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
-        .and_then(move |account_details| SendMoneyFuture {
-            state: SendMoneyFutureState::SendMoney,
-            next: Some(service),
-            from_account,
-            source_account: account_details.ilp_address(),
-            destination_account,
-            shared_secret,
-            source_amount,
-            congestion_controller: CongestionController::default(),
-            pending_requests: Cell::new(Vec::new()),
-            delivered_amount: 0,
-            should_send_source_account: true,
-            sequence: 1,
-            rejected_packets: 0,
-            error: None,
+        .and_then(move |account_details| {
+            let source_account = account_details.ilp_address();
+            let source_scheme = source_account.segments().next().expect("Addresses should have a scheme first");
+            let destination_scheme = destination_account.segments().next().expect("Addresses should have a scheme first");
+            if source_scheme != destination_scheme {
+                warn!("Destination ILP address starts with a different scheme prefix (\"{}\') than ours (\"{}\'), this probably isn't going to work",
+                destination_scheme,
+                source_scheme);
+            }
+
+            SendMoneyFuture {
+                state: SendMoneyFutureState::SendMoney,
+                next: Some(service),
+                from_account,
+                source_account,
+                destination_account,
+                shared_secret,
+                source_amount,
+                congestion_controller: CongestionController::default(),
+                pending_requests: Cell::new(Vec::new()),
+                delivered_amount: 0,
+                should_send_source_account: true,
+                sequence: 1,
+                rejected_packets: 0,
+                error: None,
+            }
         })
 }
 

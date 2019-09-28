@@ -75,11 +75,6 @@ where
         } else if !routing_table.is_empty() {
             let mut matching_prefix = Bytes::new();
             for route in self.store.routing_table() {
-                trace!(
-                    "Checking route: \"{}\" -> {}",
-                    str::from_utf8(&route.0[..]).unwrap_or("<not utf8>"),
-                    route.1
-                );
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
                 if (route.0.is_empty() || dest.starts_with(&route.0[..]))
                     && route.0.len() >= matching_prefix.len()
@@ -121,7 +116,26 @@ where
                     }),
             )
         } else {
-            error!("No route found for request: {:?}", request);
+            error!(
+                "No route found for request{}: {:?}",
+                {
+                    // Log a warning if the global prefix does not match
+                    let mut segments = (&self.ilp_address as &str).split(|c| c == '.');
+                    if let Some(global_prefix) = segments.next() {
+                        if !request.prepare.destination().starts_with(global_prefix) {
+                            format!(
+                            " (warning: address does not start with the right global prefix, expected: \"{}\")",
+                            global_prefix
+                        )
+                        } else {
+                            "".to_string()
+                        }
+                    } else {
+                        "".to_string()
+                    }
+                },
+                request
+            );
             Box::new(err(RejectBuilder {
                 code: ErrorCode::F02_UNREACHABLE,
                 message: &[],

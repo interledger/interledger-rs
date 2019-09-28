@@ -87,7 +87,7 @@ impl ConnectionGenerator {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PaymentNotification {
     pub to_username: Username,
     pub from_username: Username,
