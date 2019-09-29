@@ -23,11 +23,7 @@ use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
-use std::time::Duration;
 use warp::{self, Filter};
-
-const MAX_RETRIES: usize = 10;
-const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_millis(5000);
 
 #[derive(Deserialize, Debug)]
 struct SpspPayRequest {
@@ -534,7 +530,7 @@ where
             let settlement_engine_url = account.settlement_engine_details().map(|details| details.url).or(default_settlement_engine);
             if let Some(se_url) = settlement_engine_url {
                 let id = account.id();
-                let http_client = Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES);
+                let http_client = Client::default();
                 trace!(
                     "Sending account {} creation request to settlement engine: {:?}",
                     id,

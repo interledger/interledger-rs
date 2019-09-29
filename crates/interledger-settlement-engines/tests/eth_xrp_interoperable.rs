@@ -187,9 +187,13 @@ fn eth_xrp_interoperable() {
         "routing_relation": "Child",
     });
 
-    let bob_fut = set_node_settlement_engines(node2_http, bob_settlement_engines, "admin")
-        .join(create_account_on_node(node2_http, alice_on_bob, "admin"))
-        .join(create_account_on_node(node2_http, charlie_on_bob, "admin"));
+    let bob_fut = create_account_on_node(node2_http, alice_on_bob, "admin")
+        .join(create_account_on_node(node2_http, charlie_on_bob, "admin"))
+        // Setting the settlement engines after the accounts are created should
+        // still trigger the call to create their accounts on the settlement engines
+        .and_then(move |_| {
+            set_node_settlement_engines(node2_http, bob_settlement_engines, "admin")
+        });
 
     runtime.spawn(
         node2_eth_engine_fut

@@ -1,14 +1,15 @@
-use crate::{ApiError, NodeStore};
+use crate::{http_retry::Client, ApiError, NodeStore};
 use bytes::Buf;
 use futures::{
-    future::{err, Either},
+    future::{err, join_all, Either},
     Future,
 };
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_router::RouterStore;
 use interledger_service::Account;
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use log::error;
+use interledger_settlement::SettlementAccount;
+use log::{error, trace};
 use serde::Serialize;
 use serde_json::json;
 use std::{
@@ -29,7 +30,7 @@ where
         + BalanceStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
-    A: Account + HttpAccount + Serialize + 'static,
+    A: Account + HttpAccount + SettlementAccount + Serialize + 'static,
 {
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
@@ -178,14 +179,56 @@ where
         .and(warp::body::json())
         .and(with_store.clone())
         .and_then(|asset_to_url_map: HashMap<String, Url>, store: S| {
-            let reply = warp::reply::json(&asset_to_url_map);
+            let asset_to_url_map_clone = asset_to_url_map.clone();
             store
-                .set_settlement_engines(asset_to_url_map)
+                .set_settlement_engines(asset_to_url_map.clone())
                 .map_err(|_| {
-                    error!("Error setting static route");
+                    error!("Error setting settlement engines");
                     warp::reject::custom(ApiError::InternalServerError)
                 })
-                .and_then(move |_| Ok(reply))
+                .and_then(move |_| {
+                    // Create the accounts on the settlement engines for any
+                    // accounts that are using the default settlement engine URLs
+                    // (This is done in case we modify the globally configured settlement
+                    // engine URLs after accounts have already been added)
+
+                    // TODO we should come up with a better way of ensuring
+                    // the accounts are created that doesn't involve loading
+                    // all of the accounts from the database into memory
+                    // (even if this isn't called often, it could crash the node at some point)
+                    store.get_all_accounts()
+                        .map_err(|_| {
+                            warp::reject::custom(ApiError::InternalServerError)
+                        })
+                    .and_then(move |accounts| {
+                        let client = Client::default();
+                        let create_settlement_accounts =
+                            accounts.into_iter().filter_map(move |account| {
+                                let id = account.id();
+                                // Try creating the account on the settlement engine if the settlement_engine_url of the
+                                // account is the one we just configured as the default for the account's asset code
+                                if let Some(details) = account.settlement_engine_details() {
+                                    if Some(&details.url) == asset_to_url_map.get(account.asset_code()) {
+                                        return Some(client.create_engine_account(details.url, account.id())
+                                            .map_err(|_| {
+                                                warp::reject::custom(ApiError::InternalServerError)
+                                            })
+                                            .and_then(move |status_code| {
+                                                if status_code.is_success() {
+                                                    trace!("Account {} created on the SE", id);
+                                                } else {
+                                                    error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                                                }
+                                                Ok(())
+                                            }));
+                                        }
+                                }
+                                None
+                            });
+                        join_all(create_settlement_accounts)
+                    })
+                })
+                .and_then(move |_| Ok(warp::reply::json(&asset_to_url_map_clone)))
         })
         .boxed();
 
