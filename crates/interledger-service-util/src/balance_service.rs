@@ -1,5 +1,5 @@
 use futures::Future;
-use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
+use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
 use log::{debug, error};
@@ -39,7 +39,6 @@ pub trait BalanceStore: AccountStore {
 /// Requires an `Account` and a `BalanceStore`
 #[derive(Clone)]
 pub struct BalanceService<S, O, A> {
-    ilp_address: Address,
     store: S,
     next: O,
     settlement_client: SettlementClient,
@@ -48,13 +47,12 @@ pub struct BalanceService<S, O, A> {
 
 impl<S, O, A> BalanceService<S, O, A>
 where
-    S: BalanceStore<Account = A> + SettlementStore<Account = A>,
+    S: AddressStore + BalanceStore<Account = A> + SettlementStore<Account = A>,
     O: OutgoingService<A>,
     A: Account + SettlementAccount,
 {
-    pub fn new(ilp_address: Address, store: S, next: O) -> Self {
+    pub fn new(store: S, next: O) -> Self {
         BalanceService {
-            ilp_address,
             store,
             next,
             settlement_client: SettlementClient::new(),
@@ -65,7 +63,13 @@ where
 
 impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
 where
-    S: BalanceStore<Account = A> + SettlementStore<Account = A> + Clone + Send + Sync + 'static,
+    S: AddressStore
+        + BalanceStore<Account = A>
+        + SettlementStore<Account = A>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
     A: SettlementAccount + 'static,
 {
@@ -102,7 +106,7 @@ where
         let to_id = to.id();
         let incoming_amount = request.original_amount;
         let outgoing_amount = request.prepare.amount();
-        let ilp_address = self.ilp_address.clone();
+        let ilp_address = self.store.get_ilp_address();
         let settlement_client = self.settlement_client.clone();
         let to_has_engine = to.settlement_engine_details().is_some();
 

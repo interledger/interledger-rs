@@ -3,7 +3,7 @@ use futures::{
     future::{err, Either},
     Future, Stream,
 };
-use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
+use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 // TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
 use interledger_settlement::{Convert, ConvertDetails};
@@ -42,7 +42,6 @@ pub trait ExchangeRateStore: Clone {
 /// Requires a `ExchangeRateStore`
 #[derive(Clone)]
 pub struct ExchangeRateService<S, O, A> {
-    ilp_address: Address,
     spread: f64,
     store: S,
     next: O,
@@ -51,13 +50,12 @@ pub struct ExchangeRateService<S, O, A> {
 
 impl<S, O, A> ExchangeRateService<S, O, A>
 where
-    S: ExchangeRateStore,
+    S: AddressStore + ExchangeRateStore,
     O: OutgoingService<A>,
     A: Account,
 {
-    pub fn new(ilp_address: Address, spread: f64, store: S, next: O) -> Self {
+    pub fn new(spread: f64, store: S, next: O) -> Self {
         ExchangeRateService {
-            ilp_address,
             spread,
             store,
             next,
@@ -69,7 +67,7 @@ where
 impl<S, O, A> OutgoingService<A> for ExchangeRateService<S, O, A>
 where
     // TODO can we make these non-'static?
-    S: ExchangeRateStore + Clone + Send + Sync + 'static,
+    S: AddressStore + ExchangeRateStore + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
     A: Account + Sync + 'static,
 {
@@ -85,6 +83,7 @@ where
         &mut self,
         mut request: OutgoingRequest<A>,
     ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
+        let ilp_address = self.store.get_ilp_address();
         if request.prepare.amount() > 0 {
             let rate: f64 = if request.from.asset_code() == request.to.asset_code() {
                 1f64
@@ -112,7 +111,7 @@ where
                         request.to.asset_code()
                     )
                     .as_bytes(),
-                    triggered_by: Some(&self.ilp_address),
+                    triggered_by: Some(&ilp_address),
                     data: &[],
                 }
                 .build()));
@@ -151,7 +150,7 @@ where
                                 outgoing_amount,
                             )
                             .as_bytes(),
-                            triggered_by: Some(&self.ilp_address),
+                            triggered_by: Some(&ilp_address),
                             data: &[],
                         }
                         .build()));
@@ -177,7 +176,7 @@ where
                             request.prepare.amount(),
                         )
                         .as_bytes(),
-                        triggered_by: Some(&self.ilp_address),
+                        triggered_by: Some(&ilp_address),
                         data: &[],
                     }
                     .build()));
@@ -396,6 +395,25 @@ mod tests {
         }
     }
 
+    impl AddressStore for TestStore {
+        /// Saves the ILP Address in the store's memory and database
+        fn set_ilp_address(
+            &self,
+            _ilp_address: Address,
+        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            unimplemented!()
+        }
+
+        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            unimplemented!()
+        }
+
+        /// Get's the store's ilp address from memory
+        fn get_ilp_address(&self) -> Address {
+            Address::from_str("example.connector").unwrap()
+        }
+    }
+
     impl Account for TestAccount {
         type AccountId = u64;
 
@@ -465,11 +483,6 @@ mod tests {
         TestAccount,
     > {
         let store = test_store(rate1, rate2);
-        ExchangeRateService::new(
-            Address::from_str("example.bob").unwrap(),
-            spread,
-            store,
-            handler,
-        )
+        ExchangeRateService::new(spread, store, handler)
     }
 }

@@ -218,18 +218,15 @@ where
 
 pub fn test_service(
 ) -> SettlementMessageService<impl IncomingService<TestAccount> + Clone, TestAccount> {
-    SettlementMessageService::new(
-        SERVICE_ADDRESS.clone(),
-        incoming_service_fn(|_request| {
-            Box::new(err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: b"No other incoming handler!",
-                data: &[],
-                triggered_by: Some(&SERVICE_ADDRESS),
-            }
-            .build()))
-        }),
-    )
+    SettlementMessageService::new(incoming_service_fn(|_request| {
+        Box::new(err(RejectBuilder {
+            code: ErrorCode::F02_UNREACHABLE,
+            message: b"No other incoming handler!",
+            data: &[],
+            triggered_by: Some(&SERVICE_ADDRESS),
+        }
+        .build()))
+    }))
 }
 
 pub fn test_store(store_fails: bool, account_has_engine: bool) -> TestStore {
