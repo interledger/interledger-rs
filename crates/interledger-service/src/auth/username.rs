@@ -1,8 +1,11 @@
 /// Wrapper around String to perform sanitization for usernames
 use regex::Regex;
-use std::convert::TryFrom;
-use std::fmt::Display;
-use std::str::FromStr;
+use std::{
+    cmp::{Ord, PartialOrd},
+    convert::TryFrom,
+    fmt::Display,
+    str::FromStr,
+};
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -20,7 +23,7 @@ lazy_static! {
 /// 1. [NFKC Normalization](https://en.wikipedia.org/wiki/Unicode_equivalence#Normalization)
 /// 2. Checks the string is 2-32 word characters only (no special characters except `_`)
 /// 3. Uses [case folding](https://www.w3.org/International/wiki/Case_folding) to convert to lowercase in a language-aware manner
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(try_from = "&str")]
 pub struct Username(String);
 

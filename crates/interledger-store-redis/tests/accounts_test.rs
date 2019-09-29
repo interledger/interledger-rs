@@ -85,12 +85,7 @@ fn update_ilp_and_children_addresses() {
             .and_then(move |acc2| {
                 let mut accs = accs.clone();
                 accs.push(acc2);
-                accs.sort_by(|a, b| {
-                    a.username()
-                        .as_bytes()
-                        .partial_cmp(b.username().as_bytes())
-                        .unwrap()
-                });
+                accs.sort_by_key(|a| a.username().clone());
                 let ilp_address = Address::from_str("test.parent.our_address").unwrap();
                 store
                     .set_ilp_address(ilp_address.clone())
