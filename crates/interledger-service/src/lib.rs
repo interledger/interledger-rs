@@ -218,6 +218,7 @@ pub trait AddressStore: Clone {
     /// Saves the ILP Address in the store's memory and database
     fn set_ilp_address(
         &self,
+        parent_ilp_address: Address,
         ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 

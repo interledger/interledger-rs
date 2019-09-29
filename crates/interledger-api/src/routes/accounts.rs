@@ -453,7 +453,7 @@ where
             debug!("Asking for routes from {:?}", parent.clone());
             join_all(vec![
                 // Update our store's address
-                store.set_ilp_address(ilp_address),
+                store.set_ilp_address(parent.ilp_address().clone(), ilp_address),
                 // Get the parent's routes for us
                 Box::new(
                     service

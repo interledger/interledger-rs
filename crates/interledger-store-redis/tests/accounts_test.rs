@@ -92,8 +92,9 @@ fn update_ilp_and_children_addresses() {
                         .unwrap()
                 });
                 let ilp_address = Address::from_str("test.parent.our_address").unwrap();
+                let parent_ilp_address = Address::from_str("test.parent").unwrap();
                 store
-                    .set_ilp_address(ilp_address.clone())
+                    .set_ilp_address(parent_ilp_address, ilp_address.clone())
                     .and_then(move |_| {
                         let ret = store.get_ilp_address();
                         assert_eq!(ilp_address, ret);

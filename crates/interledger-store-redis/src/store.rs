@@ -1346,12 +1346,12 @@ impl AddressStore for RedisStore {
     // updates their ILP Address to match the new address.
     fn set_ilp_address(
         &self,
+        parent_ilp_address: Address,
         ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         debug!("Setting ILP address to: {}", ilp_address);
         let routing_table = self.routes.clone();
         let conn = self.connection.clone();
-        let ilp_address_clone = ilp_address.clone();
 
         // Set the ILP address we have in memory
         (*self.ilp_address.write()) = ilp_address.clone();
@@ -1383,7 +1383,7 @@ impl AddressStore for RedisStore {
                             pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
                                 .ignore();
 
-                            let new_ilp_address = ilp_address_clone
+                            let new_ilp_address = parent_ilp_address
                                 .with_suffix(account.username().as_bytes())
                                 .unwrap();
                             pipe.hset(

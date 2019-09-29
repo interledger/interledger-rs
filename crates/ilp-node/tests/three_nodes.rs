@@ -170,12 +170,20 @@ fn three_nodes() {
             })
     }));
 
-    let charlie_fut = create_account_on_node(node3_http, bob_on_charlie, "admin")
-        .and_then(move |_| create_account_on_node(node3_http, charlie_on_charlie, "admin"));
+    // if charlie is added on charlie's node before the parent, its address
+    // will be stored as local.host.charlie, and thus when adding the parent it
+    // will be converted to example.bob.charlie
+    // if we add bob first, and then add charlie without a username, it is can
+    // be problematic if
+    // charlie is not added with a username, since it will be added as
+    // example.bob.charlie.charlie, which we is a different account.
+    let charlie_fut = create_account_on_node(node3_http, charlie_on_charlie, "admin")
+        .and_then(move |_| create_account_on_node(node3_http, bob_on_charlie, "admin"));
 
     runtime.spawn(
-        node3
-            .serve()
+        delay(1000)
+            .map_err(|_| panic!("Something strange happened"))
+            .and_then(move |_| node3.serve())
             .and_then(move |_| charlie_fut)
             .and_then(move |_| Ok(())),
     );
@@ -183,7 +191,7 @@ fn three_nodes() {
     runtime
         .block_on(
             // Wait for the nodes to spin up
-            delay(1000)
+            delay(2000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
                     let send_1_to_3 = send_money_to_username(

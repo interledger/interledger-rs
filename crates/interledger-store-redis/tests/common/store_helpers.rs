@@ -33,7 +33,10 @@ pub fn test_store() -> impl Future<Item = (RedisStore, TestContext, Vec<Account>
                     // we just assume alice appended some data to her address
                     store
                         .clone()
-                        .set_ilp_address(acc.ilp_address().with_suffix(b"user1").unwrap())
+                        .set_ilp_address(
+                            acc.ilp_address(),
+                            acc.ilp_address().with_suffix(b"user1").unwrap(),
+                        )
                         .and_then(move |_| {
                             store_clone
                                 .insert_account(ACCOUNT_DETAILS_1.clone())

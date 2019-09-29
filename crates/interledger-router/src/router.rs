@@ -46,7 +46,7 @@ where
 
 impl<S, O> IncomingService<S::Account> for Router<S, O>
 where
-    S: RouterStore,
+    S: RouterStore + AddressStore,
     O: OutgoingService<S::Account> + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
@@ -60,7 +60,7 @@ where
         let destination = request.prepare.destination();
         let mut next_hop = None;
         let routing_table = self.store.routing_table();
-        let ilp_address = self.ilp_address.clone();
+        let ilp_address = self.store.get_ilp_address();
 
         // Check if we have a direct path for that account or if we need to scan
         // through the routing table
@@ -117,10 +117,11 @@ where
             )
         } else {
             error!(
-                "No route found for request{}: {:?}",
+                "[{}]: No route found for request{}: {:?}",
+                ilp_address,
                 {
                     // Log a warning if the global prefix does not match
-                    let mut segments = (&self.ilp_address as &str).split(|c| c == '.');
+                    let mut segments = (&ilp_address as &str).split(|c| c == '.');
                     if let Some(global_prefix) = segments.next() {
                         if !request.prepare.destination().starts_with(global_prefix) {
                             format!(

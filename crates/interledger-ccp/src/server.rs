@@ -323,10 +323,10 @@ where
             .into_iter()
             .filter(|route| {
                 if !route.prefix.starts_with(&self.global_prefix.read()) {
-                    warn!("Got route for a different global prefix: {:?}", route);
+                    warn!("Got route for a different global prefix: {:?}. Our prefix: {:?}", route, *self.global_prefix.read());
                     false
                 } else if route.prefix.len() <= self.global_prefix.read().len() {
-                    warn!("Got route broadcast for the global prefix: {:?}", route);
+                    warn!("Got route broadcast for the global prefix: {:?}. Our prefix: {:?}", route, *self.global_prefix.read());
                     false
                 } else if route.prefix.starts_with(self.ilp_address.read().as_ref()) {
                     trace!("Ignoring route broadcast for a prefix that starts with our own address: {:?}", route);
@@ -379,7 +379,7 @@ where
         );
 
         // Filter out routes that don't make sense or that we won't accept
-        let update = self.filter_routes(update);
+        // let update = self.filter_routes(update);
 
         let mut incoming_tables = self.incoming_tables.write();
         if !&incoming_tables.contains_key(&request.from.id()) {
@@ -584,10 +584,11 @@ where
 
                     for (prefix, account, mut route) in better_routes {
                         debug!(
-                            "Setting new route for prefix: {} -> Account: {} (id: {})",
+                            "Setting new route for prefix: {} -> Account: {} (id: {}, ilp_address: {})",
                             str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
                             account.username(),
                             account.id(),
+                            account.ilp_address(),
                         );
                         local_table.set_route(prefix.clone(), account.clone(), route.clone());
 
