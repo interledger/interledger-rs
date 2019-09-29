@@ -39,12 +39,10 @@ where
         .map_err(|_err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
         .and_then(move |account_details| {
             let source_account = account_details.ilp_address();
-            let source_scheme = source_account.segments().next().expect("Addresses should have a scheme first");
-            let destination_scheme = destination_account.segments().next().expect("Addresses should have a scheme first");
-            if source_scheme != destination_scheme {
+            if source_account.scheme() != destination_account.scheme() {
                 warn!("Destination ILP address starts with a different scheme prefix (\"{}\') than ours (\"{}\'), this probably isn't going to work",
-                destination_scheme,
-                source_scheme);
+                destination_account.scheme(),
+                source_account.scheme());
             }
 
             SendMoneyFuture {

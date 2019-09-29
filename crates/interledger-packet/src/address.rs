@@ -156,6 +156,15 @@ impl Address {
         }
     }
 
+    /// Returns the first segment of the address, which is the scheme.
+    /// See [`IL-RFC 15: ILP Addresses](https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md#allocation-schemes)
+    pub fn scheme(&self) -> &str {
+        // This should neve panic because we validate the Address when it's created
+        self.segments()
+            .next()
+            .expect("Addresses must have a scheme as the first segment")
+    }
+
     /// Suffixes the ILP Address with the provided suffix. Includes a '.' separator
     pub fn with_suffix(&self, suffix: &[u8]) -> Result<Address, ParseError> {
         let new_address_len = self.len() + 1 + suffix.len();
@@ -340,6 +349,21 @@ mod test_address {
         assert_eq!(
             format!("{}", Address::from_str("test.alice").unwrap()),
             "test.alice",
+        );
+    }
+
+    #[test]
+    fn test_scheme() {
+        assert_eq!(Address::from_str("test.alice").unwrap().scheme(), "test");
+        assert_eq!(
+            Address::from_str("example.node.other").unwrap().scheme(),
+            "example"
+        );
+        assert_eq!(
+            Address::from_str("g.some-node.child-node.with_other_things~and-more")
+                .unwrap()
+                .scheme(),
+            "g"
         );
     }
 
