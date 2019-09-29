@@ -247,10 +247,12 @@ impl InterledgerNode {
                                 outgoing_service.clone()
                             );
                             let mut ccp_builder = CcpRouteManagerBuilder::new(
+                                ilp_address.clone(),
                                 store.clone(),
                                 outgoing_service.clone(),
                                 incoming_service,
                             );
+                            ccp_builder.ilp_address(ilp_address.clone());
                             if let Some(ms) = route_broadcast_interval {
                                 ccp_builder.broadcast_interval(ms);
                             }

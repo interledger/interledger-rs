@@ -216,7 +216,6 @@ impl AddressStore for TestStore {
     /// Saves the ILP Address in the store's memory and database
     fn set_ilp_address(
         &self,
-        _parent_ilp_address: Address,
         _ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         unimplemented!()
@@ -336,7 +335,6 @@ mod outgoing {
         /// Saves the ILP Address in the store's memory and database
         fn set_ilp_address(
             &self,
-            _parent_ilp_address: Address,
             _ilp_address: Address,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
