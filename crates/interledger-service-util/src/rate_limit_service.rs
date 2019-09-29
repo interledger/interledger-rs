@@ -2,8 +2,10 @@ use futures::{
     future::{err, Either},
     Future,
 };
-use interledger_packet::{Address, ErrorCode, RejectBuilder};
-use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
+use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_service::{
+    Account, AddressStore, BoxedIlpFuture, IncomingRequest, IncomingService,
+};
 use log::{error, warn};
 use std::marker::PhantomData;
 
@@ -52,7 +54,6 @@ pub trait RateLimitStore {
 /// It is an IncomingService.
 #[derive(Clone)]
 pub struct RateLimitService<S, I, A> {
-    ilp_address: Address,
     store: S,
     next: I, // Can we somehow omit the PhantomData
     account_type: PhantomData<A>,
@@ -60,13 +61,12 @@ pub struct RateLimitService<S, I, A> {
 
 impl<S, I, A> RateLimitService<S, I, A>
 where
-    S: RateLimitStore<Account = A> + Clone + Send + Sync,
+    S: AddressStore + RateLimitStore<Account = A> + Clone + Send + Sync,
     I: IncomingService<A> + Clone + Send + Sync, // Looks like 'static is not required?
     A: RateLimitAccount + Sync,
 {
-    pub fn new(ilp_address: Address, store: S, next: I) -> Self {
+    pub fn new(store: S, next: I) -> Self {
         RateLimitService {
-            ilp_address,
             store,
             next,
             account_type: PhantomData,
@@ -76,7 +76,7 @@ where
 
 impl<S, I, A> IncomingService<A> for RateLimitService<S, I, A>
 where
-    S: RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
+    S: AddressStore + RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     A: RateLimitAccount + Sync + 'static,
 {
@@ -89,7 +89,7 @@ where
     ///     - If the request forwarding failed, the client should not be charged towards their throughput limit, so they are refunded, and return a reject
     /// 1. If the limit was hit, return a reject with the appropriate ErrorCode.
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
-        let ilp_address = self.ilp_address.clone();
+        let ilp_address = self.store.get_ilp_address();
         let mut next = self.next.clone();
         let store = self.store.clone();
         let account = request.from.clone();

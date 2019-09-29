@@ -214,11 +214,10 @@ impl InterledgerNode {
                             // service to others like the router and then call handle_incoming on it to set up the incoming handler
                             let outgoing_service = btp_server_service.clone();
                             let outgoing_service = ValidatorService::outgoing(
-                                ilp_address.clone(),
+                                store.clone(),
                                 outgoing_service
                             );
                             let outgoing_service = HttpClientService::new(
-                                ilp_address.clone(),
                                 store.clone(),
                                 outgoing_service,
                             );
@@ -233,12 +232,10 @@ impl InterledgerNode {
                                 outgoing_service,
                             );
                             let outgoing_service = BalanceService::new(
-                                ilp_address.clone(),
                                 store.clone(),
                                 outgoing_service,
                             );
                             let outgoing_service = ExchangeRateService::new(
-                                ilp_address.clone(),
                                 exchange_rate_spread,
                                 store.clone(),
                                 outgoing_service,
@@ -246,7 +243,6 @@ impl InterledgerNode {
 
                             // Set up the Router and Routing Manager
                             let incoming_service = Router::new(
-                                ilp_address.clone(),
                                 store.clone(),
                                 outgoing_service.clone()
                             );
@@ -261,18 +257,17 @@ impl InterledgerNode {
                                 ccp_builder.broadcast_interval(ms);
                             }
                             let incoming_service = ccp_builder.to_service();
-                            let incoming_service = EchoService::new(ilp_address.clone(), incoming_service);
-                            let incoming_service = SettlementMessageService::new(ilp_address.clone(), incoming_service);
+                            let incoming_service = EchoService::new(store.clone(), incoming_service);
+                            let incoming_service = SettlementMessageService::new(incoming_service);
                             let incoming_service = IldcpService::new(incoming_service);
                             let incoming_service =
                                 MaxPacketAmountService::new(
-                                    ilp_address.clone(),
+                                    store.clone(),
                                     incoming_service
                             );
                             let incoming_service =
-                                ValidatorService::incoming(ilp_address.clone(), incoming_service);
+                                ValidatorService::incoming(store.clone(), incoming_service);
                             let incoming_service = RateLimitService::new(
-                                ilp_address.clone(),
                                 store.clone(),
                                 incoming_service,
                             );

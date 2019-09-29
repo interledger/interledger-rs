@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use futures::{future::err, Future};
 use hex;
-use interledger_packet::{Address, ErrorCode, RejectBuilder};
+use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use log::error;
 use ring::digest::{digest, SHA256};
@@ -15,43 +15,46 @@ use tokio::prelude::FutureExt;
 /// Forwards everything else.
 ///
 #[derive(Clone)]
-pub struct ValidatorService<IO, A> {
-    ilp_address: Address,
+pub struct ValidatorService<IO, S, A> {
+    store: S,
     next: IO,
     account_type: PhantomData<A>,
 }
 
-impl<I, A> ValidatorService<I, A>
+impl<I, S, A> ValidatorService<I, S, A>
 where
     I: IncomingService<A>,
+    S: AddressStore,
     A: Account,
 {
-    pub fn incoming(ilp_address: Address, next: I) -> Self {
+    pub fn incoming(store: S, next: I) -> Self {
         ValidatorService {
-            ilp_address,
+            store,
             next,
             account_type: PhantomData,
         }
     }
 }
 
-impl<O, A> ValidatorService<O, A>
+impl<O, S, A> ValidatorService<O, S, A>
 where
     O: OutgoingService<A>,
+    S: AddressStore,
     A: Account,
 {
-    pub fn outgoing(ilp_address: Address, next: O) -> Self {
+    pub fn outgoing(store: S, next: O) -> Self {
         ValidatorService {
-            ilp_address,
+            store,
             next,
             account_type: PhantomData,
         }
     }
 }
 
-impl<I, A> IncomingService<A> for ValidatorService<I, A>
+impl<I, S, A> IncomingService<A> for ValidatorService<I, S, A>
 where
     I: IncomingService<A>,
+    S: AddressStore,
     A: Account,
 {
     type Future = BoxedIlpFuture;
@@ -73,7 +76,7 @@ where
             let result = Box::new(err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
-                triggered_by: Some(&self.ilp_address),
+                triggered_by: Some(&self.store.get_ilp_address()),
                 data: &[],
             }
             .build()));
@@ -82,9 +85,10 @@ where
     }
 }
 
-impl<O, A> OutgoingService<A> for ValidatorService<O, A>
+impl<O, S, A> OutgoingService<A> for ValidatorService<O, S, A>
 where
     O: OutgoingService<A>,
+    S: AddressStore,
     A: Account,
 {
     type Future = BoxedIlpFuture;
@@ -104,7 +108,7 @@ where
         let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
         let now = Utc::now();
         let time_left = expires_at - now;
-        let ilp_address = self.ilp_address.clone();
+        let ilp_address = self.store.get_ilp_address();
         let ilp_address_clone = ilp_address.clone();
         if time_left > Duration::zero() {
             Box::new(
@@ -164,6 +168,8 @@ where
 }
 
 #[cfg(test)]
+use interledger_packet::Address;
+#[cfg(test)]
 use lazy_static::lazy_static;
 #[cfg(test)]
 use std::str::FromStr;
@@ -202,6 +208,30 @@ impl Account for TestAccount {
 }
 
 #[cfg(test)]
+#[derive(Clone)]
+struct TestStore;
+
+#[cfg(test)]
+impl AddressStore for TestStore {
+    /// Saves the ILP Address in the store's memory and database
+    fn set_ilp_address(
+        &self,
+        _ilp_address: Address,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unimplemented!()
+    }
+
+    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unimplemented!()
+    }
+
+    /// Get's the store's ilp address from memory
+    fn get_ilp_address(&self) -> Address {
+        Address::from_str("example.connector").unwrap()
+    }
+}
+
+#[cfg(test)]
 mod incoming {
     use super::*;
     use interledger_packet::*;
@@ -216,7 +246,7 @@ mod incoming {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::incoming(
-            Address::from_str("example.connector").unwrap(),
+            TestStore,
             incoming_service_fn(move |request| {
                 requests_clone.lock().unwrap().push(request);
                 Ok(FulfillBuilder {
@@ -252,7 +282,7 @@ mod incoming {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::incoming(
-            Address::from_str("example.connector").unwrap(),
+            TestStore,
             incoming_service_fn(move |request| {
                 requests_clone.lock().unwrap().push(request);
                 Ok(FulfillBuilder {
@@ -298,12 +328,34 @@ mod outgoing {
         time::{Duration, SystemTime},
     };
 
+    #[derive(Clone)]
+    struct TestStore;
+
+    impl AddressStore for TestStore {
+        /// Saves the ILP Address in the store's memory and database
+        fn set_ilp_address(
+            &self,
+            _ilp_address: Address,
+        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            unimplemented!()
+        }
+
+        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            unimplemented!()
+        }
+
+        /// Get's the store's ilp address from memory
+        fn get_ilp_address(&self) -> Address {
+            Address::from_str("example.connector").unwrap()
+        }
+    }
+
     #[test]
     fn lets_through_valid_outgoing_response() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::outgoing(
-            Address::from_str("example.connector").unwrap(),
+            TestStore,
             outgoing_service_fn(move |request| {
                 requests_clone.lock().unwrap().push(request);
                 Ok(FulfillBuilder {
@@ -341,7 +393,7 @@ mod outgoing {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::outgoing(
-            Address::from_str("example.connector").unwrap(),
+            TestStore,
             outgoing_service_fn(move |request| {
                 requests_clone.lock().unwrap().push(request);
                 Ok(FulfillBuilder {

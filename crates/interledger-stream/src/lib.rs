@@ -24,7 +24,7 @@ pub mod test_helpers {
     use futures::{future::ok, sync::mpsc::UnboundedSender, Future};
     use interledger_packet::Address;
     use interledger_router::RouterStore;
-    use interledger_service::{Account, AccountStore, Username};
+    use interledger_service::{Account, AccountStore, AddressStore, Username};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -113,6 +113,25 @@ pub mod test_helpers {
             HashMap::from_iter(vec![(self.route.0.clone(), self.route.1.id())].into_iter())
         }
     }
+
+    impl AddressStore for TestStore {
+        /// Saves the ILP Address in the store's memory and database
+        fn set_ilp_address(
+            &self,
+            _ilp_address: Address,
+        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            unimplemented!()
+        }
+
+        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+            unimplemented!()
+        }
+
+        /// Get's the store's ilp address from memory
+        fn get_ilp_address(&self) -> Address {
+            Address::from_str("example.connector").unwrap()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -156,7 +175,7 @@ mod send_money_to_receiver {
                 .build())
             }),
         );
-        let server = Router::new(EXAMPLE_RECEIVER.clone(), store, server);
+        let server = Router::new(store, server);
         let server = IldcpService::new(server);
 
         let (destination_account, shared_secret) =
