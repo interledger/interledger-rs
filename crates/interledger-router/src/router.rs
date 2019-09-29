@@ -120,15 +120,14 @@ where
                 "No route found for request{}: {:?}",
                 {
                     // Log a warning if the global prefix does not match
-                    if let Some(global_prefix) = self.ilp_address.segments().next() {
-                        if !request.prepare.destination().starts_with(global_prefix) {
-                            format!(
-                            " (warning: address does not start with the right global prefix, expected: \"{}\")",
-                            global_prefix
-                        )
-                        } else {
-                            "".to_string()
-                        }
+                    let destination = request.prepare.destination();
+                    if destination.scheme() != self.ilp_address.scheme()
+                        && destination.scheme() != "peer"
+                    {
+                        format!(
+                        " (warning: address does not start with the right scheme prefix, expected: \"{}\")",
+                        self.ilp_address.scheme()
+                    )
                     } else {
                         "".to_string()
                     }

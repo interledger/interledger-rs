@@ -61,7 +61,6 @@ pub struct CcpRouteManagerBuilder<I, O, S> {
     /// It is the same as the local_table with our own address added to the path of each route.
     store: S,
     ilp_address: Address,
-    global_prefix: Bytes,
     broadcast_interval: u64,
 }
 
@@ -75,7 +74,6 @@ where
     pub fn new(ilp_address: Address, store: S, outgoing: O, next_incoming: I) -> Self {
         CcpRouteManagerBuilder {
             ilp_address,
-            global_prefix: Bytes::from_static(b"g."),
             next_incoming,
             outgoing,
             store,
@@ -84,12 +82,6 @@ where
     }
 
     pub fn ilp_address(&mut self, ilp_address: Address) -> &mut Self {
-        self.global_prefix = ilp_address
-            .to_bytes()
-            .iter()
-            .position(|c| c == &b'.')
-            .map(|index| ilp_address.to_bytes().slice_to(index + 1))
-            .unwrap_or_else(|| ilp_address.to_bytes().clone());
         self.ilp_address = ilp_address;
         self
     }
@@ -104,7 +96,6 @@ where
         #[allow(clippy::let_and_return)]
         let service = CcpRouteManager {
             ilp_address: Arc::new(RwLock::new(self.ilp_address.clone())),
-            global_prefix: Arc::new(RwLock::new(self.global_prefix.clone())),
             next_incoming: self.next_incoming.clone(),
             outgoing: self.outgoing.clone(),
             store: self.store.clone(),
@@ -134,7 +125,6 @@ where
 #[derive(Clone)]
 pub struct CcpRouteManager<I, O, S, A: Account> {
     ilp_address: Arc<RwLock<Address>>,
-    global_prefix: Arc<RwLock<Bytes>>,
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
     next_incoming: I,
     /// The outgoing request handler that will be used to send outgoing CCP messages.
@@ -195,12 +185,6 @@ where
             );
             // release the read lock
             drop(current_ilp_address);
-            *self.global_prefix.write() = ilp_address
-                .to_bytes()
-                .iter()
-                .position(|c| c == &b'.')
-                .map(|index| ilp_address.to_bytes().slice_to(index + 1))
-                .unwrap_or_else(|| ilp_address.to_bytes().clone());
             *self.ilp_address.write() = ilp_address;
 
             // TODO should we reset our routes and request new ones
@@ -322,10 +306,13 @@ where
             .new_routes
             .into_iter()
             .filter(|route| {
-                if !route.prefix.starts_with(&self.global_prefix.read()) {
+                let ilp_address = self.ilp_address.read();
+                let address_scheme = (*ilp_address).scheme().as_bytes();
+                if !route.prefix.starts_with(address_scheme) {
                     warn!("Got route for a different global prefix: {:?}", route);
                     false
-                } else if route.prefix.len() <= self.global_prefix.read().len() {
+                } else if route.prefix.len() <= address_scheme.len() + 1 {
+                    // note the + 1 is due to address_scheme not including a trailing "."
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
                 } else if route.prefix.starts_with(self.ilp_address.read().as_ref()) {
@@ -519,7 +506,6 @@ where
         let forwarding_table_updates = self.forwarding_table_updates.clone();
         let incoming_tables = self.incoming_tables.clone();
         let ilp_address = self.ilp_address.read().clone();
-        let global_prefix = self.global_prefix.read().clone();
         let mut store = self.store.clone();
 
         self.store.get_local_and_configured_routes().and_then(
@@ -595,8 +581,9 @@ where
 
                         // Don't advertise routes that don't start with the global prefix
                         // or that advertise the whole global prefix
-                        let correct_global_prefix = route.prefix.starts_with(&global_prefix[..])
-                            && route.prefix != *global_prefix;
+                        let address_scheme = ilp_address.scheme().as_bytes();
+                        let correct_address_scheme = route.prefix.starts_with(address_scheme)
+                            && route.prefix != *address_scheme;
                         // We do want to advertise our address
                         let is_our_address = route.prefix == (ilp_address.as_ref() as &Bytes);
                         // Don't advertise local routes because advertising only our address
@@ -608,7 +595,7 @@ where
                         // Don't include routes we're also withdrawing
                         let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
 
-                        if correct_global_prefix && not_local_route && not_withdrawn_route {
+                        if correct_address_scheme && not_local_route && not_withdrawn_route {
                             let old_route = forwarding_table.get_route(&prefix);
                             if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
                                 route.path.insert(0, ilp_address.to_bytes());
@@ -1266,7 +1253,7 @@ mod handle_route_update_request {
     }
 
     #[test]
-    fn filters_routes_with_other_global_prefix() {
+    fn filters_routes_with_other_address_scheme() {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
@@ -1287,7 +1274,7 @@ mod handle_route_update_request {
     }
 
     #[test]
-    fn filters_routes_for_global_prefix() {
+    fn filters_routes_for_address_scheme() {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
@@ -1303,6 +1290,7 @@ mod handle_route_update_request {
             props: Vec::new(),
         });
         let request = service.filter_routes(request);
+        dbg!(request.new_routes.clone());
         assert_eq!(request.new_routes.len(), 1);
         assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
     }
