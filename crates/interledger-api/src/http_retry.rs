@@ -5,12 +5,13 @@ use http::StatusCode;
 use log::trace;
 use reqwest::r#async::Client as HttpClient;
 use serde_json::json;
-use std::fmt::Display;
-use std::time::Duration;
+use std::{default::Default, fmt::Display, time::Duration};
 use url::Url;
 
 // The account creation endpoint set by the engines in the [RFC](https://github.com/interledger/rfcs/pull/536)
 static ACCOUNTS_ENDPOINT: &str = "accounts";
+const MAX_RETRIES: usize = 10;
+const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_millis(5000);
 
 #[derive(Clone)]
 pub struct Client {
@@ -121,5 +122,11 @@ where
             // related to the engine not having started yet
             RetryPolicy::WaitRetry(Duration::from_secs(1))
         }
+    }
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Client::new(DEFAULT_HTTP_TIMEOUT, MAX_RETRIES)
     }
 }
