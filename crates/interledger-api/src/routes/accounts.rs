@@ -406,7 +406,7 @@ fn get_address_from_parent_and_update_routes<O, A, S>(
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Clone + Send + Sync + 'static,
-    S: AddressStore + Clone + Send + Sync + 'static,
+    S: NodeStore<Account = A> + Clone + Send + Sync + 'static,
 {
     debug!(
         "Getting ILP address from parent account: {} (id: {})",
@@ -448,6 +448,9 @@ where
             .to_prepare();
             debug!("Asking for routes from {:?}", parent.clone());
             join_all(vec![
+                // Set the parent to be the default route for everything
+                // that starts with their global prefix
+                store.set_default_route(parent.id()),
                 // Update our store's address
                 store.set_ilp_address(ilp_address),
                 // Get the parent's routes for us

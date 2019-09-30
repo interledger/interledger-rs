@@ -328,6 +328,40 @@ fn static_routes_override_others() {
 }
 
 #[test]
+fn default_route() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let mut store_clone = store.clone();
+        store
+            .clone()
+            .set_default_route(accs[0].id())
+            .and_then(move |_| {
+                let account1_id = AccountId::new();
+                let account1 = Account::try_from(
+                    account1_id,
+                    ACCOUNT_DETAILS_1.clone(),
+                    store.get_ilp_address(),
+                )
+                .unwrap();
+                store_clone
+                    .set_routes(vec![
+                        (Bytes::from("example.a"), account1.clone()),
+                        (Bytes::from("example.b"), account1.clone()),
+                    ])
+                    .and_then(move |_| {
+                        let routes = store.routing_table();
+                        assert_eq!(routes[&b""[..]], accs[0].id());
+                        assert_eq!(routes[&b"example.a"[..]], account1_id);
+                        assert_eq!(routes[&b"example.b"[..]], account1_id);
+                        assert_eq!(routes.len(), 3);
+                        let _ = context;
+                        Ok(())
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
 fn returns_configured_routes_for_route_manager() {
     block_on(test_store().and_then(|(store, context, accs)| {
         store

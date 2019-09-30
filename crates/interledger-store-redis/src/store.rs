@@ -48,7 +48,7 @@ use redis::{
 use secrecy::{ExposeSecret, Secret};
 use serde_json;
 use std::{
-    iter::FromIterator,
+    iter::{self, FromIterator},
     str,
     str::FromStr,
     sync::Arc,
@@ -64,6 +64,7 @@ const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 static PARENT_ILP_KEY: &str = "parent_node_account_address";
 static ROUTES_KEY: &str = "routes:current";
 static STATIC_ROUTES_KEY: &str = "routes:static";
+static DEFAULT_ROUTE_KEY: &str = "routes:default";
 static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement_engines";
 
@@ -1293,6 +1294,45 @@ impl NodeStore for RedisStore {
         )
     }
 
+    fn set_default_route(
+        &self,
+        account_id: AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let routing_table = self.routes.clone();
+        Box::new(
+            cmd("EXISTS")
+                .arg(accounts_key(account_id))
+                .query_async(self.connection.clone())
+                .map_err(|err| {
+                    error!(
+                        "Error checking if account exists before setting default route: {:?}",
+                        err
+                    )
+                })
+                .and_then(move |(connection, exists): (RedisReconnect, bool)| {
+                    if exists {
+                        Ok(connection)
+                    } else {
+                        error!(
+                            "Cannot set default route because account {} does not exist",
+                            account_id
+                        );
+                        Err(())
+                    }
+                })
+                .and_then(move |connection| {
+                    cmd("SET")
+                        .arg(DEFAULT_ROUTE_KEY)
+                        .arg(account_id)
+                        .query_async(connection)
+                        .map_err(|err| error!("Error setting default route: {:?}", err))
+                        .and_then(move |(connection, _): (RedisReconnect, Value)| {
+                            update_routes(connection, routing_table)
+                        })
+                }),
+        )
+    }
+
     fn set_settlement_engines(
         &self,
         asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
@@ -1849,19 +1889,33 @@ fn update_routes(
     routing_table: Arc<RwLock<HashMap<Bytes, AccountId>>>,
 ) -> impl Future<Item = (), Error = ()> {
     let mut pipe = redis::pipe();
-    pipe.hgetall(ROUTES_KEY).hgetall(STATIC_ROUTES_KEY);
+    pipe.hgetall(ROUTES_KEY)
+        .hgetall(STATIC_ROUTES_KEY)
+        .get(DEFAULT_ROUTE_KEY);
     pipe.query_async(connection)
         .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
         .and_then(
-            move |(_connection, (routes, static_routes)): (_, (RouteVec, RouteVec))| {
+            move |(_connection, (routes, static_routes, default_route)): (
+                _,
+                (RouteVec, RouteVec, Option<AccountId>),
+            )| {
                 trace!(
-                    "Loaded routes from redis. Static routes: {:?}, other routes: {:?}",
+                    "Loaded routes from redis. Static routes: {:?}, default route: {:?}, other routes: {:?}",
                     static_routes,
+                    default_route,
                     routes
                 );
+                // If there is a default route set in the db,
+                // set the entry for "" in the routing table to route to that account
+                let default_route_iter = iter::once(default_route)
+                    .filter_map(|r| r)
+                    // TODO should the default route prefix be the global scheme instead of the empty string?
+                    .map(|account_id| (String::new(), account_id));
                 let routes = HashMap::from_iter(
                     routes
                         .into_iter()
+                        // Include the default route if there is one
+                        .chain(default_route_iter)
                         // Having the static_routes inserted after ensures that they will overwrite
                         // any routes with the same prefix from the first set
                         .chain(static_routes.into_iter())
