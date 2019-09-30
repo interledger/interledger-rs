@@ -170,11 +170,9 @@ where
                 .for_each(move |_| {
                     // ensure we have the latest ILP Address from the store
                     clone.update_ilp_address();
-                    clone.broadcast_routes().then(|_| {
-                        // Returning an error would end the broadcast loop
-                        // so we want to return Ok even if there was an error
-                        Ok(())
-                    })
+                    // Returning an error would end the broadcast loop
+                    // so we want to return Ok even if there was an error
+                    clone.broadcast_routes().then(|_| Ok(()))
                 })
         })
     }
@@ -190,9 +188,6 @@ where
             // release the read lock
             drop(current_ilp_address);
             *self.ilp_address.write() = ilp_address;
-
-            // TODO should we reset our routes and request new ones
-            // if the global prefix changes?
         }
     }
 

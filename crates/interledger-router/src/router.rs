@@ -112,7 +112,7 @@ where
             )
         } else {
             error!(
-                "No route found for request{}: {:?}",
+                "No route found for request {}: {:?}",
                 {
                     // Log a warning if the global prefix does not match
                     let destination = request.prepare.destination();

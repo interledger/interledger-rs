@@ -170,21 +170,19 @@ fn three_nodes() {
             })
     }));
 
-    let charlie_fut = create_account_on_node(node3_http, bob_on_charlie, "admin")
-        .and_then(move |_| create_account_on_node(node3_http, charlie_on_charlie, "admin"));
-
-    runtime.spawn(
-        node3
-            .serve()
-            .and_then(move |_| charlie_fut)
-            .and_then(move |_| Ok(())),
-    );
+    // We execute the futures one after the other to avoid race conditions where
+    // Bob gets added before the node's main account
+    let charlie_fut = create_account_on_node(node3_http, charlie_on_charlie, "admin")
+        .and_then(move |_| create_account_on_node(node3_http, bob_on_charlie, "admin"));
 
     runtime
         .block_on(
-            // Wait for the nodes to spin up
-            delay(1000)
-                .map_err(|_| panic!("Something strange happened"))
+            node3
+                .serve()
+                .and_then(move |_| charlie_fut)
+                // we wait some time after the node is up so that we get the
+                // necessary routes from bob
+                .and_then(move |_| delay(1000).map_err(|_| panic!("Something strange happened")))
                 .and_then(move |_| {
                     let send_1_to_3 = send_money_to_username(
                         node1_http,
@@ -211,10 +209,10 @@ fn three_nodes() {
                         ])
                     };
 
-                    // // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
-                    // // while Node 3's scale is 6. This means that Node 3 will
-                    // // see 1000x less. In addition, the conversion rate is 2:1
-                    // // for 3's asset, so he will receive 2 total.
+                    // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
+                    // while Node 3's scale is 6. This means that Node 3 will
+                    // see 1000x less. In addition, the conversion rate is 2:1
+                    // for 3's asset, so he will receive 2 total.
                     send_1_to_3
                         .map_err(|err| {
                             eprintln!("Error sending from node 1 to node 3: {:?}", err);
