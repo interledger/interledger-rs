@@ -130,6 +130,7 @@ impl EthereumStore for TestStore {
 
     fn save_recently_observed_block(
         &self,
+        _net_version: String,
         block: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.last_observed_block.write();
@@ -139,6 +140,7 @@ impl EthereumStore for TestStore {
 
     fn load_recently_observed_block(
         &self,
+        _net_version: String,
     ) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send> {
         Box::new(Some(ok(*self.last_observed_block.read())))
     }
@@ -286,6 +288,8 @@ where
         .watch_incoming(watch_incoming)
         .poll_frequency(1000)
         .connect()
+        .wait()
+        .unwrap()
 }
 
 pub fn test_store(

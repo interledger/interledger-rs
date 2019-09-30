@@ -100,6 +100,7 @@ pub struct EthereumLedgerSettlementEngine<S, Si, A> {
     poll_frequency: Duration,
     connector_url: Url,
     asset_scale: u8,
+    net_version: String,
     challenges: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
 
@@ -187,7 +188,9 @@ where
         self
     }
 
-    pub fn connect(&self) -> EthereumLedgerSettlementEngine<S, Si, A> {
+    pub fn connect(
+        &self,
+    ) -> impl Future<Item = EthereumLedgerSettlementEngine<S, Si, A>, Error = ()> {
         let ethereum_endpoint = if let Some(ref ethereum_endpoint) = self.ethereum_endpoint {
             &ethereum_endpoint
         } else {
@@ -227,23 +230,31 @@ where
             token_address: self.token_address,
         };
 
-        let engine = EthereumLedgerSettlementEngine {
-            web3,
-            store: self.store.clone(),
-            signer: self.signer.clone(),
-            address,
-            chain_id,
-            confirmations,
-            poll_frequency,
-            connector_url,
-            asset_scale,
-            account_type: PhantomData,
-            challenges: Arc::new(RwLock::new(HashMap::new())),
-        };
-        if self.watch_incoming {
-            engine.notify_connector_on_incoming_settlement();
-        }
-        engine
+        let store = self.store.clone();
+        let signer = self.signer.clone();
+        let watch_incoming = self.watch_incoming;
+        web3.net().version().then(move |result| {
+            let net_version = result.unwrap_or_else(|_| chain_id.to_string());
+            let engine = EthereumLedgerSettlementEngine {
+                web3,
+                store,
+                signer,
+                address,
+                chain_id,
+                confirmations,
+                poll_frequency,
+                connector_url,
+                asset_scale,
+                net_version,
+                account_type: PhantomData,
+                challenges: Arc::new(RwLock::new(HashMap::new())),
+            };
+            if watch_incoming {
+                engine.notify_connector_on_incoming_settlement();
+            }
+
+            Ok(engine)
+        })
     }
 }
 
@@ -314,6 +325,8 @@ where
         let self_clone2 = self.clone();
         let our_address = self.address.own_address;
         let token_address = self.address.token_address;
+        let net_version = self.net_version.clone();
+        let net_version_clone = net_version.clone();
 
         // We `Box` futures in these functions due to
         // https://github.com/rust-lang/rust/issues/54540#issuecomment-494749912.
@@ -326,7 +339,10 @@ where
                 // get the safe number of blocks to avoid reorgs
                 let fetch_until = current_block - confirmations;
                 // U256 does not implement IntoFuture so we must wrap it
-                Ok((Ok(fetch_until), store.load_recently_observed_block()))
+                Ok((
+                    Ok(fetch_until),
+                    store.load_recently_observed_block(net_version),
+                ))
             })
             .flatten()
             .and_then(move |(to_block, last_observed_block)| {
@@ -382,7 +398,7 @@ where
                     trace!("Processed all transctions up to block {}", to_block);
                     // now that all transactions have been processed successfully, we
                     // can save `to_block` as the latest observed block
-                    store_clone.save_recently_observed_block(to_block)
+                    store_clone.save_recently_observed_block(net_version_clone, to_block)
                 }))
             })
     }
@@ -1115,27 +1131,32 @@ pub fn run_ethereum_engine(opt: EthereumLedgerOpt) -> impl Future<Item = (), Err
     EthereumLedgerRedisStoreBuilder::new(opt.redis_connection.clone())
         .connect()
         .and_then(move |ethereum_store| {
-            let engine =
-                EthereumLedgerSettlementEngineBuilder::new(ethereum_store.clone(), opt.private_key)
-                    .ethereum_endpoint(&opt.ethereum_url)
-                    .chain_id(opt.chain_id)
-                    .connector_url(&opt.connector_url)
-                    .confirmations(opt.confirmations)
-                    .asset_scale(opt.asset_scale)
-                    .poll_frequency(opt.poll_frequency)
-                    .watch_incoming(opt.watch_incoming)
-                    .token_address(opt.token_address)
-                    .connect();
+            let engine_fut = EthereumLedgerSettlementEngineBuilder::new(
+                ethereum_store.clone(),
+                opt.private_key.clone(),
+            )
+            .ethereum_endpoint(&opt.ethereum_url)
+            .chain_id(opt.chain_id)
+            .connector_url(&opt.connector_url)
+            .confirmations(opt.confirmations)
+            .asset_scale(opt.asset_scale)
+            .poll_frequency(opt.poll_frequency)
+            .watch_incoming(opt.watch_incoming)
+            .token_address(opt.token_address)
+            .connect();
 
             let listener = TcpListener::bind(&opt.settlement_api_bind_address)
                 .expect("Unable to bind to Settlement Engine address");
-            let api = SettlementEngineApi::new(engine, ethereum_store);
-            tokio::spawn(api.serve(listener.incoming()));
-            info!(
-                "Ethereum Settlement Engine listening on: {}",
-                &opt.settlement_api_bind_address
-            );
-            Ok(())
+
+            engine_fut.and_then(move |engine| {
+                let api = SettlementEngineApi::new(engine, ethereum_store);
+                tokio::spawn(api.serve(listener.incoming()));
+                info!(
+                    "Ethereum Settlement Engine listening on: {}",
+                    &opt.settlement_api_bind_address
+                );
+                Ok(())
+            })
         })
 }
 
