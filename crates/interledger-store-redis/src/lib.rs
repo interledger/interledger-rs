@@ -4,6 +4,7 @@
 
 mod account;
 mod crypto;
+mod reconnect;
 mod store;
 
 pub use account::{Account, AccountId};
