@@ -294,10 +294,11 @@ impl EthereumStore for EthereumLedgerRedisStore {
 
     fn save_recently_observed_block(
         &self,
+        net_version: String,
         block: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut pipe = redis::pipe();
-        pipe.set(RECENTLY_OBSERVED_BLOCK_KEY, block.low_u64())
+        pipe.hset(RECENTLY_OBSERVED_BLOCK_KEY, net_version, block.low_u64())
             .ignore();
         Box::new(
             pipe.query_async(self.connection.clone())
@@ -310,12 +311,14 @@ impl EthereumStore for EthereumLedgerRedisStore {
 
     fn load_recently_observed_block(
         &self,
+        net_version: String,
     ) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send> {
         let mut pipe = redis::pipe();
         pipe.get(RECENTLY_OBSERVED_BLOCK_KEY);
         Box::new(
-            cmd("GET")
+            cmd("HGET")
                 .arg(RECENTLY_OBSERVED_BLOCK_KEY)
+                .arg(net_version)
                 .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error loading last observed block: {:?}", err))
                 .map(|(_connnection, block): (_, Option<u64>)| block.map(U256::from)),
@@ -481,16 +484,25 @@ mod tests {
     #[test]
     fn saves_and_loads_last_observed_data_properly() {
         block_on(test_store().and_then(|(store, context)| {
-            let block = U256::from(2);
+            let block1 = U256::from(1);
+            let block2 = U256::from(2);
             store
-                .save_recently_observed_block(block)
+                .save_recently_observed_block("1".to_owned(), block1)
+                .map_err(|err| eprintln!("Redis error: {:?}", err))
+                .join(store.save_recently_observed_block("2".to_owned(), block2))
                 .map_err(|err| eprintln!("Redis error: {:?}", err))
                 .and_then(move |_| {
                     store
-                        .load_recently_observed_block()
+                        .load_recently_observed_block("1".to_owned())
                         .map_err(|err| eprintln!("Redis error: {:?}", err))
-                        .and_then(move |data| {
-                            assert_eq!(data, Some(block));
+                        .join(
+                            store
+                                .load_recently_observed_block("2".to_owned())
+                                .map_err(|err| eprintln!("Redis error: {:?}", err)),
+                        )
+                        .and_then(move |(ret1, ret2)| {
+                            assert_eq!(ret1, Some(block1));
+                            assert_eq!(ret2, Some(block2));
                             let _ = context;
                             Ok(())
                         })

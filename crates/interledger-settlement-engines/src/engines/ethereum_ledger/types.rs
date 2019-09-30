@@ -64,12 +64,14 @@ pub trait EthereumStore {
     /// transactions have been communicated to the connector
     fn save_recently_observed_block(
         &self,
+        net_version: String,
         block: U256,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     /// Loads the latest saved block number
     fn load_recently_observed_block(
         &self,
+        net_version: String,
     ) -> Box<dyn Future<Item = Option<U256>, Error = ()> + Send>;
 
     /// Retrieves the account id associated with the provided addresses pair.
