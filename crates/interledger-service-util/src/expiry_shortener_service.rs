@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use interledger_service::{Account, OutgoingRequest, OutgoingService};
-use log::debug;
+use log::trace;
 
 pub const DEFAULT_ROUND_TRIP_TIME: u32 = 500;
 pub const DEFAULT_MAX_EXPIRY_DURATION: u32 = 30000;
@@ -60,7 +60,7 @@ where
         let latest_allowable_expiry =
             Utc::now() + Duration::milliseconds(i64::from(self.max_expiry_duration));
         let new_expiry = if new_expiry > latest_allowable_expiry {
-            debug!(
+            trace!(
                 "Shortening packet expiry duration to {}ms in the future",
                 self.max_expiry_duration
             );

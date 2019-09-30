@@ -1855,6 +1855,8 @@ fn update_routes(
                         .chain(static_routes.into_iter())
                         .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
                 );
+                // TODO we may not want to print this because the routing table will be very big
+                // if the node has a lot of local accounts
                 trace!("Routing table is: {:?}", routes);
                 *routing_table.write() = routes;
                 Ok(())
