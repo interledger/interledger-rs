@@ -33,17 +33,12 @@ jobs:
             sudo apt-get install redis-server
             redis-server --version
       - run:
-          name: Install Node.js
+          name: Install Node.js, Ganache CLI, and XRP Engine
           command: |
               curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
               source ~/.nvm/nvm.sh
               nvm install node
-      - run:
-          name: Install Ganache CLI
-          command: npm i -g ganache-cli
-      - run:
-          name: Install the XRP Engine
-          command: npm i -g ilp-settlement-xrp
+              npm i -g ganache-cli ilp-settlement-xrp
       - run:
           name: Reduce codegen units
           # If we don't include this, the linker runs out of memory when building

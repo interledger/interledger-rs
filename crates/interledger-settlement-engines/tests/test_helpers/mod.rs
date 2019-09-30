@@ -11,7 +11,6 @@ use interledger_settlement_engines::engines::ethereum_ledger::{
 
 pub mod redis_helpers;
 
-use reqwest;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,9 +21,6 @@ use std::process::Command;
 use std::str;
 use std::thread::sleep;
 use std::time::Duration;
-
-#[allow(unused)]
-static XRP_FAUCET_URL: &str = "https://faucet.altnet.rippletest.net/accounts";
 
 #[derive(Deserialize)]
 pub struct DeliveryData {
@@ -58,14 +54,14 @@ pub fn start_xrp_engine(
     engine
         .env("DEBUG", "settlement*")
         .env("CONNECTOR_URL", connector_url)
-        .env("REDIS_URI", &format!("127.0.0.1:{}/1", redis_port.to_string()))
+        .env("REDIS_URI", &format!("redis://127.0.0.1:{}", redis_port.to_string()))
         .env("ENGINE_PORT", engine_port.to_string());
     let engine_pid = engine
         // .stderr(std::process::Stdio::null())
         // .stdout(std::process::Stdio::null())
         .spawn()
         .expect("couldnt start xrp engine");
-    sleep(Duration::from_secs(2));
+    sleep(Duration::from_secs(8));
     engine_pid
 }
 
