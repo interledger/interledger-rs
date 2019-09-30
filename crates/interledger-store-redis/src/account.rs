@@ -82,16 +82,16 @@ impl Account {
     pub fn try_from(
         id: AccountId,
         details: AccountDetails,
-        parent_ilp_address: Address,
+        node_ilp_address: Address,
     ) -> Result<Account, ()> {
         let ilp_address = match details.ilp_address {
             Some(a) => a,
-            None => parent_ilp_address
+            None => node_ilp_address
                 .with_suffix(details.username.as_bytes())
                 .map_err(|_| {
                     error!(
                         "Could not append username {} to address {}",
-                        details.username, parent_ilp_address
+                        details.username, node_ilp_address
                     )
                 })?,
         };
