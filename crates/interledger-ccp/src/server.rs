@@ -634,32 +634,30 @@ where
 
     /// Send RouteUpdateRequests to all peers that we send routing messages to
     fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
-        let mut outgoing = self.outgoing.clone();
-        let to_epoch_index = self.forwarding_table.read().epoch();
-
-        let from_epoch_index: u32 = {
-            let mut lock = self.last_epoch_updates_sent_for.lock();
-            let epoch = *lock;
-            *lock = to_epoch_index;
-            epoch
-        };
-
-        let route_update_request = self.create_route_update(from_epoch_index, to_epoch_index);
-        debug!(
-            "Sending route udpates for epochs {} - {}: {:?}",
-            from_epoch_index, to_epoch_index, route_update_request,
-        );
-
-        let prepare = route_update_request.to_prepare();
+        let self_clone = self.clone();
         self.store
             .get_accounts_to_send_routes_to()
             .and_then(move |mut accounts| {
+                let mut outgoing = self_clone.outgoing.clone();
+                let to_epoch_index = self_clone.forwarding_table.read().epoch();
+
+                let from_epoch_index: u32 = {
+                    let mut lock = self_clone.last_epoch_updates_sent_for.lock();
+                    let epoch = *lock;
+                    *lock = to_epoch_index;
+                    epoch
+                };
+
+                let route_update_request = self_clone.create_route_update(from_epoch_index, to_epoch_index);
+
+                let prepare = route_update_request.to_prepare();
                 accounts.sort_unstable_by_key(|a| a.id().to_string());
                 accounts.dedup_by_key(|a| a.id());
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    trace!("Sending route updates to accounts: {}", {
+                    trace!("Sending route update for epochs {} - {} to accounts: {:?} {}",
+                        from_epoch_index, to_epoch_index, route_update_request, {
                         let account_list: Vec<String> = accounts
                             .iter()
                             .map(|a| {
