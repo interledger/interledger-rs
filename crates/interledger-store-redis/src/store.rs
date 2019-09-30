@@ -1383,9 +1383,24 @@ impl AddressStore for RedisStore {
                             pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
                                 .ignore();
 
-                            let new_ilp_address = ilp_address_clone
-                                .with_suffix(account.username().as_bytes())
-                                .unwrap();
+                            // if the username of the account ends with the
+                            // node's address, we're already configured so no
+                            // need to append anything.
+                            let ilp_address_clone2 = ilp_address_clone.clone();
+                            // Note: We are assuming that if the node's address
+                            // ends with the account's username, then this
+                            // account represents the node's non routing
+                            // account. Is this a reasonable assumption to make?
+                            let new_ilp_address =
+                                if ilp_address_clone2.segments().rev().next().unwrap()
+                                    == account.username().to_string()
+                                {
+                                    ilp_address_clone2
+                                } else {
+                                    ilp_address_clone
+                                        .with_suffix(account.username().as_bytes())
+                                        .unwrap()
+                                };
                             pipe.hset(
                                 accounts_key(account.id()),
                                 "ilp_address",
