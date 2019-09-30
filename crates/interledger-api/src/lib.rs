@@ -102,6 +102,11 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         account_id: <Self::Account as Account>::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
+    fn set_default_route(
+        &self,
+        account_id: <Self::Account as Account>::AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
     fn set_settlement_engines(
         &self,
         asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
