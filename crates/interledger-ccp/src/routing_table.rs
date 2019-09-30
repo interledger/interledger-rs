@@ -147,7 +147,8 @@ where
 
         if request.to_epoch_index <= self.epoch {
             trace!(
-                "Ignoring duplicate routing update for epoch: {}",
+                "Ignoring routing update from old epoch. Received epoch: {}. Our epoch: {}",
+                request.to_epoch_index,
                 self.epoch
             );
             return Ok(Vec::new());

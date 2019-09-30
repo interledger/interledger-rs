@@ -1,11 +1,6 @@
 /// Wrapper around String to perform sanitization for usernames
 use regex::Regex;
-use std::{
-    cmp::{Ord, PartialOrd},
-    convert::TryFrom,
-    fmt::Display,
-    str::FromStr,
-};
+use std::{convert::TryFrom, fmt::Display, str::FromStr};
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
