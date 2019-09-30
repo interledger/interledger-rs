@@ -245,7 +245,7 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 1. A settlement engine for Charlie to Bob on XRPL
    - To settle the balance of Bob's account on Charlie's node (Port 3003)
 
-By default, the XRP settlement engine generates new testnet XRPL testnet accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
+By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -290,7 +290,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -e DEBUG=settlement* \
         -e CONNECTOR_URL=http://interledger-rs-node_b:7771 \
         -e REDIS_URI=redis-bob_se_xrp \
-        ilp-settlement-xrp
+        interledgerjs/settlement-xrp
 
     # Start Charlie's settlement engine (XRPL)
     $CMD_DOCKER run \
@@ -301,7 +301,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -e DEBUG=settlement* \
         -e CONNECTOR_URL=http://interledger-rs-node_c:7771 \
         -e REDIS_URI=redis-charlie_se_xrp \
-        ilp-settlement-xrp
+        interledgerjs/settlement-xrp
 else
     which ilp-settlement-xrp &> /dev/null || error_and_exit "You need to install \"ilp-settlement-xrp\"."
 -->

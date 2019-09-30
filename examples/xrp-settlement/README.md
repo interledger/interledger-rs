@@ -177,7 +177,7 @@ When you want to watch logs, use the `tail` command. You can use the command lik
 
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
-By default, the XRP settlement engine generates new testnet XRPL testnet accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
+By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -191,7 +191,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -e DEBUG=settlement* \
         -e CONNECTOR_URL=http://interledger-rs-node_a:7771 \
         -e REDIS_URI=redis-alice_se \
-        ilp-settlement-xrp
+        interledgerjs/settlement-xrp
 
     # Start Bob's settlement engine
     $CMD_DOCKER run \
@@ -202,7 +202,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -e DEBUG=settlement* \
         -e CONNECTOR_URL=http://interledger-rs-node_b:7771 \
         -e REDIS_URI=redis-bob_se \
-        ilp-settlement-xrp
+        interledgerjs/settlement-xrp
 else
 -->
 
@@ -211,13 +211,13 @@ else
 export RUST_LOG=interledger=debug
 
 # Start Alice's settlement engine
-DEBUG="xrp-settlement-engine" \
+DEBUG="settlement*" \
 REDIS_URI=127.0.0.1:6380 \
 ilp-settlement-xrp \
 &> logs/node-alice-settlement-engine.log &
 
 # Start Bob's settlement engine
-DEBUG="xrp-settlement-engine" \
+DEBUG="settlement*" \
 CONNECTOR_URL="http://localhost:8771" \
 REDIS_URI=127.0.0.1:6382 \
 ENGINE_PORT=3001 \
