@@ -145,7 +145,8 @@ where
             ));
         }
 
-        if request.to_epoch_index <= self.epoch {
+        // It is OK to receive epochs with the same index as our current epoch
+        if request.to_epoch_index < self.epoch {
             trace!(
                 "Ignoring routing update from old epoch. Received epoch: {}. Our epoch: {}",
                 request.to_epoch_index,
