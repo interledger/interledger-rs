@@ -90,9 +90,21 @@ where
                     .send()
                     .map_err(move |err| {
                         error!("Error sending HTTP request: {:?}", err);
+                        let code = if err.is_client_error() {
+                            ErrorCode::F00_BAD_REQUEST
+                        } else {
+                            ErrorCode::T01_PEER_UNREACHABLE
+                        };
+                        let message = if let Some(status) = err.status() {
+                            format!("Error sending ILP over HTTP request: {}", status)
+                        } else if let Some(err) = err.get_ref() {
+                            format!("Error sending ILP over HTTP request: {:?}", err)
+                        } else {
+                            "Error sending ILP over HTTP request".to_string()
+                        };
                         RejectBuilder {
-                            code: ErrorCode::T01_PEER_UNREACHABLE,
-                            message: &[],
+                            code,
+                            message: message.as_str().as_bytes(),
                             triggered_by: Some(&ilp_address),
                             data: &[],
                         }
