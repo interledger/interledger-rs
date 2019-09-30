@@ -6,7 +6,7 @@ use crate::{
         CCP_RESPONSE, CCP_UPDATE_DESTINATION,
     },
     routing_table::RoutingTable,
-    CcpRoutingAccount, RouteManagerStore,
+    CcpRoutingAccount, RouteManagerStore, RoutingRelation,
 };
 use bytes::Bytes;
 use futures::{
@@ -38,7 +38,11 @@ use tokio_timer::Interval;
 #[cfg(not(test))]
 use tokio_executor::spawn;
 
-const DEFAULT_ROUTE_EXPIRY_TIME: u32 = 45000;
+// TODO should the route expiry be longer? we use 30 seconds now
+// because the expiry shortener will lower the expiry to 30 seconds
+// otherwise. we could make it longer and make sure the BTP server
+// comes after the expiry shortener
+const DEFAULT_ROUTE_EXPIRY_TIME: u32 = 30000;
 const DEFAULT_BROADCAST_INTERVAL: u64 = 30000;
 const DUMMY_ROUTING_TABLE_ID: [u8; 16] = [0; 16];
 
@@ -660,7 +664,7 @@ where
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    debug!("Sending route updates to accounts: {}", {
+                    trace!("Sending route updates to accounts: {}", {
                         let account_list: Vec<String> = accounts
                             .iter()
                             .map(|a| {
@@ -674,29 +678,24 @@ where
                             .collect();
                         account_list.join(", ")
                     });
-                    Either::A(
-                        join_all(accounts.into_iter().map(move |account| {
-                            let account_id = account.id();
-                            outgoing
-                                .send_request(OutgoingRequest {
-                                    from: account.clone(),
-                                    to: account,
-                                    original_amount: prepare.amount(),
-                                    prepare: prepare.clone(),
-                                })
-                                .map_err(move |err| {
+                    Either::A(join_all(accounts.into_iter().map(move |account| {
+                        outgoing
+                            .send_request(OutgoingRequest {
+                                from: account.clone(),
+                                to: account.clone(),
+                                original_amount: prepare.amount(),
+                                prepare: prepare.clone(),
+                            })
+                            .map_err(move |err| {
+                                if account.routing_relation() != RoutingRelation::Child {
                                     warn!(
-                                        "Error sending route update to account {}: {:?}",
-                                        account_id, err
+                                        "Error sending route update to {:?} account {} (id: {}): {:?}",
+                                        account.routing_relation(), account.username(), account.id(), err
                                     )
-                                })
-                                .then(|_| Ok(()))
-                        }))
-                        .and_then(|_| {
-                            trace!("Finished sending route updates");
-                            Ok(())
-                        }),
-                    )
+                                }
+                            })
+                            .then(|_| Ok(()))
+                    })).and_then(|_| Ok(())))
                 } else {
                     trace!("No accounts to broadcast routes to");
                     Either::B(ok(()))
