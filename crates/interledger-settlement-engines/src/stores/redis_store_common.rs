@@ -218,17 +218,14 @@ impl LeftoversStore for EngineRedisStore {
         &self,
         account_id: Self::AccountId,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
-        pipe.atomic();
-        pipe.lrange(uncredited_amount_key(account_id.to_string()), 0, -1);
         Box::new(
-            pipe.query_async(self.connection.clone())
+            cmd("LRANGE")
+                .arg(uncredited_amount_key(account_id.to_string()))
+                .arg(0)
+                .arg(-1)
+                .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
-                .and_then(move |(_, amounts): (_, Vec<AmountWithScale>)| {
-                    // this call will only return 1 element
-                    let amount = amounts[0].clone();
-                    Ok((amount.num, amount.scale))
-                }),
+                .and_then(move |(_, amount): (_, AmountWithScale)| Ok((amount.num, amount.scale))),
         )
     }
 
@@ -242,22 +239,18 @@ impl LeftoversStore for EngineRedisStore {
             account_id,
             uncredited_settlement_amount
         );
-        let mut pipe = redis::pipe();
-        pipe.atomic();
-        // We store these amounts as lists of strings
-        // because we cannot do BigNumber arithmetic in the store
-        // When loading the amounts, we convert them to the appropriate data
-        // type and sum them up.
-        pipe.rpush(
-            uncredited_amount_key(account_id),
-            AmountWithScale {
-                num: uncredited_settlement_amount.0,
-                scale: uncredited_settlement_amount.1,
-            },
-        )
-        .ignore();
         Box::new(
-            pipe.query_async(self.connection.clone())
+            // We store these amounts as lists of strings
+            // because we cannot do BigNumber arithmetic in the store
+            // When loading the amounts, we convert them to the appropriate data
+            // type and sum them up.
+            cmd("RPUSH")
+                .arg(uncredited_amount_key(account_id))
+                .arg(AmountWithScale {
+                    num: uncredited_settlement_amount.0,
+                    scale: uncredited_settlement_amount.1,
+                })
+                .query_async(self.connection.clone())
                 .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
                 .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
         )
