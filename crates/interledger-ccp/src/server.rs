@@ -108,6 +108,7 @@ where
             last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
             local_table: Arc::new(RwLock::new(RoutingTable::default())),
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
+            unavailable_accounts: Arc::new(Mutex::new(HashMap::new())),
         };
 
         #[cfg(not(test))]
@@ -117,6 +118,16 @@ where
 
         service
     }
+}
+
+#[derive(Debug)]
+struct BackoffParams {
+    /// The total number of route broadcast intervals we should wait before trying again
+    /// This is incremented for each broadcast failure
+    max: u8,
+    /// How many more intervals we should wait before trying to send again
+    /// (0 means we should try again on the next loop)
+    skip_intervals: u8,
 }
 
 /// The Routing Manager Service.
@@ -151,6 +162,11 @@ pub struct CcpRouteManager<I, O, S, A: Account> {
     /// existing best route and if they do not attempt to overwrite configured routes.
     incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
     store: S,
+    /// If we get final errors while sending to specific accounts, we'll
+    /// wait before trying to broadcast to them
+    /// This maps the account ID to the number of route brodcast intervals
+    /// we should wait before trying again
+    unavailable_accounts: Arc<Mutex<HashMap<A::AccountId, BackoffParams>>>,
 }
 
 impl<I, O, S, A> CcpRouteManager<I, O, S, A>
@@ -248,6 +264,19 @@ where
 
         // TODO stop sending updates if they are in Idle mode
         if control.mode == Mode::Sync {
+            // Don't skip them in the route update broadcasts anymore since this
+            // tells us that they are online
+            // TODO what happens if they can send to us but we can't send to them?
+            {
+                trace!("Checking whether account was previously listed as unavailable");
+                let mut unavailable_accounts = self.unavailable_accounts.lock();
+                if unavailable_accounts.remove(&request.from.id()).is_some() {
+                    debug!("Account {} (id: {}) is no longer unavailable, will resume broadcasting routes to it",
+                            request.from.username(),
+                            request.from.id());
+                }
+            }
+
             let (from_epoch_index, to_epoch_index) = {
                 let forwarding_table = self.forwarding_table.read();
                 let to_epoch_index = forwarding_table.epoch();
@@ -635,8 +664,23 @@ where
     /// Send RouteUpdateRequests to all peers that we send routing messages to
     fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
         let self_clone = self.clone();
+        let unavailable_accounts = self.unavailable_accounts.clone();
+        // Check which accounts we should skip this iteration
+        let accounts_to_skip: Vec<A::AccountId> = {
+            trace!("Checking accounts to skip");
+            let mut unavailable_accounts = self.unavailable_accounts.lock();
+            let mut skip = Vec::new();
+            for (id, mut backoff) in unavailable_accounts.iter_mut() {
+                if backoff.skip_intervals > 0 {
+                    skip.push(*id);
+                }
+                backoff.skip_intervals = backoff.skip_intervals.saturating_sub(1);
+            }
+            skip
+        };
+        trace!("Skipping accounts: {:?}", accounts_to_skip);
         self.store
-            .get_accounts_to_send_routes_to(Vec::new())
+            .get_accounts_to_send_routes_to(accounts_to_skip)
             .and_then(move |mut accounts| {
                 let mut outgoing = self_clone.outgoing.clone();
                 let to_epoch_index = self_clone.forwarding_table.read().epoch();
@@ -648,7 +692,8 @@ where
                     epoch
                 };
 
-                let route_update_request = self_clone.create_route_update(from_epoch_index, to_epoch_index);
+                let route_update_request =
+                    self_clone.create_route_update(from_epoch_index, to_epoch_index);
 
                 let prepare = route_update_request.to_prepare();
                 accounts.sort_unstable_by_key(|a| a.id().to_string());
@@ -656,39 +701,73 @@ where
 
                 let broadcasting = !accounts.is_empty();
                 if broadcasting {
-                    trace!("Sending route update for epochs {} - {} to accounts: {:?} {}",
-                        from_epoch_index, to_epoch_index, route_update_request, {
-                        let account_list: Vec<String> = accounts
-                            .iter()
-                            .map(|a| {
-                                format!(
-                                    "{} (id: {}, ilp_address: {})",
-                                    a.username(),
-                                    a.id(),
-                                    a.ilp_address()
-                                )
-                            })
-                            .collect();
-                        account_list.join(", ")
-                    });
-                    Either::A(join_all(accounts.into_iter().map(move |account| {
-                        outgoing
-                            .send_request(OutgoingRequest {
-                                from: account.clone(),
-                                to: account.clone(),
-                                original_amount: prepare.amount(),
-                                prepare: prepare.clone(),
-                            })
-                            .map_err(move |err| {
-                                if account.routing_relation() != RoutingRelation::Child {
-                                    warn!(
-                                        "Error sending route update to {:?} account {} (id: {}): {:?}",
-                                        account.routing_relation(), account.username(), account.id(), err
+                    trace!(
+                        "Sending route update for epochs {} - {} to accounts: {:?} {}",
+                        from_epoch_index,
+                        to_epoch_index,
+                        route_update_request,
+                        {
+                            let account_list: Vec<String> = accounts
+                                .iter()
+                                .map(|a| {
+                                    format!(
+                                        "{} (id: {}, ilp_address: {})",
+                                        a.username(),
+                                        a.id(),
+                                        a.ilp_address()
                                     )
+                                })
+                                .collect();
+                            account_list.join(", ")
+                        }
+                    );
+                    Either::A(
+                        join_all(accounts.into_iter().map(move |account| {
+                            outgoing
+                                .send_request(OutgoingRequest {
+                                    from: account.clone(),
+                                    to: account.clone(),
+                                    original_amount: prepare.amount(),
+                                    prepare: prepare.clone(),
+                                })
+                                .then(move |res| Ok((account, res)))
+                        }))
+                        .and_then(move |results: Vec<(A, Result<Fulfill, Reject>)>| {
+                            // Handle the results of the route broadcast attempts
+                            trace!("Updating unavailable accounts");
+                            let mut unavailable_accounts = unavailable_accounts.lock();
+                            for (account, result) in results.into_iter() {
+                                match (account.routing_relation(), result) {
+                                    (RoutingRelation::Child, Err(err)) => {
+                                        if let Some(backoff) = unavailable_accounts.get_mut(&account.id()) {
+                                            // Increase the number of intervals we'll skip
+                                            // (but don't overflow the value it's stored in)
+                                            backoff.max = backoff.max.saturating_add(1);
+                                            backoff.skip_intervals = backoff.max;
+                                        } else {
+                                            // Skip sending to this account next time
+                                            unavailable_accounts.insert(account.id(), BackoffParams {
+                                                max: 1,
+                                                skip_intervals: 1,
+                                            });
+                                        }
+                                        trace!("Error sending route update to {:?} account {} (id: {}), increased backoff to {}: {:?}",
+                                            account.routing_relation(), account.username(), account.id(), unavailable_accounts[&account.id()].max, err);
+                                    },
+                                    (_, Err(err)) => {
+                                        warn!("Error sending route update to {:?} account {} (id: {}): {:?}",
+                                            account.routing_relation(), account.username(), account.id(), err);
+                                    },
+                                    (_, Ok(_)) => {
+                                        if unavailable_accounts.remove(&account.id()).is_some() {
+                                            debug!("Account {} (id: {}) is no longer unavailable, resuming route broadcasts", account.username(), account.id());
+                                        }
+                                    }
                                 }
-                            })
-                            .then(|_| Ok(()))
-                    })).and_then(|_| Ok(())))
+                            }
+                            Ok(())
+                        }),
+                    )
                 } else {
                     trace!("No accounts to broadcast routes to");
                     Either::B(ok(()))
@@ -1640,8 +1719,10 @@ mod create_route_update {
 #[cfg(test)]
 mod send_route_updates {
     use super::*;
+    use crate::fixtures::*;
     use crate::test_helpers::*;
-    use std::str::FromStr;
+    use interledger_service::*;
+    use std::{iter::FromIterator, str::FromStr};
 
     #[test]
     fn broadcasts_to_all_accounts_we_send_updates_to() {
@@ -1781,5 +1862,182 @@ mod send_route_updates {
             str::from_utf8(&update.withdrawn_routes[0]).unwrap(),
             "example.remote"
         );
+    }
+
+    #[test]
+    fn backs_off_sending_to_unavailable_child_accounts() {
+        let local_routes = HashMap::from_iter(vec![
+            (
+                Bytes::from("example.local.1"),
+                TestAccount::new(1, "example.local.1"),
+            ),
+            (
+                Bytes::from("example.connector.other-local"),
+                TestAccount {
+                    id: 2,
+                    ilp_address: Address::from_str("example.connector.other-local").unwrap(),
+                    relation: RoutingRelation::Child,
+                },
+            ),
+        ]);
+        let store = TestStore::with_routes(local_routes, HashMap::new());
+        let outgoing_requests: Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let outgoing_requests_clone = outgoing_requests.clone();
+        let outgoing = outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
+            let res = if request.to.routing_relation() == RoutingRelation::Child {
+                Err(RejectBuilder {
+                    code: ErrorCode::F00_BAD_REQUEST,
+                    message: &[],
+                    data: &[],
+                    triggered_by: Some(request.to.ilp_address()),
+                }
+                .build())
+            } else {
+                Ok(CCP_RESPONSE.clone())
+            };
+            (*outgoing_requests_clone.lock()).push(request);
+            res
+        });
+        let service = CcpRouteManagerBuilder::new(
+            Address::from_str("example.connector").unwrap(),
+            store,
+            outgoing,
+            incoming_service_fn(|_request| {
+                Box::new(err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: b"No other incoming handler!",
+                    data: &[],
+                    triggered_by: Some(&EXAMPLE_CONNECTOR),
+                }
+                .build()))
+            }),
+        )
+        .ilp_address(Address::from_str("example.connector").unwrap())
+        .to_service();
+        service.send_route_updates().wait().unwrap();
+
+        // The first time, the child request is rejected
+        assert_eq!(outgoing_requests.lock().len(), 2);
+        {
+            let lock = service.unavailable_accounts.lock();
+            let backoff = lock
+                .get(&2)
+                .expect("Should have added chlid to unavailable accounts");
+            assert_eq!(backoff.max, 1);
+            assert_eq!(backoff.skip_intervals, 1);
+        }
+
+        *outgoing_requests.lock() = Vec::new();
+        service.send_route_updates().wait().unwrap();
+
+        // When we send again, we skip the child
+        assert_eq!(outgoing_requests.lock().len(), 1);
+        {
+            let lock = service.unavailable_accounts.lock();
+            let backoff = lock
+                .get(&2)
+                .expect("Should have added chlid to unavailable accounts");
+            assert_eq!(backoff.max, 1);
+            assert_eq!(backoff.skip_intervals, 0);
+        }
+
+        *outgoing_requests.lock() = Vec::new();
+        service.send_route_updates().wait().unwrap();
+
+        // When we send again, we try the child but it still won't work
+        assert_eq!(outgoing_requests.lock().len(), 2);
+        {
+            let lock = service.unavailable_accounts.lock();
+            let backoff = lock
+                .get(&2)
+                .expect("Should have added chlid to unavailable accounts");
+            assert_eq!(backoff.max, 2);
+            assert_eq!(backoff.skip_intervals, 2);
+        }
+    }
+
+    #[test]
+    fn resets_backoff_on_route_control_request() {
+        let child_account = TestAccount {
+            id: 2,
+            ilp_address: Address::from_str("example.connector.other-local").unwrap(),
+            relation: RoutingRelation::Child,
+        };
+        let local_routes = HashMap::from_iter(vec![
+            (
+                Bytes::from("example.local.1"),
+                TestAccount::new(1, "example.local.1"),
+            ),
+            (
+                Bytes::from("example.connector.other-local"),
+                child_account.clone(),
+            ),
+        ]);
+        let store = TestStore::with_routes(local_routes, HashMap::new());
+        let outgoing_requests: Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let outgoing_requests_clone = outgoing_requests.clone();
+        let outgoing = outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
+            let res = if request.to.routing_relation() == RoutingRelation::Child {
+                Err(RejectBuilder {
+                    code: ErrorCode::F00_BAD_REQUEST,
+                    message: &[],
+                    data: &[],
+                    triggered_by: Some(request.to.ilp_address()),
+                }
+                .build())
+            } else {
+                Ok(CCP_RESPONSE.clone())
+            };
+            (*outgoing_requests_clone.lock()).push(request);
+            res
+        });
+        let mut service = CcpRouteManagerBuilder::new(
+            Address::from_str("example.connector").unwrap(),
+            store,
+            outgoing,
+            incoming_service_fn(|_request| {
+                Box::new(err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: b"No other incoming handler!",
+                    data: &[],
+                    triggered_by: Some(&EXAMPLE_CONNECTOR),
+                }
+                .build()))
+            }),
+        )
+        .ilp_address(Address::from_str("example.connector").unwrap())
+        .to_service();
+        service.send_route_updates().wait().unwrap();
+
+        // The first time, the child request is rejected
+        assert_eq!(outgoing_requests.lock().len(), 2);
+        {
+            let lock = service.unavailable_accounts.lock();
+            let backoff = lock
+                .get(&2)
+                .expect("Should have added chlid to unavailable accounts");
+            assert_eq!(backoff.max, 1);
+            assert_eq!(backoff.skip_intervals, 1);
+        }
+
+        service
+            .handle_request(IncomingRequest {
+                prepare: CONTROL_REQUEST.to_prepare(),
+                from: child_account,
+            })
+            .wait()
+            .unwrap();
+        {
+            let lock = service.unavailable_accounts.lock();
+            assert!(lock.get(&2).is_none());
+        }
+
+        *outgoing_requests.lock() = Vec::new();
+        service.send_route_updates().wait().unwrap();
+
+        // When we send again, we don't skip the child because we got a request from them
+        assert_eq!(outgoing_requests.lock().len(), 2);
     }
 }
