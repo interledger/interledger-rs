@@ -53,8 +53,8 @@ fn eth_xrp_interoperable() {
     let node3_xrp_engine_port = get_open_port(Some(3033));
 
     // spawn 2 redis servers for the XRP engines
-    let node2_redis_port = get_open_port(Some(6379));
-    let node3_redis_port = get_open_port(Some(6380));
+    let node2_redis_port = get_open_port(Some(6380));
+    let node3_redis_port = get_open_port(Some(6381));
     let mut node2_engine_redis = RedisServer::spawn_with_port(node2_redis_port);
     let mut node3_engine_redis = RedisServer::spawn_with_port(node3_redis_port);
     let mut node2_xrp_engine = start_xrp_engine(
