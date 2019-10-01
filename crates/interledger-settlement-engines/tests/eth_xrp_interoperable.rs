@@ -67,6 +67,7 @@ fn eth_xrp_interoperable() {
         node3_redis_port,
         node3_xrp_engine_port,
     );
+    std::thread::sleep(std::time::Duration::from_secs(15));
 
     let node1_eth_key =
         "380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc".to_string();
@@ -193,21 +194,7 @@ fn eth_xrp_interoperable() {
         node2_eth_engine_fut
             .and_then(move |_| node2.serve())
             .and_then(move |_| bob_fut)
-            .and_then(move |_| {
-                let client = reqwest::r#async::Client::new();
-                client
-                    .put(&format!("http://localhost:{}/rates", node2_http))
-                    .header("Authorization", "Bearer admin")
-                    // Let's say 0.001 ETH = 1 XRP for this example
-                    .json(&json!({"XRP": 1000, "ETH": 1}))
-                    .send()
-                    .map_err(|err| panic!(err))
-                    .and_then(|res| {
-                        res.error_for_status()
-                            .expect("Error setting exchange rates");
-                        Ok(())
-                    })
-            }),
+            .and_then(move |_| Ok(())),
     );
 
     let charlie_on_charlie = json!({
@@ -247,20 +234,27 @@ fn eth_xrp_interoperable() {
         exchange_rate_spread: 0.0,
     };
 
-    runtime.spawn(
-        // Wait a bit to make sure the other node's BTP server is listening
-        delay(500)
-            .map_err(|err| panic!(err))
-            .and_then(move |_| node3.serve())
-            .and_then(move |_| charlie_fut)
-            .and_then(move |_| Ok(())),
-    );
-
     runtime
         .block_on(
-            // Wait for the nodes to spin up
             delay(1000)
-                .map_err(|_| panic!("Something strange happened"))
+                .map_err(|err| panic!(err))
+                .and_then(move |_| node3.serve())
+                .and_then(move |_| charlie_fut)
+                .and_then(move |_| {
+                    let client = reqwest::r#async::Client::new();
+                    client
+                        .put(&format!("http://localhost:{}/rates", node2_http))
+                        .header("Authorization", "Bearer admin")
+                        // Let's say 0.001 ETH = 1 XRP for this example
+                        .json(&json!({"XRP": 1000, "ETH": 1}))
+                        .send()
+                        .map_err(|err| panic!(err))
+                        .and_then(|res| {
+                            res.error_for_status()
+                                .expect("Error setting exchange rates");
+                            Ok(())
+                        })
+                })
                 .and_then(move |_| {
                     send_money_to_username(
                         node1_http, node3_http, 69000, "charlie", "alice", "in_alice",
