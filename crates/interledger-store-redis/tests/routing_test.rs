@@ -122,13 +122,25 @@ fn polls_for_route_updates() {
 fn gets_accounts_to_send_routes_to() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_accounts_to_send_routes_to()
+            .get_accounts_to_send_routes_to(Vec::new())
             .and_then(move |accounts| {
-                assert_eq!(
-                    *accounts[0].ilp_address(),
-                    Address::from_str("example.alice.user1.bob").unwrap()
-                );
+                // We send to child accounts but not parents
+                assert_eq!(accounts[0].username().as_ref(), "bob");
                 assert_eq!(accounts.len(), 1);
+                let _ = context;
+                Ok(())
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn gets_accounts_to_send_routes_to_and_skips_ignored() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        store
+            .get_accounts_to_send_routes_to(vec![accs[1].id()])
+            .and_then(move |accounts| {
+                assert!(accounts.is_empty());
                 let _ = context;
                 Ok(())
             })

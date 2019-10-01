@@ -59,7 +59,6 @@ impl ConnectionLike for RedisReconnect {
                 .req_packed_command(cmd)
                 .or_else(move |error| {
                     if error.is_connection_dropped() {
-                        // TODO should the request be retried automatically?
                         debug!("Redis connection was dropped, attempting to reconnect");
                         Either::A(clone.reconnect().then(|_| Err(error)))
                     } else {

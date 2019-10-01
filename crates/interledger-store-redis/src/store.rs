@@ -1300,6 +1300,7 @@ impl NodeStore for RedisStore {
         account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routing_table = self.routes.clone();
+        // TODO replace this with a lua script to do both calls at once
         Box::new(
             cmd("EXISTS")
                 .arg(accounts_key(account_id))
@@ -1490,6 +1491,7 @@ impl RouteManagerStore for RedisStore {
 
     fn get_accounts_to_send_routes_to(
         &self,
+        ignore_accounts: Vec<AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         Box::new(
@@ -1498,13 +1500,15 @@ impl RouteManagerStore for RedisStore {
                 .query_async(self.connection.clone())
                 .map_err(|err| error!("Error getting members of set send_routes_to: {:?}", err))
                 .and_then(
-                    |(connection, account_ids): (RedisReconnect, Vec<AccountId>)| {
+                    move |(connection, account_ids): (RedisReconnect, Vec<AccountId>)| {
                         if account_ids.is_empty() {
                             Either::A(ok(Vec::new()))
                         } else {
                             let mut script = LOAD_ACCOUNTS.prepare_invoke();
                             for id in account_ids.iter() {
-                                script.arg(id.to_string());
+                                if !ignore_accounts.contains(id) {
+                                    script.arg(id.to_string());
+                                }
                             }
                             Either::B(
                                 script
@@ -1911,7 +1915,6 @@ fn update_routes(
                 // set the entry for "" in the routing table to route to that account
                 let default_route_iter = iter::once(default_route)
                     .filter_map(|r| r)
-                    // TODO should the default route prefix be the global scheme instead of the empty string?
                     .map(|account_id| (String::new(), account_id));
                 let routes = HashMap::from_iter(
                     routes

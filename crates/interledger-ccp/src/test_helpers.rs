@@ -148,13 +148,16 @@ impl RouteManagerStore for TestStore {
 
     fn get_accounts_to_send_routes_to(
         &self,
+        ignore_accounts: Vec<u64>,
     ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
         let mut accounts: Vec<TestAccount> = self
             .local
             .values()
             .chain(self.configured.values())
             .chain(self.routes.lock().values())
-            .filter(|account| account.should_send_routes())
+            .filter(|account| {
+                account.should_send_routes() && !ignore_accounts.contains(&account.id())
+            })
             .cloned()
             .collect();
         accounts.dedup_by_key(|a| a.id());
