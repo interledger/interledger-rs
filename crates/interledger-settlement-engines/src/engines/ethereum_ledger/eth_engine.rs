@@ -711,21 +711,36 @@ where
         } else {
             to
         };
-        let gas_amount_fut = web3.eth().estimate_gas(
-            CallRequest {
-                to: estimate_gas_destination,
-                from: None,
-                gas: None,
-                gas_price: None,
-                value: Some(value),
-                data: Some(tx.data.clone().into()),
-            },
-            None,
+        let gas_amount_fut = Either::A(Either::A(
+            web3.eth()
+                .estimate_gas(
+                    CallRequest {
+                        to: estimate_gas_destination,
+                        from: None,
+                        gas: None,
+                        gas_price: None,
+                        value: Some(value),
+                        data: Some(tx.data.clone().into()),
+                    },
+                    None,
+                )
+                .then(move |res| {
+                    Ok(match res {
+                        // if the gas estimation fails, use a default amount that will never
+                        // fail (eth transactions take 21000 gas, and ERC20 transactions are
+                        // between 50-70k)
+                        // This call will fail on Geth nodes until
+                        // https://github.com/ethereum/go-ethereum/issues/2586 is fixed
+                        Ok(amount) => amount,
+                        Err(_) => U256::from(100_000),
+                    })
+                }),
+        ));
+        let gas_price_fut = Either::A(Either::B(web3.eth().gas_price()));
+        let nonce_fut = Either::B(
+            web3.eth()
+                .transaction_count(own_address, Some(BlockNumber::Pending)),
         );
-        let gas_price_fut = web3.eth().gas_price();
-        let nonce_fut = web3
-            .eth()
-            .transaction_count(own_address, Some(BlockNumber::Pending));
         Box::new(
             join_all(vec![gas_price_fut, gas_amount_fut, nonce_fut])
                 .map_err(|err| error!("Error when querying gas price / nonce: {:?}", err))
