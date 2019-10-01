@@ -636,7 +636,7 @@ where
     fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
         let self_clone = self.clone();
         self.store
-            .get_accounts_to_send_routes_to()
+            .get_accounts_to_send_routes_to(Vec::new())
             .and_then(move |mut accounts| {
                 let mut outgoing = self_clone.outgoing.clone();
                 let to_epoch_index = self_clone.forwarding_table.read().epoch();

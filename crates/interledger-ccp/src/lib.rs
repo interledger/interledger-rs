@@ -102,6 +102,7 @@ pub trait RouteManagerStore: Clone {
 
     fn get_accounts_to_send_routes_to(
         &self,
+        ignore_accounts: Vec<<Self::Account as Account>::AccountId>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
     fn get_accounts_to_receive_routes_from(
