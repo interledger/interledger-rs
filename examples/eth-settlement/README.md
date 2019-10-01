@@ -426,19 +426,6 @@ printf "Adding Alice's account...\n"
     --ilp-over-http-incoming-token in_alice \
     --ilp-over-http-url http://localhost:7770/ilp \
     --settle-to 0 > logs/account-alice-alice.log
-#curl \
-#    -H "Content-Type: application/json" \
-#    -H "Authorization: Bearer hi_alice" \
-#    -d '{
-#    "username": "alice",
-#    "ilp_address": "example.alice",
-#    "asset_code": "ETH",
-#    "asset_scale": 18,
-#    "max_packet_amount": 100,
-#    "ilp_over_http_incoming_token": "in_alice",
-#    "ilp_over_http_url": "http://localhost:7770/ilp",
-#    "settle_to" : 0}' \
-#    http://localhost:7770/accounts > logs/account-alice-alice.log 2>/dev/null
 
 printf "Adding Bob's Account...\n"
 ./ilp-cli --node http://localhost:8770 accounts create bob \
@@ -450,19 +437,6 @@ printf "Adding Bob's Account...\n"
     --ilp-over-http-incoming-token in_bob \
     --ilp-over-http-url http://localhost:8770/ilp \
     --settle-to 0 > logs/account-bob-bob.log
-#curl \
-#    -H "Content-Type: application/json" \
-#    -H "Authorization: Bearer hi_bob" \
-#    -d '{
-#    "username": "bob",
-#    "ilp_address": "example.bob",
-#    "asset_code": "ETH",
-#    "asset_scale": 18,
-#    "max_packet_amount": 100,
-#    "ilp_over_http_incoming_token": "in_bob",
-#    "ilp_over_http_url": "http://localhost:8770/ilp",
-#    "settle_to" : 0}' \
-#    http://localhost:8770/accounts > logs/account-bob-bob.log 2>/dev/null
 
 printf "Adding Bob's account on Alice's node...\n"
 ./ilp-cli accounts create bob \
@@ -477,25 +451,7 @@ printf "Adding Bob's account on Alice's node...\n"
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
-    --routing-relation Peer > logs/account-alice-bob.log
-#curl \
-#    -H "Content-Type: application/json" \
-#    -H "Authorization: Bearer hi_alice" \
-#    -d '{
-#    "ilp_address": "example.bob",
-#    "username": "bob",
-#    "asset_code": "ETH",
-#    "asset_scale": 18,
-#    "max_packet_amount": 100,
-#    "settlement_engine_url": "http://localhost:3000",
-#    "ilp_over_http_incoming_token": "bob_password",
-#    "ilp_over_http_outgoing_token": "alice:alice_password",
-#    "ilp_over_http_url": "http://localhost:8770/ilp",
-#    "settle_threshold": 500,
-#    "min_balance": -1000,
-#    "settle_to" : 0,
-#    "routing_relation": "Peer"}' \
-#    http://localhost:7770/accounts > logs/account-alice-bob.log 2>/dev/null &
+    --routing-relation Peer > logs/account-alice-bob.log &
 
 printf "Adding Alice's account on Bob's node...\n"
 ./ilp-cli --node http://localhost:8770 accounts create alice \
@@ -510,25 +466,7 @@ printf "Adding Alice's account on Bob's node...\n"
     --ilp-over-http-url http://localhost:7770/ilp \
     --settle-threshold 500 \
     --settle-to 0 \
-    --routing-relation Peer > logs/account-bob-alice.log
-#curl \
-#    -H "Content-Type: application/json" \
-#    -H "Authorization: Bearer hi_bob" \
-#    -d '{
-#    "ilp_address": "example.alice",
-#    "username": "alice",
-#    "asset_code": "ETH",
-#    "asset_scale": 18,
-#    "max_packet_amount": 100,
-#    "settlement_engine_url": "http://localhost:3001",
-#    "ilp_over_http_incoming_token": "alice_password",
-#    "ilp_over_http_outgoing_token": "bob:bob_password",
-#    "ilp_over_http_url": "http://localhost:7770/ilp",
-#    "settle_threshold": 500,
-#    "min_balance": -1000,
-#    "settle_to" : 0,
-#    "routing_relation": "Peer"}' \
-#    http://localhost:8770/accounts > logs/account-bob-alice.log 2>/dev/null &
+    --routing-relation Peer > logs/account-bob-alice.log &
 
 sleep 2
 ```
@@ -549,29 +487,17 @@ printf "\nChecking balances...\n"
 
 printf "\nAlice's balance on Alice's node: "
 ./ilp-cli accounts balance alice
-#curl \
-#-H "Authorization: Bearer alice:in_alice" \
-#http://localhost:7770/accounts/alice/balance
 
 printf "\nBob's balance on Alice's node: "
 ./ilp-cli accounts balance bob
-#curl \
-#-H "Authorization: Bearer bob:bob_password" \
-#http://localhost:7770/accounts/bob/balance
 
 printf "\nAlice's balance on Bob's node: "
 ./ilp-cli --node http://localhost:8770 accounts balance alice \
     --auth alice:alice_password
-#curl \
-#-H "Authorization: Bearer alice:alice_password" \
-#http://localhost:8770/accounts/alice/balance
 
 printf "\nBob's balance on Bob's node: "
 ./ilp-cli --node http://localhost:8770 accounts balance bob \
     --auth bob:in_bob
-#curl \
-#-H "Authorization: Bearer bob:in_bob" \
-#http://localhost:8770/accounts/bob/balance
 
 printf "\n\n"
 -->
@@ -593,11 +519,6 @@ else
 ./ilp-cli pay alice --auth in_alice \
     --amount 500 \
     --to http://localhost:8770/accounts/bob/spsp
-#curl \
-#    -H "Authorization: Bearer alice:in_alice" \
-#    -H "Content-Type: application/json" \
-#    -d "{\"receiver\":\"http://localhost:8770/accounts/bob/spsp\",\"source_amount\":500}" \
-#    http://localhost:7770/accounts/alice/payments
 ```
 <!--!
 fi
@@ -614,24 +535,18 @@ printf "done\n"
 
 ```bash #
 printf "\nAlice's balance on Alice's node: "
-curl \
--H "Authorization: Bearer alice:in_alice" \
-http://localhost:7770/accounts/alice/balance
+./ilp-cli accounts balance alice
 
 printf "\nBob's balance on Alice's node: "
-curl \
--H "Authorization: Bearer bob:bob_password" \
-http://localhost:7770/accounts/bob/balance
+./ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-curl \
--H "Authorization: Bearer alice:alice_password" \
-http://localhost:8770/accounts/alice/balance
+./ilp-cli --node http://localhost:8770 accounts balance alice \
+    --auth alice:alice_password
 
 printf "\nBob's balance on Bob's node: "
-curl \
--H "Authorization: Bearer bob:in_bob" \
-http://localhost:8770/accounts/bob/balance
+./ilp-cli --node http://localhost:8770 accounts balance bob \
+    --auth bob:in_bob
 ```
 
 <!--!
