@@ -291,7 +291,7 @@ else
 # We merely use this symbolic link here to pretend that ilp-cli is installed
 ln -s ../../target/debug/ilp-cli ilp-cli
 
-# For authenticating to nodes, we can set credentials as follows
+# For authenticating to nodes, we can set credentials as an environment variable or a CLI argument
 export ILP_CLI_API_AUTH=admin-a
 
 # Insert accounts on Node A
@@ -315,12 +315,14 @@ printf "Creating Node B's account on Node A...\n"
 # One account represents Bob and the other represents Node A's account with Node B
 
 printf "Creating Bob's account on Node B...\n"
-./ilp-cli --quiet --node http://localhost:8770 --auth admin-b accounts create bob \
+./ilp-cli --quiet --node http://localhost:8770 accounts create bob \
+    --auth admin-b \
     --asset-code ABC \
     --asset-scale 9
 
 printf "Creating Node A's account on Node B...\n"
-./ilp-cli --quiet --node http://localhost:8770 --auth admin-b accounts create node_a \
+./ilp-cli --quiet --node http://localhost:8770 accounts create node_a \
+    --auth admin-b \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-over-http-incoming-token node_a-password
@@ -342,10 +344,10 @@ printf "Node B's balance on Node A: "
 ./ilp-cli accounts balance node_b
 
 printf "Node A's balance on Node B: "
-./ilp-cli --node http://localhost:8770 --auth admin-b accounts balance node_a
+./ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
 
 printf "Bob's balance: "
-./ilp-cli --node http://localhost:8770 --auth admin-b accounts balance bob
+./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
 
 printf "\n\n"
 -->
@@ -366,7 +368,8 @@ else
 
 ```bash
 # Sending payment of 500 from Alice (on Node A) to Bob (on Node B)
-./ilp-cli --auth alice-password pay alice \
+./ilp-cli pay alice \
+    --auth alice-password \
     --source-amount 500 \
     --receiver http://localhost:8770/accounts/bob/spsp
 ```
@@ -390,12 +393,10 @@ printf "Node B's balance on Node A: "
 ./ilp-cli accounts balance node_b
 
 printf "Node A's balance on Node B: "
-./ilp-cli --node http://localhost:8770 --auth admin-b accounts \
-    balance node_a
+./ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
 
 printf "Bob's balance: "
-./ilp-cli --node http://localhost:8770 --auth admin-b accounts \
-    balance bob
+./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
 ```
 
 <!--!

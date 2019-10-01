@@ -131,10 +131,12 @@ pub struct AccountSettings {
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_btp_url: Option<String>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_threshold: Option<i64>,
     // Note that this is intentionally an unsigned integer because users should
     // not be able to set the settle_to value to be negative (meaning the node
     // would pre-fund with the user)
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_to: Option<u64>,
 }
 

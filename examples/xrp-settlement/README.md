@@ -401,7 +401,8 @@ printf "Adding Alice's account...\n"
     --settle-to 0 > logs/account-alice-alice.log
 
 printf "Adding Bob's Account...\n"
-./ilp-cli --auth hi_bob --node http://localhost:8770 accounts create bob \
+./ilp-cli --node http://localhost:8770 accounts create bob \
+    --auth hi_bob \
     --ilp-address example.bob \
     --asset-code XRP \
     --asset-scale 6 \
@@ -426,7 +427,8 @@ printf "Adding Bob's account on Alice's node...\n"
     --routing-relation Peer > logs/account-alice-bob.log &
 
 printf "Adding Alice's account on Bob's node...\n"
-./ilp-cli --auth hi_bob --node http://localhost:8770 accounts create alice \
+./ilp-cli --node http://localhost:8770 accounts create alice \
+    --auth hi_bob \
     --ilp-address example.alice \
     --asset-code XRP \
     --asset-scale 6 \
@@ -465,10 +467,10 @@ printf "\nBob's balance on Alice's node: "
 ./ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance alice
+./ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
 printf "\nBob's balance on Bob's node: "
-./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance bob
+./ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 
 printf "\n\n"
 -->
@@ -488,7 +490,8 @@ else
 -->
 
 ```bash
-./ilp-cli --auth in_alice pay alice \
+./ilp-cli pay alice \
+    --auth in_alice \
     --source-amount 500 \
     --receiver http://localhost:8770/accounts/bob/spsp
 ```
@@ -518,10 +521,10 @@ printf "\nBob's balance on Alice's node: "
 ./ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance alice
+./ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
 printf "\nBob's balance on Bob's node: "
-./ilp-cli --auth hi_bob --node http://localhost:8770 accounts balance bob
+./ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 ```
 
 ### 8. Kill All the Services
