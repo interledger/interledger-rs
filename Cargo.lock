@@ -992,7 +992,7 @@ dependencies = [
  "interledger-service 0.2.2-beta.2",
  "interledger-service-util 0.2.2-beta.2",
  "interledger-settlement 0.1.1-beta.2",
- "interledger-spsp 0.2.2-beta.1",
+ "interledger-spsp 0.2.2-beta.2",
  "interledger-store-redis 0.2.2-beta.1",
  "interledger-stream 0.2.2-beta.2",
 ]
@@ -1014,7 +1014,7 @@ dependencies = [
  "interledger-service 0.2.2-beta.2",
  "interledger-service-util 0.2.2-beta.2",
  "interledger-settlement 0.1.1-beta.2",
- "interledger-spsp 0.2.2-beta.1",
+ "interledger-spsp 0.2.2-beta.2",
  "interledger-stream 0.2.2-beta.2",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.20 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1256,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-spsp"
-version = "0.2.2-beta.1"
+version = "0.2.2-beta.2"
 dependencies = [
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
