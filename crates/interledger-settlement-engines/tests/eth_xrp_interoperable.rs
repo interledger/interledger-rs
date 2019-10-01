@@ -60,12 +60,12 @@ fn eth_xrp_interoperable() {
     let mut node2_xrp_engine = start_xrp_engine(
         &format!("http://localhost:{}", node2_settlement),
         node2_redis_port,
-        node2_xrp_engine_port
+        node2_xrp_engine_port,
     );
     let mut node3_xrp_engine = start_xrp_engine(
         &format!("http://localhost:{}", node3_settlement),
         node3_redis_port,
-        node3_xrp_engine_port
+        node3_xrp_engine_port,
     );
 
     let node1_eth_key =

@@ -48,13 +48,16 @@ pub fn start_ganache() -> std::process::Child {
 pub fn start_xrp_engine(
     connector_url: &str,
     redis_port: u16,
-    engine_port: u16
+    engine_port: u16,
 ) -> std::process::Child {
     let mut engine = Command::new("ilp-settlement-xrp");
     engine
         .env("DEBUG", "settlement*")
         .env("CONNECTOR_URL", connector_url)
-        .env("REDIS_URI", &format!("redis://127.0.0.1:{}", redis_port.to_string()))
+        .env(
+            "REDIS_URI",
+            &format!("redis://127.0.0.1:{}", redis_port.to_string()),
+        )
         .env("ENGINE_PORT", engine_port.to_string());
     let engine_pid = engine
         // .stderr(std::process::Stdio::null())
