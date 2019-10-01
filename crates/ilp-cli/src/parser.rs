@@ -19,6 +19,20 @@ pub fn build<'a, 'b>() -> App<'a, 'b> {
     ])
 }
 
+struct AuthorizedSubCommand;
+
+impl AuthorizedSubCommand {
+    fn with_name(name: &str) -> App {
+        SubCommand::with_name(name).arg(
+            Arg::with_name("authorization_key")
+                .long("auth")
+                .env("ILP_CLI_API_AUTH")
+                .required(true)
+                .help("An HTTP bearer authorization token permitting access to this operation"),
+        )
+    }
+}
+
 fn ilp_cli<'a, 'b>() -> App<'a, 'b> {
     App::new("ilp-cli")
         .about("Interledger.rs Command-Line Interface")
@@ -44,46 +58,33 @@ fn ilp_cli<'a, 'b>() -> App<'a, 'b> {
 }
 
 fn accounts<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("accounts")
-        .about("Operations for interacting with accounts")
-        .arg(
-            Arg::with_name("is_admin")
-                .long("admin")
-                .help("Attempts to perform the specified operation as an administrator"),
-        )
+    SubCommand::with_name("accounts").about("Operations for interacting with accounts")
 }
 
 fn accounts_balance<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("balance")
+    AuthorizedSubCommand::with_name("balance")
         .about("Returns the balance of an account")
-        .args(&[
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
-            Arg::with_name("account_username")
+        .arg(
+            Arg::with_name("username")
                 .index(1)
                 .takes_value(true)
                 .required(true)
                 .help("The username of the account whose balance to return"),
-        ])
+        )
 }
 
 fn accounts_create<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("create")
+    AuthorizedSubCommand::with_name("create")
         .about("Creates a new account on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
                 .takes_value(true)
                 .required(true)
-                .help("The username of the new account"),
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
+                .help("The username of the account"),
+            Arg::with_name("overwrite")
+                .long("overwrite")
+                .help("If present, will use the provided settings to overwrite rather than create the given account"),
             Arg::with_name("asset_code")
                 .long("asset-code")
                 .takes_value(true)
@@ -147,87 +148,47 @@ fn accounts_create<'a, 'b>() -> App<'a, 'b> {
 }
 
 fn accounts_delete<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("delete")
+    AuthorizedSubCommand::with_name("delete")
         .about("Delete the given account")
-        .args(&[
+        .arg(
             Arg::with_name("username")
                 .index(1)
                 .takes_value(true)
                 .required(true)
                 .help("The username of the account to delete"),
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
-        ])
+        )
 }
 
 fn accounts_incoming_payments<'a, 'b>() -> App<'a, 'b> {
     SubCommand::with_name("incoming-payments")
+        .about("Open a persistent connection to a node for monitoring incoming payments to an account [COMING SOON]")
 }
 
 fn accounts_info<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("info")
+    AuthorizedSubCommand::with_name("info")
         .about("View details of a given account")
-        .args(&[
+        .arg(
             Arg::with_name("username")
                 .index(1)
                 .takes_value(true)
                 .required(true)
                 .help("The username of the account to view"),
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
-        ])
-}
-
-fn accounts_list<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("list")
-        .about("List all accounts on this node")
-        .arg(
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
         )
 }
 
+fn accounts_list<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("list").about("List all accounts on this node")
+}
+
 fn accounts_update<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("update")
+    AuthorizedSubCommand::with_name("update")
         .about("Overwrite the details of account on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
                 .takes_value(true)
                 .required(true)
-                .help("The username of the account to update"),
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
-            Arg::with_name("asset_code")
-                .long("asset-code")
-                .takes_value(true)
-                .help("The code of the asset associated with this account"),
-            Arg::with_name("asset_scale")
-                .long("asset-scale")
-                .takes_value(true)
-                .help("The scale of the asset associated with this account"),
-            // TODO: when we have a glossary of HTTP API options, add their descriptions to these
-            Arg::with_name("ilp_address")
-                .long("ilp-address")
-                .takes_value(true),
-            Arg::with_name("max_packet_amount")
-                .long("max-packet-amount")
-                .takes_value(true),
-            Arg::with_name("min_balance")
-                .long("min-balance")
-                .takes_value(true),
+                .help("The username of the account"),
             Arg::with_name("ilp_over_http_url")
                 .long("ilp-over-http-url")
                 .takes_value(true),
@@ -252,27 +213,12 @@ fn accounts_update<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("settle_to")
                 .long("settle-to")
                 .takes_value(true),
-            Arg::with_name("routing_relation")
-                .long("routing-relation")
-                .takes_value(true),
-            Arg::with_name("round_trip_time")
-                .long("round-trip-time")
-                .takes_value(true),
-            Arg::with_name("amount_per_minute_limit")
-                .long("amount-per-minute-limit")
-                .takes_value(true),
-            Arg::with_name("packets_per_minute_limit")
-                .long("packets-per-minute-limit")
-                .takes_value(true),
-            Arg::with_name("settlement_engine_url")
-                .long("settlement-engine-url")
-                .takes_value(true),
         ])
 }
 
 fn pay<'a, 'b>() -> App<'a, 'b> {
     // TODO: this endpoint currently only works with user authorization, not admin authorization
-    SubCommand::with_name("pay")
+    AuthorizedSubCommand::with_name("pay")
         .about("Send a payment from an account on this node")
         .args(&[
             Arg::with_name("sender_username")
@@ -280,18 +226,13 @@ fn pay<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .required(true)
                 .help("The username of the account on this node issuing the payment"),
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
             Arg::with_name("source_amount")
-                .long("source-amount")
+                .long("amount")
                 .takes_value(true)
                 .required(true)
                 .help("The amount to transfer from the sender to the receiver, denominated in units of the sender's assets"),
             Arg::with_name("receiver")
-                .long("receiver")
+                .long("to")
                 .takes_value(true)
                 .required(true)
                 .help("The Payment Pointer or SPSP address of the account receiving the payment"),
@@ -307,20 +248,15 @@ fn rates_list<'a, 'b>() -> App<'a, 'b> {
 }
 
 fn rates_set_all<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("set-all")
+    AuthorizedSubCommand::with_name("set-all")
         .about("Overwrite the list of exchange rates used by this node")
-        .args(&[
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
-            Arg::with_name("rate")
-                .short("r")
-                .long("rate")
+        .arg(
+            Arg::with_name("halve")
+                .long("pair")
                 .number_of_values(2)
-                .multiple(true),
-        ])
+                .multiple(true)
+                .help("A set of space-separated key/value pairs, representing an asset code and an exchange rate; may appear multiple times"),
+        )
 }
 
 fn routes<'a, 'b>() -> App<'a, 'b> {
@@ -332,24 +268,32 @@ fn routes_list<'a, 'b>() -> App<'a, 'b> {
 }
 
 fn routes_set<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("set")
+    AuthorizedSubCommand::with_name("set")
+        .about("Configure a single static route on this node")
+        .args(&[
+            Arg::with_name("prefix")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .help("The routing prefix to configure"),
+            Arg::with_name("destination")
+                .long("destination")
+                .takes_value(true)
+                .required(true)
+                .help("The destination to associate with the provided prefix"),
+        ])
 }
 
 fn routes_set_all<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("set-all")
+    AuthorizedSubCommand::with_name("set-all")
         .about("Overwrite the list of static routes used by this node")
-        .args(&[
-            Arg::with_name("authorization_key")
-                .long("auth")
-                .env("ILP_CLI_API_AUTH")
-                .required(true)
-                .help("An HTTP bearer authorization token permitting access to this operation"),
-            Arg::with_name("route")
-                .short("r")
-                .long("route")
+        .arg(
+            Arg::with_name("halve")
+                .long("pair")
                 .number_of_values(2)
-                .multiple(true),
-        ])
+                .multiple(true)
+                .help("A set of space-separated key/value pairs, representing a route and its destination; may appear multiple times"),
+        )
 }
 
 fn settlement_engines<'a, 'b>() -> App<'a, 'b> {
@@ -357,7 +301,15 @@ fn settlement_engines<'a, 'b>() -> App<'a, 'b> {
 }
 
 fn settlement_engines_set_all<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("set-all")
+    AuthorizedSubCommand::with_name("set-all")
+        .about("Configure the default settlement engines for given asset codes")
+        .arg(
+            Arg::with_name("halve")
+                .long("pair")
+                .number_of_values(2)
+                .multiple(true)
+                .help("A set of space-separated key/value pairs, representing an asset code and a settlement engine; may appear multiple times"),
+        )
 }
 
 fn status<'a, 'b>() -> App<'a, 'b> {
