@@ -87,11 +87,12 @@ lazy_static! {
     /// This lua script fetches an account associated with a username. The client
     /// MUST ensure that the returned account is authenticated.
     static ref ACCOUNT_FROM_USERNAME: Script = Script::new("
-    local acc_id = redis.call('HGET', 'usernames', ARGV[1])
-    if acc_id == nil then
-        return nil
+    local username = ARGV[1]
+    if redis.call('HEXISTS', 'usernames', username) then
+        local id = redis.call('HGET', 'usernames', ARGV[1])
+        return redis.call('HGETALL', 'accounts:' .. id)
     else
-        return redis.call('HGETALL', 'accounts:' .. acc_id)
+        return nil
     end");
 
     /// Load a list of accounts
@@ -1327,6 +1328,7 @@ impl NodeStore for RedisStore {
                         .query_async(connection)
                         .map_err(|err| error!("Error setting default route: {:?}", err))
                         .and_then(move |(connection, _): (RedisReconnect, Value)| {
+                            debug!("Set default route to account id: {}", account_id);
                             update_routes(connection, routing_table)
                         })
                 }),
