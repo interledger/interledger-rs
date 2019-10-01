@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use clap::ArgMatches;
 use reqwest::{self, Client, Response};
 use std::collections::HashMap;
@@ -25,7 +23,7 @@ pub fn run<'a, 'b>(matches: &ArgMatches) -> Result<Response, Error> {
                 "accounts" => match ilp_cli_matches.subcommand() {
                     (accounts_subcommand, Some(accounts_matches)) => match accounts_subcommand {
                         "balance" => client.get_account_balance(accounts_matches),
-                        "create" => client.post_accounts(accounts_matches),
+                        "create" => client.post_or_put_accounts(accounts_matches),
                         "delete" => client.delete_account(accounts_matches),
                         "incoming-payments" => {
                             client.ws_account_payments_incoming(accounts_matches)
@@ -64,7 +62,7 @@ pub fn run<'a, 'b>(matches: &ArgMatches) -> Result<Response, Error> {
                 "settlement-engines" => match ilp_cli_matches.subcommand() {
                     (settlement_engines_subcommand, Some(settlement_engines_matches)) => {
                         match settlement_engines_subcommand {
-                            "set-all" => client.put_settlement_engines(ilp_cli_matches),
+                            "set-all" => client.put_settlement_engines(settlement_engines_matches),
                             command => panic!(
                                 "Unhandled `ilp-cli settlement-engines` subcommand: {}",
                                 command
@@ -89,7 +87,7 @@ struct NodeClient<'a> {
 impl NodeClient<'_> {
     fn get_account_balance(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("account_username").unwrap();
+        let user = args.remove("username").unwrap();
         self.client
             .get(&format!("{}/accounts/{}/balance", self.url, user))
             .bearer_auth(auth)
@@ -97,14 +95,18 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
-    fn post_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    fn post_or_put_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
-        self.client
-            .post(&format!("{}/accounts", self.url))
-            .bearer_auth(auth)
-            .json(&args)
-            .send()
-            .map_err(Error::ClientErr)
+        if matches.is_present("overwrite") {
+            self.client.put(&format!("{}/accounts", self.url))
+        } else {
+            self.client
+                .post(&format!("{}/accounts/{}", self.url, args["username"]))
+        }
+        .bearer_auth(auth)
+        .json(&args)
+        .send()
+        .map_err(Error::ClientErr)
     }
 
     fn delete_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
@@ -179,30 +181,11 @@ impl NodeClient<'_> {
     }
 
     fn put_rates(&self, matches: &ArgMatches) -> Result<Response, Error> {
-        let auth = matches.value_of("authorization_key").unwrap();
-        let mut rates = HashMap::new();
-        if let Some(rate_matches) = matches.values_of("rate") {
-            let rate_matches: Vec<&str> = rate_matches.collect();
-            let codes: Vec<String> = rate_matches
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 0)
-                .map(|(_, code)| code.to_string())
-                .collect();
-            let values: Vec<f64> = rate_matches
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 1)
-                .map(|(_, value)| value.parse().unwrap())
-                .collect();
-            for (code, value) in codes.into_iter().zip(values.into_iter()) {
-                rates.insert(code, value);
-            }
-        }
+        let (auth, rate_pairs) = unflatten_pairs(matches);
         self.client
             .put(&format!("{}/rates", self.url))
             .bearer_auth(auth)
-            .json(&rates)
+            .json(&rate_pairs)
             .send()
             .map_err(Error::ClientErr)
     }
@@ -215,40 +198,33 @@ impl NodeClient<'_> {
     }
 
     fn put_route_static(&self, matches: &ArgMatches) -> Result<Response, Error> {
-        unimplemented!()
+        let (auth, args) = extract_args(matches);
+        self.client
+            .put(&format!("{}/routes/static/{}", self.url, args["prefix"]))
+            .bearer_auth(auth)
+            .body(args["destination"].to_string())
+            .send()
+            .map_err(Error::ClientErr)
     }
 
     fn put_routes_static(&self, matches: &ArgMatches) -> Result<Response, Error> {
-        let auth = matches.value_of("authorization_key").unwrap();
-        let mut combined_routes = HashMap::new();
-        if let Some(route_matches) = matches.values_of("route") {
-            let route_matches: Vec<&str> = route_matches.collect();
-            let prefixes: Vec<String> = route_matches
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 0)
-                .map(|(_, prefix)| prefix.to_string())
-                .collect();
-            let routes: Vec<String> = route_matches
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 1)
-                .map(|(_, route)| route.to_string())
-                .collect();
-            for (prefix, route) in prefixes.into_iter().zip(routes.into_iter()) {
-                combined_routes.insert(prefix, route);
-            }
-        }
+        let (auth, route_pairs) = unflatten_pairs(matches);
         self.client
             .put(&format!("{}/routes/static", self.url))
             .bearer_auth(auth)
-            .json(&combined_routes)
+            .json(&route_pairs)
             .send()
             .map_err(Error::ClientErr)
     }
 
     fn put_settlement_engines(&self, matches: &ArgMatches) -> Result<Response, Error> {
-        unimplemented!()
+        let (auth, engine_pairs) = unflatten_pairs(matches);
+        self.client
+            .put(&format!("{}/settlement/engines", self.url))
+            .bearer_auth(auth)
+            .json(&engine_pairs)
+            .send()
+            .map_err(Error::ClientErr)
     }
 
     fn get_root(&self, matches: &ArgMatches) -> Result<Response, Error> {
@@ -265,8 +241,21 @@ fn extract_args<'a>(matches: &'a ArgMatches) -> (&'a str, HashMap<&'a str, &'a s
     let mut args: HashMap<_, _> = matches // Contains data and metadata about the parsed command
         .args // The hashmap containing each parameter along with its values and metadata
         .iter()
-        .map(|(&key, val)| (key, val.vals[0].to_str().unwrap())) // Extract raw key/value pairs
+        .map(|(&key, val)| (key, val.vals.get(0))) // Extract raw key/value pairs
+        .filter(|(_, val)| val.is_some()) // Reject keys that don't have values
+        .map(|(key, val)| (key, val.unwrap().to_str().unwrap())) // Convert values from bytes to strings
         .collect();
     let auth = args.remove("authorization_key").unwrap();
     (auth, args)
+}
+
+fn unflatten_pairs<'a>(matches: &'a ArgMatches) -> (&'a str, HashMap<&'a str, &'a str>) {
+    let mut pairs = HashMap::new();
+    if let Some(halve_matches) = matches.values_of("halve") {
+        let halves: Vec<&str> = halve_matches.collect();
+        for pair in halves.windows(2).step_by(2) {
+            pairs.insert(pair[0], pair[1]);
+        }
+    }
+    (matches.value_of("authorization_key").unwrap(), pairs)
 }

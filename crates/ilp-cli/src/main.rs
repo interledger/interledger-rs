@@ -76,9 +76,10 @@ mod interface_tests {
     #[test]
     fn accounts_create() {
         should_parse(&[
-            "ilp-cli accounts create alice --auth foo --asset-code ABC --asset-scale 9", // minimal
             "ilp-cli accounts create alice --auth foo --asset-code XYZ --asset-scale 6 --ilp-address bar --max-packet-amount 100 --min-balance 0 --ilp-over-http-url qux --ilp-over-http-incoming-token baz --ilp-over-http-outgoing-token qaz --ilp-over-btp-url spam --ilp-over-btp-outgoing-token ham --ilp-over-btp-incoming-token eggs --settle-threshold 0 --settle-to 0 --routing-relation foobar --round-trip-time 1000 --amount-per-minute-limit 42 --packets-per-minute-limit 4 --settlement-engine-url if_you_can_read_this_congratulations_youve_scrolled_too_far_right", // maximal
             "ilp-cli accounts create alice --auth foo --asset-code ABC --asset-scale 3 --min-balance -1000 --settle-threshold -10", // negative numbers
+            "ilp-cli accounts create alice --overwrite --auth foo --asset-code ABC --asset-scale 9", // minimal, overwrite
+            "ilp-cli accounts create alice --overwrite --auth foo --asset-code XYZ --asset-scale 6 --ilp-address bar --max-packet-amount 100 --min-balance 0 --ilp-over-http-url qux --ilp-over-http-incoming-token baz --ilp-over-http-outgoing-token qaz --ilp-over-btp-url spam --ilp-over-btp-outgoing-token ham --ilp-over-btp-incoming-token eggs --settle-threshold 0 --settle-to 0 --routing-relation foobar --round-trip-time 1000 --amount-per-minute-limit 42 --packets-per-minute-limit 4 --settlement-engine-url if_you_can_read_this_congratulations_youve_scrolled_too_far_right", // maximal, overwrite
         ]);
     }
 
@@ -109,10 +110,8 @@ mod interface_tests {
     #[test]
     fn accounts_update() {
         should_parse(&[
-            "ilp-cli accounts update alice --auth foo", // minimal, non-admin
-            "ilp-cli accounts update alice --auth foo --ilp-over-http-incoming-token bar --ilp-over-btp-incoming-token qux --ilp-over-http-outgoing-token baz --ilp-over-btp-outgoing-token qaz --ilp-over-http-url spam --ilp-over-btp-url eggs --settle-threshold 0 --settle-to 0", // maximal, non-admin
-            "ilp-cli accounts --admin update alice --auth foo", // minimal, admin
-            "ilp-cli accounts --admin update alice --auth foo --asset-code XYZ --asset-scale 6 --ilp-address bar --max-packet-amount 100 --min-balance 0 --ilp-over-http-url qux --ilp-over-http-incoming-token baz --ilp-over-http-outgoing-token qaz --ilp-over-btp-url spam --ilp-over-btp-outgoing-token ham --ilp-over-btp-incoming-token eggs --settle-threshold 0 --settle-to 0 --routing-relation foobar --round-trip-time 1000 --amount-per-minute-limit 42 --packets-per-minute-limit 4 --settlement-engine-url if_you_can_read_this_congratulations_youve_scrolled_too_far_right", // maximal, admin
+            "ilp-cli accounts update alice --auth foo", // minimal
+            "ilp-cli accounts update alice --auth foo --ilp-over-http-incoming-token bar --ilp-over-btp-incoming-token qux --ilp-over-http-outgoing-token baz --ilp-over-btp-outgoing-token qaz --ilp-over-http-url spam --ilp-over-btp-url eggs --settle-threshold 0 --settle-to 0", // maximal
             "ilp-cli accounts update alice --auth foo --settle-threshold -1000 --settle-to -10", // negative numbers
         ]);
     }
@@ -120,7 +119,7 @@ mod interface_tests {
     #[test]
     fn pay() {
         should_parse(&[
-            "ilp-cli pay alice --auth foo --source-amount 500 --receiver bar", // minimal
+            "ilp-cli pay alice --auth foo --amount 500 --to bar", // minimal
         ]);
     }
 
@@ -133,7 +132,12 @@ mod interface_tests {
 
     #[test]
     fn rates_set_all() {
-        should_parse(&["ilp-cli rates set-all --auth foo -r bar 1.0 -r baz 2.0"])
+        should_parse(&[
+            "ilp-cli rates set-all --auth foo",                // minimal
+            "ilp-cli rates set-all --auth foo --pair bar 1.0", // one
+            "ilp-cli rates set-all --auth foo --pair bar 1.0 --pair qux 2.0", // two
+            "ilp-cli rates set-all --auth foo --pair bar 1.0 --pair qux 2.0 --pair baz 3.0 --pair qaz 4.0 --pair spam 5.0 --pair ham 6.0 --pair eggs 7.0", // many
+        ]);
     }
 
     #[test]
@@ -144,15 +148,31 @@ mod interface_tests {
     }
 
     #[test]
-    fn routes_set() {}
-
-    #[test]
-    fn routes_set_all() {
-        should_parse(&["ilp-cli routes set-all --auth foo -r bar qux -r baz qaz"])
+    fn routes_set() {
+        should_parse(&[
+            "ilp-cli routes set foo --destination bar --auth baz", // minimal
+        ]);
     }
 
     #[test]
-    fn settlement_engines_set_all() {}
+    fn routes_set_all() {
+        should_parse(&[
+            "ilp-cli routes set-all --auth foo", // minimal
+            "ilp-cli routes set-all --auth foo --pair bar qux", // one
+            "ilp-cli routes set-all --auth foo --pair bar qux --pair baz qaz", // two
+            "ilp-cli routes set-all --auth foo --pair bar qux --pair baz qaz --pair spam eggs --pair foobar foobaz", // many
+        ])
+    }
+
+    #[test]
+    fn settlement_engines_set_all() {
+        should_parse(&[
+            "ilp-cli settlement-engines set-all --auth foo", // minimal
+            "ilp-cli settlement-engines set-all --auth foo --pair ABC bar", // one
+            "ilp-cli settlement-engines set-all --auth foo --pair ABC bar --pair DEF qux", // two
+            "ilp-cli settlement-engines set-all --auth foo --pair ABC bar --pair DEF qux --pair GHI baz --pair JKL qaz --pair MNO spam --pair PQR ham --pair STU eggs", // many
+        ]);
+    }
 
     #[test]
     fn status() {
