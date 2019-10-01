@@ -1,7 +1,7 @@
 [package]
 name = "interledger-settlement-engines"
 description = "Interledger Settlement Engines"
-version = "0.1.1-beta.1"
+version = "0.1.1-beta.2"
 authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
 license = "Apache-2.0"
 edition = "2018"
