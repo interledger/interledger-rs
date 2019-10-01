@@ -156,7 +156,7 @@ impl RouteManagerStore for TestStore {
             .chain(self.configured.values())
             .chain(self.routes.lock().values())
             .filter(|account| {
-                account.should_send_routes() && !ignore_accounts.contains(&account.id())
+                account.should_send_routes() && !ignore_accounts.contains(&account.id)
             })
             .cloned()
             .collect();
