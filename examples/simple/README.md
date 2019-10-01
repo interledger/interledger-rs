@@ -173,7 +173,7 @@ else
 
 ```bash
 # Turn on debug logging for all of the interledger.rs components
-export RUST_LOG=interledger=debug
+export RUST_LOG=interledger=trace
 
 # Start both nodes.
 # Note that the configuration options can be passed as environment variables
@@ -370,8 +370,8 @@ else
 # Sending payment of 500 from Alice (on Node A) to Bob (on Node B)
 ./ilp-cli pay alice \
     --auth alice-password \
-    --source-amount 500 \
-    --receiver http://localhost:8770/accounts/bob/spsp
+    --amount 500 \
+    --to http://localhost:8770/accounts/bob/spsp
 ```
 
 <!--!

@@ -98,10 +98,10 @@ impl NodeClient<'_> {
     fn post_or_put_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         if matches.is_present("overwrite") {
-            self.client.put(&format!("{}/accounts", self.url))
-        } else {
             self.client
-                .post(&format!("{}/accounts/{}", self.url, args["username"]))
+                .put(&format!("{}/accounts/{}", self.url, args["username"]))
+        } else {
+            self.client.post(&format!("{}/accounts/", self.url))
         }
         .bearer_auth(auth)
         .json(&args)
@@ -118,7 +118,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
-    fn ws_account_payments_incoming(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    fn ws_account_payments_incoming(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         unimplemented!()
     }
 
@@ -173,7 +173,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
-    fn get_rates(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    fn get_rates(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
             .get(&format!("{}/rates", self.url))
             .send()
@@ -190,7 +190,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
-    fn get_routes(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    fn get_routes(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
             .get(&format!("{}/routes", self.url))
             .send()
@@ -227,7 +227,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
-    fn get_root(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    fn get_root(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
             .get(&format!("{}/", self.url))
             .send()
