@@ -30,7 +30,10 @@ use std::{
     cmp::min,
     convert::TryFrom,
     str,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tokio_timer::Interval;
@@ -105,7 +108,7 @@ where
             store: self.store.clone(),
             forwarding_table: Arc::new(RwLock::new(RoutingTable::default())),
             forwarding_table_updates: Arc::new(RwLock::new(Vec::new())),
-            last_epoch_updates_sent_for: Arc::new(Mutex::new(0)),
+            last_epoch_updates_sent_for: Arc::new(AtomicU32::new(0)),
             local_table: Arc::new(RwLock::new(RoutingTable::default())),
             incoming_tables: Arc::new(RwLock::new(HashMap::new())),
             unavailable_accounts: Arc::new(Mutex::new(HashMap::new())),
@@ -149,7 +152,7 @@ pub struct CcpRouteManager<I, O, S, A: Account> {
     /// This represents the routing table we will forward to our peers.
     /// It is the same as the local_table with our own address added to the path of each route.
     forwarding_table: Arc<RwLock<RoutingTable<A>>>,
-    last_epoch_updates_sent_for: Arc<Mutex<u32>>,
+    last_epoch_updates_sent_for: Arc<AtomicU32>,
     /// These updates are stored such that index 0 is the transition from epoch 0 to epoch 1
     forwarding_table_updates: Arc<RwLock<Vec<NewAndWithdrawnRoutes>>>,
     /// This is the routing table we have compile from configuration and
@@ -684,13 +687,7 @@ where
             .and_then(move |mut accounts| {
                 let mut outgoing = self_clone.outgoing.clone();
                 let to_epoch_index = self_clone.forwarding_table.read().epoch();
-
-                let from_epoch_index: u32 = {
-                    let mut lock = self_clone.last_epoch_updates_sent_for.lock();
-                    let epoch = *lock;
-                    *lock = to_epoch_index;
-                    epoch
-                };
+                let from_epoch_index = self_clone.last_epoch_updates_sent_for.swap(to_epoch_index, Ordering::SeqCst);
 
                 let route_update_request =
                     self_clone.create_route_update(from_epoch_index, to_epoch_index);
