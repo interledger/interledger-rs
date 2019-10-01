@@ -492,8 +492,8 @@ else
 ```bash
 ./ilp-cli pay alice \
     --auth in_alice \
-    --source-amount 500 \
-    --receiver http://localhost:8770/accounts/bob/spsp
+    --amount 500 \
+    --to http://localhost:8770/accounts/bob/spsp
 ```
 
 <!--!
