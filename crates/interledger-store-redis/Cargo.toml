@@ -1,6 +1,6 @@
 [package]
 name = "interledger-store-redis"
-version = "0.2.2-beta.1"
+version = "0.2.2-beta.2"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Data store for Interledger.js using Redis"
 license = "Apache-2.0"
