@@ -1,0 +1,16 @@
+{
+  "username": "<username>",
+  "ilp_address": "<ilp_address>",
+  "asset_code": "<asset_code>",
+  "asset_scale": <asset_scale>,
+  "ilp_over_btp_url": "<ilp_over_btp_url>",
+  "ilp_over_btp_incoming_token": "<ilp_over_btp_incoming_token>",
+  "ilp_over_btp_outgoing_token": "<ilp_over_btp_outgoing_token>",
+  "ilp_over_http_url": "<ilp_over_http_url>",
+  "ilp_over_http_incoming_token": "<ilp_over_http_incoming_token>",
+  "ilp_over_http_outgoing_token": "<ilp_over_http_outgoing_token>",
+  "settlement_engine_url": "<settlement_engine_url>",
+  "settle_threshold": 10000,
+  "settle_to" : 0,
+  "routing_relation": "<routing_relation>"
+}
