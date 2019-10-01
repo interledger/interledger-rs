@@ -59,13 +59,11 @@ pub fn start_xrp_engine(
             &format!("redis://127.0.0.1:{}", redis_port.to_string()),
         )
         .env("ENGINE_PORT", engine_port.to_string());
-    let engine_pid = engine
+    engine
         // .stderr(std::process::Stdio::null())
         // .stdout(std::process::Stdio::null())
         .spawn()
-        .expect("couldnt start xrp engine");
-    sleep(Duration::from_secs(8));
-    engine_pid
+        .expect("couldnt start xrp engine")
 }
 
 #[cfg(feature = "ethereum")]
