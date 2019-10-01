@@ -144,8 +144,11 @@ where
             let handler = outgoing_handler_clone.clone();
             let btp = btp_clone.clone();
             store
-                .insert_account(account_details)
-                .map_err(|_| warp::reject::custom(ApiError::InternalServerError))
+                .insert_account(account_details.clone())
+                .map_err(move |_| {
+                    error!("Error inserting account into store: {:?}", account_details);
+                    warp::reject::custom(ApiError::InternalServerError)
+                })
                 .and_then(move |account| {
                     connect_to_external_services(handler, account, store_clone, btp)
                 })
