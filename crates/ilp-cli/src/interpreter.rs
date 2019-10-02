@@ -248,7 +248,7 @@ impl NodeClient<'_> {
         let asset = cli_args["asset"];
         let foreign_args: XpringResponse = self
             .client
-            .get(&format!("https://stage.xpring.io/api/accounts/{}", asset))
+            .get(&format!("https://xpring.io/api/accounts/{}", asset))
             .send()
             .unwrap()
             .json()
