@@ -1,4 +1,5 @@
 use clap::ArgMatches;
+use http;
 use reqwest::{self, Client, Response};
 use std::collections::HashMap;
 
@@ -255,34 +256,38 @@ impl NodeClient<'_> {
             .json()
             .expect("Got unexpected response from Xpring Testnet Signup API");
         let mut args = HashMap::new();
+        let token = format!(
+            "{}:{}",
+            foreign_args.username.clone(),
+            foreign_args.passkey.clone()
+        );
         args.insert("ilp_over_http_url", foreign_args.http_endpoint.clone());
-        args.insert(
-            "ilp_over_http_outgoing_token",
-            format!(
-                "{}:{}",
-                foreign_args.username.clone(),
-                foreign_args.passkey.clone()
-            ),
-        );
+        args.insert("ilp_over_http_outgoing_token", token.clone());
         args.insert("ilp_over_btp_url", foreign_args.btp_endpoint.clone());
-        args.insert(
-            "ilp_over_btp_outgoing_token",
-            format!(
-                "{}:{}",
-                foreign_args.username.clone(),
-                foreign_args.passkey.clone()
-            ),
-        );
+        args.insert("ilp_over_btp_outgoing_token", token.clone());
         args.insert("asset_scale", foreign_args.asset_scale.to_string());
         args.insert("asset_code", foreign_args.asset_code.clone());
         args.insert("username", format!("xpring_{}", asset));
         args.insert("routing_relation", String::from("Parent")); // TODO: weird behavior when deleting and re-inserting accounts with this
-        self.client
+                                                                 // TODO should we set different parameters?
+        args.insert("settle_threshold", "1000".to_string());
+        args.insert("settle_to", "0".to_string());
+
+        let result = self
+            .client
             .post(&format!("{}/accounts/", self.url))
             .bearer_auth(auth)
             .json(&args)
-            .send()
-            .map_err(Error::ClientErr)
+            .send();
+
+        if matches.is_present("return_testnet_credential") {
+            result.expect("Error creating account for testnet node on our local node");
+            Ok(Response::from(
+                http::Response::builder().body(token).unwrap(),
+            ))
+        } else {
+            result.map_err(Error::ClientErr)
+        }
     }
 }
 
