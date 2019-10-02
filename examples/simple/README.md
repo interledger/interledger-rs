@@ -173,7 +173,7 @@ else
 
 ```bash
 # Turn on debug logging for all of the interledger.rs components
-export RUST_LOG=interledger=trace
+export RUST_LOG=interledger=debug
 
 # Start both nodes.
 # Note that the configuration options can be passed as environment variables
