@@ -152,7 +152,9 @@ pub struct EncryptedAccountSettings {
     pub ilp_over_btp_outgoing_token: Option<Bytes>,
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_btp_url: Option<String>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_threshold: Option<i64>,
+    #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_to: Option<u64>,
 }
 

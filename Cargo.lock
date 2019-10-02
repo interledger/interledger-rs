@@ -884,6 +884,7 @@ name = "ilp-cli"
 version = "0.0.1"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.101 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

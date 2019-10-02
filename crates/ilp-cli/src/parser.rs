@@ -395,7 +395,7 @@ fn testnet<'a, 'b>() -> App<'a, 'b> {
 fn testnet_setup<'a, 'b>() -> App<'a, 'b> {
     AuthorizedSubCommand::with_name("setup")
         .about("Create a local account peered with a remote node on the testnet")
-        .arg(
+        .args(&[
             Arg::with_name("asset")
                 .index(1)
                 .required(true)
@@ -403,5 +403,8 @@ fn testnet_setup<'a, 'b>() -> App<'a, 'b> {
                 .possible_values(&["xrp", "eth"])
                 .case_insensitive(true)
                 .help("The asset that will be tied to the new testnet account"),
-        )
+            Arg::with_name("return_testnet_credential")
+                .long("return-testnet-credential")
+                .help("Return the authorization credential for our account on the testnet node instead of the account on our local node"),
+        ])
 }
