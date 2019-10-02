@@ -11,6 +11,10 @@
 ![Rust Version](https://img.shields.io/badge/rust-stable-Success)
 [![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/node/)
 
+## Connecting to the Testnet
+
+See the [testnet instructions](./docs/testnet.md) to quickly connect to the testnet with a bundle that includes the Interledger.rs node and settlement engines.
+
 ## Understanding Interledger.rs
 - [HTTP API](./docs/api.md)
 - [Rust API](https://docs.rs/interledger)
@@ -18,6 +22,8 @@
 - [Interledger Forum](https://forum.interledger.org) for general questions about the Interledger Protocol and Project
 
 ## Installation and Usage
+
+To run the Interledger.rs components by themselves (rather than the `testnet-bundle`), you can follow these instructions:
 
 ### Using Docker
 
@@ -29,12 +35,21 @@
 
 ```bash #
 docker pull interledgerrs/node
+docker pull interledgerrs/ilp-cli
+docker pull interledgerrs/settlement-engines
 ```
 
 #### Run
 
 ```bash #
+# This runs the sender / receiver / router bundle
 docker run -it interledgerrs/node
+
+# This is a simple CLI for interacting with the node's HTTP API
+docker pull interledgerrs/ilp-cli
+
+# This is includes the Settlement Engines written in Rust
+docker pull interledgerrs/settlement-engines
 ```
 
 ### Building From Source
@@ -46,67 +61,28 @@ docker run -it interledgerrs/node
 
 #### Install
 
-```bash # 
+```bash #
 # 1. Clone the repsitory and change the working directory
 git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs
 
 # 2. Build interledger-rs (add `--release` to compile the release version, which is slower to compile but faster to run)
-cargo build 
+cargo build
 ```
 
 #### Run
 
 ```bash #
-cargo run
+# This runs the ilp-node
+cargo run -p ilp-node -- # Put CLI args after the "--"
+
+cargo run -p ilp-cli -- # Put CLI args after the "--"
+
+cargo run -p interledger-settlement-engines -- ethereum-ledger
 ```
 
 Append the `--help` flag to see available options.
 
-### Configuration
-
-Interledger.rs commands such as `node` and `ethereum-ledger` accept configuration options in the following ways:
-
-#### Environment variables
-
-```bash #
-# Passing as environment variables
-# {parameter name (typically in capital)}={value}
-# note that the parameter names MUST begin with a prefix of "ILP_" e.g. ILP_SECRET_SEED
-ILP_ADDRESS=example.alice \
-ILP_OTHER_PARAMETER=other_value \
-cargo run
-```
-
-#### Standard In (stdin)
-
-```bash #
-# Passing from STDIN in JSON, TOML, YAML format.
-some_command | cargo run
-```
-
-#### Configuration files
-
-```bash #
-# Passing by a configuration file in JSON, TOML, YAML format.
-# The first argument after subcommands such as `node` is the path to the configuration file.
-# Note that in order for a docker image to have access to a local file, it must be included in
-# a directory that is mounted as a Volume at `/config`
-cargo run -- config.yml
-```
-
-#### Command line arguments
-
-```bash #
-# Passing by command line arguments.
-# --{parameter name} {value}
-cargo run -- --admin_auth_token super-secret
-```
-
-Note that configurations are applied in the following order of priority: 
-1. Environment Variables 
-1. Stdin 
-1. Configuration files
-1. Command line arguments.
+See [configuration](./docs/configuration.md) for more details on how the node is configured.
 
 ## Examples
 
@@ -114,4 +90,4 @@ See the [examples](./examples/README.md) for demos of Interledger functionality 
 
 ## Contributing
 
-Contributions are very welcome and if you're interested in getting involved, see [CONTRIBUTING.md](docs/CONTRIBUTING.md). We're more than happy to answer questions and mentor you in making your first contributions to Interledger.rs!
+Contributions are very welcome and if you're interested in getting involved, see [CONTRIBUTING.md](docs/CONTRIBUTING.md). We're more than happy to answer questions and mentor you in making your first contributions to Interledger.rs (even if you've never written in Rust before)!
