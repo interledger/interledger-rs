@@ -245,14 +245,15 @@ impl NodeClient<'_> {
 
     fn xpring_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, cli_args) = extract_args(matches);
-        let asset = cli_args["asset"];
+        // Note the Xpring API expects the asset code in lowercase
+        let asset = cli_args["asset"].to_lowercase();
         let foreign_args: XpringResponse = self
             .client
             .get(&format!("https://stage.xpring.io/api/accounts/{}", asset))
             .send()
-            .unwrap()
+            .expect("Error requesting credentials from Xpring Testnet Signup API")
             .json()
-            .unwrap();
+            .expect("Got unexpected response from Xpring Testnet Signup API");
         let mut args = HashMap::new();
         args.insert("ilp_over_http_url", foreign_args.http_endpoint.clone());
         args.insert(
@@ -264,11 +265,18 @@ impl NodeClient<'_> {
             ),
         );
         args.insert("ilp_over_btp_url", foreign_args.btp_endpoint.clone());
+        args.insert(
+            "ilp_over_btp_outgoing_token",
+            format!(
+                "{}:{}",
+                foreign_args.username.clone(),
+                foreign_args.passkey.clone()
+            ),
+        );
         args.insert("asset_scale", foreign_args.asset_scale.to_string());
         args.insert("asset_code", foreign_args.asset_code.clone());
-        args.insert("username", format!("xpring_{}", cli_args["asset"]));
+        args.insert("username", format!("xpring_{}", asset));
         args.insert("routing_relation", String::from("Parent")); // TODO: weird behavior when deleting and re-inserting accounts with this
-        dbg!(&args);
         self.client
             .post(&format!("{}/accounts/", self.url))
             .bearer_auth(auth)

@@ -7,10 +7,10 @@ COPY ./crates /usr/src/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
-RUN cargo build --release --package ilp-node
-# RUN cargo build --package ilp-node
+RUN cargo build --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
+# RUN cargo build --release --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
 
-FROM alpine
+FROM node:12-alpine
 
 # Expose ports for HTTP server
 EXPOSE 7770
@@ -28,19 +28,27 @@ RUN apk --no-cache add \
 
 # Copy Interledger binary
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-node \
+    /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
     /usr/local/bin/ilp-node
+COPY --from=rust \
+    /usr/src/target/x86_64-unknown-linux-musl/debug/interledger-settlement-engines \
+    /usr/local/bin/interledger-settlement-engines
+COPY --from=rust \
+    /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-cli \
+    /usr/local/bin/ilp-cli
 # COPY --from=rust \
 #     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
 #     /usr/local/bin/ilp-node
 
 WORKDIR /opt/app
 
+RUN npm install -g ilp-settlement-xrp localtunnel
+
 COPY ./docker/redis.conf redis.conf
-COPY ./docker/run-node-and-redis.sh run-node-and-redis.sh
+COPY ./docker/run-testnet-bundle.js run-testnet-bundle.js
 
 # ENV RUST_BACKTRACE=1
-ENV RUST_LOG=ilp,interledger
+ENV RUST_LOG=interledger=debug
 
 # In order for the node to access the config file, you need to mount
 # the directory with the node's config.yml file as a Docker volume
@@ -48,5 +56,4 @@ ENV RUST_LOG=ilp,interledger
 # `-v /path/to/config.yml:/config` when calling `docker run`.
 VOLUME [ "/config" ]
 
-ENTRYPOINT [ "/bin/sh", "./run-node-and-redis.sh" ]
-CMD [ "/config/config.yml" ]
+ENTRYPOINT [ "node", "run-testnet-bundle.js" ]
