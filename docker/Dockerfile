@@ -7,8 +7,8 @@ COPY ./crates /usr/src/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
-RUN cargo build --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
-# RUN cargo build --release --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
+# RUN cargo build --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
+RUN cargo build --release --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
 
 FROM node:12-alpine
 
@@ -28,17 +28,23 @@ RUN apk --no-cache add \
 
 # Copy Interledger binary
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
+    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-node \
     /usr/local/bin/ilp-node
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/debug/interledger-settlement-engines \
+    /usr/src/target/x86_64-unknown-linux-musl/release/interledger-settlement-engines \
     /usr/local/bin/interledger-settlement-engines
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-cli \
+    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-cli \
     /usr/local/bin/ilp-cli
 # COPY --from=rust \
 #     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
 #     /usr/local/bin/ilp-node
+# COPY --from=rust \
+#     /usr/src/target/x86_64-unknown-linux-musl/debug/interledger-settlement-engines \
+#     /usr/local/bin/interledger-settlement-engines
+# COPY --from=rust \
+#     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-cli \
+#     /usr/local/bin/ilp-cli
 
 WORKDIR /opt/app
 
