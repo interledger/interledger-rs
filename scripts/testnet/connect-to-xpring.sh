@@ -211,11 +211,10 @@ EOM
         --private_key "${SE_ETH_SECRET}" \
         --chain_id 4 \
         --confirmations 0 \
-        --poll_frequency 1000 \
+        --poll_frequency 10000 \
         --ethereum_url "${SE_ETH_URL}" \
         --connector_url http://127.0.0.1:7771 \
         --redis_url redis://127.0.0.1:6380/ \
-        --asset_scale 6 \
         --settlement_api_bind_address 127.0.0.1:3000 \
         &> logs/settlement-engine-eth.log &
 
