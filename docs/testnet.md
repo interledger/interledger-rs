@@ -8,19 +8,19 @@
 - Payments
     - Send Payments
     - Receive Payments
-- Manual configuration
-    - Requiremenets
-    - Running a node and peering
+- Manual Configuration
+    - Requirements
+    - Running a Node and Peering
 
 
 ## Get Your Own Credentials
 
-In order to connect to the testnet, you need to generate
+To connect to the testnet, you need to generate
 credentials and get your account configured on a testnet node.
 
-Currently, the [the Xpring testnet website](https://xpring.io/ilp-testnet-creds) can be used to generate credentials. The site automatically configures your account on Xpring's testnet node. You could use the credentials on that node to send and receive payments, or you can use that account's information to connect your local node to the testnet (more on that later)
+Currently, the [Xpring testnet website](https://xpring.io/ilp-testnet-creds) can be used to generate credentials. The site automatically configures your account on Xpring's testnet node. You could use the credentials on that node to send and receive payments, or you can use that account's information to connect your local node to the testnet (more on that later)
 
-Just click the **"Generate XRP Credentials"** or **"Generate ETH Credentials"** button, and you'll get your account set on the node. Keep the credentials so that you could later send payments or set up your own node.
+Just click the **"Generate XRP Credentials"** or **"Generate ETH Credentials"** button, and you'll get your account configured on the testnet node. Keep the credentials so that you could later send payments or set up your own node.
 
 The credentials should look like (username and token would be different ones):
 
@@ -38,7 +38,7 @@ You can also obtain the above credentials by making a GET request to `https://xp
 
 
 ## Send and Receive Payments
-If you want to just try out the Interledger testnet, you could try as follows.
+If you want to just try out the Interledger testnet, you could try as follows:
 
 ```bash
 curl \
@@ -49,9 +49,9 @@ curl \
     https://rs3.xpring.dev/accounts/${Username}/payments
 ```
 
-Note that you should replace **$their-payment-pointer.example** with one you want to send payments to, and **source_amount** with how much money you want to pay. If you are sending to an account that is configured with a different asset, the returned value may be different from the one you sent, based on any exchange rate calculations.
+Note that you should replace **$their-payment-pointer.example** with the payment pointer you want to send payments to, and **source_amount** with how much money you want to pay. If you are sending to an account that is configured with a different asset, the returned value may be different from the one you sent, based on any exchange rate calculations.
 
-If someone sends you payments, you could confirm your balance increase as follows.
+If someone sends you payments, you could confirm your balance increase as follows:
 
 ```bash
 curl \
@@ -79,7 +79,7 @@ docker pull interledgerrs/ilp-cli
 docker run -it -e NAME=YOUR_NAME interledgerrs/testnet-bundle
 ```
 
-The above will configure and run the Interledger node, the ETH & XRP engines,
+The above commands will configure and run the Interledger node, the ETH & XRP engines,
 and connect to the testnet. Let's try to make some payments!
 
 ## Payments
@@ -95,7 +95,7 @@ docker run interledgerrs/ilp-cli --node https://<YOUR_NAME>.localtunnel.me pay <
      --amount <YOUR_AMOUNT>
 ```
 
-In this case, you are sending payment request to YOUR NODE. Your node resolves the payment pointer into an ILP address and then tries to pay the amount to the address. The ILP packets are routed through the testnet's node because we are configured as its "child".
+In this case, you are sending a payment request to YOUR NODE. Your node resolves the payment pointer into an ILP address and then tries to pay the amount to the address. The ILP packets are routed through the testnet's node because we are configured as its "child".
 
 ### Receive Payments
 
@@ -120,7 +120,7 @@ what is happening under the hood**
 
 #### Requirements 
 
-Before you try to connect to the testnet, you need to install the following dependencies.
+Before you try to connect to the testnet, you need to install the following dependencies:
 
 - localtunnel
 - Redis
@@ -139,8 +139,8 @@ Before you try to connect to the testnet, you need to install the following depe
 
     The Interledger.rs nodes and settlement engines currently use [Redis](https://redis.io/) to store their data (SQL database support coming soon!). Nodes and settlement engines can use different Redis instances.
 
-    - Compile and install from the source code
-    - [Download the source code here](https://redis.io/download)
+    - Compile and install from the source code  
+    [Download the source code here](https://redis.io/download)
     - Install using package managers
     - Ubuntu: run `sudo apt-get install redis-server`
     - macOS: If you use Homebrew, run `brew install redis`
@@ -148,6 +148,7 @@ Before you try to connect to the testnet, you need to install the following depe
     Make sure your Redis is empty. You could run `redis-cli flushall` to clear all the data.
 
 1. **Rust**
+    
     Because Interledger.rs is written in the Rust language, you need the Rust environment. Refer to the [Getting started](https://www.rust-lang.org/learn/get-started) page or just `curl https://sh.rustup.rs -sSf | sh` and follow the instructions.
 
 1. **settlement-xrp**
@@ -173,9 +174,9 @@ If you want to set up your environment manually, you have to:
 
 #### Spin up a Settlement Engine
 
-We currently have settlement engine support for XRP and Ethereum on-ledger Layer-1 transactions (payment channels support is in our pipeline). Set up one depending which asset you chose for your credentials.
+We currently have settlement engine support for XRP and Ethereum on-ledger Layer-1 transactions (payment channels support is in our pipeline). Set up one depending on which asset you chose for your credentials.
 
-To spin up a XRP settlement engine:
+To spin up a XRP settlement engine, use the following commands:
 
 ```bash
 mkdir -p logs
@@ -191,7 +192,7 @@ ilp-settlement-xrp \
 
 Note that we have to spin up a Redis which the settlement engine is going to connect to. It automatically get secrets from the XRP faucet, so you don't need to specify. If you want to use your own credentials, you have to provide the environment variable [`XRP_SECRET`](https://github.com/interledgerjs/settlement-xrp/blob/master/src/run.ts#L6). A faucet is available at the [XRPL website](https://xrpl.org/xrp-testnet-faucet.html).
 
-To spin up a Ethereum settlement engine,
+To spin up a Ethereum settlement engine, use the following commands:
 
 ```bash
 mkdir -p logs
@@ -209,7 +210,7 @@ cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger
 &> logs/settlement-engine-eth.log &
 ```
 
-Note that you have to specify 2 parameters here, `SE_ETH_SECRET` and `SE_ETH_URL`. Because the Xpring node is connected to the Rinkeby testnet of Ethereum, we also need to connect to Rinkeby.
+Note that you have to specify two parameters here, `SE_ETH_SECRET` and `SE_ETH_URL`. Because the Xpring node is connected to the Rinkeby testnet of Ethereum, we also need to connect to Rinkeby.
 
 - `SE_ETH_SECRET`
     - The private key to be used. An Ethereum private key is a 32-byte hex string. You can generate one via [Ethereum Generate Wallet](https://github.com/vkobel/ethereum-generate-wallet).
@@ -265,7 +266,7 @@ Now that our node is running and exposed to the internet, let's insert accounts.
         --pair ETH http://localhost:3002
     ```
 
-1. The main account that we use for sending and receiving payments.    
+1. The main account that we use for sending and receiving payments   
     ```
     cargo run --bin ilp-cli accounts create <YOUR_NAME> \ 
         --auth=<admin_auth_token> \
@@ -301,10 +302,10 @@ Now that our node is running and exposed to the internet, let's insert accounts.
                 --settle-threshold=1000 \
                 --settle-to=0
         ```
-   
-    Notes: 
-        - `$USERNAME` is the first part of the returned value from the previous step. 
-        - `$TESTNET_AUTH` is the full `USERNAME:PASSWORD` string from the previous step 
+   Note: 
+        
+   - `$USERNAME` is the first part of the returned value from the previous step. 
+   - `$TESTNET_AUTH` is the full `USERNAME:PASSWORD` string from the previous step 
 
 
 The peering process with the testnet is done! Congratulations!
