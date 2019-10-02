@@ -52,15 +52,15 @@ async function run() {
         // Configure the testnet node to talk to us over HTTP instead of BTP
         console.log('Switching node-to-node communication to HTTP (instead of WebSockets)...')
         const xpringToken = randomBytes(20).toString('hex')
+        execSync(`ilp-cli accounts update-settings xpring_${config.currency} \
+            --auth=${config.adminAuthToken} \
+            --ilp-over-http-incoming-token=${xpringToken} \
+            --settle-threshold=1000 \
+            --settle-to=0`)
         execSync(`ilp-cli --node=https://rs3.xpring.dev accounts update-settings ${testnetAuth.split(':')[0]} \
             --auth=${testnetAuth} \
             --ilp-over-http-outgoing-token=xpring_${config.currency.toLowerCase()}:${xpringToken} \
             --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp \
-            --settle-threshold=1000 \
-            --settle-to=0`)
-        execSync(`ilp-cli accounts update-settings xpring_${config.currency} \
-            --auth=${config.adminAuthToken} \
-            --ilp-over-http-incoming-token=${xpringToken} \
             --settle-threshold=1000 \
             --settle-to=0`)
     }
@@ -79,7 +79,7 @@ function loadConfig() {
         const secretSeed = randomBytes(32).toString('hex')
         const currency = (process.env.CURRENCY || 'XRP').toUpperCase()
         const ethKey = process.env.ETH_SECRET_KEY || '380EB0F3D505F087E438ECA80BC4DF9A7FAA24F868E69FC0440261A0FC0567DC'
-        const ethUrl = process.env.ETH_URL || 'https://rinkeby.infura.io/v3/516b56b980c64f799942937106cdb200'
+        const ethUrl = process.env.ETH_URL || 'https://rinkeby.infura.io/v3/2bd7fa2c387e4f07a5599bc64d0a9c33'
 
         const config = {
             nodeName,
