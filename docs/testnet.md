@@ -63,11 +63,18 @@ Note: Currently there is no way to check who paid you. This is a feature we inte
 
 ## Connect Your Local Node to the Testnet
 
-We have [published a Docker image on Dockerhub](https://hub.docker.com/r/interledgerrs/testnet-bundle) so that you can connect to the testnet easily and with a reproducible environment. You can obtain it and run it by executing the following commands:
+We have [published a Docker image on
+Dockerhub](https://hub.docker.com/r/interledgerrs/testnet-bundle) so that you
+can connect to the testnet easily and with a reproducible environment. We also
+provide a [pre-built CLI](https://hub.docker.com/r/interledgerrs/ilp-cli) for
+interacting with the node. You can
+obtain the images and run them by executing the following commands:
 
 ```bash
 # Get the image
 docker pull interledgerrs/testnet-bundle
+# Get the CLI
+docker pull interledgerrs/ilp-cli
 # Run the testnet bundle
 docker run -it -e NAME=YOUR_NAME interledgerrs/testnet-bundle
 ```
@@ -82,13 +89,11 @@ and connect to the testnet. Let's try to make some payments!
 Now you can send payments as follows:
 
 ```bash
- cargo run --bin ilp-cli pay <YOUR_NAME> \
-     --auth <YOUR_PASSWORD> \
-     --receiver <RECEIVER_PAYMENT_POINTER> \
-     --source-amount <YOUR_AMOUNT>
+docker run interledgerrs/ilp-cli --node https://<YOUR_NAME>.localtunnel.me pay <YOUR_NAME> \
+     --auth <YOUR_NAME:YOUR_NAME> \
+     --to <RECEIVER_PAYMENT_POINTER> \
+     --amount <YOUR_AMOUNT>
 ```
-
-Note that you should replace **$their-payment-pointer.example** with one you want to send payments to, and **source_amount** with how much money you want to pay.
 
 In this case, you are sending payment request to YOUR NODE. Your node resolves the payment pointer into an ILP address and then tries to pay the amount to the address. The ILP packets are routed through the testnet's node because we are configured as its "child".
 
@@ -103,7 +108,7 @@ https://<YOUR_NAME>.localtunnel.me/accounts/<YOUR_NAME>/spsp
 Then you can confirm your balance as follows:
 
 ```bash
-cargo run --bin ilp-cli accounts balance <YOUR_NAME> --auth <YOUR_NAME>:<YOUR_PASSWORD>
+docker run interledgerrs/ilp-cli --node https://<YOUR_NAME>.localtunnel.me accounts balance <YOUR_NAME> --auth <YOUR_NAME>:<YOUR_NAME>
 ```
 
 ### Manual configuration
