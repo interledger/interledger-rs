@@ -229,7 +229,7 @@ Now that our node is running and exposed to the internet, let's insert accounts.
 
 1. Default settlement engines endpoints
     ```
-    ./ilp-cli settlement-engines set-all \
+    cargo run --bin ilp-cli settlement-engines set-all \
         --auth=<admin_auth_token> \
         --pair XRP http://localhost:3001 \
         --pair ETH http://localhost:3002
@@ -237,7 +237,7 @@ Now that our node is running and exposed to the internet, let's insert accounts.
 
 1. The main account that we use for sending and receiving payments.    
     ```
-    ./ilp-cli accounts create <YOUR_NAME> \ 
+    cargo run --bin ilp-cli accounts create <YOUR_NAME> \ 
         --auth=<admin_auth_token> \
         --asset-code=<ASSET_CODE> \
         --asset-scale=<ASSET_SCALE> 
@@ -246,7 +246,7 @@ Now that our node is running and exposed to the internet, let's insert accounts.
     
 1. Connect to the Xpring Testnet node so we're connected to the rest of the testnet
     ```
-     ./ilp-cli testnet setup <ASSET_CODE> \
+    cargo run --bin ilp-cli testnet setup <ASSET_CODE> \
          --auth=<admin_auth_token> \
          --return-testnet-credential
     ```
@@ -255,7 +255,7 @@ Now that our node is running and exposed to the internet, let's insert accounts.
 1. (Optional) Configure the testnet node to talk to us over HTTP instead of BTP (HTTP is more reliable, BTP is more efficient due to WebSockets)
    1. Configure the testnet account on our node to authenticate with ILP over HTTP 
        ```
-        ./ilp-cli accounts update-settings xpring_<ASSET_CODE> \
+        cargo run --bin ilp-cli accounts update-settings xpring_<ASSET_CODE> \
                 --auth=<admin_auth_token> \
                 --ilp-over-http-incoming-token=xpring_password \
                 --settle-threshold=1000 \
@@ -264,7 +264,7 @@ Now that our node is running and exposed to the internet, let's insert accounts.
         
    1.  Configure ILP over HTTP for our account on the testnet node
         ```
-        ./ilp-cli --node=https://rs3.xpring.dev accounts update-settings $USERNAME
+        cargo run --bin ilp-cli --node=https://rs3.xpring.dev accounts update-settings $USERNAME
                 --auth=$TESTNET_AUTH \
                 --ilp-over-http-outgoing-token=xpring_<ASSET_CODE>:xpring_password \
                 --ilp-over-http-url=https://<YOUR_NAME>.localtunnel.me/ilp \
@@ -309,5 +309,5 @@ https://<YOUR_NAME>.localtunnel.me/accounts/<YOUR_NAME>/spsp
 Then you can confirm your balance as follows:
 
 ```bash
-./ilp-cli accounts balance <YOUR_NAME> --auth <YOUR_NAME>:<YOUR_PASSWORD>
+cargo run --bin ilp-cli accounts balance <YOUR_NAME> --auth <YOUR_NAME>:<YOUR_PASSWORD>
 ```
