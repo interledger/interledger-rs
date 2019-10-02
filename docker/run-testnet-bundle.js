@@ -16,8 +16,8 @@ async function run() {
     let config = loadConfig()
 
     runRedis()
-    runNode(config)
     runLocalTunnel(config.nodeName)
+    runNode(config)
 
     // if (config.currency === 'XRP') {
     runXrpSettlementEngine()
@@ -52,17 +52,17 @@ async function run() {
         // Configure the testnet node to talk to us over HTTP instead of BTP
         console.log('Switching node-to-node communication to HTTP (instead of WebSockets)...')
         const xpringToken = randomBytes(20).toString('hex')
-        execSync(`ilp-cli accounts update-settings xpring_${config.currency} \
-            --auth=${config.adminAuthToken} \
-            --ilp-over-http-incoming-token=${xpringToken} \
-            --settle-threshold=1000 \
-            --settle-to=0`)
         execSync(`ilp-cli --node=https://rs3.xpring.dev accounts update-settings ${testnetAuth.split(':')[0]} \
             --auth=${testnetAuth} \
             --ilp-over-http-outgoing-token=xpring_${config.currency.toLowerCase()}:${xpringToken} \
-            --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp \
-            --settle-threshold=1000 \
-            --settle-to=0`)
+            --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp`)
+        // --settle-threshold=1000 \
+        // --settle-to=0`)
+        execSync(`ilp-cli accounts update-settings xpring_${config.currency.toLowerCase()} \
+            --auth=${config.adminAuthToken} \
+            --ilp-over-http-incoming-token=${xpringToken}`)
+        // --settle-threshold=1000 \
+        // --settle-to=0`)
     }
 
     console.log('Using config: ', config)
@@ -120,7 +120,7 @@ function runNode({ adminAuthToken, secretSeed, nodeName }) {
         `--admin_auth_token=${adminAuthToken}`,
         `--secret_seed=${secretSeed}`,
         '--redis_url=unix:/tmp/redis.sock',
-        // `--default_spsp_account=${nodeName}`
+        `--default_spsp_account=${nodeName}`
     ],
         {
             env: {
