@@ -310,3 +310,83 @@ where
         warp::serve(self.into_warp_filter()).bind(addr)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{self, json};
+
+    #[test]
+    fn number_or_string_deserialization() {
+        #[derive(PartialEq, Deserialize, Debug)]
+        struct One {
+            #[serde(deserialize_with = "number_or_string")]
+            val: u64,
+        }
+        assert_eq!(
+            serde_json::from_str::<One>("{\"val\":1}").unwrap(),
+            One { val: 1 }
+        );
+        assert_eq!(
+            serde_json::from_str::<One>("{\"val\":\"1\"}").unwrap(),
+            One { val: 1 }
+        );
+
+        assert!(serde_json::from_str::<One>("{\"val\":\"not-a-number\"}").is_err());
+        assert!(serde_json::from_str::<One>("{\"val\":\"-1\"}").is_err());
+    }
+
+    #[test]
+    fn optional_number_or_string_deserialization() {
+        #[derive(PartialEq, Deserialize, Debug)]
+        struct One {
+            #[serde(deserialize_with = "optional_number_or_string")]
+            val: Option<u64>,
+        }
+        assert_eq!(
+            serde_json::from_str::<One>("{\"val\":1}").unwrap(),
+            One { val: Some(1) }
+        );
+        assert_eq!(
+            serde_json::from_str::<One>("{\"val\":\"1\"}").unwrap(),
+            One { val: Some(1) }
+        );
+        assert!(serde_json::from_str::<One>("{}").is_err());
+
+        #[derive(PartialEq, Deserialize, Debug)]
+        struct Two {
+            #[serde(default, deserialize_with = "optional_number_or_string")]
+            val: Option<u64>,
+        }
+        assert_eq!(
+            serde_json::from_str::<Two>("{\"val\":2}").unwrap(),
+            Two { val: Some(2) }
+        );
+        assert_eq!(
+            serde_json::from_str::<Two>("{\"val\":\"2\"}").unwrap(),
+            Two { val: Some(2) }
+        );
+        assert_eq!(
+            serde_json::from_str::<Two>("{}").unwrap(),
+            Two { val: None }
+        );
+    }
+
+    #[test]
+    fn account_settings_deserialization() {
+        let settings: AccountSettings = serde_json::from_value(json!({
+            "ilp_over_http_url": "https://example.com/ilp",
+            "ilp_over_http_incoming_token": "secret",
+            "settle_to": 0,
+            "settle_threshold": "1000",
+        }))
+        .unwrap();
+        assert_eq!(settings.settle_threshold, Some(1000));
+        assert_eq!(settings.settle_to, Some(0));
+        assert_eq!(
+            settings.ilp_over_http_url,
+            Some("https://example.com/ilp".to_string())
+        );
+        assert!(settings.ilp_over_btp_url.is_none());
+    }
+}
