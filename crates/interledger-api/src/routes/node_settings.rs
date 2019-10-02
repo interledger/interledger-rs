@@ -51,10 +51,12 @@ where
     // GET /
     let get_root = warp::get2()
         .and(warp::path::end())
-        .map(|| {
+        .and(with_store.clone())
+        .map(|store: S| {
             // TODO add more to this response
             warp::reply::json(&json!({
                 "status": "Ready".to_string(),
+                "ilp_address": store.get_ilp_address(),
             }))
         })
         .boxed();
