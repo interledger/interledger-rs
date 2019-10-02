@@ -23,7 +23,7 @@ In contradiction to the mainnet, the testnet is to test functions of the network
 ## Get Your Own Credentials
 You need to get your own credentials to connect to the testnet. In other words, you need to get your account configured on a testnet node.
 
-We have [the Xpring testnet site](https://test.xpring.io/ilp-testnet-creds) to provide credentials for you. The site automatically configures your account on the Xpring's testnet node. You could use the credentials to send payments from the node and receive payments to the node, or you could also connect your local node to the testnet.
+We have [the Xpring testnet site](https://xpring.io/ilp-testnet-creds) to provide credentials for you. The site automatically configures your account on the Xpring's testnet node. You could use the credentials to send payments from the node and receive payments to the node, or you could also connect your local node to the testnet.
 
 Just push **"Generate XRP Credentials"** or **"Generate ETH Credentials"** button then you'll get your account set on the node. Keep the credentials so that you could later send payments or set up your own node.
 

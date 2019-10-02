@@ -73,7 +73,7 @@ FLAGS:
     -h  Show this help.
 
 SEE:
-    https://test.xpring.io/ilp-testnet-creds
+    https://xpring.io/ilp-testnet-creds
     https://status.xpring.tech/
 EOM
 }
@@ -484,8 +484,8 @@ mkdir -p logs/accounts
 # set up global variables
 BASE_DIR=$(cd $(dirname $0); pwd)
 XPRING_USERNAME="xpring"
-# XPRING_CREDENTIAL_API="https://xpring.io/api"
-XPRING_CREDENTIAL_API="https://stage.xpring.io/api"
+XPRING_CREDENTIAL_API="https://xpring.io/api"
+# XPRING_CREDENTIAL_API="https://stage.xpring.io/api"
 XPRING_NODE_ILP_ADDRESS="test.xpring-dev.rs3"
 XPRING_NODE_API_URL="https://rs3.xpring.dev"
 NODE_LT_SUBDOMAIN_FILE="node_lt_subdomain.config"
