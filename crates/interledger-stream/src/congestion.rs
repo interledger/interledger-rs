@@ -53,6 +53,7 @@ impl CongestionController {
         }
     }
 
+    #[allow(dead_code)]
     pub fn default() -> Self {
         // TODO an increase amount of 1000 might be too small if the units are worth very little
         // should it be adjusted based on something like the max packet amount?
