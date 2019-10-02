@@ -168,6 +168,7 @@ redis-server --port 6380 &> logs/redis_se.log &
 
 cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger \
 --private_key "${SE_ETH_SECRET}" \
+--chain_id 4 \
 --confirmations 0 \
 --poll_frequency 1000 \
 --ethereum_url "${SE_ETH_URL}" \
