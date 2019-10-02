@@ -239,7 +239,8 @@ fn receive_money(
         }
         .build();
         debug!(
-            "Fulfilling prepare with fulfillment: {} and encrypted stream packet: {:?}",
+            "Fulfilling prepare for amount {} with fulfillment: {} and encrypted stream packet: {:?}",
+            prepare_amount,
             hex::encode(&fulfillment[..]),
             response_packet
         );

@@ -53,7 +53,10 @@ where
                 destination_account,
                 shared_secret,
                 source_amount,
-                congestion_controller: CongestionController::default(),
+                // Try sending the full amount first
+                // TODO make this configurable -- in different scenarios you might prioritize
+                // sending as much as possible per packet vs getting money flowing ASAP differently
+                congestion_controller: CongestionController::new(source_amount, source_amount / 10, 2.0),
                 pending_requests: Cell::new(Vec::new()),
                 delivered_amount: 0,
                 should_send_source_account: true,
