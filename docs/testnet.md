@@ -2,24 +2,15 @@
 
 ## Table of Contents
 
-- Why do we need a testnet?
 - Get Your Own Credentials
 - Send and Receive Payments
 - Connect Your Local Node to the Testnet
-    - Docker
-    - Manual configuration 
-        - Requiremenets
-        - Running a node and peering
-- Try Out Payments
+- Payments
     - Send Payments
     - Receive Payments
-
-
-## Why do we need a testnet?
-
-Testing is an absolute requirement when deploying software. Because of that, the Interledger.rs repository ensures that all its features are thoroughly tested. However, network conditions such as latency and bandwidth are not the same as in the real world when running unit and integration tests. In order to simulate that, we leverage test networks (testnets). 
-
-Testnets are networks where the topology is similar to the expected real world network topology, but the funds used are not "real" (i.e. do not hold any real-world value). Succesful testnet runs can greatly increase our confidence in the reliability of our software, before deploying it to mainnet where it will be able to control large amounts of money.
+- Manual configuration
+    - Requiremenets
+    - Running a node and peering
 
 
 ## Get Your Own Credentials
@@ -31,14 +22,14 @@ Currently, the [the Xpring testnet website](https://xpring.io/ilp-testnet-creds)
 
 Just click the **"Generate XRP Credentials"** or **"Generate ETH Credentials"** button, and you'll get your account set on the node. Keep the credentials so that you could later send payments or set up your own node.
 
-The credentials should look like (Username and PassKey would be different ones):
+The credentials should look like (username and token would be different ones):
 
 |key|value|
 |---|---|
-|Username|user_qjex4cfk|
-|PassKey|us5w0zt1br4ft|
-|http_endpoint|https://rs3.xpring.dev/ilp|
-|btp_endpoint|btp+wss://rs3.xpring.dev/ilp/btp|
+|username|user_qjex4cfk|
+|token|us5w0zt1br4ft|
+|ilp_over_http_url|https://rs3.xpring.dev/ilp|
+|ilp_over_btp_url|btp+wss://rs3.xpring.dev/ilp/btp|
 |payment_pointer|$rs3.xpring.dev/accounts/user_qjex4cfk/spsp|
 |asset_code|XRP|
 |asset_scale|9|
@@ -52,7 +43,7 @@ If you want to just try out the Interledger testnet, you could try as follows.
 ```bash
 curl \
     -X POST \
-    -H "Authorization: Bearer ${Username}:${PassKey}" \
+    -H "Authorization: Bearer ${username}:${token}" \
     -H "Content-Type: application/json" \
     -d '{"receiver":"$their-payment-pointer.example","source_amount":500}' \
     https://rs3.xpring.dev/accounts/${Username}/payments
@@ -64,15 +55,13 @@ If someone sends you payments, you could confirm your balance increase as follow
 
 ```bash
 curl \
-    -H "Authorization: Bearer ${Username}:${PassKey}" \
+    -H "Authorization: Bearer ${username}:${token}" \
     https://rs3.xpring.dev/accounts/${Username}/balance
 ```
 
 Note: Currently there is no way to check who paid you. This is a feature we intend to support in the future, and can be done by having the sender of the payment include additional metadata in the STREAM packets.
 
 ## Connect Your Local Node to the Testnet
-
-### Docker 
 
 We have [published a Docker image on Dockerhub](https://hub.docker.com/r/interledgerrs/testnet-bundle) so that you can connect to the testnet easily and with a reproducible environment. You can obtain it and run it by executing the following commands:
 
@@ -83,10 +72,46 @@ docker pull interledgerrs/testnet-bundle
 docker run -it -e NAME=YOUR_NAME interledgerrs/testnet-bundle
 ```
 
-The above will configure and run the Interledger node, the ETH & XRP engines, and connect to the testnet. Try making some payments!
+The above will configure and run the Interledger node, the ETH & XRP engines,
+and connect to the testnet. Let's try to make some payments!
 
+## Payments
+
+### Send Payments
+
+Now you can send payments as follows:
+
+```bash
+ cargo run --bin ilp-cli pay <YOUR_NAME> \
+     --auth <YOUR_PASSWORD> \
+     --receiver <RECEIVER_PAYMENT_POINTER> \
+     --source-amount <YOUR_AMOUNT>
+```
+
+Note that you should replace **$their-payment-pointer.example** with one you want to send payments to, and **source_amount** with how much money you want to pay.
+
+In this case, you are sending payment request to YOUR NODE. Your node resolves the payment pointer into an ILP address and then tries to pay the amount to the address. The ILP packets are routed through the testnet's node because we are configured as its "child".
+
+### Receive Payments
+
+Other people could send you payments using the following SPSP address.
+
+```bash
+https://<YOUR_NAME>.localtunnel.me/accounts/<YOUR_NAME>/spsp
+```
+
+Then you can confirm your balance as follows:
+
+```bash
+cargo run --bin ilp-cli accounts balance <YOUR_NAME> --auth <YOUR_NAME>:<YOUR_PASSWORD>
+```
 
 ### Manual configuration
+
+**Configuring an Interledger Node is a complicated process. We highly advise you
+use the provided docker image which has the Node, Engines and Store packaged
+already. Only try doing the next steps if you want to get an in-depth view of
+what is happening under the hood**
 
 #### Requirements 
 
@@ -280,34 +305,3 @@ Now that our node is running and exposed to the internet, let's insert accounts.
 The peering process with the testnet is done! Congratulations!
 
 You should now be able to send and receive payments through the testnet node.
-
-## Try Out Payments
-
-### Send Payments
-
-Now you can send payments as follows:
-
-```bash
- ./ilp_cli pay <YOUR_NAME> \
-     --auth <YOUR_PASSWORD> \
-     --receiver <RECEIVER_PAYMENT_POINTER> \
-     --source-amount <YOUR_AMOUNT>
-```
-
-Note that you should replace **$their-payment-pointer.example** with one you want to send payments to, and **source_amount** with how much money you want to pay.
-
-In this case, you are sending payment request to YOUR NODE. Your node resolves the payment pointer into an ILP address and then tries to pay the amount to the address. The ILP packets are routed through the testnet's node because we are configured as its "child".
-
-### Receive Payments
-
-Other people could send you payments using the following SPSP address.
-
-```bash
-https://<YOUR_NAME>.localtunnel.me/accounts/<YOUR_NAME>/spsp
-```
-
-Then you can confirm your balance as follows:
-
-```bash
-cargo run --bin ilp-cli accounts balance <YOUR_NAME> --auth <YOUR_NAME>:<YOUR_PASSWORD>
-```

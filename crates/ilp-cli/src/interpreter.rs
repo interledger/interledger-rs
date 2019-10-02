@@ -1,8 +1,8 @@
 use clap::ArgMatches;
 use http;
 use reqwest::{self, Client, Response};
-use std::collections::HashMap;
 use serde_json::value::*;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum Error {
@@ -159,7 +159,7 @@ impl NodeClient<'_> {
         // are sent as numbers, because otherwise the node rejects
         // the request with a (strange) 401: Unauthorized error
         // TODO: find a less hacky way to send the request
-        let mut number_json : HashMap<&str, Value> = HashMap::new();
+        let mut number_json: HashMap<&str, Value> = HashMap::new();
         for (key, value) in args {
             if let Ok(num) = value.parse::<i64>() {
                 number_json.insert(key, Value::Number(Number::from(num)));
