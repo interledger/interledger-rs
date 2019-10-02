@@ -23,20 +23,15 @@ pub fn run<'a, 'b>(matches: &ArgMatches) -> Result<Response, Error> {
                 "accounts" => match ilp_cli_matches.subcommand() {
                     (accounts_subcommand, Some(accounts_matches)) => match accounts_subcommand {
                         "balance" => client.get_account_balance(accounts_matches),
-                        "create" => client.post_or_put_accounts(accounts_matches),
+                        "create" => client.post_accounts(accounts_matches),
                         "delete" => client.delete_account(accounts_matches),
                         "incoming-payments" => {
                             client.ws_account_payments_incoming(accounts_matches)
                         }
                         "info" => client.get_account(accounts_matches),
                         "list" => client.get_accounts(accounts_matches),
-                        "update" => {
-                            if accounts_matches.is_present("is_admin") {
-                                client.put_account(accounts_matches)
-                            } else {
-                                client.put_account_settings(accounts_matches)
-                            }
-                        }
+                        "update" => client.put_account(accounts_matches),
+                        "update-settings" => client.put_account_settings(accounts_matches),
                         command => panic!("Unhandled `ilp-cli accounts` subcommand: {}", command),
                     },
                     _ => Err(Error::UsageErr("ilp-cli help accounts")),
@@ -95,18 +90,24 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
-    fn post_or_put_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    fn post_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
-        if matches.is_present("overwrite") {
-            self.client
-                .put(&format!("{}/accounts/{}", self.url, args["username"]))
-        } else {
-            self.client.post(&format!("{}/accounts/", self.url))
-        }
-        .bearer_auth(auth)
-        .json(&args)
-        .send()
-        .map_err(Error::ClientErr)
+        self.client
+            .post(&format!("{}/accounts/", self.url))
+            .bearer_auth(auth)
+            .json(&args)
+            .send()
+            .map_err(Error::ClientErr)
+    }
+
+    fn put_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
+        let (auth, args) = extract_args(matches);
+        self.client
+            .put(&format!("{}/accounts/{}", self.url, args["username"]))
+            .bearer_auth(auth)
+            .json(&args)
+            .send()
+            .map_err(Error::ClientErr)
     }
 
     fn delete_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
@@ -136,17 +137,6 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/accounts", self.url))
             .bearer_auth(auth)
-            .send()
-            .map_err(Error::ClientErr)
-    }
-
-    fn put_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
-        let (auth, mut args) = extract_args(matches);
-        let user = args.remove("username").unwrap();
-        self.client
-            .put(&format!("{}/accounts/{}", self.url, user))
-            .bearer_auth(auth)
-            .json(&args)
             .send()
             .map_err(Error::ClientErr)
     }

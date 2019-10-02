@@ -10,6 +10,7 @@ pub fn build<'a, 'b>() -> App<'a, 'b> {
             accounts_info(),
             accounts_list(),
             accounts_update(),
+            accounts_update_settings(),
         ]),
         pay(),
         rates().subcommands(vec![rates_list(), rates_set_all()]),
@@ -40,6 +41,7 @@ fn ilp_cli<'a, 'b>() -> App<'a, 'b> {
         .global_settings(&[
             AppSettings::AllowNegativeNumbers,
             AppSettings::VersionlessSubcommands,
+            //AppSettings::SubcommandRequiredElseHelp, // TODO: re-enable this
         ])
         // TODO remove this line once this issue is solved:
         // https://github.com/clap-rs/clap/issues/1536
@@ -82,9 +84,77 @@ fn accounts_create<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .required(true)
                 .help("The username of the account"),
-            Arg::with_name("overwrite")
-                .long("overwrite")
-                .help("If present, will use the provided settings to overwrite rather than create the given account"),
+            Arg::with_name("asset_code")
+                .long("asset-code")
+                .takes_value(true)
+                .required(true)
+                .help("The code of the asset associated with this account"),
+            Arg::with_name("asset_scale")
+                .long("asset-scale")
+                .takes_value(true)
+                .required(true)
+                .help("The scale of the asset associated with this account"),
+            // TODO: when we have a glossary of HTTP API options, add their descriptions to these
+            Arg::with_name("ilp_address")
+                .long("ilp-address")
+                .takes_value(true),
+            Arg::with_name("max_packet_amount")
+                .long("max-packet-amount")
+                .takes_value(true),
+            Arg::with_name("min_balance")
+                .long("min-balance")
+                .takes_value(true),
+            Arg::with_name("ilp_over_http_url")
+                .long("ilp-over-http-url")
+                .takes_value(true),
+            Arg::with_name("ilp_over_http_incoming_token")
+                .long("ilp-over-http-incoming-token")
+                .takes_value(true),
+            Arg::with_name("ilp_over_http_outgoing_token")
+                .long("ilp-over-http-outgoing-token")
+                .takes_value(true),
+            Arg::with_name("ilp_over_btp_url")
+                .long("ilp-over-btp-url")
+                .takes_value(true),
+            Arg::with_name("ilp_over_btp_outgoing_token")
+                .long("ilp-over-btp-outgoing-token")
+                .takes_value(true),
+            Arg::with_name("ilp_over_btp_incoming_token")
+                .long("ilp-over-btp-incoming-token")
+                .takes_value(true),
+            Arg::with_name("settle_threshold")
+                .long("settle-threshold")
+                .takes_value(true),
+            Arg::with_name("settle_to")
+                .long("settle-to")
+                .takes_value(true),
+            Arg::with_name("routing_relation")
+                .long("routing-relation")
+                .takes_value(true),
+            Arg::with_name("round_trip_time")
+                .long("round-trip-time")
+                .takes_value(true),
+            Arg::with_name("amount_per_minute_limit")
+                .long("amount-per-minute-limit")
+                .takes_value(true),
+            Arg::with_name("packets_per_minute_limit")
+                .long("packets-per-minute-limit")
+                .takes_value(true),
+            Arg::with_name("settlement_engine_url")
+                .long("settlement-engine-url")
+                .takes_value(true),
+        ])
+}
+
+fn accounts_update<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("update")
+        .about("Creates a new account on this node")
+        .args(&[
+            Arg::with_name("username")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .help("The username of the account"),
             Arg::with_name("asset_code")
                 .long("asset-code")
                 .takes_value(true)
@@ -180,9 +250,9 @@ fn accounts_list<'a, 'b>() -> App<'a, 'b> {
     AuthorizedSubCommand::with_name("list").about("List all accounts on this node")
 }
 
-fn accounts_update<'a, 'b>() -> App<'a, 'b> {
-    AuthorizedSubCommand::with_name("update")
-        .about("Overwrite the details of account on this node")
+fn accounts_update_settings<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("update-settings")
+        .about("Overwrite the details of an account on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
