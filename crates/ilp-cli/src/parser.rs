@@ -17,6 +17,7 @@ pub fn build<'a, 'b>() -> App<'a, 'b> {
         routes().subcommands(vec![routes_list(), routes_set(), routes_set_all()]),
         settlement_engines().subcommands(vec![settlement_engines_set_all()]),
         status(),
+        testnet().subcommands(vec![testnet_setup()]),
     ])
 }
 
@@ -368,6 +369,7 @@ fn routes_set_all<'a, 'b>() -> App<'a, 'b> {
 
 fn settlement_engines<'a, 'b>() -> App<'a, 'b> {
     SubCommand::with_name("settlement-engines")
+        .about("Interact with the settlement engine configurations")
 }
 
 fn settlement_engines_set_all<'a, 'b>() -> App<'a, 'b> {
@@ -384,4 +386,22 @@ fn settlement_engines_set_all<'a, 'b>() -> App<'a, 'b> {
 
 fn status<'a, 'b>() -> App<'a, 'b> {
     SubCommand::with_name("status").about("Query the status of the server")
+}
+
+fn testnet<'a, 'b>() -> App<'a, 'b> {
+    SubCommand::with_name("testnet").about("Easily access the testnet")
+}
+
+fn testnet_setup<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("setup")
+        .about("Create a local account peered with a remote node on the testnet")
+        .arg(
+            Arg::with_name("asset")
+                .index(1)
+                .required(true)
+                .takes_value(true)
+                .possible_values(&["xrp", "eth"])
+                .case_insensitive(true)
+                .help("The asset that will be tied to the new testnet account"),
+        )
 }

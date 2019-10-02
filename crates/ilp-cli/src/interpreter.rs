@@ -2,6 +2,7 @@ use clap::ArgMatches;
 use reqwest::{self, Client, Response};
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum Error {
     UsageErr(&'static str),
     ClientErr(reqwest::Error),
@@ -67,6 +68,13 @@ pub fn run<'a, 'b>(matches: &ArgMatches) -> Result<Response, Error> {
                     _ => Err(Error::UsageErr("ilp-cli help settlement-engines")),
                 },
                 "status" => client.get_root(ilp_cli_matches),
+                "testnet" => match ilp_cli_matches.subcommand() {
+                    (testnet_subcommand, Some(testnet_matches)) => match testnet_subcommand {
+                        "setup" => client.xpring_account(testnet_matches),
+                        command => panic!("Unhandled `ilp-cli testnet` subcommand: {}", command),
+                    },
+                    _ => Err(Error::UsageErr("ilp-cli help testnet")),
+                },
                 command => panic!("Unhandled `ilp-cli` subcommand: {}", command),
             }
         }
@@ -223,6 +231,51 @@ impl NodeClient<'_> {
             .send()
             .map_err(Error::ClientErr)
     }
+    /*
+    {"http_endpoint": "https://rs3.xpring.dev/ilp", // ilp_over_http_url
+    "passkey": "b0i3q9tbvfgek",  // ilp_over_http_outgoing_token = username:passkey
+    "btp_endpoint": "btp+wss://rs3.xpring.dev/ilp/btp", // ilp_over_btp_url
+    "asset_scale": 9, // asset_scale
+    "node": "rs3.xpring.dev",
+    "asset_code": "XRP",  // asset_code
+    "username": "user_g31tuju4",  // username
+    "payment_pointer": "$rs3.xpring.dev/accounts/user_g31tuju4/spsp"}
+    routing_relation Parent
+    */
+
+    fn xpring_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
+        let (auth, cli_args) = extract_args(matches);
+        let asset = cli_args["asset"];
+        let foreign_args: XpringResponse = self
+            .client
+            .get(&format!("https://stage.xpring.io/api/accounts/{}", asset))
+            .send()
+            .unwrap()
+            .json()
+            .unwrap();
+        let mut args = HashMap::new();
+        args.insert("ilp_over_http_url", foreign_args.http_endpoint.clone());
+        args.insert(
+            "ilp_over_http_outgoing_token",
+            format!(
+                "{}:{}",
+                foreign_args.username.clone(),
+                foreign_args.passkey.clone()
+            ),
+        );
+        args.insert("ilp_over_btp_url", foreign_args.btp_endpoint.clone());
+        args.insert("asset_scale", foreign_args.asset_scale.to_string());
+        args.insert("asset_code", foreign_args.asset_code.clone());
+        args.insert("username", format!("xpring_{}", cli_args["asset"]));
+        args.insert("routing_relation", String::from("Parent")); // TODO: weird behavior when deleting and re-inserting accounts with this
+        dbg!(&args);
+        self.client
+            .post(&format!("{}/accounts/", self.url))
+            .bearer_auth(auth)
+            .json(&args)
+            .send()
+            .map_err(Error::ClientErr)
+    }
 }
 
 // This function takes the map of arguments parsed by Clap
@@ -248,4 +301,16 @@ fn unflatten_pairs<'a>(matches: &'a ArgMatches) -> (&'a str, HashMap<&'a str, &'
         }
     }
     (matches.value_of("authorization_key").unwrap(), pairs)
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct XpringResponse {
+    http_endpoint: String,
+    passkey: String,
+    btp_endpoint: String,
+    asset_scale: u8,
+    node: String,
+    asset_code: String,
+    username: String,
+    payment_pointer: String,
 }
