@@ -79,6 +79,19 @@ where
     })
 }
 
+fn deserialize_optional_username<'de, D>(deserializer: D) -> Result<Option<Username>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    if let Ok(username) = String::deserialize(deserializer) {
+        Username::from_str(&username)
+            .map(Some)
+            .map_err(|err| DeserializeError::custom(format!("Invalid username: {:?}", err)))
+    } else {
+        Ok(None)
+    }
+}
+
 fn deserialize_redis_connection<'de, D>(deserializer: D) -> Result<ConnectionInfo, D::Error>
 where
     D: Deserializer<'de>,
@@ -124,6 +137,7 @@ pub struct InterledgerNode {
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
+    #[serde(deserialize_with = "deserialize_optional_username")]
     pub default_spsp_account: Option<Username>,
     /// Interval, defined in milliseconds, on which the node will broadcast routing
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
