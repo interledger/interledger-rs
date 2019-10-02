@@ -78,8 +78,14 @@ mod interface_tests {
         should_parse(&[
             "ilp-cli accounts create alice --auth foo --asset-code XYZ --asset-scale 6 --ilp-address bar --max-packet-amount 100 --min-balance 0 --ilp-over-http-url qux --ilp-over-http-incoming-token baz --ilp-over-http-outgoing-token qaz --ilp-over-btp-url spam --ilp-over-btp-outgoing-token ham --ilp-over-btp-incoming-token eggs --settle-threshold 0 --settle-to 0 --routing-relation foobar --round-trip-time 1000 --amount-per-minute-limit 42 --packets-per-minute-limit 4 --settlement-engine-url if_you_can_read_this_congratulations_youve_scrolled_too_far_right", // maximal
             "ilp-cli accounts create alice --auth foo --asset-code ABC --asset-scale 3 --min-balance -1000 --settle-threshold -10", // negative numbers
-            "ilp-cli accounts create alice --overwrite --auth foo --asset-code ABC --asset-scale 9", // minimal, overwrite
-            "ilp-cli accounts create alice --overwrite --auth foo --asset-code XYZ --asset-scale 6 --ilp-address bar --max-packet-amount 100 --min-balance 0 --ilp-over-http-url qux --ilp-over-http-incoming-token baz --ilp-over-http-outgoing-token qaz --ilp-over-btp-url spam --ilp-over-btp-outgoing-token ham --ilp-over-btp-incoming-token eggs --settle-threshold 0 --settle-to 0 --routing-relation foobar --round-trip-time 1000 --amount-per-minute-limit 42 --packets-per-minute-limit 4 --settlement-engine-url if_you_can_read_this_congratulations_youve_scrolled_too_far_right", // maximal, overwrite
+        ]);
+    }
+
+    #[test]
+    fn accounts_update() {
+        should_parse(&[
+            "ilp-cli accounts update alice --auth foo --asset-code ABC --asset-scale 9", // minimal
+            "ilp-cli accounts update alice --auth foo --asset-code XYZ --asset-scale 6 --ilp-address bar --max-packet-amount 100 --min-balance 0 --ilp-over-http-url qux --ilp-over-http-incoming-token baz --ilp-over-http-outgoing-token qaz --ilp-over-btp-url spam --ilp-over-btp-outgoing-token ham --ilp-over-btp-incoming-token eggs --settle-threshold 0 --settle-to 0 --routing-relation foobar --round-trip-time 1000 --amount-per-minute-limit 42 --packets-per-minute-limit 4 --settlement-engine-url if_you_can_read_this_congratulations_youve_scrolled_too_far_right", // maximal
         ]);
     }
 
@@ -108,11 +114,11 @@ mod interface_tests {
     }
 
     #[test]
-    fn accounts_update() {
+    fn accounts_update_settings() {
         should_parse(&[
-            "ilp-cli accounts update alice --auth foo", // minimal
-            "ilp-cli accounts update alice --auth foo --ilp-over-http-incoming-token bar --ilp-over-btp-incoming-token qux --ilp-over-http-outgoing-token baz --ilp-over-btp-outgoing-token qaz --ilp-over-http-url spam --ilp-over-btp-url eggs --settle-threshold 0 --settle-to 0", // maximal
-            "ilp-cli accounts update alice --auth foo --settle-threshold -1000 --settle-to -10", // negative numbers
+            "ilp-cli accounts update-settings alice --auth foo", // minimal
+            "ilp-cli accounts update-settings alice --auth foo --ilp-over-http-incoming-token bar --ilp-over-btp-incoming-token qux --ilp-over-http-outgoing-token baz --ilp-over-btp-outgoing-token qaz --ilp-over-http-url spam --ilp-over-btp-url eggs --settle-threshold 0 --settle-to 0", // maximal
+            "ilp-cli accounts update-settings alice --auth foo --settle-threshold -1000 --settle-to -10", // negative numbers
         ]);
     }
 
