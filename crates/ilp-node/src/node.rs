@@ -86,7 +86,7 @@ where
     if let Ok(username) = String::deserialize(deserializer) {
         Username::from_str(&username)
             .map(Some)
-            .map_err(|err| DeserializeError::custom(format!("Invalid address: {:?}", err)))
+            .map_err(|err| DeserializeError::custom(format!("Invalid username: {:?}", err)))
     } else {
         Ok(None)
     }
