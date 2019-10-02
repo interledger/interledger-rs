@@ -158,6 +158,7 @@ function runEthSettlementEngine({ ethKey, ethUrl }) {
         '--settlement_api_bind_address=127.0.0.1:3002',
         `--ethereum_url=${ethUrl}`,
         `--private_key=${ethKey}`,
+        `--poll_frequency=15000`,
         '--redis_url=unix:/tmp/redis.sock?db=2',
         '--chain_id=4'
     ], {
