@@ -42,14 +42,27 @@ async function run() {
             --pair XRP http://localhost:3001 \
             --pair ETH http://localhost:3002`)
         // Connect to the Xpring Testnet node so we're connected to the rest of the testnet
-        execSync(`ilp-cli testnet setup ${config.currency} --auth=${config.adminAuthToken}`)
+        console.log('Connecting to the Xpring Testnet node...')
+        const testnetAuth = execSync(`ilp-cli testnet setup ${config.currency} \
+            --auth=${config.adminAuthToken} \
+            --return-testnet-credential`, {
+            encoding: 'utf8'
+        }).replace(/\s/g, '')
 
-        const xpringToken = randomBytes(32).toString('hex')
-        // execSync(`ilp-cli --node=https://rs3.xpring.dev update-settings \
-        //     --auth=${}
-        //     --ilp-over-http-outgoing-token=${xpringToken} \
-        //     --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp`)
-
+        // Configure the testnet node to talk to us over HTTP instead of BTP
+        console.log('Switching node-to-node communication to HTTP (instead of WebSockets)...')
+        const xpringToken = randomBytes(20).toString('hex')
+        execSync(`ilp-cli --node=https://rs3.xpring.dev accounts update-settings ${testnetAuth.split(':')[0]} \
+            --auth=${testnetAuth} \
+            --ilp-over-http-outgoing-token=xpring_${config.currency.toLowerCase()}:${xpringToken} \
+            --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp \
+            --settle-threshold=1000 \
+            --settle-to=0`)
+        execSync(`ilp-cli accounts update-settings xpring_${config.currency} \
+            --auth=${config.adminAuthToken} \
+            --ilp-over-http-incoming-token=${xpringToken} \
+            --settle-threshold=1000 \
+            --settle-to=0`)
     }
 
     console.log('Using config: ', config)
@@ -62,7 +75,7 @@ function loadConfig() {
         return config
     } else {
         const nodeName = process.env.NAME || `ilp_node_${randomBytes(10).toString('hex')}`
-        const adminAuthToken = `admin-token-${randomBytes(32).toString('hex')}`
+        const adminAuthToken = process.env.ADMIN_AUTH_TOKEN || `admin-token-${randomBytes(20).toString('hex')}`
         const secretSeed = randomBytes(32).toString('hex')
         const currency = (process.env.CURRENCY || 'XRP').toUpperCase()
         const ethKey = process.env.ETH_SECRET_KEY || '380EB0F3D505F087E438ECA80BC4DF9A7FAA24F868E69FC0440261A0FC0567DC'
@@ -101,7 +114,7 @@ function runRedis() {
     return redis
 }
 
-function runNode({ adminAuthToken, secretSeed }) {
+function runNode({ adminAuthToken, secretSeed, nodeName }) {
     console.log('Starting ilp-node...')
     const node = spawn('ilp-node', [
         `--admin_auth_token=${adminAuthToken}`,
