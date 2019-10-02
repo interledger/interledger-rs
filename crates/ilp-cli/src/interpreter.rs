@@ -8,7 +8,7 @@ pub enum Error {
     ClientErr(reqwest::Error),
 }
 
-pub fn run<'a, 'b>(matches: &ArgMatches) -> Result<Response, Error> {
+pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
     let client = NodeClient {
         client: Client::new(),
         // `--node` has a a default value, so will never be None
