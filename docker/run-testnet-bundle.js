@@ -50,19 +50,24 @@ async function run() {
         }).replace(/\s/g, '')
 
         // Configure the testnet node to talk to us over HTTP instead of BTP
-        console.log('Switching node-to-node communication to HTTP (instead of WebSockets)...')
-        const xpringToken = randomBytes(20).toString('hex')
-        execSync(`ilp-cli --node=https://rs3.xpring.dev accounts update-settings ${testnetAuth.split(':')[0]} \
-            --auth=${testnetAuth} \
-            --ilp-over-http-outgoing-token=xpring_${config.currency.toLowerCase()}:${xpringToken} \
-            --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp`)
-        // --settle-threshold=1000 \
-        // --settle-to=0`)
-        execSync(`ilp-cli accounts update-settings xpring_${config.currency.toLowerCase()} \
+        console.log('Setting up the nodes to use HTTP for bilateral communication...')
+        const testnetUsername = testnetAuth.split(':')[0]
+        const localUsername = `xpring_${config.currency.toLowerCase()}`
+        // This changes the HTTP auth details so that both sides use the same auth token
+        // It also requests a lower settlement threshold than the default so we see settlements going through
+        execSync(`ilp-cli accounts update-settings ${localUsername} \
             --auth=${config.adminAuthToken} \
-            --ilp-over-http-incoming-token=${xpringToken}`)
-        // --settle-threshold=1000 \
-        // --settle-to=0`)
+            --ilp-over-http-incoming-token=${config.xpringToken} \
+            --ilp-over-http-outgoing-token=${testnetUsername}:${config.xpringToken} \
+            --settle-threshold=1000 \
+            --settle-to=0`)
+        execSync(`ilp-cli --node=https://rs3.xpring.dev accounts update-settings ${testnetUsername} \
+            --auth=${testnetAuth} \
+            --ilp-over-http-incoming-token=${config.xpringToken} \
+            --ilp-over-http-outgoing-token=${localUsername}:${config.xpringToken} \
+            --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp \
+            --settle-threshold=1000 \
+            --settle-to=0`)
     }
 
     console.log('Using config: ', config)
@@ -80,6 +85,7 @@ function loadConfig() {
         const currency = (process.env.CURRENCY || 'XRP').toUpperCase()
         const ethKey = process.env.ETH_SECRET_KEY || '380EB0F3D505F087E438ECA80BC4DF9A7FAA24F868E69FC0440261A0FC0567DC'
         const ethUrl = process.env.ETH_URL || 'https://rinkeby.infura.io/v3/2bd7fa2c387e4f07a5599bc64d0a9c33'
+        const xpringToken = randomBytes(20).toString('hex')
 
         const config = {
             nodeName,
@@ -87,7 +93,8 @@ function loadConfig() {
             secretSeed,
             currency,
             ethKey,
-            ethUrl
+            ethUrl,
+            xpringToken
         }
         fs.writeFileSync(configFilePath, JSON.stringify(config))
 
@@ -158,7 +165,8 @@ function runEthSettlementEngine({ ethKey, ethUrl }) {
         '--settlement_api_bind_address=127.0.0.1:3002',
         `--ethereum_url=${ethUrl}`,
         `--private_key=${ethKey}`,
-        `--poll_frequency=15000`,
+        '--poll_frequency=15000',
+        '--confirmations=0',
         '--redis_url=unix:/tmp/redis.sock?db=2',
         '--chain_id=4'
     ], {
