@@ -48,15 +48,24 @@ where
         .boxed();
     let with_store = warp::any().map(move || store.clone()).boxed();
 
+    let crate_version = format!(
+        "{}.{}.{}{}",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR"),
+        env!("CARGO_PKG_VERSION_PATCH"),
+        option_env!("CARGO_PKG_VERSION_PRE").unwrap_or("")
+    );
+
     // GET /
     let get_root = warp::get2()
         .and(warp::path::end())
         .and(with_store.clone())
-        .map(|store: S| {
+        .map(move |store: S| {
             // TODO add more to this response
             warp::reply::json(&json!({
                 "status": "Ready".to_string(),
                 "ilp_address": store.get_ilp_address(),
+                "version": crate_version,
             }))
         })
         .boxed();
