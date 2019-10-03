@@ -143,8 +143,13 @@ impl NodeClient<'_> {
             self.url, args["username"]
         ))
         .expect("Could not parse URL");
-        // TODO: wss if node url is https?
-        url.set_scheme("ws").expect("Could not alter URL scheme");
+
+        url.set_scheme(match url.scheme() {
+            "http" => "ws",
+            "https" => "wss",
+            _ => panic!("Unexpected URL protocol"),
+        })
+        .expect("Could not alter URL scheme");
 
         let mut request: Request = url.into();
         request.add_header(
