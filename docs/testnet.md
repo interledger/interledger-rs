@@ -30,7 +30,7 @@ To start your Interledger node and settle with the Xpring testnet node using on-
 
 ```bash
 # Run the testnet bundle
-docker run -it -e NAME=<YOUR_NAME> interledgerrs/testnet-bundle
+docker run -it -e NAME=<YOUR_NAME> -e CURRENCY=XRP interledgerrs/testnet-bundle
 ```
 
 In several seconds, your node should startup, generate a prefunded XRP testnet account, and be ready to send payments!
@@ -47,7 +47,7 @@ Lastly, to start the Interledger node with the Ethereum settlement engine:
 
 ```bash
 # Run the testnet bundle
-docker run -it -e NAME=<YOUR_NAME> -e ETH_SECRET_KEY=<YOUR_PRIVATE_KEY> interledgerrs/testnet-bundle
+docker run -it -e NAME=<YOUR_NAME> -e CURRENCY=ETH -e ETH_SECRET_KEY=<YOUR_PRIVATE_KEY> interledgerrs/testnet-bundle
 ```
 
 ## Get Your Node's Public Address
