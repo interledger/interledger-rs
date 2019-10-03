@@ -9,3 +9,6 @@
 /scripts/ @dora-gt @emschwartz
 *.md @dora-gt @emschwartz
 Dockerfile @dora-gt @emschwartz
+
+# CLI
+/crates/ilp-cli @bstrie @emschwartz
