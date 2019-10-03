@@ -137,7 +137,7 @@ pub struct InterledgerNode {
     /// When SPSP payments are sent to the root domain, the payment pointer is resolved
     /// to <domain>/.well-known/pay. This value determines which account those payments
     /// will be sent to.
-    #[serde(deserialize_with = "deserialize_optional_username")]
+    #[serde(default, deserialize_with = "deserialize_optional_username")]
     pub default_spsp_account: Option<Username>,
     /// Interval, defined in milliseconds, on which the node will broadcast routing
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
