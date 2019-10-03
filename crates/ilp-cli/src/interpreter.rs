@@ -171,6 +171,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // GET /accounts
     fn get_accounts(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, _) = extract_args(matches);
         self.client
@@ -180,6 +181,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // PUT /accounts/:username/settings
     fn put_account_settings(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
         let user = args.remove("username").unwrap();
@@ -205,6 +207,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // POST /accounts/:username/payments
     fn post_account_payments(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
         let user = args.remove("sender_username").unwrap();
@@ -216,6 +219,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // GET /rates
     fn get_rates(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
             .get(&format!("{}/rates", self.url))
@@ -223,6 +227,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // PUT /rates
     fn put_rates(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, rate_pairs) = unflatten_pairs(matches);
         self.client
@@ -233,6 +238,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // GET /routes
     fn get_routes(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
             .get(&format!("{}/routes", self.url))
@@ -240,6 +246,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // PUT /routes/static/:prefix
     fn put_route_static(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, args) = extract_args(matches);
         self.client
@@ -250,6 +257,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // PUT routes/static
     fn put_routes_static(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, route_pairs) = unflatten_pairs(matches);
         self.client
@@ -260,6 +268,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // PUT /settlement/engines
     fn put_settlement_engines(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, engine_pairs) = unflatten_pairs(matches);
         self.client
@@ -270,6 +279,7 @@ impl NodeClient<'_> {
             .map_err(Error::ClientErr)
     }
 
+    // GET /
     fn get_root(&self, _matches: &ArgMatches) -> Result<Response, Error> {
         self.client
             .get(&format!("{}/", self.url))
