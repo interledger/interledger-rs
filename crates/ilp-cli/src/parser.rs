@@ -231,8 +231,18 @@ fn accounts_delete<'a, 'b>() -> App<'a, 'b> {
 }
 
 fn accounts_incoming_payments<'a, 'b>() -> App<'a, 'b> {
-    SubCommand::with_name("incoming-payments")
+    AuthorizedSubCommand::with_name("incoming-payments")
         .about("Open a persistent connection to a node for monitoring incoming payments to an account [COMING SOON]")
+        .about(
+            "Open a persistent connection to a node for monitoring incoming payments to an account",
+        )
+        .arg(
+            Arg::with_name("username")
+                .index(1)
+                .takes_value(true)
+                .required(true)
+                .help("The username of the account to monitor"),
+        )
 }
 
 fn accounts_info<'a, 'b>() -> App<'a, 'b> {
