@@ -54,7 +54,7 @@ docker run -it -e NAME=<YOUR_NAME> -e ETH_SECRET_KEY=<YOUR_PRIVATE_KEY> interled
 
 The Docker image automatically exposes your Interledger node to the public internet using Localtunnel. This enables other nodes to send payments to you and to access the API. To find this URL, search for the "your url is" line in the terminal (in most cases, this should be `<YOUR_NAME>.localtunnel.me`).
 
-### Send Payments
+## Send Payments
 
 Now, you can send payments as follows:
 
@@ -74,10 +74,10 @@ This command:
 
 (**Note**: to specify the amount, you must use _base units_. Both XRP and ETH accounts are configured to use amounts that are denomianted in 9 decimal places. So, to send the equivalent of 1 XRP or 1 ETH, the amount would be `1000000000`; to send 1 gwei, which is a very small amount of ETH, the amount would be `1`).
 
-### Receive Payments
+## Receive Payments
 
 To receive payments, simply provide the URL of your node to a friend or node operator (or run another node yourself)! Then, they can use the `pay` command in the CLI, explained above, to send payments to you!
 
-### Advanced Configuration
+## Advanced Configuration
 
 Want to learn how to setup the Node manually without using Docker? Checkout the [manual testnet configuration](./manual-config.md) tutorial!
