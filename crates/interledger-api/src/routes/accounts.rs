@@ -81,6 +81,9 @@ where
         .boxed();
     let with_store = warp::any().map(move || store.clone()).boxed();
     let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
+    // Note that the following `accounts*` and `account*` filters are based on the path of `accounts`.
+    // These filters should be applied before anything so that some other functions or filters
+    // are NOT kicked for any paths.
     let accounts = warp::path("accounts");
     let accounts_index = accounts.and(warp::path::end());
     let account_username = accounts.and(warp::path::param2::<Username>());
@@ -123,10 +126,9 @@ where
             },
         )
         .boxed();
-    let admin_or_authorized_account = admin_only
+    let admin_or_authorized_account = account_username_to_id
         .clone()
-        .and(account_username_to_id.clone())
-        .clone()
+        .and(admin_only.clone())
         .or(authorized_account_from_path
             .clone()
             .map(|account: A| account.id()))
@@ -136,8 +138,8 @@ where
     // POST /accounts
     let btp_clone = btp.clone();
     let outgoing_handler_clone = outgoing_handler.clone();
-    let post_accounts = warp::post2()
-        .and(accounts_index)
+    let post_accounts = accounts_index
+        .and(warp::post2())
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
@@ -159,8 +161,8 @@ where
         .boxed();
 
     // GET /accounts
-    let get_accounts = warp::get2()
-        .and(accounts_index)
+    let get_accounts = accounts_index
+        .and(warp::get2())
         .and(admin_only.clone())
         .and(with_store.clone())
         .and_then(|store: S| {
@@ -172,9 +174,10 @@ where
         .boxed();
 
     // PUT /accounts/:username
-    let put_account = warp::put2()
-        .and(account_username_to_id.clone())
+    let put_account = account_username_to_id
+        .clone()
         .and(warp::path::end())
+        .and(warp::put2())
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
@@ -197,9 +200,10 @@ where
         .boxed();
 
     // GET /accounts/:username
-    let get_account = warp::get2()
-        .and(admin_or_authorized_account.clone())
+    let get_account = admin_or_authorized_account
+        .clone()
         .and(warp::path::end())
+        .and(warp::get2())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, store: S| {
             store
@@ -211,10 +215,11 @@ where
         .boxed();
 
     // GET /accounts/:username/balance
-    let get_account_balance = warp::get2()
-        .and(admin_or_authorized_account.clone())
+    let get_account_balance = admin_or_authorized_account
+        .clone()
         .and(warp::path("balance"))
         .and(warp::path::end())
+        .and(warp::get2())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, store: S| {
             // TODO reduce the number of store calls it takes to get the balance
@@ -238,10 +243,11 @@ where
         .boxed();
 
     // DELETE /accounts/:username
-    let delete_account = warp::delete2()
-        .and(admin_only.clone())
-        .and(account_username_to_id.clone())
+    let delete_account = account_username_to_id
+        .clone()
         .and(warp::path::end())
+        .and(warp::delete2())
+        .and(admin_only.clone())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, store: S| {
             store
@@ -255,10 +261,11 @@ where
         .boxed();
 
     // PUT /accounts/:username/settings
-    let put_account_settings = warp::put2()
-        .and(admin_or_authorized_account.clone())
+    let put_account_settings = admin_or_authorized_account
+        .clone()
         .and(warp::path("settings"))
         .and(warp::path::end())
+        .and(warp::put2())
         .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, settings: AccountSettings, store: S| {
@@ -273,13 +280,14 @@ where
         .boxed();
 
     // (Websocket) /accounts/:username/payments/incoming
-    let incoming_payment_notifications = warp::ws2()
-        .and(admin_or_authorized_account.clone())
+    let incoming_payment_notifications = admin_or_authorized_account
+        .clone()
         .and(warp::path("payments"))
         .and(warp::path("incoming"))
         .and(warp::path::end())
+        .and(warp::ws2())
         .and(with_store.clone())
-        .map(|ws: warp::ws::Ws2, id: A::AccountId, store: S| {
+        .map(|id: A::AccountId, ws: warp::ws::Ws2, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
                 let (tx, rx) = futures::sync::mpsc::unbounded::<PaymentNotification>();
                 store.add_payment_notification_subscription(id, tx);
@@ -295,10 +303,11 @@ where
         .boxed();
 
     // POST /accounts/:username/payments
-    let post_payments = warp::post2()
-        .and(authorized_account_from_path.clone())
+    let post_payments = authorized_account_from_path
+        .clone()
         .and(warp::path("payments"))
         .and(warp::path::end())
+        .and(warp::post2())
         .and(deserialize_json())
         .and(with_incoming_handler.clone())
         .and_then(
@@ -329,10 +338,11 @@ where
 
     // GET /accounts/:username/spsp
     let server_secret_clone = server_secret.clone();
-    let get_spsp = warp::get2()
-        .and(account_username_to_id.clone())
+    let get_spsp = account_username_to_id
+        .clone()
         .and(warp::path("spsp"))
         .and(warp::path::end())
+        .and(warp::get2())
         .and(with_store.clone())
         .and_then(move |id: A::AccountId, store: S| {
             let server_secret_clone = server_secret_clone.clone();
@@ -354,10 +364,10 @@ where
     // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
     // with no path resolves to
     let server_secret_clone = server_secret.clone();
-    let get_spsp_well_known = warp::get2()
-        .and(warp::path(".well-known"))
+    let get_spsp_well_known = warp::path(".well-known")
         .and(warp::path("pay"))
         .and(warp::path::end())
+        .and(warp::get2())
         .and(with_store.clone())
         .and_then(move |store: S| {
             // TODO don't clone this

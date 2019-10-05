@@ -58,8 +58,8 @@ where
     );
 
     // GET /
-    let get_root = warp::get2()
-        .and(warp::path::end())
+    let get_root = warp::path::end()
+        .and(warp::get2())
         .and(with_store.clone())
         .map(move |store: S| {
             // TODO add more to this response
@@ -72,10 +72,10 @@ where
         .boxed();
 
     // PUT /rates
-    let put_rates = warp::put2()
-        .and(admin_only.clone())
-        .and(warp::path("rates"))
+    let put_rates = warp::path("rates")
         .and(warp::path::end())
+        .and(warp::put2())
+        .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|rates: ExchangeRates, store: S| -> Result<_, Rejection> {
@@ -89,9 +89,9 @@ where
         .boxed();
 
     // GET /rates
-    let get_rates = warp::get2()
-        .and(warp::path("rates"))
+    let get_rates = warp::path("rates")
         .and(warp::path::end())
+        .and(warp::get2())
         .and(with_store.clone())
         .and_then(|store: S| -> Result<_, Rejection> {
             if let Ok(rates) = store.get_all_exchange_rates() {
@@ -104,9 +104,9 @@ where
         .boxed();
 
     // GET /routes
-    let get_routes = warp::get2()
-        .and(warp::path("routes"))
+    let get_routes = warp::path("routes")
         .and(warp::path::end())
+        .and(warp::get2())
         .and(with_store.clone())
         .map(|store: S| {
             // Convert addresses from bytes to utf8 strings
@@ -125,11 +125,11 @@ where
         .boxed();
 
     // PUT /routes/static
-    let put_static_routes = warp::put2()
-        .and(admin_only.clone())
-        .and(warp::path("routes"))
+    let put_static_routes = warp::path("routes")
         .and(warp::path("static"))
         .and(warp::path::end())
+        .and(warp::put2())
+        .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|routes: HashMap<String, String>, store: S| {
@@ -155,12 +155,12 @@ where
         .boxed();
 
     // PUT /routes/static/:prefix
-    let put_static_route = warp::put2()
-        .and(admin_only.clone())
-        .and(warp::path("routes"))
+    let put_static_route = warp::path("routes")
         .and(warp::path("static"))
-        .and(warp::path::param2::<String>())
         .and(warp::path::end())
+        .and(warp::put2())
+        .and(admin_only.clone())
+        .and(warp::path::param2::<String>())
         .and(warp::body::concat())
         .and(with_store.clone())
         .and_then(|prefix: String, body: warp::body::FullBody, store: S| {
@@ -185,11 +185,11 @@ where
         .boxed();
 
     // PUT /settlement/engines
-    let put_settlement_engines = warp::put2()
-        .and(admin_only.clone())
-        .and(warp::path("settlement"))
+    let put_settlement_engines = warp::path("settlement")
         .and(warp::path("engines"))
         .and(warp::path::end())
+        .and(warp::put2())
+        .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|asset_to_url_map: HashMap<String, Url>, store: S| {
