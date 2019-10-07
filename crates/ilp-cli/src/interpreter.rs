@@ -1,7 +1,6 @@
 use clap::ArgMatches;
 use http;
 use reqwest::{self, Client, Response};
-use serde_json::value::*;
 use std::{borrow::Cow, collections::HashMap};
 use tungstenite::{connect, handshake::client::Request};
 use url::Url;
@@ -190,24 +189,10 @@ impl NodeClient<'_> {
     fn put_account_settings(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
         let user = args.remove("username").unwrap();
-
-        // This is done to ensure that the values that need to be numbers
-        // are sent as numbers, because otherwise the node rejects
-        // the request with a (strange) 401: Unauthorized error
-        // TODO: find a less hacky way to send the request
-        let mut number_json: HashMap<&str, Value> = HashMap::new();
-        for (key, value) in args {
-            if let Ok(num) = value.parse::<i64>() {
-                number_json.insert(key, Value::Number(Number::from(num)));
-            } else {
-                number_json.insert(key, Value::String(value.to_owned()));
-            }
-        }
-
         self.client
             .put(&format!("{}/accounts/{}/settings", self.url, user))
             .bearer_auth(auth)
-            .json(&number_json)
+            .json(&args)
             .send()
             .map_err(Error::ClientErr)
     }

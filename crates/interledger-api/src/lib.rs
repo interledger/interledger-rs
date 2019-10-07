@@ -9,6 +9,7 @@ use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     error::Error as StdError,
     fmt::{self, Display},
     net::SocketAddr,
@@ -23,7 +24,7 @@ use url::Url;
 
 pub(crate) mod http_retry;
 
-// This enum and the following two functions are used to allow clients to send either
+// This enum and the following functions are used to allow clients to send either
 // numbers or strings and have them be properly deserialized into the appropriate
 // integer type.
 #[derive(Deserialize)]
@@ -57,6 +58,17 @@ where
             .map_err(de::Error::custom)
             .and_then(|n| Ok(Some(n))),
     }
+}
+
+pub fn map_of_number_or_string<'de, D>(deserializer: D) -> Result<HashMap<String, f64>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct Wrapper(#[serde(deserialize_with = "number_or_string")] f64);
+
+    let v = HashMap::<String, Wrapper>::deserialize(deserializer)?;
+    Ok(v.into_iter().map(|(k, Wrapper(v))| (k, v)).collect())
 }
 
 // TODO should the methods from this trait be split up and put into the
@@ -117,6 +129,11 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         asset_code: &str,
     ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send>;
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExchangeRates(
+    #[serde(deserialize_with = "map_of_number_or_string")] HashMap<String, f64>,
+);
 
 /// AccountSettings is a subset of the user parameters defined in
 /// AccountDetails. Its purpose is to allow a user to modify certain of their
