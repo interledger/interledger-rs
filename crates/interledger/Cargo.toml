@@ -34,19 +34,19 @@ store-redis = ["interledger-store-redis"]
 stream = ["interledger-stream", "ildcp"]
 
 [dependencies]
-interledger-api = { path = "../interledger-api", version = "^0.1.1-alpha.1", optional = true }
-interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1", optional = true }
-interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1", optional = true }
-interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1", optional = true }
-interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", optional = true }
-interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1"}
-interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1", optional = true }
-interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
-interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1", optional = true }
-interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1", optional = true }
-interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1", optional = true }
-interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", optional = true }
-interledger-store-redis = { path = "../interledger-store-redis", version = "^0.2.2-alpha.1", optional = true}
+interledger-api = { path = "../interledger-api", version = "^0.1.1-alpha.1", optional = true, default-features = false }
+interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1", optional = true, default-features = false }
+interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", default-features = false }
+interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
+interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1", optional = true, default-features = false }
+interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", optional = true, default-features = false }
+interledger-store-redis = { path = "../interledger-store-redis", version = "^0.2.2-alpha.1", optional = true, default-features = false }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
