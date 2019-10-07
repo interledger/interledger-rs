@@ -187,6 +187,13 @@ mod interface_tests {
         ]);
     }
 
+    #[test]
+    fn testnet_setup() {
+        should_parse(&[
+            "ilp-cli testnet setup ETH --auth foo", // minimal
+        ]);
+    }
+
     fn should_parse(examples: &[&str]) {
         let mut app = parser::build();
         for example in examples {
