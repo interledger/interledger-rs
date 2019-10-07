@@ -151,8 +151,8 @@ fn merge_std_in(config: &mut Config) {
         if let Ok(buf_str) = String::from_utf8(buf) {
             let config_hash = FileFormat::Json
                 .parse(None, &buf_str)
-                .or_else(|_| FileFormat::Yaml.parse(None, &buf_str))
-                .or_else(|_| FileFormat::Toml.parse(None, &buf_str))
+                //.or_else(|_| FileFormat::Yaml.parse(None, &buf_str))
+                //.or_else(|_| FileFormat::Toml.parse(None, &buf_str))
                 .ok();
             if let Some(config_hash) = config_hash {
                 // if the key is not defined in the given config already, set it to the config

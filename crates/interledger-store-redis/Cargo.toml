@@ -12,40 +12,40 @@ name = "interledger_store_redis"
 path = "src/lib.rs"
 
 [dependencies]
-bytes = "0.4.12"
-clap = "2.32.0"
-futures = "0.1.25"
-interledger-api = { path = "../interledger-api", version = "^0.1.1-alpha.1"}
-interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1"}
-interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1"}
-interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1"}
-interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1"}
-interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1"}
-interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1"}
-interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
-interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1"}
-interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1"}
-interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1"}
-lazy_static = "1.4.0"
-log = "0.4.6"
-parking_lot = "0.7.1"
-redis = "0.12.0"
-ring = "0.14.6"
-serde = { version = "1.0.99", features = ["derive"] }
-serde_json = "1.0.40"
-stream-cancel = "0.4.4"
-tokio-executor = "0.1.6"
-tokio-timer = "0.2.10"
-url = { version = "2.1.0", features = ["serde"] }
-http = "0.1.17"
-uuid = { version = "0.7.4", features = ["serde"] }
-secrecy = { version = "0.4.0", features = ["serde", "bytes"] }
-zeroize = { version = "0.10.1", features = ["bytes"] }
-num-bigint = "0.2.3"
+bytes = { version = "0.4.12", default-features = false }
+clap = { version = "2.33.0", default-features = false }
+futures = { version = "0.1.29", default-features = false }
+interledger-api = { path = "../interledger-api", version = "^0.1.1-alpha.1", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", default-features = false }
+interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1", default-features = false }
+interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1", default-features = false }
+interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1", default-features = false }
+interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", default-features = false }
+interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1", default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
+interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1", default-features = false }
+interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1", default-features = false }
+interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", default-features = false }
+lazy_static = { version = "1.4.0", default-features = false }
+log = { version = "0.4.8", default-features = false }
+parking_lot = { version = "0.9.0", default-features = false }
+redis = { version = "0.12.0", default-features = false }
+ring = { version = "0.14.6", default-features = false }
+serde = { version = "1.0.101", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.41", default-features = false }
+stream-cancel = { version = "0.4.4", default-features = false }
+tokio-executor = { version = "0.1.8", default-features = false }
+tokio-timer = { version = "0.2.11", default-features = false }
+url = { version = "2.1.0", default-features = false, features = ["serde"] }
+http = { version = "0.1.18", default-features = false }
+uuid = { version = "0.7.4", default-features = false, features = ["serde"] }
+secrecy = { version = "0.4.0", default-features = false, features = ["serde", "bytes"] }
+zeroize = { version = "0.10.1", default-features = false, features = ["bytes"] }
+num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 
 [dev-dependencies]
-env_logger = "0.6.1"
-net2 = "0.2.33"
-rand = "0.6.5"
-tokio = "0.1.18"
-os_type="2.2"
+env_logger = { version = "0.7.0", default-features = false }
+net2 = { version = "0.2.33", default-features = false }
+rand = { version = "0.7.2", default-features = false }
+tokio = { version = "0.1.22", default-features = false }
+os_type = { version = "2.2", default-features = false }

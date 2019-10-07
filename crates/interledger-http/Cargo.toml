@@ -8,11 +8,11 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-bytes = "0.4.12"
-futures = "0.1.25"
-interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1"}
-interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
-log = "0.4.6"
-reqwest = "0.9.11"
-url = "2.1.0"
-warp = "0.1.20"
+bytes = { version = "0.4.12", default-features = false }
+futures = { version = "0.1.29", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
+log = { version = "0.4.8", default-features = false }
+reqwest = { version = "0.9.21", default-features = false }
+url = { version = "2.1.0", default-features = false }
+warp = { version = "0.1.20", default-features = false }

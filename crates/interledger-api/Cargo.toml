@@ -8,28 +8,28 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-bytes = "0.4.12"
-futures = "0.1.25"
-futures-retry = "0.3.3"
-http = "0.1.17"
-interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1"}
-interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1"}
-interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1"}
-interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1"}
-interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1"}
-interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1"}
-interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1"}
-interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1"}
-interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1" }
-interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1"}
-interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1"}
-log = "0.4.6"
-serde = { version = "1.0.99", features = ["derive"] }
-serde_json = "1.0.39"
-reqwest = "0.9.18"
-url = { version = "2.1.0", features = ["serde"] }
-warp = "0.1.19"
-secrecy = { version = "0.4.0", features = ["serde"] }
+bytes = { version = "0.4.12", default-features = false }
+futures = { version = "0.1.29", default-features = false }
+futures-retry = { version = "0.3.3", default-features = false }
+http = { version = "0.1.18", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", default-features = false }
+interledger-http = { path = "../interledger-http", version = "^0.2.2-alpha.1", default-features = false }
+interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", default-features = false }
+interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1", default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
+interledger-service-util = { path = "../interledger-service-util", version = "^0.2.2-alpha.1", default-features = false }
+interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1", default-features = false }
+interledger-spsp = { path = "../interledger-spsp", version = "^0.2.2-alpha.1", default-features = false }
+interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", default-features = false }
+interledger-ccp = { path = "../interledger-ccp", version = "^0.1.1-alpha.1", default-features = false }
+interledger-btp = { path = "../interledger-btp", version = "^0.2.2-alpha.1", default-features = false }
+log = { version = "0.4.8", default-features = false }
+serde = { version = "1.0.101", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.41", default-features = false }
+reqwest = { version = "0.9.21", default-features = false }
+url = { version = "2.1.0", default-features = false, features = ["serde"] }
+warp = { version = "0.1.20", default-features = false }
+secrecy = { version = "0.4.0", default-features = false, features = ["serde"] }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
