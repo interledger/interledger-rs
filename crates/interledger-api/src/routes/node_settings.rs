@@ -1,4 +1,4 @@
-use crate::{http_retry::Client, ApiError, NodeStore};
+use crate::{http_retry::Client, ApiError, ExchangeRates, NodeStore};
 use bytes::Buf;
 use futures::{
     future::{err, join_all, Either},
@@ -68,8 +68,8 @@ where
         .and(warp::path::end())
         .and(warp::body::json())
         .and(with_store.clone())
-        .and_then(|rates: HashMap<String, f64>, store: S| {
-            if store.set_exchange_rates(rates.clone()).is_ok() {
+        .and_then(|rates: ExchangeRates, store: S| {
+            if store.set_exchange_rates(rates.0.clone()).is_ok() {
                 Ok(warp::reply::json(&rates))
             } else {
                 error!("Error setting exchange rates");
