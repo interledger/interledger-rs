@@ -8,7 +8,8 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [features]
-default = [
+default = ["node"]
+node = [
     "api",
     "btp",
     "ccp",
@@ -17,7 +18,6 @@ default = [
     "router",
     "service-util",
     "settlement",
-    "spsp",
     "store-redis",
     "stream",
 ]
