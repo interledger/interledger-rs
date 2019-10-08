@@ -8,11 +8,11 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-futures = { version = "0.1.29", default-features = false }
+futures = { version = "0.1.29", default-features = true }
 interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 base64 = { version = "0.10.1", default-features = false }
-regex = { version = "1.3.1", default-features = false }
+regex = { version = "1.3.1", default-features = false, features = ["std", "unicode-perl"] }
 lazy_static = { version = "1.4.0", default-features = false }
 unicase = { version = "2.5.1", default-features = false }
 unicode-normalization = { version = "0.1.8", default-features = false }
