@@ -1,8 +1,5 @@
 #![recursion_limit = "128"]
 
-#[macro_use]
-extern crate tower_web;
-
 use bytes::Bytes;
 use futures::Future;
 use hyper::StatusCode;
@@ -20,7 +17,9 @@ mod message_service;
 #[cfg(test)]
 mod test_helpers;
 use num_bigint::BigUint;
+use serde::{Deserialize, Serialize};
 use std::ops::{Div, Mul};
+use tower_web::Extract;
 
 pub use api::{scale_with_precision_loss, SettlementApi};
 pub use client::SettlementClient;
