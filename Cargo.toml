@@ -17,5 +17,4 @@ members = [
   "./crates/interledger-spsp",
   "./crates/interledger-store-redis",
   "./crates/interledger-stream",
-  "./crates/interledger-settlement-engines",
 ]
