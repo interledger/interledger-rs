@@ -8,11 +8,6 @@ jobs:
     resource_class: medium+
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}
-            - cargo-cache-1-
       - run:
           name: Install Cargo Extensions
           command: |
@@ -78,7 +73,3 @@ jobs:
       # - run:
       #     name: Upload Code Coverage
       #     command: "bash <(curl -s https://codecov.io/bash)"
-      - save_cache:
-          key: cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-          paths:
-            - /home/circleci/.cargo
