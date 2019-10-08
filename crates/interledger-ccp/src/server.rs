@@ -27,11 +27,11 @@ use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::collections::HashMap;
 use std::{
-    cmp::min,
+    cmp::{min, Ordering},
     convert::TryFrom,
     str,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{self, AtomicU32},
         Arc,
     },
     time::{Duration, Instant},
@@ -687,7 +687,7 @@ where
             .and_then(move |mut accounts| {
                 let mut outgoing = self_clone.outgoing.clone();
                 let to_epoch_index = self_clone.forwarding_table.read().epoch();
-                let from_epoch_index = self_clone.last_epoch_updates_sent_for.swap(to_epoch_index, Ordering::SeqCst);
+                let from_epoch_index = self_clone.last_epoch_updates_sent_for.swap(to_epoch_index, atomic::Ordering::SeqCst);
 
                 let route_update_request =
                     self_clone.create_route_update(from_epoch_index, to_epoch_index);
@@ -933,25 +933,23 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         let (best_account, best_route) = candidate_routes.fold(
             (account, route),
             |(best_account, best_route), (account, route)| {
-                // Prioritize child > peer > parent
-                if best_account.routing_relation() > account.routing_relation() {
-                    return (best_account, best_route);
-                } else if best_account.routing_relation() < account.routing_relation() {
-                    return (account, route);
-                }
-
-                // Prioritize shortest path
-                if best_route.path.len() < route.path.len() {
-                    return (best_account, best_route);
-                } else if best_route.path.len() > route.path.len() {
-                    return (account, route);
-                }
-
-                // Finally base it on account ID
-                if best_account.id().to_string() < account.id().to_string() {
-                    (best_account, best_route)
-                } else {
-                    (account, route)
+                // Priority:
+                // 1. child > peer > parent
+                // 2. shortest path
+                // 3. account ID (random priority)
+                match (
+                    best_account
+                        .routing_relation()
+                        .cmp(&account.routing_relation()),
+                    best_route.path.len().cmp(&route.path.len()),
+                    best_account.id().to_string().cmp(&account.id().to_string()),
+                ) {
+                    (Ordering::Greater, _, _)
+                    | (Ordering::Equal, Ordering::Less, _)
+                    | (Ordering::Equal, Ordering::Equal, Ordering::Less) => {
+                        (best_account, best_route)
+                    }
+                    _ => (account, route),
                 }
             },
         );

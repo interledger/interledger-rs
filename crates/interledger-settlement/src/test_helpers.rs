@@ -18,8 +18,7 @@ use crate::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{cmp::Ordering, str::FromStr, sync::Arc};
 use tokio::runtime::Runtime;
 use url::Url;
 
@@ -184,37 +183,41 @@ impl LeftoversStore for TestStore {
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
         if let Some(leftovers) = (*guard).get_mut(&account_id) {
-            if leftovers.1 > uncredited_settlement_amount.1 {
-                // the current leftovers maintain the scale so we just need to
-                // upscale the provided leftovers to the existing leftovers' scale
-                let scaled = uncredited_settlement_amount
-                    .0
-                    .normalize_scale(ConvertDetails {
-                        from: uncredited_settlement_amount.1,
-                        to: leftovers.1,
-                    })
-                    .unwrap();
-                *leftovers = (leftovers.0.clone() + scaled, leftovers.1);
-            } else if leftovers.1 == uncredited_settlement_amount.1 {
-                *leftovers = (
-                    leftovers.0.clone() + uncredited_settlement_amount.0,
-                    leftovers.1,
-                );
-            } else {
-                // if the scale of the provided leftovers is bigger than
-                // existing scale then we update the scale of the leftovers'
-                // scale
-                let scaled = leftovers
-                    .0
-                    .normalize_scale(ConvertDetails {
-                        from: leftovers.1,
-                        to: uncredited_settlement_amount.1,
-                    })
-                    .unwrap();
-                *leftovers = (
-                    uncredited_settlement_amount.0 + scaled,
-                    uncredited_settlement_amount.1,
-                );
+            match leftovers.1.cmp(&uncredited_settlement_amount.1) {
+                Ordering::Greater => {
+                    // the current leftovers maintain the scale so we just need to
+                    // upscale the provided leftovers to the existing leftovers' scale
+                    let scaled = uncredited_settlement_amount
+                        .0
+                        .normalize_scale(ConvertDetails {
+                            from: uncredited_settlement_amount.1,
+                            to: leftovers.1,
+                        })
+                        .unwrap();
+                    *leftovers = (leftovers.0.clone() + scaled, leftovers.1);
+                }
+                Ordering::Equal => {
+                    *leftovers = (
+                        leftovers.0.clone() + uncredited_settlement_amount.0,
+                        leftovers.1,
+                    );
+                }
+                Ordering::Less => {
+                    // if the scale of the provided leftovers is bigger than
+                    // existing scale then we update the scale of the leftovers'
+                    // scale
+                    let scaled = leftovers
+                        .0
+                        .normalize_scale(ConvertDetails {
+                            from: leftovers.1,
+                            to: uncredited_settlement_amount.1,
+                        })
+                        .unwrap();
+                    *leftovers = (
+                        uncredited_settlement_amount.0 + scaled,
+                        uncredited_settlement_amount.1,
+                    );
+                }
             }
         } else {
             (*guard).insert(account_id, uncredited_settlement_amount);

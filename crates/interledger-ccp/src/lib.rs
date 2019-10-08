@@ -12,8 +12,7 @@
 use bytes::Bytes;
 use futures::Future;
 use interledger_service::Account;
-use std::collections::HashMap;
-use std::{str::FromStr, string::ToString};
+use std::{collections::HashMap, str::FromStr, string::ToString};
 
 #[cfg(test)]
 mod fixtures;
@@ -30,7 +29,7 @@ use serde::{Deserialize, Serialize};
 
 /// Data structure used to describe the routing relation of an account with its peers.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RoutingRelation {
     /// An account from which we do not receive routes from, neither broadcast
     /// routes to
