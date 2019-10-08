@@ -13,6 +13,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 mod redis_helpers;
 use redis_helpers::*;
 
+// TODO: reenable this test once it's no longer flaky
 //#[test]
 fn coincap() {
     let _ = env_logger::try_init();
@@ -74,7 +75,7 @@ fn coincap() {
 }
 
 // TODO can we disable this with conditional compilation?
-//#[test]
+#[test]
 fn cryptocompare() {
     let _ = env_logger::try_init();
     let context = TestContext::new();
