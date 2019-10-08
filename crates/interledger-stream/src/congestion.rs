@@ -53,13 +53,6 @@ impl CongestionController {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn default() -> Self {
-        // TODO an increase amount of 1000 might be too small if the units are worth very little
-        // should it be adjusted based on something like the max packet amount?
-        Self::new(1000, 1000, 2.0)
-    }
-
     pub fn get_max_amount(&mut self) -> u64 {
         let amount_left_in_window = self.max_in_flight - self.amount_in_flight;
         if let Some(max_packet_amount) = self.max_packet_amount {

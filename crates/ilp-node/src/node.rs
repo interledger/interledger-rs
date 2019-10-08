@@ -1,12 +1,12 @@
 use bytes::Bytes;
-use futures::{future::result, Future};
+use futures::Future;
 use hex::FromHex;
 #[doc(hidden)]
 pub use interledger::api::AccountDetails;
 pub use interledger::service_util::ExchangeRateProvider;
 
 use interledger::{
-    api::{NodeApi, NodeStore},
+    api::NodeApi,
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
     ccp::CcpRouteManagerBuilder,
     http::HttpClientService,
@@ -20,7 +20,7 @@ use interledger::{
         ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
     },
     settlement::{SettlementApi, SettlementMessageService},
-    store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    store_redis::{Account, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;
@@ -342,28 +342,6 @@ impl InterledgerNode {
     /// Run the node on the default Tokio runtime
     pub fn run(&self) {
         tokio_run(self.serve());
-    }
-
-    #[doc(hidden)]
-    #[allow(dead_code)]
-    pub fn insert_account(
-        &self,
-        account: AccountDetails,
-    ) -> impl Future<Item = AccountId, Error = ()> {
-        let redis_secret = generate_redis_secret(&self.secret_seed);
-        result(self.redis_connection.clone().into_connection_info())
-            .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
-            .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
-            .map_err(|err| error!("Error connecting to Redis: {:?}", err))
-            .and_then(move |store| {
-                store
-                    .insert_account(account)
-                    .map_err(|_| error!("Unable to create account"))
-                    .and_then(|account| {
-                        debug!("Created account: {}", account.id());
-                        Ok(account.id())
-                    })
-            })
     }
 }
 
