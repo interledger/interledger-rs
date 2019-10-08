@@ -16,7 +16,6 @@ hex = { version = "0.4.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
 interledger-settlement = { path = "../interledger-settlement", version = "^0.1.1-alpha.1", default-features = false }
-interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", default-features = false }
 lazy_static = { version = "1.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 reqwest = { version = "0.9.21", default-features = false }

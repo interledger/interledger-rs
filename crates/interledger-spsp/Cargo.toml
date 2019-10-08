@@ -13,12 +13,10 @@ bytes = { version = "0.4.12", default-features = false }
 failure = { version = "0.1.5", default-features = false }
 futures = { version = "0.1.29", default-features = false }
 hyper = { version = "0.12.35", default-features = false }
-interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", features = ["serde"], default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
 interledger-stream = { path = "../interledger-stream", version = "^0.2.2-alpha.1", default-features = false }
 log = { version = "0.4.8", default-features = false }
 reqwest = { version = "0.9.21", default-features = false }
 serde = { version = "1.0.101", default-features = false }
-serde_derive = { version = "1.0.101", default-features = false }
 serde_json = { version = "1.0.41", default-features = false }
