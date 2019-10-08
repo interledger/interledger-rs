@@ -30,7 +30,5 @@ tokio = { version = "0.1.22", default-features = false, features = ["rt-full"] }
 serde = { version = "1.0.101", default-features = false }
 
 [dev-dependencies]
-env_logger = { version = "0.7.0", default-features = false }
 interledger-router = { path = "../interledger-router", version = "^0.2.2-alpha.1", default-features = false }
 lazy_static = { version = "1.4.0", default-features = false }
-regex = { version = "1.3.1", default-features = false, features = ["std"] }
