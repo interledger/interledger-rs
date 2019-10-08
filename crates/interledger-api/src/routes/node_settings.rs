@@ -157,10 +157,10 @@ where
     // PUT /routes/static/:prefix
     let put_static_route = warp::path("routes")
         .and(warp::path("static"))
+        .and(warp::path::param2::<String>())
         .and(warp::path::end())
         .and(warp::put2())
         .and(admin_only.clone())
-        .and(warp::path::param2::<String>())
         .and(warp::body::concat())
         .and(with_store.clone())
         .and_then(|prefix: String, body: warp::body::FullBody, store: S| {
@@ -265,7 +265,10 @@ const INVALID_ACCOUNT_ID_TYPE: ApiErrorType = ApiErrorType {
 impl ApiError {
     fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
         let detail = match invalid_account_id {
-            Some(invalid_account_id) => format!("{} is an invalid account ID", invalid_account_id),
+            Some(invalid_account_id) => match invalid_account_id.len() {
+                0 => "Account ID is empty".to_owned(),
+                _ => format!("{} is an invalid account ID", invalid_account_id),
+            },
             None => "Invalid string was given as an account ID".to_owned(),
         };
         ApiError::bad_request(&INVALID_ACCOUNT_ID_TYPE, Some(detail), None, None)
