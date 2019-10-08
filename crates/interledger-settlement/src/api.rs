@@ -22,7 +22,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::executor::spawn;
-use tower_web::{net::ConnectionStream, ServiceBuilder};
+use tower_web::{
+    derive_resource, derive_resource_impl, impl_web, impl_web_clean_nested,
+    impl_web_clean_top_level, net::ConnectionStream, ServiceBuilder,
+};
 
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
