@@ -1,11 +1,10 @@
 version: 2
 jobs:
-  build:
+  style-and-audit:
     docker:
       - image: circleci/rust
         environment:
           CARGO_HOME: /home/circleci/.cargo
-    resource_class: medium+
     steps:
       - checkout
       - run:
@@ -14,11 +13,26 @@ jobs:
             cargo install --quiet cargo-audit || true # cargo-kcov
             rustup component add rustfmt clippy || true
       - run:
-          name: Install Redis
+          name: cargo fmt
           command: |
-            sudo apt-get update
-            sudo apt-get install redis-server
-            redis-server --version
+            cargo fmt --all -- --check
+      - run:
+          name: cargo clippy
+          command: |
+            cargo clippy --all-targets --all-features -- -D warnings
+      - run:
+          name: cargo audit
+          command: cargo audit
+
+  build-test:
+    docker:
+      - image: circleci/rust
+        environment:
+          CARGO_HOME: /home/circleci/.cargo
+    # TODO try even larger box, maybe we can speed it up and avoid needing to reduce the codegen units
+    resource_class: medium+
+    steps:
+      - checkout
       - run:
           name: Reduce codegen units
           # If we don't include this, the linker runs out of memory when building
@@ -29,6 +43,13 @@ jobs:
           name: Build
           command: cargo build --all-features --all-targets
       - run:
+          name: Install Redis
+          command: |
+            # TODO is this update needed?
+            sudo apt-get update
+            sudo apt-get install redis-server
+            redis-server --version
+      - run:
           name: Test
           # Note the timeout is included to make sure that they
           # do not run for more than 10 minutes under any circumstances
@@ -37,34 +58,10 @@ jobs:
           command: timeout 10m cargo test --all --all-features
           environment:
             RUST_BACKTRACE: "1"
-      - run:
-          name: Check Style
-          command: |
-            cargo fmt --all -- --check
-            cargo clippy --all-targets --all-features -- -D warnings
-      - run:
-          name: Audit Dependencies
-          command: cargo audit
-      # - run:
-      #     name: Install kcov
-      #     command: >-
-      #       kcov --version ||
-      #       (sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-      #       && cargo kcov --print-install-kcov-sh | sh)
-      # - run:
-      #     name: Generate Coverage Report
-      #     # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
-      #     # See discussion in https://github.com/travis-ci/travis-ci/issues/9061
-      #     sudo: required
-      #     command:
-      #       cargo kcov --all --verbose
-      #       # -- --verify
-      #       # --exclude-region="kcov-ignore-start:kcov-ignore-end"
-      #       # --exclude-pattern="$CARGO_HOME,**/tests/**"
-      #       # --exclude-line="^(\)*\}*,*)$"
-      #     environment:
-      #       # Configure the redis tests to use a unix socket instead of TCP
-      #       REDISRS_SERVER_TYPE: unix
-      # - run:
-      #     name: Upload Code Coverage
-      #     command: "bash <(curl -s https://codecov.io/bash)"
+
+workflows:
+  version: 2
+  build-test-check:
+    jobs:
+      - style-and-audit
+      - build-test
