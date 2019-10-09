@@ -74,7 +74,7 @@ else
     done
 fi
 
-# later on we create a symlink, here make sure it's deleted
+# Aliases don't play nicely with scripts, so this is our faux-alias
 function ilp-cli {
     cargo run --quiet --bin ilp-cli -- $@
 }

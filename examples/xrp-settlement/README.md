@@ -107,8 +107,10 @@ else
     done
 fi
 
-# later on we create a symlink, here make sure it's deleted
-rm ilp-cli &> /dev/null
+# Aliases don't play nicely with scripts, so this is our faux-alias
+function ilp-cli {
+    cargo run --quiet --bin ilp-cli -- $@
+}
 
 -->
 
@@ -385,13 +387,15 @@ else
 -->
 
 ```bash
-ln -s ../../target/debug/ilp-cli ilp-cli
+# This alias makes our CLI invocations more natural
+alias ilp-cli="cargo run --quiet --bin ilp-cli --"
+
 export ILP_CLI_API_AUTH=hi_alice
 
 # Adding settlement accounts should be done at the same time because it checks each other
 
 printf "Adding Alice's account...\n"
-./ilp-cli accounts create alice \
+ilp-cli accounts create alice \
     --ilp-address example.alice \
     --asset-code XRP \
     --asset-scale 6 \
@@ -401,7 +405,7 @@ printf "Adding Alice's account...\n"
     --settle-to 0 > logs/account-alice-alice.log
 
 printf "Adding Bob's Account...\n"
-./ilp-cli --node http://localhost:8770 accounts create bob \
+ilp-cli --node http://localhost:8770 accounts create bob \
     --auth hi_bob \
     --ilp-address example.bob \
     --asset-code XRP \
@@ -412,7 +416,7 @@ printf "Adding Bob's Account...\n"
     --settle-to 0 > logs/account-bob-bob.log
 
 printf "Adding Bob's account on Alice's node...\n"
-./ilp-cli accounts create bob \
+ilp-cli accounts create bob \
     --ilp-address example.bob \
     --asset-code XRP \
     --asset-scale 6 \
@@ -427,7 +431,7 @@ printf "Adding Bob's account on Alice's node...\n"
     --routing-relation Peer > logs/account-alice-bob.log &
 
 printf "Adding Alice's account on Bob's node...\n"
-./ilp-cli --node http://localhost:8770 accounts create alice \
+ilp-cli --node http://localhost:8770 accounts create alice \
     --auth hi_bob \
     --ilp-address example.alice \
     --asset-code XRP \
@@ -461,16 +465,16 @@ The `settle_threshold` and `settle_to` parameters control when settlements are t
 printf "\n\nChecking balances prior to payment...\n"
 
 printf "\nAlice's balance on Alice's node: "
-./ilp-cli accounts balance alice
+ilp-cli accounts balance alice
 
 printf "\nBob's balance on Alice's node: "
-./ilp-cli accounts balance bob
+ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-./ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
+ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
 printf "\nBob's balance on Bob's node: "
-./ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
+ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 
 printf "\n\n"
 -->
@@ -490,7 +494,7 @@ else
 -->
 
 ```bash
-./ilp-cli pay alice \
+ilp-cli pay alice \
     --auth in_alice \
     --amount 500 \
     --to http://localhost:8770/accounts/bob/spsp
@@ -515,16 +519,16 @@ printf "Checking balances after payment...\n"
 
 ```bash
 printf "\nAlice's balance on Alice's node: "
-./ilp-cli accounts balance alice
+ilp-cli accounts balance alice
 
 printf "\nBob's balance on Alice's node: "
-./ilp-cli accounts balance bob
+ilp-cli accounts balance bob
 
 printf "\nAlice's balance on Bob's node: "
-./ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
+ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
 printf "\nBob's balance on Bob's node: "
-./ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
+ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 ```
 
 ### 8. Kill All the Services
