@@ -75,7 +75,9 @@ else
 fi
 
 # later on we create a symlink, here make sure it's deleted
-rm ilp-cli &> /dev/null
+function ilp-cli {
+    cargo run --quiet --bin ilp-cli -- $@
+}
 
 printf "\n"
 -->
@@ -214,7 +216,13 @@ You can also watch the logs with: `tail -f logs/node_a.log` or `tail -f logs/nod
 
 Let's create accounts on both nodes. The following script sets up accounts for two users, Alice and Bob. It also creates accounts that represent the connection between Nodes A and B.
 
-Now that the nodes are up and running, we'll be using the `ilp-cli` command-line tool to work with them. This tool comes with the Interledger.rs repo, and offers a convenient way for developers to inspect and interact with live nodes. Note that `ilp-cli` speaks to Interledger.rs nodes via the normal HTTP API, so you could also use any other HTTP client (such as `curl`, for example) to perform the same operations.
+Now that the nodes are up and running, we'll be using the `ilp-cli` command-line tool to work with them. This tool offers a convenient way for developers to inspect and interact with live nodes. Note that `ilp-cli` speaks to Interledger.rs nodes via the normal HTTP API, so you could also use any other HTTP client (such as `curl`, for example) to perform the same operations.
+
+The `ilp-cli` command is included with the Interledger.rs repository. To avoid needing to install `ilp-cli` locally, we can pretend that it's installed by using an alias:
+
+```bash #
+alias ilp-cli="cargo run --quiet --bin ilp-cli --"
+```
 
 See the [HTTP API docs](../../docs/api.md) for the full list of fields that can be set on an account.
 
@@ -288,9 +296,6 @@ else
 -->
 
 ```bash
-# We merely use this symbolic link here to pretend that ilp-cli is installed
-ln -s ../../target/debug/ilp-cli ilp-cli
-
 # For authenticating to nodes, we can set credentials as an environment variable or a CLI argument
 export ILP_CLI_API_AUTH=admin-a
 
@@ -298,13 +303,13 @@ export ILP_CLI_API_AUTH=admin-a
 # One account represents Alice and the other represents Node B's account with Node A
 
 printf "Creating Alice's account on Node A...\n"
-./ilp-cli --quiet accounts create alice \
+ilp-cli --quiet accounts create alice \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-over-http-incoming-token alice-password
 
 printf "Creating Node B's account on Node A...\n"
-./ilp-cli --quiet accounts create node_b \
+ilp-cli --quiet accounts create node_b \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-address example.node_b \
@@ -315,13 +320,13 @@ printf "Creating Node B's account on Node A...\n"
 # One account represents Bob and the other represents Node A's account with Node B
 
 printf "Creating Bob's account on Node B...\n"
-./ilp-cli --quiet --node http://localhost:8770 accounts create bob \
+ilp-cli --quiet --node http://localhost:8770 accounts create bob \
     --auth admin-b \
     --asset-code ABC \
     --asset-scale 9
 
 printf "Creating Node A's account on Node B...\n"
-./ilp-cli --quiet --node http://localhost:8770 accounts create node_a \
+ilp-cli --quiet --node http://localhost:8770 accounts create node_a \
     --auth admin-b \
     --asset-code ABC \
     --asset-scale 9 \
@@ -352,16 +357,16 @@ if [ "$USE_DOCKER" -eq 1 ]; then
     $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance bob --auth admin-b
 else
     printf "\nAlice's balance: "
-    ./ilp-cli accounts balance alice
+    ilp-cli accounts balance alice
     
     printf "Node B's balance on Node A: "
-    ./ilp-cli accounts balance node_b
+    ilp-cli accounts balance node_b
     
     printf "Node A's balance on Node B: "
-    ./ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
+    ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
     
     printf "Bob's balance: "
-    ./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
+    ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
 fi
 printf "\n\n"
 -->
@@ -382,7 +387,7 @@ else
 
 ```bash
 # Sending payment of 500 from Alice (on Node A) to Bob (on Node B)
-./ilp-cli pay alice \
+ilp-cli pay alice \
     --auth alice-password \
     --amount 500 \
     --to http://localhost:8770/accounts/bob/spsp
@@ -416,16 +421,16 @@ else
 -->
 ```bash
 printf "\nAlice's balance: "
-./ilp-cli accounts balance alice
+ilp-cli accounts balance alice
 
 printf "Node B's balance on Node A: "
-./ilp-cli accounts balance node_b
+ilp-cli accounts balance node_b
 
 printf "Node A's balance on Node B: "
-./ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
+ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
 
 printf "Bob's balance: "
-./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
+ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
 ```
 <!--!
 fi
