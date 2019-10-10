@@ -1,6 +1,6 @@
 [package]
 name = "interledger-settlement"
-version = "0.1.1-beta.2"
+version = "0.1.1-beta.3"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Settlement-related components for Interledger.rs"
 license = "Apache-2.0"
