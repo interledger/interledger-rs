@@ -806,7 +806,7 @@ dependencies = [
  "interledger-settlement 0.1.1-beta.3",
  "interledger-spsp 0.2.2-beta.2",
  "interledger-store-redis 0.2.2-beta.2",
- "interledger-stream 0.2.2-beta.2",
+ "interledger-stream 0.2.2-beta.3",
 ]
 
 [[package]]
@@ -827,7 +827,7 @@ dependencies = [
  "interledger-service-util 0.2.2-beta.3",
  "interledger-settlement 0.1.1-beta.3",
  "interledger-spsp 0.2.2-beta.2",
- "interledger-stream 0.2.2-beta.2",
+ "interledger-stream 0.2.2-beta.3",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "secrecy 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1026,7 +1026,7 @@ dependencies = [
  "interledger-ildcp 0.2.2-beta.3",
  "interledger-packet 0.2.2-beta.5",
  "interledger-service 0.2.2-beta.3",
- "interledger-stream 0.2.2-beta.2",
+ "interledger-stream 0.2.2-beta.3",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.101 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1053,7 +1053,7 @@ dependencies = [
  "interledger-service 0.2.2-beta.3",
  "interledger-service-util 0.2.2-beta.3",
  "interledger-settlement 0.1.1-beta.3",
- "interledger-stream 0.2.2-beta.2",
+ "interledger-stream 0.2.2-beta.3",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1077,7 +1077,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-stream"
-version = "0.2.2-beta.2"
+version = "0.2.2-beta.3"
 dependencies = [
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
