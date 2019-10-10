@@ -14,7 +14,7 @@ mod redis_helpers;
 use redis_helpers::*;
 
 // TODO: reenable this test once it's no longer flaky
-//#[test]
+#[test]
 fn coincap() {
     let _ = env_logger::try_init();
     let context = TestContext::new();
