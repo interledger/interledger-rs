@@ -752,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "ilp-node"
-version = "0.4.1-beta.2"
+version = "0.4.1-beta.3"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
