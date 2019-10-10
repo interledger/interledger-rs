@@ -1,6 +1,6 @@
 [package]
 name = "interledger-service-util"
-version = "0.2.2-beta.2"
+version = "0.2.2-beta.3"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Small, commonly used Interledger services that don't really fit anywhere else"
 license = "Apache-2.0"
