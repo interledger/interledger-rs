@@ -1,3 +1,6 @@
+mod error_types;
+pub(crate) use error_types::*;
+
 use chrono::{DateTime, Local};
 use http::header::HeaderValue;
 use lazy_static::lazy_static;
@@ -11,13 +14,16 @@ use std::{
 };
 use warp::{reject::custom, reply::json, reply::Response, Rejection, Reply};
 
+/// API error type prefix of problems
+const ERROR_TYPE_PREFIX: &str = "https://errors.interledger.org/http-api";
+
 /// This struct represents the fields defined in [RFC7807](https://tools.ietf.org/html/rfc7807).
 /// The meaning of each field could be found at [Members of a Problem Details Object](https://tools.ietf.org/html/rfc7807#section-3.1) section.
 /// ApiError implements Reply so that it could be used for responses.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct ApiError {
     /// `type` is a URI which represents an error type. The URI should provide human-readable
-    /// documents so that developers could solve the problem easily.
+    /// documents so that developers can solve the problem easily.
     #[serde(serialize_with = "serialize_type")]
     pub r#type: &'static ProblemType,
     /// `title` is a short, human-readable summary of the type.
@@ -69,33 +75,12 @@ pub enum ProblemType {
     InterledgerHttpApi(&'static str),
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct ApiErrorType {
     pub r#type: &'static ProblemType,
     pub title: &'static str,
+    pub status: http::StatusCode,
 }
-
-// default errors
-const ERROR_TYPE_PREFIX: &str = "https://errors.interledger.org/http-api";
-const DEFAULT_BAD_REQUEST_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Bad Request",
-};
-const DEFAULT_INTERNAL_SERVER_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Internal Server Error",
-};
-const DEFAULT_UNAUTHORIZED_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Unauthorized",
-};
-const DEFAULT_NOT_FOUND_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Not Found",
-};
-const DEFAULT_METHOD_NOT_ALLOWED_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Method Not Allowed",
-};
 
 // This should be OK because serde serializer MUST be `fn<S>(&T, S)`
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -119,106 +104,62 @@ where
 }
 
 impl ApiError {
+    pub fn from_api_error_type(problem_type: &ApiErrorType) -> Self {
+        ApiError {
+            r#type: problem_type.r#type,
+            title: problem_type.title,
+            status: problem_type.status,
+            detail: None,
+            instance: None,
+            extension_members: Some(ApiError::merge_default_extension_members(None)),
+        }
+    }
+
+    // Note that we should basically avoid using the following default errors because
+    // we should provide more detailed information for developers
     #[allow(dead_code)]
-    pub fn default_bad_request() -> Self {
-        ApiError::bad_request(&DEFAULT_BAD_REQUEST_TYPE, None, None, None)
+    pub fn bad_request() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_BAD_REQUEST_TYPE)
     }
 
-    pub fn bad_request(
-        problem_type: &ApiErrorType,
-        detail: Option<String>,
-        instance: Option<String>,
-        extension_members: Option<Map<String, Value>>,
-    ) -> Self {
-        ApiError {
-            r#type: problem_type.r#type,
-            title: problem_type.title,
-            status: http::StatusCode::BAD_REQUEST,
-            detail,
-            instance,
-            extension_members: Some(ApiError::merge_default_extension_members(extension_members)),
-        }
+    pub fn internal_server_error() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_INTERNAL_SERVER_ERROR_TYPE)
     }
 
-    pub fn default_internal_server_error() -> Self {
-        ApiError::internal_server_error(&DEFAULT_INTERNAL_SERVER_ERROR_TYPE, None, None, None)
-    }
-
-    pub fn internal_server_error(
-        problem_type: &ApiErrorType,
-        detail: Option<String>,
-        instance: Option<String>,
-        extension_members: Option<Map<String, Value>>,
-    ) -> Self {
-        ApiError {
-            r#type: problem_type.r#type,
-            title: problem_type.title,
-            status: http::StatusCode::INTERNAL_SERVER_ERROR,
-            detail,
-            instance,
-            extension_members: Some(ApiError::merge_default_extension_members(extension_members)),
-        }
-    }
-
-    pub fn default_unauthorized() -> Self {
-        ApiError::unauthorized(&DEFAULT_UNAUTHORIZED_TYPE, None, None, None)
-    }
-
-    pub fn unauthorized(
-        problem_type: &ApiErrorType,
-        detail: Option<String>,
-        instance: Option<String>,
-        extension_members: Option<Map<String, Value>>,
-    ) -> Self {
-        ApiError {
-            r#type: problem_type.r#type,
-            title: problem_type.title,
-            status: http::StatusCode::UNAUTHORIZED,
-            detail,
-            instance,
-            extension_members: Some(ApiError::merge_default_extension_members(extension_members)),
-        }
+    pub fn unauthorized() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_UNAUTHORIZED_TYPE)
     }
 
     #[allow(dead_code)]
-    pub fn default_not_found() -> Self {
-        ApiError::not_found(&DEFAULT_NOT_FOUND_TYPE, None, None, None)
+    pub fn not_found() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_NOT_FOUND_TYPE)
     }
 
-    pub fn not_found(
-        problem_type: &ApiErrorType,
-        detail: Option<String>,
-        instance: Option<String>,
-        extension_members: Option<Map<String, Value>>,
-    ) -> Self {
-        ApiError {
-            r#type: problem_type.r#type,
-            title: problem_type.title,
-            status: http::StatusCode::NOT_FOUND,
-            detail,
-            instance,
-            extension_members: Some(ApiError::merge_default_extension_members(extension_members)),
-        }
+    #[allow(dead_code)]
+    pub fn method_not_allowed() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE)
     }
 
-    pub fn default_method_not_allowed() -> Self {
-        ApiError::method_not_allowed(&DEFAULT_METHOD_NOT_ALLOWED_TYPE, None, None, None)
+    pub fn detail<T>(mut self, detail: Option<T>) -> Self
+    where
+        T: Into<String>,
+    {
+        self.detail = detail.map(|detail| detail.into());
+        self
     }
 
-    pub fn method_not_allowed(
-        problem_type: &ApiErrorType,
-        detail: Option<String>,
-        instance: Option<String>,
-        extension_members: Option<Map<String, Value>>,
-    ) -> Self {
-        ApiError {
-            r#type: problem_type.r#type,
-            title: problem_type.title,
-            status: http::StatusCode::METHOD_NOT_ALLOWED,
-            detail,
-            instance,
-            extension_members: Some(ApiError::merge_default_extension_members(extension_members)),
-        }
+    #[allow(dead_code)]
+    pub fn instance<T>(mut self, instance: Option<T>) -> Self
+    where
+        T: Into<String>,
+    {
+        self.instance = instance.map(|instance| instance.into());
+        self
+    }
+
+    pub fn extension_members(mut self, extension_members: Option<Map<String, Value>>) -> Self {
+        self.extension_members = extension_members;
+        self
     }
 
     fn get_base_extension_members() -> Map<String, Value> {
@@ -288,23 +229,9 @@ impl Display for JsonDeserializeError {
     }
 }
 
-// JSON deserialization errors
-const JSON_SYNTAX_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::InterledgerHttpApi("json-syntax"),
-    title: "JSON Syntax Error",
-};
-const JSON_DATA_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::InterledgerHttpApi("json-data"),
-    title: "JSON Data Error",
-};
-const UNKNOWN_JSON_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::InterledgerHttpApi("json-unknown"),
-    title: "Unknown JSON Error",
-};
-
 impl Reply for JsonDeserializeError {
     fn into_response(self) -> Response {
-        let mut extension_member = Map::new();
+        let mut extension_members = Map::new();
 
         // invalid-params should be a plural form even if it is always an array with a single value
         // for the future extendability.
@@ -315,7 +242,7 @@ impl Reply for JsonDeserializeError {
                 serde_path_to_error::Segment::Unknown => {}
                 _ => {
                     let invalid_params = serde_json::json!([ { "name": self.path.to_string() } ]);
-                    extension_member.insert("invalid-params".to_string(), invalid_params);
+                    extension_members.insert("invalid-params".to_string(), invalid_params);
                 }
             }
         }
@@ -326,7 +253,7 @@ impl Reply for JsonDeserializeError {
             if let Some(r#match) = captures.get(1) {
                 let invalid_params =
                     serde_json::json!([ { "name": r#match.as_str(), "type": "missing" } ]);
-                extension_member.insert("invalid-params".to_string(), invalid_params);
+                extension_members.insert("invalid-params".to_string(), invalid_params);
             }
         }
 
@@ -335,17 +262,16 @@ impl Reply for JsonDeserializeError {
             Category::Data => &JSON_DATA_TYPE,
             _ => &UNKNOWN_JSON_TYPE,
         };
+        let detail = Some(self.detail);
+        let extension_members = match extension_members.keys().len() {
+            0 => None,
+            _ => Some(extension_members),
+        };
 
-        ApiError::bad_request(
-            api_error_type,
-            Some(self.detail),
-            None,
-            match extension_member.keys().len() {
-                0 => None,
-                _ => Some(extension_member),
-            },
-        )
-        .into_response()
+        ApiError::from_api_error_type(api_error_type)
+            .detail(detail)
+            .extension_members(extension_members)
+            .into_response()
     }
 }
 
