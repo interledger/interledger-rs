@@ -760,7 +760,7 @@ dependencies = [
  "env_logger 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "interledger 0.4.1-beta.2",
+ "interledger 0.4.1-beta.3",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.62 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "interledger"
-version = "0.4.1-beta.2"
+version = "0.4.1-beta.3"
 dependencies = [
  "interledger-api 0.1.1-beta.3",
  "interledger-btp 0.2.2-beta.3",
