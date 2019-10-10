@@ -48,7 +48,7 @@ where
 
     /// Figures out the next node to pass the received Prepare packet to.
     ///
-    /// Firstly, it checks if there is a direct path for that account and use that.
+    /// Firstly, it checks if there is a direct path for that account and uses that.
     /// If not it scans through the routing table and checks if the route prefix matches
     /// the prepare packet's destination or if it's a catch-all address (i.e. empty prefix)
     fn handle_request(&mut self, request: IncomingRequest<S::Account>) -> Self::Future {
