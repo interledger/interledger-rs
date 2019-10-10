@@ -162,10 +162,7 @@ mod test_error_code {
             format!("{}", ErrorCode::T01_PEER_UNREACHABLE),
             String::from("T01")
         );
-        assert_eq!(
-            format!("{}", ErrorCode::T02_PEER_BUSY),
-            String::from("T02")
-        );
+        assert_eq!(format!("{}", ErrorCode::T02_PEER_BUSY), String::from("T02"));
         assert_eq!(
             format!("{}", ErrorCode::T03_CONNECTOR_BUSY),
             String::from("T03")
