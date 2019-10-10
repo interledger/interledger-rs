@@ -105,10 +105,102 @@ mod test_error_code {
     }
 
     #[test]
-    fn test_error_values() {
+    fn test_final_error_values() {
         assert_eq!(
             format!("{}", ErrorCode::F00_BAD_REQUEST),
             String::from("F00")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F01_INVALID_PACKET),
+            String::from("F01")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F02_UNREACHABLE),
+            String::from("F02")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F03_INVALID_AMOUNT),
+            String::from("F03")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F04_INSUFFICIENT_DESTINATION_AMOUNT),
+            String::from("F04")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F05_WRONG_CONDITION),
+            String::from("F05")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F06_UNEXPECTED_PAYMENT),
+            String::from("F06")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F07_CANNOT_RECEIVE),
+            String::from("F07")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F08_AMOUNT_TOO_LARGE),
+            String::from("F08")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F09_INVALID_PEER_RESPONSE),
+            String::from("F09")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::F99_APPLICATION_ERROR),
+            String::from("F99")
+        );
+    }
+
+    #[test]
+    fn test_temporary_error_values() {
+        assert_eq!(
+            format!("{}", ErrorCode::T00_INTERNAL_ERROR),
+            String::from("T00")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::T01_PEER_UNREACHABLE),
+            String::from("T01")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::T02_PEER_BUSY),
+            String::from("T02")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::T03_CONNECTOR_BUSY),
+            String::from("T03")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::T04_INSUFFICIENT_LIQUIDITY),
+            String::from("T04")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::T05_RATE_LIMITED),
+            String::from("T05")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::T99_APPLICATION_ERROR),
+            String::from("T99")
+        );
+    }
+
+    #[test]
+    fn test_relative_error_values() {
+        assert_eq!(
+            format!("{}", ErrorCode::R00_TRANSFER_TIMED_OUT),
+            String::from("R00")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT),
+            String::from("R01")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::R02_INSUFFICIENT_TIMEOUT),
+            String::from("R02")
+        );
+        assert_eq!(
+            format!("{}", ErrorCode::R99_APPLICATION_ERROR),
+            String::from("R99")
         );
     }
 }
