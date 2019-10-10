@@ -34,4 +34,3 @@ WORKDIR /opt/app
 ENV RUST_LOG=ilp,interledger=debug
 
 ENTRYPOINT [ "/usr/local/bin/ilp-node" ]
-CMD [ "node" ]

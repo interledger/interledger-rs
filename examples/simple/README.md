@@ -337,18 +337,32 @@ fi
 <!--!
 # check balances before payment
 printf "\n\nChecking balances prior to payment...\n"
-printf "\nAlice's balance: "
-./ilp-cli accounts balance alice
 
-printf "Node B's balance on Node A: "
-./ilp-cli accounts balance node_b
-
-printf "Node A's balance on Node B: "
-./ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
-
-printf "Bob's balance: "
-./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
-
+if [ "$USE_DOCKER" -eq 1 ]; then
+    printf "\nAlice's balance: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance alice --auth admin-a
+    
+    printf "Node B's balance on Node A: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance node_b --auth admin-a
+    
+    printf "Node A's balance on Node B: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance node_a --auth admin-b
+    
+    printf "Bob's balance: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance bob --auth admin-b
+else
+    printf "\nAlice's balance: "
+    ./ilp-cli accounts balance alice
+    
+    printf "Node B's balance on Node A: "
+    ./ilp-cli accounts balance node_b
+    
+    printf "Node A's balance on Node B: "
+    ./ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
+    
+    printf "Bob's balance: "
+    ./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
+fi
 printf "\n\n"
 -->
 
@@ -385,6 +399,21 @@ You can run the following script to print each of the accounts' balances (try do
 
 <!--! printf "Checking balances after payment...\n" -->
 
+<!--!
+if [ "$USE_DOCKER" -eq 1 ]; then
+    printf "\nAlice's balance: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance alice --auth admin-a
+    
+    printf "Node B's balance on Node A: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance node_b --auth admin-a
+    
+    printf "Node A's balance on Node B: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance node_a --auth admin-b
+    
+    printf "Bob's balance: "
+    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance bob --auth admin-b
+else
+-->
 ```bash
 printf "\nAlice's balance: "
 ./ilp-cli accounts balance alice
@@ -398,8 +427,8 @@ printf "Node A's balance on Node B: "
 printf "Bob's balance: "
 ./ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
 ```
-
 <!--!
+fi
 printf "\n\n"
 -->
 
