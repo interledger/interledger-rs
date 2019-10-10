@@ -41,7 +41,7 @@ where
 
 impl<S, O> IncomingService<S::Account> for Router<S, O>
 where
-    S: AddressStore + RouterStore + AddressStore,
+    S: AddressStore + RouterStore,
     O: OutgoingService<S::Account> + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
