@@ -11,7 +11,7 @@ default-run = "ilp-node"
 [dependencies]
 bytes = { version = "0.4.12", default-features = false }
 clap = { version = "2.33.0", default-features = false }
-config = { version = "0.9.3", default-features = false, features = ["json"] }
+config = { version = "0.9.3", default-features = false, features = ["json", "toml", "yaml"] }
 env_logger = { version = "0.7.0", default-features = false }
 futures = { version = "0.1.29", default-features = false }
 hex = { version = "0.4.0", default-features = false }

@@ -18,6 +18,7 @@ node = [
     "router",
     "service-util",
     "settlement",
+    "spsp",
     "store-redis",
     "stream",
 ]
