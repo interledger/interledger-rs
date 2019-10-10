@@ -97,14 +97,18 @@ mod test_error_code {
     }
 
     #[test]
-    fn test_printing() {
-        assert_eq!(
-            format!("{}", ErrorCode::F00_BAD_REQUEST),
-            String::from("F00")
-        );
+    fn test_debug_printing() {
         assert_eq!(
             format!("{:?}", ErrorCode::F00_BAD_REQUEST),
             String::from("ErrorCode(\"F00\")")
+        );
+    }
+
+    #[test]
+    fn test_error_values() {
+        assert_eq!(
+            format!("{}", ErrorCode::F00_BAD_REQUEST),
+            String::from("F00")
         );
     }
 }
