@@ -25,6 +25,7 @@ use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
+use std::str::FromStr;
 use warp::{self, Filter, Rejection};
 
 #[derive(Deserialize, Debug)]
@@ -72,7 +73,7 @@ where
             if authorization == admin_auth_header {
                 Ok(())
             } else {
-                Err(ApiError::default_unauthorized().into())
+                Err(ApiError::unauthorized().into())
             }
         })
         // This call makes it so we do not pass on a () value on
@@ -80,10 +81,12 @@ where
         .untuple_one()
         .boxed();
     let with_store = warp::any().map(move || store.clone()).boxed();
+    let admin_auth_header = format!("Bearer {}", admin_api_token);
+    let with_admin_auth_header = warp::any().map(move || admin_auth_header.clone()).boxed();
     let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
-    // Note that the following `accounts*` and `account*` filters are based on the path of `accounts`.
-    // These filters should be applied before anything so that some other functions or filters
-    // are NOT kicked for any paths.
+    // Note that the following path filters should be applied before others
+    // (such as method and authentication) to avoid triggering unexpected errors for requests
+    // that do not match this path.
     let accounts = warp::path("accounts");
     let accounts_index = accounts.and(warp::path::end());
     let account_username = accounts.and(warp::path::param2::<Username>());
@@ -95,51 +98,107 @@ where
                 .map_err::<_, Rejection>(move |_| {
                     // TODO differentiate between server error and not found
                     error!("Error getting account id from username: {}", username);
-                    ApiError::account_not_found(Some(&username)).into()
+                    ApiError::account_not_found().into()
                 })
         })
         .boxed();
-    let valid_account_authorization = warp::header::<AuthToken>("authorization")
+
+    // This is required when using `admin_or_authorized_user_only` or `authorized_user_only` filter.
+    // Sets Username from path into ext for context.
+    let set_account_username_to_ext = account_username
+        .and_then(|username: Username| -> Result<_, Rejection> {
+            warp::filters::ext::set(username);
+            Ok(())
+        })
+        .untuple_one()
+        .boxed();
+
+    // Receives parameters which were prepared by `set_account_username_to_ext` and
+    // considers the request is eligible to be processed or not, checking the auth.
+    // Why we separate `set_account_username_to_ext` and this filter is that
+    // we want to check whether the sender is eligible to access this path but at the same time,
+    // we don't want to spawn any `Rejection`s at `set_account_username_to_ext`.
+    // At the point of `set_account_username_to_ext`, there might be some other
+    // remaining path filters. So we have to process those first, not to spawn errors of
+    // unauthorized that the the request actually should not cause.
+    // This function needs parameters which can be prepared by `set_account_username_to_ext`.
+    let admin_or_authorized_user_only = warp::filters::ext::get::<Username>()
+        .and(warp::header::<String>("authorization"))
         .and(with_store.clone())
-        .and_then(|auth: AuthToken, store: S| {
-            store
-                .get_account_from_http_auth(auth.username(), auth.password())
-                .map_err::<_, Rejection>(move |_| {
-                    error!(
-                        "Invalid authorization provided for user: {}",
-                        auth.username()
-                    );
-                    ApiError::default_unauthorized().into()
-                })
-        })
-        .boxed();
-    let authorized_account_from_path = account_username
-        .and(valid_account_authorization.clone())
+        .and(with_admin_auth_header.clone())
         .and_then(
-            |path_username: Username, authorized_account: A| -> Result<A, Rejection> {
-                // Check that the user is authorized for this route
-                if &path_username == authorized_account.username() {
-                    Ok(authorized_account)
-                } else {
-                    Err(ApiError::default_unauthorized().into())
-                }
+            |path_username: Username, auth_string: String, store: S, admin_auth_header: String| {
+                store.get_account_id_from_username(&path_username).then(
+                    move |account_id: Result<A::AccountId, _>| {
+                        if account_id.is_err() {
+                            return Either::A(err::<A::AccountId, Rejection>(
+                                ApiError::account_not_found().into(),
+                            ));
+                        }
+                        let account_id = account_id.unwrap();
+                        if auth_string == admin_auth_header {
+                            return Either::A(ok(account_id));
+                        }
+                        let auth = match AuthToken::from_str(&auth_string) {
+                            Ok(auth) => auth,
+                            Err(_) => return Either::A(err(ApiError::account_not_found().into())),
+                        };
+                        Either::B(
+                            store
+                                .get_account_from_http_auth(auth.username(), auth.password())
+                                .then(move |authorized_account: Result<A, _>| {
+                                    if authorized_account.is_err() {
+                                        return err(ApiError::account_not_found().into());
+                                    }
+                                    let authorized_account = authorized_account.unwrap();
+                                    if &path_username == authorized_account.username() {
+                                        ok(authorized_account.id())
+                                    } else {
+                                        err(ApiError::unauthorized().into())
+                                    }
+                                }),
+                        )
+                    },
+                )
             },
         )
         .boxed();
-    let admin_or_authorized_account = account_username_to_id
-        .clone()
-        .and(admin_only.clone())
-        .or(authorized_account_from_path
-            .clone()
-            .map(|account: A| account.id()))
-        .unify()
+
+    // The same structure as `admin_or_authorized_user_only`.
+    // This function needs parameters which can be prepared by `set_account_username_to_ext`.
+    let authorized_user_only = warp::filters::ext::get::<Username>()
+        .and(warp::header::<String>("authorization"))
+        .and(with_store.clone())
+        .and_then(|path_username: Username, auth_string: String, store: S| {
+            let auth: AuthToken = match AuthToken::from_str(&auth_string) {
+                Ok(auth) => auth,
+                Err(_) => {
+                    return Either::A(err::<A, Rejection>(ApiError::account_not_found().into()))
+                }
+            };
+            Either::B(
+                store
+                    .get_account_from_http_auth(auth.username(), auth.password())
+                    .then(move |authorized_account: Result<A, _>| {
+                        if authorized_account.is_err() {
+                            return err::<A, Rejection>(ApiError::account_not_found().into());
+                        }
+                        let authorized_account = authorized_account.unwrap();
+                        if &path_username == authorized_account.username() {
+                            ok(authorized_account)
+                        } else {
+                            err(ApiError::unauthorized().into())
+                        }
+                    }),
+            )
+        })
         .boxed();
 
     // POST /accounts
     let btp_clone = btp.clone();
     let outgoing_handler_clone = outgoing_handler.clone();
-    let post_accounts = accounts_index
-        .and(warp::post2())
+    let post_accounts = warp::post2()
+        .and(accounts_index)
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
@@ -151,7 +210,8 @@ where
                 .insert_account(account_details.clone())
                 .map_err(move |_| {
                     error!("Error inserting account into store: {:?}", account_details);
-                    ApiError::default_internal_server_error().into()
+                    // TODO need more information
+                    ApiError::internal_server_error().into()
                 })
                 .and_then(move |account| {
                     connect_to_external_services(handler, account, store_clone, btp)
@@ -161,23 +221,22 @@ where
         .boxed();
 
     // GET /accounts
-    let get_accounts = accounts_index
-        .and(warp::get2())
+    let get_accounts = warp::get2()
+        .and(accounts_index)
         .and(admin_only.clone())
         .and(with_store.clone())
         .and_then(|store: S| {
             store
                 .get_all_accounts()
-                .map_err::<_, Rejection>(|_| ApiError::default_internal_server_error().into())
+                .map_err::<_, Rejection>(|_| ApiError::internal_server_error().into())
                 .and_then(|accounts| Ok(warp::reply::json(&accounts)))
         })
         .boxed();
 
     // PUT /accounts/:username
-    let put_account = account_username_to_id
-        .clone()
+    let put_account = warp::put2()
+        .and(account_username_to_id.clone())
         .and(warp::path::end())
-        .and(warp::put2())
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
@@ -188,9 +247,7 @@ where
                 let btp = btp.clone();
                 store
                     .update_account(id, account_details)
-                    .map_err::<_, Rejection>(move |_| {
-                        ApiError::default_internal_server_error().into()
-                    })
+                    .map_err::<_, Rejection>(move |_| ApiError::internal_server_error().into())
                     .and_then(move |account| {
                         connect_to_external_services(handler, account, store_clone, btp)
                     })
@@ -200,26 +257,26 @@ where
         .boxed();
 
     // GET /accounts/:username
-    let get_account = admin_or_authorized_account
-        .clone()
+    let get_account = warp::get2()
+        .and(set_account_username_to_ext.clone())
         .and(warp::path::end())
-        .and(warp::get2())
+        .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, store: S| {
             store
                 .get_accounts(vec![id])
                 // TODO return username
-                .map_err::<_, Rejection>(|_| ApiError::account_not_found(None).into())
+                .map_err::<_, Rejection>(|_| ApiError::account_not_found().into())
                 .and_then(|accounts| Ok(warp::reply::json(&accounts[0])))
         })
         .boxed();
 
     // GET /accounts/:username/balance
-    let get_account_balance = admin_or_authorized_account
-        .clone()
+    let get_account_balance = warp::get2()
+        .and(set_account_username_to_ext.clone())
         .and(warp::path("balance"))
         .and(warp::path::end())
-        .and(warp::get2())
+        .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, store: S| {
             // TODO reduce the number of store calls it takes to get the balance
@@ -231,7 +288,7 @@ where
                         .get_balance(accounts.pop().unwrap())
                         .map_err(move |_| {
                             error!("Error getting balance for account: {}", id);
-                            ApiError::default_internal_server_error().into()
+                            ApiError::internal_server_error().into()
                         })
                 })
                 .and_then(|balance: i64| {
@@ -243,10 +300,9 @@ where
         .boxed();
 
     // DELETE /accounts/:username
-    let delete_account = account_username_to_id
-        .clone()
+    let delete_account = warp::delete2()
+        .and(account_username_to_id.clone())
         .and(warp::path::end())
-        .and(warp::delete2())
         .and(admin_only.clone())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, store: S| {
@@ -254,18 +310,18 @@ where
                 .delete_account(id)
                 .map_err::<_, Rejection>(move |_| {
                     error!("Error deleting account {}", id);
-                    ApiError::default_internal_server_error().into()
+                    ApiError::internal_server_error().into()
                 })
                 .and_then(|account| Ok(warp::reply::json(&account)))
         })
         .boxed();
 
     // PUT /accounts/:username/settings
-    let put_account_settings = admin_or_authorized_account
-        .clone()
+    let put_account_settings = warp::put2()
+        .and(set_account_username_to_ext.clone())
         .and(warp::path("settings"))
         .and(warp::path::end())
-        .and(warp::put2())
+        .and(admin_or_authorized_user_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|id: A::AccountId, settings: AccountSettings, store: S| {
@@ -273,18 +329,19 @@ where
                 .modify_account_settings(id, settings)
                 .map_err::<_, Rejection>(move |_| {
                     error!("Error updating account settings {}", id);
-                    ApiError::default_internal_server_error().into()
+                    ApiError::internal_server_error().into()
                 })
                 .and_then(|settings| Ok(warp::reply::json(&settings)))
         })
         .boxed();
 
     // (Websocket) /accounts/:username/payments/incoming
-    let incoming_payment_notifications = admin_or_authorized_account
+    let incoming_payment_notifications = set_account_username_to_ext
         .clone()
         .and(warp::path("payments"))
         .and(warp::path("incoming"))
         .and(warp::path::end())
+        .and(admin_or_authorized_user_only.clone())
         .and(warp::ws2())
         .and(with_store.clone())
         .map(|id: A::AccountId, ws: warp::ws::Ws2, store: S| {
@@ -303,11 +360,11 @@ where
         .boxed();
 
     // POST /accounts/:username/payments
-    let post_payments = authorized_account_from_path
-        .clone()
+    let post_payments = warp::post2()
+        .and(set_account_username_to_ext.clone())
         .and(warp::path("payments"))
         .and(warp::path::end())
-        .and(warp::post2())
+        .and(authorized_user_only.clone())
         .and(deserialize_json())
         .and(with_incoming_handler.clone())
         .and_then(
@@ -330,7 +387,7 @@ where
                 .map_err::<_, Rejection>(|err| {
                     error!("Error sending SPSP payment: {:?}", err);
                     // TODO give a different error message depending on what type of error it is
-                    ApiError::default_internal_server_error().into()
+                    ApiError::internal_server_error().into()
                 })
             },
         )
@@ -338,17 +395,16 @@ where
 
     // GET /accounts/:username/spsp
     let server_secret_clone = server_secret.clone();
-    let get_spsp = account_username_to_id
-        .clone()
+    let get_spsp = warp::get2()
+        .and(account_username_to_id.clone())
         .and(warp::path("spsp"))
         .and(warp::path::end())
-        .and(warp::get2())
         .and(with_store.clone())
         .and_then(move |id: A::AccountId, store: S| {
             let server_secret_clone = server_secret_clone.clone();
             store
                 .get_accounts(vec![id])
-                .map_err::<_, Rejection>(|_| ApiError::default_internal_server_error().into())
+                .map_err::<_, Rejection>(|_| ApiError::internal_server_error().into())
                 .and_then(move |accounts| {
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
                     Ok(SpspResponder::new(
@@ -364,10 +420,10 @@ where
     // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
     // with no path resolves to
     let server_secret_clone = server_secret.clone();
-    let get_spsp_well_known = warp::path(".well-known")
+    let get_spsp_well_known = warp::get2()
+        .and(warp::path(".well-known"))
         .and(warp::path("pay"))
         .and(warp::path::end())
-        .and(warp::get2())
         .and(with_store.clone())
         .and_then(move |store: S| {
             // TODO don't clone this
@@ -384,7 +440,7 @@ where
                             // TODO this shouldn't take multiple store calls
                             store
                                 .get_accounts(vec![id])
-                                .map_err(|_| ApiError::default_internal_server_error().into())
+                                .map_err(|_| ApiError::internal_server_error().into())
                                 .map(|mut accounts| accounts.pop().unwrap())
                         })
                         .and_then(move |account| {
@@ -397,7 +453,7 @@ where
                         }),
                 )
             } else {
-                Either::B(err(ApiError::default_not_found().into()))
+                Either::B(err(ApiError::not_found().into()))
             }
         })
         .boxed();
@@ -518,7 +574,7 @@ where
         trace!("Newly inserted account has a BTP URL configured, will try to connect");
         Either::A(
             connect_to_service_account(account.clone(), true, btp)
-                .map_err(|_| ApiError::default_internal_server_error().into()),
+                .map_err(|_| ApiError::internal_server_error().into()),
         )
     } else {
         Either::B(ok(()))
@@ -530,18 +586,14 @@ where
         let get_ilp_address_fut = if account.routing_relation() == RoutingRelation::Parent {
             Either::A(
                 get_address_from_parent_and_update_routes(service, account.clone(), store.clone())
-                .map_err(|_| {
-                    ApiError::default_internal_server_error().into()
-                })
+                .map_err(|_| ApiError::internal_server_error().into())
             )
         } else {
             Either::B(ok(()))
         };
 
         let default_settlement_engine_fut = store.get_asset_settlement_engine(account.asset_code())
-            .map_err(|_| {
-                ApiError::default_internal_server_error().into()
-            });
+            .map_err(|_| ApiError::internal_server_error().into());
 
         // Register the account with the settlement engine
         // if a settlement_engine_url was configured on the account
@@ -559,9 +611,7 @@ where
                 );
                 Either::A(
                     http_client.create_engine_account(se_url, id)
-                    .map_err(|_| {
-                        ApiError::default_internal_server_error().into()
-                    })
+                    .map_err(|_| ApiError::internal_server_error().into())
                     .and_then(move |status_code| {
                         if status_code.is_success() {
                             trace!("Account {} created on the SE", id);
@@ -580,22 +630,9 @@ where
     })
 }
 
-// Account specific errors
-const ACCOUNT_NOT_FOUND_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::InterledgerHttpApi("accounts/account-not-found"),
-    title: "Account Not Found",
-};
-
 impl ApiError {
-    fn account_not_found(not_found_account: Option<&str>) -> Self {
-        ApiError::not_found(
-            &ACCOUNT_NOT_FOUND_TYPE,
-            Some(match not_found_account {
-                Some(account) => format!("{} was not found.", account),
-                None => "Username was not found.".to_owned(),
-            }),
-            None,
-            None,
-        )
+    fn account_not_found() -> Self {
+        ApiError::from_api_error_type(&ACCOUNT_NOT_FOUND_TYPE)
+            .detail(Some("Username was not found.".to_owned()))
     }
 }

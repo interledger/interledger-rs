@@ -15,6 +15,8 @@ use interledger::{packet::Address, service::Username};
 // Integration tests of accounts APIs
 // These are very rough tests. It confirms only that the paths and HTTP methods are working correctly.
 // TODO add more to make it precise.
+// TODO consider using `warp::test` in the cases where we can utilize it
+// https://docs.rs/warp/0.1.20/warp/test/index.html
 
 const NODE_ILP_ADDRESS: &str = "example.node";
 const ILP_ADDRESS_1: &str = "example.node.1";
@@ -74,6 +76,7 @@ fn accounts_test() {
 
     let get_accounts = move |node: InterledgerNode| {
         // GET /accounts
+        println!("Testing: GET /accounts");
         let client = reqwest::r#async::Client::new();
         client
             .get(&format!(
@@ -90,7 +93,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 assert_eq!(json, Value::Array(vec![]));
                 Ok(node)
             })
@@ -98,6 +101,7 @@ fn accounts_test() {
 
     let post_accounts_1 = move |node: InterledgerNode| {
         // POST /accounts
+        println!("Testing: POST /accounts");
         let client = reqwest::r#async::Client::new();
         client
             .post(&format!(
@@ -129,7 +133,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account
@@ -190,6 +194,7 @@ fn accounts_test() {
 
     let post_accounts_2 = move |node: InterledgerNode| {
         // POST /accounts
+        println!("Testing: POST /accounts");
         let client = reqwest::r#async::Client::new();
         client
             .post(&format!(
@@ -217,7 +222,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account.get("username").expect("username was expected"),
@@ -272,6 +277,7 @@ fn accounts_test() {
 
     let put_accounts_username = move |node: InterledgerNode| {
         // PUT /accounts/:username
+        println!("Testing: PUT /accounts/:username");
         let client = reqwest::r#async::Client::new();
         client
             .put(&format!(
@@ -295,7 +301,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account
@@ -326,6 +332,7 @@ fn accounts_test() {
 
     let get_accounts_username = move |node: InterledgerNode| {
         // GET /accounts/:username
+        println!("Testing: GET /accounts/:username");
         let client = reqwest::r#async::Client::new();
         client
             .get(&format!(
@@ -343,7 +350,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     // Only checks if the specified fields are corret or not because
                     // `put_accounts_username` resets fields which were not specified.
@@ -376,6 +383,7 @@ fn accounts_test() {
 
     let get_accounts_username_balance = move |node: InterledgerNode| {
         // GET /accounts/:username/balance
+        println!("Testing: GET /accounts/:username/balance");
         let client = reqwest::r#async::Client::new();
         client
             .get(&format!(
@@ -393,7 +401,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(balance) = json {
                     // TODO why isn't this a number?
                     //assert_eq!(account.get("balance").expect("balance was expected"), &Value::Number(Number::from(0)));
@@ -410,6 +418,7 @@ fn accounts_test() {
 
     let put_accounts_username_settings = move |node: InterledgerNode| {
         // PUT /accounts/:username/settings
+        println!("Testing: PUT /accounts/:username/settings");
         let client = reqwest::r#async::Client::new();
         client
             .put(&format!(
@@ -431,7 +440,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account
@@ -452,6 +461,7 @@ fn accounts_test() {
 
     let delete_accounts_username = move |node: InterledgerNode| {
         // DELETE /accounts/:username
+        println!("Testing: DELETE /accounts/:username");
         let client = reqwest::r#async::Client::new();
         client
             .delete(&format!(
@@ -469,7 +479,7 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account.get("username").expect("username was expected"),
@@ -494,6 +504,7 @@ fn accounts_test() {
 
     let post_accounts_username_payments = move |node: InterledgerNode| {
         // POST /accounts/:username/payments
+        println!("Testing: POST /accounts/:username/payments");
         let amount = 100;
         let client = reqwest::r#async::Client::new();
         client
@@ -515,7 +526,7 @@ fn accounts_test() {
             .and_then(move|mut res| {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
-                let json: Value = serde_json::from_str(&content).expect(&format!("Could not parse JSON! JSON: {}", &content));
+                let json: Value = serde_json::from_str(&content).unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(delivered_amount) = json {
                     assert_eq!(delivered_amount.get("delivered_amount").expect("delivered_amount was expected"), &Value::Number(Number::from(amount)));
                 } else {
@@ -527,6 +538,7 @@ fn accounts_test() {
 
     let get_accounts_username_spsp = move |node: InterledgerNode| {
         // GET /accounts/:username/spsp
+        println!("Testing: GET /accounts/:username/spsp");
         let client = reqwest::r#async::Client::new();
         client
             .get(&format!(
@@ -540,14 +552,14 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(spsp) = json {
                     if let Value::String(account) = spsp
                         .get("destination_account")
                         .expect("destination_account was expected")
                     {
                         assert!(
-                            account.starts_with(&format!("{}", ILP_ADDRESS_1)),
+                            account.starts_with(ILP_ADDRESS_1),
                             "destination_account doesn't start with address of {}",
                             USERNAME_1
                         );
@@ -577,6 +589,7 @@ fn accounts_test() {
 
     let get_well_known_pay = move |node: InterledgerNode| {
         // GET /.well-known/pay
+        println!("Testing: GET /.well-known/pay");
         let client = reqwest::r#async::Client::new();
         client
             .get(&format!(
@@ -589,14 +602,14 @@ fn accounts_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(spsp) = json {
                     if let Value::String(account) = spsp
                         .get("destination_account")
                         .expect("destination_account was expected")
                     {
                         assert!(
-                            account.starts_with(&format!("{}", ILP_ADDRESS_1)),
+                            account.starts_with(ILP_ADDRESS_1),
                             "destination_account doesn't start with address of {}",
                             USERNAME_1
                         );
@@ -624,6 +637,90 @@ fn accounts_test() {
             })
     };
 
+    let get_accounts_username_by_admin = move |node: InterledgerNode| {
+        // GET /accounts/:username
+        println!("Testing: GET /accounts/:username [ADMIN]");
+        let client = reqwest::r#async::Client::new();
+        client
+            .get(&format!(
+                "http://localhost:{}/accounts/{}",
+                node.http_bind_address.port(),
+                USERNAME_1
+            ))
+            .header(
+                "Authorization",
+                &format!("Bearer {}", node.admin_auth_token),
+            )
+            .send()
+            .map_err(|err| panic!(err))
+            .and_then(|mut res| {
+                let content = res.text().wait().expect("Error getting response!");
+                assert!(res.error_for_status_ref().is_ok(), "{}", &content);
+                let json: Value = serde_json::from_str(&content)
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
+                if let Value::Object(account) = json {
+                    // Only checks if the specified fields are corret or not because
+                    // `put_accounts_username` resets fields which were not specified.
+                    assert_eq!(
+                        account
+                            .get("ilp_address")
+                            .expect("ilp_address was expected"),
+                        &Value::String(ILP_ADDRESS_1.to_owned())
+                    );
+                    assert_eq!(
+                        account.get("username").expect("username was expected"),
+                        &Value::String(USERNAME_1.to_owned())
+                    );
+                    assert_eq!(
+                        account.get("asset_code").expect("asset_code was expected"),
+                        &Value::String(ASSET_CODE.to_owned())
+                    );
+                    assert_eq!(
+                        account
+                            .get("asset_scale")
+                            .expect("asset_scale was expected"),
+                        &Value::Number(Number::from(ASSET_SCALE))
+                    );
+                } else {
+                    panic!("Invalid response JSON! {}", &content);
+                }
+                Ok(node)
+            })
+    };
+
+    // Should cause Unauthorized
+    let get_accounts_username_unauthorized = move |node: InterledgerNode| {
+        // GET /accounts/:username
+        println!("Testing: GET /accounts/:username");
+        let client = reqwest::r#async::Client::new();
+        client
+            .get(&format!(
+                "http://localhost:{}/accounts/{}",
+                node.http_bind_address.port(),
+                USERNAME_1
+            ))
+            .header(
+                "Authorization",
+                &format!("Bearer {}:{}", USERNAME_2, ILP_OVER_HTTP_INCOMING_TOKEN_2),
+            )
+            .send()
+            .map_err(|err| panic!(err))
+            .and_then(|mut res| {
+                let content = res.text().wait().expect("Error getting response!");
+                let json: Value = serde_json::from_str(&content)
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
+                if let Value::Object(account) = json {
+                    assert_eq!(
+                        account.get("status").expect("status was expected"),
+                        &Value::Number(Number::from(http::StatusCode::UNAUTHORIZED.as_u16()))
+                    );
+                } else {
+                    panic!("Invalid response JSON! {}", &content);
+                }
+                Ok(node)
+            })
+    };
+
     runtime
         .block_on(
             node_to_serve
@@ -641,7 +738,9 @@ fn accounts_test() {
                 .and_then(wait_a_sec) // Seems that we need to wait a while after the account insertions.
                 .and_then(post_accounts_username_payments)
                 .and_then(get_accounts_username_spsp)
-                .and_then(get_well_known_pay),
+                .and_then(get_well_known_pay)
+                .and_then(get_accounts_username_by_admin)
+                .and_then(get_accounts_username_unauthorized),
         )
         .expect("Could not spin up node and tests.");
 }

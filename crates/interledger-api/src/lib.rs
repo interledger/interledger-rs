@@ -8,10 +8,11 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
-use std::{fmt::Display, net::SocketAddr, str::FromStr, collections::HashMap};
+use std::{collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
 use warp::{self, Filter};
 mod routes;
 use bytes::Buf;
+use error::*;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
 use secrecy::SecretString;
@@ -283,12 +284,15 @@ where
             ))
             .or(routes::node_settings_api(self.admin_api_token, self.store))
             .recover(|err: warp::Rejection| {
-                if let Some(api_error) = err.find_cause::<error::ApiError>() {
+                if let Some(api_error) = err.find_cause::<ApiError>() {
                     Ok(api_error.clone().into_response())
-                } else if let Some(json_error) = err.find_cause::<error::JsonDeserializeError>() {
+                } else if let Some(json_error) = err.find_cause::<JsonDeserializeError>() {
                     Ok(json_error.clone().into_response())
                 } else if err.status() == http::status::StatusCode::METHOD_NOT_ALLOWED {
-                    Ok(error::ApiError::default_method_not_allowed().into_response())
+                    Ok(
+                        ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE)
+                            .into_response(),
+                    )
                 } else {
                     Err(err)
                 }
@@ -308,7 +312,7 @@ fn deserialize_json<T: DeserializeOwned + Send>(
         .and_then(|buf: FullBody| {
             let deserializer = &mut serde_json::Deserializer::from_slice(&buf.bytes());
             serde_path_to_error::deserialize(deserializer).map_err(|err| {
-                warp::reject::custom(error::JsonDeserializeError {
+                warp::reject::custom(JsonDeserializeError {
                     category: err.inner().classify(),
                     detail: err.inner().to_string(),
                     path: err.path().clone(),

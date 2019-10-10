@@ -66,7 +66,7 @@ fn node_settings_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account.get("status").expect("status was expected"),
@@ -112,7 +112,7 @@ fn node_settings_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(rates) = json {
                     if let Value::Number(num) = rates.get("XRP").expect("XRP was expected") {
                         assert!(relative_eq!(
@@ -153,7 +153,7 @@ fn node_settings_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(rates) = json {
                     if let Value::Number(num) = rates.get("XRP").expect("XRP was expected") {
                         assert!(relative_eq!(
@@ -194,7 +194,7 @@ fn node_settings_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(_rates) = json {
                     // nothing so far
                 } else {
@@ -228,7 +228,7 @@ fn node_settings_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     let account_id = account
                         .get("id")
@@ -275,7 +275,7 @@ fn node_settings_test() {
                     let content = res.text().wait().expect("Error getting response!");
                     assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                     let json: Value = serde_json::from_str(&content)
-                        .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                        .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                     if let Value::Object(account) = json {
                         assert_eq!(
                             account.get("example.a").expect("example.a was expected"),
@@ -344,12 +344,15 @@ fn node_settings_test() {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
-                    .expect(&format!("Could not parse JSON! JSON: {}", &content));
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
                     assert_eq!(
                         account
                             .get(SETTLEMENT_ENGINE_ASSET_CODE)
-                            .expect(&format!("{} was expected", SETTLEMENT_ENGINE_ASSET_CODE)),
+                            .unwrap_or_else(|| panic!(
+                                "{} was expected",
+                                SETTLEMENT_ENGINE_ASSET_CODE
+                            )),
                         &Value::String(SETTLEMENT_ENGINE_URL.to_owned())
                     );
                 } else {
