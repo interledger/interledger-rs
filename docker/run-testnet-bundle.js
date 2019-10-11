@@ -80,6 +80,7 @@ function loadConfig() {
         return config
     } else {
         const nodeName = process.env.NAME || `ilp_node_${randomBytes(10).toString('hex')}`
+        const httpBindAddress = process.env.HTTP_BIND_ADDRESS || `0.0.0.0:7770`
         const adminAuthToken = process.env.ADMIN_AUTH_TOKEN || `admin-token-${randomBytes(20).toString('hex')}`
         const secretSeed = randomBytes(32).toString('hex')
         const currency = (process.env.CURRENCY || 'XRP').toUpperCase()
@@ -89,6 +90,7 @@ function loadConfig() {
 
         const config = {
             nodeName,
+            httpBindAddress,
             adminAuthToken,
             secretSeed,
             currency,
@@ -121,9 +123,10 @@ function runRedis() {
     return redis
 }
 
-function runNode({ adminAuthToken, secretSeed, nodeName }) {
+function runNode({ httpBindAddress, adminAuthToken, secretSeed, nodeName }) {
     console.log('Starting ilp-node...')
     const node = spawn('ilp-node', [
+        `--http_bind_address=${httpBindAddress}`,
         `--admin_auth_token=${adminAuthToken}`,
         `--secret_seed=${secretSeed}`,
         '--redis_url=unix:/tmp/redis.sock',

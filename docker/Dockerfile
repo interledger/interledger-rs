@@ -1,14 +1,19 @@
 # Build Interledger node into standalone binary
 FROM clux/muslrust:stable as rust
 
-WORKDIR /usr/src
-COPY ./Cargo.toml /usr/src/Cargo.toml
-COPY ./crates /usr/src/crates
+WORKDIR /usr/src/interledger-rs
+COPY ./Cargo.toml /usr/src/interledger-rs/Cargo.toml
+COPY ./crates /usr/src/interledger-rs/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
 # RUN cargo build --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
-RUN cargo build --release --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
+RUN cargo build --release --all-features --package ilp-node --package ilp-cli
+
+WORKDIR /usr/src/
+RUN git clone https://github.com/interledger-rs/settlement-engines.git
+WORKDIR /usr/src/settlement-engines
+RUN cargo build --release --all-features --package interledger-settlement-engines
 
 FROM node:12-alpine
 
@@ -28,23 +33,23 @@ RUN apk --no-cache add \
 
 # Copy Interledger binary
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-node \
+    /usr/src/interledger-rs/target/x86_64-unknown-linux-musl/release/ilp-node \
     /usr/local/bin/ilp-node
 COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/release/interledger-settlement-engines \
-    /usr/local/bin/interledger-settlement-engines
-COPY --from=rust \
-    /usr/src/target/x86_64-unknown-linux-musl/release/ilp-cli \
+    /usr/src/interledger-rs/target/x86_64-unknown-linux-musl/release/ilp-cli \
     /usr/local/bin/ilp-cli
+COPY --from=rust \
+    /usr/src/settlement-engines/target/x86_64-unknown-linux-musl/release/interledger-settlement-engines \
+    /usr/local/bin/interledger-settlement-engines
 # COPY --from=rust \
-#     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-node \
+#     /usr/src/interledger-rs/target/x86_64-unknown-linux-musl/debug/ilp-node \
 #     /usr/local/bin/ilp-node
 # COPY --from=rust \
-#     /usr/src/target/x86_64-unknown-linux-musl/debug/interledger-settlement-engines \
-#     /usr/local/bin/interledger-settlement-engines
-# COPY --from=rust \
-#     /usr/src/target/x86_64-unknown-linux-musl/debug/ilp-cli \
+#     /usr/src/interledger-rs/target/x86_64-unknown-linux-musl/debug/ilp-cli \
 #     /usr/local/bin/ilp-cli
+# COPY --from=rust \
+#     /usr/src/settlement-engines/target/x86_64-unknown-linux-musl/debug/interledger-settlement-engines \
+#     /usr/local/bin/interledger-settlement-engines
 
 WORKDIR /opt/app
 
