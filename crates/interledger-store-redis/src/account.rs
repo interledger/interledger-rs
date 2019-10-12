@@ -154,7 +154,7 @@ impl Account {
 
     pub fn encrypt_tokens(
         mut self,
-        encryption_key: &aead::SealingKey,
+        encryption_key: &aead::LessSafeKey,
     ) -> AccountWithEncryptedTokens {
         if let Some(ref token) = self.ilp_over_btp_outgoing_token {
             self.ilp_over_btp_outgoing_token = Some(SecretBytes::from(encrypt_token(
@@ -190,7 +190,7 @@ pub struct AccountWithEncryptedTokens {
 }
 
 impl AccountWithEncryptedTokens {
-    pub fn decrypt_tokens(mut self, decryption_key: &aead::OpeningKey) -> Account {
+    pub fn decrypt_tokens(mut self, decryption_key: &aead::LessSafeKey) -> Account {
         if let Some(ref encrypted) = self.account.ilp_over_btp_outgoing_token {
             self.account.ilp_over_btp_outgoing_token =
                 decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);

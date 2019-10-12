@@ -12,7 +12,7 @@ static ENCRYPTION_KEY_STRING: &[u8] = b"ilp_stream_encryption";
 static FULFILLMENT_GENERATION_STRING: &[u8] = b"ilp_stream_fulfillment";
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
-    let key = hmac::SigningKey::new(&digest::SHA256, key);
+    let key = hmac::Key::new(hmac::HMAC_SHA256, key);
     let output = hmac::sign(&key, message);
     let mut to_return: [u8; 32] = [0; 32];
     to_return.copy_from_slice(output.as_ref());
@@ -68,21 +68,16 @@ fn encrypt_with_nonce(
     nonce: [u8; NONCE_LENGTH],
 ) -> BytesMut {
     let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
-    let key = aead::SealingKey::new(&aead::AES_256_GCM, &key)
+    let key = aead::UnboundKey::new(&aead::AES_256_GCM, &key)
         .expect("Failed to create a new sealing key for encrypting data!");
+    let key = aead::LessSafeKey::new(key);
 
     let additional_data = aead::Aad::from(&[]);
 
-    // seal_in_place expects the data to have enough room (in length, not just capacity) to append the auth tag
-    let auth_tag_place_holder: [u8; AUTH_TAG_LENGTH] = [0; AUTH_TAG_LENGTH];
-    plaintext.extend_from_slice(&auth_tag_place_holder[..]);
-
-    aead::seal_in_place(
-        &key,
+    key.seal_in_place_append_tag(
         aead::Nonce::assume_unique_for_key(nonce),
         additional_data,
-        plaintext.as_mut(),
-        AUTH_TAG_LENGTH,
+        &mut plaintext,
     )
     .unwrap_or_else(|err| {
         error!("Error encrypting {:?}", err);
@@ -103,8 +98,9 @@ fn encrypt_with_nonce(
 
 pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
     let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
-    let key = aead::OpeningKey::new(&aead::AES_256_GCM, &key)
+    let key = aead::UnboundKey::new(&aead::AES_256_GCM, &key)
         .expect("Failed to create a new opening key for decrypting data!");
+    let key = aead::LessSafeKey::new(key);
 
     let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
     nonce.copy_from_slice(&ciphertext.split_to(NONCE_LENGTH));
@@ -115,17 +111,16 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
     // Ring expects the tag to come after the data
     ciphertext.unsplit(auth_tag);
 
-    let length = aead::open_in_place(
-        &key,
-        aead::Nonce::assume_unique_for_key(nonce),
-        aead::Aad::from(additional_data),
-        0,
-        ciphertext.as_mut(),
-    )
-    .map_err(|err| {
-        error!("Error decrypting {:?}", err);
-    })?
-    .len();
+    let length = key
+        .open_in_place(
+            aead::Nonce::assume_unique_for_key(nonce),
+            aead::Aad::from(additional_data),
+            &mut ciphertext,
+        )
+        .map_err(|err| {
+            error!("Error decrypting {:?}", err);
+        })?
+        .len();
     ciphertext.truncate(length);
     Ok(ciphertext)
 }

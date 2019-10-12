@@ -26,7 +26,7 @@ use interledger::{
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
 use ring::{
-    digest, hmac,
+    hmac,
     rand::{SecureRandom, SystemRandom},
 };
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
@@ -370,7 +370,7 @@ impl InterledgerNode {
 fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {
     let mut redis_secret: [u8; 32] = [0; 32];
     let sig = hmac::sign(
-        &hmac::SigningKey::new(&digest::SHA256, secret_seed),
+        &hmac::Key::new(hmac::HMAC_SHA256, secret_seed),
         REDIS_SECRET_GENERATION_STRING.as_bytes(),
     );
     redis_secret.copy_from_slice(sig.as_ref());
