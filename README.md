@@ -48,7 +48,7 @@ docker run -it interledgerrs/node
 # This is a simple CLI for interacting with the node's HTTP API
 docker run -it interledgerrs/ilp-cli
 
-# This is includes the Settlement Engines written in Rust
+# This includes the Settlement Engines written in Rust
 docker run -it interledgerrs/settlement-engines
 ```
 
@@ -69,6 +69,8 @@ git clone https://github.com/interledger-rs/interledger-rs && cd interledger-rs
 cargo build
 ```
 
+You can find the Interledger Settlement Engines in a [separate repository](https://github.com/interledger-rs/settlement-engines).
+
 #### Run
 
 ```bash #
@@ -76,8 +78,6 @@ cargo build
 cargo run -p ilp-node -- # Put CLI args after the "--"
 
 cargo run -p ilp-cli -- # Put CLI args after the "--"
-
-cargo run -p interledger-settlement-engines -- ethereum-ledger
 ```
 
 Append the `--help` flag to see available options.
