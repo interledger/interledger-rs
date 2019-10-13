@@ -148,7 +148,7 @@ where
                                 .get_account_from_http_auth(auth.username(), auth.password())
                                 .then(move |authorized_account: Result<A, _>| {
                                     if authorized_account.is_err() {
-                                        return err(ApiError::account_not_found().into());
+                                        return err(ApiError::unauthorized().into());
                                     }
                                     let authorized_account = authorized_account.unwrap();
                                     if &path_username == authorized_account.username() {
@@ -181,7 +181,7 @@ where
                     .get_account_from_http_auth(auth.username(), auth.password())
                     .then(move |authorized_account: Result<A, _>| {
                         if authorized_account.is_err() {
-                            return err::<A, Rejection>(ApiError::account_not_found().into());
+                            return err::<A, Rejection>(ApiError::unauthorized().into());
                         }
                         let authorized_account = authorized_account.unwrap();
                         if &path_username == authorized_account.username() {
