@@ -46,7 +46,7 @@ docker pull interledgerrs/settlement-engines
 docker run -it interledgerrs/node
 
 # This is a simple CLI for interacting with the node's HTTP API
-docker run -it interledgerrs/ilp-cli
+docker run -it --rm interledgerrs/ilp-cli
 
 # This includes the Settlement Engines written in Rust
 docker run -it interledgerrs/settlement-engines
