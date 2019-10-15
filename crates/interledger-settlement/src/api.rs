@@ -2,6 +2,7 @@ use super::{
     Convert, ConvertDetails, IdempotentData, IdempotentStore, LeftoversStore, Quantity,
     SettlementAccount, SettlementStore, SE_ILP_ADDRESS,
 };
+use bytes::buf::FromBuf;
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -17,52 +18,137 @@ use num_traits::Zero;
 use ring::digest::{digest, SHA256};
 use serde_json::json;
 use std::{
-    marker::PhantomData,
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
 use tokio::executor::spawn;
-use tower_web::{
-    derive_resource, derive_resource_impl, impl_web, impl_web_clean_nested,
-    impl_web_clean_top_level, net::ConnectionStream, ServiceBuilder,
-};
+use warp::{self, Filter};
 
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
 
-#[derive(Clone)]
-pub struct SettlementApi<S, O, A> {
-    outgoing_handler: O,
+pub fn create_settlements_filter<S, O, A>(
     store: S,
-    account_type: PhantomData<A>,
-}
+    outgoing_handler: O,
+) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
+where
+    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+        + SettlementStore<Account = A>
+        + IdempotentStore
+        + AccountStore<Account = A>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    A: SettlementAccount + Send + Sync + 'static,
+{
+    let with_store = warp::any().map(move || store.clone()).boxed();
+    let idempotency = warp::header::optional::<String>("idempotency-key");
+    let account_id = warp::path("accounts").and(warp::path::param2::<String>()); // account_id
 
-impl_web! {
-    impl<S, O, A> SettlementApi<S, O, A>
-    where
-        S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint> + SettlementStore<Account = A> + IdempotentStore + AccountStore<Account = A> + Clone + Send + Sync + 'static,
-        O: OutgoingService<A> + Clone + Send + Sync + 'static,
-        A: SettlementAccount + Send + Sync + 'static,
-    {
-        pub fn new(store: S, outgoing_handler: O) -> Self {
-            SettlementApi {
-                store,
-                outgoing_handler,
-                account_type: PhantomData,
-            }
-        }
+    // POST /accounts/:account_id/settlements (optional idempotency-key header)
+    // Body is a Quantity object
+    let settlement_endpoint = account_id.and(warp::path("settlements"));
+    let settlements = warp::post2()
+        .and(settlement_endpoint)
+        .and(warp::path::end())
+        .and(idempotency.clone())
+        .and(warp::body::json())
+        .and(with_store.clone())
+        .and_then(
+            move |id: String, idempotency_key: Option<String>, quantity: Quantity, store: S| {
+                let input = format!("{}{:?}", id, quantity);
+                let input_hash = get_hash_of(input.as_ref());
+
+                let idempotency_key_clone = idempotency_key.clone();
+                let store_clone = store.clone();
+                let f =
+                    move || do_receive_settlement(store_clone, id, quantity, idempotency_key_clone);
+                make_idempotent_call(store, f, input_hash, idempotency_key)
+                    // TODO Replace with responses
+                    .map_err(move |(_status_code, error_msg)| warp::reject::custom(error_msg))
+                    .and_then(move |(_status_code, message)| {
+                        // TODO Replace with responses
+                        match serde_json::from_slice::<Quantity>(&message) {
+                            Ok(quantity) => Either::A(ok(warp::reply::json(&quantity))),
+                            Err(_) => Either::B(err(warp::reject::custom(
+                                "could not convert to quantity",
+                            ))),
+                        }
+                    })
+            },
+        );
+
+    // POST /accounts/:account_id/messages (optional idempotency-key header)
+    // Body is a Vec<u8> object
+    let with_outgoing_handler = warp::any().map(move || outgoing_handler.clone()).boxed();
+    let messages_endpoint = account_id.and(warp::path("messages"));
+    let messages = warp::post2()
+        .and(messages_endpoint)
+        .and(warp::path::end())
+        .and(idempotency.clone())
+        .and(warp::body::concat())
+        .and(with_store.clone())
+        .and(with_outgoing_handler.clone())
+        .and_then(
+            move |id: String,
+                  idempotency_key: Option<String>,
+                  body: warp::body::FullBody,
+                  store: S,
+                  outgoing_handler: O| {
+                // Gets called by our settlement engine, forwards the request outwards
+                // until it reaches the peer's settlement engine.
+                let message = Vec::from_buf(body);
+                let input = format!("{}{:?}", id, message);
+                let input_hash = get_hash_of(input.as_ref());
+
+                let store_clone = store.clone();
+                let f =
+                    move || do_send_outgoing_message(store_clone, outgoing_handler, id, message);
+                make_idempotent_call(store, f, input_hash, idempotency_key)
+                    // TODO Replace with error case with response
+                    .map_err(move |(_status_code, error_msg)| warp::reject::custom(error_msg))
+                    .and_then(move |(status_code, message)| {
+                        Ok(Response::builder()
+                            .status(status_code)
+                            .body(message)
+                            .unwrap())
+                    })
+            },
+        );
+
+    settlements
+        // TODO: Figure out how to convert these rejections to responses
+        // .recover(|err: warp::Rejection| {
+        //     Ok(err.into_response())
+        // })
+        .or(messages)
+        .boxed()
+}
 
         // Helper function that returns any idempotent data that corresponds to a
         // provided idempotency key. It fails if the hash of the input that
         // generated the idempotent data does not match the hash of the provided input.
-        fn check_idempotency(
-            &self,
+        fn check_idempotency<S, A>(
+            store: S,
             idempotency_key: String,
             input_hash: [u8; 32],
-        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String> {
-            self.store
+        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String>
+        where
+            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+                + SettlementStore<Account = A>
+                + IdempotentStore
+                + AccountStore<Account = A>
+                + Clone
+                + Send
+                + Sync
+                + 'static,
+            A: SettlementAccount + Send + Sync + 'static,
+        {
+            store
                 .load_idempotent_data(idempotency_key.clone())
                 .map_err(move |_| {
                     let error_msg = "Couldn't load idempotent data".to_owned();
@@ -74,7 +160,10 @@ impl_web! {
                         if ret.2 == input_hash {
                             Ok(Some((ret.0, ret.1)))
                         } else {
-                            Ok(Some((StatusCode::from_u16(409).unwrap(), Bytes::from(&b"Provided idempotency key is tied to other input"[..]))))
+                            Ok(Some((
+                                StatusCode::from_u16(409).unwrap(),
+                                Bytes::from("Provided idempotency key is tied to other input"),
+                            )))
                         }
                     } else {
                         Ok(None)
@@ -82,28 +171,43 @@ impl_web! {
                 })
         }
 
-        fn make_idempotent_call<F>(&self, f: F, input_hash: [u8; 32], idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>>
-        where F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
-            let store = self.store.clone();
+        fn make_idempotent_call<S, A, F>(
+            store: S,
+            f: F,
+            input_hash: [u8; 32],
+            idempotency_key: Option<String>,
+        ) -> impl Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)>
+        where
+            F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>,
+            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+                + SettlementStore<Account = A>
+                + IdempotentStore
+                + AccountStore<Account = A>
+                + Clone
+                + Send
+                + Sync
+                + 'static,
+            A: SettlementAccount + Send + Sync + 'static,
+        {
             if let Some(idempotency_key) = idempotency_key {
                 // If there an idempotency key was provided, check idempotency
                 // and the key was not present or conflicting with an existing
                 // key, perform the call and save the idempotent return data
                 Either::A(
-                    self.check_idempotency(idempotency_key.clone(), input_hash)
+                    check_idempotency(store.clone(), idempotency_key.clone(), input_hash)
                     .map_err(move |err| {
                         let status_code = StatusCode::from_u16(500).unwrap();
-                        Response::builder().status(status_code).body(err).unwrap()
+                        (status_code, err)
                     })
                     .and_then(move |ret: Option<(StatusCode, Bytes)>| {
                         if let Some(ret) = ret {
                             if ret.0.is_success() {
-                                let resp = Response::builder().status(ret.0).body(ret.1).unwrap();
-                                Either::A(Either::A(ok(resp)))
+                                Either::A(Either::A(ok((ret.0, ret.1))))
                             } else {
-                                let resp = Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap();
-                                Either::A(Either::B(err(resp)))
-
+                                Either::A(Either::B(err((
+                                    ret.0,
+                                    String::from_utf8_lossy(&ret.1).to_string(),
+                                ))))
                             }
                         } else {
                             Either::B(
@@ -112,14 +216,14 @@ impl_web! {
                                     let status_code = ret.0;
                                     let data = Bytes::from(ret.1.clone());
                                     spawn(store.save_idempotent_data(idempotency_key, input_hash, status_code, data));
-                                    Response::builder().status(status_code).body(ret.1).unwrap()
+                                    (status_code, ret.1)
                                 }})
                                 .and_then(move |ret: (StatusCode, Bytes)| {
                                     store.save_idempotent_data(idempotency_key, input_hash, ret.0, ret.1.clone())
                                     .map_err({let ret = ret.clone(); move |_| {
-                                        Response::builder().status(ret.0).body(String::from_utf8_lossy(&ret.1).to_string()).unwrap()
+                                        (ret.0, String::from_utf8_lossy(&ret.1).to_string())
                                     }}).and_then(move |_| {
-                                        Ok(Response::builder().status(ret.0).body(ret.1).unwrap())
+                                        Ok((ret.0, ret.1))
                                     })
                                 })
                             )
@@ -129,13 +233,8 @@ impl_web! {
             } else {
                 // otherwise just make the call w/o any idempotency saves
                 Either::B(
-                    f()
-                    .map_err(move |ret: (StatusCode, String)| {
-                        Response::builder().status(ret.0).body(ret.1).unwrap()
-                    })
-                    .and_then(move |ret: (StatusCode, Bytes)| {
-                        Ok(Response::builder().status(ret.0).body(ret.1).unwrap())
-                    })
+                    f().map_err(move |ret: (StatusCode, String)| (ret.0, ret.1))
+                        .and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
                 )
             }
         }
