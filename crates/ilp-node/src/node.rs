@@ -12,7 +12,7 @@ use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
     ccp::{CcpRouteManagerBuilder, CcpRoutingAccount},
-    http::HttpClientService,
+    http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer},
     ildcp::IldcpService,
     packet::Address,
     packet::{ErrorCode, RejectBuilder},
@@ -412,6 +412,10 @@ impl InterledgerNode {
                             if let Some(username) = default_spsp_account {
                                 api.default_spsp_account(username);
                             }
+                            // add an API of ILP over HTTP and add rejection handler
+                            let api = api.into_warp_filter()
+                                .or(IlpOverHttpServer::new(incoming_service.clone(), store.clone()).as_filter())
+                                .recover(default_rejection_handler);
 
                             // Mount the BTP endpoint at /ilp/btp
                             let btp_endpoint = warp::path("ilp")
@@ -421,7 +425,7 @@ impl InterledgerNode {
                             // Note that other endpoints added to the API must come first
                             // because the API includes error handling and consumes the request.
                             // TODO should we just make BTP part of the API?
-                            let api = btp_endpoint.or(api.into_warp_filter()).with(warp::log("interledger-api")).boxed();
+                            let api = btp_endpoint.or(api).with(warp::log("interledger-api")).boxed();
                             info!("Interledger.rs node HTTP API listening on: {}", http_bind_address);
                             spawn(warp::serve(api).bind(http_bind_address));
 

@@ -1,5 +1,5 @@
 mod error_types;
-pub(crate) use error_types::*;
+pub use error_types::*;
 
 use chrono::{DateTime, Local};
 use http::header::HeaderValue;
@@ -21,7 +21,7 @@ const ERROR_TYPE_PREFIX: &str = "https://errors.interledger.org/http-api";
 /// The meaning of each field could be found at [Members of a Problem Details Object](https://tools.ietf.org/html/rfc7807#section-3.1) section.
 /// ApiError implements Reply so that it could be used for responses.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct ApiError {
+pub struct ApiError {
     /// `type` is a URI which represents an error type. The URI should provide human-readable
     /// documents so that developers can solve the problem easily.
     #[serde(serialize_with = "serialize_type")]
@@ -140,6 +140,26 @@ impl ApiError {
         ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE)
     }
 
+    pub fn account_not_found() -> Self {
+        ApiError::from_api_error_type(&ACCOUNT_NOT_FOUND_TYPE)
+            .detail(Some("Username was not found.".to_owned()))
+    }
+
+    pub fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
+        let detail = Some(match invalid_account_id {
+            Some(invalid_account_id) => match invalid_account_id.len() {
+                0 => "Account ID is empty".to_owned(),
+                _ => format!("{} is an invalid account ID", invalid_account_id),
+            },
+            None => "Invalid string was given as an account ID".to_owned(),
+        });
+        ApiError::from_api_error_type(&INVALID_ACCOUNT_ID_TYPE).detail(detail)
+    }
+
+    pub fn invalid_ilp_packet() -> Self {
+        ApiError::from_api_error_type(&INVALID_ILP_PACKET_TYPE)
+    }
+
     pub fn detail<T>(mut self, detail: Option<T>) -> Self
     where
         T: Into<String>,
@@ -215,10 +235,10 @@ lazy_static! {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct JsonDeserializeError {
-    pub(crate) category: Category,
-    pub(crate) detail: String,
-    pub(crate) path: serde_path_to_error::Path,
+pub struct JsonDeserializeError {
+    pub category: Category,
+    pub detail: String,
+    pub path: serde_path_to_error::Path,
 }
 
 impl StdError for JsonDeserializeError {}
@@ -278,5 +298,18 @@ impl Reply for JsonDeserializeError {
 impl From<JsonDeserializeError> for Rejection {
     fn from(from: JsonDeserializeError) -> Self {
         custom(from)
+    }
+}
+
+// Receives `ApiError`s and `JsonDeserializeError` and return it in the RFC7807 format.
+pub fn default_rejection_handler(err: warp::Rejection) -> Result<Response, Rejection> {
+    if let Some(api_error) = err.find_cause::<ApiError>() {
+        Ok(api_error.clone().into_response())
+    } else if let Some(json_error) = err.find_cause::<JsonDeserializeError>() {
+        Ok(json_error.clone().into_response())
+    } else if err.status() == http::status::StatusCode::METHOD_NOT_ALLOWED {
+        Ok(ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE).into_response())
+    } else {
+        Err(err)
     }
 }
