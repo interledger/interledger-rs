@@ -9,6 +9,7 @@ use crate::test_helpers::TestAccount;
 
 pub static DATA: &str = "DATA_FOR_SETTLEMENT_ENGINE";
 pub static BODY: &str = "hi";
+pub static IDEMPOTENCY: &str = "AJKJNUjM0oyiAN46";
 
 lazy_static! {
     pub static ref SETTLEMENT_DATA: Quantity = Quantity::new("100", 18);
@@ -18,5 +19,4 @@ lazy_static! {
     pub static ref MESSAGES_API: Matcher = Matcher::Regex(r"^/accounts/\d*/messages$".to_string());
     pub static ref SETTLEMENT_API: Matcher =
         Matcher::Regex(r"^/accounts/\d*/settlements$".to_string());
-    pub static ref IDEMPOTENCY: Option<String> = Some("AJKJNUjM0oyiAN46".to_string());
 }

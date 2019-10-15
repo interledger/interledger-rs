@@ -342,8 +342,7 @@ pub fn test_store(store_fails: bool, account_has_engine: bool) -> TestStore {
 pub fn test_api(
     test_store: TestStore,
     should_fulfill: bool,
-) -> SettlementApi<TestStore, impl OutgoingService<TestAccount> + Clone + Send + Sync, TestAccount>
-{
+) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
     let outgoing = outgoing_service_fn(move |_| {
         Box::new(if should_fulfill {
             ok(FulfillBuilder {
@@ -361,5 +360,5 @@ pub fn test_api(
             .build())
         })
     });
-    SettlementApi::new(test_store, outgoing)
+    create_settlements_filter(test_store, outgoing)
 }

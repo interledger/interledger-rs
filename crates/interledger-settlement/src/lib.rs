@@ -19,9 +19,8 @@ mod test_helpers;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::ops::{Div, Mul};
-use tower_web::Extract;
 
-pub use api::{scale_with_precision_loss, SettlementApi};
+pub use api::{create_settlements_filter, scale_with_precision_loss};
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
@@ -29,7 +28,7 @@ lazy_static! {
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
 
-#[derive(Extract, Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Quantity {
     pub amount: String,
     pub scale: u8,
