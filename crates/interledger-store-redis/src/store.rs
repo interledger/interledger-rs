@@ -46,9 +46,8 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use parking_lot::RwLock;
 use redis::{
-    self, aio::SharedConnection, cmd, Client, ConnectionInfo, ControlFlow, ErrorKind,
-    FromRedisValue, PipelineCommands, PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs,
-    Value,
+    self, cmd, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue, PipelineCommands,
+    PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
 };
 use secrecy::{ExposeSecret, Secret};
 use serde_json;
@@ -658,7 +657,7 @@ impl RedisStore {
         Box::new(
             LOAD_ACCOUNTS
                 .arg(id.to_string())
-                .invoke_async(self.connection.get_shared_connection())
+                .invoke_async(self.connection.clone())
                 .map_err(|err| error!("Error loading accounts: {:?}", err))
                 .and_then(|(_, mut accounts): (_, Vec<AccountWithEncryptedTokens>)| {
                     accounts.pop().ok_or(())
@@ -726,7 +725,7 @@ impl AccountStore for RedisStore {
         }
         Box::new(
             script
-                .invoke_async(self.connection.get_shared_connection())
+                .invoke_async(self.connection.clone())
                 .map_err(|err| error!("Error loading accounts: {:?}", err))
                 .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
                     if accounts.len() == num_accounts {
@@ -836,7 +835,7 @@ impl BalanceStore for RedisStore {
                 PROCESS_PREPARE
                     .arg(from_account_id)
                     .arg(incoming_amount)
-                    .invoke_async(self.connection.get_shared_connection())
+                    .invoke_async(self.connection.clone())
                     .map_err(move |err| {
                         warn!(
                             "Error handling prepare from account: {}:  {:?}",
@@ -867,7 +866,7 @@ impl BalanceStore for RedisStore {
                 PROCESS_FULFILL
                     .arg(to_account_id)
                     .arg(outgoing_amount)
-                    .invoke_async(self.connection.get_shared_connection())
+                    .invoke_async(self.connection.clone())
                     .map_err(move |err| {
                         error!(
                             "Error handling Fulfill received from account: {}: {:?}",
@@ -900,7 +899,7 @@ impl BalanceStore for RedisStore {
                 PROCESS_REJECT
                     .arg(from_account_id)
                     .arg(incoming_amount)
-                    .invoke_async(self.connection.get_shared_connection())
+                    .invoke_async(self.connection.clone())
                     .map_err(move |err| {
                         warn!(
                             "Error handling reject for packet from account: {}: {:?}",
@@ -965,7 +964,7 @@ impl BtpStore for RedisStore {
         Box::new(
             ACCOUNT_FROM_USERNAME
                 .arg(username.as_ref())
-                .invoke_async(self.connection.get_shared_connection())
+                .invoke_async(self.connection.clone())
                 .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
@@ -1018,7 +1017,7 @@ impl BtpStore for RedisStore {
                             }
                             Either::B(
                                 script
-                                    .invoke_async(connection.get_shared_connection())
+                                    .invoke_async(connection.clone())
                                     .map_err(|err| {
                                         error!(
                                         "Error getting accounts with outgoing BTP details: {:?}",
@@ -1027,7 +1026,7 @@ impl BtpStore for RedisStore {
                                     })
                                     .and_then(
                                         move |(_connection, accounts): (
-                                            SharedConnection,
+                                            RedisReconnect,
                                             Vec<AccountWithEncryptedTokens>,
                                         )| {
                                             let accounts: Vec<Account> = accounts
@@ -1065,7 +1064,7 @@ impl HttpStore for RedisStore {
         Box::new(
             ACCOUNT_FROM_USERNAME
                 .arg(username.as_ref())
-                .invoke_async(self.connection.get_shared_connection())
+                .invoke_async(self.connection.clone())
                 .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
@@ -1218,7 +1217,7 @@ impl NodeStore for RedisStore {
                 script.arg(id.to_string());
             }
             script
-                .invoke_async(connection.get_shared_connection())
+                .invoke_async(connection.clone())
                 .map_err(|err| error!("Error getting account ids: {:?}", err))
                 .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
                     let accounts: Vec<Account> = accounts
@@ -1521,7 +1520,7 @@ impl RouteManagerStore for RedisStore {
                             }
                             Either::B(
                                 script
-                                    .invoke_async(connection.get_shared_connection())
+                                    .invoke_async(connection.clone())
                                     .map_err(|err| {
                                         error!(
                                             "Error getting accounts to send routes to: {:?}",
@@ -1530,7 +1529,7 @@ impl RouteManagerStore for RedisStore {
                                     })
                                     .and_then(
                                         move |(_connection, accounts): (
-                                            SharedConnection,
+                                            RedisReconnect,
                                             Vec<AccountWithEncryptedTokens>,
                                         )| {
                                             let accounts: Vec<Account> = accounts
@@ -1576,7 +1575,7 @@ impl RouteManagerStore for RedisStore {
                             }
                             Either::B(
                                 script
-                                    .invoke_async(connection.get_shared_connection())
+                                    .invoke_async(connection.clone())
                                     .map_err(|err| {
                                         error!(
                                             "Error getting accounts to receive routes from: {:?}",
@@ -1585,7 +1584,7 @@ impl RouteManagerStore for RedisStore {
                                     })
                                     .and_then(
                                         move |(_connection, accounts): (
-                                            SharedConnection,
+                                            RedisReconnect,
                                             Vec<AccountWithEncryptedTokens>,
                                         )| {
                                             let accounts: Vec<Account> = accounts
@@ -1854,7 +1853,7 @@ impl SettlementStore for RedisStore {
             .arg(account_id)
             .arg(amount)
             .arg(idempotency_key)
-            .invoke_async(self.connection.get_shared_connection())
+            .invoke_async(self.connection.clone())
             .map_err(move |err| error!("Error processing incoming settlement from account: {} for amount: {}: {:?}", account_id, amount, err))
             .and_then(move |(_connection, balance): (_, i64)| {
                 trace!("Processed incoming settlement from account: {} for amount: {}. Balance is now: {}", account_id, amount, balance);
@@ -1876,7 +1875,7 @@ impl SettlementStore for RedisStore {
             REFUND_SETTLEMENT
                 .arg(account_id)
                 .arg(settle_amount)
-                .invoke_async(self.connection.get_shared_connection())
+                .invoke_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error refunding settlement for account: {} of amount: {}: {:?}",

@@ -37,9 +37,7 @@ impl RedisReconnect {
         })
     }
 
-    // TODO get rid of this command when redis::Script#invoke_async is made generic over ConnectionLike
-    // instead of being pinned to SharedConnection
-    pub fn get_shared_connection(&self) -> SharedConnection {
+    fn get_shared_connection(&self) -> SharedConnection {
         self.conn.read().clone()
     }
 }
