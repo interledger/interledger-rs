@@ -129,157 +129,175 @@ where
         .boxed()
 }
 
-        // Helper function that returns any idempotent data that corresponds to a
-        // provided idempotency key. It fails if the hash of the input that
-        // generated the idempotent data does not match the hash of the provided input.
-        fn check_idempotency<S, A>(
-            store: S,
-            idempotency_key: String,
-            input_hash: [u8; 32],
-        ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String>
-        where
-            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-                + SettlementStore<Account = A>
-                + IdempotentStore
-                + AccountStore<Account = A>
-                + Clone
-                + Send
-                + Sync
-                + 'static,
-            A: SettlementAccount + Send + Sync + 'static,
-        {
-            store
-                .load_idempotent_data(idempotency_key.clone())
-                .map_err(move |_| {
-                    let error_msg = "Couldn't load idempotent data".to_owned();
-                    error!("{}", error_msg);
-                    error_msg
+// Helper function that returns any idempotent data that corresponds to a
+// provided idempotency key. It fails if the hash of the input that
+// generated the idempotent data does not match the hash of the provided input.
+fn check_idempotency<S, A>(
+    store: S,
+    idempotency_key: String,
+    input_hash: [u8; 32],
+) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String>
+where
+    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+        + SettlementStore<Account = A>
+        + IdempotentStore
+        + AccountStore<Account = A>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    A: SettlementAccount + Send + Sync + 'static,
+{
+    store
+        .load_idempotent_data(idempotency_key.clone())
+        .map_err(move |_| {
+            let error_msg = "Couldn't load idempotent data".to_owned();
+            error!("{}", error_msg);
+            error_msg
+        })
+        .and_then(move |ret: Option<IdempotentData>| {
+            if let Some(ret) = ret {
+                if ret.2 == input_hash {
+                    Ok(Some((ret.0, ret.1)))
+                } else {
+                    Ok(Some((
+                        StatusCode::from_u16(409).unwrap(),
+                        Bytes::from("Provided idempotency key is tied to other input"),
+                    )))
+                }
+            } else {
+                Ok(None)
+            }
+        })
+}
+
+fn make_idempotent_call<S, A, F>(
+    store: S,
+    f: F,
+    input_hash: [u8; 32],
+    idempotency_key: Option<String>,
+) -> impl Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)>
+where
+    F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>,
+    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+        + SettlementStore<Account = A>
+        + IdempotentStore
+        + AccountStore<Account = A>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    A: SettlementAccount + Send + Sync + 'static,
+{
+    if let Some(idempotency_key) = idempotency_key {
+        // If there an idempotency key was provided, check idempotency
+        // and the key was not present or conflicting with an existing
+        // key, perform the call and save the idempotent return data
+        Either::A(
+            check_idempotency(store.clone(), idempotency_key.clone(), input_hash)
+                .map_err(move |err| {
+                    let status_code = StatusCode::from_u16(500).unwrap();
+                    (status_code, err)
                 })
-                .and_then(move |ret: Option<IdempotentData>| {
+                .and_then(move |ret: Option<(StatusCode, Bytes)>| {
                     if let Some(ret) = ret {
-                        if ret.2 == input_hash {
-                            Ok(Some((ret.0, ret.1)))
+                        if ret.0.is_success() {
+                            Either::A(Either::A(ok((ret.0, ret.1))))
                         } else {
-                            Ok(Some((
-                                StatusCode::from_u16(409).unwrap(),
-                                Bytes::from("Provided idempotency key is tied to other input"),
-                            )))
+                            Either::A(Either::B(err((
+                                ret.0,
+                                String::from_utf8_lossy(&ret.1).to_string(),
+                            ))))
                         }
                     } else {
-                        Ok(None)
-                    }
-                })
-        }
-
-        fn make_idempotent_call<S, A, F>(
-            store: S,
-            f: F,
-            input_hash: [u8; 32],
-            idempotency_key: Option<String>,
-        ) -> impl Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)>
-        where
-            F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>,
-            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-                + SettlementStore<Account = A>
-                + IdempotentStore
-                + AccountStore<Account = A>
-                + Clone
-                + Send
-                + Sync
-                + 'static,
-            A: SettlementAccount + Send + Sync + 'static,
-        {
-            if let Some(idempotency_key) = idempotency_key {
-                // If there an idempotency key was provided, check idempotency
-                // and the key was not present or conflicting with an existing
-                // key, perform the call and save the idempotent return data
-                Either::A(
-                    check_idempotency(store.clone(), idempotency_key.clone(), input_hash)
-                    .map_err(move |err| {
-                        let status_code = StatusCode::from_u16(500).unwrap();
-                        (status_code, err)
-                    })
-                    .and_then(move |ret: Option<(StatusCode, Bytes)>| {
-                        if let Some(ret) = ret {
-                            if ret.0.is_success() {
-                                Either::A(Either::A(ok((ret.0, ret.1))))
-                            } else {
-                                Either::A(Either::B(err((
-                                    ret.0,
-                                    String::from_utf8_lossy(&ret.1).to_string(),
-                                ))))
-                            }
-                        } else {
-                            Either::B(
-                                f()
-                                .map_err({let store = store.clone(); let idempotency_key = idempotency_key.clone(); move |ret: (StatusCode, String)| {
+                        Either::B(
+                            f().map_err({
+                                let store = store.clone();
+                                let idempotency_key = idempotency_key.clone();
+                                move |ret: (StatusCode, String)| {
                                     let status_code = ret.0;
                                     let data = Bytes::from(ret.1.clone());
-                                    spawn(store.save_idempotent_data(idempotency_key, input_hash, status_code, data));
+                                    spawn(store.save_idempotent_data(
+                                        idempotency_key,
+                                        input_hash,
+                                        status_code,
+                                        data,
+                                    ));
                                     (status_code, ret.1)
-                                }})
-                                .and_then(move |ret: (StatusCode, Bytes)| {
-                                    store.save_idempotent_data(idempotency_key, input_hash, ret.0, ret.1.clone())
-                                    .map_err({let ret = ret.clone(); move |_| {
-                                        (ret.0, String::from_utf8_lossy(&ret.1).to_string())
-                                    }}).and_then(move |_| {
-                                        Ok((ret.0, ret.1))
-                                    })
-                                })
-                            )
-                        }
-                    })
-                )
-            } else {
-                // otherwise just make the call w/o any idempotency saves
-                Either::B(
-                    f().map_err(move |ret: (StatusCode, String)| (ret.0, ret.1))
-                        .and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
-                )
-            }
+                                }
+                            })
+                            .and_then(
+                                move |ret: (StatusCode, Bytes)| {
+                                    store
+                                        .save_idempotent_data(
+                                            idempotency_key,
+                                            input_hash,
+                                            ret.0,
+                                            ret.1.clone(),
+                                        )
+                                        .map_err({
+                                            let ret = ret.clone();
+                                            move |_| {
+                                                (ret.0, String::from_utf8_lossy(&ret.1).to_string())
+                                            }
+                                        })
+                                        .and_then(move |_| Ok((ret.0, ret.1)))
+                                },
+                            ),
+                        )
+                    }
+                }),
+        )
+    } else {
+        // otherwise just make the call w/o any idempotency saves
+        Either::B(
+            f().map_err(move |ret: (StatusCode, String)| (ret.0, ret.1))
+                .and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
+        )
+    }
+}
+
+fn do_receive_settlement<S, A>(
+    store: S,
+    account_id: String,
+    body: Quantity,
+    idempotency_key: Option<String>,
+) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
+where
+    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+        + SettlementStore<Account = A>
+        + IdempotentStore
+        + AccountStore<Account = A>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    A: SettlementAccount + Send + Sync + 'static,
+{
+    let store_clone = store.clone();
+    let engine_amount = body.amount;
+    let engine_scale = body.scale;
+
+    // Convert to the desired data types
+    let account_id = match A::AccountId::from_str(&account_id) {
+        Ok(a) => a,
+        Err(_) => {
+            let error_msg = format!("Unable to parse account id: {}", account_id);
+            error!("{}", error_msg);
+            return Box::new(err((StatusCode::from_u16(400).unwrap(), error_msg)));
         }
+    };
 
-        fn do_receive_settlement<S, A>(
-            store: S,
-            account_id: String,
-            body: Quantity,
-            idempotency_key: Option<String>,
-        ) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
-        where
-            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-                + SettlementStore<Account = A>
-                + IdempotentStore
-                + AccountStore<Account = A>
-                + Clone
-                + Send
-                + Sync
-                + 'static,
-            A: SettlementAccount + Send + Sync + 'static,
-        {
-            let store_clone = store.clone();
-            let engine_amount = body.amount;
-            let engine_scale = body.scale;
+    let engine_amount = match BigUint::from_str(&engine_amount) {
+        Ok(a) => a,
+        Err(_) => {
+            let error_msg = format!("Could not convert amount: {:?}", engine_amount);
+            error!("{}", error_msg);
+            return Box::new(err((StatusCode::from_u16(500).unwrap(), error_msg)));
+        }
+    };
 
-            // Convert to the desired data types
-            let account_id = match A::AccountId::from_str(&account_id) {
-                Ok(a) => a,
-                Err(_) => {
-                    let error_msg = format!("Unable to parse account id: {}", account_id);
-                    error!("{}", error_msg);
-                    return Box::new(err((StatusCode::from_u16(400).unwrap(), error_msg)));
-                }
-            };
-
-            let engine_amount = match BigUint::from_str(&engine_amount) {
-                Ok(a) => a,
-                Err(_) => {
-                    let error_msg = format!("Could not convert amount: {:?}", engine_amount);
-                    error!("{}", error_msg);
-                    return Box::new(err((StatusCode::from_u16(500).unwrap(), error_msg)));
-                }
-            };
-
-            Box::new(
+    Box::new(
             store.get_accounts(vec![account_id])
             .map_err(move |_err| {
                 let error_msg = format!("Error getting account: {}", account_id);
@@ -342,27 +360,27 @@ where
                     })
                 })
             }))
-        }
+}
 
-        fn do_send_outgoing_message<S, O, A>(
-            store: S,
-            mut outgoing_handler: O,
-            account_id: String,
-            body: Vec<u8>,
-        ) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
-        where
-            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-                + SettlementStore<Account = A>
-                + IdempotentStore
-                + AccountStore<Account = A>
-                + Clone
-                + Send
-                + Sync
-                + 'static,
-            O: OutgoingService<A> + Clone + Send + Sync + 'static,
-            A: SettlementAccount + Send + Sync + 'static,
-        {
-            Box::new(result(A::AccountId::from_str(&account_id)
+fn do_send_outgoing_message<S, O, A>(
+    store: S,
+    mut outgoing_handler: O,
+    account_id: String,
+    body: Vec<u8>,
+) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
+where
+    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+        + SettlementStore<Account = A>
+        + IdempotentStore
+        + AccountStore<Account = A>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    A: SettlementAccount + Send + Sync + 'static,
+{
+    Box::new(result(A::AccountId::from_str(&account_id)
             .map_err(move |_err| {
                 let error_msg = format!("Unable to parse account id: {}", account_id);
                 error!("{}", error_msg);
@@ -417,7 +435,7 @@ where
                 let data = Bytes::from(fulfill.data());
                 Ok((StatusCode::OK, data))
             }))
-        }
+}
 
 pub fn scale_with_precision_loss(
     amount: BigUint,
