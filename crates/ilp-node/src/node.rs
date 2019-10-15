@@ -25,7 +25,7 @@ use interledger::{
         BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
         ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
     },
-    settlement::{SettlementMessageService, create_settlements_filter},
+    settlement::{create_settlements_filter, SettlementMessageService},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };

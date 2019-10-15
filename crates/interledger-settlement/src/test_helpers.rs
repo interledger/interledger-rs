@@ -7,8 +7,7 @@ use futures::{
     Future,
 };
 use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService,
-    OutgoingService, Username,
+    incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService, Username,
 };
 
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
