@@ -1,8 +1,4 @@
-use crate::error::*;
-use crate::{
-    deserialize_json, http_retry::Client, number_or_string, AccountDetails, AccountSettings,
-    NodeStore,
-};
+use crate::{http_retry::Client, number_or_string, AccountDetails, AccountSettings, NodeStore};
 use bytes::Bytes;
 use futures::{
     future::{err, join_all, ok, Either},
@@ -10,7 +6,7 @@ use futures::{
 };
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
-use interledger_http::{HttpAccount, HttpStore};
+use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
 use interledger_router::RouterStore;
@@ -89,8 +85,18 @@ where
     // that do not match this path.
     let accounts = warp::path("accounts");
     let accounts_index = accounts.and(warp::path::end());
-    let account_username = accounts.and(warp::path::param2::<Username>());
-    let account_username_to_id = account_username
+    // This is required when using `admin_or_authorized_user_only` or `authorized_user_only` filter.
+    // Sets Username from path into ext for context.
+    let account_username = accounts
+        .and(warp::path::param2::<Username>())
+        .and_then(|username: Username| -> Result<_, Rejection> {
+            warp::filters::ext::set(username);
+            Ok(())
+        })
+        .untuple_one()
+        .boxed();
+    let account_username_to_id = accounts
+        .and(warp::path::param2::<Username>())
         .and(with_store.clone())
         .and_then(|username: Username, store: S| {
             store
@@ -103,25 +109,15 @@ where
         })
         .boxed();
 
-    // This is required when using `admin_or_authorized_user_only` or `authorized_user_only` filter.
-    // Sets Username from path into ext for context.
-    let set_account_username_to_ext = account_username
-        .and_then(|username: Username| -> Result<_, Rejection> {
-            warp::filters::ext::set(username);
-            Ok(())
-        })
-        .untuple_one()
-        .boxed();
-
-    // Receives parameters which were prepared by `set_account_username_to_ext` and
+    // Receives parameters which were prepared by `account_username` and
     // considers the request is eligible to be processed or not, checking the auth.
-    // Why we separate `set_account_username_to_ext` and this filter is that
+    // Why we separate `account_username` and this filter is that
     // we want to check whether the sender is eligible to access this path but at the same time,
-    // we don't want to spawn any `Rejection`s at `set_account_username_to_ext`.
-    // At the point of `set_account_username_to_ext`, there might be some other
+    // we don't want to spawn any `Rejection`s at `account_username`.
+    // At the point of `account_username`, there might be some other
     // remaining path filters. So we have to process those first, not to spawn errors of
     // unauthorized that the the request actually should not cause.
-    // This function needs parameters which can be prepared by `set_account_username_to_ext`.
+    // This function needs parameters which can be prepared by `account_username`.
     let admin_or_authorized_user_only = warp::filters::ext::get::<Username>()
         .and(warp::header::<String>("authorization"))
         .and(with_store.clone())
@@ -165,7 +161,7 @@ where
         .boxed();
 
     // The same structure as `admin_or_authorized_user_only`.
-    // This function needs parameters which can be prepared by `set_account_username_to_ext`.
+    // This function needs parameters which can be prepared by `account_username`.
     let authorized_user_only = warp::filters::ext::get::<Username>()
         .and(warp::header::<String>("authorization"))
         .and(with_store.clone())
@@ -258,7 +254,7 @@ where
 
     // GET /accounts/:username
     let get_account = warp::get2()
-        .and(set_account_username_to_ext.clone())
+        .and(account_username.clone())
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
@@ -273,7 +269,7 @@ where
 
     // GET /accounts/:username/balance
     let get_account_balance = warp::get2()
-        .and(set_account_username_to_ext.clone())
+        .and(account_username.clone())
         .and(warp::path("balance"))
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
@@ -318,7 +314,7 @@ where
 
     // PUT /accounts/:username/settings
     let put_account_settings = warp::put2()
-        .and(set_account_username_to_ext.clone())
+        .and(account_username.clone())
         .and(warp::path("settings"))
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
@@ -336,7 +332,7 @@ where
         .boxed();
 
     // (Websocket) /accounts/:username/payments/incoming
-    let incoming_payment_notifications = set_account_username_to_ext
+    let incoming_payment_notifications = account_username
         .clone()
         .and(warp::path("payments"))
         .and(warp::path("incoming"))
@@ -361,7 +357,7 @@ where
 
     // POST /accounts/:username/payments
     let post_payments = warp::post2()
-        .and(set_account_username_to_ext.clone())
+        .and(account_username.clone())
         .and(warp::path("payments"))
         .and(warp::path::end())
         .and(authorized_user_only.clone())
@@ -628,11 +624,4 @@ where
             }
         })
     })
-}
-
-impl ApiError {
-    fn account_not_found() -> Self {
-        ApiError::from_api_error_type(&ACCOUNT_NOT_FOUND_TYPE)
-            .detail(Some("Username was not found.".to_owned()))
-    }
 }

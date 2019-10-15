@@ -1,19 +1,14 @@
-use super::HttpStore;
+use super::{error::*, HttpStore};
 use bytes::{buf::Buf, Bytes, BytesMut};
 use futures::{
-    future::{err, Either},
+    future::{err, Either, FutureResult},
     Future,
 };
 use interledger_packet::Prepare;
 use interledger_service::{AuthToken, IncomingRequest, IncomingService};
 use log::error;
-use std::{
-    convert::TryFrom,
-    error::Error as StdError,
-    fmt::{self, Display},
-    net::SocketAddr,
-};
-use warp::{self, Filter};
+use std::{convert::TryFrom, net::SocketAddr};
+use warp::{self, Filter, Rejection};
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_PACKET_SIZE: u64 = 40000;
@@ -25,23 +20,6 @@ pub struct HttpServer<I, S> {
     incoming: I,
     store: S,
 }
-
-#[derive(Clone, Copy, Debug)]
-enum ApiError {
-    InvalidPacket,
-    Unauthorized,
-}
-
-impl Display for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            ApiError::InvalidPacket => "Body was not a valid ILP Prepare packet",
-            ApiError::Unauthorized => "Unauthorized",
-        })
-    }
-}
-
-impl StdError for ApiError {}
 
 impl<I, S> HttpServer<I, S>
 where
@@ -60,48 +38,54 @@ where
         let store = self.store.clone();
 
         warp::post2()
+            .and(warp::path("ilp"))
+            .and(warp::path::end())
             .and(warp::header::<AuthToken>("authorization"))
             .and_then(move |auth: AuthToken| {
                 store
                     .get_account_from_http_auth(auth.username(), auth.password())
-                    .map_err(move |_| {
+                    .map_err(move |_| -> Rejection {
                         error!(
                             "Invalid authorization provided for user: {}",
                             auth.username()
                         );
-                        warp::reject::custom(ApiError::Unauthorized)
+                        ApiError::unauthorized().into()
                     })
             })
             .and(warp::body::content_length_limit(MAX_PACKET_SIZE))
             .and(warp::body::concat())
-            .and_then(move |account: S::Account, body: warp::body::FullBody| {
-                // TODO don't copy ILP packet
-                let buffer = BytesMut::from(body.bytes());
-                if let Ok(prepare) = Prepare::try_from(buffer) {
-                    Either::A(
-                        incoming
-                            .clone()
-                            .handle_request(IncomingRequest {
-                                from: account,
-                                prepare,
-                            })
-                            .then(|result| {
-                                let bytes: BytesMut = match result {
-                                    Ok(fulfill) => fulfill.into(),
-                                    Err(reject) => reject.into(),
-                                };
-                                Ok(warp::http::Response::builder()
-                                    .header("Content-Type", "application/octet-stream")
-                                    .status(200)
-                                    .body(bytes.freeze())
-                                    .unwrap())
-                            }),
-                    )
-                } else {
-                    error!("Body was not a valid Prepare packet");
-                    Either::B(err(warp::reject::custom(ApiError::InvalidPacket)))
-                }
-            })
+            .and_then(
+                move |account: S::Account,
+                      body: warp::body::FullBody|
+                      -> Either<_, FutureResult<_, Rejection>> {
+                    // TODO don't copy ILP packet
+                    let buffer = BytesMut::from(body.bytes());
+                    if let Ok(prepare) = Prepare::try_from(buffer) {
+                        Either::A(
+                            incoming
+                                .clone()
+                                .handle_request(IncomingRequest {
+                                    from: account,
+                                    prepare,
+                                })
+                                .then(|result| {
+                                    let bytes: BytesMut = match result {
+                                        Ok(fulfill) => fulfill.into(),
+                                        Err(reject) => reject.into(),
+                                    };
+                                    Ok(warp::http::Response::builder()
+                                        .header("Content-Type", "application/octet-stream")
+                                        .status(200)
+                                        .body(bytes.freeze())
+                                        .unwrap())
+                                }),
+                        )
+                    } else {
+                        error!("Body was not a valid Prepare packet");
+                        Either::B(err(ApiError::invalid_ilp_packet().into()))
+                    }
+                },
+            )
     }
 
     pub fn bind(&self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> + Send {

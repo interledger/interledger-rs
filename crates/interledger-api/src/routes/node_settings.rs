@@ -1,11 +1,10 @@
-use crate::error::*;
-use crate::{deserialize_json, http_retry::Client, ExchangeRates, NodeStore};
+use crate::{http_retry::Client, ExchangeRates, NodeStore};
 use bytes::Buf;
 use futures::{
     future::{err, join_all, Either},
     Future,
 };
-use interledger_http::{HttpAccount, HttpStore};
+use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
 use interledger_router::RouterStore;
 use interledger_service::Account;
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
@@ -250,17 +249,4 @@ where
         .or(put_static_route)
         .or(put_settlement_engines)
         .boxed()
-}
-
-impl ApiError {
-    fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
-        let detail = Some(match invalid_account_id {
-            Some(invalid_account_id) => match invalid_account_id.len() {
-                0 => "Account ID is empty".to_owned(),
-                _ => format!("{} is an invalid account ID", invalid_account_id),
-            },
-            None => "Invalid string was given as an account ID".to_owned(),
-        });
-        ApiError::from_api_error_type(&INVALID_ACCOUNT_ID_TYPE).detail(detail)
-    }
 }

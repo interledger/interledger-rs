@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::Future;
-use interledger_http::{HttpAccount, HttpServer as IlpOverHttpServer, HttpStore};
+use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
@@ -8,19 +8,14 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
+use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
 use warp::{self, Filter};
 mod routes;
-use bytes::Buf;
-use error::*;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
 use secrecy::SecretString;
-use serde::de::DeserializeOwned;
 use url::Url;
-use warp::{filters::body::FullBody, Rejection, Reply};
 
-pub(crate) mod error;
 pub(crate) mod http_retry;
 
 // This enum and the following functions are used to allow clients to send either
@@ -267,58 +262,22 @@ where
     }
 
     pub fn into_warp_filter(self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
-        // POST /ilp is the route for ILP-over-HTTP
-        let ilp_over_http = warp::path("ilp").and(warp::path::end()).and(
-            IlpOverHttpServer::new(self.incoming_handler.clone(), self.store.clone()).as_filter(),
-        );
-
-        ilp_over_http
-            .or(routes::accounts_api(
-                self.server_secret,
-                self.admin_api_token.clone(),
-                self.default_spsp_account,
-                self.incoming_handler,
-                self.outgoing_handler,
-                self.btp,
-                self.store.clone(),
-            ))
-            .or(routes::node_settings_api(self.admin_api_token, self.store))
-            .recover(|err: warp::Rejection| {
-                if let Some(api_error) = err.find_cause::<ApiError>() {
-                    Ok(api_error.clone().into_response())
-                } else if let Some(json_error) = err.find_cause::<JsonDeserializeError>() {
-                    Ok(json_error.clone().into_response())
-                } else if err.status() == http::status::StatusCode::METHOD_NOT_ALLOWED {
-                    Ok(
-                        ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE)
-                            .into_response(),
-                    )
-                } else {
-                    Err(err)
-                }
-            })
-            .boxed()
+        routes::accounts_api(
+            self.server_secret,
+            self.admin_api_token.clone(),
+            self.default_spsp_account,
+            self.incoming_handler,
+            self.outgoing_handler,
+            self.btp,
+            self.store.clone(),
+        )
+        .or(routes::node_settings_api(self.admin_api_token, self.store))
+        .boxed()
     }
 
     pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
         warp::serve(self.into_warp_filter()).bind(addr)
     }
-}
-
-fn deserialize_json<T: DeserializeOwned + Send>(
-) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
-    warp::header::exact("content-type", "application/json")
-        .and(warp::body::concat())
-        .and_then(|buf: FullBody| {
-            let deserializer = &mut serde_json::Deserializer::from_slice(&buf.bytes());
-            serde_path_to_error::deserialize(deserializer).map_err(|err| {
-                warp::reject::custom(JsonDeserializeError {
-                    category: err.inner().classify(),
-                    detail: err.inner().to_string(),
-                    path: err.path().clone(),
-                })
-            })
-        })
 }
 
 #[cfg(test)]
