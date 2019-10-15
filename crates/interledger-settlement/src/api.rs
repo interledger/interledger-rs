@@ -344,91 +344,80 @@ where
             }))
         }
 
-        // Gets called by our settlement engine, forwards the request outwards
-        // until it reaches the peer's settlement engine. Extract is not
-        // implemented for Bytes unfortunately.
-       #[post("/accounts/:account_id/messages")]
-       fn send_outgoing_message(&self, account_id: String, body: Vec<u8>, idempotency_key: Option<String>)-> impl Future<Item = Response<Bytes>, Error = Response<String>> {
-
-           let input = format!("{}{:?}", account_id, body);
-           let input_hash = get_hash_of(input.as_ref());
-
-            let self_clone = self.clone();
-            let f = move || self_clone.do_send_outgoing_message(account_id, body);
-            self.make_idempotent_call(f, input_hash, idempotency_key)
-       }
-
-        fn do_send_outgoing_message(&self, account_id: String, body: Vec<u8>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
-            let store = self.store.clone();
-            let mut outgoing_handler = self.outgoing_handler.clone();
-               Box::new(result(A::AccountId::from_str(&account_id)
-               .map_err(move |_err| {
-                   let error_msg = format!("Unable to parse account id: {}", account_id);
-                   error!("{}", error_msg);
-                   let status_code = StatusCode::from_u16(400).unwrap();
-                   (status_code, error_msg)
-               }))
-               .and_then(move |account_id| {
-                    store.get_accounts(vec![account_id])
-                    .map_err(move |_| {
-                        let error_msg = format!("Error getting account: {}", account_id);
-                        error!("{}", error_msg);
-                        let status_code = StatusCode::from_u16(404).unwrap();
-                        (status_code, error_msg)
-                    })
-                })
-               .and_then(|accounts| {
-                   let account = &accounts[0];
-                   if account.settlement_engine_details().is_some() {
-                       Ok(account.clone())
-                   } else {
-                       let error_msg = format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id());
-                       error!("{}", error_msg);
-                       Err((StatusCode::from_u16(404).unwrap(), error_msg))
-                   }
-               })
-               .and_then(move |account| {
-                   // Send the message to the peer's settlement engine.
-                   // Note that we use dummy values for the `from` and `original_amount`
-                   // because this `OutgoingRequest` will bypass the router and thus will not
-                   // use either of these values. Including dummy values in the rare case where
-                   // we do not need them seems easier than using
-                   // `Option`s all over the place.
-                   outgoing_handler.send_request(OutgoingRequest {
-                       from: account.clone(),
-                       to: account.clone(),
-                       original_amount: 0,
-                       prepare: PrepareBuilder {
-                           destination: SE_ILP_ADDRESS.clone(),
-                           amount: 0,
-                           expires_at: SystemTime::now() + Duration::from_secs(30),
-                           data: &body,
-                           execution_condition: &PEER_PROTOCOL_CONDITION,
-                       }.build()
-                   })
-                   .map_err(move |reject| {
-                       let error_msg = format!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());
-                       error!("{}", error_msg);
-                       (StatusCode::from_u16(502).unwrap(), error_msg)
-                   })
-               })
-               .and_then(move |fulfill| {
-                   let data = Bytes::from(fulfill.data());
-                   Ok((StatusCode::OK, data))
-               })
-               )
-        }
-        pub fn serve<I>(self, incoming: I) -> impl Future<Item = (), Error = ()>
+        fn do_send_outgoing_message<S, O, A>(
+            store: S,
+            mut outgoing_handler: O,
+            account_id: String,
+            body: Vec<u8>,
+        ) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
         where
-            I: ConnectionStream,
-            I::Item: Send + 'static,
+            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+                + SettlementStore<Account = A>
+                + IdempotentStore
+                + AccountStore<Account = A>
+                + Clone
+                + Send
+                + Sync
+                + 'static,
+            O: OutgoingService<A> + Clone + Send + Sync + 'static,
+            A: SettlementAccount + Send + Sync + 'static,
         {
-            ServiceBuilder::new()
-                .resource(self)
-                .serve(incoming)
+            Box::new(result(A::AccountId::from_str(&account_id)
+            .map_err(move |_err| {
+                let error_msg = format!("Unable to parse account id: {}", account_id);
+                error!("{}", error_msg);
+                let status_code = StatusCode::from_u16(400).unwrap();
+                (status_code, error_msg)
+            }))
+            .and_then(move |account_id| {
+                store.get_accounts(vec![account_id])
+                .map_err(move |_| {
+                    let error_msg = format!("Error getting account: {}", account_id);
+                    error!("{}", error_msg);
+                    let status_code = StatusCode::from_u16(404).unwrap();
+                    (status_code, error_msg)
+                })
+            })
+            .and_then(|accounts| {
+                let account = &accounts[0];
+                if account.settlement_engine_details().is_some() {
+                    Ok(account.clone())
+                } else {
+                    let error_msg = format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id());
+                    error!("{}", error_msg);
+                    Err((StatusCode::from_u16(404).unwrap(), error_msg))
+                }
+            })
+            .and_then(move |account| {
+                // Send the message to the peer's settlement engine.
+                // Note that we use dummy values for the `from` and `original_amount`
+                // because this `OutgoingRequest` will bypass the router and thus will not
+                // use either of these values. Including dummy values in the rare case where
+                // we do not need them seems easier than using
+                // `Option`s all over the place.
+                outgoing_handler.send_request(OutgoingRequest {
+                    from: account.clone(),
+                    to: account.clone(),
+                    original_amount: 0,
+                    prepare: PrepareBuilder {
+                        destination: SE_ILP_ADDRESS.clone(),
+                        amount: 0,
+                        expires_at: SystemTime::now() + Duration::from_secs(30),
+                        data: &body,
+                        execution_condition: &PEER_PROTOCOL_CONDITION,
+                    }.build()
+                })
+                .map_err(move |reject| {
+                    let error_msg = format!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());
+                    error!("{}", error_msg);
+                    (StatusCode::from_u16(502).unwrap(), error_msg)
+                })
+            })
+            .and_then(move |fulfill| {
+                let data = Bytes::from(fulfill.data());
+                Ok((StatusCode::OK, data))
+            }))
         }
-    }
-}
 
 pub fn scale_with_precision_loss(
     amount: BigUint,
