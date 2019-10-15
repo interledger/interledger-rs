@@ -25,7 +25,7 @@ use interledger::{
         BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
         ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
     },
-    settlement::{SettlementApi, SettlementMessageService},
+    settlement::{SettlementMessageService, create_settlements_filter},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };
@@ -36,14 +36,8 @@ use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{
-    convert::TryFrom,
-    net::SocketAddr,
-    str::{self, FromStr},
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use tokio::{net::TcpListener, spawn};
+use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
+use tokio::spawn;
 use url::Url;
 use warp::{
     self,
@@ -430,14 +424,12 @@ impl InterledgerNode {
                             spawn(warp::serve(api).bind(http_bind_address));
 
                             // Settlement API
-                            let settlement_api = SettlementApi::new(
+                            let settlement_api = create_settlements_filter(
                                 store.clone(),
                                 outgoing_service.clone(),
                             );
-                            let listener = TcpListener::bind(&settlement_api_bind_address)
-                                .expect("Unable to bind to Settlement API address");
                             info!("Settlement API listening on: {}", settlement_api_bind_address);
-                            spawn(settlement_api.serve(listener.incoming()));
+                            spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
 
                             // Exchange Rate Polling
                             if let Some(provider) = exchange_rate_provider {
