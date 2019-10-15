@@ -239,20 +239,24 @@ where
             }
         }
 
-        #[post("/accounts/:account_id/settlements")]
-        fn receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> impl Future<Item = Response<Bytes>, Error = Response<String>> {
-            let input = format!("{}{:?}", account_id, body);
-            let input_hash = get_hash_of(input.as_ref());
-
-            let self_clone = self.clone();
-            let idempotency_key_clone = idempotency_key.clone();
-            let f = move || self_clone.do_receive_settlement(account_id, body, idempotency_key_clone);
-            self.make_idempotent_call(f, input_hash, idempotency_key)
-        }
-
-        fn do_receive_settlement(&self, account_id: String, body: Quantity, idempotency_key: Option<String>) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send> {
-            let store = self.store.clone();
-            let store_clone = self.store.clone();
+        fn do_receive_settlement<S, A>(
+            store: S,
+            account_id: String,
+            body: Quantity,
+            idempotency_key: Option<String>,
+        ) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
+        where
+            S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
+                + SettlementStore<Account = A>
+                + IdempotentStore
+                + AccountStore<Account = A>
+                + Clone
+                + Send
+                + Sync
+                + 'static,
+            A: SettlementAccount + Send + Sync + 'static,
+        {
+            let store_clone = store.clone();
             let engine_amount = body.amount;
             let engine_scale = body.scale;
 
@@ -262,7 +266,7 @@ where
                 Err(_) => {
                     let error_msg = format!("Unable to parse account id: {}", account_id);
                     error!("{}", error_msg);
-                    return Box::new(err((StatusCode::from_u16(400).unwrap(), error_msg)))
+                    return Box::new(err((StatusCode::from_u16(400).unwrap(), error_msg)));
                 }
             };
 
@@ -271,7 +275,7 @@ where
                 Err(_) => {
                     let error_msg = format!("Could not convert amount: {:?}", engine_amount);
                     error!("{}", error_msg);
-                    return Box::new(err((StatusCode::from_u16(500).unwrap(), error_msg)))
+                    return Box::new(err((StatusCode::from_u16(500).unwrap(), error_msg)));
                 }
             };
 
