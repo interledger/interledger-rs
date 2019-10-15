@@ -55,7 +55,7 @@ where
     let settlements = warp::post2()
         .and(settlement_endpoint)
         .and(warp::path::end())
-        .and(idempotency.clone())
+        .and(idempotency)
         .and(warp::body::json())
         .and(with_store.clone())
         .and_then(
@@ -65,9 +65,9 @@ where
 
                 let idempotency_key_clone = idempotency_key.clone();
                 let store_clone = store.clone();
-                let f =
+                let receive_settlement_fn =
                     move || do_receive_settlement(store_clone, id, quantity, idempotency_key_clone);
-                make_idempotent_call(store, f, input_hash, idempotency_key)
+                make_idempotent_call(store, receive_settlement_fn, input_hash, idempotency_key)
                     // TODO Replace with responses
                     .map_err(move |(_status_code, error_msg)| warp::reject::custom(error_msg))
                     .and_then(move |(_status_code, message)| {
@@ -89,7 +89,7 @@ where
     let messages = warp::post2()
         .and(messages_endpoint)
         .and(warp::path::end())
-        .and(idempotency.clone())
+        .and(idempotency)
         .and(warp::body::concat())
         .and(with_store.clone())
         .and(with_outgoing_handler.clone())
@@ -106,9 +106,11 @@ where
                 let input_hash = get_hash_of(input.as_ref());
 
                 let store_clone = store.clone();
-                let f =
+                // Wrap do_send_outgoing_message in a closure to be invoked by
+                // the idempotency wrapper
+                let send_outgoing_message_fn =
                     move || do_send_outgoing_message(store_clone, outgoing_handler, id, message);
-                make_idempotent_call(store, f, input_hash, idempotency_key)
+                make_idempotent_call(store, send_outgoing_message_fn, input_hash, idempotency_key)
                     // TODO Replace with error case with response
                     .map_err(move |(_status_code, error_msg)| warp::reject::custom(error_msg))
                     .and_then(move |(status_code, message)| {
@@ -157,6 +159,10 @@ where
         })
         .and_then(move |ret: Option<IdempotentData>| {
             if let Some(ret) = ret {
+                // Check if the hash (ret.2) of the loaded idempotent data matches the hash
+                // of the provided input data. If not, we should error out since
+                // the caller provided an idempotency key that was used for a
+                // different input.
                 if ret.2 == input_hash {
                     Ok(Some((ret.0, ret.1)))
                 } else {
@@ -171,6 +177,8 @@ where
         })
 }
 
+// make_idempotent_call takes a function instead of direct arguments so that we
+// can reuse it for both the messages and the settlements calls
 fn make_idempotent_call<S, A, F>(
     store: S,
     f: F,
@@ -505,7 +513,6 @@ mod tests {
     // Settlement Tests
     mod settlement_tests {
         use super::*;
-        use warp::Reply;
 
         const CONNECTOR_SCALE: u8 = 9;
         const OUR_SCALE: u8 = 11;
@@ -523,7 +530,7 @@ mod tests {
         {
             let mut response = warp::test::request()
                 .method("POST")
-                .path(&format!("/accounts/{}/settlements", id.clone()))
+                .path(&format!("/accounts/{}/settlements", id))
                 .body(json!(Quantity::new(amount.to_string(), scale)).to_string());
 
             if let Some(idempotency_key) = idempotency_key {
@@ -678,11 +685,11 @@ mod tests {
             let store = test_store(false, false);
             let api = test_api(store.clone(), false);
 
-            let response = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let response = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
             assert_eq!(response.body(), "Unhandled rejection: Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
             // check that it's idempotent
-            let response = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let response = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
             assert_eq!(response.body(), "Unhandled rejection: Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
             let s = store.clone();
@@ -712,7 +719,7 @@ mod tests {
             let store = test_store(false, true);
             let api = test_api(store.clone(), false);
 
-            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 400);
             assert_eq!(
                 ret.body(),
@@ -720,14 +727,14 @@ mod tests {
             );
 
             // check that it's idempotent
-            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 400);
             assert_eq!(
                 ret.body(),
                 "Unhandled rejection: Unable to parse account id: a"
             );
 
-            let _ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let _ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -745,11 +752,11 @@ mod tests {
             let store = TestStore::new(vec![], false);
             let api = test_api(store.clone(), false);
 
-            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Unhandled rejection: Error getting account: 0");
 
-            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY.clone()));
+            let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 404);
             assert_eq!(ret.body(), "Unhandled rejection: Error getting account: 0");
 
@@ -778,7 +785,7 @@ mod tests {
         {
             let mut response = warp::test::request()
                 .method("POST")
-                .path(&format!("/accounts/{}/messages", id.clone()))
+                .path(&format!("/accounts/{}/messages", id))
                 .body(message);
 
             if let Some(idempotency_key) = idempotency_key {
@@ -874,10 +881,10 @@ mod tests {
             );
             // assert_eq!(ret.status().as_u16(), 400);
 
-            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 400);
 
-            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 400);
 
             let s = store.clone();
@@ -896,10 +903,10 @@ mod tests {
             let store = TestStore::new(vec![], false);
             let api = test_api(store.clone(), true);
 
-            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 404);
 
-            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
             // assert_eq!(ret.status().as_u16(), 404);
 
             let s = store.clone();
