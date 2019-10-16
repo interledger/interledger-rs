@@ -45,11 +45,13 @@ pub struct Account {
     pub(crate) ilp_over_http_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     pub(crate) ilp_over_http_incoming_token: Option<SecretBytes>,
+    pub(crate) ilp_over_http_outgoing_username: Option<Username>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     pub(crate) ilp_over_http_outgoing_token: Option<SecretBytes>,
     pub(crate) ilp_over_btp_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     pub(crate) ilp_over_btp_incoming_token: Option<SecretBytes>,
+    pub(crate) ilp_over_btp_outgoing_username: Option<Username>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     pub(crate) ilp_over_btp_outgoing_token: Option<SecretBytes>,
     pub(crate) settle_threshold: Option<i64>,
@@ -132,6 +134,7 @@ impl Account {
             ilp_over_http_incoming_token: details
                 .ilp_over_http_incoming_token
                 .map(|token| SecretBytes::new(token.expose_secret().to_string())),
+            ilp_over_http_outgoing_username: details.ilp_over_http_outgoing_username,
             ilp_over_http_outgoing_token: details
                 .ilp_over_http_outgoing_token
                 .map(|token| SecretBytes::new(token.expose_secret().to_string())),
@@ -139,6 +142,7 @@ impl Account {
             ilp_over_btp_incoming_token: details
                 .ilp_over_btp_incoming_token
                 .map(|token| SecretBytes::new(token.expose_secret().to_string())),
+            ilp_over_btp_outgoing_username: details.ilp_over_btp_outgoing_username,
             ilp_over_btp_outgoing_token: details
                 .ilp_over_btp_outgoing_token
                 .map(|token| SecretBytes::new(token.expose_secret().to_string())),
@@ -301,6 +305,14 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
                 .as_ref()
                 .write_redis_args(&mut rv);
         }
+        if let Some(ilp_over_http_outgoing_username) =
+            account.ilp_over_http_outgoing_username.as_ref()
+        {
+            "ilp_over_http_outgoing_username".write_redis_args(&mut rv);
+            ilp_over_http_outgoing_username
+                .as_ref()
+                .write_redis_args(&mut rv);
+        }
         if let Some(ilp_over_http_outgoing_token) = account.ilp_over_http_outgoing_token.as_ref() {
             "ilp_over_http_outgoing_token".write_redis_args(&mut rv);
             ilp_over_http_outgoing_token
@@ -316,6 +328,14 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "ilp_over_btp_incoming_token".write_redis_args(&mut rv);
             ilp_over_btp_incoming_token
                 .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
+        }
+        if let Some(ilp_over_btp_outgoing_username) =
+            account.ilp_over_btp_outgoing_username.as_ref()
+        {
+            "ilp_over_btp_outgoing_username".write_redis_args(&mut rv);
+            ilp_over_btp_outgoing_username
                 .as_ref()
                 .write_redis_args(&mut rv);
         }
@@ -367,6 +387,28 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         let username: String = get_value("username", &hash)?;
         let username = Username::from_str(&username)
             .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid username")))?;
+        let ilp_over_http_outgoing_username: Option<String> =
+            get_value_option::<String>("ilp_over_http_outgoing_username", &hash)?;
+        let ilp_over_http_outgoing_username = match ilp_over_http_outgoing_username {
+            None => None,
+            Some(string_username) => Some(Username::from_str(&string_username).map_err(|_| {
+                RedisError::from((
+                    ErrorKind::TypeError,
+                    "Invalid Username for ilp_over_http_outgoing_username",
+                ))
+            })?),
+        };
+        let ilp_over_btp_outgoing_username: Option<String> =
+            get_value_option::<String>("ilp_over_btp_outgoing_username", &hash)?;
+        let ilp_over_btp_outgoing_username = match ilp_over_btp_outgoing_username {
+            None => None,
+            Some(string_username) => Some(Username::from_str(&string_username).map_err(|_| {
+                RedisError::from((
+                    ErrorKind::TypeError,
+                    "Invalid Username for ilp_over_btp_outgoing_username",
+                ))
+            })?),
+        };
         let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
         let routing_relation = if let Some(relation) = routing_relation {
             RoutingRelation::from_str(relation.as_str())
@@ -390,6 +432,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                     &hash,
                 )?
                 .map(SecretBytes::from),
+                ilp_over_http_outgoing_username,
                 ilp_over_http_outgoing_token: get_bytes_option(
                     "ilp_over_http_outgoing_token",
                     &hash,
@@ -401,6 +444,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                     &hash,
                 )?
                 .map(SecretBytes::from),
+                ilp_over_btp_outgoing_username,
                 ilp_over_btp_outgoing_token: get_bytes_option(
                     "ilp_over_btp_outgoing_token",
                     &hash,
@@ -516,6 +560,14 @@ impl BtpAccount for Account {
             None
         }
     }
+
+    fn get_ilp_over_btp_outgoing_username(&self) -> Option<&Username> {
+        if let Some(ref username) = self.ilp_over_btp_outgoing_username {
+            Some(username)
+        } else {
+            None
+        }
+    }
 }
 
 impl MaxPacketAmountAccount for Account {
@@ -572,10 +624,12 @@ mod redis_account {
             ilp_over_http_url: Some("http://example.com/ilp".to_string()),
             // we are Bob and we're using this account to peer with Alice
             ilp_over_http_incoming_token: Some(SecretString::new("incoming_auth_token".to_string())),
-            ilp_over_http_outgoing_token: Some(SecretString::new("bob:outgoing_auth_token".to_string())),
+            ilp_over_http_outgoing_username: Some(Username::from_str("bob").expect("invalid username")),
+            ilp_over_http_outgoing_token: Some(SecretString::new("outgoing_auth_token".to_string())),
             ilp_over_btp_url: Some("btp+ws://example.com/ilp/btp".to_string()),
             ilp_over_btp_incoming_token: Some(SecretString::new("alice:btp_token".to_string())),
-            ilp_over_btp_outgoing_token: Some(SecretString::new("bob:btp_token".to_string())),
+            ilp_over_btp_outgoing_username: Some(Username::from_str("bob").expect("invalid username")),
+            ilp_over_btp_outgoing_token: Some(SecretString::new("btp_token".to_string())),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
             routing_relation: Some("Peer".to_string()),

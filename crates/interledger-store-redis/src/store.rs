@@ -600,11 +600,27 @@ impl RedisStore {
             pipe.hset(accounts_key(id), "ilp_over_http_url", endpoint);
         }
 
+        if let Some(ref username) = settings.ilp_over_btp_outgoing_username {
+            pipe.hset(
+                accounts_key(id),
+                "ilp_over_btp_outgoing_username",
+                username.as_ref(),
+            );
+        }
+
         if let Some(ref token) = settings.ilp_over_btp_outgoing_token {
             pipe.hset(
                 accounts_key(id),
                 "ilp_over_btp_outgoing_token",
                 token.as_ref(),
+            );
+        }
+
+        if let Some(ref username) = settings.ilp_over_http_outgoing_username {
+            pipe.hset(
+                accounts_key(id),
+                "ilp_over_http_outgoing_username",
+                username.as_ref(),
             );
         }
 
@@ -1183,12 +1199,14 @@ impl NodeStore for RedisStore {
                     token.expose_secret().as_bytes(),
                 )
             }),
+            ilp_over_btp_outgoing_username: settings.ilp_over_btp_outgoing_username,
             ilp_over_btp_outgoing_token: settings.ilp_over_btp_outgoing_token.map(|token| {
                 encrypt_token(
                     &encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
             }),
+            ilp_over_http_outgoing_username: settings.ilp_over_http_outgoing_username,
             ilp_over_http_outgoing_token: settings.ilp_over_http_outgoing_token.map(|token| {
                 encrypt_token(
                     &encryption_key.expose_secret().0,

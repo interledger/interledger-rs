@@ -144,7 +144,9 @@ pub struct ExchangeRates(
 pub struct AccountSettings {
     pub ilp_over_http_incoming_token: Option<SecretString>,
     pub ilp_over_btp_incoming_token: Option<SecretString>,
+    pub ilp_over_http_outgoing_username: Option<Username>,
     pub ilp_over_http_outgoing_token: Option<SecretString>,
+    pub ilp_over_btp_outgoing_username: Option<Username>,
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_btp_url: Option<String>,
@@ -165,7 +167,9 @@ pub struct AccountSettings {
 pub struct EncryptedAccountSettings {
     pub ilp_over_http_incoming_token: Option<Bytes>,
     pub ilp_over_btp_incoming_token: Option<Bytes>,
+    pub ilp_over_http_outgoing_username: Option<Username>,
     pub ilp_over_http_outgoing_token: Option<Bytes>,
+    pub ilp_over_btp_outgoing_username: Option<Username>,
     pub ilp_over_btp_outgoing_token: Option<Bytes>,
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_btp_url: Option<String>,
@@ -189,10 +193,12 @@ pub struct AccountDetails {
     pub min_balance: Option<i64>,
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_http_incoming_token: Option<SecretString>,
+    pub ilp_over_http_outgoing_username: Option<Username>,
     pub ilp_over_http_outgoing_token: Option<SecretString>,
     pub ilp_over_btp_url: Option<String>,
-    pub ilp_over_btp_outgoing_token: Option<SecretString>,
     pub ilp_over_btp_incoming_token: Option<SecretString>,
+    pub ilp_over_btp_outgoing_username: Option<Username>,
+    pub ilp_over_btp_outgoing_token: Option<SecretString>,
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_threshold: Option<i64>,
     #[serde(default, deserialize_with = "optional_number_or_string")]

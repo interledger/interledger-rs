@@ -24,6 +24,7 @@ pub use self::service::{BtpOutgoingService, BtpService};
 pub trait BtpAccount: Account {
     fn get_ilp_over_btp_url(&self) -> Option<&Url>;
     fn get_ilp_over_btp_outgoing_token(&self) -> Option<&[u8]>;
+    fn get_ilp_over_btp_outgoing_username(&self) -> Option<&Username>;
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
