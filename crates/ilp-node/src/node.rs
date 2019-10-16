@@ -1,5 +1,8 @@
 use bytes::Bytes;
-use futures::{future::result, Future};
+use futures::{
+    future::{err, result, Either},
+    Future,
+};
 use hex::FromHex;
 #[doc(hidden)]
 pub use interledger::api::AccountDetails;
@@ -8,13 +11,16 @@ pub use interledger::service_util::ExchangeRateProvider;
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
-    ccp::CcpRouteManagerBuilder,
+    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount},
     http::HttpClientService,
     ildcp::IldcpService,
     packet::Address,
     packet::{ErrorCode, RejectBuilder},
     router::Router,
-    service::{outgoing_service_fn, Account as AccountTrait, OutgoingRequest, Username},
+    service::{
+        outgoing_service_fn, Account as AccountTrait, IncomingService, OutgoingRequest,
+        OutgoingService, Username,
+    },
     service_util::{
         BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
         ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
@@ -25,13 +31,25 @@ use interledger::{
 };
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
-use metrics::{labels, recorder, Key};
+use metrics::{self, labels, recorder, Key};
+use metrics_core::{Builder, Drain, Observe};
+use metrics_runtime;
 use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
+use std::{
+    convert::TryFrom,
+    net::SocketAddr,
+    str::{self, FromStr},
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::{net::TcpListener, spawn};
 use url::Url;
-use warp::{self, Filter};
+use warp::{
+    self,
+    http::{Response, StatusCode},
+    Filter,
+};
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 static DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
@@ -49,7 +67,7 @@ fn default_redis_url() -> ConnectionInfo {
     DEFAULT_REDIS_URL.into_connection_info().unwrap()
 }
 fn default_exchange_rate_poll_interval() -> u64 {
-    60000
+    60_000
 }
 
 fn deserialize_optional_address<'de, D>(deserializer: D) -> Result<Option<Address>, D::Error>
@@ -105,6 +123,32 @@ where
         })
 }
 
+/// Configuration for [Prometheus](https://prometheus.io) metrics collection.
+#[derive(Deserialize, Clone)]
+pub struct PrometheusConfig {
+    /// IP address and port to host the Prometheus endpoint on.
+    pub bind_address: SocketAddr,
+    /// Amount of time, in milliseconds, that the node will collect data points for the
+    /// Prometheus histograms. Defaults to 300000ms (5 minutes).
+    #[serde(default = "PrometheusConfig::default_histogram_window")]
+    pub histogram_window: u64,
+    /// Granularity, in milliseconds, that the node will use to roll off old data.
+    /// For example, a value of 1000ms (1 second) would mean that the node forgets the oldest
+    /// 1 second of histogram data points every second. Defaults to 10000ms (10 seconds).
+    #[serde(default = "PrometheusConfig::default_histogram_granularity")]
+    pub histogram_granularity: u64,
+}
+
+impl PrometheusConfig {
+    fn default_histogram_window() -> u64 {
+        300_000
+    }
+
+    fn default_histogram_granularity() -> u64 {
+        10_000
+    }
+}
+
 /// An all-in-one Interledger node that includes sender and receiver functionality,
 /// a connector, and a management API. The node uses Redis for persistence.
 #[derive(Deserialize, Clone)]
@@ -149,22 +193,42 @@ pub struct InterledgerNode {
     /// - [CryptoCompare](https://cryptocompare.com) (note this requires an API key)
     /// If this value is not set, the node will not poll for exchange rates and will
     /// instead use the rates configured via the HTTP API.
+    #[serde(default)]
     pub exchange_rate_provider: Option<ExchangeRateProvider>,
-    // Spread, as a fraction, to add on top of the exchange rate.
-    // This amount is kept as the node operator's profit, or may cover
-    // fluctuations in exchange rates.
-    // For example, take an incoming packet with an amount of 100. If the
-    // exchange rate is 1:2 and the spread is 0.01, the amount on the
-    // outgoing packet would be 198 (instead of 200 without the spread).
+    /// Spread, as a fraction, to add on top of the exchange rate.
+    /// This amount is kept as the node operator's profit, or may cover
+    /// fluctuations in exchange rates.
+    /// For example, take an incoming packet with an amount of 100. If the
+    /// exchange rate is 1:2 and the spread is 0.01, the amount on the
+    /// outgoing packet would be 198 (instead of 200 without the spread).
     #[serde(default)]
     pub exchange_rate_spread: f64,
+    /// Configuration for [Prometheus](https://prometheus.io) metrics collection.
+    /// If this configuration is not provided, the node will not collect metrics.
+    #[serde(default)]
+    pub prometheus: Option<PrometheusConfig>,
 }
 
 impl InterledgerNode {
-    /// Returns a future that runs the Interledger Node
+    /// Returns a future that runs the Interledger.rs Node.
+    ///
+    /// If the Prometheus configuration was provided, it will
+    /// also run the Prometheus metrics server on the given address.
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
+        if self.prometheus.is_some() {
+            Either::A(
+                self.serve_prometheus()
+                    .join(self.serve_node())
+                    .and_then(|_| Ok(())),
+            )
+        } else {
+            Either::B(self.serve_node())
+        }
+    }
+
+    fn serve_node(&self) -> impl Future<Item = (), Error = ()> {
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
         let http_bind_address = self.http_bind_address;
@@ -231,6 +295,33 @@ impl InterledgerNode {
                                 outgoing_service,
                             );
 
+                            let outgoing_service = outgoing_service.wrap(|request, mut next| {
+                                let labels = labels!(
+                                    "from_asset_code" => request.from.asset_code().to_string(),
+                                    "to_asset_code" => request.to.asset_code().to_string(),
+                                    "from_routing_relation" => request.from.routing_relation().to_string(),
+                                    "to_routing_relation" => request.to.routing_relation().to_string(),
+                                );
+
+                                // TODO replace these calls with the counter! macro if there's a way to easily pass in the already-created labels
+                                // right now if you pass the labels into one of the other macros, it gets a recursion limit error while expanding the macro
+                                recorder().record_counter(Key::from_name_and_labels("requests.outgoing.prepare", labels.clone()), 1);
+                                let start_time = Instant::now();
+
+                                next.send_request(request).then(move |result| {
+                                    if result.is_ok() {
+                                        recorder().record_counter(Key::from_name_and_labels("requests.outgoing.fulfill", labels.clone()), 1);
+                                    } else {
+                                        recorder().record_counter(Key::from_name_and_labels("requests.outgoing.reject", labels.clone()), 1);
+                                    }
+
+                                    recorder().record_histogram(
+                                        Key::from_name_and_labels("requests.outgoing.duration", labels.clone()),
+                                        (Instant::now() - start_time).as_nanos() as u64);
+                                    result
+                                })
+                            });
+
                             // Note: the expiry shortener must come after the Validator so that the expiry duration
                             // is shortened before we check whether there is enough time left
                             let outgoing_service = ValidatorService::outgoing(
@@ -284,6 +375,26 @@ impl InterledgerNode {
                                 store.clone(),
                                 incoming_service,
                             );
+                            let incoming_service = incoming_service.wrap(|request, mut next| {
+                                let labels = labels!(
+                                    "from_asset_code" => request.from.asset_code().to_string(),
+                                    "from_routing_relation" => request.from.routing_relation().to_string(),
+                                );
+                                recorder().record_counter(Key::from_name_and_labels("requests.incoming.prepare", labels.clone()), 1);
+                                let start_time = Instant::now();
+
+                                next.handle_request(request).then(move |result| {
+                                    if result.is_ok() {
+                                        recorder().record_counter(Key::from_name_and_labels("requests.incoming.fulfill", labels.clone()), 1);
+                                    } else {
+                                        recorder().record_counter(Key::from_name_and_labels("requests.incoming.reject", labels.clone()), 1);
+                                    }
+                                    recorder().record_histogram(
+                                        Key::from_name_and_labels("requests.incoming.reject", labels),
+                                        (Instant::now() - start_time).as_nanos() as u64);
+                                    result
+                                })
+                            });
 
                             // Handle incoming packets sent via BTP
                             btp_server_service.handle_incoming(incoming_service.clone());
@@ -311,6 +422,7 @@ impl InterledgerNode {
                             // because the API includes error handling and consumes the request.
                             // TODO should we just make BTP part of the API?
                             let api = btp_endpoint.or(api.into_warp_filter()).with(warp::log("interledger-api")).boxed();
+                            info!("Interledger.rs node HTTP API listening on: {}", http_bind_address);
                             spawn(warp::serve(api).bind(http_bind_address));
 
                             // Settlement API
@@ -336,6 +448,61 @@ impl InterledgerNode {
                     )
                 })
         }))
+    }
+
+    /// Starts a Prometheus metrics server that will listen on the configured address.
+    ///
+    /// # Errors
+    /// This will fail if another Prometheus server is already running in this
+    /// process or on the configured port.
+    pub fn serve_prometheus(&self) -> impl Future<Item = (), Error = ()> {
+        Box::new(if let Some(ref prometheus) = self.prometheus {
+            // Set up the metrics collector
+            let receiver = metrics_runtime::Builder::default()
+                .histogram(
+                    Duration::from_millis(prometheus.histogram_window),
+                    Duration::from_millis(prometheus.histogram_granularity),
+                )
+                .build()
+                .expect("Failed to create metrics Receiver");
+            let controller = receiver.get_controller();
+            // Try installing the global recorder
+            match metrics::set_boxed_recorder(Box::new(receiver)) {
+                Ok(_) => {
+                    let observer =
+                        Arc::new(metrics_runtime::observers::PrometheusBuilder::default());
+
+                    let filter = warp::get2().and(warp::path::end()).map(move || {
+                        let mut observer = observer.build();
+                        controller.observe(&mut observer);
+                        let prometheus_response = observer.drain();
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header("Content-Type", "text/plain; version=0.0.4")
+                            .body(prometheus_response)
+                    });
+
+                    info!(
+                        "Prometheus metrics server listening on: {}",
+                        prometheus.bind_address
+                    );
+                    Either::A(
+                        warp::serve(filter)
+                            .bind(prometheus.bind_address)
+                            .map_err(|_| {
+                                error!("Error binding Prometheus server to the configured address")
+                            }),
+                    )
+                }
+                Err(e) => {
+                    error!("Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
+                    Either::B(err(()))
+                }
+            }
+        } else {
+            error!("No prometheus configuration provided");
+            Either::B(err(()))
+        })
     }
 
     /// Run the node on the default Tokio runtime
