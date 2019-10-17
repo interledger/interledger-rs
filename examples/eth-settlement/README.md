@@ -196,12 +196,9 @@ sleep 3
 -->
 
 ### 4. Launch Settlement Engines
-Because each node needs its own settlement engine, we need to launch both a
-settlement engine for Alice's node and another settlement engine for Bob's node.
+Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
-Note: The engines are part of a [separate
-repository](https://github.com/interledger-rs/settlement-engines) so you have to
-clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
+Note: The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
 
 <!--!
 printf "\nStarting settlement engines...\n"
