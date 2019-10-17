@@ -145,6 +145,11 @@ impl ApiError {
             .detail(Some("Username was not found.".to_owned()))
     }
 
+    #[allow(dead_code)]
+    pub fn idempotency_conflict() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_IDEMPOTENT_CONFLICT_TYPE)
+    }
+
     pub fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
         let detail = Some(match invalid_account_id {
             Some(invalid_account_id) => match invalid_account_id.len() {
