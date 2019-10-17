@@ -54,6 +54,10 @@ impl CongestionController {
     }
 
     pub fn get_max_amount(&mut self) -> u64 {
+        if self.amount_in_flight > self.max_in_flight {
+            return 0;
+        }
+
         let amount_left_in_window = self.max_in_flight - self.amount_in_flight;
         if let Some(max_packet_amount) = self.max_packet_amount {
             min(amount_left_in_window, max_packet_amount)
@@ -304,6 +308,17 @@ mod tests {
             controller.prepare(amount);
             controller.fulfill(amount);
             assert_eq!(controller.get_max_amount(), 100);
+        }
+
+        #[test]
+        fn max_packet_amount_doesnt_overflow_u64() {
+            let mut controller = CongestionController::new(1000, 1000, 5.0);
+
+            controller.prepare(500);
+            controller.prepare(500);
+            controller.reject(500, &*INSUFFICIENT_LIQUIDITY_ERROR);
+
+            assert_eq!(controller.get_max_amount(), 0);
         }
 
         #[test]
