@@ -25,10 +25,8 @@ use interledger::{
 };
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
-use ring::{
-    digest, hmac,
-    rand::{SecureRandom, SystemRandom},
-};
+use metrics::{labels, recorder, Key};
+use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::{net::TcpListener, spawn};
@@ -158,6 +156,7 @@ pub struct InterledgerNode {
     // For example, take an incoming packet with an amount of 100. If the
     // exchange rate is 1:2 and the spread is 0.01, the amount on the
     // outgoing packet would be 198 (instead of 200 without the spread).
+    #[serde(default)]
     pub exchange_rate_spread: f64,
 }
 
@@ -388,12 +387,4 @@ pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
 
     runtime.spawn(fut);
     runtime.shutdown_on_idle().wait().unwrap();
-}
-
-#[doc(hidden)]
-#[allow(dead_code)]
-pub fn random_secret() -> [u8; 32] {
-    let mut bytes: [u8; 32] = [0; 32];
-    SystemRandom::new().fill(&mut bytes).unwrap();
-    bytes
 }

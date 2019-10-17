@@ -1,17 +1,17 @@
 use env_logger;
 use futures::Future;
-use ilp_node::{random_secret, ExchangeRateProvider, InterledgerNode};
-use interledger::{packet::Address, service::Username};
+use ilp_node::InterledgerNode;
 use log::error;
 use reqwest::r#async::Client;
 use secrecy::SecretString;
-use serde_json::Value;
+use serde_json::{self, json, Value};
 use std::env;
-use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
 use redis_helpers::*;
+mod test_helpers;
+use test_helpers::random_secret;
 
 #[test]
 fn coincap() {
@@ -25,19 +25,19 @@ fn coincap() {
 
     let http_port = get_open_port(Some(3010));
 
-    let node = InterledgerNode {
-        ilp_address: Some(Address::from_str("example.one").unwrap()),
-        default_spsp_account: Some(Username::from_str("one").unwrap()),
-        admin_auth_token: "admin".to_string(),
-        redis_connection: context.get_client_connection_info(),
-        http_bind_address: ([127, 0, 0, 1], http_port).into(),
-        settlement_api_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
-        secret_seed: random_secret(),
-        route_broadcast_interval: Some(200),
-        exchange_rate_poll_interval: 60000,
-        exchange_rate_provider: Some(ExchangeRateProvider::CoinCap),
-        exchange_rate_spread: 0.0,
-    };
+    let node: InterledgerNode = serde_json::from_value(json!({
+        "ilp_address": "example.one",
+        "default_spsp_account": "one",
+        "admin_auth_token": "admin",
+        "redis_connection": connection_info_to_string(context.get_client_connection_info()),
+        "http_bind_address": format!("127.0.0.1:{}", http_port),
+        "settlement_api_bind_address": format!("127.0.0.1:{}", get_open_port(None)),
+        "secret_seed": random_secret(),
+        "route_broadcast_interval": 200,
+        "exchange_rate_poll_interval": 60000,
+        "exchange_rate_provider": "CoinCap",
+    }))
+    .unwrap();
     runtime.spawn(node.serve());
 
     runtime
@@ -93,19 +93,22 @@ fn cryptocompare() {
 
     let http_port = get_open_port(Some(3011));
 
-    let node = InterledgerNode {
-        ilp_address: Some(Address::from_str("example.one").unwrap()),
-        default_spsp_account: Some(Username::from_str("one").unwrap()),
-        admin_auth_token: "admin".to_string(),
-        redis_connection: context.get_client_connection_info(),
-        http_bind_address: ([127, 0, 0, 1], http_port).into(),
-        settlement_api_bind_address: ([127, 0, 0, 1], get_open_port(None)).into(),
-        secret_seed: random_secret(),
-        route_broadcast_interval: Some(200),
-        exchange_rate_poll_interval: 60000,
-        exchange_rate_provider: Some(ExchangeRateProvider::CryptoCompare(api_key)),
-        exchange_rate_spread: 0.0,
-    };
+    let node: InterledgerNode = serde_json::from_value(json!({
+        "ilp_address": "example.one",
+        "default_spsp_account": "one",
+        "admin_auth_token": "admin",
+        "redis_connection": connection_info_to_string(context.get_client_connection_info()),
+        "http_bind_address": format!("127.0.0.1:{}", http_port),
+        "settlement_api_bind_address": format!("127.0.0.1:{}", get_open_port(None)),
+        "secret_seed": random_secret(),
+        "route_broadcast_interval": 200,
+        "exchange_rate_poll_interval": 60000,
+        "exchange_rate_provider": {
+            "CryptoCompare": api_key
+        },
+        "exchange_rate_spread": 0.0,
+    }))
+    .unwrap();
     runtime.spawn(node.serve());
 
     runtime
