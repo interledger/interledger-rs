@@ -121,7 +121,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --all-features --bin ilp-node --bin interledger-settlement-engines
+cargo build --all-features --bin ilp-node
 ```
 <!--!
 fi
@@ -198,6 +198,8 @@ sleep 3
 ### 4. Launch Settlement Engines
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
+Note: The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
+
 <!--!
 printf "\nStarting settlement engines...\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
@@ -207,7 +209,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-se_a \
         -td \
-        interledgerrs/settlement-engine ethereum-ledger \
+        interledgerrs/settlement-engines ethereum-ledger \
         --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
         --confirmations 0 \
         --poll_frequency 1000 \
@@ -222,7 +224,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-se_b \
         -td \
-        interledgerrs/settlement-engine ethereum-ledger \
+        interledgerrs/settlement-engines ethereum-ledger \
         --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
         --confirmations 0 \
         --poll_frequency 1000 \
@@ -236,9 +238,11 @@ else
 ```bash
 # Turn on debug logging for all of the interledger.rs components
 export RUST_LOG=interledger=debug
+git clone https://github.com/interledger-rs/settlement-engines
+cd settlement-engines
 
 # Start Alice's settlement engine
-cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger \
+cargo run --features "ethereum" -- ethereum-ledger \
 --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -249,7 +253,7 @@ cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger
 &> logs/node-alice-settlement-engine.log &
 
 # Start Bob's settlement engine
-cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger \
+cargo run --features "ethereum" -- ethereum-ledger \
 --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -258,6 +262,8 @@ cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger
 --redis_url redis://127.0.0.1:6382/ \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine.log &
+
+cd ..
 ```
 
 <!--!
