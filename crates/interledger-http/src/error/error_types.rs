@@ -30,6 +30,11 @@ pub const DEFAULT_METHOD_NOT_ALLOWED_TYPE: ApiErrorType = ApiErrorType {
     title: "Method Not Allowed",
     status: http::StatusCode::METHOD_NOT_ALLOWED,
 };
+pub const DEFAULT_IDEMPOTENT_CONFLICT_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::Default,
+    title: "Provided idempotency key is tied to other input",
+    status: http::StatusCode::CONFLICT,
+};
 
 // ILP over HTTP specific errors
 pub const INVALID_ILP_PACKET_TYPE: ApiErrorType = ApiErrorType {
