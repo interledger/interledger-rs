@@ -1,8 +1,6 @@
 use futures::{future::join_all, Future};
-use ilp_node::{random_secret, InterledgerNode};
-use interledger::{packet::Address, service::Username};
-use serde_json::json;
-use std::str::FromStr;
+use ilp_node::InterledgerNode;
+use serde_json::{self, json};
 use tokio::runtime::Builder as RuntimeBuilder;
 
 mod redis_helpers;
@@ -63,33 +61,29 @@ fn two_nodes_btp() {
         "ilp_over_http_incoming_token" : "default account holder",
     });
 
-    let node_a = InterledgerNode {
-        ilp_address: None,
-        default_spsp_account: None,
-        admin_auth_token: "admin".to_string(),
-        redis_connection: connection_info1,
-        http_bind_address: ([127, 0, 0, 1], node_a_http).into(),
-        settlement_api_bind_address: ([127, 0, 0, 1], node_a_settlement).into(),
-        secret_seed: random_secret(),
-        route_broadcast_interval: Some(200),
-        exchange_rate_poll_interval: 60000,
-        exchange_rate_provider: None,
-        exchange_rate_spread: 0.0,
-    };
+    let node_a: InterledgerNode = serde_json::from_value(json!({
+        "admin_auth_token": "admin",
+        "redis_connection": connection_info_to_string(connection_info1),
+        "http_bind_address": format!("127.0.0.1:{}", node_a_http),
+        "settlement_api_bind_address": format!("127.0.0.1:{}", node_a_settlement),
+        "secret_seed": random_secret(),
+        "route_broadcast_interval": 200,
+        "exchange_rate_poll_interval": 60000,
+    }))
+    .unwrap();
 
-    let node_b = InterledgerNode {
-        ilp_address: Some(Address::from_str("example.parent").unwrap()),
-        default_spsp_account: Some(Username::from_str("bob_on_b").unwrap()),
-        admin_auth_token: "admin".to_string(),
-        redis_connection: connection_info2,
-        http_bind_address: ([127, 0, 0, 1], node_b_http).into(),
-        settlement_api_bind_address: ([127, 0, 0, 1], node_b_settlement).into(),
-        secret_seed: random_secret(),
-        route_broadcast_interval: Some(200),
-        exchange_rate_poll_interval: 60000,
-        exchange_rate_provider: None,
-        exchange_rate_spread: 0.0,
-    };
+    let node_b: InterledgerNode = serde_json::from_value(json!({
+        "ilp_address": "example.parent",
+        "default_spsp_account": "bob_on_b",
+        "admin_auth_token": "admin",
+        "redis_connection": connection_info_to_string(connection_info2),
+        "http_bind_address": format!("127.0.0.1:{}", node_b_http),
+        "settlement_api_bind_address": format!("127.0.0.1:{}", node_b_settlement),
+        "secret_seed": random_secret(),
+        "route_broadcast_interval": Some(200),
+        "exchange_rate_poll_interval": 60000,
+    }))
+    .unwrap();
 
     let alice_fut = join_all(vec![
         create_account_on_node(node_a_http, alice_on_a, "admin"),

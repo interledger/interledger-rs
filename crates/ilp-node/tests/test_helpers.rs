@@ -1,14 +1,23 @@
 use futures::{stream::Stream, Future};
+use hex;
 use interledger::{
     packet::Address,
     service::Account as AccountTrait,
     store_redis::{Account, AccountId},
 };
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str;
+
+#[allow(unused)]
+pub fn random_secret() -> String {
+    let mut bytes: [u8; 32] = [0; 32];
+    SystemRandom::new().fill(&mut bytes).unwrap();
+    hex::encode(bytes)
+}
 
 #[derive(serde::Deserialize)]
 pub struct DeliveryData {

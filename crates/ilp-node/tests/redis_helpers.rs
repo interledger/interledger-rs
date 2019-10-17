@@ -13,9 +13,17 @@ use std::path::PathBuf;
 
 use futures::Future;
 
-use redis::RedisError;
+use redis::{ConnectionAddr, ConnectionInfo, RedisError};
 
 use tokio::timer::Delay;
+
+#[allow(unused)]
+pub fn connection_info_to_string(info: ConnectionInfo) -> String {
+    match info.addr.as_ref() {
+        ConnectionAddr::Tcp(url, port) => format!("redis://{}:{}/{}", url, port, info.db),
+        ConnectionAddr::Unix(path) => format!("unix:{}?db={}", path.to_str().unwrap(), info.db),
+    }
+}
 
 pub fn get_open_port(try_port: Option<u16>) -> u16 {
     if let Some(port) = try_port {

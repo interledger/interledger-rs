@@ -189,10 +189,15 @@ where
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ExchangeRateProvider {
+    #[serde(alias = "coin_cap", alias = "coincap", alias = "Coincap")]
     CoinCap,
     /// CryptoCompare must be configured with an API key
+    #[serde(
+        alias = "crypto_compare",
+        alias = "cryptocompare",
+        alias = "Cryptocompare"
+    )]
     CryptoCompare(SecretString),
 }
 
