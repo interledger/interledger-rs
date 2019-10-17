@@ -31,7 +31,7 @@ pub fn main() {
             Ok(body) => {
                 if response.status().is_success() {
                     if !matches.is_present("quiet") {
-                        println!("{}", body);
+                        print!("{}", body);
                     }
                 } else {
                     eprintln!(
