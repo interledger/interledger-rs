@@ -147,7 +147,7 @@ else
 -->
 
 ```bash
-cargo build --all-features --bin ilp-node --bin interledger-settlement-engines
+cargo build --all-features --bin ilp-node
 ```
 
 <!--!
@@ -245,7 +245,15 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 1. A settlement engine for Charlie to Bob on XRPL
    - To settle the balance of Bob's account on Charlie's node (Port 3003)
 
-By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
+By default, the XRP settlement engine generates new testnet XRPL accounts
+prefunded with 1,000 testnet XRP (a new account is generated each run).
+Alternatively, you may supply an `XRP_SECRET` environment variable by generating
+your own testnet credentials from the [official
+faucet](https://xrpl.org/xrp-test-net-faucet.html).
+
+Note: The rust engines are part of a [separate
+repository](https://github.com/interledger-rs/settlement-engines) so you have to
+clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -256,7 +264,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-se_a \
         -td \
-        interledgerrs/settlement-engine ethereum-ledger \
+        interledgerrs/settlement-engines ethereum-ledger \
         --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
         --confirmations 0 \
         --poll_frequency 1000 \
@@ -272,7 +280,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-se_b \
         -td \
-        interledgerrs/settlement-engine ethereum-ledger \
+        interledgerrs/settlement-engines ethereum-ledger \
         --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
         --confirmations 0 \
         --poll_frequency 1000 \
@@ -309,9 +317,11 @@ else
 ```bash
 # Turn on debug logging for all of the interledger.rs components
 export RUST_LOG=interledger=debug
+git clone https://github.com/interledger-rs/settlement-engines
+cd settlement-engines
 
 # Start Alice's settlement engine (ETH)
-cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger \
+cargo run --features "ethereum" -- ethereum-ledger \
 --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -323,7 +333,7 @@ cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger
 &> logs/node-alice-settlement-engine-eth.log &
 
 # Start Bob's settlement engine (ETH, XRPL)
-cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger \
+cargo run --features "ethereum" -- ethereum-ledger \
 --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -333,6 +343,8 @@ cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger
 --asset_scale 6 \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine-eth.log &
+
+cd ..
 
 DEBUG="settlement*" \
 CONNECTOR_URL="http://localhost:8771" \
