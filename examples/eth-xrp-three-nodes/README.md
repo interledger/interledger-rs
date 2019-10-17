@@ -245,15 +245,9 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 1. A settlement engine for Charlie to Bob on XRPL
    - To settle the balance of Bob's account on Charlie's node (Port 3003)
 
-By default, the XRP settlement engine generates new testnet XRPL accounts
-prefunded with 1,000 testnet XRP (a new account is generated each run).
-Alternatively, you may supply an `XRP_SECRET` environment variable by generating
-your own testnet credentials from the [official
-faucet](https://xrpl.org/xrp-test-net-faucet.html).
+By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
-Note: The rust engines are part of a [separate
-repository](https://github.com/interledger-rs/settlement-engines) so you have to
-clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
+Note: The rust engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
 
 <!--!
 printf "\nStarting settlement engines...\n"
