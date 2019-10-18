@@ -46,7 +46,7 @@ Interledger.rs and settlement engines written in other languages are fully inter
 
 Install the settlement engine as follows:
 
-```bash
+```bash #
 npm i -g ilp-settlement-xrp
 ```
 
@@ -147,7 +147,7 @@ else
 -->
 
 ```bash
-cargo build --all-features --bin ilp-node
+cargo build --bin ilp-node
 ```
 
 <!--!
@@ -247,7 +247,7 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 
 By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
-Note: The rust engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
+The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, clone it first.
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -306,13 +306,27 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         interledgerjs/settlement-xrp
 else
     which ilp-settlement-xrp &> /dev/null || error_and_exit "You need to install \"ilp-settlement-xrp\"."
+    pushd "${SETTLEMENT_ENGINE_INSTALLL_DIR}" &>/dev/null
+    if [ ! -e "settlement-engines" ]; then
+        git clone https://github.com/interledger-rs/settlement-engines
+    fi
+    pushd settlement-engines &>/dev/null
 -->
+
+```bash #
+# Do this somewhere OUTER the interledger-rs directory otherwise you'll get an error.
+git clone https://github.com/interledger-rs/settlement-engines
+cd settlement-engines
+```
+
+Then, spin up your settlement engines.
 
 ```bash
 # Turn on debug logging for all of the interledger.rs components
 export RUST_LOG=interledger=debug
-git clone https://github.com/interledger-rs/settlement-engines
-cd settlement-engines
+mkdir -p logs
+
+cargo build --features "ethereum" --bin interledger-settlement-engines
 
 # Start Alice's settlement engine (ETH)
 cargo run --features "ethereum" -- ethereum-ledger \
@@ -338,7 +352,7 @@ cargo run --features "ethereum" -- ethereum-ledger \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine-eth.log &
 
-cd ..
+# Now go back to interledger-rs directory.
 
 DEBUG="settlement*" \
 CONNECTOR_URL="http://localhost:8771" \
@@ -357,6 +371,8 @@ ilp-settlement-xrp \
 ```
 
 <!--!
+    popd &>/dev/null
+    popd &>/dev/null
 fi
 -->
 
@@ -397,7 +413,6 @@ if [ "$USE_DOCKER" -eq 1 ]; then
 
     # Start Charlie's node
     $CMD_DOCKER run \
-        -e ILP_ADDRESS=example.charlie \
         -e ILP_SECRET_SEED=1232362131122139900555208458637022875563691455429373719368053354 \
         -e ILP_ADMIN_AUTH_TOKEN=hi_charlie \
         -e ILP_REDIS_URL=redis://redis-charlie_node:6379/ \
@@ -420,7 +435,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_alice \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --all-features --bin ilp-node &> logs/node-alice.log &
+cargo run --bin ilp-node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -429,16 +444,15 @@ ILP_ADMIN_AUTH_TOKEN=hi_bob \
 ILP_REDIS_URL=redis://127.0.0.1:6381/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --all-features --bin ilp-node &> logs/node-bob.log &
+cargo run --bin ilp-node &> logs/node-bob.log &
 
 # Start Charlie's node
-ILP_ADDRESS=example.bob.charlie \
 ILP_SECRET_SEED=1232362131122139900555208458637022875563691455429373719368053354 \
 ILP_ADMIN_AUTH_TOKEN=hi_charlie \
 ILP_REDIS_URL=redis://127.0.0.1:6384/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:9770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:9771 \
-cargo run --all-features --bin ilp-node &> logs/node-charlie.log &
+cargo run --bin ilp-node &> logs/node-charlie.log &
 ```
 
 <!--!
