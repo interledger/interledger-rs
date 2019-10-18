@@ -1653,7 +1653,7 @@ impl IdempotentStore for RedisStore {
                         trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
                         let mut input_hash: [u8; 32] = Default::default();
                         input_hash.copy_from_slice(input_hash_slice.as_ref());
-                        Ok(Some((
+                        Ok(Some(IdempotentData::new(
                             StatusCode::from_str(status_code).unwrap(),
                             Bytes::from(data.clone()),
                             input_hash,

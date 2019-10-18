@@ -91,20 +91,6 @@ pub const IDEMPOTENT_STORE_CALL_ERROR_TYPE: ApiErrorType = ApiErrorType {
     status: StatusCode::CONFLICT,
 };
 
-// Number coversion errors
-pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Conversion error",
-    status: StatusCode::INTERNAL_SERVER_ERROR,
-};
-
-// Account without an engine error
-pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    status: StatusCode::NOT_FOUND,
-    title: "No settlement engine configured",
-};
-
 lazy_static! {
     pub static ref IDEMPOTENT_STORE_CALL_ERROR: ApiError =
         ApiError::from_api_error_type(&IDEMPOTENT_STORE_CALL_ERROR_TYPE)

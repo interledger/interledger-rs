@@ -6,8 +6,24 @@ use futures::{
     Future,
 };
 use http::StatusCode;
+use log::error;
 
-pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdempotentData {
+    pub status: StatusCode,
+    pub body: Bytes,
+    pub input_hash: [u8; 32],
+}
+
+impl IdempotentData {
+    pub fn new(status: StatusCode, body: Bytes, input_hash: [u8; 32]) -> Self {
+        Self {
+            status,
+            body,
+            input_hash,
+        }
+    }
+}
 
 pub trait IdempotentStore {
     /// Returns the API response that was saved when the idempotency key was used
@@ -48,8 +64,8 @@ where
                 // of the provided input data. If not, we should error out since
                 // the caller provided an idempotency key that was used for a
                 // different input.
-                if ret.2 == input_hash {
-                    Ok(Some((ret.0, ret.1)))
+                if ret.input_hash == input_hash {
+                    Ok(Some((ret.status, ret.body)))
                 } else {
                     Ok(Some((
                         StatusCode::from_u16(409).unwrap(),
@@ -66,7 +82,7 @@ where
 // can reuse it for both the messages and the settlements calls
 pub fn make_idempotent_call<S, F>(
     store: S,
-    f: F,
+    non_idempotent_function: F,
     input_hash: [u8; 32],
     idempotency_key: Option<String>,
 ) -> impl Future<Item = (StatusCode, Bytes), Error = ApiError>
@@ -98,7 +114,7 @@ where
                         }
                     } else {
                         Either::B(
-                            f().map_err({
+                            non_idempotent_function().map_err({
                                 let store = store.clone();
                                 let idempotency_key = idempotency_key.clone();
                                 move |ret: ApiError| {
@@ -109,10 +125,9 @@ where
                                         input_hash,
                                         status_code,
                                         data,
-                                    ));
+                                    ).map_err(move |_| error!("Failed to connect to the store! The request will not be idempotent if retried.")));
                                     ret
-                                }
-                            })
+                                }})
                             .and_then(
                                 move |ret: (StatusCode, Bytes)| {
                                     store
@@ -122,7 +137,10 @@ where
                                             ret.0,
                                             ret.1.clone(),
                                         )
-                                        .map_err(move |_| IDEMPOTENT_STORE_CALL_ERROR.clone())
+                                        .map_err(move |_| {
+                                            error!("Failed to connect to the store! The request will not be idempotent if retried.");
+                                             IDEMPOTENT_STORE_CALL_ERROR.clone()
+                                        })
                                         .and_then(move |_| Ok((ret.0, ret.1)))
                                 },
                             ),
@@ -133,6 +151,8 @@ where
         )
     } else {
         // otherwise just make the call w/o any idempotency saves
-        Either::B(f().and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))))
+        Either::B(
+            non_idempotent_function().and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
+        )
     }
 }
