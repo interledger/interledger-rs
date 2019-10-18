@@ -143,7 +143,7 @@ impl ApiError {
 
     pub fn account_not_found() -> Self {
         ApiError::from_api_error_type(&ACCOUNT_NOT_FOUND_TYPE)
-            .detail(Some("Username was not found.".to_owned()))
+            .detail("Username was not found.".to_owned())
     }
 
     #[allow(dead_code)]
@@ -152,13 +152,13 @@ impl ApiError {
     }
 
     pub fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
-        let detail = Some(match invalid_account_id {
+        let detail = match invalid_account_id {
             Some(invalid_account_id) => match invalid_account_id.len() {
                 0 => "Account ID is empty".to_owned(),
                 _ => format!("{} is an invalid account ID", invalid_account_id),
             },
             None => "Invalid string was given as an account ID".to_owned(),
-        });
+        };
         ApiError::from_api_error_type(&INVALID_ACCOUNT_ID_TYPE).detail(detail)
     }
 
@@ -166,20 +166,20 @@ impl ApiError {
         ApiError::from_api_error_type(&INVALID_ILP_PACKET_TYPE)
     }
 
-    pub fn detail<T>(mut self, detail: Option<T>) -> Self
+    pub fn detail<T>(mut self, detail: T) -> Self
     where
         T: Into<String>,
     {
-        self.detail = detail.map(|detail| detail.into());
+        self.detail = Some(detail.into());
         self
     }
 
     #[allow(dead_code)]
-    pub fn instance<T>(mut self, instance: Option<T>) -> Self
+    pub fn instance<T>(mut self, instance: T) -> Self
     where
         T: Into<String>,
     {
-        self.instance = instance.map(|instance| instance.into());
+        self.instance = Some(instance.into());
         self
     }
 
@@ -288,7 +288,7 @@ impl Reply for JsonDeserializeError {
             Category::Data => &JSON_DATA_TYPE,
             _ => &UNKNOWN_JSON_TYPE,
         };
-        let detail = Some(self.detail);
+        let detail = self.detail;
         let extension_members = match extension_members.keys().len() {
             0 => None,
             _ => Some(extension_members),
