@@ -66,7 +66,7 @@ Interledger.rs and settlement engines written in other languages are fully inter
 
 Install the settlement engine as follows:
 
-```bash
+```bash #
 npm i -g ilp-settlement-xrp
 ```
 
@@ -347,8 +347,8 @@ printf "\nWaiting for Interledger.rs nodes to start up"
 
 wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
+wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
 
 printf " done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
@@ -358,7 +358,7 @@ printf " done\nThe Interledger.rs nodes are up and running!\n\n"
 <!--!
 printf "Creating accounts:\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
-    # Adding settlement accounts should be done at the same time because it checks each other
+    export ILP_CLI_API_AUTH=hi_alice
 
     printf "Adding Alice's account...\n"
     curl \
@@ -437,10 +437,7 @@ else
 ```bash
 # This alias makes our CLI invocations more natural
 alias ilp-cli="cargo run --quiet --bin ilp-cli --"
-
 export ILP_CLI_API_AUTH=hi_alice
-
-# Adding settlement accounts should be done at the same time because it checks each other
 
 printf "Adding Alice's account...\n"
 ilp-cli accounts create alice \
@@ -515,13 +512,13 @@ printf "\n\nChecking balances prior to payment...\n"
 printf "\nAlice's balance on Alice's node: "
 ilp-cli accounts balance alice
 
-printf "\nBob's balance on Alice's node: "
+printf "Bob's balance on Alice's node: "
 ilp-cli accounts balance bob
 
-printf "\nAlice's balance on Bob's node: "
+printf "Alice's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
-printf "\nBob's balance on Bob's node: "
+printf "Bob's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 
 printf "\n\n"
@@ -555,7 +552,7 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance"
+wait_to_get_http_response_body '{"balance":"0"}' 20 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
@@ -569,13 +566,13 @@ printf "Checking balances after payment...\n"
 printf "\nAlice's balance on Alice's node: "
 ilp-cli accounts balance alice
 
-printf "\nBob's balance on Alice's node: "
+printf "Bob's balance on Alice's node: "
 ilp-cli accounts balance bob
 
-printf "\nAlice's balance on Bob's node: "
+printf "Alice's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance alice --auth hi_bob 
 
-printf "\nBob's balance on Bob's node: "
+printf "Bob's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance bob --auth hi_bob 
 ```
 
