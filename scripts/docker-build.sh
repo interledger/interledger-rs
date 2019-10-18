@@ -16,7 +16,7 @@ if [ $# -eq 0 ]; then
     printf "\e[33mNo build target is given, building all targets.\e[m\n"
     build_targets+=(ilp-cli)
     build_targets+=(node)
-    build_targets+=(settlement-engines)
+    # build_targets+=(settlement-engines)
     build_targets+=(testnet-bundle)
     build_targets+=(circleci-rust-dind)
 fi
@@ -24,6 +24,7 @@ fi
 # if arguments are given, add it as build targets
 build_targets+=($@)
 
+# TODO remove settlement engines
 for build_target in "${build_targets[@]}"; do
     case $build_target in
         # intended to be run in the top directory
@@ -38,6 +39,7 @@ for build_target in "${build_targets[@]}"; do
                 . ;;
         "testnet-bundle") docker build -f ./docker/Dockerfile -t interledgerrs/testnet-bundle:latest . ;;
         "ci-node") docker build -f ./docker/CI/node.dockerfile -t interledgerrs/node:latest . ;;
+        "ci-ilp-cli") docker build -f ./docker/CI/ilp-cli.dockerfile -t interledgerrs/ilp-cli:latest . ;;
         "ci-settlement-engines") docker build -f ./docker/CI/settlement-engines.dockerfile -t interledgerrs/settlement-engines:latest . ;;
         "circleci-rust-dind") docker build -f ./docker/CI/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:latest . ;;
     esac

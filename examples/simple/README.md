@@ -274,7 +274,7 @@ See the [HTTP API docs](../../docs/api.md) for the full list of fields that can 
 printf "\nCreating accounts...\n\n"
 
 if [ "$USE_DOCKER" -eq 1 ]; then
-    printf "Alice's account:\n"
+    printf "Creating Alice's account on Node A...\n"
     curl \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer admin-a" \
@@ -285,9 +285,9 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_scale": 9,
         "max_packet_amount": 100,
         "ilp_over_http_incoming_token": "alice-password"}' \
-        http://localhost:7770/accounts
+        http://localhost:7770/accounts >logs/account-node_a-alice.log 2>/dev/null
     
-    printf "\nNode B's account on Node A:\n"
+    printf "Creating Node B's account on Node A...\n"
     curl \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer admin-a" \
@@ -302,12 +302,12 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "ilp_over_http_url": "http://interledger-rs-node_b:7770/ilp",
         "min_balance": -100000,
         "routing_relation": "Peer"}' \
-        http://localhost:7770/accounts
+        http://localhost:7770/accounts >logs/account-node_a-node_b.log 2>/dev/null
     
     # Insert accounts on Node B
     # One account represents Bob and the other represents Node A's account with Node B
     
-    printf "\nBob's Account:\n"
+    printf "Creating Bob's account on Node B...\n"
     curl \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer admin-b" \
@@ -318,9 +318,9 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "asset_scale": 9,
         "max_packet_amount": 100,
         "ilp_over_http_incoming_token": "bob"}' \
-        http://localhost:8770/accounts
+        http://localhost:8770/accounts >logs/account-node_b-bob.log 2>/dev/null
     
-    printf "\nNode A's account on Node B:\n"
+    printf "Creating Node A's account on Node B...\n"
     curl \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer admin-b" \
@@ -335,7 +335,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "ilp_over_http_url": "http://interledger-rs-node_a:7770/ilp",
         "min_balance": -100000,
         "routing_relation": "Peer"}' \
-        http://localhost:8770/accounts
+        http://localhost:8770/accounts >logs/account-node_b-node_a.log 2>/dev/null
 else
 -->
 
@@ -347,34 +347,38 @@ export ILP_CLI_API_AUTH=admin-a
 # One account represents Alice and the other represents Node B's account with Node A
 
 printf "Creating Alice's account on Node A...\n"
-ilp-cli --quiet accounts create alice \
+ilp-cli accounts create alice \
     --asset-code ABC \
     --asset-scale 9 \
-    --ilp-over-http-incoming-token alice-password
+    --ilp-over-http-incoming-token alice-password \
+    >logs/account-node_a-alice.log 2>/dev/null
 
 printf "Creating Node B's account on Node A...\n"
-ilp-cli --quiet accounts create node_b \
+ilp-cli accounts create node_b \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-address example.node_b \
     --ilp-over-http-outgoing-token node_a:node_a-password \
-    --ilp-over-http-url 'http://localhost:8770/ilp'
+    --ilp-over-http-url 'http://localhost:8770/ilp' \
+    >logs/account-node_a-node_b.log 2>/dev/null
 
 # Insert accounts on Node B
 # One account represents Bob and the other represents Node A's account with Node B
 
 printf "Creating Bob's account on Node B...\n"
-ilp-cli --quiet --node http://localhost:8770 accounts create bob \
-    --auth admin-b \
-    --asset-code ABC \
-    --asset-scale 9
-
-printf "Creating Node A's account on Node B...\n"
-ilp-cli --quiet --node http://localhost:8770 accounts create node_a \
+ilp-cli --node http://localhost:8770 accounts create bob \
     --auth admin-b \
     --asset-code ABC \
     --asset-scale 9 \
-    --ilp-over-http-incoming-token node_a-password
+    >logs/account-node_b-bob.log 2>/dev/null
+
+printf "Creating Node A's account on Node B...\n"
+ilp-cli --node http://localhost:8770 accounts create node_a \
+    --auth admin-b \
+    --asset-code ABC \
+    --asset-scale 9 \
+    --ilp-over-http-incoming-token node_a-password \
+    >logs/account-node_b-node_a.log 2>/dev/null
 ```
 
 <!--!

@@ -213,7 +213,7 @@ fi
 ### 2. Launch Redis
 
 <!--!
-printf "\Starting Redis instances..."
+printf "\nStarting Redis instances..."
 if [ "$USE_DOCKER" -eq 1 ]; then
     printf "\n"
     $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
@@ -308,7 +308,7 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 
 By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
-The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions in settlement-engine](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, the first step would be to clone the repository.
+The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions in `settlement-engines`](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engines`, the first step would be to clone the repository.
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -375,7 +375,7 @@ else
 -->
 
 ```bash #
-# This should be done outside of the interledger-rs directory, otherwise it will cause an error
+# This should be done outside of the interledger-rs directory, otherwise it will cause an error.
 git clone https://github.com/interledger-rs/settlement-engines
 cd settlement-engines
 ```
@@ -524,10 +524,10 @@ printf "\nWaiting for nodes to start up"
 wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 wait_to_serve "http://localhost:9770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3002" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3003" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
+wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
+wait_to_serve "http://localhost:3002" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
+wait_to_serve "http://localhost:3003" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
 
 printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
@@ -857,11 +857,11 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for Ethereum block to be mined"
-wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer hi_bob" "http://localhost:8770/accounts/alice/balance"
+wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer hi_bob" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 
 printf "Waiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer hi_charlie" "http://localhost:9770/accounts/bob/balance"
+wait_to_get_http_response_body '{"balance":"0"}' 20 -H "Authorization: Bearer hi_charlie" "http://localhost:9770/accounts/bob/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
@@ -1034,7 +1034,7 @@ fi
 printf "\n"
 run_post_test_hook
 if [ $TEST_MODE -ne 1 ]; then
-    prompt_yn "Do you want to kill the services? [Y/n]" "y"
+    prompt_yn "Do you want to kill the services? [Y/n] " "y"
 fi
 printf "\n"
 if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then
