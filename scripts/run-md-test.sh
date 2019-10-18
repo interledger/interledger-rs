@@ -49,11 +49,13 @@ function clear_redis_file() {
 
 # $1 = target directory
 # $2 = docker mode in [01]
+# $3 = test name filter
 #
 # test_example examples/eth-settlement 0
 function test_example() {
     local target_directory=$1
     local docker_mode=$2
+    local test_name_filter=$3
     local target_name=$(basename $target_directory)
     local result
 
@@ -69,27 +71,51 @@ function test_example() {
     fi
     mkdir -p ${LOG_DIR}/${target_name}
     mv logs ${LOG_DIR}/${target_name}/${docker_mode}
+    # there may not be logs when testing non-settlement ones
+    mv ${SETTLEMENT_ENGINE_DIR}/logs/* ${LOG_DIR}/${target_name}/${docker_mode}/ &>/dev/null
     popd > /dev/null
     return $result
 }
 
 # Adds all directories in `examples` directory as test targets.
 function add_example_tests() {
+    local test_name_filter=$1
+    local docker_mode_filter=$2
+
     # This will add tests like "test_example examples/eth-settlement 0" which means an example test of
     # eth-settlement in non-docker mode.
     for directory in $(find $BASE_DIR/../examples/* -maxdepth 0 -type d); do
-        TESTS+=("test_example ${directory} 0") # this cannot contain space in the directory path
-        TESTS+=("test_example ${directory} 1")
+        if [ -n "${test_name_filter}" ] && [[ ! "${directory}" =~ ${test_name_filter} ]]; then
+            printf "\e[33;1mSkipping \"%s\"\e[m\n" "${directory}"
+            continue
+        fi
+        if [ -n "${docker_mode_filter}" ]; then
+            printf "\e[33;1mAdding only USE_DOCKER=%d for \"%s\"\e[m\n" "${docker_mode_filter}" "${directory}"
+            TESTS+=("test_example ${directory} ${docker_mode_filter} ${test_name_filter}")
+        else
+            TESTS+=("test_example ${directory} 0 ${test_name_filter}") # this cannot contain space in the directory path
+            TESTS+=("test_example ${directory} 1 ${test_name_filter}")
+        fi
     done
 }
 
 BASE_DIR=$(cd $(dirname $0); pwd)
 RUN_MD=$BASE_DIR/run-md.sh
 LOG_DIR=/tmp/run-md-test/logs
+export SETTLEMENT_ENGINE_INSTALLL_DIR=$(cd ~; pwd)
+SETTLEMENT_ENGINE_DIR=${SETTLEMENT_ENGINE_INSTALLL_DIR}/settlement-engines
+
+# if arg is given, consider it is a filter
+if [ $# -gt 0 ]; then
+    TEST_NAME_FILTER=$1
+fi
+if [ $# -gt 1 ]; then
+    DOCKER_MODE_FILTER=$2
+fi
 
 # set up example tests
 TESTS=()
-add_example_tests
+add_example_tests ${TEST_NAME_FILTER} ${DOCKER_MODE_FILTER}
 
 # set up log dir for CircleCI
 # the log files will be put as artifacts

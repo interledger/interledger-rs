@@ -1,4 +1,4 @@
-# rust + dind + musl + (nvm + npm + ganache + settlement-xrp)
+# rust + dind + musl + (nvm + npm + ganache + ilp-settlement-xrp)
 # rust:latest @ 2019/09/17
 FROM circleci/rust@sha256:3e7f62299c1b6fa3a429ddfb19b8d43bcd92c329b9b604571801a8d2273d16f6
 
@@ -55,6 +55,7 @@ WORKDIR /home/circleci
 
 # Install nvm, node and ganache-cli
 # node v12 causes a compilation error
+# Because npm is super annoyingly slow & unstable, use yarn instead.
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
 ENV NVM_DIR="/home/circleci/.nvm"
 ENV NODE_VERSION="v11.15.0"
@@ -62,16 +63,10 @@ ENV NODE_PATH=$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 RUN . ~/.nvm/nvm.sh && \
     nvm install $NODE_VERSION && \
-    npm install -g ganache-cli
-
-# Build and install settlement-xrp
-RUN git clone https://github.com/interledgerjs/settlement-xrp/
-WORKDIR settlement-xrp
-RUN . ~/.nvm/nvm.sh && \
-    npm install graphql@0.11.3 && \
-    npm install && \
-    npm run build && \
-    npm link
+    curl -o- -L https://yarnpkg.com/install.sh | bash && \
+    export PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH && \
+    yarn global add ganache-cli ilp-settlement-xrp
+ENV PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH
 
 WORKDIR /home/circleci
 ENV CARGO_HOME=/home/circleci/.cargo

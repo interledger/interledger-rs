@@ -3,6 +3,7 @@ FROM clux/muslrust:stable as rust
 
 WORKDIR /usr/src/interledger-rs
 COPY ./Cargo.toml /usr/src/interledger-rs/Cargo.toml
+COPY ./Cargo.lock /usr/src/interledger-rs/Cargo.lock
 COPY ./crates /usr/src/interledger-rs/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
