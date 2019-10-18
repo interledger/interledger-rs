@@ -7,6 +7,7 @@ RUN echo "Building profile: ${CARGO_BUILD_OPTION}, output dir: ${RUST_BIN_DIR_NA
 
 WORKDIR /usr/src
 COPY ./Cargo.toml /usr/src/Cargo.toml
+COPY ./Cargo.lock /usr/src/Cargo.lock
 COPY ./crates /usr/src/crates
 
 RUN cargo build ${CARGO_BUILD_OPTION} --package ilp-node --bin ilp-node

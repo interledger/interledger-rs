@@ -165,7 +165,7 @@ else
     printf "Building interledger.rs... (This may take a couple of minutes)\n"
 -->
 ```bash
-cargo build --all-features --bin ilp-node
+cargo build --bin ilp-node
 ```
 <!--!
 fi
@@ -174,7 +174,7 @@ fi
 ### 2. Launch Redis
 
 <!--!
-printf "\Starting Redis instances..."
+printf "\nStarting Redis instances..."
 if [ "$USE_DOCKER" -eq 1 ]; then
     printf "\n"
     $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
@@ -248,7 +248,7 @@ sleep 3
 ### 4. Launch Settlement Engines
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
-Note: The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md)
+The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, clone it first.
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -283,13 +283,27 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --redis_url redis://redis-bob_se:6379/ \
         --settlement_api_bind_address 0.0.0.0:3000
 else
+    pushd "${SETTLEMENT_ENGINE_INSTALLL_DIR}" &>/dev/null
+    if [ ! -e "settlement-engines" ]; then
+        git clone https://github.com/interledger-rs/settlement-engines
+    fi
+    pushd settlement-engines &>/dev/null
 -->
+
+```bash #
+# Do this somewhere OUTER the interledger-rs directory otherwise you'll get an error.
+git clone https://github.com/interledger-rs/settlement-engines
+cd settlement-engines
+```
+
+Then, spin up your settlement engines.
 
 ```bash
 # Turn on debug logging for all of the interledger.rs components
 export RUST_LOG=interledger=debug
-git clone https://github.com/interledger-rs/settlement-engines
-cd settlement-engines
+mkdir -p logs
+
+cargo build --features "ethereum" --bin interledger-settlement-engines
 
 # Start Alice's settlement engine
 cargo run --features "ethereum" -- ethereum-ledger \
@@ -313,10 +327,12 @@ cargo run --features "ethereum" -- ethereum-ledger \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine.log &
 
-cd ..
+# Now go back to interledger-rs directory.
 ```
 
 <!--!
+    popd &>/dev/null
+    popd &>/dev/null
 fi
 -->
 
@@ -365,7 +381,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_alice \
 ILP_REDIS_URL=redis://127.0.0.1:6379/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --all-features --bin ilp-node &> logs/node-alice.log &
+cargo run --bin ilp-node &> logs/node-alice.log &
 
 # Start Bob's node
 ILP_ADDRESS=example.bob \
@@ -374,7 +390,7 @@ ILP_ADMIN_AUTH_TOKEN=hi_bob \
 ILP_REDIS_URL=redis://127.0.0.1:6381/ \
 ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
 ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --all-features --bin ilp-node &> logs/node-bob.log &
+cargo run --bin ilp-node &> logs/node-bob.log &
 ```
 
 <!--!
@@ -384,8 +400,8 @@ printf "\nWaiting for Interledger.rs nodes to start up"
 
 wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
 wait_to_serve "http://localhost:8770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
-wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
+wait_to_serve "http://localhost:3000" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
+wait_to_serve "http://localhost:3001" 10 || error_and_exit "\nFailed to spin up settlement engine. Check out your configuration and log files."
 
 printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 -->
@@ -395,7 +411,7 @@ printf "done\nThe Interledger.rs nodes are up and running!\n\n"
 <!--!
 printf "Creating accounts:\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
-    # Adding settlement accounts should be done at the same time because it checks each other
+    export ILP_CLI_API_AUTH=hi_alice
     
     printf "Adding Alice's account...\n"
     curl \
@@ -474,9 +490,7 @@ else
 ```bash
 # This alias makes our CLI invocations more natural
 alias ilp-cli="cargo run --quiet --bin ilp-cli --"
-
 export ILP_CLI_API_AUTH=hi_alice
-# Adding settlement accounts should be done at the same time because it checks each other
 
 printf "Adding Alice's account...\n"
 ilp-cli accounts create alice \
@@ -521,7 +535,7 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --asset-code ETH \
     --asset-scale 18 \
     --max-packet-amount 100 \
-    --settlement-engine-url http://localhost:3000 \
+    --settlement-engine-url http://localhost:3001 \
     --ilp-over-http-incoming-token alice_password \
     --ilp-over-http-outgoing-token bob:bob_password \
     --ilp-over-http-url http://localhost:7770/ilp \
@@ -549,18 +563,18 @@ printf "\nChecking balances...\n"
 printf "\nAlice's balance on Alice's node: "
 ilp-cli accounts balance alice
 
-printf "\nBob's balance on Alice's node: "
+printf "Bob's balance on Alice's node: "
 ilp-cli accounts balance bob
 
-printf "\nAlice's balance on Bob's node: "
+printf "Alice's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance alice \
     --auth alice:alice_password
 
-printf "\nBob's balance on Bob's node: "
+printf "Bob's balance on Bob's node: "
 ilp-cli --node http://localhost:8770 accounts balance bob \
     --auth bob:in_bob
 
-printf "\n\n"
+printf "\n"
 -->
 
 The following script sends a payment from Alice to Bob.
@@ -574,6 +588,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         -H "Content-Type: application/json" \
         -d "{\"receiver\":\"http://interledger-rs-node_b:7770/accounts/bob/spsp\",\"source_amount\":500}" \
         http://localhost:7770/accounts/alice/payments
+    printf "\n"
 else
 -->
 ```bash
@@ -584,11 +599,9 @@ ilp-cli pay alice --auth in_alice \
 <!--!
 fi
 
-printf "\n"
-
 # wait untill the settlement is done
 printf "\nWaiting for Ethereum block to be mined"
-wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" 
+wait_to_get_http_response_body '{"balance":"0"}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
@@ -707,7 +720,7 @@ If you inspect `ganache-cli`'s output, you will notice that the block number has
 printf "\n"
 run_post_test_hook
 if [ $TEST_MODE -ne 1 ]; then
-    prompt_yn "Do you want to kill the services? [Y/n]" "y"
+    prompt_yn "Do you want to kill the services? [Y/n] " "y"
 fi
 printf "\n"
 if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then
