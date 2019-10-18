@@ -14,7 +14,8 @@ use std::{
 };
 use warp::{reject::custom, reply::json, reply::Response, Rejection, Reply};
 
-/// API error type prefix of problems
+/// API error type prefix of problems.
+/// This URL prefix is currently not published but we assume that in the future.
 const ERROR_TYPE_PREFIX: &str = "https://errors.interledger.org/http-api";
 
 /// This struct represents the fields defined in [RFC7807](https://tools.ietf.org/html/rfc7807).
