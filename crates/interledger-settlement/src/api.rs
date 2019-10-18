@@ -135,21 +135,13 @@ where
 // Helper function that returns any idempotent data that corresponds to a
 // provided idempotency key. It fails if the hash of the input that
 // generated the idempotent data does not match the hash of the provided input.
-fn check_idempotency<S, A>(
+fn check_idempotency<S>(
     store: S,
     idempotency_key: String,
     input_hash: [u8; 32],
 ) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = ApiError>
 where
-    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-        + SettlementStore<Account = A>
-        + IdempotentStore
-        + AccountStore<Account = A>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
 {
     store
         .load_idempotent_data(idempotency_key.clone())
@@ -176,7 +168,7 @@ where
 
 // make_idempotent_call takes a function instead of direct arguments so that we
 // can reuse it for both the messages and the settlements calls
-fn make_idempotent_call<S, A, F>(
+fn make_idempotent_call<S, F>(
     store: S,
     f: F,
     input_hash: [u8; 32],
@@ -184,15 +176,7 @@ fn make_idempotent_call<S, A, F>(
 ) -> impl Future<Item = (StatusCode, Bytes), Error = ApiError>
 where
     F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>,
-    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-        + SettlementStore<Account = A>
-        + IdempotentStore
-        + AccountStore<Account = A>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
 {
     if let Some(idempotency_key) = idempotency_key {
         // If there an idempotency key was provided, check idempotency
