@@ -14,6 +14,12 @@ function init() {
         TEST_MODE=0
     fi
 
+    # set global settlement engine dir so that the engine never gets compiled many times when test
+    # furthermore, we cannot clone `settlement-engine` in `interledger-rs` directory.
+    if [ -z "${SETTLEMENT_ENGINE_INSTALLL_DIR}" ]; then
+        SETTLEMENT_ENGINE_INSTALLL_DIR=$(cd ~; pwd)
+    fi
+
     # define commands
     CMD_DOCKER=docker
     if [ -n "$USE_SUDO" ] && [ "$USE_SUDO" -ne "0" ]; then
