@@ -9,6 +9,8 @@ use lazy_static::lazy_static;
 use std::str::FromStr;
 use url::Url;
 
+pub mod errors;
+
 mod api;
 mod client;
 #[cfg(test)]

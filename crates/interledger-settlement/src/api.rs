@@ -22,7 +22,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::executor::spawn;
-use warp::{self, Filter};
+use warp::{self, reject::Rejection, Filter};
+
+use crate::errors::*;
+use interledger_http::error::*;
 
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
@@ -68,12 +71,16 @@ where
                 let receive_settlement_fn =
                     move || do_receive_settlement(store_clone, id, quantity, idempotency_key_clone);
                 make_idempotent_call(store, receive_settlement_fn, input_hash, idempotency_key)
-                    // TODO Replace with responses
-                    .map_err(move |(_status_code, error_msg)| warp::reject::custom(error_msg))
-                    .and_then(move |(_status_code, message)| {
-                        // TODO Replace with responses
+                    .map_err::<_, Rejection>(move |err| err.into())
+                    .and_then(move |(status_code, message)| {
                         match serde_json::from_slice::<Quantity>(&message) {
-                            Ok(quantity) => Either::A(ok(warp::reply::json(&quantity))),
+                            Ok(quantity) => {
+                                let resp = Response::builder()
+                                    .status(status_code)
+                                    .body(serde_json::to_string(&quantity).unwrap())
+                                    .unwrap();
+                                Either::A(ok(resp))
+                            }
                             Err(_) => Either::B(err(warp::reject::custom(
                                 "could not convert to quantity",
                             ))),
@@ -111,8 +118,7 @@ where
                 let send_outgoing_message_fn =
                     move || do_send_outgoing_message(store_clone, outgoing_handler, id, message);
                 make_idempotent_call(store, send_outgoing_message_fn, input_hash, idempotency_key)
-                    // TODO Replace with error case with response
-                    .map_err(move |(_status_code, error_msg)| warp::reject::custom(error_msg))
+                    .map_err::<_, Rejection>(move |err| err.into())
                     .and_then(move |(status_code, message)| {
                         Ok(Response::builder()
                             .status(status_code)
@@ -123,11 +129,8 @@ where
         );
 
     settlements
-        // TODO: Figure out how to convert these rejections to responses
-        // .recover(|err: warp::Rejection| {
-        //     Ok(err.into_response())
-        // })
         .or(messages)
+        .recover(default_rejection_handler)
         .boxed()
 }
 
@@ -138,7 +141,7 @@ fn check_idempotency<S, A>(
     store: S,
     idempotency_key: String,
     input_hash: [u8; 32],
-) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = String>
+) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = ApiError>
 where
     S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
         + SettlementStore<Account = A>
@@ -152,11 +155,7 @@ where
 {
     store
         .load_idempotent_data(idempotency_key.clone())
-        .map_err(move |_| {
-            let error_msg = "Couldn't load idempotent data".to_owned();
-            error!("{}", error_msg);
-            error_msg
-        })
+        .map_err(move |_| IDEMPOTENT_STORE_CALL_ERROR.clone())
         .and_then(move |ret: Option<IdempotentData>| {
             if let Some(ret) = ret {
                 // Check if the hash (ret.2) of the loaded idempotent data matches the hash
@@ -168,7 +167,7 @@ where
                 } else {
                     Ok(Some((
                         StatusCode::from_u16(409).unwrap(),
-                        Bytes::from("Provided idempotency key is tied to other input"),
+                        Bytes::from(IDEMPOTENCY_CONFLICT_ERR),
                     )))
                 }
             } else {
@@ -184,9 +183,9 @@ fn make_idempotent_call<S, A, F>(
     f: F,
     input_hash: [u8; 32],
     idempotency_key: Option<String>,
-) -> impl Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)>
+) -> impl Future<Item = (StatusCode, Bytes), Error = ApiError>
 where
-    F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>,
+    F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>,
     S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
         + SettlementStore<Account = A>
         + IdempotentStore
@@ -202,36 +201,38 @@ where
         // and the key was not present or conflicting with an existing
         // key, perform the call and save the idempotent return data
         Either::A(
-            check_idempotency(store.clone(), idempotency_key.clone(), input_hash)
-                .map_err(move |err| {
-                    let status_code = StatusCode::from_u16(500).unwrap();
-                    (status_code, err)
-                })
-                .and_then(move |ret: Option<(StatusCode, Bytes)>| {
+            check_idempotency(store.clone(), idempotency_key.clone(), input_hash).and_then(
+                move |ret: Option<(StatusCode, Bytes)>| {
                     if let Some(ret) = ret {
                         if ret.0.is_success() {
                             Either::A(Either::A(ok((ret.0, ret.1))))
                         } else {
-                            Either::A(Either::B(err((
-                                ret.0,
-                                String::from_utf8_lossy(&ret.1).to_string(),
-                            ))))
+                            let err_msg = ApiErrorType {
+                                r#type: &ProblemType::Default,
+                                status: ret.0,
+                                title: "Idempotency Error",
+                            };
+                            // if check_idempotency returns an error, then it
+                            // has to be an idempotency error
+                            let ret_error = ApiError::from_api_error_type(&err_msg)
+                                .detail(Some(String::from_utf8_lossy(&ret.1).to_string()));
+                            Either::A(Either::B(err(ret_error)))
                         }
                     } else {
                         Either::B(
                             f().map_err({
                                 let store = store.clone();
                                 let idempotency_key = idempotency_key.clone();
-                                move |ret: (StatusCode, String)| {
-                                    let status_code = ret.0;
-                                    let data = Bytes::from(ret.1.clone());
+                                move |ret: ApiError| {
+                                    let status_code = ret.status.clone();
+                                    let data = Bytes::from(ret.detail.clone().unwrap_or_default());
                                     spawn(store.save_idempotent_data(
                                         idempotency_key,
                                         input_hash,
                                         status_code,
                                         data,
                                     ));
-                                    (status_code, ret.1)
+                                    ret
                                 }
                             })
                             .and_then(
@@ -243,25 +244,18 @@ where
                                             ret.0,
                                             ret.1.clone(),
                                         )
-                                        .map_err({
-                                            let ret = ret.clone();
-                                            move |_| {
-                                                (ret.0, String::from_utf8_lossy(&ret.1).to_string())
-                                            }
-                                        })
+                                        .map_err(move |_| IDEMPOTENT_STORE_CALL_ERROR.clone())
                                         .and_then(move |_| Ok((ret.0, ret.1)))
                                 },
                             ),
                         )
                     }
-                }),
+                },
+            ),
         )
     } else {
         // otherwise just make the call w/o any idempotency saves
-        Either::B(
-            f().map_err(move |ret: (StatusCode, String)| (ret.0, ret.1))
-                .and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
-        )
+        Either::B(f().and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))))
     }
 }
 
@@ -270,7 +264,7 @@ fn do_receive_settlement<S, A>(
     account_id: String,
     body: Quantity,
     idempotency_key: Option<String>,
-) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
+) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>
 where
     S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
         + SettlementStore<Account = A>
@@ -292,7 +286,7 @@ where
         Err(_) => {
             let error_msg = format!("Unable to parse account id: {}", account_id);
             error!("{}", error_msg);
-            return Box::new(err((StatusCode::from_u16(400).unwrap(), error_msg)));
+            return Box::new(err(ApiError::invalid_account_id(Some(&account_id))));
         }
     };
 
@@ -301,16 +295,18 @@ where
         Err(_) => {
             let error_msg = format!("Could not convert amount: {:?}", engine_amount);
             error!("{}", error_msg);
-            return Box::new(err((StatusCode::from_u16(500).unwrap(), error_msg)));
+            return Box::new(err(
+                ApiError::from_api_error_type(&CONVERSION_ERROR_TYPE).detail(Some(&error_msg))
+            ));
         }
     };
 
     Box::new(
             store.get_accounts(vec![account_id])
             .map_err(move |_err| {
-                let error_msg = format!("Error getting account: {}", account_id);
-                error!("{}", error_msg);
-                (StatusCode::from_u16(404).unwrap(), error_msg)
+                let err = ApiError::account_not_found().detail(Some(format!("Account {} was not found", account_id)));
+                error!("{}", err);
+                err
             })
             .and_then(move |accounts| {
                 let account = &accounts[0];
@@ -319,7 +315,7 @@ where
                 } else {
                     let error_msg = format!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
                     error!("{}", error_msg);
-                    Err((StatusCode::from_u16(404).unwrap(), error_msg))
+                    Err(ApiError::from_api_error_type(&NO_ENGINE_CONFIGURED_ERROR_TYPE).detail(Some(error_msg)))
                 }
             })
             .and_then(move |account| {
@@ -340,7 +336,12 @@ where
                 .map_err(move |_err| {
                     let error_msg = format!("Error getting uncredited settlement amount for: {}", account.id());
                     error!("{}", error_msg);
-                    (StatusCode::from_u16(500).unwrap(), error_msg)
+                    let error_type = ApiErrorType {
+                        r#type: &ProblemType::Default,
+                        status: StatusCode::INTERNAL_SERVER_ERROR,
+                        title: "Load uncredited settlement amount error", 
+                    };
+                    ApiError::from_api_error_type(&error_type).detail(Some(error_msg))
                 })
                 .and_then(move |scaled_leftover_amount| {
                     // add the leftovers to the scaled engine amount
@@ -357,7 +358,12 @@ where
                     .map_err(move |_| {
                         let error_msg = format!("Error updating the balance and leftovers of account: {}", account_id);
                         error!("{}", error_msg);
-                        (StatusCode::from_u16(500).unwrap(), error_msg)
+                        let error_type = ApiErrorType {
+                            r#type: &ProblemType::Default,
+                            status: StatusCode::INTERNAL_SERVER_ERROR,
+                            title: "Balance update error"
+                        };
+                        ApiError::from_api_error_type(&error_type).detail(Some(error_msg))
                     })
                     .and_then(move |_| {
                         // the connector "lies" and tells the engine that it
@@ -375,7 +381,7 @@ fn do_send_outgoing_message<S, O, A>(
     mut outgoing_handler: O,
     account_id: String,
     body: Vec<u8>,
-) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = (StatusCode, String)> + Send>
+) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>
 where
     S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
         + SettlementStore<Account = A>
@@ -389,19 +395,17 @@ where
     A: SettlementAccount + Send + Sync + 'static,
 {
     Box::new(result(A::AccountId::from_str(&account_id)
-            .map_err(move |_err| {
-                let error_msg = format!("Unable to parse account id: {}", account_id);
-                error!("{}", error_msg);
-                let status_code = StatusCode::from_u16(400).unwrap();
-                (status_code, error_msg)
+            .map_err(move |_| {
+                let err = ApiError::invalid_account_id(Some(&account_id));
+                error!("{}", err);
+                err
             }))
             .and_then(move |account_id| {
                 store.get_accounts(vec![account_id])
                 .map_err(move |_| {
-                    let error_msg = format!("Error getting account: {}", account_id);
-                    error!("{}", error_msg);
-                    let status_code = StatusCode::from_u16(404).unwrap();
-                    (status_code, error_msg)
+                    let err = ApiError::account_not_found().detail(Some(format!("Account {} was not found", account_id)));
+                    error!("{}", err);
+                    err
                 })
             })
             .and_then(|accounts| {
@@ -409,9 +413,9 @@ where
                 if account.settlement_engine_details().is_some() {
                     Ok(account.clone())
                 } else {
-                    let error_msg = format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id());
-                    error!("{}", error_msg);
-                    Err((StatusCode::from_u16(404).unwrap(), error_msg))
+                    let err = ApiError::account_not_found().detail(Some(format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id())));;
+                    error!("{}", err);
+                    Err(err)
                 }
             })
             .and_then(move |account| {
@@ -435,8 +439,13 @@ where
                 })
                 .map_err(move |reject| {
                     let error_msg = format!("Error sending message to peer settlement engine. Packet rejected with code: {}, message: {}", reject.code(), str::from_utf8(reject.message()).unwrap_or_default());
+                    let error_type = ApiErrorType {
+                        r#type: &ProblemType::Default,
+                        status: StatusCode::BAD_GATEWAY,
+                        title: "Error sending message to peer engine",
+                    };
                     error!("{}", error_msg);
-                    (StatusCode::from_u16(502).unwrap(), error_msg)
+                    ApiError::from_api_error_type(&error_type).detail(Some(error_msg))
                 })
             })
             .and_then(move |fulfill| {
@@ -491,6 +500,14 @@ mod tests {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
+    use serde_json::Value;
+
+    fn check_error_status_and_message(response: Response<Bytes>, status_code: u16, message: &str) {
+        let err: Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(response.status().as_u16(), status_code);
+        assert_eq!(err.get("status").unwrap(), status_code);
+        assert_eq!(err.get("detail").unwrap(), message);
+    }
 
     #[test]
     fn precision_loss() {
@@ -560,23 +577,26 @@ mod tests {
 
             // fails with different account id
             let response = settlement_call(&api, "2", 200, OUR_SCALE, Some(IDEMPOTENCY));
-            assert_eq!(
-                *response.body(),
-                Bytes::from("Unhandled rejection: Provided idempotency key is tied to other input")
+            check_error_status_and_message(
+                response,
+                409,
+                "Provided idempotency key is tied to other input",
             );
 
             // fails with different settlement data and account id
             let response = settlement_call(&api, "2", 42, OUR_SCALE, Some(IDEMPOTENCY));
-            assert_eq!(
-                *response.body(),
-                Bytes::from("Unhandled rejection: Provided idempotency key is tied to other input")
+            check_error_status_and_message(
+                response,
+                409,
+                "Provided idempotency key is tied to other input",
             );
 
             // fails with different settlement data and same account id
             let response = settlement_call(&api, &id, 42, OUR_SCALE, Some(IDEMPOTENCY));
-            assert_eq!(
-                *response.body(),
-                Bytes::from("Unhandled rejection: Provided idempotency key is tied to other input")
+            check_error_status_and_message(
+                response,
+                409,
+                "Provided idempotency key is tied to other input",
             );
 
             // works without idempotency key
@@ -686,11 +706,11 @@ mod tests {
             let api = test_api(store.clone(), false);
 
             let response = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
-            assert_eq!(response.body(), "Unhandled rejection: Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
+            check_error_status_and_message(response, 404, "Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
             // check that it's idempotent
             let response = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
-            assert_eq!(response.body(), "Unhandled rejection: Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
+            check_error_status_and_message(response, 404, "Account 0 does not have settlement engine details configured. Cannot handle incoming settlement");
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -720,19 +740,11 @@ mod tests {
             let api = test_api(store.clone(), false);
 
             let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 400);
-            assert_eq!(
-                ret.body(),
-                "Unhandled rejection: Unable to parse account id: a"
-            );
+            check_error_status_and_message(ret, 400, "a is an invalid account ID");
 
             // check that it's idempotent
             let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 400);
-            assert_eq!(
-                ret.body(),
-                "Unhandled rejection: Unable to parse account id: a"
-            );
+            check_error_status_and_message(ret, 400, "a is an invalid account ID");
 
             let _ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
 
@@ -743,7 +755,7 @@ mod tests {
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 2);
             assert_eq!(cached_data.0, 400);
-            assert_eq!(cached_data.1, &Bytes::from("Unable to parse account id: a"));
+            assert_eq!(cached_data.1, &Bytes::from("a is an invalid account ID"));
         }
 
         #[test]
@@ -753,20 +765,18 @@ mod tests {
             let api = test_api(store.clone(), false);
 
             let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 404);
-            assert_eq!(ret.body(), "Unhandled rejection: Error getting account: 0");
+            check_error_status_and_message(ret, 404, "Account 0 was not found");
 
             let ret = settlement_call(&api, &id, 100, 18, Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 404);
-            assert_eq!(ret.body(), "Unhandled rejection: Error getting account: 0");
+            check_error_status_and_message(ret, 404, "Account 0 was not found");
 
             let s = store.clone();
             let cache = s.cache.read();
             let cached_data = cache.get(IDEMPOTENCY).unwrap();
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 1);
-            // assert_eq!(cached_data.0, 404);
-            assert_eq!(cached_data.1, &Bytes::from("Error getting account: 0"));
+            assert_eq!(cached_data.0, 404);
+            assert_eq!(cached_data.1, &Bytes::from("Account 0 was not found"));
         }
     }
 
@@ -811,27 +821,27 @@ mod tests {
             // Using the same idempotency key with different arguments MUST
             // fail.
             let ret = messages_call(&api, "1", &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
-            assert_eq!(
-                ret.body(),
-                "Unhandled rejection: Provided idempotency key is tied to other input"
+            check_error_status_and_message(
+                ret,
+                409,
+                "Provided idempotency key is tied to other input",
             );
 
             let data = [0, 1, 2];
             // fails with different account id and data
             let ret = messages_call(&api, "1", &data[..], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
-            assert_eq!(
-                ret.body(),
-                "Unhandled rejection: Provided idempotency key is tied to other input"
+            check_error_status_and_message(
+                ret,
+                409,
+                "Provided idempotency key is tied to other input",
             );
 
             // fails for same account id but different data
             let ret = messages_call(&api, &id, &data[..], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status(), StatusCode::from_u16(409).unwrap());
-            assert_eq!(
-                ret.body(),
-                "Unhandled rejection: Provided idempotency key is tied to other input"
+            check_error_status_and_message(
+                ret,
+                409,
+                "Provided idempotency key is tied to other input",
             );
 
             let s = store.clone();
@@ -850,12 +860,10 @@ mod tests {
             let api = test_api(store.clone(), false);
 
             let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 502);
-            assert_eq!(ret.body(), "Unhandled rejection: Error sending message to peer settlement engine. Packet rejected with code: F02, message: No other outgoing handler!");
+            check_error_status_and_message(ret, 502, "Error sending message to peer settlement engine. Packet rejected with code: F02, message: No other outgoing handler!");
 
             let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 502);
-            assert_eq!(ret.body(), "Unhandled rejection: Error sending message to peer settlement engine. Packet rejected with code: F02, message: No other outgoing handler!");
+            check_error_status_and_message(ret, 502, "Error sending message to peer settlement engine. Packet rejected with code: F02, message: No other outgoing handler!");
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -875,17 +883,13 @@ mod tests {
             let api = test_api(store.clone(), true);
 
             let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            assert_eq!(
-                ret.body(),
-                &Bytes::from("Unhandled rejection: Unable to parse account id: a")
-            );
-            // assert_eq!(ret.status().as_u16(), 400);
+            check_error_status_and_message(ret, 400, "a is an invalid account ID");
 
-            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 400);
+            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            check_error_status_and_message(ret, 400, "a is an invalid account ID");
 
-            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 400);
+            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            check_error_status_and_message(ret, 400, "a is an invalid account ID");
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -894,7 +898,7 @@ mod tests {
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 2);
             assert_eq!(cached_data.0, 400);
-            assert_eq!(cached_data.1, &Bytes::from("Unable to parse account id: a"));
+            assert_eq!(cached_data.1, &Bytes::from("a is an invalid account ID"));
         }
 
         #[test]
@@ -903,11 +907,11 @@ mod tests {
             let store = TestStore::new(vec![], false);
             let api = test_api(store.clone(), true);
 
-            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 404);
+            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            check_error_status_and_message(ret, 404, "Account 0 was not found");
 
-            let _ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            // assert_eq!(ret.status().as_u16(), 404);
+            let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
+            check_error_status_and_message(ret, 404, "Account 0 was not found");
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -916,7 +920,7 @@ mod tests {
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 1);
             assert_eq!(cached_data.0, 404);
-            assert_eq!(cached_data.1, &Bytes::from("Error getting account: 0"));
+            assert_eq!(cached_data.1, &Bytes::from("Account 0 was not found"));
         }
     }
 }
