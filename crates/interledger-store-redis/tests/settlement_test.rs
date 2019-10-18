@@ -5,7 +5,7 @@ use common::*;
 use futures::future::join_all;
 use http::StatusCode;
 use interledger_api::NodeStore;
-use interledger_http::idempotency::IdempotentStore;
+use interledger_http::idempotency::{IdempotentData, IdempotentStore};
 use interledger_service::{Account, AccountStore};
 use interledger_settlement::{LeftoversStore, SettlementAccount, SettlementStore};
 use interledger_store_redis::AccountId;
@@ -102,7 +102,7 @@ fn saves_and_loads_idempotency_key_data_properly() {
                     .and_then(move |data1| {
                         assert_eq!(
                             data1.unwrap(),
-                            (StatusCode::OK, Bytes::from("TEST"), input_hash)
+                            IdempotentData::new(StatusCode::OK, Bytes::from("TEST"), input_hash)
                         );
                         let _ = context;
 

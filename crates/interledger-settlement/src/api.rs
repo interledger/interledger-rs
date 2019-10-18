@@ -29,6 +29,20 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
 
+// Number conversion errors
+pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::Default,
+    title: "Conversion error",
+    status: StatusCode::INTERNAL_SERVER_ERROR,
+};
+
+// Account without an engine error
+pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::Default,
+    status: StatusCode::NOT_FOUND,
+    title: "No settlement engine configured",
+};
+
 pub fn create_settlements_filter<S, O, A>(
     store: S,
     outgoing_handler: O,
@@ -47,11 +61,11 @@ where
 {
     let with_store = warp::any().map(move || store.clone()).boxed();
     let idempotency = warp::header::optional::<String>("idempotency-key");
-    let account_id = warp::path("accounts").and(warp::path::param2::<String>()); // account_id
+    let account_id_filter = warp::path("accounts").and(warp::path::param2::<String>()); // account_id
 
     // POST /accounts/:account_id/settlements (optional idempotency-key header)
     // Body is a Quantity object
-    let settlement_endpoint = account_id.and(warp::path("settlements"));
+    let settlement_endpoint = account_id_filter.and(warp::path("settlements"));
     let settlements = warp::post2()
         .and(settlement_endpoint)
         .and(warp::path::end())
@@ -59,14 +73,18 @@ where
         .and(warp::body::json())
         .and(with_store.clone())
         .and_then(
-            move |id: String, idempotency_key: Option<String>, quantity: Quantity, store: S| {
-                let input = format!("{}{:?}", id, quantity);
+            move |account_id: String,
+                  idempotency_key: Option<String>,
+                  quantity: Quantity,
+                  store: S| {
+                let input = format!("{}{:?}", account_id, quantity);
                 let input_hash = get_hash_of(input.as_ref());
 
                 let idempotency_key_clone = idempotency_key.clone();
                 let store_clone = store.clone();
-                let receive_settlement_fn =
-                    move || do_receive_settlement(store_clone, id, quantity, idempotency_key_clone);
+                let receive_settlement_fn = move || {
+                    do_receive_settlement(store_clone, account_id, quantity, idempotency_key_clone)
+                };
                 make_idempotent_call(store, receive_settlement_fn, input_hash, idempotency_key)
                     .map_err::<_, Rejection>(move |err| err.into())
                     .and_then(move |(status_code, message)| {
@@ -89,7 +107,7 @@ where
     // POST /accounts/:account_id/messages (optional idempotency-key header)
     // Body is a Vec<u8> object
     let with_outgoing_handler = warp::any().map(move || outgoing_handler.clone()).boxed();
-    let messages_endpoint = account_id.and(warp::path("messages"));
+    let messages_endpoint = account_id_filter.and(warp::path("messages"));
     let messages = warp::post2()
         .and(messages_endpoint)
         .and(warp::path::end())
@@ -98,7 +116,7 @@ where
         .and(with_store.clone())
         .and(with_outgoing_handler.clone())
         .and_then(
-            move |id: String,
+            move |account_id: String,
                   idempotency_key: Option<String>,
                   body: warp::body::FullBody,
                   store: S,
@@ -106,14 +124,15 @@ where
                 // Gets called by our settlement engine, forwards the request outwards
                 // until it reaches the peer's settlement engine.
                 let message = Vec::from_buf(body);
-                let input = format!("{}{:?}", id, message);
+                let input = format!("{}{:?}", account_id, message);
                 let input_hash = get_hash_of(input.as_ref());
 
                 let store_clone = store.clone();
                 // Wrap do_send_outgoing_message in a closure to be invoked by
                 // the idempotency wrapper
-                let send_outgoing_message_fn =
-                    move || do_send_outgoing_message(store_clone, outgoing_handler, id, message);
+                let send_outgoing_message_fn = move || {
+                    do_send_outgoing_message(store_clone, outgoing_handler, account_id, message)
+                };
                 make_idempotent_call(store, send_outgoing_message_fn, input_hash, idempotency_key)
                     .map_err::<_, Rejection>(move |err| err.into())
                     .and_then(move |(status_code, message)| {
@@ -482,8 +501,8 @@ mod tests {
 
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 4);
-            assert_eq!(cached_data.0, StatusCode::OK);
-            let quantity: Quantity = serde_json::from_slice(&cached_data.1).unwrap();
+            assert_eq!(cached_data.status, StatusCode::OK);
+            let quantity: Quantity = serde_json::from_slice(&cached_data.body).unwrap();
             assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
         }
 
@@ -590,8 +609,8 @@ mod tests {
 
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 1);
-            assert_eq!(cached_data.0, 404);
-            assert_eq!(cached_data.1, &Bytes::from("Account 0 does not have settlement engine details configured. Cannot handle incoming settlement"));
+            assert_eq!(cached_data.status, 404);
+            assert_eq!(cached_data.body, &Bytes::from("Account 0 does not have settlement engine details configured. Cannot handle incoming settlement"));
         }
 
         #[test]
@@ -626,8 +645,8 @@ mod tests {
 
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 2);
-            assert_eq!(cached_data.0, 400);
-            assert_eq!(cached_data.1, &Bytes::from("a is an invalid account ID"));
+            assert_eq!(cached_data.status, 400);
+            assert_eq!(cached_data.body, &Bytes::from("a is an invalid account ID"));
         }
 
         #[test]
@@ -647,8 +666,8 @@ mod tests {
             let cached_data = cache.get(IDEMPOTENCY).unwrap();
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 1);
-            assert_eq!(cached_data.0, 404);
-            assert_eq!(cached_data.1, &Bytes::from("Account 0 was not found"));
+            assert_eq!(cached_data.status, 404);
+            assert_eq!(cached_data.body, &Bytes::from("Account 0 was not found"));
         }
     }
 
@@ -721,8 +740,8 @@ mod tests {
             let cached_data = cache.get(IDEMPOTENCY).unwrap();
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 4);
-            assert_eq!(cached_data.0, StatusCode::OK);
-            assert_eq!(cached_data.1, &Bytes::from("hello!"));
+            assert_eq!(cached_data.status, StatusCode::OK);
+            assert_eq!(cached_data.body, &Bytes::from("hello!"));
         }
 
         #[test]
@@ -742,8 +761,8 @@ mod tests {
             let cached_data = cache.get(IDEMPOTENCY).unwrap();
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 1);
-            assert_eq!(cached_data.0, 502);
-            assert_eq!(cached_data.1, &Bytes::from("Error sending message to peer settlement engine. Packet rejected with code: F02, message: No other outgoing handler!"));
+            assert_eq!(cached_data.status, 502);
+            assert_eq!(cached_data.body, &Bytes::from("Error sending message to peer settlement engine. Packet rejected with code: F02, message: No other outgoing handler!"));
         }
 
         #[test]
@@ -769,8 +788,8 @@ mod tests {
 
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 2);
-            assert_eq!(cached_data.0, 400);
-            assert_eq!(cached_data.1, &Bytes::from("a is an invalid account ID"));
+            assert_eq!(cached_data.status, 400);
+            assert_eq!(cached_data.body, &Bytes::from("a is an invalid account ID"));
         }
 
         #[test]
@@ -791,8 +810,8 @@ mod tests {
 
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 1);
-            assert_eq!(cached_data.0, 404);
-            assert_eq!(cached_data.1, &Bytes::from("Account 0 was not found"));
+            assert_eq!(cached_data.status, 404);
+            assert_eq!(cached_data.body, &Bytes::from("Account 0 was not found"));
         }
     }
 }

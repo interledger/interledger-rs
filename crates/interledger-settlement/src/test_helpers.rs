@@ -121,7 +121,7 @@ impl IdempotentStore for TestStore {
         if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
             *guard += 1; // used to test how many times this branch gets executed
-            Box::new(ok(Some((data.0, data.1.clone(), data.2))))
+            Box::new(ok(Some(data.clone())))
         } else {
             Box::new(ok(None))
         }
@@ -135,7 +135,10 @@ impl IdempotentStore for TestStore {
         data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut cache = self.cache.write();
-        cache.insert(idempotency_key, (status_code, data, input_hash));
+        cache.insert(
+            idempotency_key,
+            IdempotentData::new(status_code, data, input_hash),
+        );
         Box::new(ok(()))
     }
 }

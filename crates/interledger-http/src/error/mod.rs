@@ -1,6 +1,5 @@
 mod error_types;
 pub use error_types::*;
-pub use http::StatusCode;
 
 use chrono::{DateTime, Local};
 use http::header::HeaderValue;
