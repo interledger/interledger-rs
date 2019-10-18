@@ -81,6 +81,11 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - checkout
+      # Seems that something wrong is cached
+      # Without this, XRP Settlements on docker mode fail
+      - run:
+          name: Clear docker cache
+          command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs docker rmi
       - restore_cache:
           keys:
             - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
@@ -93,7 +98,7 @@ jobs:
             printf "[build]\ntarget = \"x86_64-unknown-linux-musl\"\n" > .cargo/config
       - run:
           name: Build
-          command: cargo build --bin interledger --bin interledger-settlement-engines --all-features
+          command: cargo build --bin ilp-node --bin ilp-cli
       - run:
           # builds dev profile images because these images are not going to be released
           # also, we have to copy binaries so remove target from .dockerignore
@@ -105,7 +110,7 @@ jobs:
             echo "target/**/*.rlib" >> .dockerignore
             echo "target/**/deps" >> .dockerignore
             echo "target/**/incremental" >> .dockerignore
-            scripts/docker-build.sh ci-node ci-settlement-engines
+            scripts/docker-build.sh ci-node ci-ilp-cli
       - run:
           name: Run run-md test
           command: scripts/run-md-test.sh
@@ -131,15 +136,16 @@ jobs:
       - run:
           # builds release profile images to be released
           name: Build docker images
-          command: scripts/docker-build.sh node settlement-engines
+          command: scripts/docker-build.sh node ilp-cli
           environment:
             PROFILE: "release"
       - run:
           name: Push to DockerHub
+          # TODO tag properly
           command: |
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
             docker push interledgerrs/node:latest
-            docker push interledgerrs/settlement-engines:latest
+            docker push interledgerrs/ilp-cli:latest
       - save_cache:
           key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
           paths:
