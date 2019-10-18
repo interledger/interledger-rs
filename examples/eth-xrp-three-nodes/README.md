@@ -247,7 +247,7 @@ In this example, we'll connect 3 Interledger nodes and each node needs its own s
 
 By default, the XRP settlement engine generates new testnet XRPL accounts prefunded with 1,000 testnet XRP (a new account is generated each run). Alternatively, you may supply an `XRP_SECRET` environment variable by generating your own testnet credentials from the [official faucet](https://xrpl.org/xrp-test-net-faucet.html).
 
-The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, clone it first.
+The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions in settlement-engine](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, the first step would be to clone the repository.
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -352,7 +352,7 @@ cargo run --features "ethereum" -- ethereum-ledger \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine-eth.log &
 
-# Now go back to interledger-rs directory.
+# Now go back to the `interledger-rs` directory.
 
 DEBUG="settlement*" \
 CONNECTOR_URL="http://localhost:8771" \
