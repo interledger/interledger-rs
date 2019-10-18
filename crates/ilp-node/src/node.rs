@@ -390,7 +390,7 @@ impl InterledgerNode {
                                         recorder().record_counter(Key::from_name_and_labels("requests.incoming.reject", labels.clone()), 1);
                                     }
                                     recorder().record_histogram(
-                                        Key::from_name_and_labels("requests.incoming.reject", labels),
+                                        Key::from_name_and_labels("requests.incoming.duration", labels),
                                         (Instant::now() - start_time).as_nanos() as u64);
                                     result
                                 })
