@@ -1,6 +1,6 @@
 use super::{
-    Convert, ConvertDetails, IdempotentData, IdempotentStore, LeftoversStore, Quantity,
-    SettlementAccount, SettlementStore, SE_ILP_ADDRESS,
+    Convert, ConvertDetails, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
+    SE_ILP_ADDRESS,
 };
 use bytes::buf::FromBuf;
 use bytes::Bytes;
@@ -9,7 +9,7 @@ use futures::{
     Future,
 };
 use hyper::{Response, StatusCode};
-use interledger_http::error::*;
+use interledger_http::{error::*, idempotency::*};
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
@@ -22,7 +22,6 @@ use std::{
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
-use tokio::executor::spawn;
 use warp::{self, reject::Rejection, Filter};
 
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
@@ -132,115 +131,6 @@ where
         .boxed()
 }
 
-// Helper function that returns any idempotent data that corresponds to a
-// provided idempotency key. It fails if the hash of the input that
-// generated the idempotent data does not match the hash of the provided input.
-fn check_idempotency<S>(
-    store: S,
-    idempotency_key: String,
-    input_hash: [u8; 32],
-) -> impl Future<Item = Option<(StatusCode, Bytes)>, Error = ApiError>
-where
-    S: IdempotentStore + Clone + Send + Sync + 'static,
-{
-    store
-        .load_idempotent_data(idempotency_key.clone())
-        .map_err(move |_| IDEMPOTENT_STORE_CALL_ERROR.clone())
-        .and_then(move |ret: Option<IdempotentData>| {
-            if let Some(ret) = ret {
-                // Check if the hash (ret.2) of the loaded idempotent data matches the hash
-                // of the provided input data. If not, we should error out since
-                // the caller provided an idempotency key that was used for a
-                // different input.
-                if ret.2 == input_hash {
-                    Ok(Some((ret.0, ret.1)))
-                } else {
-                    Ok(Some((
-                        StatusCode::from_u16(409).unwrap(),
-                        Bytes::from(IDEMPOTENCY_CONFLICT_ERR),
-                    )))
-                }
-            } else {
-                Ok(None)
-            }
-        })
-}
-
-// make_idempotent_call takes a function instead of direct arguments so that we
-// can reuse it for both the messages and the settlements calls
-fn make_idempotent_call<S, F>(
-    store: S,
-    f: F,
-    input_hash: [u8; 32],
-    idempotency_key: Option<String>,
-) -> impl Future<Item = (StatusCode, Bytes), Error = ApiError>
-where
-    F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
-{
-    if let Some(idempotency_key) = idempotency_key {
-        // If there an idempotency key was provided, check idempotency
-        // and the key was not present or conflicting with an existing
-        // key, perform the call and save the idempotent return data
-        Either::A(
-            check_idempotency(store.clone(), idempotency_key.clone(), input_hash).and_then(
-                move |ret: Option<(StatusCode, Bytes)>| {
-                    if let Some(ret) = ret {
-                        if ret.0.is_success() {
-                            Either::A(Either::A(ok((ret.0, ret.1))))
-                        } else {
-                            let err_msg = ApiErrorType {
-                                r#type: &ProblemType::Default,
-                                status: ret.0,
-                                title: "Idempotency Error",
-                            };
-                            // if check_idempotency returns an error, then it
-                            // has to be an idempotency error
-                            let ret_error = ApiError::from_api_error_type(&err_msg)
-                                .detail(Some(String::from_utf8_lossy(&ret.1).to_string()));
-                            Either::A(Either::B(err(ret_error)))
-                        }
-                    } else {
-                        Either::B(
-                            f().map_err({
-                                let store = store.clone();
-                                let idempotency_key = idempotency_key.clone();
-                                move |ret: ApiError| {
-                                    let status_code = ret.status.clone();
-                                    let data = Bytes::from(ret.detail.clone().unwrap_or_default());
-                                    spawn(store.save_idempotent_data(
-                                        idempotency_key,
-                                        input_hash,
-                                        status_code,
-                                        data,
-                                    ));
-                                    ret
-                                }
-                            })
-                            .and_then(
-                                move |ret: (StatusCode, Bytes)| {
-                                    store
-                                        .save_idempotent_data(
-                                            idempotency_key,
-                                            input_hash,
-                                            ret.0,
-                                            ret.1.clone(),
-                                        )
-                                        .map_err(move |_| IDEMPOTENT_STORE_CALL_ERROR.clone())
-                                        .and_then(move |_| Ok((ret.0, ret.1)))
-                                },
-                            ),
-                        )
-                    }
-                },
-            ),
-        )
-    } else {
-        // otherwise just make the call w/o any idempotency saves
-        Either::B(f().and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))))
-    }
-}
-
 fn do_receive_settlement<S, A>(
     store: S,
     account_id: String,
@@ -278,7 +168,7 @@ where
             let error_msg = format!("Could not convert amount: {:?}", engine_amount);
             error!("{}", error_msg);
             return Box::new(err(
-                ApiError::from_api_error_type(&CONVERSION_ERROR_TYPE).detail(Some(&error_msg))
+                ApiError::from_api_error_type(&CONVERSION_ERROR_TYPE).detail(error_msg)
             ));
         }
     };
@@ -286,7 +176,7 @@ where
     Box::new(
             store.get_accounts(vec![account_id])
             .map_err(move |_err| {
-                let err = ApiError::account_not_found().detail(Some(format!("Account {} was not found", account_id)));
+                let err = ApiError::account_not_found().detail(format!("Account {} was not found", account_id));
                 error!("{}", err);
                 err
             })
@@ -297,7 +187,7 @@ where
                 } else {
                     let error_msg = format!("Account {} does not have settlement engine details configured. Cannot handle incoming settlement", account.id());
                     error!("{}", error_msg);
-                    Err(ApiError::from_api_error_type(&NO_ENGINE_CONFIGURED_ERROR_TYPE).detail(Some(error_msg)))
+                    Err(ApiError::from_api_error_type(&NO_ENGINE_CONFIGURED_ERROR_TYPE).detail(error_msg))
                 }
             })
             .and_then(move |account| {
@@ -323,7 +213,7 @@ where
                         status: StatusCode::INTERNAL_SERVER_ERROR,
                         title: "Load uncredited settlement amount error", 
                     };
-                    ApiError::from_api_error_type(&error_type).detail(Some(error_msg))
+                    ApiError::from_api_error_type(&error_type).detail(error_msg)
                 })
                 .and_then(move |scaled_leftover_amount| {
                     // add the leftovers to the scaled engine amount
@@ -345,7 +235,7 @@ where
                             status: StatusCode::INTERNAL_SERVER_ERROR,
                             title: "Balance update error"
                         };
-                        ApiError::from_api_error_type(&error_type).detail(Some(error_msg))
+                        ApiError::from_api_error_type(&error_type).detail(error_msg)
                     })
                     .and_then(move |_| {
                         // the connector "lies" and tells the engine that it
@@ -385,7 +275,7 @@ where
             .and_then(move |account_id| {
                 store.get_accounts(vec![account_id])
                 .map_err(move |_| {
-                    let err = ApiError::account_not_found().detail(Some(format!("Account {} was not found", account_id)));
+                    let err = ApiError::account_not_found().detail(format!("Account {} was not found", account_id));
                     error!("{}", err);
                     err
                 })
@@ -395,7 +285,7 @@ where
                 if account.settlement_engine_details().is_some() {
                     Ok(account.clone())
                 } else {
-                    let err = ApiError::account_not_found().detail(Some(format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id())));;
+                    let err = ApiError::account_not_found().detail(format!("Account {} has no settlement engine details configured, cannot send a settlement engine message to that account", accounts[0].id()));
                     error!("{}", err);
                     Err(err)
                 }
@@ -427,7 +317,7 @@ where
                         title: "Error sending message to peer engine",
                     };
                     error!("{}", error_msg);
-                    ApiError::from_api_error_type(&error_type).detail(Some(error_msg))
+                    ApiError::from_api_error_type(&error_type).detail(error_msg)
                 })
             })
             .and_then(move |fulfill| {
