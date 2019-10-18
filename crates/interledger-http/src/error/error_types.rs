@@ -108,5 +108,5 @@ pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
 lazy_static! {
     pub static ref IDEMPOTENT_STORE_CALL_ERROR: ApiError =
         ApiError::from_api_error_type(&IDEMPOTENT_STORE_CALL_ERROR_TYPE)
-            .detail(Some("Could not process idempotent data in store"));
+            .detail("Could not process idempotent data in store");
 }

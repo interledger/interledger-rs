@@ -1,8 +1,6 @@
 #![recursion_limit = "128"]
 
-use bytes::Bytes;
 use futures::Future;
-use hyper::StatusCode;
 use interledger_packet::Address;
 use interledger_service::Account;
 use lazy_static::lazy_static;
@@ -72,27 +70,6 @@ pub trait SettlementStore {
         &self,
         account_id: <Self::Account as Account>::AccountId,
         settle_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
-}
-
-pub type IdempotentData = (StatusCode, Bytes, [u8; 32]);
-
-pub trait IdempotentStore {
-    /// Returns the API response that was saved when the idempotency key was used
-    /// Also returns a hash of the input data which resulted in the response
-    fn load_idempotent_data(
-        &self,
-        idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send>;
-
-    /// Saves the data that was passed along with the api request for later
-    /// The store MUST also save a hash of the input, so that it errors out on requests
-    fn save_idempotent_data(
-        &self,
-        idempotency_key: String,
-        input_hash: [u8; 32],
-        status_code: StatusCode,
-        data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
 
