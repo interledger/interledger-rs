@@ -73,9 +73,7 @@ where
                 Err(_) => {
                     return Box::new(err(RejectBuilder {
                         code: ErrorCode::T00_INTERNAL_ERROR,
-                        message: format!("Cannot parse authorization token {}", token)
-                            .as_str()
-                            .as_ref(),
+                        message: &[],
                         triggered_by: None,
                         data: &[],
                     }
