@@ -314,7 +314,7 @@ else
 -->
 
 ```bash #
-# This should be done outside of the interledger-rs ditrectory, otherwise it will cause an error
+# This should be done outside of the interledger-rs directory, otherwise it will cause an error
 git clone https://github.com/interledger-rs/settlement-engines
 cd settlement-engines
 ```
