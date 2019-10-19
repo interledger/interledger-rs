@@ -286,7 +286,8 @@ impl Reply for JsonDeserializeError {
         let api_error_type = match self.category {
             Category::Syntax => &JSON_SYNTAX_TYPE,
             Category::Data => &JSON_DATA_TYPE,
-            _ => &UNKNOWN_JSON_TYPE,
+            Category::Eof => &JSON_EOF_TYPE,
+            Category::Io => &JSON_IO_TYPE,
         };
         let detail = self.detail;
         let extension_members = match extension_members.keys().len() {

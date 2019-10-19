@@ -54,9 +54,14 @@ pub const JSON_DATA_TYPE: ApiErrorType = ApiErrorType {
     title: "JSON Data Error",
     status: http::StatusCode::BAD_REQUEST,
 };
-pub const UNKNOWN_JSON_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::InterledgerHttpApi("json-unknown"),
-    title: "Unknown JSON Error",
+pub const JSON_EOF_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::InterledgerHttpApi("json-eof"),
+    title: "JSON Unexpected EOF",
+    status: http::StatusCode::BAD_REQUEST,
+};
+pub const JSON_IO_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::InterledgerHttpApi("json-io"),
+    title: "JSON IO Error",
     status: http::StatusCode::BAD_REQUEST,
 };
 
