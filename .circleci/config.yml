@@ -85,7 +85,7 @@ jobs:
       # Without this, XRP Settlements on docker mode fail
       - run:
           name: Clear docker cache
-          command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs docker rmi
+          command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs --no-run-if-empty docker rmi
       - restore_cache:
           keys:
             - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
