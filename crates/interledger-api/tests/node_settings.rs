@@ -4,7 +4,7 @@ use approx::relative_eq;
 use common::redis_test_helpers;
 use futures::Future;
 use reqwest::{self, r#async::Body};
-use serde_json::{json, Value};
+use serde_json::{json, Number, Value};
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
@@ -317,6 +317,37 @@ fn node_settings_test() {
                     let content = res.text().wait().expect("Error getting response!");
                     assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                     assert_eq!(content, account_id);
+                    Ok((node, account_id, ilp_address))
+                })
+        };
+
+    // Should cause Unauthorized
+    let put_routes_static_prefix_unauthorized =
+        move |(node, account_id, ilp_address): (InterledgerNode, String, String)| {
+            // PUT /routes/static/:prefix
+            let client = reqwest::r#async::Client::new();
+            client
+                .put(&format!(
+                    "http://localhost:{}/routes/static/{}",
+                    node.http_bind_address.port(),
+                    ilp_address
+                ))
+                .header("Authorization", &format!("Bearer {}", "wrong_token"))
+                .body(Body::from(account_id.clone()))
+                .send()
+                .map_err(|err| panic!(err))
+                .and_then(move |mut res| {
+                    let content = res.text().wait().expect("Error getting response!");
+                    let json: Value = serde_json::from_str(&content)
+                        .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
+                    if let Value::Object(account) = json {
+                        assert_eq!(
+                            account.get("status").expect("status was expected"),
+                            &Value::Number(Number::from(http::StatusCode::UNAUTHORIZED.as_u16()))
+                        );
+                    } else {
+                        panic!("Invalid response JSON! {}", &content);
+                    }
                     Ok(node)
                 })
         };
@@ -374,6 +405,7 @@ fn node_settings_test() {
                 .and_then(post_accounts)
                 .and_then(put_routes_static)
                 .and_then(put_routes_static_prefix)
+                .and_then(put_routes_static_prefix_unauthorized)
                 .and_then(put_settlement_engines),
         )
         .expect("Could not spin up node and tests.");
