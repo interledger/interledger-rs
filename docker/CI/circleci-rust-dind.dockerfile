@@ -1,6 +1,5 @@
-# rust + dind + musl + (nvm + npm + ganache + ilp-settlement-xrp)
-# rust:latest @ 2019/09/17
-FROM circleci/rust@sha256:3e7f62299c1b6fa3a429ddfb19b8d43bcd92c329b9b604571801a8d2273d16f6
+# rust + dind + musl + (nvm + npm + yarn + ganache + ilp-settlement-xrp)
+FROM circleci/rust:1.38
 
 USER root
 
