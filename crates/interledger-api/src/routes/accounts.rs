@@ -261,7 +261,6 @@ where
         .and_then(|id: A::AccountId, store: S| {
             store
                 .get_accounts(vec![id])
-                // TODO return username
                 .map_err::<_, Rejection>(|_| ApiError::account_not_found().into())
                 .and_then(|accounts| Ok(warp::reply::json(&accounts[0])))
         })
