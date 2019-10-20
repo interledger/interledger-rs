@@ -19,7 +19,10 @@ function pre_test_hook() {
         ncat -l -k -c "docker exec -i interledger-rs-se_c nc 127.0.0.1 3000" -p 3002 &
         ncat -l -k -c "docker exec -i interledger-rs-se_d nc 127.0.0.1 3000" -p 3003 &
         printf "done\n"
-     fi
+    fi
+    if [ $TEST_MODE -eq 1 ] && [ ${USE_DOCKER} -eq 1 ]; then
+        trap 'output_docker_logs; exit;' 0
+    fi
 }
 
 function post_test_hook() {
@@ -30,25 +33,28 @@ function post_test_hook() {
         test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/charlie/balance
         test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/bob/balance
         test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/charlie/balance
-        
-        if [ ${USE_DOCKER} -eq 1 ]; then
-            docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
-            docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
-            docker logs interledger-rs-node_c &> logs/interledger-rs-node_c.log
-            docker logs interledger-rs-se_a &> logs/interledger-rs-se_a.log
-            docker logs interledger-rs-se_b &> logs/interledger-rs-se_b.log
-            docker logs interledger-rs-se_c &> logs/interledger-rs-se_c.log
-            docker logs interledger-rs-se_d &> logs/interledger-rs-se_d.log
-            docker logs ganache &> logs/ganache.log
-            docker logs redis-alice_node &> logs/redis-alice_node.log
-            docker logs redis-alice_se_eth &> logs/redis-alice_se_eth.log
-            docker logs redis-bob_node &> logs/redis-bob_node.log
-            docker logs redis-bob_se_eth &> logs/redis-bob_se_eth.log
-            docker logs redis-bob_se_xrp &> logs/redis-bob_se_xrp.log
-            docker logs redis-charlie_node &> logs/redis-charlie_node.log
-            docker logs redis-charlie_se_xrp &> logs/redis-charlie_se_xrp.log
-        fi
     fi
+}
+
+function output_docker_logs() {
+    printf "\e[33m%s\e[m" "Writing docker logs..." 1>&2
+    mkdir -p logs
+    docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
+    docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
+    docker logs interledger-rs-node_c &> logs/interledger-rs-node_c.log
+    docker logs interledger-rs-se_a &> logs/interledger-rs-se_a.log
+    docker logs interledger-rs-se_b &> logs/interledger-rs-se_b.log
+    docker logs interledger-rs-se_c &> logs/interledger-rs-se_c.log
+    docker logs interledger-rs-se_d &> logs/interledger-rs-se_d.log
+    docker logs ganache &> logs/ganache.log
+    docker logs redis-alice_node &> logs/redis-alice_node.log
+    docker logs redis-alice_se_eth &> logs/redis-alice_se_eth.log
+    docker logs redis-bob_node &> logs/redis-bob_node.log
+    docker logs redis-bob_se_eth &> logs/redis-bob_se_eth.log
+    docker logs redis-bob_se_xrp &> logs/redis-bob_se_xrp.log
+    docker logs redis-charlie_node &> logs/redis-charlie_node.log
+    docker logs redis-charlie_se_xrp &> logs/redis-charlie_se_xrp.log
+    printf "\e[33m%s\e[m\n" "done" 1>&2
 }
 -->
 
