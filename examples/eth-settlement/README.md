@@ -16,7 +16,10 @@ function pre_test_hook() {
         ncat -l -k -c "docker exec -i interledger-rs-se_a nc 127.0.0.1 3000" -p 3000 &
         ncat -l -k -c "docker exec -i interledger-rs-se_b nc 127.0.0.1 3000" -p 3001 &
         printf "done\n"
-     fi
+    fi
+    if [ $TEST_MODE -eq 1 ] && [ ${USE_DOCKER} -eq 1 ]; then
+        trap 'output_docker_logs; exit;' 0
+    fi
 }
 
 function post_test_hook() {
@@ -25,19 +28,22 @@ function post_test_hook() {
         test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
         test_equals_or_exit '{"balance":"0"}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
         test_equals_or_exit '{"balance":"500"}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
-        
-        if [ ${USE_DOCKER} -eq 1 ]; then
-            docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
-            docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
-            docker logs interledger-rs-se_a &> logs/interledger-rs-se_a.log
-            docker logs interledger-rs-se_b &> logs/interledger-rs-se_b.log
-            docker logs ganache &> logs/ganache.log
-            docker logs redis-alice_node &> logs/redis-alice_node.log
-            docker logs redis-alice_se &> logs/redis-alice_se.log
-            docker logs redis-bob_node &> logs/redis-bob_node.log
-            docker logs redis-bob_se &> logs/redis-bob_se.log
-        fi
     fi
+}
+
+function output_docker_logs() {
+    printf "\e[33m%s\e[m" "Writing docker logs..." 1>&2
+    mkdir -p logs
+    docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
+    docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
+    docker logs interledger-rs-se_a &> logs/interledger-rs-se_a.log
+    docker logs interledger-rs-se_b &> logs/interledger-rs-se_b.log
+    docker logs ganache &> logs/ganache.log
+    docker logs redis-alice_node &> logs/redis-alice_node.log
+    docker logs redis-alice_se &> logs/redis-alice_se.log
+    docker logs redis-bob_node &> logs/redis-bob_node.log
+    docker logs redis-bob_se &> logs/redis-bob_se.log
+    printf "\e[33m%s\e[m\n" "done" 1>&2
 }
 -->
 
