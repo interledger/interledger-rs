@@ -194,32 +194,32 @@ When you want to watch logs, use the `tail` command. You can use the command lik
 printf "\n\nStarting Interledger nodes...\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     $CMD_DOCKER run \
-        -e ILP_ADDRESS=example.node_a \
-        -e ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
-        -e ILP_ADMIN_AUTH_TOKEN=admin-a \
-        -e ILP_REDIS_URL=redis://redis-alice_node:6379/ \
-        -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
-        -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
         -p 127.0.0.1:7770:7770 \
         -p 127.0.0.1:7771:7771 \
         --network=interledger \
         --name=interledger-rs-node_a \
         -td \
-        interledgerrs/node
+        interledgerrs/node \
+        --ilp_address example.node_a \
+        --secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
+        --admin_auth_token admin-a \
+        --redis_url redis://redis-alice_node:6379/ \
+        --http_bind_address 0.0.0.0:7770 \
+        --settlement_api_bind_address 0.0.0.0:7771
     
     $CMD_DOCKER run \
-        -e ILP_ADDRESS=example.node_b \
-        -e ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
-        -e ILP_ADMIN_AUTH_TOKEN=admin-b \
-        -e ILP_REDIS_URL=redis://redis-bob_node:6379/ \
-        -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
-        -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
         -p 127.0.0.1:8770:7770 \
         -p 127.0.0.1:8771:7771 \
         --network=interledger \
         --name=interledger-rs-node_b \
         -td \
-        interledgerrs/node
+        interledgerrs/node \
+        --ilp_address example.node_b \
+        --secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
+        --admin_auth_token admin-b \
+        --redis_url redis://redis-bob_node:6379/ \
+        --http_bind_address 0.0.0.0:7770 \
+        --settlement_api_bind_address 0.0.0.0:7771
 else
 -->
 
@@ -231,21 +231,25 @@ export RUST_LOG=interledger=debug
 # Note that the configuration options can be passed as environment variables
 # or saved to a YAML, JSON or TOML file and passed to the node as a positional argument.
 # You can also pass it from STDIN.
-ILP_ADDRESS=example.node_a \
-ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
-ILP_ADMIN_AUTH_TOKEN=admin-a \
-ILP_REDIS_URL=redis://127.0.0.1:6379/ \
-ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
-ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --bin ilp-node &> logs/node_a.log &
+# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node`.
+# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
+cargo run --bin ilp-node -- \
+--ilp_address example.node_a \
+--secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
+--admin_auth_token admin-a \
+--redis_url redis://127.0.0.1:6379/ \
+--http_bind_address 127.0.0.1:7770 \
+--settlement_api_bind_address 127.0.0.1:7771 \
+&> logs/node_a.log &
 
-ILP_ADDRESS=example.node_b \
-ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
-ILP_ADMIN_AUTH_TOKEN=admin-b \
-ILP_REDIS_URL=redis://127.0.0.1:6380/ \
-ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
-ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --bin ilp-node &> logs/node_b.log &
+cargo run --bin ilp-node -- \
+--ilp_address example.node_b \
+--secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
+--admin_auth_token admin-b \
+--redis_url redis://127.0.0.1:6380/ \
+--http_bind_address 127.0.0.1:8770 \
+--settlement_api_bind_address 127.0.0.1:8771 \
+&> logs/node_b.log &
 ```
 
 <!--!
