@@ -305,14 +305,14 @@ impl InterledgerNode {
 
                                 // TODO replace these calls with the counter! macro if there's a way to easily pass in the already-created labels
                                 // right now if you pass the labels into one of the other macros, it gets a recursion limit error while expanding the macro
-                                recorder().record_counter(Key::from_name_and_labels("requests.outgoing.prepare", labels.clone()), 1);
+                                recorder().increment_counter(Key::from_name_and_labels("requests.outgoing.prepare", labels.clone()), 1);
                                 let start_time = Instant::now();
 
                                 next.send_request(request).then(move |result| {
                                     if result.is_ok() {
-                                        recorder().record_counter(Key::from_name_and_labels("requests.outgoing.fulfill", labels.clone()), 1);
+                                        recorder().increment_counter(Key::from_name_and_labels("requests.outgoing.fulfill", labels.clone()), 1);
                                     } else {
-                                        recorder().record_counter(Key::from_name_and_labels("requests.outgoing.reject", labels.clone()), 1);
+                                        recorder().increment_counter(Key::from_name_and_labels("requests.outgoing.reject", labels.clone()), 1);
                                     }
 
                                     recorder().record_histogram(
@@ -380,14 +380,14 @@ impl InterledgerNode {
                                     "from_asset_code" => request.from.asset_code().to_string(),
                                     "from_routing_relation" => request.from.routing_relation().to_string(),
                                 );
-                                recorder().record_counter(Key::from_name_and_labels("requests.incoming.prepare", labels.clone()), 1);
+                                recorder().increment_counter(Key::from_name_and_labels("requests.incoming.prepare", labels.clone()), 1);
                                 let start_time = Instant::now();
 
                                 next.handle_request(request).then(move |result| {
                                     if result.is_ok() {
-                                        recorder().record_counter(Key::from_name_and_labels("requests.incoming.fulfill", labels.clone()), 1);
+                                        recorder().increment_counter(Key::from_name_and_labels("requests.incoming.fulfill", labels.clone()), 1);
                                     } else {
-                                        recorder().record_counter(Key::from_name_and_labels("requests.incoming.reject", labels.clone()), 1);
+                                        recorder().increment_counter(Key::from_name_and_labels("requests.incoming.reject", labels.clone()), 1);
                                     }
                                     recorder().record_histogram(
                                         Key::from_name_and_labels("requests.incoming.duration", labels),
@@ -465,7 +465,7 @@ impl InterledgerNode {
                 )
                 .build()
                 .expect("Failed to create metrics Receiver");
-            let controller = receiver.get_controller();
+            let controller = receiver.controller();
             // Try installing the global recorder
             match metrics::set_boxed_recorder(Box::new(receiver)) {
                 Ok(_) => {
