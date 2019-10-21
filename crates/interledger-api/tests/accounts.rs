@@ -1,7 +1,7 @@
 mod common;
 
 use base64;
-use common::redis_test_helpers;
+use common::{random_secret, redis_test_helpers};
 use futures::Future;
 use reqwest;
 use serde_json::{json, Number, Value};
@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::{thread, time::Duration};
 use tokio::runtime::Builder as RuntimeBuilder;
 
-use ilp_node::{random_secret, InterledgerNode};
+use ilp_node::InterledgerNode;
 use interledger::{packet::Address, service::Username};
 
 // Integration tests of accounts APIs
@@ -66,6 +66,7 @@ fn accounts_test() {
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
         exchange_rate_spread: 0.0,
+        prometheus: None,
     };
     let node_to_serve = node.clone();
     let node_context = move |_| Ok(node);
