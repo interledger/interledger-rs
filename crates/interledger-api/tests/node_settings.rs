@@ -1,14 +1,14 @@
 mod common;
 
 use approx::relative_eq;
-use common::redis_test_helpers;
+use common::{random_secret, redis_test_helpers};
 use futures::Future;
 use reqwest::{self, r#async::Body};
 use serde_json::{json, Number, Value};
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 
-use ilp_node::{random_secret, InterledgerNode};
+use ilp_node::InterledgerNode;
 use interledger::packet::Address;
 
 // Integration tests of node settings APIs
@@ -48,6 +48,7 @@ fn node_settings_test() {
         exchange_rate_poll_interval: 60000,
         exchange_rate_provider: None,
         exchange_rate_spread: 0.0,
+        prometheus: None,
     };
     let node_to_serve = node.clone();
     let node_context = move |_| Ok(node);
