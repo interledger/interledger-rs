@@ -254,7 +254,7 @@ sleep 3
 ### 4. Launch Settlement Engines
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
-The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, clone it first.
+The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions in `settlement-engines`](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engines`, the first step would be to clone the repository.
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -297,7 +297,7 @@ else
 -->
 
 ```bash #
-# Do this somewhere OUTER the interledger-rs directory otherwise you'll get an error.
+# This should be done outside of the interledger-rs directory, otherwise it will cause an error.
 git clone https://github.com/interledger-rs/settlement-engines
 cd settlement-engines
 ```
@@ -333,7 +333,7 @@ cargo run --features "ethereum" -- ethereum-ledger \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine.log &
 
-# Now go back to interledger-rs directory.
+# Now go back to the `interledger-rs` directory.
 ```
 
 <!--!
