@@ -110,7 +110,7 @@ jobs:
             echo "target/**/*.rlib" >> .dockerignore
             echo "target/**/deps" >> .dockerignore
             echo "target/**/incremental" >> .dockerignore
-            scripts/docker-build.sh ci-node ci-ilp-cli
+            docker/docker-build.sh ci-node ci-ilp-cli
       - run:
           name: Run run-md test
           command: scripts/run-md-test.sh
@@ -136,7 +136,7 @@ jobs:
       - run:
           # builds release profile images to be released
           name: Build docker images
-          command: scripts/docker-build.sh node ilp-cli
+          command: docker/docker-build.sh node ilp-cli
           environment:
             PROFILE: "release"
       - run:
