@@ -26,7 +26,7 @@ pub struct DeliveryData {
 
 #[derive(serde::Deserialize)]
 pub struct BalanceData {
-    pub balance: String,
+    pub balance: i64,
 }
 
 #[allow(unused)]
@@ -153,6 +153,6 @@ pub fn get_balance<T: Display>(
         })
         .and_then(|body| {
             let ret: BalanceData = serde_json::from_slice(&body).unwrap();
-            Ok(ret.balance.parse().unwrap())
+            Ok(ret.balance)
         })
 }

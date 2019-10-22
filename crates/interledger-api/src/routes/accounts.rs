@@ -288,7 +288,7 @@ where
                 })
                 .and_then(|balance: i64| {
                     Ok(warp::reply::json(&json!({
-                        "balance": balance.to_string(),
+                        "balance": balance,
                     })))
                 })
         })
