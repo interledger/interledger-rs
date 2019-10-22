@@ -2,13 +2,53 @@
 
 For instructions on running the ILP Node, see the [Readme](../README.md).
 
-## Authentication
+## Authorization
 
-The ILP Node uses HTTP Bearer Token authorization. Most requests must either be authenticated with the admin token configured on the node or the token configured for a particular account.
+The ILP Node uses HTTP Bearer Token authorization. Most requests must either be authorized with the admin token configured on the node or the token configured for a particular account.
+
+Your HTTP requests would look like:
+
+```
+GET /accounts HTTP/1.1
+Authorization: Bearer BEARER-TOKEN-HERE
+```
+
+The format of the `Authorization` header is either of the following.
+
+1. The admin token
+    - `Bearer admin-token`
+    - `admin-token` is the token you specified as `admin_auth_token` when you spun up the node.
+1. User tokens
+    - `Bearer username:password`
+    - `username` and `password` are what you specified as `username` and `ilp_over_http_incoming_token` respectively when you created the account.
+
+
+## The API
+
+By default, the API is available on port `7770` and it accepts:
+
+- [POST `/accounts`](#post-accounts)
+- [GET `/accounts`](#get-accounts)
+- [PUT `/accounts/:username`](#put-accountsusername)
+- [GET `/accounts/:username`](#get-accountsusername)
+- [DELETE `/accounts/:username`](#delete-accountsusername)
+- [PUT `/accounts/:username/settings`](#put-accountsusernamesettings)
+- [GET `/accounts/:username/balance`](#get-accountsusernamebalance)
+- [POST `/accounts/:username/payments`](#post-accountsusernamepayments)
+- [(WebSocket) `/accounts/:username/payments/incoming`](#websocket-accountsusernamepaymentsincoming)
+- [GET `/accounts/:username/spsp`](#get-accountsusernamespsp)
+- [GET `/.well-known/pay`](#get-well-knownpay)
+- [POST `/ilp`](#post-ilp---ilp-over-http)
+- [(WebSocket) `/ilp/btp`](#websocket-ilpbtp---bilateral-transfer-protocol-btp)
+- [GET `/`](#get-)
+- [PUT `/rates`](#put-rates)
+- [GET `/rates`](#get-rates)
+- [GET `/routes`](#get-routes)
+- [PUT `/routes/static`](#put-routesstatic)
+- [PUT `/routes/static/:prefix`](#put-routesstaticprefix)
+- [PUT `/settlement/engines`](#put-settlementengines)
 
 ## Account-Related Routes
-
-By default, the API is available on port `7770`.
 
 ### POST /accounts
 
@@ -37,7 +77,7 @@ The comprehensive list of possible parameters is as follows:
     "ilp_over_http_url": "https://peer-ilp-over-http-endpoint.example/ilp",
     "ilp_over_http_incoming_token": "http bearer token they will use to authenticate with us",
     "ilp_over_http_outgoing_token": "http bearer token we will use to authenticate with them",
-    "ilp_over_btp_url": "btp+wss://peer-btp-endpoint",
+    "ilp_over_btp_url": "btp+wss://peer-btp-endpoint/ilp/btp",
     "ilp_over_btp_outgoing_token": "btp auth token we will use to authenticate with them",
     "ilp_over_btp_incoming_token": "btp auth token they will use to authenticate with us",
     "settlement_engine_url": "http://settlement-engine-for-this-account:3000",
@@ -52,11 +92,40 @@ The comprehensive list of possible parameters is as follows:
 
 ### GET /accounts
 
-Admin only.
+Admin only. Returns a list of accounts on the node.
+
+### PUT /accounts/:username
+
+Admin only. Updates a user with given parameters. The minimum requirement and the full list of parameters are the same as `POST /accounts`.
 
 ### GET /accounts/:username
 
-Admin or account-holder only.
+Admin or account-holder only. Returns the account setting of an account.
+
+### DELETE /accounts/:username
+
+Admin only. Deletes an account.
+
+### PUT /accounts/:username/settings
+
+Admin or account-holder only. Updates a user with given parametes. This is the only way of a user updating its account settings.
+
+#### Request
+
+The comprehensive list of possible parameters is as follows:
+
+```json
+{
+    "ilp_over_http_url": "https://peer-ilp-over-http-endpoint.example/ilp",
+    "ilp_over_http_incoming_token": "http bearer token they will use to authenticate with us",
+    "ilp_over_http_outgoing_token": "http bearer token we will use to authenticate with them",
+    "ilp_over_btp_url": "btp+wss://peer-btp-endpoint/ilp/btp",
+    "ilp_over_btp_outgoing_token": "btp auth token we will use to authenticate with them",
+    "ilp_over_btp_incoming_token": "btp auth token they will use to authenticate with us",
+    "settle_threshold": 1000000000,
+    "settle_to": 0
+}
+```
 
 ### GET /accounts/:username/balance
 
@@ -92,6 +161,26 @@ Account-holder only.
     "delivered_amount": 2000000
 }
 ```
+
+### (WebSocket) /accounts/:username/payments/incoming
+
+Admin or account-holder only.
+
+#### Message
+
+In the format of text message of WebSocket, the endpoint will send the following JSON when receiving payments:
+
+```json
+{
+    "to_username": "Receiving account username",
+    "from_username": "Sending account username",
+    "destination": "Destination ILP address",
+    "amount": 1000,
+    "timestamp": "Receiving time in RFC3339 format"
+}
+```
+
+Note that the sending account username is one on the receiving node, not one of terminal sender.
 
 ### GET /accounts/:username/spsp
 
@@ -145,7 +234,9 @@ Health check.
 
 ```json
 {
-    "status": "Ready"
+    "status": "Ready",
+    "ilp_address": "example.node",
+    "version": "0.1.1beta.3"
 }
 ```
 
@@ -183,18 +274,18 @@ Get all of the node's exchange rates.
 
 Admin only.
 
-Configure static routes for the node. These will override routes received by CCP broadcast from other nodes.
+Configure static routes for the node. Key is a route prefix, value is an ID of an account. These will override routes received by CCP broadcast from other nodes.
 
 #### Request
 
 ```json
 {
-    "example.some-prefix": 0,
-    "example.other.more-specific.prefix": 4
+    "example.some-prefix": "7db997ce-3239-4d82-82fb-ee2e6d4f7050",
+    "example.other.more-specific.prefix": "dc9df826-b1f5-4560-9f37-9f859eb3be7f"
 }
 ```
 
-### PUT /routes/:prefix
+### PUT /routes/static/:prefix
 
 Admin only.
 
@@ -203,7 +294,7 @@ Configure a single route.
 #### Request
 
 ```
-"4"
+"7db997ce-3239-4d82-82fb-ee2e6d4f7050"
 ```
 
 ### GET /routes
@@ -220,7 +311,7 @@ has a settlement engine configured here, the account will automatically be set u
 
 ```
 {
-    "ABC": "http://localhost:30001",
+    "ABC": "http://localhost:3001",
     "XYZ": "http://localhost:3002"
 }
 ```
