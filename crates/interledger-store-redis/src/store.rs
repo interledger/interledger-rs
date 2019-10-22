@@ -94,162 +94,23 @@ lazy_static! {
 
     /// This lua script fetches an account associated with a username. The client
     /// MUST ensure that the returned account is authenticated.
-    static ref ACCOUNT_FROM_USERNAME: Script = Script::new("
-    local username = ARGV[1]
-    if redis.call('HEXISTS', 'usernames', username) then
-        local id = redis.call('HGET', 'usernames', ARGV[1])
-        return redis.call('HGETALL', 'accounts:' .. id)
-    else
-        return nil
-    end");
+    static ref ACCOUNT_FROM_USERNAME: Script = Script::new(include_str!("lua/account_from_username.lua"));
 
     /// Load a list of accounts
     /// If an account does not have a settlement_engine_url set
     /// but there is one configured for that account's currency,
     /// it will use the globally configured url
-    static ref LOAD_ACCOUNTS: Script = Script::new("
-    -- borrowed from https://stackoverflow.com/a/34313599
-    local function into_dictionary(flat_map)
-        local result = {}
-        for i = 1, #flat_map, 2 do
-            result[flat_map[i]] = flat_map[i + 1]
-        end
-        return result
-    end
+    static ref LOAD_ACCOUNTS: Script = Script::new(include_str!("lua/load_accounts.lua"));
 
-    local settlement_engines = into_dictionary(redis.call('HGETALL', 'settlement_engines'))
-    local accounts = {}
+    static ref PROCESS_PREPARE: Script = Script::new(include_str!("lua/process_prepare.lua"));
 
-    -- TODO get rid of the two representations of account
-    -- For some reason, the result from HGETALL returns
-    -- a bulk value type that we can return but that
-    -- we cannot index into with string keys. In contrast,
-    -- the result from into_dictionary can be indexed into
-    -- but if we try to return it, redis thinks it is a
-    -- '(empty list or set)'. There _should_ be some better way to do
-    -- this simple operation and a less janky way to insert the
-    -- settlement_engine_url into the account we are going to return
-    local account
-    local account_dict
-    for index, id in ipairs(ARGV) do
-        account = redis.call('HGETALL', 'accounts:' .. id)
+    static ref PROCESS_FULFILL: Script = Script::new(include_str!("lua/process_fulfill.lua"));
 
-        if account ~= nil then
-            account_dict = into_dictionary(account)
+    static ref PROCESS_REJECT: Script = Script::new(include_str!("lua/process_reject.lua"));
 
-            -- If the account does not have a settlement_engine_url specified
-            -- but there is one configured for that currency, set the
-            -- account to use that url
-            if account_dict.settlement_engine_url == nil then
-                local url = settlement_engines[account_dict.asset_code]
-                if url ~= nil then
-                    table.insert(account, 'settlement_engine_url')
-                    table.insert(account, url)
-                end
-            end
+    static ref REFUND_SETTLEMENT: Script = Script::new(include_str!("lua/refund_settlement.lua"));
 
-            table.insert(accounts, account)
-        end
-    end
-    return accounts");
-
-    static ref PROCESS_PREPARE: Script = Script::new("
-    local from_id = ARGV[1]
-    local from_account = 'accounts:' .. ARGV[1]
-    local from_amount = tonumber(ARGV[2])
-    local min_balance, balance, prepaid_amount = unpack(redis.call('HMGET', from_account, 'min_balance', 'balance', 'prepaid_amount'))
-    balance = tonumber(balance)
-    prepaid_amount = tonumber(prepaid_amount)
-
-    -- Check that the prepare wouldn't go under the account's minimum balance
-    if min_balance then
-        min_balance = tonumber(min_balance)
-        if balance + prepaid_amount - from_amount < min_balance then
-            error('Incoming prepare of ' .. from_amount .. ' would bring account ' .. from_id .. ' under its minimum balance. Current balance: ' .. balance .. ', min balance: ' .. min_balance)
-        end
-    end
-
-    -- Deduct the from_amount from the prepaid_amount and/or the balance
-    if prepaid_amount >= from_amount then
-        prepaid_amount = redis.call('HINCRBY', from_account, 'prepaid_amount', 0 - from_amount)
-    elseif prepaid_amount > 0 then
-        local sub_from_balance = from_amount - prepaid_amount
-        prepaid_amount = 0
-        redis.call('HSET', from_account, 'prepaid_amount', 0)
-        balance = redis.call('HINCRBY', from_account, 'balance', 0 - sub_from_balance)
-    else
-        balance = redis.call('HINCRBY', from_account, 'balance', 0 - from_amount)
-    end
-
-    return balance + prepaid_amount");
-
-    static ref PROCESS_FULFILL: Script = Script::new("
-    local to_account = 'accounts:' .. ARGV[1]
-    local to_amount = tonumber(ARGV[2])
-
-    local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
-    local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'prepaid_amount', 'settle_threshold', 'settle_to'))
-
-    -- The logic for trigerring settlement is as follows:
-    --  1. settle_threshold must be non-nil (if it's nil, then settlement was perhaps disabled on the account).
-    --  2. balance must be greater than settle_threshold (this is the core of the 'should I settle logic')
-    --  3. settle_threshold must be greater than settle_to (e.g., settleTo=5, settleThreshold=6)
-    local settle_amount = 0
-    if (settle_threshold and settle_to) and (balance >= tonumber(settle_threshold)) and (tonumber(settle_threshold) > tonumber(settle_to)) then
-        settle_amount = balance - tonumber(settle_to)
-
-        -- Update the balance _before_ sending the settlement so that we don't accidentally send
-        -- multiple settlements for the same balance. If the settlement fails we'll roll back
-        -- the balance change by re-adding the amount back to the balance
-        balance = settle_to
-        redis.call('HSET', to_account, 'balance', balance)
-    end
-
-    return {balance + prepaid_amount, settle_amount}");
-
-    static ref PROCESS_REJECT: Script = Script::new("
-    local from_account = 'accounts:' .. ARGV[1]
-    local from_amount = tonumber(ARGV[2])
-
-    local prepaid_amount = redis.call('HGET', from_account, 'prepaid_amount')
-    local balance = redis.call('HINCRBY', from_account, 'balance', from_amount)
-    return balance + prepaid_amount");
-
-    static ref REFUND_SETTLEMENT: Script = Script::new("
-    local account = 'accounts:' .. ARGV[1]
-    local settle_amount = tonumber(ARGV[2])
-
-    local balance = redis.call('HINCRBY', account, 'balance', settle_amount)
-    return balance");
-
-    static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new("
-    local account = 'accounts:' .. ARGV[1]
-    local amount = tonumber(ARGV[2])
-    local idempotency_key = ARGV[3]
-
-    local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
-
-    -- If idempotency key has been used, then do not perform any operations
-    if redis.call('EXISTS', idempotency_key) == 1 then
-        return balance + prepaid_amount
-    end
-
-    -- Otherwise, set it to true and make it expire after 24h (86400 sec)
-    redis.call('SET', idempotency_key, 'true', 'EX', 86400)
-
-    -- Credit the incoming settlement to the balance and/or prepaid amount,
-    -- depending on whether that account currently owes money or not
-    if tonumber(balance) >= 0 then
-        prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount)
-    elseif math.abs(balance) >= amount then
-        balance = redis.call('HINCRBY', account, 'balance', amount)
-    else
-        prepaid_amount = redis.call('HINCRBY', account, 'prepaid_amount', amount + balance)
-        balance = 0
-        redis.call('HSET', account, 'balance', 0)
-    end
-
-    return balance + prepaid_amount");
+    static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new(include_str!("lua/process_incoming_settlement.lua"));
 }
 
 pub struct RedisStoreBuilder {
