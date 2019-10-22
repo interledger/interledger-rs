@@ -408,7 +408,7 @@ fn accounts_test() {
                     //assert_eq!(account.get("balance").expect("balance was expected"), &Value::Number(Number::from(0)));
                     assert_eq!(
                         balance.get("balance").expect("balance was expected"),
-                        &Value::String("0".to_owned())
+                        &Value::Number(Number::from(0))
                     );
                 } else {
                     panic!("Invalid response JSON! {}", &content);
