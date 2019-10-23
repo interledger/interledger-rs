@@ -7,12 +7,19 @@ use std::{
     io::Read,
     vec::Vec,
 };
+use tracing_subscriber::{
+    filter::EnvFilter,
+    fmt::{time::ChronoUtc, Subscriber},
+};
 
 mod node;
 use node::InterledgerNode;
 
 pub fn main() {
-    env_logger::init();
+    Subscriber::builder()
+        .with_timer(ChronoUtc::rfc3339())
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
     // The naming convention of arguments
     //

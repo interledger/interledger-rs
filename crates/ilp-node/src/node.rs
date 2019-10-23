@@ -31,7 +31,6 @@ use interledger::{
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;
-use log::{debug, error, info, trace};
 use metrics::{self, labels, recorder, Key};
 use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;
@@ -39,6 +38,8 @@ use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::spawn;
+use tracing::{debug, error, info};
+use tracing_futures::Instrument;
 use url::Url;
 use warp::{
     self,
@@ -243,7 +244,7 @@ impl InterledgerNode {
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
         let exchange_rate_spread = self.exchange_rate_spread;
 
-        debug!(
+        debug!(target: "interledger-node",
             "Starting Interledger node with ILP address: {}",
             ilp_address
         );
@@ -251,15 +252,14 @@ impl InterledgerNode {
         Box::new(RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .node_ilp_address(ilp_address.clone())
         .connect()
-        .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
+        .map_err(move |err| error!(target: "interledger-node", "Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
                 store.clone().get_btp_outgoing_accounts()
-                .map_err(|_| error!("Error getting accounts"))
+                .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
                 .and_then(move |btp_accounts| {
                     let outgoing_service =
                         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
-                            error!("No route found for outgoing account {} (id: {})", request.to.username(), request.to.id());
-                            trace!("Rejecting request to account {:?}, prepare packet: {:?}", request.to, request.prepare);
+                            error!(target: "interledger-node", "No route found for outgoing account ");
                             Err(RejectBuilder {
                                 code: ErrorCode::F02_UNREACHABLE,
                                 message: &format!(
@@ -290,7 +290,9 @@ impl InterledgerNode {
                                 outgoing_service,
                             );
 
-                            let outgoing_service = outgoing_service.wrap(|request, mut next| {
+                            // let span = tracing::Span::current();
+                        // dbg!(Span::current());
+                            let outgoing_service = outgoing_service.wrap(move |request, mut next| {
                                 let labels = labels!(
                                     "from_asset_code" => request.from.asset_code().to_string(),
                                     "to_asset_code" => request.to.asset_code().to_string(),
@@ -316,6 +318,9 @@ impl InterledgerNode {
                                     result
                                 })
                             });
+
+                            // Instrument the service with tracing
+                            let outgoing_service = outgoing_service.in_current_span();
 
                             // Note: the expiry shortener must come after the Validator so that the expiry duration
                             // is shortened before we check whether there is enough time left
@@ -370,7 +375,11 @@ impl InterledgerNode {
                                 store.clone(),
                                 incoming_service,
                             );
-                            let incoming_service = incoming_service.wrap(|request, mut next| {
+
+                            // Instrument the service with tracing
+                            let incoming_service = incoming_service.in_current_span();
+
+                            let incoming_service = incoming_service.wrap(move |request, mut next| {
                                 let labels = labels!(
                                     "from_asset_code" => request.from.asset_code().to_string(),
                                     "from_routing_relation" => request.from.routing_relation().to_string(),
@@ -421,7 +430,7 @@ impl InterledgerNode {
                             // because the API includes error handling and consumes the request.
                             // TODO should we just make BTP part of the API?
                             let api = btp_endpoint.or(api).with(warp::log("interledger-api")).boxed();
-                            info!("Interledger.rs node HTTP API listening on: {}", http_bind_address);
+                            info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
                             spawn(warp::serve(api).bind(http_bind_address));
 
                             // Settlement API
@@ -429,7 +438,7 @@ impl InterledgerNode {
                                 store.clone(),
                                 outgoing_service.clone(),
                             );
-                            info!("Settlement API listening on: {}", settlement_api_bind_address);
+                            info!(target: "interledger-node", "Settlement API listening on: {}", settlement_api_bind_address);
                             spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
 
                             // Exchange Rate Polling
@@ -437,14 +446,15 @@ impl InterledgerNode {
                                 let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, store.clone());
                                 exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
                             } else {
-                                debug!("Not using exchange rate provider. Rates must be set via the HTTP API");
+                                debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
                             }
 
                             Ok(())
                         },
                     )
                 })
-        }))
+        })
+        .in_current_span())
     }
 
     /// Starts a Prometheus metrics server that will listen on the configured address.
@@ -452,7 +462,7 @@ impl InterledgerNode {
     /// # Errors
     /// This will fail if another Prometheus server is already running in this
     /// process or on the configured port.
-    pub fn serve_prometheus(&self) -> impl Future<Item = (), Error = ()> {
+    fn serve_prometheus(&self) -> impl Future<Item = (), Error = ()> {
         Box::new(if let Some(ref prometheus) = self.prometheus {
             // Set up the metrics collector
             let receiver = metrics_runtime::Builder::default()
@@ -479,7 +489,7 @@ impl InterledgerNode {
                             .body(prometheus_response)
                     });
 
-                    info!(
+                    info!(target: "interledger-node",
                         "Prometheus metrics server listening on: {}",
                         prometheus.bind_address
                     );
@@ -487,17 +497,17 @@ impl InterledgerNode {
                         warp::serve(filter)
                             .bind(prometheus.bind_address)
                             .map_err(|_| {
-                                error!("Error binding Prometheus server to the configured address")
+                                error!(target: "interledger-node", "Error binding Prometheus server to the configured address")
                             }),
                     )
                 }
                 Err(e) => {
-                    error!("Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
+                    error!(target: "interledger-node", "Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
                     Either::B(err(()))
                 }
             }
         } else {
-            error!("No prometheus configuration provided");
+            error!(target: "interledger-node", "No prometheus configuration provided");
             Either::B(err(()))
         })
     }
@@ -515,15 +525,15 @@ impl InterledgerNode {
     ) -> impl Future<Item = AccountId, Error = ()> {
         let redis_secret = generate_redis_secret(&self.secret_seed);
         result(self.redis_connection.clone().into_connection_info())
-            .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
+            .map_err(|err| error!(target: "interledger-node", "Invalid Redis connection details: {:?}", err))
             .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
-            .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            .map_err(|err| error!(target: "interledger-node", "Error connecting to Redis: {:?}", err))
             .and_then(move |store| {
                 store
                     .insert_account(account)
-                    .map_err(|_| error!("Unable to create account"))
+                    .map_err(|_| error!(target: "interledger-node", "Unable to create account"))
                     .and_then(|account| {
-                        debug!("Created account: {}", account.id());
+                        debug!(target: "interledger-node", "Created account: {}", account.id());
                         Ok(account.id())
                     })
             })

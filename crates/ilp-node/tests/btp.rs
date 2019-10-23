@@ -2,6 +2,8 @@ use futures::{future::join_all, Future};
 use ilp_node::InterledgerNode;
 use serde_json::{self, json};
 use tokio::runtime::Builder as RuntimeBuilder;
+use tracing::error_span;
+use tracing_futures::Instrument;
 
 mod redis_helpers;
 use redis_helpers::*;
@@ -12,7 +14,7 @@ use test_helpers::*;
 #[test]
 fn two_nodes_btp() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 2
-    let _ = env_logger::try_init();
+    tracing_subscriber::fmt::try_init().unwrap_or(());
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance
@@ -90,14 +92,22 @@ fn two_nodes_btp() {
         create_account_on_node(node_a_http, b_on_a, "admin"),
     ]);
 
-    runtime.spawn(node_a.serve());
+    runtime.spawn(
+        node_a
+            .serve()
+            .instrument(error_span!(target: "interledger", "node_a")),
+    );
 
     let bob_fut = join_all(vec![
         create_account_on_node(node_b_http, a_on_b, "admin"),
         create_account_on_node(node_b_http, bob_on_b, "admin"),
     ]);
 
-    runtime.spawn(node_b.serve());
+    runtime.spawn(
+        node_b
+            .serve()
+            .instrument(error_span!(target: "interledger", "node_b")),
+    );
 
     runtime
         .block_on(

@@ -2,6 +2,9 @@ use futures::{future::join_all, Future};
 use ilp_node::InterledgerNode;
 use serde_json::json;
 use tokio::runtime::Builder as RuntimeBuilder;
+use tracing::error_span;
+use tracing_futures::Instrument;
+use tracing_subscriber;
 
 mod redis_helpers;
 use redis_helpers::*;
@@ -12,7 +15,8 @@ use test_helpers::*;
 #[test]
 fn three_nodes() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
-    let _ = env_logger::try_init();
+
+    tracing_subscriber::fmt::try_init().unwrap_or(());
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance
@@ -141,7 +145,8 @@ fn three_nodes() {
         node1
             .serve()
             .and_then(move |_| alice_fut)
-            .and_then(move |_| Ok(())),
+            .and_then(move |_| Ok(()))
+            .instrument(error_span!(target: "interledger", "node1")),
     );
 
     let bob_fut = join_all(vec![
@@ -149,20 +154,26 @@ fn three_nodes() {
         create_account_on_node(node2_http, charlie_on_bob, "admin"),
     ]);
 
-    runtime.spawn(node2.serve().and_then(move |_| bob_fut).and_then(move |_| {
-        let client = reqwest::r#async::Client::new();
-        client
-            .put(&format!("http://localhost:{}/rates", node2_http))
-            .header("Authorization", "Bearer admin")
-            .json(&json!({"ABC": 2, "XYZ": 1}))
-            .send()
-            .map_err(|err| panic!(err))
-            .and_then(|res| {
-                res.error_for_status()
-                    .expect("Error setting exchange rates");
-                Ok(())
+    runtime.spawn(
+        node2
+            .serve()
+            .and_then(move |_| bob_fut)
+            .and_then(move |_| {
+                let client = reqwest::r#async::Client::new();
+                client
+                    .put(&format!("http://localhost:{}/rates", node2_http))
+                    .header("Authorization", "Bearer admin")
+                    .json(&json!({"ABC": 2, "XYZ": 1}))
+                    .send()
+                    .map_err(|err| panic!(err))
+                    .and_then(|res| {
+                        res.error_for_status()
+                            .expect("Error setting exchange rates");
+                        Ok(())
+                    })
             })
-    }));
+            .instrument(error_span!(target: "interledger", "node2")),
+    );
 
     // We execute the futures one after the other to avoid race conditions where
     // Bob gets added before the node's main account
@@ -174,6 +185,7 @@ fn three_nodes() {
             node3
                 .serve()
                 .and_then(move |_| charlie_fut)
+                .instrument(error_span!(target: "interledger", "node3"))
                 // we wait some time after the node is up so that we get the
                 // necessary routes from bob
                 .and_then(move |_| {
