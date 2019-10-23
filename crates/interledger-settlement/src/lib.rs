@@ -18,7 +18,10 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::ops::{Div, Mul};
 
-pub use api::{create_settlements_filter, scale_with_precision_loss};
+pub use api::{
+    create_settlements_filter, scale_with_precision_loss, CONVERSION_ERROR_TYPE,
+    NO_ENGINE_CONFIGURED_ERROR_TYPE,
+};
 pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 
