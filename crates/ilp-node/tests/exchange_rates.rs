@@ -1,12 +1,12 @@
-use env_logger;
 use futures::Future;
 use ilp_node::InterledgerNode;
-use log::error;
 use reqwest::r#async::Client;
 use secrecy::SecretString;
 use serde_json::{self, json, Value};
 use std::env;
 use tokio::runtime::Builder as RuntimeBuilder;
+use tracing::error;
+use tracing_subscriber;
 
 mod redis_helpers;
 use redis_helpers::*;
@@ -15,7 +15,7 @@ use test_helpers::random_secret;
 
 #[test]
 fn coincap() {
-    let _ = env_logger::try_init();
+    tracing_subscriber::fmt::try_init().unwrap_or(());
     let context = TestContext::new();
 
     let mut runtime = RuntimeBuilder::new()
@@ -76,7 +76,7 @@ fn coincap() {
 // TODO can we disable this with conditional compilation?
 #[test]
 fn cryptocompare() {
-    let _ = env_logger::try_init();
+    tracing_subscriber::fmt::try_init().unwrap_or(());
     let context = TestContext::new();
 
     let api_key = env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY");
