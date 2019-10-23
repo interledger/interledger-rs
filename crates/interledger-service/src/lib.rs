@@ -41,6 +41,10 @@ use serde::Serialize;
 
 mod auth;
 pub use auth::{Auth as AuthToken, Username};
+#[cfg(feature = "trace")]
+mod trace;
+#[cfg(feature = "trace")]
+pub use trace::*;
 
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
