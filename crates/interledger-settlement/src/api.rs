@@ -39,8 +39,8 @@ pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
 // Account without an engine error
 pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
     r#type: &ProblemType::Default,
-    status: StatusCode::NOT_FOUND,
     title: "No settlement engine configured",
+    status: StatusCode::NOT_FOUND,
 };
 
 pub fn create_settlements_filter<S, O, A>(
