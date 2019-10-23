@@ -21,6 +21,7 @@ node = [
     "spsp",
     "store-redis",
     "stream",
+    "trace",
 ]
 api = ["interledger-api"]
 btp = ["interledger-btp"]
@@ -33,6 +34,7 @@ settlement = ["interledger-settlement" ]
 spsp = ["interledger-spsp", "stream"]
 store-redis = ["interledger-store-redis"]
 stream = ["interledger-stream", "ildcp"]
+trace = ["interledger-service/trace"]
 
 [dependencies]
 interledger-api = { path = "../interledger-api", version = "^0.1.1-alpha.1", optional = true, default-features = false }
