@@ -180,7 +180,7 @@ In the format of text message of WebSocket, the endpoint will send the following
 }
 ```
 
-Note that the sending account username is one on the receiving node, not one of terminal sender.
+Note that the `from_username` corresponds to the account that received the packet _on this node_, not the original sender.
 
 ### GET /accounts/:username/spsp
 
