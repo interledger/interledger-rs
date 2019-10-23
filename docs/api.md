@@ -236,7 +236,7 @@ Health check.
 {
     "status": "Ready",
     "ilp_address": "example.node",
-    "version": "0.1.1beta.3"
+    "version": "0.1.1-beta.3"
 }
 ```
 
