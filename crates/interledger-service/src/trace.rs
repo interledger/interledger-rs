@@ -70,42 +70,52 @@ where
         // part of a span that includes those details
         // (That means the request was created by this node and did not originate
         // as an IncomingRequest from another node)
-        let (outer_span, inner_span) = if Span::current().has_field("prepare.destination") {
-            (
-                span!(Level::ERROR,
-                    "forwarding",
-                    to.id = %request.to.id(),
-                ),
-                span!(Level::DEBUG,
-                    "",
-                    to.username = %request.from.username(),
-                    to.asset_code = %request.from.asset_code(),
-                    to.asset_scale = %request.from.asset_scale(),
-                ),
+        let is_forwarding_request = Span::current().has_field("prepare.destination");
+        let outer_span = if is_forwarding_request {
+            span!(Level::ERROR,
+                "forwarding",
+                to.id = %request.to.id(),
+                prepare.amount = request.prepare.amount(),
+            )
+        } else if Span::current().has_field("request.id") {
+            span!(Level::ERROR,
+                "outgoing",
+                prepare.destination = %request.prepare.destination(),
+                from.id = %request.from.id(),
+                to.id = %request.to.id(),
             )
         } else {
-            (
-                span!(Level::ERROR,
-                    "outgoing",
-                    request.id = %Uuid::new_v4(),
-                    prepare.destination = %request.prepare.destination(),
-                    prepare.amount = request.prepare.amount(),
-                    from.id = %request.from.id(),
-                    to.id = %request.to.id(),
-                ),
-                span!(Level::DEBUG,
-                    "",
-                    from.username = %request.from.username(),
-                    from.ilp_address = %request.from.ilp_address(),
-                    from.asset_code = %request.from.asset_code(),
-                    from.asset_scale = %request.from.asset_scale(),
-                    to.username = %request.from.username(),
-                    to.asset_code = %request.from.asset_code(),
-                    to.asset_scale = %request.from.asset_scale(),
-                ),
+            span!(Level::ERROR,
+                "outgoing",
+                request.id = %Uuid::new_v4(),
+                prepare.destination = %request.prepare.destination(),
+                from.id = %request.from.id(),
+                to.id = %request.to.id(),
             )
         };
         let _outer_scope = outer_span.enter();
+
+        // Note the inner span must be created after the outer span is entered
+        // to make sure it correctly grabs the outer context
+        let inner_span = if is_forwarding_request {
+            span!(Level::DEBUG,
+                "",
+                to.username = %request.from.username(),
+                to.asset_code = %request.from.asset_code(),
+                to.asset_scale = %request.from.asset_scale(),
+            )
+        } else {
+            span!(Level::DEBUG,
+                "",
+                from.username = %request.from.username(),
+                from.ilp_address = %request.from.ilp_address(),
+                from.asset_code = %request.from.asset_code(),
+                from.asset_scale = %request.from.asset_scale(),
+                to.username = %request.from.username(),
+                to.asset_code = %request.from.asset_code(),
+                to.asset_scale = %request.from.asset_scale(),
+            )
+        };
         let _inner_scope = inner_span.enter();
 
         (Box::new(
