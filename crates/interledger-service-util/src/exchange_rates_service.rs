@@ -8,14 +8,16 @@ use interledger_service::*;
 // TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
 use interledger_settlement::{Convert, ConvertDetails};
 use log::{debug, error, trace, warn};
-use parking_lot::RwLock;
 use reqwest::r#async::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tokio::{executor::spawn, timer::Interval};
@@ -206,7 +208,7 @@ pub enum ExchangeRateProvider {
 /// Poll exchange rate providers for the current exchange rates
 pub struct ExchangeRateFetcher<S> {
     provider: ExchangeRateProvider,
-    consecutive_failed_polls: Arc<RwLock<u32>>,
+    consecutive_failed_polls: Arc<AtomicU32>,
     failed_polls_before_invalidation: u32,
     store: S,
     client: Client,
@@ -223,7 +225,7 @@ where
     ) -> Self {
         ExchangeRateFetcher {
             provider,
-            consecutive_failed_polls: Arc::new(RwLock::new(0)),
+            consecutive_failed_polls: Arc::new(AtomicU32::new(0)),
             failed_polls_before_invalidation,
             store,
             client: Client::new(),
@@ -270,10 +272,10 @@ where
             .map_err(move |_| {
                 // Note that a race between the read on this line and the check on the line after
                 // is quite unlikely as long as the interval between polls is reasonable.
-                let failed_polls: u32 = { *consecutive_failed_polls.read() };
+                let failed_polls = consecutive_failed_polls.load(Ordering::Relaxed);
                 if failed_polls < failed_polls_before_invalidation {
                     warn!("Failed to update exchange rates (previous consecutive failed attempts: {})", failed_polls);
-                    *consecutive_failed_polls.write() = failed_polls + 1;
+                    consecutive_failed_polls.store(failed_polls + 1, Ordering::Relaxed);
                 } else {
                     error!("Failed to update exchange rates (previous consecutive failed attempts: {}), removing old rates for safety", failed_polls);
                     // Clear out all of the old rates
@@ -289,7 +291,7 @@ where
                 rates.insert("USD".to_string(), 1.0);
                 if store_clone.set_exchange_rates(rates).is_ok() {
                     // Reset our invalidation counter
-                    *consecutive_failed_polls_zeroer.write() = 0;
+                    consecutive_failed_polls_zeroer.store(0, Ordering::Relaxed);
                     debug!("Updated {} exchange rates from {:?}", num_rates, provider);
                     Ok(())
                 } else {
