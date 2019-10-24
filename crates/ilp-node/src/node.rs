@@ -291,8 +291,6 @@ impl InterledgerNode {
                                 outgoing_service,
                             );
 
-                            // let span = tracing::Span::current();
-                        // dbg!(Span::current());
                             let outgoing_service = outgoing_service.wrap(move |request, mut next| {
                                 let labels = labels!(
                                     "from_asset_code" => request.from.asset_code().to_string(),
