@@ -11,7 +11,7 @@ mod error;
 mod packet;
 mod server;
 
-pub use client::{send_money, Receipt};
+pub use client::{send_money, StreamDelivery};
 pub use error::Error;
 pub use server::{
     ConnectionGenerator, PaymentNotification, StreamNotificationsStore, StreamReceiverService,

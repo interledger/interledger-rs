@@ -11,7 +11,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 
 use ilp_node::InterledgerNode;
 use interledger::{packet::Address, service::Username};
-use interledger_stream::Receipt;
+use interledger_stream::StreamDelivery;
 
 // Integration tests of accounts APIs
 // These are very rough tests. It confirms only that the paths and HTTP methods are working correctly.
@@ -529,7 +529,7 @@ fn accounts_test() {
             .and_then(move|mut res| {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
-                let receipt: Receipt = serde_json::from_str(&content).unwrap();
+                let receipt: StreamDelivery = serde_json::from_str(&content).unwrap();
                 assert_eq!(receipt.from, Address::from_str(ILP_ADDRESS_1).unwrap());
                 println!("{}", receipt.to.to_owned());
                 assert!(receipt.to.to_string().starts_with(&format!("{}.{}", NODE_ILP_ADDRESS, USERNAME_2)));

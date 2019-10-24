@@ -1,6 +1,6 @@
 use futures::{stream::Stream, Future};
 use hex;
-use interledger::stream::Receipt;
+use interledger::stream::StreamDelivery;
 use interledger::{
     packet::Address,
     service::Account as AccountTrait,
@@ -82,7 +82,7 @@ pub fn send_money_to_username<T: Display + Debug>(
     to_username: T,
     from_username: &str,
     from_auth: &str,
-) -> impl Future<Item = Receipt, Error = ()> {
+) -> impl Future<Item = StreamDelivery, Error = ()> {
     let client = reqwest::r#async::Client::new();
     let auth = format!("{}:{}", from_username, from_auth);
     client
@@ -102,7 +102,7 @@ pub fn send_money_to_username<T: Display + Debug>(
             eprintln!("Error sending SPSP payment: {:?}", err);
         })
         .and_then(move |body| {
-            let ret: Receipt = serde_json::from_slice(&body).unwrap();
+            let ret: StreamDelivery = serde_json::from_slice(&body).unwrap();
             Ok(ret)
         })
 }
