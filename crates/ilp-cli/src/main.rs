@@ -101,7 +101,23 @@ mod interface_tests {
     }
 
     #[test]
-    fn accounts_incoming_payments() {}
+    fn accounts_incoming_payments() {
+        should_parse(&[
+            "ilp-cli accounts incoming-payments alice --auth foo", // minimal
+        ]);
+    }
+
+    #[test]
+    fn accounts_incoming_payments_invalid_protocol() {
+        should_parse(&[
+            "ilp-cli --node tftp://localhost:7770 accounts incoming-payments alice --auth foo",
+        ]);
+    }
+
+    #[test]
+    fn accounts_incoming_payments_invalid_host() {
+        should_parse(&["ilp-cli --node http://:7770 accounts incoming-payments alice --auth foo"]);
+    }
 
     #[test]
     fn accounts_info() {
