@@ -12,6 +12,7 @@ use tracing_subscriber::{
     fmt::{time::ChronoUtc, Subscriber},
 };
 
+mod metrics;
 mod node;
 use node::InterledgerNode;
 
