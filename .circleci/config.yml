@@ -82,9 +82,15 @@ jobs:
           docker_layer_caching: true
       - checkout
       # If something wrong is cached, use these lines
-      #- run:
-      #    name: Clear docker cache
-      #    command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs --no-run-if-empty docker rmi
+#      - run:
+#          name: Clear docker cache
+#          command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs --no-run-if-empty docker rmi
+      - run:
+          # Although we use `docker_layer_caching`, we need to pull these latest images
+          name: Pull Docker Images
+          command: |
+            docker pull interledgerrs/settlement-engines:latest
+            docker pull interledgerjs/settlement-xrp:latest
       - restore_cache:
           keys:
             - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
@@ -135,16 +141,26 @@ jobs:
       - run:
           # builds release profile images to be released
           name: Build docker images
-          command: docker/docker-build.sh node ilp-cli
+          command: |
+            export DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+            docker/docker-build.sh node
+
+            export DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+            docker/docker-build.sh ilp-cli
           environment:
             PROFILE: "release"
       - run:
           name: Push to DockerHub
-          # TODO tag properly
           command: |
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-            docker push interledgerrs/node:latest
-            docker push interledgerrs/ilp-cli:latest
+
+            DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+            echo "Pushing docker image of tag: interledgerrs/node:${DOCKER_IMAGE_TAG}"
+            docker push interledgerrs/node:${DOCKER_IMAGE_TAG}
+
+            DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+            echo "Pushing docker image of tag: interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}"
+            docker push interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}
       - save_cache:
           key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
           paths:
@@ -154,13 +170,24 @@ workflows:
   version: 2
   build_and_test-md:
     jobs:
-      - build
-      - test-md
-      - update-docker-images: # updates docker images on DockerHub, only if the branch is master
+      - build:
+          filters:
+            tags:
+              only: # we need this to kick builds when tags are given
+                - /.*/
+      - test-md:
+          filters:
+            tags:
+              only: # we need this to kick builds when tags are given
+                - /.*/
+      - update-docker-images: # updates docker images on DockerHub, only if the branch is master or something is tagged
           filters:
             branches:
-              only:
+              only: # master branch will be tagged as `latest` image
                 - master
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
           requires:
             - build
             - test-md
