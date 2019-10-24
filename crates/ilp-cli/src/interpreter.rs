@@ -10,6 +10,21 @@ pub enum Error {
     UsageErr(&'static str),
     ClientErr(reqwest::Error),
     ResponseErr(String),
+    ProtocolErr(&'static str),
+    UrlErr(url::ParseError),
+    WebsocketErr(tungstenite::error::Error),
+}
+
+impl From<url::ParseError> for Error {
+    fn from(error: url::ParseError) -> Self {
+        Error::UrlErr(error)
+    }
+}
+
+impl From<tungstenite::error::Error> for Error {
+    fn from(error: tungstenite::error::Error) -> Self {
+        Error::WebsocketErr(error)
+    }
 }
 
 pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
@@ -114,15 +129,16 @@ impl NodeClient<'_> {
         let mut url = Url::parse(&format!(
             "{}/accounts/{}/payments/incoming",
             self.url, args["username"]
-        ))
-        .expect("Could not parse URL");
+        ))?;
 
-        url.set_scheme(match url.scheme() {
-            "http" => "ws",
-            "https" => "wss",
-            _ => panic!("Unexpected URL protocol"),
-        })
-        .expect("Could not alter URL scheme");
+        let scheme = match url.scheme() {
+            "http" => Ok("ws"),
+            "https" => Ok("wss"),
+            _ => Err(Error::ProtocolErr("Unexpected URL protocol")),
+        }?;
+
+        // The scheme has already been sanitized so this should always succeed
+        url.set_scheme(scheme).expect("Could not alter URL scheme");
 
         let mut request: Request = url.into();
         request.add_header(
@@ -130,7 +146,7 @@ impl NodeClient<'_> {
             Cow::Owned(format!("Bearer {}", auth)),
         );
 
-        let (mut socket, _) = connect(request).expect("Could not connect to WebSocket host");
+        let (mut socket, _) = connect(request)?;
         loop {
             let msg = socket
                 .read_message()
