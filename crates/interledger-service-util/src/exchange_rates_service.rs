@@ -8,12 +8,14 @@ use interledger_service::*;
 // TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
 use interledger_settlement::{Convert, ConvertDetails};
 use log::{debug, error, trace, warn};
+use parking_lot::RwLock;
 use reqwest::r#async::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
     marker::PhantomData,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{executor::spawn, timer::Interval};
@@ -204,6 +206,8 @@ pub enum ExchangeRateProvider {
 /// Poll exchange rate providers for the current exchange rates
 pub struct ExchangeRateFetcher<S> {
     provider: ExchangeRateProvider,
+    consecutive_failed_polls: Arc<RwLock<u64>>,
+    failed_polls_before_invalidation: u64,
     store: S,
     client: Client,
 }
@@ -212,9 +216,15 @@ impl<S> ExchangeRateFetcher<S>
 where
     S: ExchangeRateStore + Send + Sync + 'static,
 {
-    pub fn new(provider: ExchangeRateProvider, store: S) -> Self {
+    pub fn new(
+        provider: ExchangeRateProvider,
+        failed_polls_before_invalidation: u64,
+        store: S,
+    ) -> Self {
         ExchangeRateFetcher {
             provider,
+            consecutive_failed_polls: Arc::new(RwLock::new(0)),
+            failed_polls_before_invalidation,
             store,
             client: Client::new(),
         }
@@ -250,18 +260,27 @@ where
     }
 
     fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
+        let consecutive_failed_polls = self.consecutive_failed_polls.clone();
+        let consecutive_failed_polls_zeroer = consecutive_failed_polls.clone();
+        let failed_polls_before_invalidation = self.failed_polls_before_invalidation;
         let store = self.store.clone();
         let store_clone = self.store.clone();
         let provider = self.provider.clone();
         self.fetch_rates()
             .map_err(move |_| {
-                // TODO this is very aggressive that a single polling failure will cause it
-                // to wipe the old rates. We may want to make it slightly less aggressive
-                // (though it's tricky because operating with old rates is potentially very dangerous)
-                error!("Error updating exchange rates, removing old rates for safety");
-                // Clear out all of the old rates
-                if store.set_exchange_rates(HashMap::new()).is_err() {
-                    error!("Unable to update exchange rates in the store");
+                // Note that a race between the read on this line and the check on the line after
+                // is quite unlikely as long as the interval between polls is reasonable.
+                let failed_polls = *consecutive_failed_polls.read();
+                if failed_polls < failed_polls_before_invalidation {
+                    warn!("Failed to update exchange rates (previous consecutive failed attempts: {})", failed_polls);
+                    *consecutive_failed_polls.write() = failed_polls + 1;
+                } else {
+                    error!("Failed to update exchange rates (previous consecutive failed attempts: {}), removing old rates for safety", failed_polls);
+                    // Clear out all of the old rates
+                    if store.set_exchange_rates(HashMap::new()).is_err() {
+                        // TODO should this be a panic?
+                        error!("Unable to update exchange rates in the store");
+                    }
                 }
             })
             .and_then(move |mut rates| {
@@ -269,6 +288,8 @@ where
                 let num_rates = rates.len();
                 rates.insert("USD".to_string(), 1.0);
                 if store_clone.set_exchange_rates(rates).is_ok() {
+                    // Reset our invalidation counter
+                    *consecutive_failed_polls_zeroer.write() = 0;
                     debug!("Updated {} exchange rates from {:?}", num_rates, provider);
                     Ok(())
                 } else {
