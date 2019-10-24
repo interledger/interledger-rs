@@ -27,6 +27,18 @@ pub fn main() {
             eprintln!("ILP CLI error: invalid response: {}", e);
             exit(1);
         }
+        Err(interpreter::Error::ProtocolErr(e)) => {
+            eprintln!("ILP CLI error: failed to send request: {}", e);
+            exit(1);
+        }
+        Err(interpreter::Error::UrlErr(e)) => {
+            eprintln!("ILP CLI error: failed to send request: {}", e);
+            exit(1);
+        }
+        Err(interpreter::Error::WebsocketErr(e)) => {
+            eprintln!("ILP CLI error: Could not connect to WebSocket host: {}", e);
+            exit(1);
+        }
         Ok(mut response) => match response.text() {
             Err(e) => {
                 eprintln!("ILP CLI error: Failed to parse HTTP response: {}", e);
