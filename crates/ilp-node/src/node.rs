@@ -7,12 +7,13 @@ use hex::FromHex;
 #[doc(hidden)]
 pub use interledger::api::AccountDetails;
 pub use interledger::service_util::ExchangeRateProvider;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
+use crate::metrics::{incoming_metrics, outgoing_metrics};
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
-    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount},
+    ccp::CcpRouteManagerBuilder,
     http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer},
     ildcp::IldcpService,
     packet::Address,
@@ -31,7 +32,6 @@ use interledger::{
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;
-use metrics::{self, labels, recorder, Key};
 use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;
 use ring::{digest, hmac};
@@ -291,32 +291,7 @@ impl InterledgerNode {
                                 outgoing_service,
                             );
 
-                            let outgoing_service = outgoing_service.wrap(move |request, mut next| {
-                                let labels = labels!(
-                                    "from_asset_code" => request.from.asset_code().to_string(),
-                                    "to_asset_code" => request.to.asset_code().to_string(),
-                                    "from_routing_relation" => request.from.routing_relation().to_string(),
-                                    "to_routing_relation" => request.to.routing_relation().to_string(),
-                                );
-
-                                // TODO replace these calls with the counter! macro if there's a way to easily pass in the already-created labels
-                                // right now if you pass the labels into one of the other macros, it gets a recursion limit error while expanding the macro
-                                recorder().increment_counter(Key::from_name_and_labels("requests.outgoing.prepare", labels.clone()), 1);
-                                let start_time = Instant::now();
-
-                                next.send_request(request).then(move |result| {
-                                    if result.is_ok() {
-                                        recorder().increment_counter(Key::from_name_and_labels("requests.outgoing.fulfill", labels.clone()), 1);
-                                    } else {
-                                        recorder().increment_counter(Key::from_name_and_labels("requests.outgoing.reject", labels.clone()), 1);
-                                    }
-
-                                    recorder().record_histogram(
-                                        Key::from_name_and_labels("requests.outgoing.duration", labels.clone()),
-                                        (Instant::now() - start_time).as_nanos() as u64);
-                                    result
-                                })
-                            });
+                            let outgoing_service = outgoing_service.wrap(outgoing_metrics);
 
                             // Instrument the service with tracing
                             let outgoing_service = outgoing_service.in_current_span();
@@ -378,26 +353,7 @@ impl InterledgerNode {
                             // Instrument the service with tracing
                             let incoming_service = incoming_service.in_current_span();
 
-                            let incoming_service = incoming_service.wrap(move |request, mut next| {
-                                let labels = labels!(
-                                    "from_asset_code" => request.from.asset_code().to_string(),
-                                    "from_routing_relation" => request.from.routing_relation().to_string(),
-                                );
-                                recorder().increment_counter(Key::from_name_and_labels("requests.incoming.prepare", labels.clone()), 1);
-                                let start_time = Instant::now();
-
-                                next.handle_request(request).then(move |result| {
-                                    if result.is_ok() {
-                                        recorder().increment_counter(Key::from_name_and_labels("requests.incoming.fulfill", labels.clone()), 1);
-                                    } else {
-                                        recorder().increment_counter(Key::from_name_and_labels("requests.incoming.reject", labels.clone()), 1);
-                                    }
-                                    recorder().record_histogram(
-                                        Key::from_name_and_labels("requests.incoming.duration", labels),
-                                        (Instant::now() - start_time).as_nanos() as u64);
-                                    result
-                                })
-                            });
+                            let incoming_service = incoming_service.wrap(incoming_metrics);
 
                             // Handle incoming packets sent via BTP
                             btp_server_service.handle_incoming(incoming_service.clone());
