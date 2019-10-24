@@ -46,6 +46,7 @@ fn node_settings_test() {
         secret_seed: random_secret(),
         route_broadcast_interval: Some(200),
         exchange_rate_poll_interval: 60000,
+        exchange_rate_failed_polls_before_invalidation: 5,
         exchange_rate_provider: None,
         exchange_rate_spread: 0.0,
         prometheus: None,
