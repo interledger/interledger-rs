@@ -236,12 +236,18 @@ fn receive_money(
                 receive_max: u64::max_value(),
             }));
         }
-    }
 
-    response_frames.push(Frame::ConnectionAssetDetails(ConnectionAssetDetailsFrame {
-        source_asset_code: asset_code,
-        source_asset_scale: asset_scale,
-    }));
+        // If we receive a ConnectionNewAddress frame, then send them our asset
+        // code & scale. The client is suppoesd to only send the
+        // ConnectionNewAddress frame once, so we expect that we will only have
+        // to respond with the ConnectionAssetDetails frame only one time.
+        if let Frame::ConnectionNewAddress(_) = frame {
+            response_frames.push(Frame::ConnectionAssetDetails(ConnectionAssetDetailsFrame {
+                source_asset_code: asset_code,
+                source_asset_scale: asset_scale,
+            }));
+        }
+    }
 
     // Return Fulfill or Reject Packet
     if is_fulfillable && prepare_amount >= stream_packet.prepare_amount() {

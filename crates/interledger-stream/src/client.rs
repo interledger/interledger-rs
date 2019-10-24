@@ -20,21 +20,21 @@ use std::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct Receipt {
+pub struct StreamDelivery {
     pub from: Address,
     pub to: Address,
-    // Receipt variables which we know ahead of time
+    // StreamDelivery variables which we know ahead of time
     pub sent_amount: u64,
     pub sent_asset_scale: u8,
     pub sent_asset_code: String,
     pub delivered_amount: u64,
-    // Receipt variables which may get updated if the receiver sends us a
+    // StreamDelivery variables which may get updated if the receiver sends us a
     // ConnectionAssetDetails frame.
     pub delivered_asset_scale: Option<u8>,
     pub delivered_asset_code: Option<String>,
 }
 
-impl Receipt {
+impl StreamDelivery {
     fn new(
         from: Address,
         to: Address,
@@ -42,7 +42,7 @@ impl Receipt {
         sent_asset_scale: u8,
         sent_asset_code: impl ToString,
     ) -> Self {
-        Receipt {
+        StreamDelivery {
             from,
             to,
             sent_amount,
@@ -68,7 +68,7 @@ pub fn send_money<S, A>(
     destination_account: Address,
     shared_secret: &[u8],
     source_amount: u64,
-) -> impl Future<Item = (Receipt, S), Error = Error>
+) -> impl Future<Item = (StreamDelivery, S), Error = Error>
 where
     S: IncomingService<A> + Clone,
     A: Account,
@@ -99,7 +99,7 @@ where
                 // sending as much as possible per packet vs getting money flowing ASAP differently
                 congestion_controller: CongestionController::new(source_amount, source_amount / 10, 2.0),
                 pending_requests: Cell::new(Vec::new()),
-                receipt: Receipt::new(
+                receipt: StreamDelivery::new(
                     from_account.ilp_address().clone(),
                     destination_account,
                     source_amount,
@@ -124,7 +124,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     source_amount: u64,
     congestion_controller: CongestionController,
     pending_requests: Cell<Vec<PendingRequest>>,
-    receipt: Receipt,
+    receipt: StreamDelivery,
     should_send_source_account: bool,
     sequence: u64,
     rejected_packets: u64,
@@ -370,7 +370,7 @@ where
     S: IncomingService<A>,
     A: Account,
 {
-    type Item = (Receipt, S);
+    type Item = (StreamDelivery, S);
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {

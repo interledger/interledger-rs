@@ -10,7 +10,7 @@ use redis_helpers::*;
 
 mod test_helpers;
 use interledger::packet::Address;
-use interledger::stream::Receipt;
+use interledger::stream::StreamDelivery;
 use std::str::FromStr;
 use test_helpers::*;
 
@@ -227,7 +227,7 @@ fn three_nodes() {
                             eprintln!("Error sending from node 1 to node 3: {:?}", err);
                             err
                         })
-                        .and_then(move |receipt: Receipt| {
+                        .and_then(move |receipt: StreamDelivery| {
                             assert_eq!(receipt.from, Address::from_str("example.alice").unwrap());
                             assert!(receipt.to.to_string().starts_with("example.bob.charlie"));
                             assert_eq!(receipt.sent_asset_code, "XYZ");
