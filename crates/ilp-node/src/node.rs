@@ -67,6 +67,10 @@ fn default_exchange_rate_poll_interval() -> u64 {
     60_000
 }
 
+fn default_exchange_rate_failed_polls_before_invalidation() -> u64 {
+    5
+}
+
 fn deserialize_optional_address<'de, D>(deserializer: D) -> Result<Option<Address>, D::Error>
 where
     D: Deserializer<'de>,
@@ -185,6 +189,10 @@ pub struct InterledgerNode {
     /// Defaults to 60000ms (60 seconds).
     #[serde(default = "default_exchange_rate_poll_interval")]
     pub exchange_rate_poll_interval: u64,
+    /// The number of consecutive failed polls to the exchange rate provider
+    /// that the connector will tolerate before invalidating the exchange rate cache.
+    #[serde(default = "default_exchange_rate_failed_polls_before_invalidation")]
+    pub exchange_rate_failed_polls_before_invalidation: u64,
     /// API to poll for exchange rates. Currently the supported options are:
     /// - [CoinCap](https://docs.coincap.io)
     /// - [CryptoCompare](https://cryptocompare.com) (note this requires an API key)
@@ -244,6 +252,8 @@ impl InterledgerNode {
         let route_broadcast_interval = self.route_broadcast_interval;
         let exchange_rate_provider = self.exchange_rate_provider.clone();
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
+        let exchange_rate_failed_polls_before_invalidation =
+            self.exchange_rate_failed_polls_before_invalidation;
         let exchange_rate_spread = self.exchange_rate_spread;
 
         debug!(target: "interledger-node",
@@ -417,7 +427,7 @@ impl InterledgerNode {
 
                             // Exchange Rate Polling
                             if let Some(provider) = exchange_rate_provider {
-                                let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, store.clone());
+                                let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, exchange_rate_failed_polls_before_invalidation, store.clone());
                                 exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
                             } else {
                                 debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
