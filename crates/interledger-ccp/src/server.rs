@@ -1358,7 +1358,6 @@ mod handle_route_update_request {
             props: Vec::new(),
         });
         let request = service.filter_routes(request);
-        dbg!(request.new_routes.clone());
         assert_eq!(request.new_routes.len(), 1);
         assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
     }
