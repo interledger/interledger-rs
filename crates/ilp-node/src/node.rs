@@ -224,6 +224,7 @@ impl InterledgerNode {
         }
     }
 
+    #[allow(clippy::cognitive_complexity)]
     fn serve_node(&self) -> impl Future<Item = (), Error = ()> {
         let redis_secret = generate_redis_secret(&self.secret_seed);
         let secret_seed = Bytes::from(&self.secret_seed[..]);
@@ -462,6 +463,7 @@ impl InterledgerNode {
     /// # Errors
     /// This will fail if another Prometheus server is already running in this
     /// process or on the configured port.
+    #[allow(clippy::cognitive_complexity)]
     fn serve_prometheus(&self) -> impl Future<Item = (), Error = ()> {
         Box::new(if let Some(ref prometheus) = self.prometheus {
             // Set up the metrics collector
