@@ -206,8 +206,8 @@ pub enum ExchangeRateProvider {
 /// Poll exchange rate providers for the current exchange rates
 pub struct ExchangeRateFetcher<S> {
     provider: ExchangeRateProvider,
-    consecutive_failed_polls: Arc<RwLock<u64>>,
-    failed_polls_before_invalidation: u64,
+    consecutive_failed_polls: Arc<RwLock<u32>>,
+    failed_polls_before_invalidation: u32,
     store: S,
     client: Client,
 }
@@ -218,7 +218,7 @@ where
 {
     pub fn new(
         provider: ExchangeRateProvider,
-        failed_polls_before_invalidation: u64,
+        failed_polls_before_invalidation: u32,
         store: S,
     ) -> Self {
         ExchangeRateFetcher {
@@ -270,7 +270,7 @@ where
             .map_err(move |_| {
                 // Note that a race between the read on this line and the check on the line after
                 // is quite unlikely as long as the interval between polls is reasonable.
-                let failed_polls = *consecutive_failed_polls.read();
+                let failed_polls: u32 = { *consecutive_failed_polls.read() };
                 if failed_polls < failed_polls_before_invalidation {
                     warn!("Failed to update exchange rates (previous consecutive failed attempts: {})", failed_polls);
                     *consecutive_failed_polls.write() = failed_polls + 1;
