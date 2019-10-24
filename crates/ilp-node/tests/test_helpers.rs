@@ -1,5 +1,6 @@
 use futures::{stream::Stream, Future};
 use hex;
+use interledger::stream::Receipt;
 use interledger::{
     packet::Address,
     service::Account as AccountTrait,
@@ -26,11 +27,6 @@ pub fn random_secret() -> String {
     let mut bytes: [u8; 32] = [0; 32];
     SystemRandom::new().fill(&mut bytes).unwrap();
     hex::encode(bytes)
-}
-
-#[derive(serde::Deserialize)]
-pub struct DeliveryData {
-    pub delivered_amount: u64,
 }
 
 #[derive(serde::Deserialize)]
@@ -86,7 +82,7 @@ pub fn send_money_to_username<T: Display + Debug>(
     to_username: T,
     from_username: &str,
     from_auth: &str,
-) -> impl Future<Item = u64, Error = ()> {
+) -> impl Future<Item = Receipt, Error = ()> {
     let client = reqwest::r#async::Client::new();
     let auth = format!("{}:{}", from_username, from_auth);
     client
@@ -106,8 +102,8 @@ pub fn send_money_to_username<T: Display + Debug>(
             eprintln!("Error sending SPSP payment: {:?}", err);
         })
         .and_then(move |body| {
-            let ret: DeliveryData = serde_json::from_slice(&body).unwrap();
-            Ok(ret.delivered_amount)
+            let ret: Receipt = serde_json::from_slice(&body).unwrap();
+            Ok(ret)
         })
 }
 

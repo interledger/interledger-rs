@@ -11,6 +11,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 
 use ilp_node::InterledgerNode;
 use interledger::{packet::Address, service::Username};
+use interledger_stream::Receipt;
 
 // Integration tests of accounts APIs
 // These are very rough tests. It confirms only that the paths and HTTP methods are working correctly.
@@ -210,7 +211,7 @@ fn accounts_test() {
             .json(&json!({
                 "username": USERNAME_2,
                 "asset_code": ASSET_CODE,
-                "asset_scale": ASSET_SCALE,
+                "asset_scale": 12,
                 "max_packet_amount": MAX_PACKET_AMOUNT,
                 "min_balance": MIN_BALANCE,
                 "ilp_over_http_incoming_token": ILP_OVER_HTTP_INCOMING_TOKEN_2,
@@ -238,7 +239,7 @@ fn accounts_test() {
                         account
                             .get("asset_scale")
                             .expect("asset_scale was expected"),
-                        &Value::Number(Number::from(ASSET_SCALE))
+                        12
                     );
                     assert_eq!(
                         account
@@ -528,12 +529,16 @@ fn accounts_test() {
             .and_then(move|mut res| {
                 let content = res.text().wait().expect("Error getting response!");
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
-                let json: Value = serde_json::from_str(&content).unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
-                if let Value::Object(delivered_amount) = json {
-                    assert_eq!(delivered_amount.get("delivered_amount").expect("delivered_amount was expected"), &Value::Number(Number::from(amount)));
-                } else {
-                    panic!("Invalid response JSON! {}", &content);
-                }
+                let receipt: Receipt = serde_json::from_str(&content).unwrap();
+                assert_eq!(receipt.from, Address::from_str(ILP_ADDRESS_1).unwrap());
+                println!("{}", receipt.to.to_owned());
+                assert!(receipt.to.to_string().starts_with(&format!("{}.{}", NODE_ILP_ADDRESS, USERNAME_2)));
+                assert_eq!(receipt.sent_amount, amount);
+                assert_eq!(receipt.sent_asset_scale as usize, ASSET_SCALE);
+                assert_eq!(receipt.sent_asset_code, ASSET_CODE);
+                assert_eq!(receipt.delivered_amount, amount * 1000);
+                assert_eq!(receipt.delivered_asset_scale.unwrap() as usize, 12);
+                assert_eq!(receipt.delivered_asset_code.unwrap(), ASSET_CODE);
                 Ok(node)
             })
     };

@@ -363,21 +363,16 @@ where
         .and(deserialize_json())
         .and(with_incoming_handler.clone())
         .and_then(
-            |account: A, pay_request: SpspPayRequest, incoming_handler: I| {
+            move |account: A, pay_request: SpspPayRequest, incoming_handler: I| {
                 pay(
                     incoming_handler,
-                    account,
+                    account.clone(),
                     &pay_request.receiver,
                     pay_request.source_amount,
                 )
-                .and_then(|delivered_amount| {
-                    debug!(
-                        "Sent SPSP payment and delivered: {} of the receiver's units",
-                        delivered_amount
-                    );
-                    Ok(warp::reply::json(&json!({
-                        "delivered_amount": delivered_amount
-                    })))
+                .and_then(move |receipt| {
+                    debug!("Sent SPSP payment, receipt: {:?}", receipt);
+                    Ok(warp::reply::json(&json!(receipt)))
                 })
                 .map_err::<_, Rejection>(|err| {
                     error!("Error sending SPSP payment: {:?}", err);

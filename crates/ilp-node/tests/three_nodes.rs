@@ -9,6 +9,9 @@ mod redis_helpers;
 use redis_helpers::*;
 
 mod test_helpers;
+use interledger::packet::Address;
+use interledger::stream::Receipt;
+use std::str::FromStr;
 use test_helpers::*;
 
 #[test]
@@ -224,7 +227,15 @@ fn three_nodes() {
                             eprintln!("Error sending from node 1 to node 3: {:?}", err);
                             err
                         })
-                        .and_then(move |_| {
+                        .and_then(move |receipt: Receipt| {
+                            assert_eq!(receipt.from, Address::from_str("example.alice").unwrap());
+                            assert!(receipt.to.to_string().starts_with("example.bob.charlie"));
+                            assert_eq!(receipt.sent_asset_code, "XYZ");
+                            assert_eq!(receipt.sent_asset_scale, 9);
+                            assert_eq!(receipt.sent_amount, 1000);
+                            assert_eq!(receipt.delivered_asset_code.unwrap(), "ABC");
+                            assert_eq!(receipt.delivered_amount, 2);
+                            assert_eq!(receipt.delivered_asset_scale.unwrap(), 6);
                             get_balances().and_then(move |ret| {
                                 assert_eq!(ret[0], -1000);
                                 assert_eq!(ret[1], 2);
@@ -238,7 +249,18 @@ fn three_nodes() {
                                 err
                             })
                         })
-                        .and_then(move |_| {
+                        .and_then(move |receipt| {
+                            assert_eq!(
+                                receipt.from,
+                                Address::from_str("example.bob.charlie").unwrap()
+                            );
+                            assert!(receipt.to.to_string().starts_with("example.alice"));
+                            assert_eq!(receipt.sent_asset_code, "ABC");
+                            assert_eq!(receipt.sent_asset_scale, 6);
+                            assert_eq!(receipt.sent_amount, 1000);
+                            assert_eq!(receipt.delivered_asset_code.unwrap(), "XYZ");
+                            assert_eq!(receipt.delivered_amount, 500_000);
+                            assert_eq!(receipt.delivered_asset_scale.unwrap(), 9);
                             get_balances().and_then(move |ret| {
                                 assert_eq!(ret[0], 499_000);
                                 assert_eq!(ret[1], -998);
