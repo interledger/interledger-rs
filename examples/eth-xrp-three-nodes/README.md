@@ -644,7 +644,11 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         "settle_to" : 0,
         "routing_relation": "Child"}' \
         http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
-
+    
+    # We have to wait here to ensure that the parent account is created because
+    # the child account tries to acquire its ILP address from the parent account.
+    sleep 2
+    
     printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
     curl \
         -H "Content-Type: application/json" \
@@ -761,6 +765,10 @@ curl \
     "settle_to" : 0,
     "routing_relation": "Child"}' \
     http://localhost:8770/accounts > logs/account-bob-charlie.log 2>/dev/null &
+
+# We have to wait here to ensure that the parent account is created because
+# the child account tries to acquire its ILP address from the parent account.
+sleep 2
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
 curl \
