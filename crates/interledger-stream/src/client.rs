@@ -11,12 +11,53 @@ use interledger_packet::{
 };
 use interledger_service::*;
 use log::{debug, error, warn};
+use serde::{Deserialize, Serialize};
 use std::{
     cell::Cell,
     cmp::min,
     str,
     time::{Duration, SystemTime},
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct Receipt {
+    pub from: Address,
+    pub to: Address,
+    // Receipt variables which we know ahead of time
+    pub sent_amount: u64,
+    pub sent_asset_scale: u8,
+    pub sent_asset_code: String,
+    pub delivered_amount: u64,
+    // Receipt variables which may get updated if the receiver sends us a
+    // ConnectionAssetDetails frame.
+    pub delivered_asset_scale: Option<u8>,
+    pub delivered_asset_code: Option<String>,
+}
+
+impl Receipt {
+    fn new(
+        from: Address,
+        to: Address,
+        sent_amount: u64,
+        sent_asset_scale: u8,
+        sent_asset_code: impl ToString,
+    ) -> Self {
+        Receipt {
+            from,
+            to,
+            sent_amount,
+            sent_asset_scale,
+            sent_asset_code: sent_asset_code.to_string(),
+            delivered_amount: 0,
+            delivered_asset_code: None,
+            delivered_asset_scale: None,
+        }
+    }
+
+    fn increment_delivered_amount(&mut self, amount: u64) {
+        self.delivered_amount += amount;
+    }
+}
 
 /// Send a given amount of money using the STREAM transport protocol.
 ///
@@ -27,7 +68,7 @@ pub fn send_money<S, A>(
     destination_account: Address,
     shared_secret: &[u8],
     source_amount: u64,
-) -> impl Future<Item = (u64, S), Error = Error>
+) -> impl Future<Item = (Receipt, S), Error = Error>
 where
     S: IncomingService<A> + Clone,
     A: Account,
@@ -48,9 +89,9 @@ where
             SendMoneyFuture {
                 state: SendMoneyFutureState::SendMoney,
                 next: Some(service),
-                from_account,
+                from_account: from_account.clone(),
                 source_account,
-                destination_account,
+                destination_account: destination_account.clone(),
                 shared_secret,
                 source_amount,
                 // Try sending the full amount first
@@ -58,7 +99,13 @@ where
                 // sending as much as possible per packet vs getting money flowing ASAP differently
                 congestion_controller: CongestionController::new(source_amount, source_amount / 10, 2.0),
                 pending_requests: Cell::new(Vec::new()),
-                delivered_amount: 0,
+                receipt: Receipt::new(
+                    from_account.ilp_address().clone(),
+                    destination_account,
+                    source_amount,
+                    from_account.asset_scale(),
+                    from_account.asset_code(),
+                ),
                 should_send_source_account: true,
                 sequence: 1,
                 rejected_packets: 0,
@@ -77,7 +124,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     source_amount: u64,
     congestion_controller: CongestionController,
     pending_requests: Cell<Vec<PendingRequest>>,
-    delivered_amount: u64,
+    receipt: Receipt,
     should_send_source_account: bool,
     sequence: u64,
     rejected_packets: u64,
@@ -251,7 +298,22 @@ where
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
                 // TODO check that the sequence matches our outgoing packet
-                self.delivered_amount += packet.prepare_amount();
+
+                // Update the asset scale & asset code via the received
+                // frame. https://github.com/interledger/rfcs/pull/551
+                // ensures that this won't change, so we only need to
+                // perform this loop once.
+                if self.receipt.delivered_asset_scale.is_none() {
+                    for frame in packet.frames() {
+                        if let Frame::ConnectionAssetDetails(frame) = frame {
+                            self.receipt.delivered_asset_scale = Some(frame.source_asset_scale);
+                            self.receipt.delivered_asset_code =
+                                Some(frame.source_asset_code.to_string());
+                        }
+                    }
+                }
+                self.receipt
+                    .increment_delivered_amount(packet.prepare_amount());
             }
         } else {
             warn!(
@@ -308,7 +370,7 @@ where
     S: IncomingService<A>,
     A: Account,
 {
-    type Item = (u64, S);
+    type Item = (Receipt, S);
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -323,10 +385,10 @@ where
                 } else {
                     self.state = SendMoneyFutureState::Closed;
                     debug!(
-                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.delivered_amount, self.sequence - 1, self.rejected_packets,
+                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.receipt.delivered_amount, self.sequence - 1, self.rejected_packets,
                     );
                     return Ok(Async::Ready((
-                        self.delivered_amount,
+                        self.receipt.clone(),
                         self.next.take().unwrap(),
                     )));
                 }

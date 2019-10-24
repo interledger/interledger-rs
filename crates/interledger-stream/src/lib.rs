@@ -11,7 +11,7 @@ mod error;
 mod packet;
 mod server;
 
-pub use client::send_money;
+pub use client::{send_money, Receipt};
 pub use error::Error;
 pub use server::{
     ConnectionGenerator, PaymentNotification, StreamNotificationsStore, StreamReceiverService,
@@ -194,8 +194,8 @@ mod send_money_to_receiver {
             &shared_secret[..],
             100,
         )
-        .and_then(|(delivered_amount, _service)| {
-            assert_eq!(delivered_amount, 100);
+        .and_then(|(receipt, _service)| {
+            assert_eq!(receipt.delivered_amount, 100);
             Ok(())
         })
         .map_err(|err| panic!(err));
