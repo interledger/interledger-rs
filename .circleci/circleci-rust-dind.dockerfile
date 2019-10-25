@@ -65,7 +65,7 @@ RUN . ~/.nvm/nvm.sh && \
     curl -o- -L https://yarnpkg.com/install.sh | bash && \
     export PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH && \
     yarn global add ganache-cli ilp-settlement-xrp
-ENV PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH
+ENV PATH=/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH
 
 WORKDIR /home/circleci
 ENV CARGO_HOME=/home/circleci/.cargo

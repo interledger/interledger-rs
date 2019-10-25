@@ -21,6 +21,7 @@ if [ $# -eq 0 ]; then
     build_targets+=(node)
     build_targets+=(testnet-bundle)
     build_targets+=(circleci-rust-dind)
+    build_targets+=(circleci-rust-mac)
 fi
 
 # if arguments are given, add it as build targets
@@ -37,6 +38,7 @@ for build_target in "${build_targets[@]}"; do
                 . ;;
         "testnet-bundle") docker build -f ./docker/Dockerfile -t interledgerrs/testnet-bundle:${docker_image_tag} . ;;
         "circleci-rust-dind") docker build -f ./.circleci/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:${docker_image_tag} . ;;
+        "circleci-rust-mac") docker build -f ./.circleci/circleci-rust-mac.dockerfile -t interledgerrs/circleci-rust-mac:${docker_image_tag} . ;;
         "ci-node") docker build -f ./.circleci/node.dockerfile -t interledgerrs/node:${docker_image_tag} . ;;
         "ci-ilp-cli") docker build -f ./.circleci/ilp-cli.dockerfile -t interledgerrs/ilp-cli:${docker_image_tag} . ;;
     esac

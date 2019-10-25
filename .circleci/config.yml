@@ -22,7 +22,7 @@ jobs:
             - cargo-cache-2-{{ checksum "Cargo.lock" }}
             - cargo-cache-2-
       - run:
-          name: Reduce codegen units
+          name: Reduce codegen Units
           # If we don't include this, the linker runs out of memory when building
           # the project on CI. We don't include this normally though because
           # it should be able to build with more units on other machines
@@ -77,6 +77,7 @@ jobs:
   test-md:
     docker:
       - image: interledgerrs/circleci-rust-dind:latest
+    resource_class: medium+
     steps:
       - setup_remote_docker:
           docker_layer_caching: true
@@ -107,7 +108,7 @@ jobs:
       - run:
           # builds dev profile images because these images are not going to be released
           # also, we have to copy binaries so remove target from .dockerignore
-          name: Build docker images
+          name: Build Docker Images
           command: |
             dockerignore=$(cat .dockerignore | sed /^target/d)
             echo "$dockerignore" > .dockerignore
@@ -117,7 +118,7 @@ jobs:
             echo "target/**/incremental" >> .dockerignore
             docker/docker-build.sh ci-node ci-ilp-cli
       - run:
-          name: Run run-md test
+          name: Run run-md Test
           command: scripts/run-md-test.sh
       - store_artifacts:
           path: /tmp/run-md-test
@@ -129,6 +130,7 @@ jobs:
   update-docker-images:
     docker:
       - image: interledgerrs/circleci-rust-dind:latest
+    resource_class: medium+
     steps:
       - setup_remote_docker:
           docker_layer_caching: true
@@ -140,12 +142,12 @@ jobs:
             - cargo-cache-2-
       - run:
           # builds release profile images to be released
-          name: Build docker images
+          name: Build Docker Images
           command: |
-            export DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+            export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
             docker/docker-build.sh node
 
-            export DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+            export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             docker/docker-build.sh ilp-cli
           environment:
             PROFILE: "release"
@@ -154,21 +156,137 @@ jobs:
           command: |
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
-            DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+            DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/node:${DOCKER_IMAGE_TAG}"
             docker push interledgerrs/node:${DOCKER_IMAGE_TAG}
 
-            DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+            DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}"
             docker push interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}
       - save_cache:
           key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
           paths:
             - /home/circleci/.cargo
+  build-release-binary-linux:
+    docker:
+      - image: interledgerrs/circleci-rust-dind:latest
+    resource_class: medium+
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - restore_cache:
+          keys:
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
+      - run:
+          # Builds release profile binaries
+          # The artifact is stored in release-builds directory, which is persistent
+          name: Build binary
+          command: |
+            crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
+            printf "Building crate_name: %s, tag: %s\n" "${crate_name}" "${CIRCLE_TAG}"
+            ./.circleci/release/build.sh x86_64-unknown-linux-musl ${crate_name}
+            mkdir -p /tmp/release-builds/x86_64-unknown-linux-musl
+            cp target/x86_64-unknown-linux-musl/release/${crate_name} /tmp/release-builds/x86_64-unknown-linux-musl/${crate_name}
+      - persist_to_workspace:
+          root: /tmp/release-builds
+          paths:
+            - x86_64-unknown-linux-musl/*
+      - store_artifacts:
+          path: /tmp/release-builds/x86_64-unknown-linux-musl
+          destination: release-builds/x86_64-unknown-linux-musl
+      - save_cache:
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+          paths:
+            - /home/circleci/.cargo
+  build-release-binary-darwin:
+    docker:
+      - image: interledgerrs/circleci-rust-mac:latest
+    resource_class: medium+
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - restore_cache:
+          keys:
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+            - cargo-cache-2-{{ checksum "Cargo.lock" }}
+            - cargo-cache-2-
+      - run:
+          # Builds release profile binaries
+          # The artifact is stored in release-builds directory, which is persistent
+          name: Build binary
+          command: |
+            crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
+            printf "Building crate_name: %s, tag: %s\n" "${crate_name}" "${CIRCLE_TAG}"
+            ./.circleci/release/build.sh x86_64-apple-darwin ${crate_name}
+            mkdir -p /tmp/release-builds/x86_64-apple-darwin
+            cp target/x86_64-apple-darwin/release/${crate_name} /tmp/release-builds/x86_64-apple-darwin/${crate_name}
+      - persist_to_workspace:
+          root: /tmp/release-builds
+          paths:
+            - x86_64-apple-darwin/*
+      - store_artifacts:
+          path: /tmp/release-builds/x86_64-apple-darwin
+          destination: release-builds/x86_64-apple-darwin
+      - save_cache:
+          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
+          paths:
+            - /home/circleci/.cargo
+  release-binaries:
+    docker:
+      - image: interledgerrs/circleci-rust-dind:latest
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - attach_workspace:
+          at: /tmp/release-builds
+      - checkout
+      - run:
+          name: Release Binaries
+          command: |
+            mkdir -p logs
+            crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
+
+            # linux musl
+            base_dir=/tmp/release-builds/x86_64-unknown-linux-musl
+            pushd ${base_dir}
+            musl_zip="${base_dir}/${crate_name}-x86_64-unknown-linux-musl.zip"
+            musl_tar_gz="${base_dir}/${crate_name}-x86_64-unknown-linux-musl.tar.gz"
+            zip $(basename ${musl_zip}) ${crate_name}
+            tar -zcvf $(basename ${musl_tar_gz}) ${crate_name}
+            popd
+
+            # macOS
+            base_dir=/tmp/release-builds/x86_64-apple-darwin
+            pushd ${base_dir}
+            darwin_zip="${base_dir}/${crate_name}-x86_64-apple-darwin.zip"
+            darwin_tar_gz="${base_dir}/${crate_name}-x86_64-apple-darwin.tar.gz"
+            zip $(basename ${darwin_zip}) ${crate_name}
+            tar -zcvf $(basename ${darwin_tar_gz}) ${crate_name}
+            popd
+
+            # TODO more appropriate release note
+            release_note=logs/release_note.txt
+            echo "Release of ${CIRCLE_TAG}" > ${release_note}
+
+            ./.circleci/release/github_release.sh \
+              ${CIRCLE_TAG} \
+              ${CIRCLE_TAG} \
+              ${release_note} \
+              ${musl_zip} \
+              ${musl_tar_gz} \
+              ${darwin_zip} \
+              ${darwin_tar_gz}
+      - store_artifacts:
+          path: logs
+          destination: release-binaries-logs
 
 workflows:
   version: 2
-  build_and_test-md:
+  test-and-release:
     jobs:
       - build:
           filters:
@@ -190,4 +308,34 @@ workflows:
                 - /^(ilp-node-|ilp-cli-).*$/
           requires:
             - build
-            - test-md
+      - build-release-binary-linux:
+          filters:
+            branches:
+              ignore: # no branch pushes are built
+                - /.*/
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build
+      - build-release-binary-darwin:
+          filters:
+            branches:
+              ignore: # no branch pushes are built
+                - /.*/
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build
+      - release-binaries:
+          filters:
+            branches:
+              ignore: # no branch pushes are built
+                - /.*/
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build-release-binary-linux
+            - build-release-binary-darwin
