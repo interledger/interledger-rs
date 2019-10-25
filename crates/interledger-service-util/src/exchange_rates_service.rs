@@ -272,16 +272,15 @@ where
             .map_err(move |_| {
                 // Note that a race between the read on this line and the check on the line after
                 // is quite unlikely as long as the interval between polls is reasonable.
-                let failed_polls = consecutive_failed_polls.load(Ordering::Relaxed);
+                let failed_polls = consecutive_failed_polls.fetch_add(1, Ordering::Relaxed);
                 if failed_polls < failed_polls_before_invalidation {
                     warn!("Failed to update exchange rates (previous consecutive failed attempts: {})", failed_polls);
-                    consecutive_failed_polls.store(failed_polls + 1, Ordering::Relaxed);
                 } else {
                     error!("Failed to update exchange rates (previous consecutive failed attempts: {}), removing old rates for safety", failed_polls);
                     // Clear out all of the old rates
                     if store.set_exchange_rates(HashMap::new()).is_err() {
-                        // TODO should this be a panic?
-                        error!("Unable to update exchange rates in the store");
+                        error!("Failed to clear exchange rates cache after exchange rates server became unresponsive; panicking");
+                        panic!("Failed to clear exchange rates cache after exchange rates server became unresponsive");
                     }
                 }
             })
