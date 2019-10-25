@@ -19,5 +19,6 @@ members = [
   "./crates/interledger-stream",
 ]
 
-[replace]
-"tracing-subscriber:0.1.5" = { git = "https://github.com/emschwartz/tracing", branch = "master" }
+[patch.crates-io]
+tracing-subscriber = { git = "https://github.com/emschwartz/tracing", branch = "es-fix-subscriber", default-features = true, features = ["tracing-log"]}
+tracing-futures = { git = "https://github.com/emschwartz/tracing", branch = "es-fix-subscriber", default-features = true, features = ["tokio", "futures-01"] }

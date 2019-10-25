@@ -722,9 +722,10 @@ dependencies = [
  "serde_json 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-futures 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-subscriber 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-futures 0.1.0 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)",
+ "tracing-subscriber 0.1.5 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)",
  "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uuid 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "warp 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -925,17 +926,14 @@ version = "0.2.2-beta.3"
 dependencies = [
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
- "hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "interledger-packet 0.2.2-beta.5",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.101 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-futures 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-futures 0.1.0 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)",
  "unicase 2.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "unicode-normalization 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "uuid 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2371,7 +2369,7 @@ dependencies = [
 [[package]]
 name = "tracing-futures"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber#4511325b29ab074a604c0fc462bed2edc18efaee"
 dependencies = [
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2381,7 +2379,7 @@ dependencies = [
 [[package]]
 name = "tracing-log"
 version = "0.1.1"
-source = "git+https://github.com/emschwartz/tracing#e33ef3182883619de77ff2e4b7d33f9bca9433d4"
+source = "git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber#4511325b29ab074a604c0fc462bed2edc18efaee"
 dependencies = [
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2391,7 +2389,7 @@ dependencies = [
 [[package]]
 name = "tracing-subscriber"
 version = "0.1.5"
-source = "git+https://github.com/emschwartz/tracing#e33ef3182883619de77ff2e4b7d33f9bca9433d4"
+source = "git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber#4511325b29ab074a604c0fc462bed2edc18efaee"
 dependencies = [
  "ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2401,14 +2399,8 @@ dependencies = [
  "regex 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-core 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing-log 0.1.1 (git+https://github.com/emschwartz/tracing)",
+ "tracing-log 0.1.1 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)",
 ]
-
-[[package]]
-name = "tracing-subscriber"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-replace = "tracing-subscriber 0.1.5 (git+https://github.com/emschwartz/tracing)"
 
 [[package]]
 name = "try-lock"
@@ -2905,10 +2897,9 @@ dependencies = [
 "checksum tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)" = "c21ff9457accc293386c20e8f754d0b059e67e325edf2284f04230d125d7e5ff"
 "checksum tracing-attributes 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "3ff978fd9c9afe2cc9c671e247713421c6406b3422305cbdce5de695d3ab4c3c"
 "checksum tracing-core 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "bc913647c520c959b6d21e35ed8fa6984971deca9f0a2fcb8c51207e0c56af1d"
-"checksum tracing-futures 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4d73cd4d483f6a9af4f9f6da37c1c162e1f99017ba708a3042e6e90e54d26e5c"
-"checksum tracing-log 0.1.1 (git+https://github.com/emschwartz/tracing)" = "<none>"
-"checksum tracing-subscriber 0.1.5 (git+https://github.com/emschwartz/tracing)" = "<none>"
-"checksum tracing-subscriber 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "63e6bb522a99f10b3b0b3b894f936bccc2516cc8761e5506de132b06bf8d2e4d"
+"checksum tracing-futures 0.1.0 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)" = "<none>"
+"checksum tracing-log 0.1.1 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)" = "<none>"
+"checksum tracing-subscriber 0.1.5 (git+https://github.com/emschwartz/tracing?branch=es-fix-subscriber)" = "<none>"
 "checksum try-lock 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e604eb7b43c06650e854be16a2a03155743d3752dd1c943f6829e26b7a36e382"
 "checksum try_from 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)" = "283d3b89e1368717881a9d51dad843cc435380d8109c9e47d38780a324698d8b"
 "checksum tungstenite 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)" = "577caf571708961603baf59d2e148d12931e0da2e4bb6c5b471dd4a524fef3aa"

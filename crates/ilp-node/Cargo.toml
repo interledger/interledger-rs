@@ -22,13 +22,14 @@ metrics-runtime = { version = "0.12.0", default-features = false, features = ["m
 ring = { version = "0.14.6", default-features = false }
 serde = { version = "1.0.101", default-features = false }
 tokio = { version = "0.1.22", default-features = false }
-tracing = { version = "0.1.9", default-features = false, features = ["log"] }
-tracing-futures = { version = "0.1.0", default-features = false, features = ["tokio", "futures-01"] }
+tracing = { version = "0.1.9", default-features = true, features = ["log"] }
+tracing-futures = { version = "0.1.0", default-features = true, features = ["tokio", "futures-01"] }
 tracing-subscriber = { version = "0.1.5", default-features = true, features = ["tracing-log"] }
 url = { version = "2.1.0", default-features = false }
 libc = { version = "0.2.62", default-features = false }
 warp = { version = "0.1.20", default-features = false, features = ["websocket"] }
 secrecy = { version = "0.5.0", default-features = false, features = ["alloc", "serde"] }
+uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
 
 [dev-dependencies]
 net2 = { version = "0.2.33", default-features = false }

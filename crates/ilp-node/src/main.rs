@@ -14,6 +14,7 @@ use tracing_subscriber::{
 
 mod metrics;
 mod node;
+mod trace;
 use node::InterledgerNode;
 
 pub fn main() {
