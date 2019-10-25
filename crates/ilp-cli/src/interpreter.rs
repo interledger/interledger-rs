@@ -21,67 +21,40 @@ pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
 
     // Dispatch based on parsed input
     match matches.subcommand() {
-        // Execute the specified subcommand
-        (ilp_cli_subcommand, Some(ilp_cli_matches)) => {
-            // Send HTTP request
-            match ilp_cli_subcommand {
-                "accounts" => match ilp_cli_matches.subcommand() {
-                    (accounts_subcommand, Some(accounts_matches)) => match accounts_subcommand {
-                        "balance" => client.get_account_balance(accounts_matches),
-                        "create" => client.post_accounts(accounts_matches),
-                        "delete" => client.delete_account(accounts_matches),
-                        "incoming-payments" => {
-                            client.ws_account_payments_incoming(accounts_matches)
-                        }
-                        "info" => client.get_account(accounts_matches),
-                        "list" => client.get_accounts(accounts_matches),
-                        "update" => client.put_account(accounts_matches),
-                        "update-settings" => client.put_account_settings(accounts_matches),
-                        command => panic!("Unhandled `ilp-cli accounts` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help accounts")),
-                },
-                "pay" => client.post_account_payments(ilp_cli_matches),
-                "rates" => match ilp_cli_matches.subcommand() {
-                    (rates_subcommand, Some(rates_matches)) => match rates_subcommand {
-                        "list" => client.get_rates(rates_matches),
-                        "set-all" => client.put_rates(rates_matches),
-                        command => panic!("Unhandled `ilp-cli rates` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help rates")),
-                },
-                "routes" => match ilp_cli_matches.subcommand() {
-                    (routes_subcommand, Some(routes_matches)) => match routes_subcommand {
-                        "list" => client.get_routes(routes_matches),
-                        "set" => client.put_route_static(routes_matches),
-                        "set-all" => client.put_routes_static(routes_matches),
-                        command => panic!("Unhandled `ilp-cli routes` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help routes")),
-                },
-                "settlement-engines" => match ilp_cli_matches.subcommand() {
-                    (settlement_engines_subcommand, Some(settlement_engines_matches)) => {
-                        match settlement_engines_subcommand {
-                            "set-all" => client.put_settlement_engines(settlement_engines_matches),
-                            command => panic!(
-                                "Unhandled `ilp-cli settlement-engines` subcommand: {}",
-                                command
-                            ),
-                        }
-                    }
-                    _ => Err(Error::UsageErr("ilp-cli help settlement-engines")),
-                },
-                "status" => client.get_root(ilp_cli_matches),
-                "testnet" => match ilp_cli_matches.subcommand() {
-                    (testnet_subcommand, Some(testnet_matches)) => match testnet_subcommand {
-                        "setup" => client.xpring_account(testnet_matches),
-                        command => panic!("Unhandled `ilp-cli testnet` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help testnet")),
-                },
-                command => panic!("Unhandled `ilp-cli` subcommand: {}", command),
+        ("accounts", Some(accounts_matches)) => match accounts_matches.subcommand() {
+            ("balance", Some(submatches)) => client.get_account_balance(submatches),
+            ("create", Some(submatches)) => client.post_accounts(submatches),
+            ("delete", Some(submatches)) => client.delete_account(submatches),
+            ("incoming-payments", Some(submatches)) => {
+                client.ws_account_payments_incoming(submatches)
             }
-        }
+            ("info", Some(submatches)) => client.get_account(submatches),
+            ("list", Some(submatches)) => client.get_accounts(submatches),
+            ("update", Some(submatches)) => client.put_account(submatches),
+            ("update-settings", Some(submatches)) => client.put_account_settings(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help accounts")),
+        },
+        ("pay", Some(pay_matches)) => client.post_account_payments(pay_matches),
+        ("rates", Some(rates_matches)) => match rates_matches.subcommand() {
+            ("list", Some(submatches)) => client.get_rates(submatches),
+            ("set-all", Some(submatches)) => client.put_rates(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help rates")),
+        },
+        ("routes", Some(routes_matches)) => match routes_matches.subcommand() {
+            ("list", Some(submatches)) => client.get_routes(submatches),
+            ("set", Some(submatches)) => client.put_route_static(submatches),
+            ("set-all", Some(submatches)) => client.put_routes_static(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help routes")),
+        },
+        ("settlement-engines", Some(settlement_matches)) => match settlement_matches.subcommand() {
+            ("set-all", Some(submatches)) => client.put_settlement_engines(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help settlement-engines")),
+        },
+        ("status", Some(status_matches)) => client.get_root(status_matches),
+        ("testnet", Some(testnet_matches)) => match testnet_matches.subcommand() {
+            ("setup", Some(submatches)) => client.xpring_account(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help testnet")),
+        },
         _ => Err(Error::UsageErr("ilp-cli help")),
     }
 }
