@@ -142,10 +142,10 @@ jobs:
           # builds release profile images to be released
           name: Build docker images
           command: |
-            export DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+            export DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
             docker/docker-build.sh node
 
-            export DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+            export DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             docker/docker-build.sh ilp-cli
           environment:
             PROFILE: "release"
@@ -154,11 +154,11 @@ jobs:
           command: |
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
-            DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+            DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/node:${DOCKER_IMAGE_TAG}"
             docker push interledgerrs/node:${DOCKER_IMAGE_TAG}
 
-            DOCKER_IMAGE_TAG=$(./docker/CI/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+            DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}"
             docker push interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}
       - save_cache:
