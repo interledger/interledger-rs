@@ -19,7 +19,7 @@ lazy_static = { version = "1.4.0", default-features = false }
 metrics = { version = "0.12.0", default-features = false, features = ["std"] }
 metrics-core = { version = "0.5.1", default-features = false }
 metrics-runtime = { version = "0.12.0", default-features = false, features = ["metrics-observer-prometheus"] }
-ring = { version = "0.14.6", default-features = false }
+ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false }
 tokio = { version = "0.1.22", default-features = false }
 tracing = { version = "0.1.9", default-features = true, features = ["log"] }
