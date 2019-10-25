@@ -105,7 +105,7 @@ fn three_nodes() {
         "route_broadcast_interval": Some(200),
         "exchange_rate_poll_interval": 60000,
     }))
-    .unwrap();
+    .expect("Error creating node1.");
 
     let node2: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.bob",
@@ -118,7 +118,7 @@ fn three_nodes() {
         "route_broadcast_interval": Some(200),
         "exchange_rate_poll_interval": 60000,
     }))
-    .unwrap();
+    .expect("Error creating node2.");
 
     let node3: InterledgerNode = serde_json::from_value(json!({
         "default_spsp_account": "charlie",
@@ -130,7 +130,7 @@ fn three_nodes() {
         "route_broadcast_interval": Some(200),
         "exchange_rate_poll_interval": 60000,
     }))
-    .unwrap();
+    .expect("Error creating node3.");
 
     let alice_fut = join_all(vec![
         create_account_on_node(node1_http, alice_on_alice, "admin"),
@@ -176,7 +176,9 @@ fn three_nodes() {
                 .and_then(move |_| charlie_fut)
                 // we wait some time after the node is up so that we get the
                 // necessary routes from bob
-                .and_then(move |_| delay(1000).map_err(|_| panic!("Something strange happened")))
+                .and_then(move |_| {
+                    delay(1000).map_err(|_| panic!("Something strange happened when `delay`"))
+                })
                 .and_then(move |_| {
                     let send_1_to_3 = send_money_to_username(
                         node1_http,
@@ -236,5 +238,9 @@ fn three_nodes() {
                         })
                 }),
         )
+        .map_err(|err| {
+            eprintln!("Error executing tests: {:?}", err);
+            err
+        })
         .unwrap();
 }

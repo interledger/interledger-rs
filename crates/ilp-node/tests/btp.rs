@@ -70,7 +70,7 @@ fn two_nodes_btp() {
         "route_broadcast_interval": 200,
         "exchange_rate_poll_interval": 60000,
     }))
-    .unwrap();
+    .expect("Error creating node_a.");
 
     let node_b: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.parent",
@@ -83,7 +83,7 @@ fn two_nodes_btp() {
         "route_broadcast_interval": Some(200),
         "exchange_rate_poll_interval": 60000,
     }))
-    .unwrap();
+    .expect("Error creating node_b.");
 
     let alice_fut = join_all(vec![
         create_account_on_node(node_a_http, alice_on_a, "admin"),
@@ -103,7 +103,7 @@ fn two_nodes_btp() {
         .block_on(
             // Wait for the nodes to spin up
             delay(500)
-                .map_err(|_| panic!("Something strange happened"))
+                .map_err(|_| panic!("Something strange happened when `delay`"))
                 .and_then(move |_| {
                     bob_fut
                         .and_then(|_| alice_fut)
@@ -161,5 +161,9 @@ fn two_nodes_btp() {
                         })
                 }),
         )
+        .map_err(|err| {
+            eprintln!("Error executing tests: {:?}", err);
+            err
+        })
         .unwrap();
 }
