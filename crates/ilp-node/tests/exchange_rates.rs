@@ -11,11 +11,11 @@ use tracing_subscriber;
 mod redis_helpers;
 use redis_helpers::*;
 mod test_helpers;
-use test_helpers::random_secret;
+use test_helpers::*;
 
 #[test]
 fn coincap() {
-    tracing_subscriber::fmt::try_init().unwrap_or(());
+    install_tracing_subscriber();
     let context = TestContext::new();
 
     let mut runtime = RuntimeBuilder::new()

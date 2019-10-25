@@ -3,7 +3,6 @@ use ilp_node::InterledgerNode;
 use reqwest::r#async::Client;
 use serde_json::{self, json};
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing_subscriber;
 
 mod redis_helpers;
 use redis_helpers::*;
@@ -14,7 +13,7 @@ use test_helpers::*;
 #[test]
 fn prometheus() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 2
-    tracing_subscriber::fmt::try_init().unwrap_or(());
+    install_tracing_subscriber();
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance
