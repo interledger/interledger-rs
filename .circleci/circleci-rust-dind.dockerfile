@@ -57,7 +57,7 @@ RUN . ~/.nvm/nvm.sh && \
     nvm install $NODE_VERSION && \
     curl -o- -L https://yarnpkg.com/install.sh | bash && \
     export PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH && \
-    yarn global add ganache-cli ilp-settlement-xrp
+    yarn global add ganache-cli ilp-settlement-xrp conventional-changelog-cli
 ENV PATH=/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH
 
 WORKDIR /home/circleci
