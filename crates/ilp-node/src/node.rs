@@ -10,6 +10,7 @@ pub use interledger::service_util::ExchangeRateProvider;
 use std::sync::Arc;
 
 use crate::metrics::{incoming_metrics, outgoing_metrics};
+use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
@@ -38,7 +39,7 @@ use ring::{digest, hmac};
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::spawn;
-use tracing::{debug, error, info};
+use tracing::{debug, debug_span, error, info};
 use tracing_futures::Instrument;
 use url::Url;
 use warp::{
@@ -293,9 +294,6 @@ impl InterledgerNode {
 
                             let outgoing_service = outgoing_service.wrap(outgoing_metrics);
 
-                            // Instrument the service with tracing
-                            let outgoing_service = outgoing_service.in_current_span();
-
                             // Note: the expiry shortener must come after the Validator so that the expiry duration
                             // is shortened before we check whether there is enough time left
                             let outgoing_service = ValidatorService::outgoing(
@@ -322,8 +320,13 @@ impl InterledgerNode {
                             // Set up the Router and Routing Manager
                             let incoming_service = Router::new(
                                 store.clone(),
-                                outgoing_service.clone()
+                                // Add tracing to add the outgoing request details to the incoming span
+                                outgoing_service.clone().wrap(trace_forwarding),
                             );
+
+                            // Add tracing to track the outgoing request details
+                            let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
+
                             let mut ccp_builder = CcpRouteManagerBuilder::new(
                                 ilp_address.clone(),
                                 store.clone(),
@@ -350,21 +353,33 @@ impl InterledgerNode {
                                 incoming_service,
                             );
 
-                            // Instrument the service with tracing
-                            let incoming_service = incoming_service.in_current_span();
+                            // Add tracing to track the incoming request details
+                            let incoming_service = incoming_service.wrap(trace_incoming).in_current_span();
 
                             let incoming_service = incoming_service.wrap(incoming_metrics);
 
                             // Handle incoming packets sent via BTP
-                            btp_server_service.handle_incoming(incoming_service.clone());
-                            btp_client_service.handle_incoming(incoming_service.clone());
+                            btp_server_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
+                                let btp = debug_span!(target: "interledger-node", "btp");
+                                let _btp_scope = btp.enter();
+                                next.handle_request(request).in_current_span()
+                            }).in_current_span());
+                            btp_client_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
+                                let btp = debug_span!(target: "interledger-node", "btp");
+                                let _btp_scope = btp.enter();
+                                next.handle_request(request).in_current_span()
+                            }).in_current_span());
 
                             // Node HTTP API
                             let mut api = NodeApi::new(
                                 secret_seed,
                                 admin_auth_token,
                                 store.clone(),
-                                incoming_service.clone(),
+                                incoming_service.clone().wrap(|request, mut next| {
+                                    let api = debug_span!(target: "interledger-node", "api");
+                                    let _api_scope = api.enter();
+                                    next.handle_request(request).in_current_span()
+                                }).in_current_span(),
                                 outgoing_service.clone(),
                                 btp.clone(),
                             );
@@ -373,7 +388,11 @@ impl InterledgerNode {
                             }
                             // add an API of ILP over HTTP and add rejection handler
                             let api = api.into_warp_filter()
-                                .or(IlpOverHttpServer::new(incoming_service.clone(), store.clone()).as_filter())
+                                .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
+                                    let http = debug_span!(target: "interledger-node", "http");
+                                    let _http_scope = http.enter();
+                                    next.handle_request(request).in_current_span()
+                                }).in_current_span(), store.clone()).as_filter())
                                 .recover(default_rejection_handler);
 
                             // Mount the BTP endpoint at /ilp/btp
