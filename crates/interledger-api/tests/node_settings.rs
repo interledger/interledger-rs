@@ -232,7 +232,7 @@ fn node_settings_test() {
                 let json: Value = serde_json::from_str(&content)
                     .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
                 if let Value::Object(account) = json {
-                    let account_id = account
+                    account
                         .get("id")
                         .map(|value| match value {
                             Value::String(string) => string,
@@ -246,86 +246,85 @@ fn node_settings_test() {
                             _ => panic!("Invalid response JSON! {}", &content),
                         })
                         .expect("ilp_address was expected");
-                    Ok((node, account_id.to_owned(), ilp_address.to_owned()))
+                    Ok((node, ilp_address.to_owned()))
                 } else {
                     panic!("Invalid response JSON! {}", &content);
                 }
             })
     };
 
-    let put_routes_static =
-        move |(node, account_id, ilp_address): (InterledgerNode, String, String)| {
-            // PUT /routes/static
-            let client = reqwest::r#async::Client::new();
-            client
-                .put(&format!(
-                    "http://localhost:{}/routes/static",
-                    node.http_bind_address.port()
-                ))
-                .header(
-                    "Authorization",
-                    &format!("Bearer {}", node.admin_auth_token),
-                )
-                .json(&json!({
-                    "example.a": &account_id,
-                    "example.b": &account_id,
-                    "example.c": &account_id,
-                }))
-                .send()
-                .map_err(|err| panic!(err))
-                .and_then(move |mut res| {
-                    let content = res.text().wait().expect("Error getting response!");
-                    assert!(res.error_for_status_ref().is_ok(), "{}", &content);
-                    let json: Value = serde_json::from_str(&content)
-                        .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
-                    if let Value::Object(account) = json {
-                        assert_eq!(
-                            account.get("example.a").expect("example.a was expected"),
-                            &Value::String(account_id.to_owned())
-                        );
-                        assert_eq!(
-                            account.get("example.b").expect("example.b was expected"),
-                            &Value::String(account_id.to_owned())
-                        );
-                        assert_eq!(
-                            account.get("example.c").expect("example.c was expected"),
-                            &Value::String(account_id.to_owned())
-                        );
-                    } else {
-                        panic!("Invalid response JSON! {}", &content);
-                    }
-                    Ok((node, account_id, ilp_address))
-                })
-        };
+    let put_routes_static = move |(node, ilp_address): (InterledgerNode, String)| {
+        // PUT /routes/static
+        let client = reqwest::r#async::Client::new();
+        client
+            .put(&format!(
+                "http://localhost:{}/routes/static",
+                node.http_bind_address.port()
+            ))
+            .header(
+                "Authorization",
+                &format!("Bearer {}", node.admin_auth_token),
+            )
+            .json(&json!({
+                "example.a": USERNAME,
+                "example.b": USERNAME,
+                "example.c": USERNAME,
+            }))
+            .send()
+            .map_err(|err| panic!(err))
+            .and_then(move |mut res| {
+                let content = res.text().wait().expect("Error getting response!");
+                assert!(res.error_for_status_ref().is_ok(), "{}", &content);
+                let json: Value = serde_json::from_str(&content)
+                    .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
+                if let Value::Object(account) = json {
+                    assert_eq!(
+                        account.get("example.a").expect("example.a was expected"),
+                        USERNAME,
+                    );
+                    assert_eq!(
+                        account.get("example.b").expect("example.b was expected"),
+                        USERNAME,
+                    );
+                    assert_eq!(
+                        account.get("example.c").expect("example.c was expected"),
+                        USERNAME,
+                    );
+                } else {
+                    panic!("Invalid response JSON! {}", &content);
+                }
+                Ok((node, ilp_address))
+            })
+    };
 
-    let put_routes_static_prefix =
-        move |(node, account_id, ilp_address): (InterledgerNode, String, String)| {
-            // PUT /routes/static/:prefix
-            let client = reqwest::r#async::Client::new();
-            client
-                .put(&format!(
-                    "http://localhost:{}/routes/static/{}",
-                    node.http_bind_address.port(),
-                    ilp_address
-                ))
-                .header(
-                    "Authorization",
-                    &format!("Bearer {}", node.admin_auth_token),
-                )
-                .body(Body::from(account_id.clone()))
-                .send()
-                .map_err(|err| panic!(err))
-                .and_then(move |mut res| {
-                    let content = res.text().wait().expect("Error getting response!");
-                    assert!(res.error_for_status_ref().is_ok(), "{}", &content);
-                    assert_eq!(content, account_id);
-                    Ok((node, account_id, ilp_address))
-                })
-        };
+    let put_routes_static_prefix = move |(node, ilp_address): (InterledgerNode, String)| {
+        // PUT /routes/static/:prefix
+        let client = reqwest::r#async::Client::new();
+        client
+            .put(&format!(
+                "http://localhost:{}/routes/static/{}",
+                node.http_bind_address.port(),
+                ilp_address
+            ))
+            .header(
+                "Authorization",
+                &format!("Bearer {}", node.admin_auth_token),
+            )
+            .header("Content-Type", "application/json")
+            .body(USERNAME)
+            .send()
+            .map_err(|err| panic!(err))
+            .and_then(move |mut res| {
+                let content = res.text().wait().expect("Error getting response!");
+                assert!(res.error_for_status_ref().is_ok(), "{}", &content);
+                assert_eq!(content, USERNAME);
+                Ok((node, ilp_address))
+            })
+    };
 
     // Should cause Unauthorized
     let put_routes_static_prefix_unauthorized =
-        move |(node, account_id, ilp_address): (InterledgerNode, String, String)| {
+        move |(node, ilp_address): (InterledgerNode, String)| {
             // PUT /routes/static/:prefix
             let client = reqwest::r#async::Client::new();
             client
@@ -335,7 +334,7 @@ fn node_settings_test() {
                     ilp_address
                 ))
                 .header("Authorization", &format!("Bearer {}", "wrong_token"))
-                .body(Body::from(account_id.clone()))
+                .body(Body::from(USERNAME))
                 .send()
                 .map_err(|err| panic!(err))
                 .and_then(move |mut res| {

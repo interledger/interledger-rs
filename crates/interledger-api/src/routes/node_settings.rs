@@ -6,7 +6,7 @@ use futures::{
 };
 use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
 use interledger_router::RouterStore;
-use interledger_service::Account;
+use interledger_service::{Account, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::SettlementAccount;
 use log::{error, trace};
@@ -95,27 +95,42 @@ where
         .boxed();
 
     // GET /routes
+    // Response: Map of ILP Address prefix -> Username
     let get_routes = warp::get2()
         .and(warp::path("routes"))
         .and(warp::path::end())
         .and(with_store.clone())
-        .map(|store: S| {
-            // Convert addresses from bytes to utf8 strings
-            let routes: HashMap<String, String> =
-                HashMap::from_iter(store.routing_table().into_iter().filter_map(
-                    |(address, account)| {
-                        if let Ok(address) = str::from_utf8(address.as_ref()) {
-                            Some((address.to_string(), account.to_string()))
-                        } else {
-                            None
-                        }
-                    },
-                ));
-            warp::reply::json(&routes)
+        .and_then(|store: S| {
+            // Convert the account IDs listed in the routing table
+            // to the usernames for the API response
+            let routes = store.routing_table();
+            store
+                .get_accounts(routes.values().cloned().collect())
+                .map_err::<_, Rejection>(|_| {
+                    error!("Error getting accounts from store");
+                    ApiError::internal_server_error().into()
+                })
+                .and_then(move |accounts| {
+                    let routes: HashMap<String, String> = HashMap::from_iter(
+                        routes
+                            .keys()
+                            .zip(accounts.into_iter().map(|a| a.username().to_string()))
+                            .filter_map(|(prefix, username)| {
+                                if let Ok(prefix) = str::from_utf8(prefix.as_ref()) {
+                                    Some((prefix.to_string(), username))
+                                } else {
+                                    None
+                                }
+                            }),
+                    );
+
+                    Ok(warp::reply::json(&routes))
+                })
         })
         .boxed();
 
     // PUT /routes/static
+    // Body: Map of ILP Address prefix -> Username
     let put_static_routes = warp::put2()
         .and(warp::path("routes"))
         .and(warp::path("static"))
@@ -123,29 +138,34 @@ where
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|routes: HashMap<String, String>, store: S| {
-            let mut parsed = HashMap::with_capacity(routes.len());
-            for (prefix, id) in routes.into_iter() {
-                if let Ok(id) = A::AccountId::from_str(id.as_str()) {
-                    parsed.insert(prefix, id);
-                } else {
-                    error!("Invalid Account ID: {}", id);
-                    return Either::B(err(ApiError::invalid_account_id(Some(&id)).into()));
-                }
-            }
-            Either::A(
+        .and_then(|routes: HashMap<String, Username>, store: S| {
+            // Convert the usernames to account IDs to set the routes in the store
+            let store_clone = store.clone();
+            let usernames: Vec<Username> = routes.values().cloned().collect();
+            // TODO use one store call to look up all of the usernames
+            join_all(usernames.into_iter().map(move |username| {
+                store_clone
+                    .get_account_id_from_username(&username)
+                    .map_err(move |_| {
+                        error!("No account exists with username: {}", username);
+                        ApiError::account_not_found().into()
+                    })
+            }))
+            .and_then(move |account_ids| {
+                let prefixes = routes.keys().map(|s| s.to_string());
                 store
-                    .set_static_routes(parsed.clone())
+                    .set_static_routes(prefixes.zip(account_ids.into_iter()))
                     .map_err::<_, Rejection>(|_| {
                         error!("Error setting static routes");
                         ApiError::internal_server_error().into()
                     })
-                    .map(move |_| warp::reply::json(&parsed)),
-            )
+                    .map(move |_| warp::reply::json(&routes))
+            })
         })
         .boxed();
 
     // PUT /routes/static/:prefix
+    // Body: Username
     let put_static_route = warp::put2()
         .and(warp::path("routes"))
         .and(warp::path("static"))
@@ -155,23 +175,33 @@ where
         .and(warp::body::concat())
         .and(with_store.clone())
         .and_then(|prefix: String, body: warp::body::FullBody, store: S| {
-            if let Ok(string) = str::from_utf8(body.bytes()) {
-                if let Ok(id) = A::AccountId::from_str(string) {
-                    return Either::A(
-                        store
-                            .set_static_route(prefix, id)
-                            .map_err::<_, Rejection>(|_| {
-                                error!("Error setting static route");
-                                ApiError::internal_server_error().into()
-                            })
-                            .map(move |_| id.to_string()),
-                    );
-                } else {
-                    return Either::B(err(ApiError::invalid_account_id(Some(&string)).into()));
-                }
+            if let Ok(username) = str::from_utf8(body.bytes())
+                .map_err(|_| ())
+                .and_then(|string| Username::from_str(string).map_err(|_| ()))
+            {
+                // Convert the username to an account ID to set it in the store
+                let username_clone = username.clone();
+                Either::A(
+                    store
+                        .clone()
+                        .get_account_id_from_username(&username)
+                        .map_err(move |_| {
+                            error!("No account exists with username: {}", username_clone);
+                            ApiError::account_not_found().into()
+                        })
+                        .and_then(move |account_id| {
+                            store
+                                .set_static_route(prefix, account_id)
+                                .map_err::<_, Rejection>(|_| {
+                                    error!("Error setting static route");
+                                    ApiError::internal_server_error().into()
+                                })
+                        })
+                        .map(move |_| username.to_string()),
+                )
+            } else {
+                Either::B(err(ApiError::bad_request().into()))
             }
-            error!("Body was not a valid Account ID");
-            Either::B(err(ApiError::invalid_account_id(None).into()))
         })
         .boxed();
 

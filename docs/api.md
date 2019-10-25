@@ -274,14 +274,14 @@ Get all of the node's exchange rates.
 
 Admin only.
 
-Configure static routes for the node. Key is a route prefix, value is an ID of an account. These will override routes received by CCP broadcast from other nodes.
+Configure static routes for the node. Key is a route prefix, value is a username of an account. These will override routes received by CCP broadcast from other nodes.
 
 #### Request
 
 ```json
 {
-    "example.some-prefix": "7db997ce-3239-4d82-82fb-ee2e6d4f7050",
-    "example.other.more-specific.prefix": "dc9df826-b1f5-4560-9f37-9f859eb3be7f"
+    "example.some-prefix": "peer_a",
+    "example.other.more-specific.prefix": "peer_b"
 }
 ```
 
@@ -294,16 +294,25 @@ Configure a single route.
 #### Request
 
 ```
-"7db997ce-3239-4d82-82fb-ee2e6d4f7050"
+peer_a
 ```
 
 ### GET /routes
+
+#### Response
+
+```json
+{
+    "example.some-prefix": "peer_a",
+    "example.other.more-specific.prefix": "peer_b"
+}
+```
 
 ### PUT /settlement/engines
 
 Admin only.
 
-Configure the default settlement engines to use for the given asset codes. 
+Configure the default settlement engines to use for the given asset codes.
 If an account is not configured with a `settlement_engine_url` but the account's `asset_code`
 has a settlement engine configured here, the account will automatically be set up to use that settlement engine.
 
