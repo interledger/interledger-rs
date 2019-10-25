@@ -36,8 +36,8 @@ for build_target in "${build_targets[@]}"; do
                 --build-arg RUST_BIN_DIR_NAME="${RUST_BIN_DIR_NAME}" \
                 . ;;
         "testnet-bundle") docker build -f ./docker/Dockerfile -t interledgerrs/testnet-bundle:${docker_image_tag} . ;;
-        "circleci-rust-dind") docker build -f ./docker/CI/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:${docker_image_tag} . ;;
-        "ci-node") docker build -f ./docker/CI/node.dockerfile -t interledgerrs/node:${docker_image_tag} . ;;
-        "ci-ilp-cli") docker build -f ./docker/CI/ilp-cli.dockerfile -t interledgerrs/ilp-cli:${docker_image_tag} . ;;
+        "circleci-rust-dind") docker build -f ./.circleci/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:${docker_image_tag} . ;;
+        "ci-node") docker build -f ./.circleci/node.dockerfile -t interledgerrs/node:${docker_image_tag} . ;;
+        "ci-ilp-cli") docker build -f ./.circleci/ilp-cli.dockerfile -t interledgerrs/ilp-cli:${docker_image_tag} . ;;
     esac
 done
