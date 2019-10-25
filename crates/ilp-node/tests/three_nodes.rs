@@ -4,7 +4,6 @@ use serde_json::json;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::error_span;
 use tracing_futures::Instrument;
-use tracing_subscriber;
 
 mod redis_helpers;
 use redis_helpers::*;
@@ -15,8 +14,7 @@ use test_helpers::*;
 #[test]
 fn three_nodes() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
-
-    tracing_subscriber::fmt::try_init().unwrap_or(());
+    install_tracing_subscriber();
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance
@@ -145,7 +143,7 @@ fn three_nodes() {
         node1
             .serve()
             .and_then(move |_| alice_fut)
-            .and_then(move |_| Ok(()))
+            .and_then(|_| Ok(()))
             .instrument(error_span!(target: "interledger", "node1")),
     );
 
