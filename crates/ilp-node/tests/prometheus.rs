@@ -29,7 +29,7 @@ fn prometheus() {
     let prometheus_port = get_open_port(None);
 
     let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|_| panic!("Tokio worker panicked"))
+        .panic_handler(|err| std::panic::resume_unwind(err))
         .build()
         .unwrap();
 

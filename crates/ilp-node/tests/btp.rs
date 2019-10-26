@@ -29,7 +29,7 @@ fn two_nodes_btp() {
     let node_b_settlement = get_open_port(Some(3021));
 
     let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|_| panic!("Tokio worker panicked"))
+        .panic_handler(|err| std::panic::resume_unwind(err))
         .build()
         .unwrap();
 
