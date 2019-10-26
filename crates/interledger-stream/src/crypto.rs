@@ -97,6 +97,11 @@ fn encrypt_with_nonce(
 }
 
 pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
+    // ciphertext must include at least a nonce and tag,
+    if ciphertext.len() < AUTH_TAG_LENGTH {
+        return Err(());
+    }
+
     let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
     let key = aead::UnboundKey::new(&aead::AES_256_GCM, &key)
         .expect("Failed to create a new opening key for decrypting data!");

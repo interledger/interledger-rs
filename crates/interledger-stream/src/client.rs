@@ -3,6 +3,7 @@ use super::crypto::*;
 use super::error::Error;
 use super::packet::*;
 use bytes::Bytes;
+use bytes::BytesMut;
 use futures::{Async, Future, Poll};
 use interledger_ildcp::get_ildcp_info;
 use interledger_packet::{
@@ -339,6 +340,29 @@ where
             reject.code(),
             self.source_amount
         );
+
+        // if we receive a reject, try to update our asset code/scale
+        // if it was not populated before
+        if self.receipt.delivered_asset_scale.is_none()
+            || self.receipt.delivered_asset_code.is_none()
+        {
+            if let Ok(packet) =
+                StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(reject.data()))
+            {
+                for frame in packet.frames() {
+                    if let Frame::ConnectionAssetDetails(frame) = frame {
+                        self.receipt.delivered_asset_scale = Some(frame.source_asset_scale);
+                        self.receipt.delivered_asset_code =
+                            Some(frame.source_asset_code.to_string());
+                    }
+                }
+            } else {
+                warn!(
+                    "Unable to parse STREAM packet from reject data for sequence {}",
+                    sequence
+                );
+            }
+        }
 
         match (reject.code().class(), reject.code()) {
             (ErrorClass::Temporary, _) => {}
