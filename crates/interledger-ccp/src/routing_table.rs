@@ -1,5 +1,4 @@
 use crate::packet::{Route, RouteUpdateRequest};
-use bytes::Bytes;
 use hex;
 use lazy_static::lazy_static;
 use log::{debug, trace};
@@ -13,7 +12,7 @@ lazy_static! {
 
 #[derive(Debug)]
 struct PrefixMap<T> {
-    map: HashMap<Bytes, T>,
+    map: HashMap<String, T>,
 }
 
 impl<T> PrefixMap<T> {
@@ -23,19 +22,19 @@ impl<T> PrefixMap<T> {
         }
     }
 
-    pub fn insert(&mut self, prefix: Bytes, item: T) -> bool {
-        self.map.insert(prefix.clone(), item).is_none()
+    pub fn insert(&mut self, prefix: String, item: T) -> bool {
+        self.map.insert(prefix, item).is_none()
     }
 
-    pub fn remove(&mut self, prefix: &[u8]) -> bool {
+    pub fn remove(&mut self, prefix: &str) -> bool {
         self.map.remove(prefix).is_some()
     }
 
-    pub fn resolve(&self, prefix: &[u8]) -> Option<&T> {
+    pub fn resolve(&self, prefix: &str) -> Option<&T> {
         // TODO use parallel iterator
         self.map
             .iter()
-            .filter(|(p, _)| prefix.starts_with(p))
+            .filter(|(p, _)| prefix.starts_with(p.as_str()))
             .max_by_key(|(p, _)| p.len())
             .map(|(_prefix, item)| item)
     }
@@ -90,13 +89,13 @@ where
     }
 
     /// Set a particular route, overwriting the one that was there before
-    pub fn set_route(&mut self, prefix: Bytes, account: A, route: Route) {
-        self.prefix_map.remove(&prefix[..]);
+    pub fn set_route(&mut self, prefix: String, account: A, route: Route) {
+        self.prefix_map.remove(&prefix);
         self.prefix_map.insert(prefix, (account, route));
     }
 
     /// Remove the route for the given prefix. Returns true if that route existed before
-    pub fn delete_route(&mut self, prefix: &[u8]) -> bool {
+    pub fn delete_route(&mut self, prefix: &str) -> bool {
         self.prefix_map.remove(prefix)
     }
 
@@ -107,16 +106,16 @@ where
     }
 
     /// Get the best route we have for the given prefix
-    pub fn get_route(&self, prefix: &[u8]) -> Option<&(A, Route)> {
+    pub fn get_route(&self, prefix: &str) -> Option<&(A, Route)> {
         self.prefix_map.resolve(prefix)
     }
 
-    pub fn get_simplified_table(&self) -> HashMap<Bytes, A> {
+    pub fn get_simplified_table(&self) -> HashMap<&str, A> {
         HashMap::from_iter(
             self.prefix_map
                 .map
                 .iter()
-                .map(|(address, (account, _route))| (address.clone(), account.clone())),
+                .map(|(address, (account, _route))| (address.as_str(), account.clone())),
         )
     }
 
@@ -125,7 +124,7 @@ where
         &mut self,
         account: A,
         request: RouteUpdateRequest,
-    ) -> Result<Vec<Bytes>, String> {
+    ) -> Result<Vec<String>, String> {
         if self.id != request.routing_table_id {
             debug!(
                 "Saw new routing table. Old ID: {}, new ID: {}",
@@ -171,7 +170,7 @@ where
             Vec::with_capacity(request.new_routes.len() + request.withdrawn_routes.len());
         for prefix in request.withdrawn_routes.iter() {
             if self.delete_route(prefix) {
-                changed_prefixes.push(prefix.clone());
+                changed_prefixes.push(prefix.to_string());
             }
         }
 
@@ -210,29 +209,29 @@ mod prefix_map {
     #[test]
     fn doesnt_insert_duplicates() {
         let mut map = PrefixMap::new();
-        assert!(map.insert(Bytes::from("example.a"), 1));
-        assert!(!map.insert(Bytes::from("example.a"), 1));
+        assert!(map.insert("example.a".to_string(), 1));
+        assert!(!map.insert("example.a".to_string(), 1));
     }
 
     #[test]
     fn removes_entry() {
         let mut map = PrefixMap::new();
-        assert!(map.insert(Bytes::from("example.a"), 1));
-        assert!(map.remove(&b"example.a"[..]));
+        assert!(map.insert("example.a".to_string(), 1));
+        assert!(map.remove("example.a"));
         assert!(map.map.is_empty());
     }
 
     #[test]
     fn resolves_to_longest_matching_prefix() {
         let mut map = PrefixMap::new();
-        map.insert(Bytes::from("example.a"), 1);
-        map.insert(Bytes::from("example.a.b.c"), 2);
-        map.insert(Bytes::from("example.a.b"), 3);
+        map.insert("example.a".to_string(), 1);
+        map.insert("example.a.b.c".to_string(), 2);
+        map.insert("example.a.b".to_string(), 3);
 
-        assert_eq!(map.resolve(b"example.a").unwrap(), &1);
-        assert_eq!(map.resolve(b"example.a.b.c").unwrap(), &2);
-        assert_eq!(map.resolve(b"example.a.b.c.d.e").unwrap(), &2);
-        assert!(map.resolve(b"example.other").is_none());
+        assert_eq!(map.resolve("example.a").unwrap(), &1);
+        assert_eq!(map.resolve("example.a.b.c").unwrap(), &2);
+        assert_eq!(map.resolve("example.a.b.c.d.e").unwrap(), &2);
+        assert!(map.resolve("example.other").is_none());
     }
 }
 
@@ -267,7 +266,7 @@ mod table {
         request.from_epoch_index = 1;
         request.to_epoch_index = 3;
         table
-            .handle_update_request(ROUTING_ACCOUNT.clone(), request.clone())
+            .handle_update_request(ROUTING_ACCOUNT.clone(), request)
             .unwrap();
         assert_eq!(table.epoch, 3);
     }
@@ -315,7 +314,7 @@ mod table {
         table.add_route(
             TestAccount::new(1, "example.one"),
             Route {
-                prefix: Bytes::from("example.one"),
+                prefix: "example.one".to_string(),
                 path: Vec::new(),
                 props: Vec::new(),
                 auth: [0; 32],
@@ -324,7 +323,7 @@ mod table {
         table.add_route(
             TestAccount::new(2, "example.two"),
             Route {
-                prefix: Bytes::from("example.two"),
+                prefix: "example.two".to_string(),
                 path: Vec::new(),
                 props: Vec::new(),
                 auth: [0; 32],
@@ -332,7 +331,7 @@ mod table {
         );
         let simplified = table.get_simplified_table();
         assert_eq!(simplified.len(), 2);
-        assert_eq!(simplified.get(&b"example.one"[..]).unwrap().id, 1);
-        assert_eq!(simplified.get(&b"example.two"[..]).unwrap().id, 2);
+        assert_eq!(simplified.get("example.one").unwrap().id, 1);
+        assert_eq!(simplified.get("example.two").unwrap().id, 2);
     }
 }

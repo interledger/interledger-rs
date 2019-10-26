@@ -8,7 +8,6 @@ use crate::{
     routing_table::RoutingTable,
     CcpRoutingAccount, RouteManagerStore, RoutingRelation,
 };
-use bytes::Bytes;
 use futures::{
     future::{err, join_all, ok, Either},
     Future, Stream,
@@ -55,7 +54,7 @@ fn hash(preimage: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-type NewAndWithdrawnRoutes = (Vec<Route>, Vec<Bytes>);
+type NewAndWithdrawnRoutes = (Vec<Route>, Vec<String>);
 
 pub struct CcpRouteManagerBuilder<I, O, S> {
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
@@ -338,7 +337,7 @@ where
             .into_iter()
             .filter(|route| {
                 let ilp_address = self.ilp_address.read();
-                let address_scheme = (*ilp_address).scheme().as_bytes();
+                let address_scheme = (*ilp_address).scheme();
                 if !route.prefix.starts_with(address_scheme) {
                     warn!("Got route for a different global prefix: {:?}", route);
                     false
@@ -346,10 +345,10 @@ where
                     // note the + 1 is due to address_scheme not including a trailing "."
                     warn!("Got route broadcast for the global prefix: {:?}", route);
                     false
-                } else if route.prefix.starts_with(self.ilp_address.read().as_ref()) {
+                } else if route.prefix.starts_with(&ilp_address as &str) {
                     trace!("Ignoring route broadcast for a prefix that starts with our own address: {:?}", route);
                     false
-                } else if route.path.contains(self.ilp_address.read().as_ref()) {
+                } else if route.path.iter().any(|p| p == &ilp_address as &str) {
                     trace!(
                         "Ignoring route broadcast for a route that includes us: {:?}",
                         route
@@ -421,14 +420,16 @@ where
                     return Box::new(ok(CCP_RESPONSE.clone()));
                 }
 
-                debug!("Recalculating best routes for prefixes: {}", {
-                    let updated: Vec<&str> = prefixes_updated
-                        .iter()
-                        .map(|prefix| str::from_utf8(&prefix).unwrap_or("<not utf8>"))
-                        .collect();
-                    updated.join(", ")
-                });
-                let future = self.update_best_routes(Some(prefixes_updated));
+                debug!(
+                    "Recalculating best routes for prefixes: {}",
+                    prefixes_updated.join(", ")
+                );
+                let future = self.update_best_routes(Some(
+                    prefixes_updated
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                ));
 
                 #[cfg(not(test))]
                 {
@@ -530,7 +531,7 @@ where
     /// If prefixes is None, this will check the best routes for all local and configured prefixes.
     fn update_best_routes(
         &self,
-        prefixes: Option<Vec<Bytes>>,
+        prefixes: Option<Vec<String>>,
     ) -> impl Future<Item = (), Error = ()> + 'static {
         let local_table = self.local_table.clone();
         let forwarding_table = self.forwarding_table.clone();
@@ -547,41 +548,41 @@ where
                     let incoming_tables = incoming_tables.read();
 
                     // Either check the given prefixes or check all of our local and configured routes
-                    let prefixes_to_check: Box<dyn Iterator<Item = Bytes>> =
-                        if let Some(prefixes) = prefixes {
-                            Box::new(prefixes.into_iter())
+                    let prefixes_to_check: Box<dyn Iterator<Item = &str>> =
+                        if let Some(ref prefixes) = prefixes {
+                            Box::new(prefixes.iter().map(|prefix| prefix.as_str()))
                         } else {
                             let routes = configured_routes.iter().chain(local_routes.iter());
-                            Box::new(routes.map(|(prefix, _account)| prefix.clone()))
+                            Box::new(routes.map(|(prefix, _account)| prefix.as_str()))
                         };
 
                     // Check all the prefixes to see which ones we have different routes for
                     // and which ones we don't have routes for anymore
-                    let mut better_routes: Vec<(Bytes, A, Route)> =
+                    let mut better_routes: Vec<(&str, A, Route)> =
                         Vec::with_capacity(prefixes_to_check.size_hint().0);
-                    let mut withdrawn_routes: Vec<Bytes> = Vec::new();
+                    let mut withdrawn_routes: Vec<&str> = Vec::new();
                     for prefix in prefixes_to_check {
                         // See which prefixes there is now a better route for
                         if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
                             local_routes,
                             configured_routes,
                             &incoming_tables,
-                            prefix.as_ref(),
+                            prefix,
                         ) {
                             if let Some((ref next_account, ref route)) =
-                                local_table.get_route(&prefix)
+                                local_table.get_route(prefix)
                             {
                                 if next_account.id() == best_next_account.id() {
                                     continue;
                                 } else {
                                     better_routes.push((
-                                        prefix.clone(),
+                                        prefix,
                                         next_account.clone(),
                                         route.clone(),
                                     ));
                                 }
                             } else {
-                                better_routes.push((prefix.clone(), best_next_account, best_route));
+                                better_routes.push((prefix, best_next_account, best_route));
                             }
                         } else {
                             // No longer have a route to this prefix
@@ -602,38 +603,38 @@ where
                     for (prefix, account, mut route) in better_routes {
                         debug!(
                             "Setting new route for prefix: {} -> Account: {} (id: {})",
-                            str::from_utf8(prefix.as_ref()).unwrap_or("<not utf8>"),
+                            prefix,
                             account.username(),
                             account.id(),
                         );
-                        local_table.set_route(prefix.clone(), account.clone(), route.clone());
+                        local_table.set_route(prefix.to_string(), account.clone(), route.clone());
 
                         // Update the forwarding table
 
                         // Don't advertise routes that don't start with the global prefix
                         // or that advertise the whole global prefix
-                        let address_scheme = ilp_address.scheme().as_bytes();
+                        let address_scheme = ilp_address.scheme();
                         let correct_address_scheme = route.prefix.starts_with(address_scheme)
-                            && route.prefix != *address_scheme;
+                            && route.prefix != address_scheme;
                         // We do want to advertise our address
-                        let is_our_address = route.prefix == (ilp_address.as_ref() as &Bytes);
+                        let is_our_address = route.prefix == &ilp_address as &str;
                         // Don't advertise local routes because advertising only our address
                         // will be enough to ensure the packet gets to us and we can route it
                         // to the correct account on our node
                         let is_local_route =
-                            route.prefix.starts_with(ilp_address.as_ref()) && route.path.is_empty();
+                            route.prefix.starts_with(&ilp_address as &str) && route.path.is_empty();
                         let not_local_route = is_our_address || !is_local_route;
                         // Don't include routes we're also withdrawing
                         let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
 
                         if correct_address_scheme && not_local_route && not_withdrawn_route {
-                            let old_route = forwarding_table.get_route(&prefix);
+                            let old_route = forwarding_table.get_route(prefix);
                             if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                                route.path.insert(0, ilp_address.to_bytes());
+                                route.path.insert(0, ilp_address.to_string());
                                 // Each hop hashes the auth before forwarding
                                 route.auth = hash(&route.auth);
                                 forwarding_table.set_route(
-                                    prefix.clone(),
+                                    prefix.to_string(),
                                     account.clone(),
                                     route.clone(),
                                 );
@@ -643,19 +644,26 @@ where
                     }
 
                     for prefix in withdrawn_routes.iter() {
-                        debug!(
-                            "Removed route for prefix: {}",
-                            str::from_utf8(&prefix[..]).unwrap_or("<not utf8>")
-                        );
+                        debug!("Removed route for prefix: {}", prefix);
                         local_table.delete_route(prefix);
                         forwarding_table.delete_route(prefix);
                     }
 
                     let epoch = forwarding_table.increment_epoch();
-                    forwarding_table_updates.push((new_routes, withdrawn_routes));
+                    forwarding_table_updates.push((
+                        new_routes,
+                        withdrawn_routes.iter().map(|s| s.to_string()).collect(),
+                    ));
                     debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
 
-                    Either::A(store.set_routes(local_table.get_simplified_table()))
+                    Either::A(
+                        store.set_routes(
+                            local_table
+                                .get_simplified_table()
+                                .into_iter()
+                                .map(|(prefix, account)| (prefix.to_string(), account)),
+                        ),
+                    )
                 } else {
                     // The routing table hasn't changed
                     Either::B(ok(()))
@@ -789,7 +797,7 @@ where
 
         // Merge the new routes and withdrawn routes from all of the given epochs
         let mut new_routes: Vec<Route> = Vec::with_capacity(epochs_to_take);
-        let mut withdrawn_routes: Vec<Bytes> = Vec::new();
+        let mut withdrawn_routes: Vec<String> = Vec::new();
 
         // Include our own prefix if its the first update
         // TODO this might not be the right place to send our prefix
@@ -798,7 +806,7 @@ where
         // corresponds to this ILP address)
         if start == 0 {
             new_routes.push(Route {
-                prefix: self.ilp_address.read().to_bytes(),
+                prefix: self.ilp_address.read().to_string(),
                 path: Vec::new(),
                 // TODO what should we include here?
                 auth: [0; 32],
@@ -828,11 +836,11 @@ where
                 // If the route was previously added, ignore that since it was withdrawn later
                 if new_routes
                     .iter()
-                    .any(|route| route.prefix == withdrawn_route)
+                    .any(|route| route.prefix.as_str() == withdrawn_route.as_str())
                 {
                     new_routes = new_routes
                         .into_iter()
-                        .filter(|route| route.prefix != withdrawn_route)
+                        .filter(|route| route.prefix.as_str() != withdrawn_route.as_str())
                         .collect();
                 }
             }
@@ -888,24 +896,24 @@ where
 }
 
 fn get_best_route_for_prefix<A: CcpRoutingAccount>(
-    local_routes: &HashMap<Bytes, A>,
-    configured_routes: &HashMap<Bytes, A>,
+    local_routes: &HashMap<String, A>,
+    configured_routes: &HashMap<String, A>,
     incoming_tables: &HashMap<A::AccountId, RoutingTable<A>>,
-    prefix: &[u8],
+    prefix: &str,
 ) -> Option<(A, Route)> {
     // Check if we have a configured route for that specific prefix
     // or any shorter prefix ("example.a.b.c" will match "example.a.b" and "example.a")
     // Note that this logic is duplicated from the Address type. We are not using
     // Addresses here because the prefixes may not be valid ILP addresses ("example." is
     // a valid prefix but not a valid address)
-    let segments: Vec<&[u8]> = prefix.split(|c| c == &b'.').collect();
+    let segments: Vec<&str> = prefix.split(|c| c == '.').collect();
     for i in 0..segments.len() {
-        let prefix = &segments[0..segments.len() - i].join(&b'.');
-        if let Some(account) = configured_routes.get(prefix.as_ref() as &[u8]) {
+        let prefix = &segments[0..segments.len() - i].join(".");
+        if let Some(account) = configured_routes.get(prefix) {
             return Some((
                 account.clone(),
                 Route {
-                    prefix: account.ilp_address().to_bytes(),
+                    prefix: account.ilp_address().to_string(),
                     auth: [0; 32],
                     path: Vec::new(),
                     props: Vec::new(),
@@ -918,7 +926,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
         return Some((
             account.clone(),
             Route {
-                prefix: account.ilp_address().to_bytes(),
+                prefix: account.ilp_address().to_string(),
                 auth: [0; 32],
                 path: Vec::new(),
                 props: Vec::new(),
@@ -992,27 +1000,27 @@ mod ranking_routes {
     use std::iter::FromIterator;
 
     lazy_static! {
-        static ref LOCAL: HashMap<Bytes, TestAccount> = HashMap::from_iter(vec![
+        static ref LOCAL: HashMap<String, TestAccount> = HashMap::from_iter(vec![
             (
-                Bytes::from("example.a"),
+                "example.a".to_string(),
                 TestAccount::new(1, "example.local.one")
             ),
             (
-                Bytes::from("example.b"),
+                "example.b".to_string(),
                 TestAccount::new(2, "example.local.two")
             ),
             (
-                Bytes::from("example.c"),
+                "example.c".to_string(),
                 TestAccount::new(3, "example.local.three")
             ),
         ]);
-        static ref CONFIGURED: HashMap<Bytes, TestAccount> = HashMap::from_iter(vec![
+        static ref CONFIGURED: HashMap<String, TestAccount> = HashMap::from_iter(vec![
             (
-                Bytes::from("example.a"),
+                "example.a".to_string(),
                 TestAccount::new(4, "example.local.four")
             ),
             (
-                Bytes::from("example.b"),
+                "example.b".to_string(),
                 TestAccount::new(5, "example.local.five")
             ),
         ]);
@@ -1023,8 +1031,8 @@ mod ranking_routes {
             child_table.add_route(
                 child.clone(),
                 Route {
-                    prefix: Bytes::from("example.d"),
-                    path: vec![Bytes::from("example.one")],
+                    prefix: "example.d".to_string(),
+                    path: vec!["example.one".to_string()],
                     auth: [0; 32],
                     props: Vec::new(),
                 },
@@ -1034,7 +1042,7 @@ mod ranking_routes {
             peer_table_1.add_route(
                 peer_1.clone(),
                 Route {
-                    prefix: Bytes::from("example.d"),
+                    prefix: "example.d".to_string(),
                     path: Vec::new(),
                     auth: [0; 32],
                     props: Vec::new(),
@@ -1043,8 +1051,8 @@ mod ranking_routes {
             peer_table_1.add_route(
                 peer_1.clone(),
                 Route {
-                    prefix: Bytes::from("example.e"),
-                    path: vec![Bytes::from("example.one")],
+                    prefix: "example.e".to_string(),
+                    path: vec!["example.one".to_string()],
                     auth: [0; 32],
                     props: Vec::new(),
                 },
@@ -1053,8 +1061,8 @@ mod ranking_routes {
                 peer_1.clone(),
                 Route {
                     // This route should be overridden by the configured "example.a" route
-                    prefix: Bytes::from("example.a.sub-prefix"),
-                    path: vec![Bytes::from("example.one")],
+                    prefix: "example.a.sub-prefix".to_string(),
+                    path: vec!["example.one".to_string()],
                     auth: [0; 32],
                     props: Vec::new(),
                 },
@@ -1064,8 +1072,8 @@ mod ranking_routes {
             peer_table_2.add_route(
                 peer_2.clone(),
                 Route {
-                    prefix: Bytes::from("example.e"),
-                    path: vec![Bytes::from("example.one"), Bytes::from("example.two")],
+                    prefix: "example.e".to_string(),
+                    path: vec!["example.one".to_string(), "example.two".to_string()],
                     auth: [0; 32],
                     props: Vec::new(),
                 },
@@ -1076,38 +1084,38 @@ mod ranking_routes {
 
     #[test]
     fn prioritizes_configured_routes() {
-        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a");
+        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.a");
         assert_eq!(best_route.unwrap().0.id(), 4);
     }
 
     #[test]
     fn prioritizes_shorter_configured_routes() {
         let best_route =
-            get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.a.sub-prefix");
+            get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.a.sub-prefix");
         assert_eq!(best_route.unwrap().0.id(), 4);
     }
 
     #[test]
     fn prioritizes_local_routes_over_broadcasted_ones() {
-        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.c");
+        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.c");
         assert_eq!(best_route.unwrap().0.id(), 3);
     }
 
     #[test]
     fn prioritizes_children_over_peers() {
-        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.d");
+        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.d");
         assert_eq!(best_route.unwrap().0.id(), 6);
     }
 
     #[test]
     fn prioritizes_shorter_paths() {
-        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.e");
+        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.e");
         assert_eq!(best_route.unwrap().0.id(), 7);
     }
 
     #[test]
     fn returns_none_for_no_route() {
-        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, b"example.z");
+        let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.z");
         assert!(best_route.is_none());
     }
 }
@@ -1325,20 +1333,20 @@ mod handle_route_update_request {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
-            prefix: Bytes::from("example.valid"),
+            prefix: "example.valid".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         request.new_routes.push(Route {
-            prefix: Bytes::from("other.prefix"),
+            prefix: "other.prefix".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         let request = service.filter_routes(request);
         assert_eq!(request.new_routes.len(), 1);
-        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+        assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
     #[test]
@@ -1346,20 +1354,20 @@ mod handle_route_update_request {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
-            prefix: Bytes::from("example.valid"),
+            prefix: "example.valid".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         request.new_routes.push(Route {
-            prefix: Bytes::from("example."),
+            prefix: "example.".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         let request = service.filter_routes(request);
         assert_eq!(request.new_routes.len(), 1);
-        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+        assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
     #[test]
@@ -1367,24 +1375,24 @@ mod handle_route_update_request {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
-            prefix: Bytes::from("example.valid"),
+            prefix: "example.valid".to_string(),
             path: vec![
-                Bytes::from("example.a"),
-                service.ilp_address.read().to_bytes(),
-                Bytes::from("example.b"),
+                "example.a".to_string(),
+                service.ilp_address.read().to_string(),
+                "example.b".to_string(),
             ],
             auth: [0; 32],
             props: Vec::new(),
         });
         request.new_routes.push(Route {
-            prefix: Bytes::from("example.valid"),
+            prefix: "example.valid".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         let request = service.filter_routes(request);
         assert_eq!(request.new_routes.len(), 1);
-        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+        assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
     #[test]
@@ -1392,20 +1400,20 @@ mod handle_route_update_request {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
-            prefix: Bytes::from("example.connector.invalid-route"),
+            prefix: "example.connector.invalid-route".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         request.new_routes.push(Route {
-            prefix: Bytes::from("example.valid"),
+            prefix: "example.valid".to_string(),
             path: Vec::new(),
             auth: [0; 32],
             props: Vec::new(),
         });
         let request = service.filter_routes(request);
         assert_eq!(request.new_routes.len(), 1);
-        assert_eq!(request.new_routes[0].prefix, Bytes::from("example.valid"));
+        assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
     #[test]
@@ -1423,7 +1431,7 @@ mod handle_route_update_request {
             .unwrap();
         assert_eq!(
             (*service.local_table.read())
-                .get_route(b"example.prefix1")
+                .get_route("example.prefix1")
                 .unwrap()
                 .0
                 .id(),
@@ -1431,7 +1439,7 @@ mod handle_route_update_request {
         );
         assert_eq!(
             (*service.local_table.read())
-                .get_route(b"example.prefix2")
+                .get_route("example.prefix2")
                 .unwrap()
                 .0
                 .id(),
@@ -1457,7 +1465,7 @@ mod handle_route_update_request {
                 .store
                 .routes
                 .lock()
-                .get(&b"example.prefix1"[..])
+                .get(&"example.prefix1"[..])
                 .unwrap()
                 .id(),
             ROUTING_ACCOUNT.id()
@@ -1467,7 +1475,7 @@ mod handle_route_update_request {
                 .store
                 .routes
                 .lock()
-                .get(&b"example.prefix2"[..])
+                .get(&"example.prefix2"[..])
                 .unwrap()
                 .id(),
             ROUTING_ACCOUNT.id()
@@ -1479,11 +1487,11 @@ mod handle_route_update_request {
         let mut service = test_service();
         let store = TestStore::with_routes(
             HashMap::from_iter(vec![(
-                Bytes::from("example.prefix1"),
+                "example.prefix1".to_string(),
                 TestAccount::new(9, "example.account9"),
             )]),
             HashMap::from_iter(vec![(
-                Bytes::from("example.prefix2"),
+                "example.prefix2".to_string(),
                 TestAccount::new(10, "example.account10"),
             )]),
         );
@@ -1501,7 +1509,7 @@ mod handle_route_update_request {
             .unwrap();
         assert_eq!(
             (*service.local_table.read())
-                .get_route(b"example.prefix1")
+                .get_route("example.prefix1")
                 .unwrap()
                 .0
                 .id(),
@@ -1509,7 +1517,7 @@ mod handle_route_update_request {
         );
         assert_eq!(
             (*service.local_table.read())
-                .get_route(b"example.prefix2")
+                .get_route("example.prefix2")
                 .unwrap()
                 .0
                 .id(),
@@ -1541,7 +1549,7 @@ mod handle_route_update_request {
                     hold_down_time: 45000,
                     speaker: UPDATE_REQUEST_COMPLEX.speaker.clone(),
                     new_routes: Vec::new(),
-                    withdrawn_routes: vec![Bytes::from("example.prefix2")],
+                    withdrawn_routes: vec!["example.prefix2".to_string()],
                 }
                 .to_prepare(),
             })
@@ -1550,14 +1558,14 @@ mod handle_route_update_request {
 
         assert_eq!(
             (*service.local_table.read())
-                .get_route(b"example.prefix1")
+                .get_route("example.prefix1")
                 .unwrap()
                 .0
                 .id(),
             ROUTING_ACCOUNT.id()
         );
         assert!((*service.local_table.read())
-            .get_route(b"example.prefix2")
+            .get_route("example.prefix2")
             .is_none());
     }
 
@@ -1659,8 +1667,8 @@ mod create_route_update {
         *service.forwarding_table_updates.write() = vec![
             (
                 vec![Route {
-                    prefix: Bytes::from("example.a"),
-                    path: vec![Bytes::from("example.x")],
+                    prefix: "example.a".to_string(),
+                    path: vec!["example.x".to_string()],
                     auth: [1; 32],
                     props: Vec::new(),
                 }],
@@ -1668,8 +1676,8 @@ mod create_route_update {
             ),
             (
                 vec![Route {
-                    prefix: Bytes::from("example.b"),
-                    path: vec![Bytes::from("example.x")],
+                    prefix: "example.b".to_string(),
+                    path: vec!["example.x".to_string()],
                     auth: [2; 32],
                     props: Vec::new(),
                 }],
@@ -1677,21 +1685,21 @@ mod create_route_update {
             ),
             (
                 vec![Route {
-                    prefix: Bytes::from("example.c"),
-                    path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                    prefix: "example.c".to_string(),
+                    path: vec!["example.x".to_string(), "example.y".to_string()],
                     auth: [3; 32],
                     props: Vec::new(),
                 }],
-                vec![Bytes::from("example.m")],
+                vec!["example.m".to_string()],
             ),
             (
                 vec![Route {
-                    prefix: Bytes::from("example.d"),
-                    path: vec![Bytes::from("example.x"), Bytes::from("example.y")],
+                    prefix: "example.d".to_string(),
+                    path: vec!["example.x".to_string(), "example.y".to_string()],
                     auth: [4; 32],
                     props: Vec::new(),
                 }],
-                vec![Bytes::from("example.n")],
+                vec!["example.n".to_string()],
             ),
         ];
         let update = service.create_route_update(1, 3);
@@ -1708,7 +1716,7 @@ mod create_route_update {
         assert!(new_routes.contains(&"example.b"));
         assert!(new_routes.contains(&"example.c"));
         assert!(!new_routes.contains(&"example.m"));
-        assert_eq!(update.withdrawn_routes[0], &Bytes::from("example.m"));
+        assert_eq!(update.withdrawn_routes[0], "example.m");
     }
 }
 
@@ -1770,8 +1778,8 @@ mod send_route_updates {
                     hold_down_time: 30000,
                     speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
-                        prefix: Bytes::from("example.remote"),
-                        path: vec![Bytes::from("example.peer")],
+                        prefix: "example.remote".to_string(),
+                        path: vec!["example.peer".to_string()],
                         auth: [0; 32],
                         props: Vec::new(),
                     }],
@@ -1813,8 +1821,8 @@ mod send_route_updates {
                     hold_down_time: 30000,
                     speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: vec![Route {
-                        prefix: Bytes::from("example.remote"),
-                        path: vec![Bytes::from("example.peer")],
+                        prefix: "example.remote".to_string(),
+                        path: vec!["example.peer".to_string()],
                         auth: [0; 32],
                         props: Vec::new(),
                     }],
@@ -1835,7 +1843,7 @@ mod send_route_updates {
                     hold_down_time: 30000,
                     speaker: Address::from_str("example.remote").unwrap(),
                     new_routes: Vec::new(),
-                    withdrawn_routes: vec![Bytes::from("example.remote")],
+                    withdrawn_routes: vec!["example.remote".to_string()],
                 }
                 .to_prepare(),
             })
@@ -1854,21 +1862,18 @@ mod send_route_updates {
         assert!(prefixes.contains(&"example.configured.1"));
         assert!(!prefixes.contains(&"example.remote"));
         assert_eq!(update.withdrawn_routes.len(), 1);
-        assert_eq!(
-            str::from_utf8(&update.withdrawn_routes[0]).unwrap(),
-            "example.remote"
-        );
+        assert_eq!(update.withdrawn_routes[0], "example.remote");
     }
 
     #[test]
     fn backs_off_sending_to_unavailable_child_accounts() {
         let local_routes = HashMap::from_iter(vec![
             (
-                Bytes::from("example.local.1"),
+                "example.local.1".to_string(),
                 TestAccount::new(1, "example.local.1"),
             ),
             (
-                Bytes::from("example.connector.other-local"),
+                "example.connector.other-local".to_string(),
                 TestAccount {
                     id: 2,
                     ilp_address: Address::from_str("example.connector.other-local").unwrap(),
@@ -1962,11 +1967,11 @@ mod send_route_updates {
         };
         let local_routes = HashMap::from_iter(vec![
             (
-                Bytes::from("example.local.1"),
+                "example.local.1".to_string(),
                 TestAccount::new(1, "example.local.1"),
             ),
             (
-                Bytes::from("example.connector.other-local"),
+                "example.connector.other-local".to_string(),
                 child_account.clone(),
             ),
         ]);

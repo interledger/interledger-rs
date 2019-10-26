@@ -20,7 +20,6 @@ pub use server::{
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use bytes::Bytes;
     use futures::{future::ok, sync::mpsc::UnboundedSender, Future};
     use interledger_packet::Address;
     use interledger_router::RouterStore;
@@ -29,6 +28,7 @@ pub mod test_helpers {
     use std::collections::HashMap;
     use std::iter::FromIterator;
     use std::str::FromStr;
+    use std::sync::Arc;
 
     lazy_static! {
         pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
@@ -86,7 +86,7 @@ pub mod test_helpers {
 
     #[derive(Clone)]
     pub struct TestStore {
-        pub route: (Bytes, TestAccount),
+        pub route: (String, TestAccount),
     }
 
     impl AccountStore for TestStore {
@@ -109,8 +109,10 @@ pub mod test_helpers {
     }
 
     impl RouterStore for TestStore {
-        fn routing_table(&self) -> HashMap<Bytes, u64> {
-            HashMap::from_iter(vec![(self.route.0.clone(), self.route.1.id())].into_iter())
+        fn routing_table(&self) -> Arc<HashMap<String, u64>> {
+            Arc::new(HashMap::from_iter(
+                vec![(self.route.0.clone(), self.route.1.id())].into_iter(),
+            ))
         }
     }
 
@@ -159,7 +161,7 @@ mod send_money_to_receiver {
             asset_scale: 9,
         };
         let store = TestStore {
-            route: (destination_address.to_bytes(), account),
+            route: (destination_address.to_string(), account),
         };
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
         let server = StreamReceiverService::new(

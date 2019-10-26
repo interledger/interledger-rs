@@ -37,13 +37,13 @@ lazy_static! {
         hold_down_time: 30000,
         speaker: Address::from_str("example.alice").unwrap(),
         new_routes: vec![Route {
-          prefix: Bytes::from("example.prefix1"),
-          path: vec![Bytes::from("example.prefix1")],
+          prefix: "example.prefix1".to_string(),
+          path: vec!["example.prefix1".to_string()],
           auth: [122,108,125,133,134,124,70,162,250,191,173,26,250,122,74,94,34,156,229,116,252,206,99,245,237,238,223,192,63,132,104,234],
           props: Vec::new(),
         }, Route {
-          prefix: Bytes::from("example.prefix2"),
-          path: vec![Bytes::from("example.connector1"), Bytes::from("example.prefix2")],
+          prefix: "example.prefix2".to_string(),
+          path: vec!["example.connector1".to_string(), "example.prefix2".to_string()],
           auth: [43,8,229,63,188,193,124,95,27,213,74,224,217,173,123,163,154,95,154,123,18,108,169,181,192,148,86,9,163,83,36,204],
           props: vec![RouteProp {
             is_optional: false,
@@ -62,8 +62,8 @@ lazy_static! {
           }]
         }],
         withdrawn_routes: vec![
-            Bytes::from("example.prefix3"),
-            Bytes::from("example.prefix4"),
+            "example.prefix3".to_string(),
+            "example.prefix4".to_string(),
         ]
     };
 }

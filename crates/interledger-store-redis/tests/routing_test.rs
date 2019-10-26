@@ -1,6 +1,5 @@
 mod common;
 
-use bytes::Bytes;
 use common::*;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_ccp::RouteManagerStore;
@@ -31,10 +30,7 @@ fn polls_for_route_updates() {
                     .and_then(move |alice| {
                         let routing_table = store_clone_1.routing_table();
                         assert_eq!(routing_table.len(), 1);
-                        assert_eq!(
-                            *routing_table.get(&Bytes::from("example.alice")).unwrap(),
-                            alice.id()
-                        );
+                        assert_eq!(*routing_table.get("example.alice").unwrap(), alice.id());
                         store_clone_1
                             .insert_account(AccountDetails {
                                 ilp_address: Some(Address::from_str("example.bob").unwrap()),
@@ -60,10 +56,7 @@ fn polls_for_route_updates() {
                             .and_then(move |bob| {
                                 let routing_table = store_clone_2.routing_table();
                                 assert_eq!(routing_table.len(), 2);
-                                assert_eq!(
-                                    *routing_table.get(&Bytes::from("example.bob")).unwrap(),
-                                    bob.id(),
-                                );
+                                assert_eq!(*routing_table.get("example.bob").unwrap(), bob.id(),);
                                 let alice_id = alice.id();
                                 let bob_id = bob.id();
                                 connection
@@ -88,26 +81,18 @@ fn polls_for_route_updates() {
                                         let routing_table = store_clone_2.routing_table();
                                         assert_eq!(routing_table.len(), 3);
                                         assert_eq!(
-                                            *routing_table
-                                                .get(&Bytes::from("example.alice"))
-                                                .unwrap(),
+                                            *routing_table.get("example.alice").unwrap(),
                                             bob_id
                                         );
                                         assert_eq!(
-                                            *routing_table
-                                                .get(&Bytes::from("example.bob"))
-                                                .unwrap(),
+                                            *routing_table.get("example.bob").unwrap(),
                                             bob.id(),
                                         );
                                         assert_eq!(
-                                            *routing_table
-                                                .get(&Bytes::from("example.charlie"))
-                                                .unwrap(),
+                                            *routing_table.get("example.charlie").unwrap(),
                                             alice_id,
                                         );
-                                        assert!(routing_table
-                                            .get(&Bytes::from("example.other"))
-                                            .is_none());
+                                        assert!(routing_table.get("example.other").is_none());
                                         let _ = context;
                                         Ok(())
                                     })
@@ -203,9 +188,9 @@ fn saves_routes_to_db() {
 
         store
             .set_routes(vec![
-                (Bytes::from("example.a"), account0.clone()),
-                (Bytes::from("example.b"), account0.clone()),
-                (Bytes::from("example.c"), account1.clone()),
+                ("example.a".to_string(), account0.clone()),
+                ("example.b".to_string(), account0.clone()),
+                ("example.c".to_string(), account1.clone()),
             ])
             .and_then(move |_| {
                 get_connection.and_then(move |connection| {
@@ -250,15 +235,15 @@ fn updates_local_routes() {
         store
             .clone()
             .set_routes(vec![
-                (Bytes::from("example.a"), account0.clone()),
-                (Bytes::from("example.b"), account0.clone()),
-                (Bytes::from("example.c"), account1.clone()),
+                ("example.a".to_string(), account0.clone()),
+                ("example.b".to_string(), account0.clone()),
+                ("example.c".to_string(), account1.clone()),
             ])
             .and_then(move |_| {
                 let routes = store.routing_table();
-                assert_eq!(routes[&b"example.a"[..]], account0_id);
-                assert_eq!(routes[&b"example.b"[..]], account0_id);
-                assert_eq!(routes[&b"example.c"[..]], account1_id);
+                assert_eq!(routes["example.a"], account0_id);
+                assert_eq!(routes["example.b"], account0_id);
+                assert_eq!(routes["example.c"], account1_id);
                 assert_eq!(routes.len(), 3);
                 Ok(())
             })
@@ -321,15 +306,15 @@ fn static_routes_override_others() {
                 .unwrap();
                 store_clone
                     .set_routes(vec![
-                        (Bytes::from("example.a"), account1.clone()),
-                        (Bytes::from("example.b"), account1.clone()),
-                        (Bytes::from("example.c"), account1),
+                        ("example.a".to_string(), account1.clone()),
+                        ("example.b".to_string(), account1.clone()),
+                        ("example.c".to_string(), account1),
                     ])
                     .and_then(move |_| {
                         let routes = store.routing_table();
-                        assert_eq!(routes[&b"example.a"[..]], accs[0].id());
-                        assert_eq!(routes[&b"example.b"[..]], accs[0].id());
-                        assert_eq!(routes[&b"example.c"[..]], account1_id);
+                        assert_eq!(routes["example.a"], accs[0].id());
+                        assert_eq!(routes["example.b"], accs[0].id());
+                        assert_eq!(routes["example.c"], account1_id);
                         assert_eq!(routes.len(), 3);
                         let _ = context;
                         Ok(())
@@ -356,14 +341,14 @@ fn default_route() {
                 .unwrap();
                 store_clone
                     .set_routes(vec![
-                        (Bytes::from("example.a"), account1.clone()),
-                        (Bytes::from("example.b"), account1.clone()),
+                        ("example.a".to_string(), account1.clone()),
+                        ("example.b".to_string(), account1.clone()),
                     ])
                     .and_then(move |_| {
                         let routes = store.routing_table();
-                        assert_eq!(routes[&b""[..]], accs[0].id());
-                        assert_eq!(routes[&b"example.a"[..]], account1_id);
-                        assert_eq!(routes[&b"example.b"[..]], account1_id);
+                        assert_eq!(routes[""], accs[0].id());
+                        assert_eq!(routes["example.a"], account1_id);
+                        assert_eq!(routes["example.b"], account1_id);
                         assert_eq!(routes.len(), 3);
                         let _ = context;
                         Ok(())
@@ -385,8 +370,8 @@ fn returns_configured_routes_for_route_manager() {
             .and_then(move |_| store.get_local_and_configured_routes())
             .and_then(move |(_local, configured)| {
                 assert_eq!(configured.len(), 2);
-                assert_eq!(configured[&b"example.a"[..]].id(), accs[0].id());
-                assert_eq!(configured[&b"example.b"[..]].id(), accs[1].id());
+                assert_eq!(configured["example.a"].id(), accs[0].id());
+                assert_eq!(configured["example.b"].id(), accs[1].id());
                 let _ = context;
                 Ok(())
             })

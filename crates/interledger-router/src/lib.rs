@@ -12,9 +12,8 @@
 //! store can either be configured or populated using the `CcpRouteManager`
 //! (see the `interledger-ccp` crate for more details).
 
-use bytes::Bytes;
 use interledger_service::{Account, AccountStore};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 mod router;
 
@@ -27,5 +26,5 @@ pub trait RouterStore: AccountStore + Clone + Send + Sync + 'static {
     /// keep the routing table in memory and use PubSub or polling to keep it updated.
     /// This ensures that individual packets can be routed without hitting the underlying store.
     // TODO avoid using HashMap because it means it'll be cloned a lot
-    fn routing_table(&self) -> HashMap<Bytes, <Self::Account as Account>::AccountId>;
+    fn routing_table(&self) -> Arc<HashMap<String, <Self::Account as Account>::AccountId>>;
 }

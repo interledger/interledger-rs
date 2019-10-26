@@ -188,7 +188,7 @@ impl RedisStoreBuilder {
                             connection,
                             subscriptions: Arc::new(RwLock::new(HashMap::new())),
                             exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                            routes: Arc::new(RwLock::new(HashMap::new())),
+                            routes: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
                             encryption_key: Arc::new(encryption_key),
                             decryption_key: Arc::new(decryption_key),
                         };
@@ -277,7 +277,7 @@ pub struct RedisStore {
     connection: RedisReconnect,
     subscriptions: Arc<RwLock<HashMap<AccountId, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
-    routes: Arc<RwLock<HashMap<Bytes, AccountId>>>,
+    routes: Arc<RwLock<Arc<HashMap<String, AccountId>>>>,
     encryption_key: Arc<Secret<EncryptionKey>>,
     decryption_key: Arc<Secret<DecryptionKey>>,
 }
@@ -954,7 +954,7 @@ impl HttpStore for RedisStore {
 }
 
 impl RouterStore for RedisStore {
-    fn routing_table(&self) -> HashMap<Bytes, <Self::Account as AccountTrait>::AccountId> {
+    fn routing_table(&self) -> Arc<HashMap<String, <Self::Account as AccountTrait>::AccountId>> {
         self.routes.read().clone()
     }
 }
@@ -1092,8 +1092,6 @@ impl NodeStore for RedisStore {
         }))
     }
 
-    // TODO fix inconsistency betwen this method and set_routes which
-    // takes the prefixes as Bytes and the account as an Account object
     fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
         R: IntoIterator<Item = (String, AccountId)>,
@@ -1293,8 +1291,7 @@ impl AddressStore for RedisStore {
                             && account.routing_relation() != RoutingRelation::Peer
                         {
                             // remove the old route
-                            pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
-                                .ignore();
+                            pipe.hdel(ROUTES_KEY, &account.ilp_address as &str).ignore();
 
                             // if the username of the account ends with the
                             // node's address, we're already configured so no
@@ -1355,7 +1352,7 @@ impl AddressStore for RedisStore {
     }
 }
 
-type RoutingTable<A> = HashMap<Bytes, A>;
+type RoutingTable<A> = HashMap<String, A>;
 
 impl RouteManagerStore for RedisStore {
     type Account = Account;
@@ -1484,14 +1481,14 @@ impl RouteManagerStore for RedisStore {
                 let local_table = HashMap::from_iter(
                     accounts
                         .iter()
-                        .map(|account| (account.ilp_address.to_bytes(), account.clone())),
+                        .map(|account| (account.ilp_address.to_string(), account.clone())),
                 );
 
                 let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
-                let configured_table: HashMap<Bytes, Account> = HashMap::from_iter(static_routes.into_iter()
+                let configured_table: HashMap<String, Account> = HashMap::from_iter(static_routes.into_iter()
                     .filter_map(|(prefix, account_id)| {
                         if let Some(account) = account_map.get(&account_id) {
-                            Some((Bytes::from(prefix), (*account).clone()))
+                            Some((prefix, (*account).clone()))
                         } else {
                             warn!("No account for ID: {}, ignoring configured route for prefix: {}", account_id, prefix);
                             None
@@ -1505,17 +1502,11 @@ impl RouteManagerStore for RedisStore {
 
     fn set_routes(
         &mut self,
-        routes: impl IntoIterator<Item = (Bytes, Account)>,
+        routes: impl IntoIterator<Item = (String, Account)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routes: Vec<(String, AccountId)> = routes
             .into_iter()
-            .filter_map(|(prefix, account)| {
-                if let Ok(prefix) = String::from_utf8(prefix.to_vec()) {
-                    Some((prefix, account.id))
-                } else {
-                    None
-                }
-            })
+            .map(|(prefix, account)| (prefix, account.id))
             .collect();
         let num_routes = routes.len();
 
@@ -1937,7 +1928,7 @@ type RouteVec = Vec<(String, AccountId)>;
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 fn update_routes(
     connection: RedisReconnect,
-    routing_table: Arc<RwLock<HashMap<Bytes, AccountId>>>,
+    routing_table: Arc<RwLock<Arc<HashMap<String, AccountId>>>>,
 ) -> impl Future<Item = (), Error = ()> {
     let mut pipe = redis::pipe();
     pipe.hgetall(ROUTES_KEY)
@@ -1969,12 +1960,11 @@ fn update_routes(
                         // Having the static_routes inserted after ensures that they will overwrite
                         // any routes with the same prefix from the first set
                         .chain(static_routes.into_iter())
-                        .map(|(prefix, account_id)| (Bytes::from(prefix), account_id)),
                 );
                 // TODO we may not want to print this because the routing table will be very big
                 // if the node has a lot of local accounts
                 trace!("Routing table is: {:?}", routes);
-                *routing_table.write() = routes;
+                *routing_table.write() = Arc::new(routes);
                 Ok(())
             },
         )
