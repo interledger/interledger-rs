@@ -531,7 +531,6 @@ fn accounts_test() {
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let receipt: StreamDelivery = serde_json::from_str(&content).unwrap();
                 assert_eq!(receipt.from, Address::from_str(ILP_ADDRESS_1).unwrap());
-                println!("{}", receipt.to.to_owned());
                 assert!(receipt.to.to_string().starts_with(&format!("{}.{}", NODE_ILP_ADDRESS, USERNAME_2)));
                 assert_eq!(receipt.sent_amount, amount);
                 assert_eq!(receipt.sent_asset_scale as usize, ASSET_SCALE);
