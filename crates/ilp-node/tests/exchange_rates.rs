@@ -19,7 +19,7 @@ fn coincap() {
     let context = TestContext::new();
 
     let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|_| panic!("Tokio worker panicked"))
+        .panic_handler(|err| std::panic::resume_unwind(err))
         .build()
         .unwrap();
 
@@ -87,7 +87,7 @@ fn cryptocompare() {
     let api_key = SecretString::new(api_key.unwrap());
 
     let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|_| panic!("Tokio worker panicked"))
+        .panic_handler(|err| std::panic::resume_unwind(err))
         .build()
         .unwrap();
 
