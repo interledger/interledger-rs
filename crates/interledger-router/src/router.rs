@@ -1,5 +1,4 @@
 use super::RouterStore;
-use bytes::Bytes;
 use futures::{future::err, Future};
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
@@ -59,7 +58,7 @@ where
 
         // Check if we have a direct path for that account or if we need to scan
         // through the routing table
-        let dest: &[u8] = destination.as_ref();
+        let dest: &str = &destination;
         if let Some(account_id) = routing_table.get(dest) {
             trace!(
                 "Found direct route for address: \"{}\". Account: {}",
@@ -68,21 +67,22 @@ where
             );
             next_hop = Some(*account_id);
         } else if !routing_table.is_empty() {
-            let mut matching_prefix = Bytes::new();
-            for route in self.store.routing_table() {
+            let mut matching_prefix = "";
+            let routing_table = self.store.routing_table();
+            for (ref prefix, account) in (*routing_table).iter() {
                 // Check if the route prefix matches or is empty (meaning it's a catch-all address)
-                if (route.0.is_empty() || dest.starts_with(&route.0[..]))
-                    && route.0.len() >= matching_prefix.len()
+                if (prefix.is_empty() || dest.starts_with(prefix.as_str()))
+                    && prefix.len() >= matching_prefix.len()
                 {
-                    next_hop.replace(route.1);
-                    matching_prefix = route.0;
+                    next_hop.replace(account.clone());
+                    matching_prefix = prefix.as_str();
                 }
             }
             if let Some(account_id) = next_hop {
                 trace!(
                     "Found matching route for address: \"{}\". Prefix: \"{}\", account: {}",
                     destination,
-                    str::from_utf8(&matching_prefix[..]).unwrap_or("<not utf8>"),
+                    matching_prefix,
                     account_id,
                 );
             }
@@ -187,7 +187,7 @@ mod tests {
 
     #[derive(Clone)]
     struct TestStore {
-        routes: HashMap<Bytes, u64>,
+        routes: HashMap<String, u64>,
     }
 
     impl AccountStore for TestStore {
@@ -229,8 +229,8 @@ mod tests {
     }
 
     impl RouterStore for TestStore {
-        fn routing_table(&self) -> HashMap<Bytes, u64> {
-            self.routes.clone()
+        fn routing_table(&self) -> Arc<HashMap<String, u64>> {
+            Arc::new(self.routes.clone())
         }
     }
 
@@ -269,7 +269,7 @@ mod tests {
     fn no_route() {
         let mut router = Router::new(
             TestStore {
-                routes: HashMap::from_iter(vec![(Bytes::from("example.other"), 1)].into_iter()),
+                routes: HashMap::from_iter(vec![("example.other".to_string(), 1)].into_iter()),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -301,7 +301,7 @@ mod tests {
         let mut router = Router::new(
             TestStore {
                 routes: HashMap::from_iter(
-                    vec![(Bytes::from("example.destination"), 1)].into_iter(),
+                    vec![("example.destination".to_string(), 1)].into_iter(),
                 ),
             },
             outgoing_service_fn(|_| {
@@ -333,7 +333,7 @@ mod tests {
     fn catch_all_route() {
         let mut router = Router::new(
             TestStore {
-                routes: HashMap::from_iter(vec![(Bytes::from(""), 0)].into_iter()),
+                routes: HashMap::from_iter(vec![(String::new(), 0)].into_iter()),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -364,7 +364,7 @@ mod tests {
     fn finds_matching_prefix() {
         let mut router = Router::new(
             TestStore {
-                routes: HashMap::from_iter(vec![(Bytes::from("example."), 1)].into_iter()),
+                routes: HashMap::from_iter(vec![("example.".to_string(), 1)].into_iter()),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -399,9 +399,9 @@ mod tests {
             TestStore {
                 routes: HashMap::from_iter(
                     vec![
-                        (Bytes::from(""), 0),
-                        (Bytes::from("example.destination"), 2),
-                        (Bytes::from("example."), 1),
+                        (String::new(), 0),
+                        ("example.destination".to_string(), 2),
+                        ("example.".to_string(), 1),
                     ]
                     .into_iter(),
                 ),

@@ -217,8 +217,8 @@ impl RouteProp {
 #[derive(Clone, PartialEq)]
 pub struct Route {
     // TODO switch this to use the Address type so we don't need separate parsing logic when implementing Debug
-    pub(crate) prefix: Bytes,
-    pub(crate) path: Vec<Bytes>,
+    pub(crate) prefix: String,
+    pub(crate) path: Vec<String>,
     pub(crate) auth: [u8; 32],
     pub(crate) props: Vec<RouteProp>,
 }
@@ -226,18 +226,8 @@ pub struct Route {
 impl Debug for Route {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.debug_struct("Route")
-            .field(
-                "prefix",
-                &str::from_utf8(&self.prefix).unwrap_or("<invalid utf8>"),
-            )
-            .field("path", &{
-                let path: Vec<&str> = self
-                    .path
-                    .iter()
-                    .map(|address| str::from_utf8(address).unwrap_or("<invalid utf8>"))
-                    .collect();
-                path
-            })
+            .field("prefix", &self.prefix)
+            .field("path", &self.path)
             .field("auth", &hex::encode(self.auth))
             .field("props", &self.props)
             .finish()
@@ -249,11 +239,11 @@ impl TryFrom<&mut &[u8]> for Route {
 
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
-        let prefix = Bytes::from(data.read_var_octet_string()?);
+        let prefix = str::from_utf8(data.read_var_octet_string()?)?.to_string();
         let path_len = data.read_var_uint()? as usize;
-        let mut path = Vec::with_capacity(path_len);
+        let mut path: Vec<String> = Vec::with_capacity(path_len);
         for _i in 0..path_len {
-            path.push(Bytes::from(data.read_var_octet_string()?));
+            path.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }
         let mut auth: [u8; 32] = [0; 32];
         data.read_exact(&mut auth)?;
@@ -306,7 +296,7 @@ pub struct RouteUpdateRequest {
     pub(crate) hold_down_time: u32,
     pub(crate) speaker: Address,
     pub(crate) new_routes: Vec<Route>,
-    pub(crate) withdrawn_routes: Vec<Bytes>,
+    pub(crate) withdrawn_routes: Vec<String>,
 }
 
 impl Debug for RouteUpdateRequest {
@@ -319,14 +309,7 @@ impl Debug for RouteUpdateRequest {
             .field("hold_down_time", &self.hold_down_time)
             .field("speaker", &self.speaker)
             .field("new_routes", &self.new_routes)
-            .field("withdrawn_routes", &{
-                let routes: Vec<&str> = self
-                    .withdrawn_routes
-                    .iter()
-                    .map(|address| str::from_utf8(address).unwrap_or("<invalid utf8>"))
-                    .collect();
-                routes
-            })
+            .field("withdrawn_routes", &self.withdrawn_routes)
             .finish()
     }
 }
@@ -375,7 +358,7 @@ impl RouteUpdateRequest {
         let withdrawn_routes_len = data.read_var_uint()? as usize;
         let mut withdrawn_routes = Vec::with_capacity(withdrawn_routes_len);
         for _i in 0..withdrawn_routes_len {
-            withdrawn_routes.push(Bytes::from(data.read_var_octet_string()?));
+            withdrawn_routes.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }
 
         Ok(RouteUpdateRequest {
@@ -562,11 +545,11 @@ mod route_update_request {
     #[test]
     fn route() {
         let route = Route {
-            prefix: Bytes::from("example.some-prefix-for-alice"),
+            prefix: "example.some-prefix-for-alice".to_string(),
             path: vec![
-                Bytes::from("example.some-other-connector"),
-                Bytes::from("example.and-another-one"),
-                Bytes::from("example.some-prefix-for-alice"),
+                "example.some-other-connector".to_string(),
+                "example.and-another-one".to_string(),
+                "example.some-prefix-for-alice".to_string(),
             ],
             auth: [9; 32],
             props: vec![

@@ -103,7 +103,7 @@ where
         .and_then(|store: S| {
             // Convert the account IDs listed in the routing table
             // to the usernames for the API response
-            let routes = store.routing_table();
+            let routes = store.routing_table().clone();
             store
                 .get_accounts(routes.values().cloned().collect())
                 .map_err::<_, Rejection>(|_| {
@@ -113,15 +113,9 @@ where
                 .and_then(move |accounts| {
                     let routes: HashMap<String, String> = HashMap::from_iter(
                         routes
-                            .keys()
-                            .zip(accounts.into_iter().map(|a| a.username().to_string()))
-                            .filter_map(|(prefix, username)| {
-                                if let Ok(prefix) = str::from_utf8(prefix.as_ref()) {
-                                    Some((prefix.to_string(), username))
-                                } else {
-                                    None
-                                }
-                            }),
+                            .iter()
+                            .map(|(prefix, _)| prefix.to_string())
+                            .zip(accounts.into_iter().map(|a| a.username().to_string())),
                     );
 
                     Ok(warp::reply::json(&routes))

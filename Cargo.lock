@@ -927,7 +927,6 @@ dependencies = [
 name = "interledger-router"
 version = "0.2.2-beta.3"
 dependencies = [
- "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "interledger-packet 0.2.2-beta.5",
  "interledger-service 0.2.2-beta.3",

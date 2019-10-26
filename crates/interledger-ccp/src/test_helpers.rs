@@ -1,7 +1,6 @@
 /* kcov-ignore-start */
 use super::*;
 use crate::{packet::CCP_RESPONSE, server::CcpRouteManager};
-use bytes::Bytes;
 use futures::{
     future::{err, ok},
     Future,
@@ -87,9 +86,9 @@ impl CcpRoutingAccount for TestAccount {
 
 #[derive(Clone)]
 pub struct TestStore {
-    pub local: HashMap<Bytes, TestAccount>,
-    pub configured: HashMap<Bytes, TestAccount>,
-    pub routes: Arc<Mutex<HashMap<Bytes, TestAccount>>>,
+    pub local: HashMap<String, TestAccount>,
+    pub configured: HashMap<String, TestAccount>,
+    pub routes: Arc<Mutex<HashMap<String, TestAccount>>>,
 }
 
 impl TestStore {
@@ -102,8 +101,8 @@ impl TestStore {
     }
 
     pub fn with_routes(
-        local: HashMap<Bytes, TestAccount>,
-        configured: HashMap<Bytes, TestAccount>,
+        local: HashMap<String, TestAccount>,
+        configured: HashMap<String, TestAccount>,
     ) -> TestStore {
         TestStore {
             local,
@@ -113,7 +112,7 @@ impl TestStore {
     }
 }
 
-type RoutingTable<A> = HashMap<Bytes, A>;
+type RoutingTable<A> = HashMap<String, A>;
 
 impl AddressStore for TestStore {
     /// Saves the ILP Address in the store's memory and database
@@ -181,7 +180,7 @@ impl RouteManagerStore for TestStore {
 
     fn set_routes(
         &mut self,
-        routes: impl IntoIterator<Item = (Bytes, TestAccount)>,
+        routes: impl IntoIterator<Item = (String, TestAccount)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Box::new(ok(()))
@@ -234,11 +233,11 @@ pub fn test_service_with_routes() -> (
 ) {
     let local_routes = HashMap::from_iter(vec![
         (
-            Bytes::from("example.local.1"),
+            "example.local.1".to_string(),
             TestAccount::new(1, "example.local.1"),
         ),
         (
-            Bytes::from("example.connector.other-local"),
+            "example.connector.other-local".to_string(),
             TestAccount {
                 id: 3,
                 ilp_address: Address::from_str("example.connector.other-local").unwrap(),
@@ -247,7 +246,7 @@ pub fn test_service_with_routes() -> (
         ),
     ]);
     let configured_routes = HashMap::from_iter(vec![(
-        Bytes::from("example.configured.1"),
+        "example.configured.1".to_string(),
         TestAccount::new(2, "example.configured.1"),
     )]);
     let store = TestStore::with_routes(local_routes, configured_routes);
