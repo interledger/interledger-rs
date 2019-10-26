@@ -198,7 +198,7 @@ fn merge_args(config: &mut Config, matches: &ArgMatches) {
 fn get_env_config(prefix: &str) -> Config {
     let mut config = Config::new();
     config
-        .merge(config::Environment::with_prefix(prefix))
+        .merge(config::Environment::with_prefix(prefix).separator("__"))
         .unwrap();
 
     if prefix.to_lowercase() == "ilp" {
