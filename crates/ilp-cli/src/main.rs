@@ -19,24 +19,8 @@ pub fn main() {
             // help text for an arbitrary subcommand, but this works just the same.
             app.get_matches_from(s.split(' '));
         }
-        Err(interpreter::Error::ClientErr(e)) => {
-            eprintln!("ILP CLI error: failed to send request: {}", e);
-            exit(1);
-        }
-        Err(interpreter::Error::ResponseErr(e)) => {
-            eprintln!("ILP CLI error: invalid response: {}", e);
-            exit(1);
-        }
-        Err(interpreter::Error::ProtocolErr(e)) => {
-            eprintln!("ILP CLI error: failed to send request: {}", e);
-            exit(1);
-        }
-        Err(interpreter::Error::UrlErr(e)) => {
-            eprintln!("ILP CLI error: failed to send request: {}", e);
-            exit(1);
-        }
-        Err(interpreter::Error::WebsocketErr(e)) => {
-            eprintln!("ILP CLI error: Could not connect to WebSocket host: {}", e);
+        Err(e) => {
+            eprintln!("ILP CLI error: {}", e);
             exit(1);
         }
         Ok(mut response) => match response.text() {

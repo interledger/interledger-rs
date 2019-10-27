@@ -1,17 +1,24 @@
 use clap::ArgMatches;
+use failure::Fail;
 use http;
 use reqwest::{self, Client, Response};
 use std::{borrow::Cow, collections::HashMap};
 use tungstenite::{connect, handshake::client::Request};
 use url::Url;
 
-#[derive(Debug)]
+#[derive(Debug, Fail)]
 pub enum Error {
+    #[fail(display = "Usage error")]
     UsageErr(&'static str),
+    #[fail(display = "Error sending request: {}", _0)]
     ClientErr(reqwest::Error),
+    #[fail(display = "Error receiving response: {}", _0)]
     ResponseErr(String),
+    #[fail(display = "Error parsing URL protocol: {}", _0)]
     ProtocolErr(&'static str),
+    #[fail(display = "Error parsing URL: {}", _0)]
     UrlErr(url::ParseError),
+    #[fail(display = "Error connecting to WebSocket host: {}", _0)]
     WebsocketErr(tungstenite::error::Error),
 }
 
@@ -134,7 +141,7 @@ impl NodeClient<'_> {
         let scheme = match url.scheme() {
             "http" => Ok("ws"),
             "https" => Ok("wss"),
-            _ => Err(Error::ProtocolErr("Unexpected URL protocol")),
+            _ => Err(Error::ProtocolErr("Unexpected protocol")),
         }?;
 
         // The scheme has already been sanitized so this should always succeed
