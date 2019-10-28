@@ -116,6 +116,6 @@ Description: <description> (explanation and/or backtrace)
 ```
 
 ## Questions
-If you have any questions, you can get in touch with us by posting on the [Interledger Forum](https://forum.interledger.org/) or in the [#rust channel of the Interledger Slack](https://interledger.slack.com/messages/CHC51E54J).
+If you have any questions, you can get in touch with us by posting on the [Interledger Forum](https://forum.interledger.org/) or in the [#rust channel of the Interledger Slack](https://interledger.slack.com/messages/CHC51E54J) (to join Interledger's Slack workspace, follow [this link](https://communityinviter.com/apps/interledger/interledger-working-groups-slack)).
 
 Once again, welcome to Interledger.rs -- we look forward to working with you!
