@@ -33,7 +33,7 @@ Before diving in to Interledger.rs, you may find it helpful to familiarize yours
     - If you have any opinion on the features of Interledger.rs, please [open issues](https://github.com/interledger-s/interledger-rs/issues) describing what you think we need.
 
 ## Pull Requests
-We welcome pull requests (PRs) that address reported issues. You can find appropriate issues by `bug` or `help-wanted` labels. To avoid multiple PRs for a single issue, please let us know that you are working on it by a comment for the issue. Also we recommend to make discussions on the issue of how to address the issue, methodology towards the resolution or the architecture of your code, in order to avoid writing inefficient or inappropriate code. 
+We welcome pull requests (PRs) that address reported issues. You can find appropriate issues by `bug` or `help-wanted` labels. To avoid multiple PRs for a single issue, please let us know that you are working on it by a comment for the issue. Also we recommend to make discussions on the issue of how to address the issue, methodology towards the resolution or the architecture of your code, in order to avoid writing inefficient or inappropriate code.
 
 Please follow the instruction below when making pull requests.
 
@@ -57,7 +57,7 @@ fi
     - Then if you want to make some changes on your PRs, `push -f` is allowed to renew your branch after squashing your new commits. You don't need to open new PRs.
 - For our [examples](../examples/README.md), we adopted a [literate programming](https://en.wikipedia.org/wiki/Literate_programming) approach. The examples are described in Markdown with shell commands included. The [`run-md.sh`](../scripts/run-md.sh) script parses the commands out of the Markdown file and runs them. If you want to add examples, please make sure your instruction file can be parsed and run by that script.
     - You can check if it is correct with running `../../scripts/run-md.sh README.md` (in your example directory).
-    
+
 ### Signing-off
 By using `-s` or `--signoff` option, you agree to the following agreement ([Developer Certificate of Origin](https://developercertificate.org/)) which assures that your commits consist of your own code and/or code which you have rights to submit.
 
