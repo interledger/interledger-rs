@@ -104,7 +104,7 @@ fn cryptocompare() {
         "route_broadcast_interval": 200,
         "exchange_rate_poll_interval": 60000,
         "exchange_rate_provider": {
-            "CryptoCompare": api_key
+            "crypto_compare": api_key
         },
         "exchange_rate_spread": 0.0,
     }))
