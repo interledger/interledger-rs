@@ -158,9 +158,15 @@ Account-holder only.
 
 ```json
 {
-    "delivered_amount": 2000000
+   "delivered_asset_scale" : 9,
+   "delivered_asset_code" : "ABC",
+   "sent_amount" : 1000000,
+   "sent_asset_code" : "XYZ",
+   "from" : "example.node_a.alice",
+   "to" : "example.node_b.bob.-p3zU4tXsDRCBLg8vt_U6iiyQ5pgZk4MfoCaG1wZDW8",
+   "delivered_amount" : 1000000,
+   "sent_asset_scale" : 9
 }
-```
 
 ### (WebSocket) /accounts/:username/payments/incoming
 
