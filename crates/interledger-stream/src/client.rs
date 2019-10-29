@@ -36,25 +36,6 @@ pub struct StreamDelivery {
 }
 
 impl StreamDelivery {
-    fn new(
-        from: Address,
-        to: Address,
-        sent_amount: u64,
-        sent_asset_scale: u8,
-        sent_asset_code: impl ToString,
-    ) -> Self {
-        StreamDelivery {
-            from,
-            to,
-            sent_amount,
-            sent_asset_scale,
-            sent_asset_code: sent_asset_code.to_string(),
-            delivered_amount: 0,
-            delivered_asset_code: None,
-            delivered_asset_scale: None,
-        }
-    }
-
     fn increment_delivered_amount(&mut self, amount: u64) {
         self.delivered_amount += amount;
     }
@@ -100,13 +81,16 @@ where
                 // sending as much as possible per packet vs getting money flowing ASAP differently
                 congestion_controller: CongestionController::new(source_amount, source_amount / 10, 2.0),
                 pending_requests: Cell::new(Vec::new()),
-                receipt: StreamDelivery::new(
-                    from_account.ilp_address().clone(),
-                    destination_account,
-                    source_amount,
-                    from_account.asset_scale(),
-                    from_account.asset_code(),
-                ),
+                receipt: StreamDelivery {
+                    from: from_account.ilp_address().clone(),
+                    to: destination_account,
+                    sent_amount: source_amount,
+                    sent_asset_scale: from_account.asset_scale(),
+                    sent_asset_code: from_account.asset_code().to_string(),
+                    delivered_asset_scale: None,
+                    delivered_asset_code: None,
+                    delivered_amount: 0,
+                },
                 should_send_source_account: true,
                 sequence: 1,
                 rejected_packets: 0,
