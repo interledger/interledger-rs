@@ -21,10 +21,10 @@ pub use self::router::Router;
 
 /// A trait for Store implmentations that have ILP routing tables.
 pub trait RouterStore: AccountStore + Clone + Send + Sync + 'static {
-    /// **Synchronously** return a copy of the routing table.
+    /// **Synchronously** return the routing table.
     /// Note that this is synchronous because it assumes that Stores should
     /// keep the routing table in memory and use PubSub or polling to keep it updated.
     /// This ensures that individual packets can be routed without hitting the underlying store.
-    // TODO avoid using HashMap because it means it'll be cloned a lot
+    /// An Arc is returned to avoid copying the underlying data while processing each packet.
     fn routing_table(&self) -> Arc<HashMap<String, <Self::Account as Account>::AccountId>>;
 }
