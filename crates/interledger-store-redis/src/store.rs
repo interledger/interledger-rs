@@ -277,6 +277,12 @@ pub struct RedisStore {
     connection: RedisReconnect,
     subscriptions: Arc<RwLock<HashMap<AccountId, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
+    /// The store keeps the routing table in memory so that it can be returned
+    /// synchronously while the Router is processing packets.
+    /// The outer `Arc<RwLock>` is used so that we can update the stored routing
+    /// table after polling the store for updates.
+    /// The inner `Arc<HashMap>` is used so that the `routing_table` method can
+    /// return a reference to the routing table without cloning the underlying data.
     routes: Arc<RwLock<Arc<HashMap<String, AccountId>>>>,
     encryption_key: Arc<Secret<EncryptionKey>>,
     decryption_key: Arc<Secret<DecryptionKey>>,
