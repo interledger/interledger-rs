@@ -103,12 +103,7 @@ where
                     request.to.asset_code()
                 );
                 return Box::new(err(RejectBuilder {
-                    // Unreachable doesn't seem to be the correct code here.
-                    // If the pair was not found, shouldn't we have a unique error code
-                    // for that such as `ErrorCode::F10_PAIRNOTFOUND` ?
-                    // Timeout should still apply we if we add a timeout
-                    // error in the get_exchange_rate call
-                    code: ErrorCode::F02_UNREACHABLE,
+                    code: ErrorCode::T00_INTERNAL_ERROR,
                     message: format!(
                         "No exchange rate available from asset: {} to: {}",
                         request.from.asset_code(),
@@ -233,6 +228,10 @@ where
     }
 
     pub fn fetch_on_interval(self, interval: Duration) -> impl Future<Item = (), Error = ()> {
+        debug!(
+            "Starting interval to poll exchange rate provider: {:?} for rates",
+            self.provider
+        );
         Interval::new(Instant::now(), interval)
             .map_err(|err| {
                 error!(
