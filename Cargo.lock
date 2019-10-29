@@ -778,7 +778,7 @@ dependencies = [
  "interledger-http 0.3.0",
  "interledger-ildcp 0.3.0",
  "interledger-packet 0.3.0",
- "interledger-router 0.2.2-beta.3",
+ "interledger-router 0.3.0",
  "interledger-service 0.3.0",
  "interledger-service-util 0.2.2-beta.3",
  "interledger-settlement 0.1.1-beta.3",
@@ -805,7 +805,7 @@ dependencies = [
  "interledger-http 0.3.0",
  "interledger-ildcp 0.3.0",
  "interledger-packet 0.3.0",
- "interledger-router 0.2.2-beta.3",
+ "interledger-router 0.3.0",
  "interledger-service 0.3.0",
  "interledger-service-util 0.2.2-beta.3",
  "interledger-settlement 0.1.1-beta.3",
@@ -925,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-router"
-version = "0.2.2-beta.3"
+version = "0.3.0"
 dependencies = [
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "interledger-packet 0.3.0",
@@ -1032,7 +1032,7 @@ dependencies = [
  "interledger-ccp 0.2.0",
  "interledger-http 0.3.0",
  "interledger-packet 0.3.0",
- "interledger-router 0.2.2-beta.3",
+ "interledger-router 0.3.0",
  "interledger-service 0.3.0",
  "interledger-service-util 0.2.2-beta.3",
  "interledger-settlement 0.1.1-beta.3",
@@ -1071,7 +1071,7 @@ dependencies = [
  "hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "interledger-ildcp 0.3.0",
  "interledger-packet 0.3.0",
- "interledger-router 0.2.2-beta.3",
+ "interledger-router 0.3.0",
  "interledger-service 0.3.0",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
