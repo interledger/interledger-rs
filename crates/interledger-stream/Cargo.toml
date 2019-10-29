@@ -21,7 +21,7 @@ failure = { version = "0.1.5", default-features = false, features = ["derive"] }
 futures = { version = "0.1.29", default-features = false }
 hex = { version = "0.4.0", default-features = false }
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.2.2-alpha.1", default-features = false }
-interledger-packet = { path = "../interledger-packet", version = "^0.2.2-alpha.1", features = ["serde"], default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.3.0", features = ["serde"], default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.2.2-alpha.1", default-features = false }
 log = { version = "0.4.8", default-features = false }
 parking_lot = { version = "0.9.0", default-features = false }
