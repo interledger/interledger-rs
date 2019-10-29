@@ -1,6 +1,6 @@
 [package]
 name = "interledger-btp"
-version = "0.2.2-beta.3"
+version = "0.3.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Bilateral Transfer Protocol (BTP) client and server services for Interledger.rs"
 license = "Apache-2.0"
