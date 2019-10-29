@@ -1,6 +1,6 @@
 [package]
 name = "interledger-ccp"
-version = "0.1.1-beta.3"
+version = "0.2.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Implementation of the Interledger Dynamic Configuration Protocol (ILDCP)"
 license = "Apache-2.0"
