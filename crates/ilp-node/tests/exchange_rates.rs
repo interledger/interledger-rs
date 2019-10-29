@@ -5,6 +5,7 @@ use secrecy::SecretString;
 use serde_json::{self, json, Value};
 use std::env;
 use tokio::runtime::Builder as RuntimeBuilder;
+use tokio_retry::{strategy::FibonacciBackoff, Retry};
 use tracing::error;
 use tracing_subscriber;
 
@@ -40,34 +41,41 @@ fn coincap() {
     .unwrap();
     runtime.spawn(node.serve());
 
+    let get_rates = move || {
+        Client::new()
+            .get(&format!("http://localhost:{}/rates", http_port))
+            .send()
+            .map_err(|_| panic!("Error getting rates"))
+            .and_then(|mut res| res.json().map_err(|_| panic!("Error getting body")))
+            .and_then(|body: Value| {
+                if let Value::Object(obj) = body {
+                    if obj.is_empty() {
+                        error!("Rates are empty");
+                        return Err(());
+                    }
+                    assert_eq!(
+                        format!("{}", obj.get("USD").expect("Should have USD rate")).as_str(),
+                        "1.0"
+                    );
+                    assert!(obj.contains_key("EUR"));
+                    assert!(obj.contains_key("JPY"));
+                    assert!(obj.contains_key("BTC"));
+                    assert!(obj.contains_key("ETH"));
+                    assert!(obj.contains_key("XRP"));
+                } else {
+                    panic!("Not an object");
+                }
+
+                Ok(())
+            })
+    };
+
     runtime
         .block_on(
             delay(1000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
-                    Client::new()
-                        .get(&format!("http://localhost:{}/rates", http_port))
-                        .send()
-                        .map_err(|_| panic!("Error getting rates"))
-                        .and_then(|mut res| res.json().map_err(|_| panic!("Error getting body")))
-                        .and_then(|body: Value| {
-                            if let Value::Object(obj) = body {
-                                assert_eq!(
-                                    format!("{}", obj.get("USD").expect("Should have USD rate"))
-                                        .as_str(),
-                                    "1.0"
-                                );
-                                assert!(obj.contains_key("EUR"));
-                                assert!(obj.contains_key("JPY"));
-                                assert!(obj.contains_key("BTC"));
-                                assert!(obj.contains_key("ETH"));
-                                assert!(obj.contains_key("XRP"));
-                            } else {
-                                panic!("Not an object");
-                            }
-
-                            Ok(())
-                        })
+                    Retry::spawn(FibonacciBackoff::from_millis(1000).take(5), get_rates)
                 }),
         )
         .unwrap();
@@ -111,32 +119,39 @@ fn cryptocompare() {
     .unwrap();
     runtime.spawn(node.serve());
 
+    let get_rates = move || {
+        Client::new()
+            .get(&format!("http://localhost:{}/rates", http_port))
+            .send()
+            .map_err(|_| panic!("Error getting rates"))
+            .and_then(|mut res| res.json().map_err(|_| panic!("Error getting body")))
+            .and_then(|body: Value| {
+                if let Value::Object(obj) = body {
+                    if obj.is_empty() {
+                        error!("Rates are empty");
+                        return Err(());
+                    }
+                    assert_eq!(
+                        format!("{}", obj.get("USD").expect("Should have USD rate")).as_str(),
+                        "1.0"
+                    );
+                    assert!(obj.contains_key("BTC"));
+                    assert!(obj.contains_key("ETH"));
+                    assert!(obj.contains_key("XRP"));
+                } else {
+                    panic!("Not an object");
+                }
+
+                Ok(())
+            })
+    };
+
     runtime
         .block_on(
             delay(1000)
                 .map_err(|_| panic!("Something strange happened"))
                 .and_then(move |_| {
-                    Client::new()
-                        .get(&format!("http://localhost:{}/rates", http_port))
-                        .send()
-                        .map_err(|_| panic!("Error getting rates"))
-                        .and_then(|mut res| res.json().map_err(|_| panic!("Error getting body")))
-                        .and_then(|body: Value| {
-                            if let Value::Object(obj) = body {
-                                assert_eq!(
-                                    format!("{}", obj.get("USD").expect("Should have USD rate"))
-                                        .as_str(),
-                                    "1.0"
-                                );
-                                assert!(obj.contains_key("BTC"));
-                                assert!(obj.contains_key("ETH"));
-                                assert!(obj.contains_key("XRP"));
-                            } else {
-                                panic!("Not an object");
-                            }
-
-                            Ok(())
-                        })
+                    Retry::spawn(FibonacciBackoff::from_millis(1000).take(5), get_rates)
                 }),
         )
         .unwrap();
