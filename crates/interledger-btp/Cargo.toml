@@ -22,7 +22,7 @@ rand = { version = "0.7.2", default-features = false, features = ["std"] }
 stream-cancel = { version = "0.4.4", default-features = false }
 tokio-executor = { version = "0.1.8", default-features = false }
 tokio-timer = { version = "0.2.11", default-features = false }
-tokio-tungstenite = { version = "0.9.0", default-features = true }
+tokio-tungstenite = { version = "0.9.0", default-features = false, features = ["tls", "connect"] }
 tungstenite = { version = "0.9.1", default-features = false }
 url = { version = "2.1.0", default-features = false }
 warp = { version = "0.1.20", default-features = false, features = ["websocket"] }
