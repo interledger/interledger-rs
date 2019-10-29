@@ -37,6 +37,7 @@ rand = { version = "0.7.2", default-features = false }
 redis = { version = "0.13.0", default-features = false, features = ["executor"] }
 reqwest = { version = "0.9.22", default-features = false, features = ["default-tls"] }
 serde_json = { version = "1.0.41", default-features = false }
+tokio-retry = { version = "0.2.0", default-features = false }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
