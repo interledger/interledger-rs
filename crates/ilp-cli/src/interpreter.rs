@@ -16,6 +16,8 @@ pub enum Error {
     ResponseErr(String),
     #[fail(display = "Error parsing URL protocol: {}", _0)]
     ProtocolErr(&'static str),
+    #[fail(display = "Error altering URL scheme")]
+    SchemeErr(),
     #[fail(display = "Error parsing URL: {}", _0)]
     UrlErr(url::ParseError),
     #[fail(display = "Error connecting to WebSocket host: {}", _0)]
@@ -144,8 +146,9 @@ impl NodeClient<'_> {
             _ => Err(Error::ProtocolErr("Unexpected protocol")),
         }?;
 
-        // The scheme has already been sanitized so this should always succeed
-        url.set_scheme(scheme).expect("Could not alter URL scheme");
+        if url.set_scheme(scheme).is_err() {
+            return Err(Error::SchemeErr());
+        };
 
         let mut request: Request = url.into();
         request.add_header(
