@@ -32,18 +32,6 @@ url = { version = "2.1.0", default-features = false, features = ["serde"] }
 warp = { version = "0.1.20", default-features = false }
 secrecy = { version = "0.5.0", default-features = false, features = ["serde"] }
 
-[dev-dependencies]
-ilp-node = { path = "../ilp-node", version = "^0.4.1-beta.2"}
-interledger = { path = "../interledger", version = "^0.4.1-alpha.1" }
-env_logger = { version = "0.6.1", default-features = false }
-net2 = { version = "0.2.33", default-features = false }
-rand = { version = "0.6.5", default-features = false }
-redis = { version = "0.13.0", default-features = false }
-tokio = { version = "0.1.20", default-features = false }
-base64 = { version = "0.10.1", default-features = false }
-approx = { version = "0.3.2", default-features = false }
-ring = { version = "0.16.9", default-features = false }
-
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
 codecov = { repository = "interledger-rs/interledger-rs" }

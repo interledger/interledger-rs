@@ -1,17 +1,19 @@
-mod common;
+mod redis_helpers;
+mod test_helpers;
 
 use base64;
-use common::{random_secret, redis_test_helpers};
 use futures::Future;
+use redis_helpers::*;
 use reqwest;
 use serde_json::{json, Number, Value};
 use std::str::FromStr;
 use std::{thread, time::Duration};
+use test_helpers::*;
 use tokio::runtime::Builder as RuntimeBuilder;
+use warp::http;
 
 use ilp_node::InterledgerNode;
-use interledger::{packet::Address, service::Username};
-use interledger_stream::StreamDelivery;
+use interledger::{packet::Address, stream::StreamDelivery};
 
 // Integration tests of accounts APIs
 // These are very rough tests. It confirms only that the paths and HTTP methods are working correctly.
@@ -41,35 +43,29 @@ const SETTLEMENT_ENGINE_URL: &str = "http://localhost:3000/";
 
 #[test]
 fn accounts_test() {
-    let _ = env_logger::try_init();
+    install_tracing_subscriber();
 
     let mut runtime = RuntimeBuilder::new().build().unwrap();
 
-    let redis_test_context = redis_test_helpers::TestContext::new();
-    let node_http_port = redis_test_helpers::get_open_port(Some(7770));
-    let node_settlement_port = redis_test_helpers::get_open_port(Some(3000));
+    let redis_test_context = TestContext::new();
+    let node_http_port = get_open_port(Some(7770));
+    let node_settlement_port = get_open_port(Some(3000));
     let mut connection_info = redis_test_context.get_client_connection_info();
     connection_info.db = 1;
 
-    let node = InterledgerNode {
-        ilp_address: Some(
-            Address::from_str(NODE_ILP_ADDRESS).expect("Could not parse ILP address."),
-        ),
-        default_spsp_account: Some(
-            Username::from_str(USERNAME_1).expect("Could not parse Username"),
-        ),
-        admin_auth_token: "admin".to_string(),
-        redis_connection: connection_info,
-        http_bind_address: ([127, 0, 0, 1], node_http_port).into(),
-        settlement_api_bind_address: ([127, 0, 0, 1], node_settlement_port).into(),
-        secret_seed: random_secret(),
-        route_broadcast_interval: Some(200),
-        exchange_rate_poll_interval: 60000,
-        exchange_rate_poll_failure_tolerance: 5,
-        exchange_rate_provider: None,
-        exchange_rate_spread: 0.0,
-        prometheus: None,
-    };
+    let node: InterledgerNode = serde_json::from_value(json!({
+        "ilp_address": NODE_ILP_ADDRESS,
+        "default_spsp_account": USERNAME_1,
+        "admin_auth_token": "admin",
+        "redis_connection": connection_info_to_string(connection_info),
+        "http_bind_address": format!("127.0.0.1:{}", node_http_port),
+        "settlement_api_bind_address": format!("127.0.0.1:{}", node_settlement_port),
+        "secret_seed": random_secret(),
+        "route_broadcast_interval": 200,
+        "exchange_rate_poll_interval": 60000,
+        "exchange_rate_poll_failure_tolerance": 5,
+    }))
+    .unwrap();
     let node_to_serve = node.clone();
     let node_context = move |_| Ok(node);
     let wait_a_sec = |node| {

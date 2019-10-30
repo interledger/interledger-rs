@@ -32,6 +32,8 @@ secrecy = { version = "0.5.0", default-features = false, features = ["alloc", "s
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
 
 [dev-dependencies]
+approx = { version = "0.3.2", default-features = false }
+base64 = { version = "0.10.1", default-features = false }
 net2 = { version = "0.2.33", default-features = false }
 rand = { version = "0.7.2", default-features = false }
 redis = { version = "0.13.0", default-features = false, features = ["executor"] }
