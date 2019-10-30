@@ -569,7 +569,7 @@ where
                             &incoming_tables,
                             prefix,
                         ) {
-                            if let Some((ref next_account, ref route)) =
+                            if let Some((ref next_account, ref _route)) =
                                 local_table.get_route(prefix)
                             {
                                 if next_account.id() == best_next_account.id() {
@@ -577,8 +577,8 @@ where
                                 } else {
                                     better_routes.push((
                                         prefix,
-                                        next_account.clone(),
-                                        route.clone(),
+                                        best_next_account.clone(),
+                                        best_route.clone(),
                                     ));
                                 }
                             } else {
