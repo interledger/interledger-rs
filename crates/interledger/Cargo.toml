@@ -1,6 +1,6 @@
 [package]
 name = "interledger"
-version = "0.4.1-beta.3"
+version = "0.5.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger client library"
 license = "Apache-2.0"

@@ -712,7 +712,7 @@ dependencies = [
  "config 0.9.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "interledger 0.4.1-beta.3",
+ "interledger 0.5.0",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.65 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -764,7 +764,7 @@ dependencies = [
 
 [[package]]
 name = "interledger"
-version = "0.4.1-beta.3"
+version = "0.5.0"
 dependencies = [
  "interledger-api 0.2.0",
  "interledger-btp 0.3.0",
