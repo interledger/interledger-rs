@@ -777,7 +777,7 @@ dependencies = [
  "interledger-service-util 0.3.0",
  "interledger-settlement 0.2.0",
  "interledger-spsp 0.3.0",
- "interledger-store-redis 0.2.2-beta.3",
+ "interledger-store-redis 0.3.0",
  "interledger-stream 0.3.0",
 ]
 
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-store-redis"
-version = "0.2.2-beta.3"
+version = "0.3.0"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
