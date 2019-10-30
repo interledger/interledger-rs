@@ -766,7 +766,7 @@ dependencies = [
 name = "interledger"
 version = "0.4.1-beta.3"
 dependencies = [
- "interledger-api 0.1.1-beta.3",
+ "interledger-api 0.2.0",
  "interledger-btp 0.3.0",
  "interledger-ccp 0.2.0",
  "interledger-http 0.3.0",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-api"
-version = "0.1.1-beta.3"
+version = "0.2.0"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1011,7 +1011,7 @@ dependencies = [
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "http 0.1.19 (registry+https://github.com/rust-lang/crates.io-index)",
- "interledger-api 0.1.1-beta.3",
+ "interledger-api 0.2.0",
  "interledger-btp 0.3.0",
  "interledger-ccp 0.2.0",
  "interledger-http 0.3.0",
