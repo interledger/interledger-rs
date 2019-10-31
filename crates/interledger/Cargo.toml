@@ -8,7 +8,7 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [features]
-default = ["node"]
+default = ["node", "store-redis", "store-sqlite"]
 node = [
     "api",
     "btp",
@@ -19,7 +19,6 @@ node = [
     "service-util",
     "settlement",
     "spsp",
-    "store-redis",
     "stream",
     "trace",
 ]
@@ -33,6 +32,7 @@ service-util = ["interledger-service-util"]
 settlement = ["interledger-settlement" ]
 spsp = ["interledger-spsp", "stream"]
 store-redis = ["interledger-store-redis"]
+store-sqlite = ["interledger-store-sqlite"]
 stream = ["interledger-stream", "ildcp"]
 trace = ["interledger-service/trace"]
 
@@ -50,6 +50,7 @@ interledger-settlement = { path = "../interledger-settlement", version = "^0.3.0
 interledger-spsp = { path = "../interledger-spsp", version = "^0.4.0", optional = true, default-features = false }
 interledger-stream = { path = "../interledger-stream", version = "^0.4.0", optional = true, default-features = false }
 interledger-store-redis = { path = "../interledger-store-redis", version = "^0.4.0", optional = true, default-features = false }
+interledger-store-sqlite = { path = "../interledger-store-sqlite", version = "^0.1.0", optional = true, default-features = false }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
