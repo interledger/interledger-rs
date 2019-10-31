@@ -193,19 +193,47 @@ impl AccountWithEncryptedTokens {
     pub fn decrypt_tokens(mut self, decryption_key: &aead::LessSafeKey) -> Account {
         if let Some(ref encrypted) = self.account.ilp_over_btp_outgoing_token {
             self.account.ilp_over_btp_outgoing_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map_err(|_| {
+                        error!(
+                            "Unable to decrypt ilp_over_btp_outgoing_token for account {}",
+                            self.account.id
+                        )
+                    })
+                    .ok();
         }
         if let Some(ref encrypted) = self.account.ilp_over_http_outgoing_token {
             self.account.ilp_over_http_outgoing_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map_err(|_| {
+                        error!(
+                            "Unable to decrypt ilp_over_http_outgoing_token for account {}",
+                            self.account.id
+                        )
+                    })
+                    .ok();
         }
         if let Some(ref encrypted) = self.account.ilp_over_btp_incoming_token {
             self.account.ilp_over_btp_incoming_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map_err(|_| {
+                        error!(
+                            "Unable to decrypt ilp_over_btp_incoming_token for account {}",
+                            self.account.id
+                        )
+                    })
+                    .ok();
         }
         if let Some(ref encrypted) = self.account.ilp_over_http_incoming_token {
             self.account.ilp_over_http_incoming_token =
-                decrypt_token(decryption_key, &encrypted.expose_secret()).map(SecretBytes::from);
+                decrypt_token(decryption_key, &encrypted.expose_secret())
+                    .map_err(|_| {
+                        error!(
+                            "Unable to decrypt ilp_over_http_incoming_token for account {}",
+                            self.account.id
+                        )
+                    })
+                    .ok();
         }
 
         self.account
