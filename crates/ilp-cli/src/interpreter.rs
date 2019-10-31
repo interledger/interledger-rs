@@ -9,6 +9,7 @@ use url::Url;
 pub enum Error {
     UsageErr(&'static str),
     ClientErr(reqwest::Error),
+    ResponseErr(String),
 }
 
 pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
@@ -296,9 +297,19 @@ impl NodeClient<'_> {
             .client
             .get(&format!("https://xpring.io/api/accounts/{}", asset))
             .send()
-            .expect("Error requesting credentials from Xpring Testnet Signup API")
+            .map_err(|err| {
+                Error::ResponseErr(format!(
+                    "Error requesting credentials from Xpring Testnet Signup API: {:?}",
+                    err
+                ))
+            })?
             .json()
-            .expect("Got unexpected response from Xpring Testnet Signup API");
+            .map_err(|err| {
+                Error::ResponseErr(format!(
+                    "Got unexpected response from Xpring Testnet Signup API: {:?}",
+                    err
+                ))
+            })?;
         let mut args = HashMap::new();
         let token = format!(
             "{}:{}",
