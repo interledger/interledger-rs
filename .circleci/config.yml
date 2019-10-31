@@ -16,11 +16,6 @@ jobs:
     resource_class: medium+
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
-            - cargo-cache-2-{{ checksum "Cargo.lock" }}
-            - cargo-cache-2-
       - run:
           name: Reduce codegen units
           # If we don't include this, the linker runs out of memory when building
@@ -71,10 +66,6 @@ jobs:
       # - run:
       #     name: Upload Code Coverage
       #     command: "bash <(curl -s https://codecov.io/bash)"
-      - save_cache:
-          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
-          paths:
-            - /home/circleci/.cargo
   test-md:
     docker:
       - image: interledgerrs/circleci-rust-dind:latest
@@ -92,11 +83,6 @@ jobs:
           command: |
             docker pull interledgerrs/settlement-engines:latest
             docker pull interledgerjs/settlement-xrp:latest
-      - restore_cache:
-          keys:
-            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
-            - cargo-cache-2-{{ checksum "Cargo.lock" }}
-            - cargo-cache-2-
       - run:
           name: Set Default Target musl
           command: |
@@ -123,10 +109,6 @@ jobs:
       - store_artifacts:
           path: /tmp/run-md-test
           destination: run-md-test
-      - save_cache:
-          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
-          paths:
-            - /home/circleci/.cargo
   update-docker-images:
     docker:
       - image: interledgerrs/circleci-rust-dind:latest
@@ -134,11 +116,6 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - checkout
-      - restore_cache:
-          keys:
-            - cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
-            - cargo-cache-2-{{ checksum "Cargo.lock" }}
-            - cargo-cache-2-
       - run:
           # builds release profile images to be released
           name: Build docker images
@@ -163,10 +140,6 @@ jobs:
             DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}"
             docker push interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}
-      - save_cache:
-          key: cargo-cache-2-{{ checksum "Cargo.lock" }}-{{ .Branch }}
-          paths:
-            - /home/circleci/.cargo
 
 workflows:
   version: 2
