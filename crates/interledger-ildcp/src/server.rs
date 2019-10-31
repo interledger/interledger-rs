@@ -9,32 +9,26 @@ use std::marker::PhantomData;
 /// A simple service that intercepts incoming ILDCP requests
 /// and responds using the information in the Account struct.
 #[derive(Clone)]
-pub struct IldcpService<I, A> {
+pub struct IldcpService<I> {
     next: I,
-    account_type: PhantomData<A>,
 }
 
-impl<I, A> IldcpService<I, A>
+impl<I> IldcpService<I>
 where
-    I: IncomingService<A>,
-    A: Account,
+    I: IncomingService,
 {
     pub fn new(next: I) -> Self {
-        IldcpService {
-            next,
-            account_type: PhantomData,
-        }
+        IldcpService { next }
     }
 }
 
-impl<I, A> IncomingService<A> for IldcpService<I, A>
+impl<I> IncomingService for IldcpService<I>
 where
-    I: IncomingService<A>,
-    A: Account,
+    I: IncomingService,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
         if is_ildcp_request(&request.prepare) {
             let from = request.from.ilp_address();
             let builder = IldcpResponseBuilder {

@@ -1,18 +1,19 @@
 use bytes::Bytes;
 use futures::Future;
-use interledger_http::{HttpAccount, HttpStore};
+use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
+use interledger_service::{
+    Account, AccountId, AddressStore, IncomingService, OutgoingService, Username,
+};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::{SettlementAccount, SettlementStore};
+use interledger_settlement::SettlementStore;
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
 use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
 use warp::{self, Filter};
 mod routes;
-use interledger_btp::{BtpAccount, BtpOutgoingService};
-use interledger_ccp::CcpRoutingAccount;
+use interledger_btp::BtpOutgoingService;
 use secrecy::SecretString;
 use url::Url;
 
@@ -71,46 +72,41 @@ where
 // modifications to the values, whereas many of the other traits mostly
 // read from the configured values.
 pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
-    type Account: Account;
-
     fn insert_account(
         &self,
         account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send>;
 
-    fn delete_account(
-        &self,
-        id: <Self::Account as Account>::AccountId,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send>;
 
     fn update_account(
         &self,
-        id: <Self::Account as Account>::AccountId,
+        id: AccountId,
         account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send>;
 
     fn modify_account_settings(
         &self,
-        id: <Self::Account as Account>::AccountId,
+        id: AccountId,
         settings: AccountSettings,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send>;
 
     // TODO limit the number of results and page through them
-    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send>;
 
     fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
-        R: IntoIterator<Item = (String, <Self::Account as Account>::AccountId)>;
+        R: IntoIterator<Item = (String, AccountId)>;
 
     fn set_static_route(
         &self,
         prefix: String,
-        account_id: <Self::Account as Account>::AccountId,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn set_default_route(
         &self,
-        account_id: <Self::Account as Account>::AccountId,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn set_settlement_engines(
@@ -201,7 +197,7 @@ pub struct AccountDetails {
     pub settlement_engine_url: Option<String>,
 }
 
-pub struct NodeApi<S, I, O, B, A: Account> {
+pub struct NodeApi<S, I, O, B> {
     store: S,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
@@ -211,31 +207,22 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     outgoing_handler: O,
     // The BTP service is included here so that we can add a new client
     // connection when an account is added with BTP details
-    btp: BtpOutgoingService<B, A>,
+    btp: BtpOutgoingService<B>,
     server_secret: Bytes,
 }
 
-impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
+impl<S, I, O, B> NodeApi<S, I, O, B>
 where
-    S: NodeStore<Account = A>
-        + HttpStore<Account = A>
-        + BalanceStore<Account = A>
-        + SettlementStore<Account = A>
-        + StreamNotificationsStore<Account = A>
+    S: NodeStore
+        + HttpStore
+        + BalanceStore
+        + SettlementStore
+        + StreamNotificationsStore
         + RouterStore
         + ExchangeRateStore,
-    I: IncomingService<A> + Clone + Send + Sync + 'static,
-    O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    B: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: BtpAccount
-        + CcpRoutingAccount
-        + Account
-        + HttpAccount
-        + SettlementAccount
-        + Serialize
-        + Send
-        + Sync
-        + 'static,
+    I: IncomingService + Clone + Send + Sync + 'static,
+    O: OutgoingService + Clone + Send + Sync + 'static,
+    B: OutgoingService + Clone + Send + Sync + 'static,
 {
     pub fn new(
         server_secret: Bytes,
@@ -243,7 +230,7 @@ where
         store: S,
         incoming_handler: I,
         outgoing_handler: O,
-        btp: BtpOutgoingService<B, A>,
+        btp: BtpOutgoingService<B>,
     ) -> Self {
         NodeApi {
             store,

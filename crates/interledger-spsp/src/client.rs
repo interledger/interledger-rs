@@ -26,15 +26,14 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
 /// Query the details of the given Payment Pointer and send a payment using the STREAM protocol.
 ///
 /// This returns the amount delivered, as reported by the receiver and in the receiver's asset's units.
-pub fn pay<S, A>(
+pub fn pay<S>(
     service: S,
-    from_account: A,
+    from_account: Account,
     receiver: &str,
     source_amount: u64,
 ) -> impl Future<Item = StreamDelivery, Error = Error>
 where
-    S: IncomingService<A> + Clone,
-    A: Account,
+    S: IncomingService + Clone,
 {
     query(receiver).and_then(move |spsp| {
         let shared_secret = spsp.shared_secret;

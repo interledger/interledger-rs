@@ -1,8 +1,7 @@
 mod common;
 
 use common::*;
-use interledger_btp::BtpAccount;
-use interledger_http::{HttpAccount, HttpStore};
+use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_service::{Account, Username};
 use std::str::FromStr;

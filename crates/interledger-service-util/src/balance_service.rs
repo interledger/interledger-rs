@@ -1,19 +1,18 @@
 use futures::Future;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
+use interledger_settlement::{SettlementClient, SettlementStore};
 use log::{debug, error};
 use std::marker::PhantomData;
 use tokio_executor::spawn;
 
 pub trait BalanceStore: AccountStore {
     /// Fetch the current balance for the given account.
-    fn get_balance(&self, account: Self::Account)
-        -> Box<dyn Future<Item = i64, Error = ()> + Send>;
+    fn get_balance(&self, account: Account) -> Box<dyn Future<Item = i64, Error = ()> + Send>;
 
     fn update_balances_for_prepare(
         &self,
-        from_account: Self::Account,
+        from_account: Account,
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
@@ -21,13 +20,13 @@ pub trait BalanceStore: AccountStore {
     /// along with the amount which should be settled
     fn update_balances_for_fulfill(
         &self,
-        to_account: Self::Account,
+        to_account: Account,
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send>;
 
     fn update_balances_for_reject(
         &self,
-        from_account: Self::Account,
+        from_account: Account,
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
@@ -38,40 +37,30 @@ pub trait BalanceStore: AccountStore {
 ///
 /// Requires an `Account` and a `BalanceStore`
 #[derive(Clone)]
-pub struct BalanceService<S, O, A> {
+pub struct BalanceService<S, O> {
     store: S,
     next: O,
     settlement_client: SettlementClient,
-    account_type: PhantomData<A>,
 }
 
-impl<S, O, A> BalanceService<S, O, A>
+impl<S, O> BalanceService<S, O>
 where
-    S: AddressStore + BalanceStore<Account = A> + SettlementStore<Account = A>,
-    O: OutgoingService<A>,
-    A: Account + SettlementAccount,
+    S: AddressStore + BalanceStore + SettlementStore,
+    O: OutgoingService,
 {
     pub fn new(store: S, next: O) -> Self {
         BalanceService {
             store,
             next,
             settlement_client: SettlementClient::new(),
-            account_type: PhantomData,
         }
     }
 }
 
-impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
+impl<S, O> OutgoingService for BalanceService<S, O>
 where
-    S: AddressStore
-        + BalanceStore<Account = A>
-        + SettlementStore<Account = A>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-    O: OutgoingService<A> + Send + Clone + 'static,
-    A: SettlementAccount + 'static,
+    S: AddressStore + BalanceStore + SettlementStore + Clone + Send + Sync + 'static,
+    O: OutgoingService + Send + Clone + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -85,7 +74,7 @@ where
     ///       INDEPENDENTLY of if the call suceeds or fails
     fn send_request(
         &mut self,
-        request: OutgoingRequest<A>,
+        request: OutgoingRequest,
     ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
         // Don't bother touching the store for zero-amount packets.
         // Note that it is possible for the original_amount to be >0 while the

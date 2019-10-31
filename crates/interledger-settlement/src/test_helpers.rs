@@ -38,7 +38,7 @@ lazy_static! {
     pub static ref ALICE: Username = Username::from_str("alice").unwrap();
 }
 
-impl Account for TestAccount {
+/*impl Account for TestAccount {
     type AccountId = u64;
 
     fn id(&self) -> u64 {
@@ -61,8 +61,9 @@ impl Account for TestAccount {
     fn ilp_address(&self) -> &Address {
         &self.ilp_address
     }
-}
-impl SettlementAccount for TestAccount {
+}*/
+
+/*impl SettlementAccount for TestAccount {
     fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
         if self.no_details {
             return None;
@@ -71,7 +72,7 @@ impl SettlementAccount for TestAccount {
             url: self.url.clone(),
         })
     }
-}
+}*/
 
 // Test Store
 #[derive(Clone)]
@@ -84,11 +85,9 @@ pub struct TestStore {
 }
 
 impl SettlementStore for TestStore {
-    type Account = TestAccount;
-
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: <Self::Account as Account>::AccountId,
+        account_id: AccountId,
         amount: u64,
         _idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -104,7 +103,7 @@ impl SettlementStore for TestStore {
 
     fn refund_settlement(
         &self,
-        _account_id: <Self::Account as Account>::AccountId,
+        _account_id: AccountId,
         _settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let ret = if self.should_fail { err(()) } else { ok(()) };
@@ -144,12 +143,10 @@ impl IdempotentStore for TestStore {
 }
 
 impl AccountStore for TestStore {
-    type Account = TestAccount;
-
     fn get_accounts(
         &self,
-        account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        account_ids: Vec<AccountId>,
+    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let accounts: Vec<TestAccount> = self
             .accounts
             .read()
@@ -179,12 +176,11 @@ impl AccountStore for TestStore {
 }
 
 impl LeftoversStore for TestStore {
-    type AccountId = u64;
     type AssetType = BigUint;
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
@@ -229,7 +225,7 @@ impl LeftoversStore for TestStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
@@ -324,8 +320,7 @@ where
     runtime.block_on(f)
 }
 
-pub fn test_service(
-) -> SettlementMessageService<impl IncomingService<TestAccount> + Clone, TestAccount> {
+pub fn test_service() -> SettlementMessageService<impl IncomingService + Clone> {
     SettlementMessageService::new(incoming_service_fn(|_request| {
         Box::new(err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,

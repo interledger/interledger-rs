@@ -1,6 +1,6 @@
 use futures::Future;
 use interledger::{
-    ccp::{CcpRoutingAccount, RoutingRelation},
+    ccp::RoutingRelation,
     packet::{ErrorCode, Fulfill, Reject},
     service::{Account, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService},
 };
@@ -12,9 +12,9 @@ use uuid::Uuid;
 /// Add tracing context for the incoming request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_incoming<A: Account>(
-    request: IncomingRequest<A>,
-    mut next: impl IncomingService<A>,
+pub fn trace_incoming(
+    request: IncomingRequest,
+    mut next: impl IncomingService,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     let request_span = error_span!(target: "interledger-node",
         "incoming",
@@ -46,9 +46,9 @@ pub fn trace_incoming<A: Account>(
 /// being forwarded and turned into an outgoing request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_forwarding<A: Account>(
-    request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
+pub fn trace_forwarding(
+    request: OutgoingRequest,
+    mut next: impl OutgoingService,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     // Here we only include the outgoing details because this will be
     // inside the "incoming" span that includes the other details
@@ -72,9 +72,9 @@ pub fn trace_forwarding<A: Account>(
 /// Add tracing context for the outgoing request (created by this node).
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
-    request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
+pub fn trace_outgoing(
+    request: OutgoingRequest,
+    mut next: impl OutgoingService,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     let request_span = error_span!(target: "interledger-node",
         "outgoing",

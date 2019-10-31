@@ -3,8 +3,7 @@ use hex;
 use interledger::stream::StreamDelivery;
 use interledger::{
     packet::Address,
-    service::Account as AccountTrait,
-    store_redis::{Account, AccountId},
+    service::{Account, AccountId},
 };
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Serialize;

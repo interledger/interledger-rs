@@ -9,16 +9,6 @@ use interledger_service::{
 use log::{error, warn};
 use std::marker::PhantomData;
 
-pub trait RateLimitAccount: Account {
-    fn packets_per_minute_limit(&self) -> Option<u32> {
-        None
-    }
-
-    fn amount_per_minute_limit(&self) -> Option<u64> {
-        None
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RateLimitError {
     PacketLimitExceeded,
@@ -27,16 +17,14 @@ pub enum RateLimitError {
 }
 
 pub trait RateLimitStore {
-    type Account: RateLimitAccount;
-
     fn apply_rate_limits(
         &self,
-        account: Self::Account,
+        account: Account,
         prepare_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = RateLimitError> + Send>;
     fn refund_throughput_limit(
         &self,
-        account: Self::Account,
+        account: Account,
         prepare_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
@@ -53,32 +41,25 @@ pub trait RateLimitStore {
 /// Requires a `RateLimitAccount` and a `RateLimitStore`.
 /// It is an IncomingService.
 #[derive(Clone)]
-pub struct RateLimitService<S, I, A> {
+pub struct RateLimitService<S, I> {
     store: S,
     next: I, // Can we somehow omit the PhantomData
-    account_type: PhantomData<A>,
 }
 
-impl<S, I, A> RateLimitService<S, I, A>
+impl<S, I> RateLimitService<S, I>
 where
-    S: AddressStore + RateLimitStore<Account = A> + Clone + Send + Sync,
-    I: IncomingService<A> + Clone + Send + Sync, // Looks like 'static is not required?
-    A: RateLimitAccount + Sync,
+    S: AddressStore + RateLimitStore + Clone + Send + Sync,
+    I: IncomingService + Clone + Send + Sync, // Looks like 'static is not required?
 {
     pub fn new(store: S, next: I) -> Self {
-        RateLimitService {
-            store,
-            next,
-            account_type: PhantomData,
-        }
+        RateLimitService { store, next }
     }
 }
 
-impl<S, I, A> IncomingService<A> for RateLimitService<S, I, A>
+impl<S, I> IncomingService for RateLimitService<S, I>
 where
-    S: AddressStore + RateLimitStore<Account = A> + Clone + Send + Sync + 'static,
-    I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: RateLimitAccount + Sync + 'static,
+    S: AddressStore + RateLimitStore + Clone + Send + Sync + 'static,
+    I: IncomingService + Clone + Send + Sync + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -88,7 +69,7 @@ where
     ///     - If it succeeds, OK
     ///     - If the request forwarding failed, the client should not be charged towards their throughput limit, so they are refunded, and return a reject
     /// 1. If the limit was hit, return a reject with the appropriate ErrorCode.
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
         let ilp_address = self.store.get_ilp_address();
         let mut next = self.next.clone();
         let store = self.store.clone();

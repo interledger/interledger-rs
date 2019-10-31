@@ -1,6 +1,5 @@
 use super::packet::*;
 use super::service::BtpOutgoingService;
-use super::BtpAccount;
 use futures::{future::join_all, Future, Sink, Stream};
 use interledger_packet::Address;
 use interledger_service::*;
@@ -22,15 +21,14 @@ pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
 /// Create a BtpOutgoingService wrapping BTP connections to the accounts specified.
 /// Calling `handle_incoming` with an `IncomingService` will turn the returned
 /// BtpOutgoingService into a bidirectional handler.
-pub fn connect_client<A, S>(
+pub fn connect_client<S>(
     ilp_address: Address,
-    accounts: Vec<A>,
+    accounts: Vec<Account>,
     error_on_unavailable: bool,
     next_outgoing: S,
-) -> impl Future<Item = BtpOutgoingService<S, A>, Error = ()>
+) -> impl Future<Item = BtpOutgoingService<S>, Error = ()>
 where
-    S: OutgoingService<A> + Clone + 'static,
-    A: BtpAccount + 'static,
+    S: OutgoingService + Clone + 'static,
 {
     let service = BtpOutgoingService::new(ilp_address, next_outgoing);
     let mut connect_btp = Vec::new();
@@ -45,14 +43,13 @@ where
     join_all(connect_btp).and_then(move |_| Ok(service))
 }
 
-pub fn connect_to_service_account<O, A>(
-    account: A,
+pub fn connect_to_service_account<O>(
+    account: Account,
     error_on_unavailable: bool,
-    service: BtpOutgoingService<O, A>,
+    service: BtpOutgoingService<O>,
 ) -> impl Future<Item = (), Error = ()>
 where
-    O: OutgoingService<A> + Clone + 'static,
-    A: BtpAccount + 'static,
+    O: OutgoingService + Clone + 'static,
 {
     let account_id = account.id();
     let mut url = account

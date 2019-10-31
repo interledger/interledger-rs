@@ -4,11 +4,10 @@ use futures::{
     future::{err, join_all, Either},
     Future,
 };
-use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
+use interledger_http::{deserialize_json, error::*, HttpStore};
 use interledger_router::RouterStore;
 use interledger_service::{Account, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
 use log::{error, trace};
 use serde::Serialize;
 use serde_json::json;
@@ -20,17 +19,12 @@ use std::{
 use url::Url;
 use warp::{self, Filter, Rejection};
 
-pub fn node_settings_api<S, A>(
+pub fn node_settings_api<S>(
     admin_api_token: String,
     store: S,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
-    S: NodeStore<Account = A>
-        + HttpStore<Account = A>
-        + BalanceStore<Account = A>
-        + ExchangeRateStore
-        + RouterStore,
-    A: Account + HttpAccount + SettlementAccount + Serialize + 'static,
+    S: NodeStore + HttpStore + BalanceStore + ExchangeRateStore + RouterStore,
 {
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
@@ -235,8 +229,8 @@ where
                                 // Try creating the account on the settlement engine if the settlement_engine_url of the
                                 // account is the one we just configured as the default for the account's asset code
                                 if let Some(details) = account.settlement_engine_details() {
-                                    if Some(&details.url) == asset_to_url_map.get(account.asset_code()) {
-                                        return Some(client.create_engine_account(details.url, account.id())
+                                    if Some(&details) == asset_to_url_map.get(account.asset_code()) {
+                                        return Some(client.create_engine_account(details, account.id())
                                             .map_err(|_| ApiError::internal_server_error().into())
                                             .and_then(move |status_code| {
                                                 if status_code.is_success() {

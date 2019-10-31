@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod metrics;
 mod node;
 mod trace;

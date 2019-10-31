@@ -3,10 +3,6 @@ use interledger_packet::{ErrorCode, MaxPacketAmountDetails, RejectBuilder};
 use interledger_service::*;
 use log::debug;
 
-pub trait MaxPacketAmountAccount: Account {
-    fn max_packet_amount(&self) -> u64;
-}
-
 /// # MaxPacketAmount Service
 ///
 /// This service is used by nodes to limit the maximum value of each packet they are willing to forward.
@@ -27,17 +23,16 @@ impl<I, S> MaxPacketAmountService<I, S> {
     }
 }
 
-impl<I, S, A> IncomingService<A> for MaxPacketAmountService<I, S>
+impl<I, S> IncomingService for MaxPacketAmountService<I, S>
 where
-    I: IncomingService<A>,
+    I: IncomingService,
     S: AddressStore,
-    A: MaxPacketAmountAccount,
 {
     type Future = BoxedIlpFuture;
 
     /// On receive request:
     /// 1. if request.prepare.amount <= request.from.max_packet_amount forward the request, else error
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
         let ilp_address = self.store.get_ilp_address();
         let max_packet_amount = request.from.max_packet_amount();
         if request.prepare.amount() <= max_packet_amount {

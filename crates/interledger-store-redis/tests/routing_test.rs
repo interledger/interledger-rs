@@ -5,8 +5,8 @@ use interledger_api::{AccountDetails, NodeStore};
 use interledger_ccp::RouteManagerStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AddressStore, Username};
-use interledger_store_redis::AccountId;
+use interledger_service::{Account, AccountId, AddressStore, Username};
+use interledger_store_common::StoreBuilder;
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;
@@ -172,14 +172,14 @@ fn saves_routes_to_db() {
         let get_connection = context.async_connection();
         let account0_id = AccountId::new();
         let account1_id = AccountId::new();
-        let account0 = Account::try_from(
+        let account0 = account_try_from(
             account0_id,
             ACCOUNT_DETAILS_0.clone(),
             store.get_ilp_address(),
         )
         .unwrap();
 
-        let account1 = Account::try_from(
+        let account1 = account_try_from(
             account1_id,
             ACCOUNT_DETAILS_1.clone(),
             store.get_ilp_address(),
@@ -220,13 +220,13 @@ fn updates_local_routes() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let account0_id = AccountId::new();
         let account1_id = AccountId::new();
-        let account0 = Account::try_from(
+        let account0 = account_try_from(
             account0_id,
             ACCOUNT_DETAILS_0.clone(),
             store.get_ilp_address(),
         )
         .unwrap();
-        let account1 = Account::try_from(
+        let account1 = account_try_from(
             account1_id,
             ACCOUNT_DETAILS_1.clone(),
             store.get_ilp_address(),
@@ -298,7 +298,7 @@ fn static_routes_override_others() {
             ])
             .and_then(move |_| {
                 let account1_id = AccountId::new();
-                let account1 = Account::try_from(
+                let account1 = account_try_from(
                     account1_id,
                     ACCOUNT_DETAILS_1.clone(),
                     store.get_ilp_address(),
@@ -333,7 +333,7 @@ fn default_route() {
             .set_default_route(accs[0].id())
             .and_then(move |_| {
                 let account1_id = AccountId::new();
-                let account1 = Account::try_from(
+                let account1 = account_try_from(
                     account1_id,
                     ACCOUNT_DETAILS_1.clone(),
                     store.get_ilp_address(),

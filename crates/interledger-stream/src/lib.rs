@@ -17,13 +17,13 @@ pub use server::{
     ConnectionGenerator, PaymentNotification, StreamNotificationsStore, StreamReceiverService,
 };
 
-#[cfg(test)]
+/*#[cfg(test)]
 pub mod test_helpers {
     use super::*;
     use futures::{future::ok, sync::mpsc::UnboundedSender, Future};
     use interledger_packet::Address;
     use interledger_router::RouterStore;
-    use interledger_service::{Account, AccountStore, AddressStore, Username};
+    use interledger_service::{Account, AccountId, AccountStore, AddressStore, Username};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -44,7 +44,7 @@ pub mod test_helpers {
         pub asset_code: String,
     }
 
-    impl Account for TestAccount {
+    /*impl Account for TestAccount {
         type AccountId = u64;
 
         fn id(&self) -> u64 {
@@ -66,14 +66,12 @@ pub mod test_helpers {
         fn ilp_address(&self) -> &Address {
             &self.ilp_address
         }
-    }
+    }*/
 
     #[derive(Clone)]
     pub struct DummyStore;
 
     impl super::StreamNotificationsStore for DummyStore {
-        type Account = TestAccount;
-
         fn add_payment_notification_subscription(
             &self,
             _account_id: u64,
@@ -90,11 +88,9 @@ pub mod test_helpers {
     }
 
     impl AccountStore for TestStore {
-        type Account = TestAccount;
-
         fn get_accounts(
             &self,
-            _account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
+            _account_ids: Vec<AccountId>,
         ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(vec![self.route.1.clone()]))
         }
@@ -134,9 +130,9 @@ pub mod test_helpers {
             Address::from_str("example.connector").unwrap()
         }
     }
-}
+}*/
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod send_money_to_receiver {
     use super::test_helpers::*;
     use super::*;
@@ -204,4 +200,4 @@ mod send_money_to_receiver {
         let runtime = Runtime::new().unwrap();
         runtime.block_on_all(run).unwrap();
     }
-}
+}*/

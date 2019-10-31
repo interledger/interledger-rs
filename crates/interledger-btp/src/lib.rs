@@ -21,29 +21,20 @@ pub use self::client::{connect_client, connect_to_service_account, parse_btp_url
 pub use self::server::create_btp_service_and_filter;
 pub use self::service::{BtpOutgoingService, BtpService};
 
-pub trait BtpAccount: Account {
-    fn get_ilp_over_btp_url(&self) -> Option<&Url>;
-    fn get_ilp_over_btp_outgoing_token(&self) -> Option<&[u8]>;
-}
-
 /// The interface for Store implementations that can be used with the BTP Server.
 pub trait BtpStore {
-    type Account: BtpAccount;
-
     /// Load Account details based on the auth token received via BTP.
     fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send>;
 
     /// Load accounts that have a ilp_over_btp_url configured
-    fn get_btp_outgoing_accounts(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    fn get_btp_outgoing_accounts(&self) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send>;
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod client_server {
     use super::*;
     use futures::future::{err, lazy, ok, result};
@@ -296,4 +287,4 @@ mod client_server {
             }))
             .unwrap();
     }
-}
+}*/

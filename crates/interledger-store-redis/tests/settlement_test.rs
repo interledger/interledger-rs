@@ -6,9 +6,8 @@ use futures::future::join_all;
 use http::StatusCode;
 use interledger_api::NodeStore;
 use interledger_http::idempotency::{IdempotentData, IdempotentStore};
-use interledger_service::{Account, AccountStore};
-use interledger_settlement::{LeftoversStore, SettlementAccount, SettlementStore};
-use interledger_store_redis::AccountId;
+use interledger_service::{Account, AccountId, AccountStore};
+use interledger_settlement::{LeftoversStore, SettlementStore};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use redis::{aio::SharedConnection, cmd};
@@ -340,22 +339,14 @@ fn loads_globally_configured_settlement_engine_url() {
                         store.get_accounts(account_ids).and_then(move |accounts| {
                             // It should not overwrite the one that was individually configured
                             assert_eq!(
-                                accounts[0]
-                                    .settlement_engine_details()
-                                    .unwrap()
-                                    .url
-                                    .as_str(),
+                                accounts[0].settlement_engine_details().unwrap().as_str(),
                                 "http://settlement.example/"
                             );
 
                             // It should set the URL for the account that did not have one configured
                             assert!(accounts[1].settlement_engine_details().is_some());
                             assert_eq!(
-                                accounts[1]
-                                    .settlement_engine_details()
-                                    .unwrap()
-                                    .url
-                                    .as_str(),
+                                accounts[1].settlement_engine_details().unwrap().as_str(),
                                 "http://settle-abc.example/"
                             );
                             let _ = context;

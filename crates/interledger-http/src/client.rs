@@ -1,4 +1,4 @@
-use super::{HttpAccount, HttpStore};
+use super::HttpStore;
 use bytes::BytesMut;
 use futures::{
     future::{err, result},
@@ -15,18 +15,16 @@ use std::str::FromStr;
 use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
-pub struct HttpClientService<S, O, A> {
+pub struct HttpClientService<S, O> {
     client: Client,
     store: Arc<S>,
     next: O,
-    account_type: PhantomData<A>,
 }
 
-impl<S, O, A> HttpClientService<S, O, A>
+impl<S, O> HttpClientService<S, O>
 where
     S: AddressStore + HttpStore,
-    O: OutgoingService<A> + Clone,
-    A: HttpAccount,
+    O: OutgoingService + Clone,
 {
     pub fn new(store: S, next: O) -> Self {
         let mut headers = HeaderMap::with_capacity(2);
@@ -44,21 +42,19 @@ where
             client,
             store: Arc::new(store),
             next,
-            account_type: PhantomData,
         }
     }
 }
 
-impl<S, O, A> OutgoingService<A> for HttpClientService<S, O, A>
+impl<S, O> OutgoingService for HttpClientService<S, O>
 where
     S: AddressStore + HttpStore,
-    O: OutgoingService<A>,
-    A: HttpAccount,
+    O: OutgoingService,
 {
     type Future = BoxedIlpFuture;
 
     /// Send an OutgoingRequest to a peer that implements the ILP-Over-HTTP.
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
         let ilp_address = self.store.get_ilp_address();
         let ilp_address_clone = ilp_address.clone();
         if let Some(url) = request.to.get_http_url() {

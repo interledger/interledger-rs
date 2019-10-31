@@ -27,22 +27,24 @@ use futures::{
 use log::{debug, error, trace, warn};
 use std::collections::{HashMap, HashSet};
 
-use super::account::AccountId;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
-use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
+use interledger_ccp::{RouteManagerStore, RoutingRelation};
 use interledger_http::{
     idempotency::{IdempotentData, IdempotentStore},
     HttpStore,
 };
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
+use interledger_service::{
+    Account, AccountId, AccountStore, AccountWithEncryptedTokens, AddressStore, Username,
+};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::{
     scale_with_precision_loss, Convert, ConvertDetails, LeftoversStore, SettlementStore,
 };
+use interledger_store_common::StoreBuilder;
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -131,25 +133,53 @@ impl RedisStoreBuilder {
             node_ilp_address: DEFAULT_ILP_ADDRESS.clone(),
         }
     }
+}
 
-    pub fn node_ilp_address(&mut self, node_ilp_address: Address) -> &mut Self {
+/*pub trait StoreBuilder {
+    type Store: Clone
+        + NodeStore
+        + BtpStore
+        + RouteManagerStore
+        + IdempotentStore
+        + HttpStore
+        + RouterStore
+        + AccountStore
+        + AddressStore
+        + BalanceStore
+        + ExchangeRateStore
+        + RateLimitStore
+        + LeftoversStore
+        + SettlementStore
+        + StreamNotificationsStore;
+
+    fn node_ilp_address(&mut self, node_ilp_address: Address) -> &mut Self;
+
+    fn poll_interval(&mut self, poll_interval: u64) -> &mut Self;
+
+    fn connect(&mut self) -> Box<dyn Future<Item = Self::Store, Error = ()> + Send + 'static>;
+}*/
+
+impl StoreBuilder for RedisStoreBuilder {
+    type Store = RedisStore;
+
+    fn node_ilp_address(&mut self, node_ilp_address: Address) -> &mut Self {
         self.node_ilp_address = node_ilp_address;
         self
     }
 
-    pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
+    fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
         self.poll_interval = poll_interval;
         self
     }
 
-    pub fn connect(&mut self) -> impl Future<Item = RedisStore, Error = ()> {
+    fn connect(&mut self) -> Box<dyn Future<Item = Self::Store, Error = ()> + Send + 'static> {
         let redis_info = self.redis_url.clone();
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
         let ilp_address = self.node_ilp_address.clone();
 
-        RedisReconnect::connect(redis_info.clone())
+        Box::new(RedisReconnect::connect(redis_info.clone())
             .map_err(|_| ())
             .join(
                 result(Client::open(redis_info.clone()))
@@ -261,7 +291,7 @@ impl RedisStoreBuilder {
 
                 Ok(store)
             })
-        })
+        }))
     }
 }
 
@@ -301,15 +331,15 @@ impl RedisStore {
         &self,
         encrypted: AccountWithEncryptedTokens,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
-        let account = encrypted.account.clone();
+        let account = encrypted.clone().account();
         let ret = encrypted.clone();
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         // Check that there isn't already an account with values that MUST be unique
         let mut pipe = redis::pipe();
-        pipe.exists(accounts_key(account.id));
+        pipe.exists(accounts_key(account.id()));
         pipe.hexists("usernames", account.username().as_ref());
-        if account.routing_relation == RoutingRelation::Parent {
+        if account.routing_relation() == RoutingRelation::Parent {
             pipe.exists(PARENT_ILP_KEY);
         }
 
@@ -320,7 +350,7 @@ impl RedisStore {
             .and_then(
                 move |(connection, results): (RedisReconnect, Vec<bool>)| {
                     if results.iter().any(|val| *val) {
-                        warn!("An account already exists with the same {}. Cannot insert account: {:?}", account.id, account);
+                        warn!("An account already exists with the same {}. Cannot insert account: {:?}", account.id(), account);
                         Err(())
                     } else {
                         Ok((connection, account))
@@ -331,33 +361,33 @@ impl RedisStore {
                 pipe.atomic();
 
                 // Add the account key to the list of accounts
-                pipe.sadd("accounts", account.id).ignore();
+                pipe.sadd("accounts", account.id()).ignore();
 
                 // Save map for Username -> Account ID
-                pipe.hset("usernames", account.username().as_ref(), account.id).ignore();
+                pipe.hset("usernames", account.username().as_ref(), account.id()).ignore();
 
                 // Set account details
                 pipe.cmd("HMSET")
-                    .arg(accounts_key(account.id))
+                    .arg(accounts_key(account.id()))
                     .arg(encrypted).ignore();
 
                 // Set balance-related details
-                pipe.hset_multiple(accounts_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
+                pipe.hset_multiple(accounts_key(account.id()), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
 
                 if account.should_send_routes() {
-                    pipe.sadd("send_routes_to", account.id).ignore();
+                    pipe.sadd("send_routes_to", account.id()).ignore();
                 }
 
                 if account.should_receive_routes() {
-                    pipe.sadd("receive_routes_from", account.id).ignore();
+                    pipe.sadd("receive_routes_from", account.id()).ignore();
                 }
 
-                if account.ilp_over_btp_url.is_some() {
-                    pipe.sadd("btp_outgoing", account.id).ignore();
+                if account.get_ilp_over_btp_url().is_some() {
+                    pipe.sadd("btp_outgoing", account.id()).ignore();
                 }
 
                 // Add route to routing table
-                pipe.hset(ROUTES_KEY, account.ilp_address.to_bytes().to_vec(), account.id)
+                pipe.hset(ROUTES_KEY, account.ilp_address().to_bytes().to_vec(), account.id())
                     .ignore();
 
                 // The parent account settings are done via the API. We just
@@ -368,7 +398,7 @@ impl RedisStore {
                         update_routes(connection, routing_table)
                     })
                     .and_then(move |_| {
-                        debug!("Inserted account {} (ILP address: {})", account.id, account.ilp_address);
+                        debug!("Inserted account {} (ILP address: {})", account.id(), account.ilp_address());
                         Ok(ret)
                     })
             }))
@@ -378,13 +408,13 @@ impl RedisStore {
         &self,
         encrypted: AccountWithEncryptedTokens,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
-        let account = encrypted.account.clone();
+        let account = encrypted.clone().account();
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         Box::new(
             // Check to make sure an account with this ID already exists
             redis::cmd("EXISTS")
-                .arg(accounts_key(account.id))
+                .arg(accounts_key(account.id()))
                 // TODO this needs to be atomic with the insertions later,
                 // waiting on #186
                 // TODO: Do not allow this update to happen if
@@ -396,7 +426,8 @@ impl RedisStore {
                     if !exists {
                         warn!(
                             "No account exists with ID {}, cannot update account {:?}",
-                            account.id, account
+                            account.id(),
+                            account
                         );
                         return Either::A(err(()));
                     }
@@ -404,31 +435,31 @@ impl RedisStore {
                     pipe.atomic();
 
                     // Add the account key to the list of accounts
-                    pipe.sadd("accounts", account.id).ignore();
+                    pipe.sadd("accounts", account.id()).ignore();
 
                     // Set account details
                     pipe.cmd("HMSET")
-                        .arg(accounts_key(account.id))
+                        .arg(accounts_key(account.id()))
                         .arg(encrypted.clone())
                         .ignore();
 
                     if account.should_send_routes() {
-                        pipe.sadd("send_routes_to", account.id).ignore();
+                        pipe.sadd("send_routes_to", account.id()).ignore();
                     }
 
                     if account.should_receive_routes() {
-                        pipe.sadd("receive_routes_from", account.id).ignore();
+                        pipe.sadd("receive_routes_from", account.id()).ignore();
                     }
 
-                    if account.ilp_over_btp_url.is_some() {
-                        pipe.sadd("btp_outgoing", account.id).ignore();
+                    if account.get_ilp_over_btp_url().is_some() {
+                        pipe.sadd("btp_outgoing", account.id()).ignore();
                     }
 
                     // Add route to routing table
                     pipe.hset(
                         ROUTES_KEY,
-                        account.ilp_address.to_bytes().to_vec(),
-                        account.id,
+                        account.ilp_address().to_bytes().to_vec(),
+                        account.id(),
                     )
                     .ignore();
 
@@ -441,7 +472,9 @@ impl RedisStore {
                             .and_then(move |_| {
                                 debug!(
                                     "Inserted account {} (id: {}, ILP address: {})",
-                                    account.username, account.id, account.ilp_address
+                                    account.username(),
+                                    account.id(),
+                                    account.ilp_address()
                                 );
                                 Ok(encrypted)
                             }),
@@ -541,28 +574,28 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         Box::new(self.redis_get_account(id).and_then(move |encrypted| {
-            let account = encrypted.account.clone();
+            let account = encrypted.clone().account();
             let mut pipe = redis::pipe();
             pipe.atomic();
 
-            pipe.srem("accounts", account.id).ignore();
+            pipe.srem("accounts", account.id()).ignore();
 
-            pipe.del(accounts_key(account.id)).ignore();
+            pipe.del(accounts_key(account.id())).ignore();
             pipe.hdel("usernames", account.username().as_ref()).ignore();
 
             if account.should_send_routes() {
-                pipe.srem("send_routes_to", account.id).ignore();
+                pipe.srem("send_routes_to", account.id()).ignore();
             }
 
             if account.should_receive_routes() {
-                pipe.srem("receive_routes_from", account.id).ignore();
+                pipe.srem("receive_routes_from", account.id()).ignore();
             }
 
-            if account.ilp_over_btp_url.is_some() {
-                pipe.srem("btp_outgoing", account.id).ignore();
+            if account.get_ilp_over_btp_url().is_some() {
+                pipe.srem("btp_outgoing", account.id()).ignore();
             }
 
-            pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
+            pipe.hdel(ROUTES_KEY, account.ilp_address().to_bytes().to_vec())
                 .ignore();
 
             pipe.query_async(connection)
@@ -571,7 +604,7 @@ impl RedisStore {
                     update_routes(connection, routing_table)
                 })
                 .and_then(move |_| {
-                    debug!("Deleted account {}", account.id);
+                    debug!("Deleted account {}", account.id());
                     Ok(encrypted)
                 })
         }))
@@ -579,12 +612,10 @@ impl RedisStore {
 }
 
 impl AccountStore for RedisStore {
-    type Account = Account;
-
     // TODO cache results to avoid hitting Redis for each packet
     fn get_accounts(
         &self,
-        account_ids: Vec<<Self::Account as AccountTrait>::AccountId>,
+        account_ids: Vec<AccountId>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
@@ -631,8 +662,6 @@ impl AccountStore for RedisStore {
 }
 
 impl StreamNotificationsStore for RedisStore {
-    type Account = Account;
-
     fn add_payment_notification_subscription(
         &self,
         id: AccountId,
@@ -676,13 +705,14 @@ impl BalanceStore for RedisStore {
     fn get_balance(&self, account: Account) -> Box<dyn Future<Item = i64, Error = ()> + Send> {
         Box::new(
             cmd("HMGET")
-                .arg(accounts_key(account.id))
+                .arg(accounts_key(account.id()))
                 .arg(&["balance", "prepaid_amount"])
                 .query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!(
                         "Error getting balance for account: {} {:?}",
-                        account.id, err
+                        account.id(),
+                        err
                     )
                 })
                 .and_then(|(_connection, values): (_, Vec<i64>)| {
@@ -699,7 +729,7 @@ impl BalanceStore for RedisStore {
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
-            let from_account_id = from_account.id;
+            let from_account_id = from_account.id();
             Box::new(
                 PROCESS_PREPARE
                     .arg(from_account_id)
@@ -730,7 +760,7 @@ impl BalanceStore for RedisStore {
         outgoing_amount: u64,
     ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
         if outgoing_amount > 0 {
-            let to_account_id = to_account.id;
+            let to_account_id = to_account.id();
             Box::new(
                 PROCESS_FULFILL
                     .arg(to_account_id)
@@ -763,7 +793,7 @@ impl BalanceStore for RedisStore {
         incoming_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         if incoming_amount > 0 {
-            let from_account_id = from_account.id;
+            let from_account_id = from_account.id();
             Box::new(
                 PROCESS_REJECT
                     .arg(from_account_id)
@@ -818,13 +848,11 @@ impl ExchangeRateStore for RedisStore {
 }
 
 impl BtpStore for RedisStore {
-    type Account = Account;
-
     fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that
         // necessary if redis is often used as a cache?)
@@ -839,21 +867,21 @@ impl BtpStore for RedisStore {
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
                             let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-                            if let Some(t) = account.ilp_over_btp_incoming_token.clone() {
+                            if let Some(t) = account.ilp_over_btp_incoming_token().clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
                                     Ok(account)
                                 } else {
                                     debug!(
                                         "Found account {} but BTP auth token was wrong",
-                                        account.username
+                                        account.username()
                                     );
                                     Err(())
                                 }
                             } else {
                                 debug!(
                                     "Account {} does not have an incoming btp token configured",
-                                    account.username
+                                    account.username()
                                 );
                                 Err(())
                             }
@@ -866,9 +894,7 @@ impl BtpStore for RedisStore {
         )
     }
 
-    fn get_btp_outgoing_accounts(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+    fn get_btp_outgoing_accounts(&self) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         Box::new(
             cmd("SMEMBERS")
@@ -918,15 +944,13 @@ impl BtpStore for RedisStore {
 }
 
 impl HttpStore for RedisStore {
-    type Account = Account;
-
     /// Checks if the stored token for the provided account id matches the
     /// provided token, and if so, returns the account associated with that token
     fn get_account_from_http_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
         let token = token.to_owned();
@@ -939,7 +963,7 @@ impl HttpStore for RedisStore {
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
                             let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-                            if let Some(t) = account.ilp_over_http_incoming_token.clone() {
+                            if let Some(t) = account.ilp_over_http_incoming_token().clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
                                     Ok(account)
@@ -960,28 +984,26 @@ impl HttpStore for RedisStore {
 }
 
 impl RouterStore for RedisStore {
-    fn routing_table(&self) -> Arc<HashMap<String, <Self::Account as AccountTrait>::AccountId>> {
+    fn routing_table(&self) -> Arc<HashMap<String, AccountId>> {
         self.routes.read().clone()
     }
 }
 
 impl NodeStore for RedisStore {
-    type Account = Account;
-
     fn insert_account(
         &self,
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let encryption_key = self.encryption_key.clone();
         let id = AccountId::new();
-        let account = match Account::try_from(id, account, self.get_ilp_address()) {
+        let account = match account_try_from(id, account, self.get_ilp_address()) {
             Ok(account) => account,
             Err(_) => return Box::new(err(())),
         };
         debug!(
             "Generated account id for {}: {}",
-            account.username.clone(),
-            account.id
+            account.username().clone(),
+            account.id()
         );
         let encrypted = account
             .clone()
@@ -1005,17 +1027,17 @@ impl NodeStore for RedisStore {
         &self,
         id: AccountId,
         account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let encryption_key = self.encryption_key.clone();
         let decryption_key = self.decryption_key.clone();
-        let account = match Account::try_from(id, account, self.get_ilp_address()) {
+        let account = match account_try_from(id, account, self.get_ilp_address()) {
             Ok(account) => account,
             Err(_) => return Box::new(err(())),
         };
         debug!(
             "Generated account id for {}: {}",
-            account.username.clone(),
-            account.id
+            account.username().clone(),
+            account.id()
         );
         let encrypted = account
             .clone()
@@ -1030,9 +1052,9 @@ impl NodeStore for RedisStore {
 
     fn modify_account_settings(
         &self,
-        id: <Self::Account as AccountTrait>::AccountId,
+        id: AccountId,
         settings: AccountSettings,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let encryption_key = self.encryption_key.clone();
         let decryption_key = self.decryption_key.clone();
         let settings = EncryptedAccountSettings {
@@ -1075,7 +1097,7 @@ impl NodeStore for RedisStore {
     }
 
     // TODO limit the number of results and page through them
-    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let mut pipe = redis::pipe();
         let connection = self.connection.clone();
@@ -1297,7 +1319,8 @@ impl AddressStore for RedisStore {
                             && account.routing_relation() != RoutingRelation::Peer
                         {
                             // remove the old route
-                            pipe.hdel(ROUTES_KEY, &account.ilp_address as &str).ignore();
+                            pipe.hdel(ROUTES_KEY, &account.ilp_address() as &str)
+                                .ignore();
 
                             // if the username of the account ends with the
                             // node's address, we're already configured so no
@@ -1361,8 +1384,6 @@ impl AddressStore for RedisStore {
 type RoutingTable<A> = HashMap<String, A>;
 
 impl RouteManagerStore for RedisStore {
-    type Account = Account;
-
     fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<AccountId>,
@@ -1487,10 +1508,10 @@ impl RouteManagerStore for RedisStore {
                 let local_table = HashMap::from_iter(
                     accounts
                         .iter()
-                        .map(|account| (account.ilp_address.to_string(), account.clone())),
+                        .map(|account| (account.ilp_address().to_string(), account.clone())),
                 );
 
-                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
+                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id(), account)));
                 let configured_table: HashMap<String, Account> = HashMap::from_iter(static_routes.into_iter()
                     .filter_map(|(prefix, account_id)| {
                         if let Some(account) = account_map.get(&account_id) {
@@ -1512,7 +1533,7 @@ impl RouteManagerStore for RedisStore {
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routes: Vec<(String, AccountId)> = routes
             .into_iter()
-            .map(|(prefix, account)| (prefix, account.id))
+            .map(|(prefix, account)| (prefix, account.id()))
             .collect();
         let num_routes = routes.len();
 
@@ -1536,8 +1557,6 @@ impl RouteManagerStore for RedisStore {
 }
 
 impl RateLimitStore for RedisStore {
-    type Account = Account;
-
     /// Apply rate limits for number of packets per minute and amount of money per minute
     ///
     /// This uses https://github.com/brandur/redis-cell so the redis-cell module MUST be loaded into redis before this is run
@@ -1546,25 +1565,27 @@ impl RateLimitStore for RedisStore {
         account: Account,
         prepare_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = RateLimitError> + Send> {
-        if account.amount_per_minute_limit.is_some() || account.packets_per_minute_limit.is_some() {
+        if account.amount_per_minute_limit().is_some()
+            || account.packets_per_minute_limit().is_some()
+        {
             let mut pipe = redis::pipe();
-            let packet_limit = account.packets_per_minute_limit.is_some();
-            let amount_limit = account.amount_per_minute_limit.is_some();
+            let packet_limit = account.packets_per_minute_limit().is_some();
+            let amount_limit = account.amount_per_minute_limit().is_some();
 
-            if let Some(limit) = account.packets_per_minute_limit {
+            if let Some(limit) = account.packets_per_minute_limit() {
                 let limit = limit - 1;
                 pipe.cmd("CL.THROTTLE")
-                    .arg(format!("limit:packets:{}", account.id))
+                    .arg(format!("limit:packets:{}", account.id()))
                     .arg(limit)
                     .arg(limit)
                     .arg(60)
                     .arg(1);
             }
 
-            if let Some(limit) = account.amount_per_minute_limit {
+            if let Some(limit) = account.amount_per_minute_limit() {
                 let limit = limit - 1;
                 pipe.cmd("CL.THROTTLE")
-                    .arg(format!("limit:throughput:{}", account.id))
+                    .arg(format!("limit:throughput:{}", account.id()))
                     // TODO allow separate configuration for burst limit
                     .arg(limit)
                     .arg(limit)
@@ -1605,11 +1626,11 @@ impl RateLimitStore for RedisStore {
         account: Account,
         prepare_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        if let Some(limit) = account.amount_per_minute_limit {
+        if let Some(limit) = account.amount_per_minute_limit() {
             let limit = limit - 1;
             Box::new(
                 cmd("CL.THROTTLE")
-                    .arg(format!("limit:throughput:{}", account.id))
+                    .arg(format!("limit:throughput:{}", account.id()))
                     .arg(limit)
                     .arg(limit)
                     .arg(60)
@@ -1699,8 +1720,6 @@ impl IdempotentStore for RedisStore {
 }
 
 impl SettlementStore for RedisStore {
-    type Account = Account;
-
     fn update_balance_for_incoming_settlement(
         &self,
         account_id: AccountId,
@@ -1842,13 +1861,10 @@ impl FromRedisValue for AmountWithScale {
 }
 
 impl LeftoversStore for RedisStore {
-    type AccountId = AccountId;
-    type AssetType = BigUint;
-
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
-    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
+        account_id: AccountId,
+    ) -> Box<dyn Future<Item = (BigUint, u8), Error = ()> + Send> {
         let mut pipe = redis::pipe();
         pipe.atomic();
         // get the amounts and instantly delete them
@@ -1868,8 +1884,8 @@ impl LeftoversStore for RedisStore {
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
-        uncredited_settlement_amount: (Self::AssetType, u8),
+        account_id: AccountId,
+        uncredited_settlement_amount: (BigUint, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
             "Saving uncredited_settlement_amount {:?} {:?}",
@@ -1895,9 +1911,9 @@ impl LeftoversStore for RedisStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
         local_scale: u8,
-    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = BigUint, Error = ()> + Send> {
         let connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         Box::new(

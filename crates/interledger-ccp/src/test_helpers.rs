@@ -54,7 +54,7 @@ impl TestAccount {
     }
 }
 
-impl Account for TestAccount {
+/*impl Account for TestAccount {
     type AccountId = u64;
 
     fn id(&self) -> u64 {
@@ -82,7 +82,7 @@ impl CcpRoutingAccount for TestAccount {
     fn routing_relation(&self) -> RoutingRelation {
         self.relation
     }
-}
+}*/
 
 #[derive(Clone)]
 pub struct TestStore {
@@ -134,8 +134,6 @@ impl AddressStore for TestStore {
 }
 
 impl RouteManagerStore for TestStore {
-    type Account = TestAccount;
-
     fn get_local_and_configured_routes(
         &self,
     ) -> Box<
@@ -188,10 +186,9 @@ impl RouteManagerStore for TestStore {
 }
 
 pub fn test_service() -> CcpRouteManager<
-    impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
-    impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+    impl IncomingService<Future = BoxedIlpFuture> + Clone,
+    impl OutgoingService<Future = BoxedIlpFuture> + Clone,
     TestStore,
-    TestAccount,
 > {
     let addr = Address::from_str("example.connector").unwrap();
     CcpRouteManagerBuilder::new(
@@ -220,14 +217,13 @@ pub fn test_service() -> CcpRouteManager<
     .to_service()
 }
 
-type OutgoingRequests = Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>>;
+type OutgoingRequests = Arc<Mutex<Vec<OutgoingRequest>>>;
 
 pub fn test_service_with_routes() -> (
     CcpRouteManager<
-        impl IncomingService<TestAccount, Future = BoxedIlpFuture> + Clone,
-        impl OutgoingService<TestAccount, Future = BoxedIlpFuture> + Clone,
+        impl IncomingService<Future = BoxedIlpFuture> + Clone,
+        impl OutgoingService<Future = BoxedIlpFuture> + Clone,
         TestStore,
-        TestAccount,
     >,
     OutgoingRequests,
 ) {

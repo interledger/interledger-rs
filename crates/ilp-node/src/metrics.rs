@@ -1,15 +1,14 @@
 use futures::Future;
 use interledger::{
-    ccp::CcpRoutingAccount,
     packet::{Fulfill, Reject},
     service::{Account, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService},
 };
 use metrics::{self, labels, recorder, Key};
 use std::time::Instant;
 
-pub fn incoming_metrics<A: Account + CcpRoutingAccount>(
-    request: IncomingRequest<A>,
-    mut next: impl IncomingService<A>,
+pub fn incoming_metrics(
+    request: IncomingRequest,
+    mut next: impl IncomingService,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     let labels = labels!(
         "from_asset_code" => request.from.asset_code().to_string(),
@@ -41,9 +40,9 @@ pub fn incoming_metrics<A: Account + CcpRoutingAccount>(
     })
 }
 
-pub fn outgoing_metrics<A: Account + CcpRoutingAccount>(
-    request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
+pub fn outgoing_metrics(
+    request: OutgoingRequest,
+    mut next: impl OutgoingService,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
     let labels = labels!(
         "from_asset_code" => request.from.asset_code().to_string(),

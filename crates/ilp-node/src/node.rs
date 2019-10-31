@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::{
-    future::{err, result, Either},
+    future::{err, ok, result, Either},
     Future,
 };
 use hex::FromHex;
@@ -14,22 +14,24 @@ use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
-    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RoutingRelation},
+    ccp::{CcpRouteManagerBuilder, RoutingRelation},
     http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer},
     ildcp::IldcpService,
     packet::Address,
     packet::{ErrorCode, RejectBuilder},
     router::Router,
     service::{
-        outgoing_service_fn, Account as AccountTrait, IncomingService, OutgoingRequest,
-        OutgoingService, Username,
+        outgoing_service_fn, Account, AccountId, IncomingService, OutgoingRequest, OutgoingService,
+        Username,
     },
     service_util::{
         BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
         ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
     },
     settlement::{create_settlements_filter, SettlementMessageService},
-    store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    store_common::StoreBuilder,
+    store_redis::{ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    store_sqlite::SqliteStoreBuilder,
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;
@@ -214,7 +216,7 @@ pub struct InterledgerNode {
 }
 
 impl InterledgerNode {
-    /// Returns a future that runs the Interledger.rs Node.
+    /// Run the node on the default Tokio runtime
     ///
     /// If the Prometheus configuration was provided, it will
     /// also run the Prometheus metrics server on the given address.
@@ -222,19 +224,29 @@ impl InterledgerNode {
     // connector instances to forward packets for that account to us
     pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
         if self.prometheus.is_some() {
-            Either::A(
-                self.serve_prometheus()
-                    .join(self.serve_node())
-                    .and_then(|_| Ok(())),
-            )
+            Either::A(self.serve_prometheus())
         } else {
-            Either::B(self.serve_node())
+            Either::B(ok(()))
         }
+        .join({
+            let redis_scheme = true; // TODO: best way of parsing URL from Connection Info
+            if redis_scheme {
+                let redis_secret = generate_redis_secret(&self.secret_seed);
+                let store = RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret);
+                Either::A(self.chain_services(store))
+            } else {
+                let store = SqliteStoreBuilder::new();
+                Either::B(self.chain_services(store))
+            }
+        })
+        .and_then(|_| Ok(()))
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn serve_node(&self) -> impl Future<Item = (), Error = ()> {
-        let redis_secret = generate_redis_secret(&self.secret_seed);
+    fn chain_services<T: StoreBuilder>(
+        &self,
+        mut store: T,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send + 'static> {
         let secret_seed = Bytes::from(&self.secret_seed[..]);
         let http_bind_address = self.http_bind_address;
         let settlement_api_bind_address = self.settlement_api_bind_address;
@@ -259,7 +271,7 @@ impl InterledgerNode {
             ilp_address
         );
 
-        Box::new(RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
+        Box::new(store
         .node_ilp_address(ilp_address.clone())
         .connect()
         .map_err(move |err| error!(target: "interledger-node", "Error connecting to Redis: {:?} {:?}", redis_addr, err))
@@ -268,7 +280,7 @@ impl InterledgerNode {
                 .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
                 .and_then(move |btp_accounts| {
                     let outgoing_service =
-                        outgoing_service_fn(move |request: OutgoingRequest<Account>| {
+                        outgoing_service_fn(move |request: OutgoingRequest| {
                             // Don't log anything for failed route updates sent to child accounts
                             // because there's a good chance they'll be offline
                             if request.prepare.destination().scheme() != "peer"
@@ -506,7 +518,7 @@ impl InterledgerNode {
         tokio_run(self.serve());
     }
 
-    #[doc(hidden)]
+    /*#[doc(hidden)]
     #[allow(dead_code)]
     pub fn insert_account(
         &self,
@@ -526,7 +538,7 @@ impl InterledgerNode {
                         Ok(account.id())
                     })
             })
-    }
+    }*/
 }
 
 fn generate_redis_secret(secret_seed: &[u8; 32]) -> [u8; 32] {

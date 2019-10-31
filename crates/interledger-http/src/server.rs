@@ -5,7 +5,7 @@ use futures::{
     Future,
 };
 use interledger_packet::Prepare;
-use interledger_service::{AuthToken, IncomingRequest, IncomingService};
+use interledger_service::{Account, AuthToken, IncomingRequest, IncomingService};
 use log::error;
 use std::{convert::TryFrom, net::SocketAddr};
 use warp::{self, Filter, Rejection};
@@ -23,7 +23,7 @@ pub struct HttpServer<I, S> {
 
 impl<I, S> HttpServer<I, S>
 where
-    I: IncomingService<S::Account> + Clone + Send + Sync + 'static,
+    I: IncomingService + Clone + Send + Sync + 'static,
     S: HttpStore,
 {
     pub fn new(incoming: I, store: S) -> Self {
@@ -55,7 +55,7 @@ where
             .and(warp::body::content_length_limit(MAX_PACKET_SIZE))
             .and(warp::body::concat())
             .and_then(
-                move |account: S::Account,
+                move |account: Account,
                       body: warp::body::FullBody|
                       -> Either<_, FutureResult<_, Rejection>> {
                     // TODO don't copy ILP packet

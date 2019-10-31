@@ -8,8 +8,7 @@ use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use std::str::FromStr;
 
-use interledger_service::{Account as AccountTrait, AddressStore};
-use interledger_store_redis::AccountId;
+use interledger_service::{Account, AccountId, AddressStore};
 
 #[test]
 fn get_balance() {
@@ -28,7 +27,7 @@ fn get_balance() {
                     .query_async(connection)
                     .map_err(|err| panic!(err))
                     .and_then(move |(_, _): (_, redis::Value)| {
-                        let account = Account::try_from(
+                        let account = account_try_from(
                             account_id,
                             ACCOUNT_DETAILS_0.clone(),
                             store.get_ilp_address(),

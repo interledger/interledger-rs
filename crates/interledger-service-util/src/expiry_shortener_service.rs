@@ -5,12 +5,6 @@ use log::trace;
 pub const DEFAULT_ROUND_TRIP_TIME: u32 = 500;
 pub const DEFAULT_MAX_EXPIRY_DURATION: u32 = 30000;
 
-pub trait RoundTripTimeAccount: Account {
-    fn round_trip_time(&self) -> u32 {
-        DEFAULT_ROUND_TRIP_TIME
-    }
-}
-
 /// # Expiry Shortener Service
 ///
 /// Each node shortens the `Prepare` packet's expiry duration before passing it on.
@@ -39,10 +33,9 @@ impl<O> ExpiryShortenerService<O> {
     }
 }
 
-impl<O, A> OutgoingService<A> for ExpiryShortenerService<O>
+impl<O> OutgoingService for ExpiryShortenerService<O>
 where
-    O: OutgoingService<A>,
-    A: RoundTripTimeAccount,
+    O: OutgoingService,
 {
     type Future = O::Future;
 
@@ -51,7 +44,7 @@ where
     /// 2. Reduce the packet's expiry by that amount
     /// 3. Ensure that the packet expiry does not exceed the maximum expiry duration
     /// 4. Forward the request
-    fn send_request(&mut self, mut request: OutgoingRequest<A>) -> Self::Future {
+    fn send_request(&mut self, mut request: OutgoingRequest) -> Self::Future {
         let time_to_subtract =
             i64::from(request.from.round_trip_time() + request.to.round_trip_time());
         let new_expiry = DateTime::<Utc>::from(request.prepare.expires_at())
@@ -74,7 +67,7 @@ where
     }
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
     use super::*;
     use futures::Future;
@@ -91,7 +84,7 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct TestAccount(u64, u32);
-    impl Account for TestAccount {
+    /*impl Account for TestAccount {
         type AccountId = u64;
 
         fn id(&self) -> u64 {
@@ -114,13 +107,7 @@ mod tests {
         fn ilp_address(&self) -> &Address {
             &EXAMPLE_ADDRESS
         }
-    }
-
-    impl RoundTripTimeAccount for TestAccount {
-        fn round_trip_time(&self) -> u32 {
-            self.1
-        }
-    }
+    }*/
 
     #[test]
     fn shortens_expiry_by_round_trip_time() {
@@ -200,4 +187,4 @@ mod tests {
             .wait()
             .expect("Should have shortened expiry");
     }
-}
+}*/

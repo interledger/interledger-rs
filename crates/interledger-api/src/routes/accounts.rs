@@ -4,17 +4,17 @@ use futures::{
     future::{err, join_all, ok, Either},
     Future, Stream,
 };
-use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
-use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
-use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
+use interledger_btp::{connect_to_service_account, BtpOutgoingService};
+use interledger_ccp::{Mode, RouteControlRequest, RoutingRelation};
+use interledger_http::{deserialize_json, error::*, HttpStore};
 use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
 use interledger_router::RouterStore;
 use interledger_service::{
-    Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
+    Account, AccountId, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService,
+    Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
@@ -31,34 +31,25 @@ struct SpspPayRequest {
     source_amount: u64,
 }
 
-pub fn accounts_api<I, O, S, A, B>(
+pub fn accounts_api<I, O, S, B>(
     server_secret: Bytes,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
     outgoing_handler: O,
-    btp: BtpOutgoingService<B, A>,
+    btp: BtpOutgoingService<B>,
     store: S,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
-    I: IncomingService<A> + Clone + Send + Sync + 'static,
-    O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    B: OutgoingService<A> + Clone + Send + Sync + 'static,
-    S: NodeStore<Account = A>
-        + HttpStore<Account = A>
-        + BalanceStore<Account = A>
-        + StreamNotificationsStore<Account = A>
+    I: IncomingService + Clone + Send + Sync + 'static,
+    O: OutgoingService + Clone + Send + Sync + 'static,
+    B: OutgoingService + Clone + Send + Sync + 'static,
+    S: NodeStore
+        + HttpStore
+        + BalanceStore
+        + StreamNotificationsStore
         + ExchangeRateStore
         + RouterStore,
-    A: BtpAccount
-        + CcpRoutingAccount
-        + SettlementAccount
-        + Account
-        + HttpAccount
-        + Serialize
-        + Send
-        + Sync
-        + 'static,
 {
     // TODO can we make any of the Filters const or put them in lazy_static?
 
@@ -125,9 +116,9 @@ where
         .and_then(
             |path_username: Username, auth_string: String, store: S, admin_auth_header: String| {
                 store.get_account_id_from_username(&path_username).then(
-                    move |account_id: Result<A::AccountId, _>| {
+                    move |account_id: Result<AccountId, _>| {
                         if account_id.is_err() {
-                            return Either::A(err::<A::AccountId, Rejection>(
+                            return Either::A(err::<AccountId, Rejection>(
                                 ApiError::account_not_found().into(),
                             ));
                         }
@@ -142,7 +133,7 @@ where
                         Either::B(
                             store
                                 .get_account_from_http_auth(auth.username(), auth.password())
-                                .then(move |authorized_account: Result<A, _>| {
+                                .then(move |authorized_account: Result<Account, _>| {
                                     if authorized_account.is_err() {
                                         return err(ApiError::unauthorized().into());
                                     }
@@ -169,15 +160,17 @@ where
             let auth: AuthToken = match AuthToken::from_str(&auth_string) {
                 Ok(auth) => auth,
                 Err(_) => {
-                    return Either::A(err::<A, Rejection>(ApiError::account_not_found().into()))
+                    return Either::A(err::<Account, Rejection>(
+                        ApiError::account_not_found().into(),
+                    ))
                 }
             };
             Either::B(
                 store
                     .get_account_from_http_auth(auth.username(), auth.password())
-                    .then(move |authorized_account: Result<A, _>| {
+                    .then(move |authorized_account: Result<Account, _>| {
                         if authorized_account.is_err() {
-                            return err::<A, Rejection>(ApiError::unauthorized().into());
+                            return err::<Account, Rejection>(ApiError::unauthorized().into());
                         }
                         let authorized_account = authorized_account.unwrap();
                         if &path_username == authorized_account.username() {
@@ -212,7 +205,7 @@ where
                 .and_then(move |account| {
                     connect_to_external_services(handler, account, store_clone, btp)
                 })
-                .and_then(|account: A| Ok(warp::reply::json(&account)))
+                .and_then(|account: Account| Ok(warp::reply::json(&account)))
         })
         .boxed();
 
@@ -237,7 +230,7 @@ where
         .and(deserialize_json())
         .and(with_store.clone())
         .and_then(
-            move |id: A::AccountId, account_details: AccountDetails, store: S| {
+            move |id: AccountId, account_details: AccountDetails, store: S| {
                 let store_clone = store.clone();
                 let handler = outgoing_handler.clone();
                 let btp = btp.clone();
@@ -247,7 +240,7 @@ where
                     .and_then(move |account| {
                         connect_to_external_services(handler, account, store_clone, btp)
                     })
-                    .and_then(|account: A| Ok(warp::reply::json(&account)))
+                    .and_then(|account: Account| Ok(warp::reply::json(&account)))
             },
         )
         .boxed();
@@ -258,7 +251,7 @@ where
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
-        .and_then(|id: A::AccountId, store: S| {
+        .and_then(|id: AccountId, store: S| {
             store
                 .get_accounts(vec![id])
                 .map_err::<_, Rejection>(|_| ApiError::account_not_found().into())
@@ -273,7 +266,7 @@ where
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
-        .and_then(|id: A::AccountId, store: S| {
+        .and_then(|id: AccountId, store: S| {
             // TODO reduce the number of store calls it takes to get the balance
             store
                 .get_accounts(vec![id])
@@ -300,7 +293,7 @@ where
         .and(warp::path::end())
         .and(admin_only.clone())
         .and(with_store.clone())
-        .and_then(|id: A::AccountId, store: S| {
+        .and_then(|id: AccountId, store: S| {
             store
                 .delete_account(id)
                 .map_err::<_, Rejection>(move |_| {
@@ -319,7 +312,7 @@ where
         .and(admin_or_authorized_user_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|id: A::AccountId, settings: AccountSettings, store: S| {
+        .and_then(|id: AccountId, settings: AccountSettings, store: S| {
             store
                 .modify_account_settings(id, settings)
                 .map_err::<_, Rejection>(move |_| {
@@ -339,7 +332,7 @@ where
         .and(admin_or_authorized_user_only.clone())
         .and(warp::ws2())
         .and(with_store.clone())
-        .map(|id: A::AccountId, ws: warp::ws::Ws2, store: S| {
+        .map(|id: AccountId, ws: warp::ws::Ws2, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
                 let (tx, rx) = futures::sync::mpsc::unbounded::<PaymentNotification>();
                 store.add_payment_notification_subscription(id, tx);
@@ -363,7 +356,7 @@ where
         .and(deserialize_json())
         .and(with_incoming_handler.clone())
         .and_then(
-            move |account: A, pay_request: SpspPayRequest, incoming_handler: I| {
+            move |account: Account, pay_request: SpspPayRequest, incoming_handler: I| {
                 pay(
                     incoming_handler,
                     account.clone(),
@@ -390,7 +383,7 @@ where
         .and(warp::path("spsp"))
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(move |id: A::AccountId, store: S| {
+        .and_then(move |id: AccountId, store: S| {
             let server_secret_clone = server_secret_clone.clone();
             store
                 .get_accounts(vec![id])
@@ -462,15 +455,14 @@ where
         .boxed()
 }
 
-fn get_address_from_parent_and_update_routes<O, A, S>(
+fn get_address_from_parent_and_update_routes<O, S>(
     mut service: O,
-    parent: A,
+    parent: Account,
     store: S,
 ) -> impl Future<Item = (), Error = ()>
 where
-    O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: CcpRoutingAccount + Clone + Send + Sync + 'static,
-    S: NodeStore<Account = A> + Clone + Send + Sync + 'static,
+    O: OutgoingService + Clone + Send + Sync + 'static,
+    S: NodeStore + Clone + Send + Sync + 'static,
 {
     debug!(
         "Getting ILP address from parent account: {} (id: {})",
@@ -546,17 +538,16 @@ where
 // 2b. Perform a RouteControl Request to make them send us any new routes
 // 3. If they have a settlement engine endpoitn configured: Make a POST to the
 //    engine's account creation endpoint with the account's id
-fn connect_to_external_services<O, A, S, B>(
+fn connect_to_external_services<O, S, B>(
     service: O,
-    account: A,
+    account: Account,
     store: S,
-    btp: BtpOutgoingService<B, A>,
-) -> impl Future<Item = A, Error = warp::reject::Rejection>
+    btp: BtpOutgoingService<B>,
+) -> impl Future<Item = Account, Error = warp::reject::Rejection>
 where
-    O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: CcpRoutingAccount + BtpAccount + SettlementAccount + Clone + Send + Sync + 'static,
-    S: NodeStore<Account = A> + AddressStore + Clone + Send + Sync + 'static,
-    B: OutgoingService<A> + Clone + 'static,
+    O: OutgoingService + Clone + Send + Sync + 'static,
+    S: NodeStore + AddressStore + Clone + Send + Sync + 'static,
+    B: OutgoingService + Clone + 'static,
 {
     // Try to connect to the account's BTP socket if they have
     // one configured
@@ -590,7 +581,7 @@ where
         // or if there is a settlement engine configured for that
         // account's asset_code
         default_settlement_engine_fut.join(get_ilp_address_fut).and_then(move |(default_settlement_engine, _)| {
-            let settlement_engine_url = account.settlement_engine_details().map(|details| details.url).or(default_settlement_engine);
+            let settlement_engine_url = account.settlement_engine_details().map(|details| details).or(default_settlement_engine);
             if let Some(se_url) = settlement_engine_url {
                 let id = account.id();
                 let http_client = Client::default();

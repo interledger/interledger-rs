@@ -1,0 +1,32 @@
+[package]
+name = "interledger-store-sqlite"
+version = "0.1.0"
+authors = ["Ben Striegel <bstriegel@ripple.com>"]
+description = "Data store for Interledger.rs using SQLite"
+license = "Apache-2.0"
+edition = "2018"
+repository = "https://github.com/interledger-rs/interledger-rs"
+
+[lib]
+name = "interledger_store_sqlite"
+path = "src/lib.rs"
+
+[dependencies]
+interledger-api = { path = "../interledger-api", version = "^0.2.0", default-features = false }
+interledger-btp = { path = "../interledger-btp", version = "^0.3.0", default-features = false }
+interledger-ccp = { path = "../interledger-ccp", version = "^0.2.0", default-features = false }
+interledger-http = { path = "../interledger-http", version = "^0.3.0", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.3.0", default-features = false }
+interledger-router = { path = "../interledger-router", version = "^0.3.0", default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.3.0", default-features = false }
+interledger-service-util = { path = "../interledger-service-util", version = "^0.3.0", default-features = false }
+interledger-settlement = { path = "../interledger-settlement", version = "^0.2.0", default-features = false }
+interledger-store-common = { path = "../interledger-store-common", version = "^0.1.0", default-features = false }
+interledger-stream = { path = "../interledger-stream", version = "^0.3.0", default-features = false }
+
+bytes = { version = "0.4.12", default-features = false }
+futures = { version = "0.1.29", default-features = false }
+http = { version = "0.1.18", default-features = false }
+num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
+rusqlite = { version = "0.20.0", default-features = false }
+url = { version = "2.1.0", default-features = false, features = ["serde"] }

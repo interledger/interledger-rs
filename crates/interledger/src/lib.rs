@@ -114,10 +114,22 @@ pub mod spsp {
     pub use interledger_spsp::*;
 }
 
+/// Shared components for backing stores
+#[cfg(feature = "store-common")]
+pub mod store_common {
+    pub use interledger_store_common::*;
+}
+
 /// Store implementation backed by Redis
 #[cfg(feature = "store-redis")]
 pub mod store_redis {
     pub use interledger_store_redis::*;
+}
+
+/// Store implementation backed by SQLite
+#[cfg(feature = "store-sqlite")]
+pub mod store_sqlite {
+    pub use interledger_store_sqlite::*;
 }
 
 /// STREAM Protocol sender and receiver

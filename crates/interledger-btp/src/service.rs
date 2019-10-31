@@ -1,4 +1,4 @@
-use super::{packet::*, BtpAccount};
+use super::packet::*;
 use bytes::BytesMut;
 use futures::{
     future::err,
@@ -59,22 +59,21 @@ impl From<warp::Error> for WsError {
 /// A container for BTP/WebSocket connections that implements OutgoingService
 /// for sending outgoing ILP Prepare packets over one of the connected BTP connections.
 #[derive(Clone)]
-pub struct BtpOutgoingService<O, A: Account> {
+pub struct BtpOutgoingService<O> {
     // TODO support multiple connections per account
     ilp_address: Address,
-    connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
+    connections: Arc<RwLock<HashMap<AccountId, UnboundedSender<Message>>>>,
     pending_outgoing: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
-    pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
-    incoming_sender: UnboundedSender<(A, u32, Prepare)>,
+    pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<Account>>>>,
+    incoming_sender: UnboundedSender<(Account, u32, Prepare)>,
     next: O,
     close_all_connections: Arc<Mutex<Option<Trigger>>>,
     stream_valve: Arc<Valve>,
 }
 
-impl<O, A> BtpOutgoingService<O, A>
+impl<O> BtpOutgoingService<O>
 where
-    O: OutgoingService<A> + Clone,
-    A: BtpAccount + 'static,
+    O: OutgoingService + Clone,
 {
     pub fn new(ilp_address: Address, next: O) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
@@ -105,7 +104,7 @@ where
     /// sent back to the Future that sent the outgoing request originally.
     pub(crate) fn add_connection(
         &self,
-        account: A,
+        account: Account,
         connection: impl Stream<Item = Message, Error = WsError>
             + Sink<SinkItem = Message, SinkError = WsError>
             + Send
@@ -225,9 +224,9 @@ where
 
     /// Convert this BtpOutgoingService into a bidirectional BtpService by adding a handler for incoming requests.
     /// This will automatically pull all incoming Prepare packets from the channel buffer and call the IncomingService with them.
-    pub fn handle_incoming<I>(self, incoming_handler: I) -> BtpService<I, O, A>
+    pub fn handle_incoming<I>(self, incoming_handler: I) -> BtpService<I, O>
     where
-        I: IncomingService<A> + Clone + Send + 'static,
+        I: IncomingService + Clone + Send + 'static,
     {
         // Any connections that were added to the BtpOutgoingService will just buffer
         // the incoming Prepare packets they get in self.pending_incoming
@@ -292,10 +291,9 @@ where
     }
 }
 
-impl<O, A> OutgoingService<A> for BtpOutgoingService<O, A>
+impl<O> OutgoingService for BtpOutgoingService<O>
 where
-    O: OutgoingService<A> + Clone,
-    A: BtpAccount + 'static,
+    O: OutgoingService + Clone,
 {
     type Future = BoxedIlpFuture;
 
@@ -303,7 +301,7 @@ where
     ///
     /// If there is no open connection for the Account specified in `request.to`, the
     /// request will be passed through to the `next` handler.
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
         let account_id = request.to.id();
         if let Some(connection) = (*self.connections.read()).get(&account_id) {
             let request_id = random::<u32>();
@@ -384,16 +382,15 @@ where
 }
 
 #[derive(Clone)]
-pub struct BtpService<I, O, A: Account> {
-    outgoing: BtpOutgoingService<O, A>,
+pub struct BtpService<I, O> {
+    outgoing: BtpOutgoingService<O>,
     incoming_handler_type: PhantomData<I>,
 }
 
-impl<I, O, A> BtpService<I, O, A>
+impl<I, O> BtpService<I, O>
 where
-    I: IncomingService<A> + Clone + Send + 'static,
-    O: OutgoingService<A> + Clone,
-    A: BtpAccount + 'static,
+    I: IncomingService + Clone + Send + 'static,
+    O: OutgoingService + Clone,
 {
     /// Close all of the open WebSocket connections
     pub fn close(&self) {
@@ -401,10 +398,9 @@ where
     }
 }
 
-impl<I, O, A> OutgoingService<A> for BtpService<I, O, A>
+impl<I, O> OutgoingService for BtpService<I, O>
 where
-    O: OutgoingService<A> + Clone + Send + 'static,
-    A: BtpAccount + 'static,
+    O: OutgoingService + Clone + Send + 'static,
 {
     type Future = BoxedIlpFuture;
 
@@ -412,7 +408,7 @@ where
     ///
     /// If there is no open connection for the Account specified in `request.to`, the
     /// request will be passed through to the `next` handler.
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
         self.outgoing.send_request(request)
     }
 }

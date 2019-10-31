@@ -235,7 +235,7 @@ mod prefix_map {
     }
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod table {
     use super::*;
     use crate::fixtures::*;
@@ -334,4 +334,4 @@ mod table {
         assert_eq!(simplified.get("example.one").unwrap().id, 1);
         assert_eq!(simplified.get("example.two").unwrap().id, 2);
     }
-}
+}*/

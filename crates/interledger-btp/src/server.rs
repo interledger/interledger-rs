@@ -1,5 +1,5 @@
 use super::service::{BtpOutgoingService, WsError};
-use super::{packet::*, BtpAccount, BtpStore};
+use super::{packet::*, BtpStore};
 use futures::{future::result, Async, AsyncSink, Future, Poll, Sink, Stream};
 use interledger_packet::Address;
 use interledger_service::*;
@@ -30,18 +30,17 @@ const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// The warp filter handles the websocket upgrades and adds incoming connections
 /// to the BTP service so that it will handle each of the messages.
-pub fn create_btp_service_and_filter<O, S, A>(
+pub fn create_btp_service_and_filter<O, S>(
     ilp_address: Address,
     store: S,
     next_outgoing: O,
 ) -> (
-    BtpOutgoingService<O, A>,
+    BtpOutgoingService<O>,
     warp::filters::BoxedFilter<(impl warp::Reply,)>,
 )
 where
-    O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    S: BtpStore<Account = A> + Clone + Send + Sync + 'static,
-    A: BtpAccount + 'static,
+    O: OutgoingService + Clone + Send + Sync + 'static,
+    S: BtpStore + Clone + Send + Sync + 'static,
 {
     let service = BtpOutgoingService::new(ilp_address, next_outgoing);
     let service_clone = service.clone();
@@ -170,21 +169,20 @@ struct Auth {
     token: AuthToken,
 }
 
-fn validate_auth<S, A>(
+fn validate_auth<S>(
     store: S,
     connection: impl Stream<Item = Message, Error = warp::Error>
         + Sink<SinkItem = Message, SinkError = warp::Error>,
 ) -> impl Future<
     Item = (
-        A,
+        Account,
         impl Stream<Item = Message, Error = warp::Error>
             + Sink<SinkItem = Message, SinkError = warp::Error>,
     ),
     Error = (),
 >
 where
-    S: BtpStore<Account = A> + 'static,
-    A: BtpAccount + 'static,
+    S: BtpStore + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
         debug!("Got BTP connection for username: {}", auth.token.username());

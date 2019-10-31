@@ -28,36 +28,29 @@ enum EchoPacketType {
 }
 
 #[derive(Clone)]
-pub struct EchoService<I, S, A> {
+pub struct EchoService<I, S> {
     store: S,
     next: I,
-    account_type: PhantomData<A>,
 }
 
-impl<I, S, A> EchoService<I, S, A>
+impl<I, S> EchoService<I, S>
 where
     S: AddressStore,
-    I: IncomingService<A>,
-    A: Account,
+    I: IncomingService,
 {
     pub fn new(store: S, next: I) -> Self {
-        EchoService {
-            store,
-            next,
-            account_type: PhantomData,
-        }
+        EchoService { store, next }
     }
 }
 
-impl<I, S, A> IncomingService<A> for EchoService<I, S, A>
+impl<I, S> IncomingService for EchoService<I, S>
 where
-    I: IncomingService<A>,
+    I: IncomingService,
     S: AddressStore,
-    A: Account,
 {
     type Future = BoxedIlpFuture;
 
-    fn handle_request(&mut self, mut request: IncomingRequest<A>) -> Self::Future {
+    fn handle_request(&mut self, mut request: IncomingRequest) -> Self::Future {
         let ilp_address = self.store.get_ilp_address();
         let should_echo = request.prepare.destination() == ilp_address
             && request.prepare.data().starts_with(ECHO_PREFIX.as_bytes());
@@ -211,7 +204,7 @@ impl<'a> EchoResponseBuilder<'a> {
     }
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod echo_tests {
     use super::*;
     use futures::future::Future;
@@ -253,7 +246,7 @@ mod echo_tests {
     #[derive(Debug, Clone)]
     struct TestAccount(u64);
 
-    impl Account for TestAccount {
+    /*impl Account for TestAccount {
         type AccountId = u64;
         fn id(&self) -> u64 {
             self.0
@@ -275,7 +268,7 @@ mod echo_tests {
         fn ilp_address(&self) -> &Address {
             &EXAMPLE_ADDRESS
         }
-    }
+    }*/
 
     /// If the destination of the packet is not destined to the node's address,
     /// the node should not echo the packet.
@@ -509,4 +502,4 @@ mod echo_tests {
         hash.copy_from_slice(digest(&SHA256, preimage).as_ref());
         hash
     }
-}
+}*/

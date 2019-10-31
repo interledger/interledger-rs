@@ -16,11 +16,7 @@ pub use self::echo_service::EchoService;
 pub use self::exchange_rates_service::{
     ExchangeRateFetcher, ExchangeRateProvider, ExchangeRateService, ExchangeRateStore,
 };
-pub use self::expiry_shortener_service::{
-    ExpiryShortenerService, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
-};
-pub use self::max_packet_amount_service::{MaxPacketAmountAccount, MaxPacketAmountService};
-pub use self::rate_limit_service::{
-    RateLimitAccount, RateLimitError, RateLimitService, RateLimitStore,
-};
+pub use self::expiry_shortener_service::{ExpiryShortenerService, DEFAULT_ROUND_TRIP_TIME};
+pub use self::max_packet_amount_service::MaxPacketAmountService;
+pub use self::rate_limit_service::{RateLimitError, RateLimitService, RateLimitStore};
 pub use self::validator_service::ValidatorService;

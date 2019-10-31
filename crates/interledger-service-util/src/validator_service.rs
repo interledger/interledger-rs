@@ -15,53 +15,41 @@ use tokio::prelude::FutureExt;
 /// Forwards everything else.
 ///
 #[derive(Clone)]
-pub struct ValidatorService<IO, S, A> {
+pub struct ValidatorService<IO, S> {
     store: S,
     next: IO,
-    account_type: PhantomData<A>,
 }
 
-impl<I, S, A> ValidatorService<I, S, A>
+impl<I, S> ValidatorService<I, S>
 where
-    I: IncomingService<A>,
+    I: IncomingService,
     S: AddressStore,
-    A: Account,
 {
     pub fn incoming(store: S, next: I) -> Self {
-        ValidatorService {
-            store,
-            next,
-            account_type: PhantomData,
-        }
+        ValidatorService { store, next }
     }
 }
 
-impl<O, S, A> ValidatorService<O, S, A>
+impl<O, S> ValidatorService<O, S>
 where
-    O: OutgoingService<A>,
+    O: OutgoingService,
     S: AddressStore,
-    A: Account,
 {
     pub fn outgoing(store: S, next: O) -> Self {
-        ValidatorService {
-            store,
-            next,
-            account_type: PhantomData,
-        }
+        ValidatorService { store, next }
     }
 }
 
-impl<I, S, A> IncomingService<A> for ValidatorService<I, S, A>
+impl<I, S> IncomingService for ValidatorService<I, S>
 where
-    I: IncomingService<A>,
+    I: IncomingService,
     S: AddressStore,
-    A: Account,
 {
     type Future = BoxedIlpFuture;
 
     /// On receiving a request:
     /// 1. If the prepare packet in the request is not expired, forward it, otherwise return a reject
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    fn handle_request(&mut self, request: IncomingRequest) -> Self::Future {
         let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
         let now = Utc::now();
         if expires_at >= now {
@@ -85,11 +73,10 @@ where
     }
 }
 
-impl<O, S, A> OutgoingService<A> for ValidatorService<O, S, A>
+impl<O, S> OutgoingService for ValidatorService<O, S>
 where
-    O: OutgoingService<A>,
+    O: OutgoingService,
     S: AddressStore,
-    A: Account,
 {
     type Future = BoxedIlpFuture;
 
@@ -101,7 +88,7 @@ where
     ///     - If the forwarding is successful, it should receive a fulfill packet. Depending on if the hash of the fulfillment condition inside the fulfill is a preimage of the condition of the prepare:
     ///         - return the fulfill if it matches
     ///         - otherwise reject
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    fn send_request(&mut self, request: OutgoingRequest) -> Self::Future {
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition()); // why?
 
@@ -182,7 +169,7 @@ lazy_static! {
 #[derive(Clone, Debug)]
 struct TestAccount(u64);
 #[cfg(test)]
-impl Account for TestAccount {
+/*impl Account for TestAccount {
     type AccountId = u64;
 
     fn id(&self) -> u64 {
@@ -205,8 +192,7 @@ impl Account for TestAccount {
     fn ilp_address(&self) -> &Address {
         &EXAMPLE_ADDRESS
     }
-}
-
+}*/
 #[cfg(test)]
 #[derive(Clone)]
 struct TestStore;
@@ -231,7 +217,7 @@ impl AddressStore for TestStore {
     }
 }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod incoming {
     use super::*;
     use interledger_packet::*;
@@ -316,9 +302,9 @@ mod incoming {
             ErrorCode::R00_TRANSFER_TIMED_OUT
         );
     }
-}
+}*/
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod outgoing {
     use super::*;
     use interledger_packet::*;
@@ -429,4 +415,4 @@ mod outgoing {
             ErrorCode::F09_INVALID_PEER_RESPONSE
         );
     }
-}
+}*/
