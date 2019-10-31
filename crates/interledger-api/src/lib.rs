@@ -261,7 +261,10 @@ where
         self
     }
 
-    pub fn into_warp_filter(self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    pub fn into_warp_filter(
+        self,
+        node_version: Option<String>,
+    ) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
         routes::accounts_api(
             self.server_secret,
             self.admin_api_token.clone(),
@@ -271,12 +274,20 @@ where
             self.btp,
             self.store.clone(),
         )
-        .or(routes::node_settings_api(self.admin_api_token, self.store))
+        .or(routes::node_settings_api(
+            self.admin_api_token,
+            node_version,
+            self.store,
+        ))
         .boxed()
     }
 
-    pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
-        warp::serve(self.into_warp_filter()).bind(addr)
+    pub fn bind(
+        self,
+        addr: SocketAddr,
+        node_version: Option<String>,
+    ) -> impl Future<Item = (), Error = ()> {
+        warp::serve(self.into_warp_filter(node_version)).bind(addr)
     }
 }
 
