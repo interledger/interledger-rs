@@ -23,6 +23,10 @@ pub fn main() {
             eprintln!("ILP CLI error: failed to send request: {}", e);
             exit(1);
         }
+        Err(interpreter::Error::ResponseErr(e)) => {
+            eprintln!("ILP CLI error: invalid response: {}", e);
+            exit(1);
+        }
         Ok(mut response) => match response.text() {
             Err(e) => {
                 eprintln!("ILP CLI error: Failed to parse HTTP response: {}", e);
