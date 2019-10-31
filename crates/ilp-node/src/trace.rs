@@ -1,7 +1,7 @@
 use futures::Future;
 use interledger::{
     ccp::{CcpRoutingAccount, RoutingRelation},
-    packet::{Fulfill, Reject},
+    packet::{ErrorCode, Fulfill, Reject},
     service::{Account, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService},
 };
 use std::str;
@@ -106,11 +106,12 @@ pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
         && request.to.routing_relation() == RoutingRelation::Child;
     next.send_request(request)
         .then(move |result| {
-            if result.is_ok() || ignore_rejects {
-                trace_response(result)
-            } else {
-                result
+            if let Err(ref err) = result {
+                if err.code() == ErrorCode::F02_UNREACHABLE && ignore_rejects {
+                    return result;
+                }
             }
+            trace_response(result)
         })
         .in_current_span()
 }
