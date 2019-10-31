@@ -12,7 +12,7 @@ use uuid::Uuid;
 /// Add tracing context for the incoming request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_incoming<A: Account + CcpRoutingAccount>(
+pub fn trace_incoming<A: Account>(
     request: IncomingRequest<A>,
     mut next: impl IncomingService<A>,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
@@ -34,7 +34,6 @@ pub fn trace_incoming<A: Account + CcpRoutingAccount>(
         from.ilp_address = %request.from.ilp_address(),
         from.asset_code = %request.from.asset_code(),
         from.asset_scale = %request.from.asset_scale(),
-        from.routing_relation = %request.from.routing_relation(),
     );
     let _details_scope = details_span.enter();
 
@@ -47,7 +46,7 @@ pub fn trace_incoming<A: Account + CcpRoutingAccount>(
 /// being forwarded and turned into an outgoing request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_forwarding<A: Account + CcpRoutingAccount>(
+pub fn trace_forwarding<A: Account>(
     request: OutgoingRequest<A>,
     mut next: impl OutgoingService<A>,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
@@ -64,7 +63,6 @@ pub fn trace_forwarding<A: Account + CcpRoutingAccount>(
         to.username = %request.from.username(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
-        to.routing_relation = %request.from.routing_relation(),
     );
     let _details_scope = details_span.enter();
 
@@ -92,11 +90,9 @@ pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
         from.ilp_address = %request.from.ilp_address(),
         from.asset_code = %request.from.asset_code(),
         from.asset_scale = %request.from.asset_scale(),
-        from.routing_relation = %request.from.routing_relation(),
         to.username = %request.from.username(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
-        to.routing_relation = %request.to.routing_relation(),
     );
     let _details_scope = details_span.enter();
 
