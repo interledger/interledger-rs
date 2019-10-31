@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use log::error;
 use ring::{
     aead, hmac,
     rand::{SecureRandom, SystemRandom},
@@ -9,7 +8,7 @@ const NONCE_LENGTH: usize = 12;
 static ENCRYPTION_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_encryption_key";
 
 use core::sync::atomic;
-use secrecy::{DebugSecret, Secret};
+use secrecy::{DebugSecret, Secret, SecretBytes};
 use std::ptr;
 use zeroize::Zeroize;
 
@@ -136,10 +135,12 @@ pub fn encrypt_token(encryption_key: &aead::LessSafeKey, token: &[u8]) -> Bytes 
     }
 }
 
-pub fn decrypt_token(decryption_key: &aead::LessSafeKey, encrypted: &[u8]) -> Option<Bytes> {
+pub fn decrypt_token(
+    decryption_key: &aead::LessSafeKey,
+    encrypted: &[u8],
+) -> Result<SecretBytes, ()> {
     if encrypted.len() < aead::MAX_TAG_LEN {
-        error!("Cannot decrypt token, encrypted value does not have a nonce attached");
-        return None;
+        return Err(());
     }
 
     let mut encrypted = encrypted.to_vec();
@@ -149,10 +150,9 @@ pub fn decrypt_token(decryption_key: &aead::LessSafeKey, encrypted: &[u8]) -> Op
     let nonce = aead::Nonce::assume_unique_for_key(nonce);
 
     if let Ok(token) = decryption_key.open_in_place(nonce, aead::Aad::empty(), &mut encrypted) {
-        Some(Bytes::from(token.to_vec()))
+        Ok(SecretBytes::new(token.to_vec()))
     } else {
-        error!("Unable to decrypt token");
-        None
+        Err(())
     }
 }
 
@@ -168,7 +168,7 @@ mod encryption {
         let encrypted = encrypt_token(&encryption_key.expose_secret().0, b"test test");
         let decrypted = decrypt_token(&decryption_key.expose_secret().0, encrypted.as_ref());
         assert_eq!(
-            str::from_utf8(decrypted.unwrap().as_ref()).unwrap(),
+            str::from_utf8(decrypted.unwrap().expose_secret().as_ref()).unwrap(),
             "test test"
         );
     }
