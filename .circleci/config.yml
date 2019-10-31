@@ -144,7 +144,7 @@ jobs:
           name: Build docker images
           command: |
             export DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
-            docker/docker-build.sh node
+            docker/docker-build.sh node testnet-bundle
 
             export DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             docker/docker-build.sh ilp-cli
@@ -158,6 +158,7 @@ jobs:
             DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/node:${DOCKER_IMAGE_TAG}"
             docker push interledgerrs/node:${DOCKER_IMAGE_TAG}
+            docker push interledgerrs/testnet-bundle:${DOCKER_IMAGE_TAG}
 
             DOCKER_IMAGE_TAG=$(./.circleci/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             echo "Pushing docker image of tag: interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}"
