@@ -1,5 +1,6 @@
 use futures::Future;
 use interledger::{
+    ccp::{CcpRoutingAccount, RoutingRelation},
     packet::{Fulfill, Reject},
     service::{Account, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService},
 };
@@ -11,7 +12,7 @@ use uuid::Uuid;
 /// Add tracing context for the incoming request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_incoming<A: Account>(
+pub fn trace_incoming<A: Account + CcpRoutingAccount>(
     request: IncomingRequest<A>,
     mut next: impl IncomingService<A>,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
@@ -33,8 +34,10 @@ pub fn trace_incoming<A: Account>(
         from.ilp_address = %request.from.ilp_address(),
         from.asset_code = %request.from.asset_code(),
         from.asset_scale = %request.from.asset_scale(),
+        from.routing_relation = %request.from.routing_relation(),
     );
     let _details_scope = details_span.enter();
+
     next.handle_request(request)
         .then(trace_response)
         .in_current_span()
@@ -44,7 +47,7 @@ pub fn trace_incoming<A: Account>(
 /// being forwarded and turned into an outgoing request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_forwarding<A: Account>(
+pub fn trace_forwarding<A: Account + CcpRoutingAccount>(
     request: OutgoingRequest<A>,
     mut next: impl OutgoingService<A>,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
@@ -61,6 +64,7 @@ pub fn trace_forwarding<A: Account>(
         to.username = %request.from.username(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
+        to.routing_relation = %request.from.routing_relation(),
     );
     let _details_scope = details_span.enter();
 
@@ -70,7 +74,7 @@ pub fn trace_forwarding<A: Account>(
 /// Add tracing context for the outgoing request (created by this node).
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_outgoing<A: Account>(
+pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
     request: OutgoingRequest<A>,
     mut next: impl OutgoingService<A>,
 ) -> impl Future<Item = Fulfill, Error = Reject> {
@@ -88,14 +92,26 @@ pub fn trace_outgoing<A: Account>(
         from.ilp_address = %request.from.ilp_address(),
         from.asset_code = %request.from.asset_code(),
         from.asset_scale = %request.from.asset_scale(),
+        from.routing_relation = %request.from.routing_relation(),
         to.username = %request.from.username(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
+        to.routing_relation = %request.to.routing_relation(),
     );
     let _details_scope = details_span.enter();
 
+    // Don't log anything for failed route updates sent to child accounts
+    // because there's a good chance they'll be offline
+    let ignore_rejects = request.prepare.destination().scheme() == "peer"
+        && request.to.routing_relation() == RoutingRelation::Child;
     next.send_request(request)
-        .then(trace_response)
+        .then(move |result| {
+            if result.is_ok() || ignore_rejects {
+                trace_response(result)
+            } else {
+                result
+            }
+        })
         .in_current_span()
 }
 
