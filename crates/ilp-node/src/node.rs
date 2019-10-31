@@ -14,7 +14,7 @@ use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
-    ccp::CcpRouteManagerBuilder,
+    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RoutingRelation},
     http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer},
     ildcp::IldcpService,
     packet::Address,
@@ -269,11 +269,17 @@ impl InterledgerNode {
                 .and_then(move |btp_accounts| {
                     let outgoing_service =
                         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
-                            error!(target: "interledger-node", "No route found for outgoing account ");
+                            // Don't log anything for failed route updates sent to child accounts
+                            // because there's a good chance they'll be offline
+                            if request.prepare.destination().scheme() != "peer"
+                                || request.to.routing_relation() != RoutingRelation::Child {
+                                error!(target: "interledger-node", "No route found for outgoing request");
+                            }
                             Err(RejectBuilder {
                                 code: ErrorCode::F02_UNREACHABLE,
                                 message: &format!(
-                                    "No outgoing route for account: {} (ILP address of the Prepare packet: {:?})",
+                                    // TODO we might not want to expose the internal account ID in the error
+                                    "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
                                     request.to.id(),
                                     request.prepare.destination(),
                                 )
