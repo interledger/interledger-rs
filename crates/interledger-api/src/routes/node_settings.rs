@@ -22,6 +22,7 @@ use warp::{self, Filter, Rejection};
 
 pub fn node_settings_api<S, A>(
     admin_api_token: String,
+    node_version: Option<String>,
     store: S,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
@@ -57,7 +58,7 @@ where
             warp::reply::json(&json!({
                 "status": "Ready".to_string(),
                 "ilp_address": store.get_ilp_address(),
-                "version": env!("CARGO_PKG_VERSION"),
+                "version": node_version,
             }))
         })
         .boxed();
