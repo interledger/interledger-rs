@@ -1,6 +1,6 @@
 [package]
 name = "ilp-node"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger node (sender, connector, receiver bundle)"
 license = "Apache-2.0"
