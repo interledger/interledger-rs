@@ -3,14 +3,7 @@ FROM circleci/rust:1.38
 
 USER root
 
-# Install libcurl3 etc.
-# cargo-audit started requiring libcurl3
-RUN echo "deb http://security.ubuntu.com/ubuntu xenial-security main" | tee -a /etc/apt/sources.list && \
-    apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 3B4FE6ACC0B21F32 && \
-    apt-get update && \
-    apt-get install libcurl3 -y && \
-    # get libcurl to a place where it won't get overwritten
-    cp /usr/lib/x86_64-linux-gnu/libcurl.so.3 /usr/lib && \
+RUN apt-get update && \
     apt-get install curl jq -y
 
 # Because nc command doesn't accept -k argument correctly, we need to install ncat of buster.
@@ -65,7 +58,7 @@ RUN . ~/.nvm/nvm.sh && \
     curl -o- -L https://yarnpkg.com/install.sh | bash && \
     export PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH && \
     yarn global add ganache-cli ilp-settlement-xrp
-ENV PATH=/home/circleci/.yarn/bin:=/home/circleci/.config/yarn/global/node_modules/.bin:$PATH
+ENV PATH=/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH
 
 WORKDIR /home/circleci
 ENV CARGO_HOME=/home/circleci/.cargo
