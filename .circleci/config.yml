@@ -46,7 +46,8 @@ jobs:
           # for 5 hours, wasting a ton of compute credits)
           command: timeout 10m cargo test --all --all-features
           environment:
-            RUST_BACKTRACE: "1"
+            - RUST_LOG: "interledger=trace"
+            - RUST_BACKTRACE: "full"
       - run:
           name: Check Style
           command: |

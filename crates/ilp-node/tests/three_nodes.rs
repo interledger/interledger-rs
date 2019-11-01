@@ -1,8 +1,8 @@
-use futures::{future::join_all, Future};
+use futures::{future::join_all, stream::*, sync::mpsc, Future};
 use ilp_node::InterledgerNode;
 use serde_json::json;
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::error_span;
+use tracing::{debug, error_span};
 use tracing_futures::Instrument;
 
 mod redis_helpers;
@@ -13,6 +13,8 @@ use interledger::packet::Address;
 use interledger::stream::StreamDelivery;
 use std::str::FromStr;
 use test_helpers::*;
+
+const LOG_TARGET: &str = "interledger-tests-three-nodes";
 
 #[test]
 fn three_nodes() {
@@ -42,35 +44,35 @@ fn three_nodes() {
 
     let alice_on_alice = json!({
         "ilp_address": "example.alice",
-        "username": "alice",
+        "username": "alice_on_a",
         "asset_code": "XYZ",
         "asset_scale": 9,
         "ilp_over_http_incoming_token" : "default account holder",
     });
     let bob_on_alice = json!({
         "ilp_address": "example.bob",
-        "username": "bob",
+        "username": "bob_on_a",
         "asset_code": "XYZ",
         "asset_scale": 9,
         "ilp_over_http_url": format!("http://localhost:{}/ilp", node2_http),
         "ilp_over_http_incoming_token" : "two",
-        "ilp_over_http_outgoing_token" : "alice:one",
+        "ilp_over_http_outgoing_token" : "alice_on_b:one",
         "min_balance": -1_000_000_000,
         "routing_relation": "Peer",
     });
 
     let alice_on_bob = json!({
         "ilp_address": "example.alice",
-        "username": "alice",
+        "username": "alice_on_b",
         "asset_code": "XYZ",
         "asset_scale": 9,
         "ilp_over_http_url": format!("http://localhost:{}/ilp", node1_http),
         "ilp_over_http_incoming_token" : "one",
-        "ilp_over_http_outgoing_token" : "bob:two",
+        "ilp_over_http_outgoing_token" : "bob_on_a:two",
         "routing_relation": "Peer",
     });
     let charlie_on_bob = json!({
-        "username": "charlie",
+        "username": "charlie_on_b",
         "asset_code": "ABC",
         "asset_scale": 6,
         "ilp_over_btp_incoming_token" : "three",
@@ -80,28 +82,28 @@ fn three_nodes() {
     });
 
     let charlie_on_charlie = json!({
-        "username": "charlie",
+        "username": "charlie_on_c",
         "asset_code": "ABC",
         "asset_scale": 6,
         "ilp_over_http_incoming_token" : "default account holder",
     });
     let bob_on_charlie = json!({
         "ilp_address": "example.bob",
-        "username": "bob",
+        "username": "bob_on_c",
         "asset_code": "ABC",
         "asset_scale": 6,
         "ilp_over_http_incoming_token" : "two",
-        "ilp_over_http_outgoing_token": "charlie:three",
+        "ilp_over_http_outgoing_token": "charlie_on_b:three",
         "ilp_over_http_url": format!("http://localhost:{}/ilp", node2_http),
         "ilp_over_btp_url": format!("btp+ws://localhost:{}/ilp/btp", node2_http),
-        "ilp_over_btp_outgoing_token": "charlie:three",
+        "ilp_over_btp_outgoing_token": "charlie_on_b:three",
         "min_balance": -1_000_000_000,
         "routing_relation": "Parent",
     });
 
     let node1: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.alice",
-        "default_spsp_account": "alice",
+        "default_spsp_account": "alice_on_a",
         "admin_auth_token": "admin",
         "redis_connection": connection_info_to_string(connection_info1),
         "http_bind_address": format!("127.0.0.1:{}", node1_http),
@@ -114,7 +116,6 @@ fn three_nodes() {
 
     let node2: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.bob",
-        "default_spsp_account": "bob",
         "admin_auth_token": "admin",
         "redis_connection": connection_info_to_string(connection_info2),
         "http_bind_address": format!("127.0.0.1:{}", node2_http),
@@ -126,7 +127,7 @@ fn three_nodes() {
     .expect("Error creating node2.");
 
     let node3: InterledgerNode = serde_json::from_value(json!({
-        "default_spsp_account": "charlie",
+        "default_spsp_account": "charlie_on_c",
         "admin_auth_token": "admin",
         "redis_connection": connection_info_to_string(connection_info3),
         "http_bind_address": format!("127.0.0.1:{}", node3_http),
@@ -137,16 +138,24 @@ fn three_nodes() {
     }))
     .expect("Error creating node3.");
 
+    let (finish_sender, finish_receiver) = mpsc::channel(0);
+
     let alice_fut = join_all(vec![
         create_account_on_node(node1_http, alice_on_alice, "admin"),
         create_account_on_node(node1_http, bob_on_alice, "admin"),
     ]);
 
+    let mut node1_finish_sender = finish_sender.clone();
     runtime.spawn(
         node1
             .serve()
             .and_then(move |_| alice_fut)
-            .and_then(|_| Ok(()))
+            .and_then(move |_| {
+                node1_finish_sender
+                    .try_send(1)
+                    .expect("Could not send message from node_1");
+                Ok(())
+            })
             .instrument(error_span!(target: "interledger", "node1")),
     );
 
@@ -155,6 +164,7 @@ fn three_nodes() {
         create_account_on_node(node2_http, charlie_on_bob, "admin"),
     ]);
 
+    let mut node2_finish_sender = finish_sender;
     runtime.spawn(
         node2
             .serve()
@@ -167,9 +177,12 @@ fn three_nodes() {
                     .json(&json!({"ABC": 2, "XYZ": 1}))
                     .send()
                     .map_err(|err| panic!(err))
-                    .and_then(|res| {
+                    .and_then(move |res| {
                         res.error_for_status()
                             .expect("Error setting exchange rates");
+                        node2_finish_sender
+                            .try_send(2)
+                            .expect("Could not send message from node_2");
                         Ok(())
                     })
             })
@@ -185,7 +198,14 @@ fn three_nodes() {
         .block_on(
             node3
                 .serve()
-                .and_then(move |_| charlie_fut)
+                .and_then(move |_| finish_receiver.collect())
+                .and_then(move |messages| {
+                    debug!(
+                        target: LOG_TARGET,
+                        "Received finish messages: {:?}", messages
+                    );
+                    charlie_fut
+                })
                 .instrument(error_span!(target: "interledger", "node3"))
                 // we wait some time after the node is up so that we get the
                 // necessary routes from bob
@@ -197,24 +217,24 @@ fn three_nodes() {
                         node1_http,
                         node3_http,
                         1000,
-                        "charlie",
-                        "alice",
+                        "charlie_on_c",
+                        "alice_on_a",
                         "default account holder",
                     );
                     let send_3_to_1 = send_money_to_username(
                         node3_http,
                         node1_http,
                         1000,
-                        "alice",
-                        "charlie",
+                        "alice_on_a",
+                        "charlie_on_c",
                         "default account holder",
                     );
 
                     let get_balances = move || {
                         futures::future::join_all(vec![
-                            get_balance("alice", node1_http, "admin"),
-                            get_balance("charlie", node2_http, "admin"),
-                            get_balance("charlie", node3_http, "admin"),
+                            get_balance("alice_on_a", node1_http, "admin"),
+                            get_balance("charlie_on_b", node2_http, "admin"),
+                            get_balance("charlie_on_c", node3_http, "admin"),
                         ])
                     };
 
@@ -228,8 +248,16 @@ fn three_nodes() {
                             err
                         })
                         .and_then(move |receipt: StreamDelivery| {
-                            assert_eq!(receipt.from, Address::from_str("example.alice").unwrap());
-                            assert!(receipt.to.to_string().starts_with("example.bob.charlie"));
+                            debug!(target: LOG_TARGET, "send_1_to_3 receipt: {:?}", receipt);
+                            assert_eq!(
+                                receipt.from,
+                                Address::from_str("example.alice").unwrap(),
+                                "Payment receipt incorrect (1)"
+                            );
+                            assert!(receipt
+                                .to
+                                .to_string()
+                                .starts_with("example.bob.charlie_on_b.charlie_on_c."));
                             assert_eq!(receipt.sent_asset_code, "XYZ");
                             assert_eq!(receipt.sent_asset_scale, 9);
                             assert_eq!(receipt.sent_amount, 1000);
@@ -250,9 +278,11 @@ fn three_nodes() {
                             })
                         })
                         .and_then(move |receipt| {
+                            debug!(target: LOG_TARGET, "send_3_to_1 receipt: {:?}", receipt);
                             assert_eq!(
                                 receipt.from,
-                                Address::from_str("example.bob.charlie").unwrap()
+                                Address::from_str("example.bob.charlie_on_b.charlie_on_c").unwrap(),
+                                "Payment receipt incorrect (2)"
                             );
                             assert!(receipt.to.to_string().starts_with("example.alice"));
                             assert_eq!(receipt.sent_asset_code, "ABC");
