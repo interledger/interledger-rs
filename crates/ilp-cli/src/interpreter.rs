@@ -1,46 +1,32 @@
 use clap::ArgMatches;
-use failure::Fail;
 use http;
 use reqwest::{self, Client, Response};
 use std::{borrow::Cow, collections::HashMap};
 use tungstenite::{connect, handshake::client::Request};
 use url::Url;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[fail(display = "Usage error")]
+    // Custom errors
+    #[error("Usage error")]
     UsageErr(&'static str),
-    #[fail(display = "Error sending request: {}", _0)]
-    ClientErr(reqwest::Error),
-    #[fail(display = "Error receiving response: {}", _0)]
-    ResponseErr(String),
-    #[fail(display = "Error parsing URL protocol: {}", _0)]
-    ProtocolErr(&'static str),
-    #[fail(display = "Error altering URL scheme")]
-    SchemeErr(),
-    #[fail(display = "Error parsing URL: {}", _0)]
-    UrlErr(url::ParseError),
-    #[fail(display = "Error connecting to WebSocket host: {}", _0)]
-    WebsocketErr(tungstenite::error::Error),
-}
-
-impl From<url::ParseError> for Error {
-    fn from(error: url::ParseError) -> Self {
-        Error::UrlErr(error)
-    }
-}
-
-impl From<tungstenite::error::Error> for Error {
-    fn from(error: tungstenite::error::Error) -> Self {
-        Error::WebsocketErr(error)
-    }
+    #[error("Invalid protocol in URL: {0}")]
+    ProtocolErr(String),
+    // Foreign errors
+    #[error("Error sending HTTP request: {0}")]
+    ClientErr(#[from] reqwest::Error),
+    #[error("Error altering URL scheme")]
+    SchemeErr(()), // TODO: should be part of UrlError, see https://github.com/servo/rust-url/issues/299
+    #[error("Error parsing URL: {0}")]
+    UrlErr(#[from] url::ParseError),
+    #[error("WebSocket error: {0}")]
+    WebsocketErr(#[from] tungstenite::error::Error),
 }
 
 pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
     let client = NodeClient {
         client: Client::new(),
-        // `--node` has a a default value, so will never be None
-        url: matches.value_of("node_url").unwrap(),
+        url: matches.value_of("node_url").unwrap(), // infallible unwrap
     };
 
     // Dispatch based on parsed input
@@ -92,7 +78,7 @@ impl NodeClient<'_> {
     // GET /accounts/:username/balance
     fn get_account_balance(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("username").unwrap();
+        let user = args.remove("username").unwrap(); // infallible unwrap
         self.client
             .get(&format!("{}/accounts/{}/balance", self.url, user))
             .bearer_auth(auth)
@@ -143,12 +129,13 @@ impl NodeClient<'_> {
         let scheme = match url.scheme() {
             "http" => Ok("ws"),
             "https" => Ok("wss"),
-            _ => Err(Error::ProtocolErr("Unexpected protocol")),
+            s => Err(Error::ProtocolErr(format!(
+                "{} (only HTTP and HTTPS are supported)",
+                s
+            ))),
         }?;
 
-        if url.set_scheme(scheme).is_err() {
-            return Err(Error::SchemeErr());
-        };
+        url.set_scheme(scheme).map_err(Error::SchemeErr)?;
 
         let mut request: Request = url.into();
         request.add_header(
@@ -158,9 +145,7 @@ impl NodeClient<'_> {
 
         let (mut socket, _) = connect(request)?;
         loop {
-            let msg = socket
-                .read_message()
-                .expect("Could not receive WebSocket message");
+            let msg = socket.read_message()?;
             println!("{}", msg);
         }
     }
@@ -188,7 +173,7 @@ impl NodeClient<'_> {
     // PUT /accounts/:username/settings
     fn put_account_settings(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("username").unwrap();
+        let user = args.remove("username").unwrap(); // infallible unwrap
         self.client
             .put(&format!("{}/accounts/{}/settings", self.url, user))
             .bearer_auth(auth)
@@ -200,7 +185,7 @@ impl NodeClient<'_> {
     // POST /accounts/:username/payments
     fn post_account_payments(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("sender_username").unwrap();
+        let user = args.remove("sender_username").unwrap(); // infallible unwrap
         self.client
             .post(&format!("{}/accounts/{}/payments", self.url, user))
             .bearer_auth(&format!("{}:{}", user, auth))
@@ -276,6 +261,7 @@ impl NodeClient<'_> {
             .send()
             .map_err(Error::ClientErr)
     }
+
     /*
     {"http_endpoint": "https://rs3.xpring.dev/ilp", // ilp_over_http_url
     "passkey": "b0i3q9tbvfgek",  // ilp_over_http_outgoing_token = username:passkey
@@ -287,7 +273,6 @@ impl NodeClient<'_> {
     "payment_pointer": "$rs3.xpring.dev/accounts/user_g31tuju4/spsp"}
     routing_relation Parent
     */
-
     fn xpring_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, cli_args) = extract_args(matches);
         // Note the Xpring API expects the asset code in lowercase
@@ -296,31 +281,17 @@ impl NodeClient<'_> {
             .client
             .get(&format!("https://xpring.io/api/accounts/{}", asset))
             .send()
-            .map_err(|err| {
-                Error::ResponseErr(format!(
-                    "Error requesting credentials from Xpring Testnet Signup API: {:?}",
-                    err
-                ))
-            })?
+            .map_err(Error::ClientErr)?
             .json()
-            .map_err(|err| {
-                Error::ResponseErr(format!(
-                    "Got unexpected response from Xpring Testnet Signup API: {:?}",
-                    err
-                ))
-            })?;
+            .map_err(Error::ClientErr)?;
         let mut args = HashMap::new();
-        let token = format!(
-            "{}:{}",
-            foreign_args.username.clone(),
-            foreign_args.passkey.clone()
-        );
-        args.insert("ilp_over_http_url", foreign_args.http_endpoint.clone());
+        let token = format!("{}:{}", foreign_args.username, foreign_args.passkey);
+        args.insert("ilp_over_http_url", foreign_args.http_endpoint);
         args.insert("ilp_over_http_outgoing_token", token.clone());
-        args.insert("ilp_over_btp_url", foreign_args.btp_endpoint.clone());
+        args.insert("ilp_over_btp_url", foreign_args.btp_endpoint);
         args.insert("ilp_over_btp_outgoing_token", token.clone());
         args.insert("asset_scale", foreign_args.asset_scale.to_string());
-        args.insert("asset_code", foreign_args.asset_code.clone());
+        args.insert("asset_code", foreign_args.asset_code);
         args.insert("username", format!("xpring_{}", asset));
         args.insert("routing_relation", String::from("Parent")); // TODO: weird behavior when deleting and re-inserting accounts with this
                                                                  // TODO should we set different parameters?
@@ -335,9 +306,9 @@ impl NodeClient<'_> {
             .send();
 
         if matches.is_present("return_testnet_credential") {
-            result.expect("Error creating account for testnet node on our local node");
+            result?;
             Ok(Response::from(
-                http::Response::builder().body(token).unwrap(),
+                http::Response::builder().body(token).unwrap(), // infallible unwrap
             ))
         } else {
             result.map_err(Error::ClientErr)
