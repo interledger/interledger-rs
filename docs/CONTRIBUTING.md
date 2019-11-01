@@ -44,6 +44,7 @@ Please follow the instruction below when making pull requests.
     - If you would like to make your local setup reject unformatted commits, you can add `cargo fmt -- --check` as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
 - Make sure to run `cargo clippy` before you commit (required to pass CI).
     - To install clippy, run `rustup component add clippy`
+    - To run clippy, use `cargo clippy --all-targets --all-features -- -D warnings`.
     - If you would like to make your local setup reject unformatted commits, you can add `cargo clippy --all-targets --all-features -- --deny warnings` as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
 - Make sure to commit using `-s` or `--signoff` option like `git cz -s`.
     - `cz` means using the [commitizen](https://github.com/commitizen/cz-cli) explained below.
