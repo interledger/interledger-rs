@@ -20,12 +20,12 @@ pub fn main() {
             app.get_matches_from(s.split(' '));
         }
         Err(e) => {
-            eprintln!("ILP CLI error: {}", e);
+            eprintln!("ilp-cli error: {}", e);
             exit(1);
         }
         Ok(mut response) => match response.text() {
             Err(e) => {
-                eprintln!("ILP CLI error: Failed to parse HTTP response: {}", e);
+                eprintln!("ilp-cli error: Failed to parse HTTP response: {}", e);
                 exit(1);
             }
             Ok(body) => {
@@ -35,7 +35,7 @@ pub fn main() {
                     }
                 } else {
                     eprintln!(
-                        "ILP CLI error: Unexpected response from server: {}: {}",
+                        "ilp-cli error: Unexpected response from server: {}: {}",
                         response.status(),
                         body,
                     );
@@ -55,9 +55,6 @@ pub fn main() {
 // run the interpreter in order to detect panics.
 // Conveniently this section also serves as a reference for example invocations.
 mod interface_tests {
-    use crate::interpreter;
-    use crate::parser;
-
     #[test]
     fn ilp_cli() {
         should_parse(&[
@@ -101,18 +98,6 @@ mod interface_tests {
         should_parse(&[
             "ilp-cli accounts incoming-payments alice --auth foo", // minimal
         ]);
-    }
-
-    #[test]
-    fn accounts_incoming_payments_invalid_protocol() {
-        should_parse(&[
-            "ilp-cli --node tftp://localhost:7770 accounts incoming-payments alice --auth foo",
-        ]);
-    }
-
-    #[test]
-    fn accounts_incoming_payments_invalid_host() {
-        should_parse(&["ilp-cli --node http://:7770 accounts incoming-payments alice --auth foo"]);
     }
 
     #[test]
@@ -211,16 +196,19 @@ mod interface_tests {
     }
 
     fn should_parse(examples: &[&str]) {
+        use crate::interpreter::{run, Error};
+        use crate::parser;
+
         let mut app = parser::build();
         for example in examples {
             let parser_result = app.get_matches_from_safe_borrow(example.split(' '));
             match parser_result {
-                Err(e) => panic!("Failure while parsing command `{}`: {}", example, e),
-                Ok(matches) => {
-                    // Any unanticipated errors at this stage will result in a panic from
-                    // within the interpreter, so no need to manually check the result.
-                    let _interpreter_result = interpreter::run(&matches);
-                }
+                Err(e) => panic!("Failed to parse command `{}`: {}", example, e),
+                Ok(matches) => match run(&matches) {
+                    // Because these are interface tests, not integration tests, network errors are expected
+                    Ok(_) | Err(Error::ClientErr(_)) | Err(Error::WebsocketErr(_)) => (),
+                    Err(e) => panic!("Unexpected interpreter failure: {}", e),
+                },
             }
         }
     }
