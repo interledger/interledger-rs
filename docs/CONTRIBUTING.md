@@ -40,12 +40,13 @@ Please follow the instruction below when making pull requests.
 - Make sure that your branch is forked from the latest `master` branch.
 - Make sure that you wrote tests, ran it and the results were all green (required to pass CI).
 - Make sure to run `cargo fmt` before you commit (required to pass CI).
-    - To install rustfmt, run `rustup component add rustfmt`
-    - If you would like to make your local setup reject unformatted commits, you can add `cargo fmt -- --check` as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
+     - To install rustfmt, run `rustup component add rustfmt`.
+     - To run rustfmt, use `cargo fmt -- --check `.
+     - If you would like to make your local setup reject unformatted commits, you can add the command as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
 - Make sure to run `cargo clippy` before you commit (required to pass CI).
-    - To install clippy, run `rustup component add clippy`
+    - To install clippy, run `rustup component add clippy`.
     - To run clippy, use `cargo clippy --all-targets --all-features -- -D warnings`.
-    - If you would like to make your local setup reject unformatted commits, you can add `cargo clippy --all-targets --all-features -- --deny warnings` as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
+    - If you would like to make your local setup reject unformatted commits, you can add the command as a pre-commit hook in the file `interledger-rs/.git/hooks/pre-commit`.
 - Make sure to commit using `-s` or `--signoff` option like `git cz -s`.
     - `cz` means using the [commitizen](https://github.com/commitizen/cz-cli) explained below.
     - Why we use the option is explained later in the [Signing-off](#Signing-off) section.
