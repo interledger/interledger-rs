@@ -254,7 +254,7 @@ sleep 3
 ### 4. Launch Settlement Engines
 Because each node needs its own settlement engine, we need to launch both a settlement engine for Alice's node and another settlement engine for Bob's node.
 
-The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engine`, clone it first.
+The engines are part of a [separate repository](https://github.com/interledger-rs/settlement-engines) so you have to clone and install them according to [the instructions in `settlement-engines`](https://github.com/interledger-rs/settlement-engines/blob/master/README.md). In case you've never cloned `settlement-engines`, the first step would be to clone the repository.
 
 <!--!
 printf "\nStarting settlement engines...\n"
@@ -297,7 +297,7 @@ else
 -->
 
 ```bash #
-# Do this somewhere OUTER the interledger-rs directory otherwise you'll get an error.
+# This should be done outside of the interledger-rs directory, otherwise it will cause an error.
 git clone https://github.com/interledger-rs/settlement-engines
 cd settlement-engines
 ```
@@ -333,7 +333,7 @@ cargo run --features "ethereum" -- ethereum-ledger \
 --settlement_api_bind_address 127.0.0.1:3001 \
 &> logs/node-bob-settlement-engine.log &
 
-# Now go back to interledger-rs directory.
+# Now go back to the `interledger-rs` directory.
 ```
 
 <!--!
@@ -349,54 +349,63 @@ printf "\nStarting nodes...\n"
 if [ "$USE_DOCKER" -eq 1 ]; then
     # Start Alice's node
     $CMD_DOCKER run \
-        -e ILP_ADDRESS=example.alice \
-        -e ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
-        -e ILP_ADMIN_AUTH_TOKEN=hi_alice \
-        -e ILP_REDIS_URL=redis://redis-alice_node:6379/ \
-        -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
-        -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
         -p 127.0.0.1:7770:7770 \
         -p 127.0.0.1:7771:7771 \
         --network=interledger \
         --name=interledger-rs-node_a \
         -td \
-        interledgerrs/node
+        interledgerrs/node \
+        --ilp_address example.alice \
+        --secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
+        --admin_auth_token hi_alice \
+        --redis_url redis://redis-alice_node:6379/ \
+        --http_bind_address 0.0.0.0:7770 \
+        --settlement_api_bind_address 0.0.0.0:7771
     
     # Start Bob's node
     $CMD_DOCKER run \
-        -e ILP_ADDRESS=example.bob \
-        -e ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
-        -e ILP_ADMIN_AUTH_TOKEN=hi_bob \
-        -e ILP_REDIS_URL=redis://redis-bob_node:6379/ \
-        -e ILP_HTTP_BIND_ADDRESS=0.0.0.0:7770 \
-        -e ILP_SETTLEMENT_API_BIND_ADDRESS=0.0.0.0:7771 \
         -p 127.0.0.1:8770:7770 \
         -p 127.0.0.1:8771:7771 \
         --network=interledger \
         --name=interledger-rs-node_b \
         -td \
-        interledgerrs/node
+        interledgerrs/node \
+        --ilp_address example.bob \
+        --secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
+        --admin_auth_token hi_bob \
+        --redis_url redis://redis-bob_node:6379/ \
+        --http_bind_address 0.0.0.0:7770 \
+        --settlement_api_bind_address 0.0.0.0:7771
 else
 -->
 
 ```bash
+# Start both nodes.
+# Note that the configuration options can be passed as environment variables
+# or saved to a YAML, JSON or TOML file and passed to the node as a positional argument.
+# You can also pass it from STDIN.
+# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node`.
+# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
+
 # Start Alice's node
-ILP_ADDRESS=example.alice \
-ILP_SECRET_SEED=8852500887504328225458511465394229327394647958135038836332350604 \
-ILP_ADMIN_AUTH_TOKEN=hi_alice \
-ILP_REDIS_URL=redis://127.0.0.1:6379/ \
-ILP_HTTP_BIND_ADDRESS=127.0.0.1:7770 \
-ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:7771 \
-cargo run --bin ilp-node &> logs/node-alice.log &
+cargo run --bin ilp-node -- \
+--ilp_address example.alice \
+--secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
+--admin_auth_token hi_alice \
+--redis_url redis://127.0.0.1:6379/ \
+--http_bind_address 127.0.0.1:7770 \
+--settlement_api_bind_address 127.0.0.1:7771 \
+&> logs/node-alice.log &
 
 # Start Bob's node
-ILP_ADDRESS=example.bob \
-ILP_SECRET_SEED=1604966725982139900555208458637022875563691455429373719368053354 \
-ILP_ADMIN_AUTH_TOKEN=hi_bob \
-ILP_REDIS_URL=redis://127.0.0.1:6381/ \
-ILP_HTTP_BIND_ADDRESS=127.0.0.1:8770 \
-ILP_SETTLEMENT_API_BIND_ADDRESS=127.0.0.1:8771 \
-cargo run --bin ilp-node &> logs/node-bob.log &
+cargo run --bin ilp-node -- \
+--ilp_address example.bob \
+--secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
+--admin_auth_token hi_bob \
+--redis_url redis://127.0.0.1:6381/ \
+--http_bind_address 127.0.0.1:8770 \
+--settlement_api_bind_address 127.0.0.1:8771 \
+&> logs/node-bob.log &
 ```
 
 <!--!
