@@ -14,7 +14,9 @@ pub enum Error {
     ProtocolErr(String),
     // Foreign errors
     #[error("Error sending HTTP request: {0}")]
-    ClientErr(#[from] reqwest::Error),
+    SendErr(#[from] reqwest::Error),
+    #[error("Error receving HTTP response from testnet: {0}")]
+    TestnetErr(reqwest::Error),
     #[error("Error altering URL scheme")]
     SchemeErr(()), // TODO: should be part of UrlError, see https://github.com/servo/rust-url/issues/299
     #[error("Error parsing URL: {0}")]
@@ -83,7 +85,7 @@ impl NodeClient<'_> {
             .get(&format!("{}/accounts/{}/balance", self.url, user))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // POST /accounts
@@ -94,7 +96,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /accounts/:username
@@ -105,7 +107,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // DELETE /accounts/:username
@@ -115,7 +117,7 @@ impl NodeClient<'_> {
             .delete(&format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // WebSocket /accounts/:username/payments/incoming
@@ -157,7 +159,7 @@ impl NodeClient<'_> {
             .get(&format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /accounts
@@ -167,7 +169,7 @@ impl NodeClient<'_> {
             .get(&format!("{}/accounts", self.url))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /accounts/:username/settings
@@ -179,7 +181,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // POST /accounts/:username/payments
@@ -191,7 +193,7 @@ impl NodeClient<'_> {
             .bearer_auth(&format!("{}:{}", user, auth))
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /rates
@@ -199,7 +201,7 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/rates", self.url))
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /rates
@@ -210,7 +212,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&rate_pairs)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /routes
@@ -218,7 +220,7 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/routes", self.url))
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /routes/static/:prefix
@@ -229,7 +231,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .body(args["destination"].to_string())
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT routes/static
@@ -240,7 +242,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&route_pairs)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /settlement/engines
@@ -251,7 +253,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&engine_pairs)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /
@@ -259,7 +261,7 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/", self.url))
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     /*
@@ -280,10 +282,9 @@ impl NodeClient<'_> {
         let foreign_args: XpringResponse = self
             .client
             .get(&format!("https://xpring.io/api/accounts/{}", asset))
-            .send()
-            .map_err(Error::ClientErr)?
+            .send()?
             .json()
-            .map_err(Error::ClientErr)?;
+            .map_err(Error::TestnetErr)?;
         let mut args = HashMap::new();
         let token = format!("{}:{}", foreign_args.username, foreign_args.passkey);
         args.insert("ilp_over_http_url", foreign_args.http_endpoint);
@@ -311,7 +312,7 @@ impl NodeClient<'_> {
                 http::Response::builder().body(token).unwrap(), // infallible unwrap
             ))
         } else {
-            result.map_err(Error::ClientErr)
+            result.map_err(Error::SendErr)
         }
     }
 }

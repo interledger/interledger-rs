@@ -206,7 +206,10 @@ mod interface_tests {
                 Err(e) => panic!("Failed to parse command `{}`: {}", example, e),
                 Ok(matches) => match run(&matches) {
                     // Because these are interface tests, not integration tests, network errors are expected
-                    Ok(_) | Err(Error::ClientErr(_)) | Err(Error::WebsocketErr(_)) => (),
+                    Ok(_)
+                    | Err(Error::SendErr(_))
+                    | Err(Error::WebsocketErr(_))
+                    | Err(Error::TestnetErr(_)) => (),
                     Err(e) => panic!("Unexpected interpreter failure: {}", e),
                 },
             }
