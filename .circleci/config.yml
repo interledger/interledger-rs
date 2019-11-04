@@ -95,7 +95,7 @@ jobs:
             echo "target/**/*.rlib" >> .dockerignore
             echo "target/**/deps" >> .dockerignore
             echo "target/**/incremental" >> .dockerignore
-            docker/docker-build.sh ci-node ci-ilp-cli
+            docker/docker-build.sh ci-ilp-node ci-ilp-cli
       - run:
           name: Run run-md Test
           command: scripts/run-md-test.sh
@@ -115,7 +115,7 @@ jobs:
           name: Build Docker Images
           command: |
             export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
-            docker/docker-build.sh node testnet-bundle
+            docker/docker-build.sh ilp-node testnet-bundle
 
             export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
             docker/docker-build.sh ilp-cli
@@ -127,8 +127,8 @@ jobs:
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
             DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
-            echo "Pushing docker image of tag: interledgerrs/node:${DOCKER_IMAGE_TAG}"
-            docker push interledgerrs/node:${DOCKER_IMAGE_TAG}
+            echo "Pushing docker image of tag: interledgerrs/ilp-node:${DOCKER_IMAGE_TAG}"
+            docker push interledgerrs/ilp-node:${DOCKER_IMAGE_TAG}
             docker push interledgerrs/testnet-bundle:${DOCKER_IMAGE_TAG}
 
             DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})

@@ -354,7 +354,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_a \
         -td \
-        interledgerrs/node \
+        interledgerrs/ilp-node \
         --ilp_address example.alice \
         --secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
         --admin_auth_token hi_alice \
@@ -369,7 +369,7 @@ if [ "$USE_DOCKER" -eq 1 ]; then
         --network=interledger \
         --name=interledger-rs-node_b \
         -td \
-        interledgerrs/node \
+        interledgerrs/ilp-node \
         --ilp_address example.bob \
         --secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
         --admin_auth_token hi_bob \
