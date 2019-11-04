@@ -1,8 +1,9 @@
 use futures::Future;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
+use interledger_settlement_api::SettlementClient;
 use log::{debug, error};
+use settlement_core::types::{SettlementAccount, SettlementStore};
 use std::marker::PhantomData;
 use tokio_executor::spawn;
 
@@ -49,7 +50,7 @@ impl<S, O, A> BalanceService<S, O, A>
 where
     S: AddressStore + BalanceStore<Account = A> + SettlementStore<Account = A>,
     O: OutgoingService<A>,
-    A: Account + SettlementAccount,
+    A: SettlementAccount,
 {
     pub fn new(store: S, next: O) -> Self {
         BalanceService {
@@ -71,7 +72,7 @@ where
         + Sync
         + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
-    A: SettlementAccount + 'static,
+    A: SettlementAccount + Account + 'static,
 {
     type Future = BoxedIlpFuture;
 

@@ -17,7 +17,6 @@ node = [
     "ildcp",
     "router",
     "service-util",
-    "settlement",
     "spsp",
     "store-redis",
     "stream",
@@ -30,7 +29,6 @@ http = ["interledger-http"]
 ildcp = ["interledger-ildcp"]
 router = ["interledger-router"]
 service-util = ["interledger-service-util"]
-settlement = ["interledger-settlement" ]
 spsp = ["interledger-spsp", "stream"]
 store-redis = ["interledger-store-redis"]
 stream = ["interledger-stream", "ildcp"]
@@ -46,7 +44,6 @@ interledger-packet = { path = "../interledger-packet", version = "^0.3.0", defau
 interledger-router = { path = "../interledger-router", version = "^0.3.0", optional = true, default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.3.0", default-features = false }
 interledger-service-util = { path = "../interledger-service-util", version = "^0.3.0", optional = true, default-features = false }
-interledger-settlement = { path = "../interledger-settlement", version = "^0.2.0", optional = true, default-features = false }
 interledger-spsp = { path = "../interledger-spsp", version = "^0.3.0", optional = true, default-features = false }
 interledger-stream = { path = "../interledger-stream", version = "^0.3.0", optional = true, default-features = false }
 interledger-store-redis = { path = "../interledger-store-redis", version = "^0.3.1", optional = true, default-features = false }

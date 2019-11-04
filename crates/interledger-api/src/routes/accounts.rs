@@ -14,12 +14,12 @@ use interledger_service::{
     Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use settlement_core::types::SettlementAccount;
 use std::convert::TryFrom;
 use std::str::FromStr;
 use warp::{self, Filter, Rejection};

@@ -96,12 +96,6 @@ pub mod service_util {
     pub use interledger_service_util::*;
 }
 
-/// Implementation of the Settlement Engine API (on the connector/node side)
-#[cfg(feature = "settlement")]
-pub mod settlement {
-    pub use interledger_settlement::*;
-}
-
 /// Simple Payment Setup Protocol (SPSP) sender and query responder
 #[cfg(feature = "spsp")]
 pub mod spsp {

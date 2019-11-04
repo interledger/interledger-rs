@@ -7,11 +7,11 @@ use http::StatusCode;
 use interledger_api::NodeStore;
 use interledger_http::idempotency::{IdempotentData, IdempotentStore};
 use interledger_service::{Account, AccountStore};
-use interledger_settlement::{LeftoversStore, SettlementAccount, SettlementStore};
 use interledger_store_redis::AccountId;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use redis::{aio::SharedConnection, cmd};
+use settlement_core::types::{LeftoversStore, SettlementAccount, SettlementStore};
 use url::Url;
 
 lazy_static! {

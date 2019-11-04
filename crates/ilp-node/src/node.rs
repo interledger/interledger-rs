@@ -28,10 +28,10 @@ use interledger::{
         BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
         ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
     },
-    settlement::{create_settlements_filter, SettlementMessageService},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };
+use interledger_settlement_api::{create_settlements_filter, SettlementMessageService};
 use lazy_static::lazy_static;
 use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;

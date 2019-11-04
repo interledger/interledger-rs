@@ -5,12 +5,11 @@ use futures::{
 };
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-// TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
-use interledger_settlement::{Convert, ConvertDetails};
 use log::{debug, error, trace, warn};
 use reqwest::r#async::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
+use settlement_core::types::{Convert, ConvertDetails};
 use std::{
     collections::HashMap,
     marker::PhantomData,

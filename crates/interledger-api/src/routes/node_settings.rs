@@ -8,10 +8,10 @@ use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
 use interledger_router::RouterStore;
 use interledger_service::{Account, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
 use log::{error, trace};
 use serde::Serialize;
 use serde_json::json;
+use settlement_core::types::SettlementAccount;
 use std::{
     collections::HashMap,
     iter::FromIterator,

@@ -40,9 +40,6 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::{
-    scale_with_precision_loss, Convert, ConvertDetails, LeftoversStore, SettlementStore,
-};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -53,6 +50,10 @@ use redis::{
 };
 use secrecy::{ExposeSecret, Secret};
 use serde_json;
+use settlement_core::{
+    scale_with_precision_loss,
+    types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
+};
 use std::{
     iter::{self, FromIterator},
     str,
