@@ -95,9 +95,10 @@ where
                 .store
                 .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
             {
-                // if `from` is worth 1 USD and `to` is worth 10 USD, the
-                // outgoing amount will actually be 1/10th of the source amount,
-                // i.e. `from_amount * (from_rate / to_rate)`
+                // Exchange rates are expressed as `base asset / asset`. To calculate the outgoing amount,
+                // we multiply by the incoming asset's rate and divide by the outgoing asset's rate. For example,
+                // if an incoming packet is denominated in an asset worth 1 USD and the outgoing asset is worth
+                // 10 USD, the outgoing amount will be 1/10th of the source amount.
                 rates[0] / rates[1]
             } else {
                 error!(
