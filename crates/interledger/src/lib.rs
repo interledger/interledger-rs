@@ -120,6 +120,12 @@ pub mod store_redis {
     pub use interledger_store_redis::*;
 }
 
+/// Store implementation backed by SQLite
+#[cfg(feature = "store-sqlite")]
+pub mod store_sqlite {
+    pub use interledger_store_sqlite::*;
+}
+
 /// STREAM Protocol sender and receiver
 #[cfg(feature = "stream")]
 pub mod stream {

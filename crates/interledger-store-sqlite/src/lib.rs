@@ -1,11 +1,11 @@
 //! # interledger-store-sqlite
+//!
 //! Data store for Interledger.rs using SQLite
 
 mod account;
 mod crypto;
 mod store;
 
-pub use account::{Account, AccountId};
 pub use store::{SqliteStore, SqliteStoreBuilder};
 
 #[cfg(test)]

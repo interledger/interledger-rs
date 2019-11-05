@@ -1132,6 +1132,8 @@ name = "interledger-store-sqlite"
 version = "0.1.0"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http 0.1.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "interledger-api 0.3.0",
  "interledger-btp 0.4.0",
  "interledger-ccp 0.3.0",
@@ -1140,14 +1142,9 @@ dependencies = [
  "interledger-service 0.4.0",
  "interledger-service-util 0.4.0",
  "interledger-settlement 0.3.0",
- "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "ring 0.16.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-bigint 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rusqlite 0.20.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "secrecy 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "uuid 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "zeroize 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

@@ -34,6 +34,7 @@ use interledger::{
     },
     settlement::api::{create_settlements_filter, SettlementMessageService},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    store_sqlite::SqliteStoreBuilder,
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;
@@ -236,6 +237,18 @@ impl InterledgerNode {
         } else {
             Either::B(self.serve_node())
         }
+        // XXX
+        .join({
+            if true {
+                let redis_secret = generate_redis_secret(&self.secret_seed);
+                let store = RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret);
+                Either::A(self.chain_services(store))
+            } else {
+                let store = SqliteStoreBuilder::new();
+                Either::B(self.chain_services(store))
+            }
+        })
+        .and_then(|_| Ok(()))
     }
 
     #[allow(clippy::cognitive_complexity)]
