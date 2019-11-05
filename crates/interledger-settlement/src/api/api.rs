@@ -1,6 +1,11 @@
-use super::{
-    Convert, ConvertDetails, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
-    SE_ILP_ADDRESS,
+use crate::settlement_core::{
+    get_hash_of,
+    idempotency::*,
+    scale_with_precision_loss,
+    types::{
+        LeftoversStore, Quantity, SettlementAccount, SettlementStore, CONVERSION_ERROR_TYPE,
+        NO_ENGINE_CONFIGURED_ERROR_TYPE, SE_ILP_ADDRESS,
+    },
 };
 use bytes::buf::FromBuf;
 use bytes::Bytes;
@@ -9,14 +14,12 @@ use futures::{
     Future,
 };
 use hyper::{Response, StatusCode};
-use interledger_http::{error::*, idempotency::*};
+use interledger_http::error::*;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
-use num_traits::Zero;
-use ring::digest::{digest, SHA256};
 use serde_json::json;
 use std::{
     str::{self, FromStr},
@@ -28,20 +31,6 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
-
-// Number conversion errors
-pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Conversion error",
-    status: StatusCode::INTERNAL_SERVER_ERROR,
-};
-
-// Account without an engine error
-pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "No settlement engine configured",
-    status: StatusCode::NOT_FOUND,
-};
 
 pub fn create_settlements_filter<S, O, A>(
     store: S,
@@ -57,7 +46,7 @@ where
         + Sync
         + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    A: SettlementAccount + Account + Send + Sync + 'static,
 {
     let with_store = warp::any().map(move || store.clone()).boxed();
     let idempotency = warp::header::optional::<String>("idempotency-key");
@@ -165,7 +154,7 @@ where
         + Send
         + Sync
         + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    A: SettlementAccount + Account + Send + Sync + 'static,
 {
     let store_clone = store.clone();
     let engine_amount = body.amount;
@@ -283,7 +272,7 @@ where
         + Sync
         + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    A: SettlementAccount + Account + Send + Sync + 'static,
 {
     Box::new(result(A::AccountId::from_str(&account_id)
             .map_err(move |_| {
@@ -345,52 +334,11 @@ where
             }))
 }
 
-pub fn scale_with_precision_loss(
-    amount: BigUint,
-    local_scale: u8,
-    remote_scale: u8,
-) -> (BigUint, BigUint) {
-    // It's safe to unwrap here since BigUint's normalize_scale cannot fail.
-    let scaled = amount
-        .normalize_scale(ConvertDetails {
-            from: remote_scale,
-            to: local_scale,
-        })
-        .unwrap();
-
-    if local_scale < remote_scale {
-        // If we ended up downscaling, scale the value back up back,
-        // and return any precision loss
-        // note that `from` and `to` are reversed compared to the previous call
-        let upscaled = scaled
-            .normalize_scale(ConvertDetails {
-                from: local_scale,
-                to: remote_scale,
-            })
-            .unwrap();
-        let precision_loss = if upscaled < amount {
-            amount - upscaled
-        } else {
-            Zero::zero()
-        };
-        (scaled, precision_loss)
-    } else {
-        // there is no need to do anything further if we upscaled
-        (scaled, Zero::zero())
-    }
-}
-
-fn get_hash_of(preimage: &[u8]) -> [u8; 32] {
-    let mut hash = [0; 32];
-    hash.copy_from_slice(digest(&SHA256, preimage).as_ref());
-    hash
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::*;
-    use crate::test_helpers::*;
+    use crate::api::fixtures::*;
+    use crate::api::test_helpers::*;
     use serde_json::Value;
 
     fn check_error_status_and_message(response: Response<Bytes>, status_code: u16, message: &str) {
