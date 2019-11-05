@@ -9,7 +9,7 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
+use interledger_settlement::settlement_core::types::SettlementAccount;
 use log::{error, trace};
 use serde::Serialize;
 use std::{

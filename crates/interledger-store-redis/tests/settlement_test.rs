@@ -5,9 +5,12 @@ use common::*;
 use futures::future::join_all;
 use http::StatusCode;
 use interledger_api::NodeStore;
-use interledger_http::idempotency::{IdempotentData, IdempotentStore};
+
 use interledger_service::{Account, AccountStore};
-use interledger_settlement::{LeftoversStore, SettlementAccount, SettlementStore};
+use interledger_settlement::settlement_core::{
+    idempotency::{IdempotentData, IdempotentStore},
+    types::{LeftoversStore, SettlementAccount, SettlementStore}
+};
 use interledger_store_redis::AccountId;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
