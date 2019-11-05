@@ -9,7 +9,7 @@ use interledger_api::NodeStore;
 use interledger_service::{Account, AccountStore};
 use interledger_settlement::settlement_core::{
     idempotency::{IdempotentData, IdempotentStore},
-    types::{LeftoversStore, SettlementAccount, SettlementStore}
+    types::{LeftoversStore, SettlementAccount, SettlementStore},
 };
 use interledger_store_redis::AccountId;
 use lazy_static::lazy_static;
