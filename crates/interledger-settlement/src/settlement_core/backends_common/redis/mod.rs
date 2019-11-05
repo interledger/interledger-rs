@@ -2,7 +2,7 @@ use bytes::Bytes;
 use futures::{future::result, Future};
 use http::StatusCode;
 
-use crate::{
+use crate::settlement_core::{
     idempotency::{IdempotentData, IdempotentStore},
     scale_with_precision_loss,
     types::{Convert, ConvertDetails, LeftoversStore},

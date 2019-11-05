@@ -88,11 +88,11 @@ pub struct TestStore {
 }
 
 impl SettlementStore for TestStore {
-    type AccountId = u64;
+    type Account = TestAccount;
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: Self::AccountId,
+        account_id: u64,
         amount: u64,
         _idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -108,7 +108,7 @@ impl SettlementStore for TestStore {
 
     fn refund_settlement(
         &self,
-        _account_id: Self::AccountId,
+        _account_id: u64,
         _settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let ret = if self.should_fail { err(()) } else { ok(()) };
