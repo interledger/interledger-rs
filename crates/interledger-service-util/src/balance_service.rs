@@ -2,7 +2,7 @@ use futures::Future;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{
-    api::SettlementClient,
+    settlement_api::SettlementClient,
     settlement_core::types::{SettlementAccount, SettlementStore},
 };
 use log::{debug, error};

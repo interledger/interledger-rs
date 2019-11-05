@@ -69,8 +69,8 @@ impl Default for SettlementClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::fixtures::TEST_ACCOUNT_0;
-    use crate::api::test_helpers::{block_on, mock_settlement};
+    use crate::settlement_api::fixtures::TEST_ACCOUNT_0;
+    use crate::settlement_api::test_helpers::{block_on, mock_settlement};
     use mockito::Matcher;
 
     #[test]
