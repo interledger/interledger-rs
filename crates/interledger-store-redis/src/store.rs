@@ -32,16 +32,14 @@ use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
-use interledger_http::{
-    HttpStore,
-};
+use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
 use interledger_settlement::settlement_core::{
-    scale_with_precision_loss, 
     idempotency::{IdempotentData, IdempotentStore},
+    scale_with_precision_loss,
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
