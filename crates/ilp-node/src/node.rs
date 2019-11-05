@@ -239,7 +239,8 @@ impl InterledgerNode {
         }
         // XXX
         .join({
-            if true {
+            let redis_scheme = true; // TODO: best way of parsing URL from Connection Info
+            if redis_scheme {
                 let redis_secret = generate_redis_secret(&self.secret_seed);
                 let store = RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret);
                 Either::A(self.chain_services(store))
