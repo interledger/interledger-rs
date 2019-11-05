@@ -16,10 +16,6 @@ mod server;
 // So that settlement engines can use errors
 pub mod error;
 
-// Idempotent API-related traits and helpers
-#[cfg(feature = "idempotency")]
-pub mod idempotency;
-
 pub use self::client::HttpClientService;
 pub use self::server::HttpServer;
 
