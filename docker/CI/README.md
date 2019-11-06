@@ -18,7 +18,7 @@ In order to build new docker images, we build the source code once like `cargo b
 
 The docker images `node.dockerfile` and `ilp-cli.dockerfile` contain platform-agnostic (although it is not completely agnostic) binaries which means it does not rely on dynamic libraries and uses `musl` instead. So we have to provide `musl` environment for `Cargo`. That is why `circleci-rust-dind.dockerfile` contains `musl`.
 
-Also why `circleci-rust-dind.dockerfile` is an independent image is that there isn't any suitable image which contains `Cargo`, `musl` and `dind` (docker in docker). `dind` is required to test the Docker mode because `run-md.sh` runs docker commands such as `docker run`. It requires docker commands inside the docker image. CircleCI spins up a Docker environment somewhere outside the container. So it would be called rater "docker command in container" than "docker in docker".
+Currently, there exists no Docker image which contains `Cargo`, `musl` and `dind` together. `dind` is required to test Docker mode because `run-md.sh` runs the tests using Docker inside CircleCI (hence requiring us to use "docker in docker")
 
 ![docker commands in container](./images/dind.svg)
 
