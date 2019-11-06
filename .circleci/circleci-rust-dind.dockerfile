@@ -11,7 +11,7 @@ RUN echo "deb http://security.ubuntu.com/ubuntu xenial-security main" | tee -a /
     apt-get install libcurl3 -y && \
     # get libcurl to a place where it won't get overwritten
     cp /usr/lib/x86_64-linux-gnu/libcurl.so.3 /usr/lib && \
-    apt-get install curl -y
+    apt-get install curl jq -y
 
 # Because nc command doesn't accept -k argument correctly, we need to install ncat of buster.
 RUN echo "deb http://deb.debian.org/debian/ buster main contrib non-free" >> /etc/apt/sources.list && \
