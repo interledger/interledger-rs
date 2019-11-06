@@ -14,7 +14,7 @@ So we need new docker images of:
 - ilp-node
 - ilp-cli
 
-In order to build new docker images, we build the source code once like `cargo build --bin ilp-node --bin ilp-cli`, not twice because we want to reduce compilation time. After the build, we just copy the binaries to docker containers using `CI/node.dockerimage` and `CI/ilp-cli.dockerimage`. That is why we don't use normal `node.dockerfile` and `ilp-cli.dockerfile`. It compiles the source files of `interledger-rs` **inside** the container, so we need **two** compilation of the source although that seems natural for normal uses.
+In order to build new docker images, we build the source code once like `cargo build --bin ilp-node --bin ilp-cli`, not twice because we want to reduce compilation time. After the build, we just copy the binaries to docker containers using `.circleci/node.dockerimage` and `.circleci/ilp-cli.dockerimage`. That is why we don't use normal `node.dockerfile` and `ilp-cli.dockerfile`. It compiles the source files of `interledger-rs` **inside** the container, so we need **two** compilation of the source although that seems natural for normal uses.
 
 The docker images `node.dockerfile` and `ilp-cli.dockerfile` contain platform-agnostic (although it is not completely agnostic) binaries which means it does not rely on dynamic libraries and uses `musl` instead. So we have to provide `musl` environment for `Cargo`. That is why `circleci-rust-dind.dockerfile` contains `musl`.
 
