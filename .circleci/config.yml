@@ -43,36 +43,6 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - checkout
-      # If something wrong is cached, use these lines
-#      - run:
-#          name: Clear docker cache
-#          command: docker images --no-trunc --format '{{.ID}}' interledgerrs/settlement-engines | xargs --no-run-if-empty docker rmi
-      - run:
-          # Although we use `docker_layer_caching`, we need to pull these latest images
-          name: Pull Docker Images
-          command: |
-            docker pull interledgerrs/settlement-engines:latest
-            docker pull interledgerjs/settlement-xrp:latest
-      - run:
-          name: Set Default Target musl
-          command: |
-            mkdir -p .cargo
-            printf "[build]\ntarget = \"x86_64-unknown-linux-musl\"\n" > .cargo/config
-      - run:
-          name: Build
-          command: cargo build --bin ilp-node --bin ilp-cli
-      - run:
-          # builds dev profile images because these images are not going to be released
-          # also, we have to copy binaries so remove target from .dockerignore
-          name: Build Docker Images
-          command: |
-            dockerignore=$(cat .dockerignore | sed /^target/d)
-            echo "$dockerignore" > .dockerignore
-            echo "target/**/*.d" >> .dockerignore
-            echo "target/**/*.rlib" >> .dockerignore
-            echo "target/**/deps" >> .dockerignore
-            echo "target/**/incremental" >> .dockerignore
-            docker/docker-build.sh ci-ilp-node ci-ilp-cli
       - run:
           name: Run run-md Test
           command: scripts/run-md-test.sh
@@ -200,6 +170,7 @@ jobs:
             release_note=logs/release_note.txt
             conventional-changelog -t ${crate_name}- -p angular > ${release_note}
 
+            # tag release
             ./.circleci/release/github_release.sh \
               ${CIRCLE_TAG} \
               ${CIRCLE_TAG} \
@@ -208,6 +179,25 @@ jobs:
               ${musl_tar_gz} \
               ${darwin_zip} \
               ${darwin_tar_gz}
+
+            # latest release, only if on the master branch
+            # tag the current commit as (crate_name)-latest, and release it
+            if [ "${CIRCLE_TAG}" == "master" ]; then
+              tag_name="${crate_name}-latest"
+              LOG_DIR=logs/${tag_name} ./.circleci/release/github_tag.sh \
+                ${tag_name} \
+                "The latest release of ${crate_name}." \
+                "$(git rev-parse HEAD)" \
+                "commit"
+              ./.circleci/release/github_release.sh \
+                ${tag_name} \
+                ${tag_name} \
+                ${release_note} \
+                ${musl_zip} \
+                ${musl_tar_gz} \
+                ${darwin_zip} \
+                ${darwin_tar_gz}
+            fi
       - store_artifacts:
           path: logs
           destination: release-binaries-logs
