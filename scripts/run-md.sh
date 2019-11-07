@@ -44,7 +44,7 @@ cat "$MD_FILE" | awk 'BEGIN { one_line_comment="^<!--!(.*)-->$" }
   # if the line matches one line comment (<!--! foo -->), just print it
   else if ($0 ~ one_line_comment) { p = $0; sub("^<!--! *", "", p); sub(" *-->$", "", p); print p }
 }' > "$TMP_SCRIPT"
-bash "$TMP_SCRIPT"
+bash -O expand_aliases "$TMP_SCRIPT"
 
 if [ $? -eq 0 ]; then
   rm "$TMP_SCRIPT"

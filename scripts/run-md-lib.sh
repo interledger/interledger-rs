@@ -2,28 +2,16 @@
 
 # initialize global variables
 function init() {
-    if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
-        USE_DOCKER=1
+    if [ -n "$SOURCE_MODE" ] && [ "$SOURCE_MODE" -ne "0" ]; then
+        SOURCE_MODE=1
     else
-        USE_DOCKER=0
+        SOURCE_MODE=0
     fi
 
     if [ -n "$TEST_MODE" ] && [ "$TEST_MODE" -ne "0" ]; then
         TEST_MODE=1
     else
         TEST_MODE=0
-    fi
-
-    # set global settlement engine dir so that the engine never gets compiled many times when test
-    # furthermore, we cannot clone `settlement-engine` in `interledger-rs` directory.
-    if [ -z "${SETTLEMENT_ENGINE_INSTALLL_DIR}" ]; then
-        SETTLEMENT_ENGINE_INSTALLL_DIR=$(cd ~; pwd)
-    fi
-
-    # define commands
-    CMD_DOCKER=docker
-    if [ -n "$USE_SUDO" ] && [ "$USE_SUDO" -ne "0" ]; then
-        CMD_DOCKER="sudo $CMD_DOCKER"
     fi
 }
 
@@ -150,5 +138,21 @@ function test_equals_or_exit() {
         return 0
     else
         error_and_exit "Test failed. Expected: $expected_value, Got: $TEST_RESULT"
+    fi
+}
+
+function is_linux() {
+    if [[ $(uname) =~ Linux ]]; then
+        echo 1
+    else
+        echo 0
+    fi
+}
+
+function is_macos() {
+    if [[ $(uname) =~ Darwin ]]; then
+        echo 1
+    else
+        echo 0
     fi
 }
