@@ -3,6 +3,7 @@
 # Intended to be run in the top directory.
 #
 # This script creates a GitHub release and attach specified asset files to the release.
+# [WARNING] If there is any release that has the same name, it will be replaced.
 #
 # Env var:
 #   GITHUB_OAUTH_TOKEN: OAuth token for GitHub
@@ -18,6 +19,7 @@ function push_release() {
     local tag_name="$1"
     local release_name="$2"
     local release_note_path="$3"
+    local log_dir=logs/${release_name}
     shift 3
 
     if [ -z "${tag_name}" ]; then
@@ -41,6 +43,29 @@ function push_release() {
         exit 1
     fi
 
+    mkdir -p ${log_dir}
+
+    # check if there is any release of the same name
+    curl \
+        -X GET \
+        -H "User-Agent: ${user_agent}" \
+        -H "Authorization: token ${GITHUB_OAUTH_TOKEN}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        https://api.github.com/repos/${repository}/releases/tags/${release_name} 2>/dev/null >${log_dir}/prev_release.json || exit 2
+    local release_id=$(jq -r .id < "${log_dir}/prev_release.json")
+
+    # delete it if found
+    if [ "${release_id}" != "null" ]; then
+        printf "%s%d%s\n" "Found a release of the same name: " "${release_id}" ", deleting..."
+        curl \
+            -X DELETE \
+            -H "User-Agent: ${user_agent}" \
+            -H "Authorization: token ${GITHUB_OAUTH_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${repository}/releases/${release_id} 2>/dev/null >${log_dir}/delete_release.json || exit 2
+    fi
+
+    # create a release
     json=$(printf '{
       "tag_name": "%s",
       "name": "%s",
@@ -54,10 +79,10 @@ function push_release() {
         -H "Authorization: token ${GITHUB_OAUTH_TOKEN}" \
         -H "Accept: application/vnd.github.v3+json" \
         -d "${json}" \
-        https://api.github.com/repos/${repository}/releases 2>/dev/null >logs/release.json || exit 2
+        https://api.github.com/repos/${repository}/releases 2>/dev/null >${log_dir}/release.json || exit 2
     printf "%s\n" "done"
 
-    asset_upload_url=$(cat logs/release.json | jq -r ".upload_url")
+    asset_upload_url=$(jq -r ".upload_url" < "${log_dir}/release.json")
     asset_upload_url=${asset_upload_url/\{\?name,label\}/}
 
     for asset_path in $@
@@ -71,7 +96,7 @@ function push_release() {
             -H "Authorization: token ${GITHUB_OAUTH_TOKEN}" \
             -H "Content-Type: $(file -b --mime-type ${content_type})" \
             --data-binary @${asset_path} \
-            ${asset_upload_url}?name=${file_name} 2>/dev/null >logs/asset_${file_name}.json || exit 2
+            ${asset_upload_url}?name=${file_name} 2>/dev/null >${log_dir}/asset_${file_name}.json || exit 2
         printf "%s\n" "done"
     done
 }
@@ -83,4 +108,4 @@ fi
 
 mkdir -p logs
 
-push_release $@
+push_release "$@"

@@ -4,12 +4,7 @@ FROM circleci/rust:1.38
 USER root
 
 RUN apt-get update && \
-    apt-get install curl jq -y
-
-# Because nc command doesn't accept -k argument correctly, we need to install ncat of buster.
-RUN echo "deb http://deb.debian.org/debian/ buster main contrib non-free" >> /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y ncat redis-server redis-tools lsof libssl-dev
+    apt-get install -y curl jq redis-server redis-tools lsof libssl-dev
 
 # Install Rust tools
 RUN cargo install --quiet cargo-audit && \

@@ -2,19 +2,13 @@
 
 function clear_environment() {
     clear_logs
-    clear_docker
     free_ports
     clear_redis_file
+    clear_binaries
 }
 
 function clear_logs() {
     rm -rf logs
-}
-
-function clear_docker() {
-    docker stop $(docker ps -aq) 2>/dev/null
-    docker rm $(docker ps -aq) 2>/dev/null
-    docker network rm interledger 2>/dev/null
 }
 
 function free_ports() {
@@ -47,6 +41,10 @@ function clear_redis_file() {
     fi
 }
 
+function clear_binaries() {
+    rm ~/.interledger/bin/*
+}
+
 # $1 = target directory
 # $2 = docker mode in [01]
 # $3 = test name filter
@@ -54,25 +52,22 @@ function clear_redis_file() {
 # test_example examples/eth-settlement 0
 function test_example() {
     local target_directory=$1
-    local docker_mode=$2
-    local test_name_filter=$3
+    local source_mode=$2
     local target_name=$(basename $target_directory)
     local result
 
     pushd $target_directory > /dev/null
-    if [ $docker_mode -eq 1 ]; then
-        printf "\e[33;1mTesting \"${target_name}\" on docker mode. [%d/%d]\e[m\n" "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
-        clear_environment; TEST_MODE=1 USE_DOCKER=1 $RUN_MD .
+    if [ $source_mode -eq 1 ]; then
+        printf "\e[33;1mTesting \"${target_name}\" on source mode. [%d/%d]\e[m\n" "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
+        clear_environment; TEST_MODE=1 SOURCE_MODE=1 $RUN_MD .
         result=$?
     else
-        printf "\e[33;1mTesting \"${target_name}\" on non-docker mode. [%d/%d]\e[m\n" "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
+        printf "\e[33;1mTesting \"${target_name}\" on binary mode. [%d/%d]\e[m\n" "$((TESTING_INDEX + 1))" "${TESTS_TOTAL}"
         clear_environment; TEST_MODE=1 $RUN_MD .
         result=$?
     fi
     mkdir -p ${LOG_DIR}/${target_name}
-    mv logs ${LOG_DIR}/${target_name}/${docker_mode}
-    # there may not be logs when testing non-settlement ones
-    mv ${SETTLEMENT_ENGINE_DIR}/logs/* ${LOG_DIR}/${target_name}/${docker_mode}/ &>/dev/null
+    mv logs ${LOG_DIR}/${target_name}/${source_mode}
     popd > /dev/null
     return $result
 }
@@ -80,7 +75,7 @@ function test_example() {
 # Adds all directories in `examples` directory as test targets.
 function add_example_tests() {
     local test_name_filter=$1
-    local docker_mode_filter=$2
+    local source_mode_filter=$2
 
     # This will add tests like "test_example examples/eth-settlement 0" which means an example test of
     # eth-settlement in non-docker mode.
@@ -89,24 +84,22 @@ function add_example_tests() {
             printf "\e[33;1mSkipping \"%s\"\e[m\n" "${directory}"
             continue
         fi
-        if [ -n "${docker_mode_filter}" ]; then
-            printf "\e[33;1mAdding only USE_DOCKER=%d for \"%s\"\e[m\n" "${docker_mode_filter}" "${directory}"
-            TESTS+=("test_example ${directory} ${docker_mode_filter} ${test_name_filter}")
+        if [ -n "${source_mode_filter}" ]; then
+            printf "\e[33;1mAdding only SOURCE_MODE=%d for \"%s\"\e[m\n" "${source_mode_filter}" "${directory}"
+            TESTS+=("test_example ${directory} ${source_mode_filter}")
         else
-            TESTS+=("test_example ${directory} 0 ${test_name_filter}") # this cannot contain space in the directory path
-            TESTS+=("test_example ${directory} 1 ${test_name_filter}")
+            TESTS+=("test_example ${directory} 0") # this cannot contain space in the directory path
+            TESTS+=("test_example ${directory} 1")
         fi
     done
 }
 
 # $1 = test name filter
-# $2 = docker mode filter
+# $2 = source mode filter
 
 BASE_DIR=$(cd $(dirname $0); pwd)
 RUN_MD=$BASE_DIR/run-md.sh
 LOG_DIR=/tmp/run-md-test/logs
-export SETTLEMENT_ENGINE_INSTALLL_DIR=$(cd ~; pwd)
-SETTLEMENT_ENGINE_DIR=${SETTLEMENT_ENGINE_INSTALLL_DIR}/settlement-engines
 
 # set up example tests
 TESTS=()
