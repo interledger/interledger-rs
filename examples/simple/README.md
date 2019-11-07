@@ -1,24 +1,5 @@
 <!--!
 # For integration tests
-function pre_test_hook() {
-    if [ $TEST_MODE -eq 1 ] && [ "${CIRCLECI}" = "true" ] && [ "${USE_DOCKER}" = "1" ]; then
-        # Make tunnels to DOCKER_HOST containers if run on CircleCI.
-        # This is because the docker is not running on the CI container and
-        # we have to connect the following two:
-        #   - 127.0.0.1:xxxx (on CI container)
-        #   - 127.0.0.1:xxxx (on DOCKER_HOST's container:xxxx)
-        # so that we could `curl localhost:xxxx` to connect to DOCKER_HOST's containers.
-        printf "Setting tunnels..."
-        # node
-        ncat -l -k -c "docker exec -i interledger-rs-node_a nc 127.0.0.1 7770" -p 7770 &
-        ncat -l -k -c "docker exec -i interledger-rs-node_b nc 127.0.0.1 7770" -p 8770 &
-        printf "done\n"
-    fi
-    if [ $TEST_MODE -eq 1 ] && [ ${USE_DOCKER} -eq 1 ]; then
-        trap 'output_docker_logs; exit;' 0
-    fi
-}
-
 function post_test_hook() {
     if [ $TEST_MODE -eq 1 ]; then
         test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/alice/balance
@@ -26,16 +7,6 @@ function post_test_hook() {
         test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/node_a/balance
         test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/bob/balance
     fi
-}
-
-function output_docker_logs() {
-    printf "\e[33m%s\e[m" "Writing docker logs..." 1>&2
-    mkdir -p logs
-    docker logs interledger-rs-node_a &> logs/interledger-rs-node_a.log
-    docker logs interledger-rs-node_b &> logs/interledger-rs-node_b.log
-    docker logs redis-alice_node &> logs/redis-alice_node.log
-    docker logs redis-bob_node &> logs/redis-bob_node.log
-    printf "\e[33m%s\e[m\n" "done" 1>&2
 }
 -->
 
@@ -82,64 +53,110 @@ init
 
 printf "Stopping Interledger nodes...\n"
 
-if [ "$USE_DOCKER" -eq 1 ]; then
-    $CMD_DOCKER --version > /dev/null || error_and_exit "Uh oh! You need to install Docker before running this example"
-    mkdir -p logs
-    
-    $CMD_DOCKER stop \
-        interledger-rs-node_a \
-        interledger-rs-node_b \
-        redis-alice_node \
-        redis-bob_node 2>/dev/null
-    
-    printf "\n\nRemoving existing Interledger containers\n"
-    $CMD_DOCKER rm \
-        interledger-rs-node_a \
-        interledger-rs-node_b \
-        redis-alice_node \
-        redis-bob_node 2>/dev/null
-else
-    for port in 6379 6380; do
-        if lsof -Pi :${port} -sTCP:LISTEN -t ; then
-            redis-cli -p ${port} shutdown
-        fi
-    done
-    
-    if [ -f dump.rdb ] ; then
-        rm -f dump.rdb
+for port in 6379 6380; do
+    if lsof -Pi :${port} -sTCP:LISTEN -t ; then
+        redis-cli -p ${port} shutdown
     fi
-    
-    for port in 8545 7770 8770; do
-        if lsof -tPi :${port} ; then
-            kill `lsof -tPi :${port}`
-        fi
-    done
+done
+
+if [ -f dump.rdb ] ; then
+    rm -f dump.rdb
 fi
 
-run_pre_test_hook
-
-# Aliases don't play nicely with scripts, so this is our faux-alias
-function ilp-cli {
-    cargo run --quiet --bin ilp-cli -- $@
-}
-
-printf "\n"
+for port in 8545 7770 8770; do
+    if lsof -tPi :${port} ; then
+        kill `lsof -tPi :${port}`
+    fi
+done
 -->
 
-### 1. Build interledger.rs
-First of all, let's build interledger.rs. (This may take a couple of minutes)
+### 1. Prepare interledger.rs
+
+First of all, we have to prepare `interledger.rs`. You could either:
+
+1. Download compiled binaries
+1. Compile from the source code
+
+If you would like to play more deeply with interledger.rs, compiling from the source is considerable. It would take less time to download compiled binaries otherwise.
+
+#### Download Compiled Binaries
+
+We provide compiled binaries for
+
+- Linux based OSs
+- macOS
+
+First, let's make a directory to install binaries.
+
+```bash
+mkdir -p ~/.interledger/bin
+
+# Also write this line in .bash_profile etc if needed
+export PATH=~/.interledger/bin:$PATH
+```
+
+##### Linux based OSs
 
 <!--!
-if [ "$USE_DOCKER" -eq 1 ]; then
-    NETWORK_ID=`$CMD_DOCKER network ls -f "name=interledger" --format="{{.ID}}"`
-    if [ -z "${NETWORK_ID}" ]; then
-        printf "Creating a docker network...\n"
-        $CMD_DOCKER network create interledger
-    fi
-else
-    printf "\nBuilding interledger.rs... (This may take a couple of minutes)\n\n"
+if [ ${SOURCE_MODE} -ne 1 ]; then
+    if [ $(is_linux) -eq 1 ]; then
 -->
 ```bash
+pushd ~/.interledger/bin &>/dev/null
+
+# install ilp-node
+if [ ! -e "ilp-node" ]; then
+    curl -L https://github.com/interledger-rs/interledger-rs/releases/download/ilp-node-latest/ilp-node-x86_64-unknown-linux-musl.tar.gz | tar xzv
+fi
+
+# install ilp-cli
+if [ ! -e "ilp-cli" ]; then
+    curl -L https://github.com/interledger-rs/interledger-rs/releases/download/ilp-cli-latest/ilp-cli-x86_64-unknown-linux-musl.tar.gz | tar xzv
+fi
+
+popd &>/dev/null
+```
+<!--!
+    fi
+-->
+
+##### macOS
+
+<!--!
+    if [ $(is_macos) -eq 1 ]; then
+-->
+```bash
+pushd ~/.interledger/bin &>/dev/null
+
+# install ilp-node
+if [ ! -e "ilp-node" ]; then
+    curl -L https://github.com/interledger-rs/interledger-rs/releases/download/ilp-node-latest/ilp-node-x86_64-apple-darwin.tar.gz | tar xzv -
+fi
+
+# install ilp-cli
+if [ ! -e "ilp-cli" ]; then
+    curl -L https://github.com/interledger-rs/interledger-rs/releases/download/ilp-cli-latest/ilp-cli-x86_64-apple-darwin.tar.gz | tar xzv -
+fi
+
+popd &>/dev/null
+```
+<!--!
+    fi
+fi
+-->
+
+#### Compile from the Source Code
+If you would prefer compiling from the source code, compile interledger.rs and CLI as follows.
+
+<!--!
+if [ ${SOURCE_MODE} -eq 1 ]; then
+    printf "Building interledger.rs... (This may take a couple of minutes)\n"
+-->
+```bash
+# These aliases make our command invocations more natural
+alias ilp-node="cargo run --quiet --bin ilp-node --"
+alias ilp-cli="cargo run --quiet --bin ilp-cli --"
+
 cargo build --bin ilp-node --bin ilp-cli
 ```
 <!--!
@@ -150,12 +167,7 @@ fi
 
 <!--!
 printf "\nStarting Redis instances..."
-if [ "$USE_DOCKER" -eq 1 ]; then
-    printf "\n"
-    $CMD_DOCKER run --name redis-alice_node -d -p 127.0.0.1:6379:6379 --network=interledger redis:5.0.5
-    $CMD_DOCKER run --name redis-bob_node -d -p 127.0.0.1:6380:6379 --network=interledger redis:5.0.5
-else
-    redis-server --version > /dev/null || error_and_exit "Uh oh! You need to install redis-server before running this example"
+redis-server --version > /dev/null || error_and_exit "Uh oh! You need to install redis-server before running this example"
 -->
 
 ```bash
@@ -170,21 +182,14 @@ redis-server --port 6380 &> logs/redis-b-node.log &
 To remove all the data in Redis, you might additionally perform:
 
 <!--!
-fi
-
 sleep 2
 printf "done\n"
-
-if [ "$USE_DOCKER" -eq 0 ]; then
 -->
 ```bash
 for port in `seq 6379 6380`; do
     redis-cli -p $port flushall
 done
 ```
-<!--!
-fi
--->
 
 When you want to watch logs, use the `tail` command. You can use the command like: `tail -f logs/redis-a-node.log`
 
@@ -192,35 +197,6 @@ When you want to watch logs, use the `tail` command. You can use the command lik
 
 <!--!
 printf "\n\nStarting Interledger nodes...\n"
-if [ "$USE_DOCKER" -eq 1 ]; then
-    $CMD_DOCKER run \
-        -p 127.0.0.1:7770:7770 \
-        -p 127.0.0.1:7771:7771 \
-        --network=interledger \
-        --name=interledger-rs-node_a \
-        -td \
-        interledgerrs/ilp-node \
-        --ilp_address example.node_a \
-        --secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
-        --admin_auth_token admin-a \
-        --redis_url redis://redis-alice_node:6379/ \
-        --http_bind_address 0.0.0.0:7770 \
-        --settlement_api_bind_address 0.0.0.0:7771
-    
-    $CMD_DOCKER run \
-        -p 127.0.0.1:8770:7770 \
-        -p 127.0.0.1:8771:7771 \
-        --network=interledger \
-        --name=interledger-rs-node_b \
-        -td \
-        interledgerrs/ilp-node \
-        --ilp_address example.node_b \
-        --secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
-        --admin_auth_token admin-b \
-        --redis_url redis://redis-bob_node:6379/ \
-        --http_bind_address 0.0.0.0:7770 \
-        --settlement_api_bind_address 0.0.0.0:7771
-else
 -->
 
 ```bash
@@ -233,7 +209,7 @@ export RUST_LOG=interledger=debug
 # You can also pass it from STDIN.
 # Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node`.
 # Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
-cargo run --bin ilp-node -- \
+ilp-node \
 --ilp_address example.node_a \
 --secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
 --admin_auth_token admin-a \
@@ -242,7 +218,7 @@ cargo run --bin ilp-node -- \
 --settlement_api_bind_address 127.0.0.1:7771 \
 &> logs/node_a.log &
 
-cargo run --bin ilp-node -- \
+ilp-node \
 --ilp_address example.node_b \
 --secret_seed 1604966725982139900555208458637022875563691455429373719368053354 \
 --admin_auth_token admin-b \
@@ -253,8 +229,6 @@ cargo run --bin ilp-node -- \
 ```
 
 <!--!
-fi
-
 printf "\nWaiting for Interledger.rs nodes to start up"
 
 wait_to_serve "http://localhost:7770" 10 || error_and_exit "\nFailed to spin up nodes. Check out your configuration and log files."
@@ -272,81 +246,10 @@ Let's create accounts on both nodes. The following script sets up accounts for t
 
 Now that the nodes are up and running, we'll be using the `ilp-cli` command-line tool to work with them. This tool offers a convenient way for developers to inspect and interact with live nodes. Note that `ilp-cli` speaks to Interledger.rs nodes via the normal HTTP API, so you could also use any other HTTP client (such as `curl`, for example) to perform the same operations.
 
-The `ilp-cli` command is included with the Interledger.rs repository. To avoid needing to install `ilp-cli` locally, we can pretend that it's installed by using an alias:
-
-```bash #
-alias ilp-cli="cargo run --quiet --bin ilp-cli --"
-```
-
 See the [HTTP API docs](../../docs/api.md) for the full list of fields that can be set on an account.
 
 <!--!
 printf "\nCreating accounts...\n\n"
-
-if [ "$USE_DOCKER" -eq 1 ]; then
-    printf "Creating Alice's account on Node A...\n"
-    curl \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer admin-a" \
-        -d '{
-        "ilp_address": "example.node_a.alice",
-        "username" : "alice",
-        "asset_code": "ABC",
-        "asset_scale": 9,
-        "max_packet_amount": 100,
-        "ilp_over_http_incoming_token": "alice-password"}' \
-        http://localhost:7770/accounts >logs/account-node_a-alice.log 2>/dev/null
-    
-    printf "Creating Node B's account on Node A...\n"
-    curl \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer admin-a" \
-        -d '{
-        "ilp_address": "example.node_b",
-        "username" : "node_b",
-        "asset_code": "ABC",
-        "asset_scale": 9,
-        "max_packet_amount": 100,
-        "ilp_over_http_incoming_token": "node_b-password",
-        "ilp_over_http_outgoing_token": "node_a:node_a-password",
-        "ilp_over_http_url": "http://interledger-rs-node_b:7770/ilp",
-        "min_balance": -100000,
-        "routing_relation": "Peer"}' \
-        http://localhost:7770/accounts >logs/account-node_a-node_b.log 2>/dev/null
-    
-    # Insert accounts on Node B
-    # One account represents Bob and the other represents Node A's account with Node B
-    
-    printf "Creating Bob's account on Node B...\n"
-    curl \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer admin-b" \
-        -d '{
-        "ilp_address": "example.node_b.bob",
-        "username" : "bob",
-        "asset_code": "ABC",
-        "asset_scale": 9,
-        "max_packet_amount": 100,
-        "ilp_over_http_incoming_token": "bob"}' \
-        http://localhost:8770/accounts >logs/account-node_b-bob.log 2>/dev/null
-    
-    printf "Creating Node A's account on Node B...\n"
-    curl \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer admin-b" \
-        -d '{
-        "ilp_address": "example.node_a",
-        "username" : "node_a",
-        "asset_code": "ABC",
-        "asset_scale": 9,
-        "max_packet_amount": 100,
-        "ilp_over_http_incoming_token": "node_a-password",
-        "ilp_over_http_outgoing_token": "node_b:node_b-password",
-        "ilp_over_http_url": "http://interledger-rs-node_a:7770/ilp",
-        "min_balance": -100000,
-        "routing_relation": "Peer"}' \
-        http://localhost:8770/accounts >logs/account-node_b-node_a.log 2>/dev/null
-else
 -->
 
 ```bash
@@ -391,41 +294,23 @@ ilp-cli --node http://localhost:8770 accounts create node_a \
     >logs/account-node_b-node_a.log 2>/dev/null
 ```
 
-<!--!
-fi
--->
-
 ### 5. Sending a Payment
 
 <!--!
-# check balances before payment
-printf "\n\nChecking balances prior to payment...\n"
+printf "\nChecking balances prior to payment...\n"
 
-if [ "$USE_DOCKER" -eq 1 ]; then
-    printf "\nAlice's balance: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance alice --auth admin-a
+printf "\nAlice's balance: "
+ilp-cli accounts balance alice
+
+printf "Node B's balance on Node A: "
+ilp-cli accounts balance node_b
+
+printf "Node A's balance on Node B: "
+ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b
+
+printf "Bob's balance: "
+ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b
     
-    printf "Node B's balance on Node A: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance node_b --auth admin-a
-    
-    printf "Node A's balance on Node B: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance node_a --auth admin-b
-    
-    printf "Bob's balance: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance bob --auth admin-b
-else
-    printf "\nAlice's balance: "
-    ilp-cli accounts balance alice
-    
-    printf "Node B's balance on Node A: "
-    ilp-cli accounts balance node_b
-    
-    printf "Node A's balance on Node B: "
-    ilp-cli --node http://localhost:8770 accounts balance node_a --auth admin-b 
-    
-    printf "Bob's balance: "
-    ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
-fi
 printf "\n\n"
 -->
 
@@ -433,14 +318,6 @@ The following command sends a payment from Alice to Bob that is routed from Node
 
 <!--!
 printf "Sending payment of 500 from Alice (on Node A) to Bob (on Node B)...\n\n"
-
-if [ "$USE_DOCKER" -eq 1 ]; then
-    curl \
-        -H "Authorization: Bearer alice:alice-password" \
-        -H "Content-Type: application/json" \
-        -d "{\"receiver\":\"http://interledger-rs-node_b:7770/accounts/bob/spsp\",\"source_amount\":500}" \
-        http://localhost:7770/accounts/alice/payments
-else
 -->
 
 ```bash
@@ -452,31 +329,17 @@ ilp-cli pay alice \
 ```
 
 <!--!
-fi
-printf "\n\n"
+printf "\n"
 -->
 
 ### 6. Check Balances
 
 You can run the following script to print each of the accounts' balances (try doing this before and after sending a payment).
 
-<!--! printf "Checking balances after payment...\n" -->
-
 <!--!
-if [ "$USE_DOCKER" -eq 1 ]; then
-    printf "\nAlice's balance: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance alice --auth admin-a
-    
-    printf "Node B's balance on Node A: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_a:7770 accounts balance node_b --auth admin-a
-    
-    printf "Node A's balance on Node B: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance node_a --auth admin-b
-    
-    printf "Bob's balance: "
-    $CMD_DOCKER run --rm --network=interledger interledgerrs/ilp-cli --node http://interledger-rs-node_b:7770 accounts balance bob --auth admin-b
-else
+printf "\nChecking balances after payment...\n"
 -->
+
 ```bash
 printf "\nAlice's balance: "
 ilp-cli accounts balance alice
@@ -491,7 +354,6 @@ printf "Bob's balance: "
 ilp-cli --node http://localhost:8770 accounts balance bob --auth admin-b 
 ```
 <!--!
-fi
 printf "\n\n"
 -->
 
@@ -505,8 +367,7 @@ if [ $TEST_MODE -ne 1 ]; then
 fi
 printf "\n"
 if [ "$PROMPT_ANSWER" = "y" ] || [ $TEST_MODE -eq 1 ] ; then
-    if [ "$USE_DOCKER" -ne 1 ]; then
-        exec 2> /dev/null
+    exec 2> /dev/null
 -->
 ```bash
 for port in 6379 6380; do
@@ -525,30 +386,11 @@ for port in 8545 7770 8770; do
     fi
 done
 ```
-<!--!
-    else
--->
-
-If you are using Docker, try the following.
 
 <!--!
-        $CMD_DOCKER stop \
-            interledger-rs-node_a \
-            interledger-rs-node_b \
-            redis-alice_node \
-            redis-bob_node
-    fi
 fi
 printf "\n"
 -->
-```bash #
-# Depending on your OS, you might not need to prefix with `sudo` necessarily.
-sudo docker stop \
-    interledger-rs-node_a \
-    interledger-rs-node_b \
-    redis-alice_node \
-    redis-bob_node
-```
 
 ## Troubleshooting
 
@@ -569,13 +411,6 @@ Your interledger.rs node is not running. The reason may be:
 1. You have some other process running on port `7770`. Stop the process and retry.
 
 To stop the process running on port `7770`, try `` kill `lsof -i:7770 -t` ``. Since this example launches 2 nodes, the port may be other than `7770`. Adjust the port number according to the situation.
-
-```
-# When running with Docker
-Error starting userland proxy: listen tcp 0.0.0.0:6379: bind: address already in use.
-```
-
-You might have run another example. Stop them first and try again. How to stop the services is written in each example page.
 
 ## Conclusion
 

@@ -23,14 +23,8 @@ $ ../../scripts/run-md.sh README.md
 $ (some command) | ../../scripts/run-md.sh
 ```
 
-You could also run the examples using Docker. Try specifying `USE_DOCKER=1` as follows.
+The script basically downloads compiled binaries and uses it. You could also make the script use the source code.  Try specifying `SOURCE_MODE=1` as follows.
 
 ```bash #
-USE_DOCKER=1 ../../scripts/run-md.sh README.md
-```
-
-If you need to perform `docker` commands with the root privileges, you can `USE_SUDO=1` as well.
-
-```bash #
-USE_DOCKER=1 USE_SUDO=1 ../../scripts/run-md.sh README.md
+SOURCE_MODE=1 ../../scripts/run-md.sh README.md
 ```
