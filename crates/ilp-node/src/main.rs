@@ -1,3 +1,5 @@
+#![type_length_limit = "1119051"]
+
 use clap::{crate_version, App, Arg, ArgMatches};
 use config::{Config, Source};
 use config::{FileFormat, Value};
@@ -12,6 +14,8 @@ use tracing_subscriber::{
     fmt::{time::ChronoUtc, Subscriber},
 };
 
+#[cfg(feature = "google-pubsub")]
+mod google_pubsub;
 mod metrics;
 mod node;
 mod trace;
