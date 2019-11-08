@@ -264,6 +264,13 @@ mod tests {
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
             Box::new(ok(ApiResponse::Default))
         }
+
+        fn delete_account(
+            &self,
+            _account_id: String,
+        ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
+            Box::new(ok(ApiResponse::Default))
+        }
     }
 
     #[test]
