@@ -11,8 +11,6 @@ use std::ops::{Div, Mul};
 use std::str::FromStr;
 use url::Url;
 
-pub type ApiResponse = (StatusCode, Bytes);
-
 // Account without an engine error
 pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
     r#type: &ProblemType::Default,
@@ -44,6 +42,12 @@ impl Quantity {
             scale,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub enum ApiResponse {
+    Default,
+    Data(Bytes),
 }
 
 /// Trait consumed by the Settlement Engine HTTP API. Every settlement engine
