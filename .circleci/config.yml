@@ -2,12 +2,22 @@ version: 2
 jobs:
   build:
     docker:
-      - image: interledgerrs/circleci-rust-dind:latest
-        environment:
-          CARGO_HOME: /home/circleci/.cargo
+      - image: circleci/rust
     resource_class: medium+
+    environment:
+      CARGO_HOME: /home/circleci/.cargo
     steps:
       - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            # install system dependeicies
+            sudo apt-get update
+            sudo apt-get install -y redis-server redis-tools libssl-dev
+
+            # install rust components
+            cargo install cargo-audit
+            rustup component add clippy
       - run:
           name: Reduce codegen Units
           # If we don't include this, the linker runs out of memory when building
@@ -37,21 +47,51 @@ jobs:
           command: cargo audit
   test-md:
     docker:
-      - image: interledgerrs/circleci-rust-dind:latest
+      - image: circleci/rust
     resource_class: medium+
+    environment:
+      # setting BASH_ENV to custom file because .bashrc of circleci/rust doesn't work with
+      # non-interactive shell.
+      BASH_ENV: /home/circleci/.bash_circleci
+      CARGO_HOME: /home/circleci/.cargo
     steps:
-      - setup_remote_docker:
-          docker_layer_caching: true
       - checkout
       - run:
+          name: Install Dependencies
+          command: |
+            # install system dependeicies
+            sudo apt-get update
+            sudo apt-get install -y curl jq redis-server redis-tools lsof libssl-dev
+
+            # install rust components
+            cargo install cargo-audit
+            rustup component add clippy
+
+            # install nvm
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+            export NVM_DIR="/home/circleci/.nvm"
+            source $NVM_DIR/nvm.sh
+            nvm install "v11.15.0"
+
+            # install yarn & components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
+            curl -o- -L https://yarnpkg.com/install.sh | bash
+            export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
+            yarn global add ganache-cli ilp-settlement-xrp conventional-changelog-cli
+
+            # env
+            echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
+            echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
+            echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
+      - run:
           name: Run run-md Test
-          command: scripts/run-md-test.sh
+          command: |
+            scripts/run-md-test.sh
       - store_artifacts:
           path: /tmp/run-md-test
           destination: run-md-test
   update-docker-images:
     docker:
-      - image: interledgerrs/circleci-rust-dind:latest
+      - image: circleci/rust
     resource_class: medium+
     steps:
       - setup_remote_docker:
@@ -91,7 +131,7 @@ jobs:
             fi
   build-release-binary-linux:
     docker:
-      - image: interledgerrs/circleci-rust-dind:latest
+      - image: circleci/rust
     resource_class: medium+
     steps:
       - setup_remote_docker:
@@ -104,9 +144,8 @@ jobs:
           command: |
             crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
             printf "Building crate_name: %s, tag: %s\n" "${crate_name}" "${CIRCLE_TAG}"
-            ./.circleci/release/build.sh x86_64-unknown-linux-musl ${crate_name}
             mkdir -p /tmp/release-builds/x86_64-unknown-linux-musl
-            cp target/x86_64-unknown-linux-musl/release/${crate_name} /tmp/release-builds/x86_64-unknown-linux-musl/${crate_name}
+            ./.circleci/release/build_musl_binary.sh ${crate_name} /tmp/release-builds/x86_64-unknown-linux-musl/${crate_name}
       - persist_to_workspace:
           root: /tmp/release-builds
           paths:
@@ -143,13 +182,36 @@ jobs:
           destination: release-builds/x86_64-apple-darwin
   release-binaries:
     docker:
-      - image: interledgerrs/circleci-rust-dind:latest
+      - image: circleci/rust
+    environment:
+      BASH_ENV: /home/circleci/.bash_circleci
+      CARGO_HOME: /home/circleci/.cargo
     steps:
-      - setup_remote_docker:
-          docker_layer_caching: true
       - attach_workspace:
           at: /tmp/release-builds
       - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            # install system dependeicies
+            sudo apt-get update
+            sudo apt-get install -y curl jq
+
+            # install nvm
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+            export NVM_DIR="/home/circleci/.nvm"
+            source $NVM_DIR/nvm.sh
+            nvm install "v11.15.0"
+
+            # install yarn & components (conventional-changelog-cli)
+            curl -o- -L https://yarnpkg.com/install.sh | bash
+            export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
+            yarn global add conventional-changelog-cli
+
+            # env
+            echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
+            echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
+            echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
       - run:
           name: Release Binaries
           command: |
