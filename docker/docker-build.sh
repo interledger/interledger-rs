@@ -20,7 +20,6 @@ if [ $# -eq 0 ]; then
     build_targets+=(ilp-cli)
     build_targets+=(ilp-node)
     build_targets+=(testnet-bundle)
-    build_targets+=(circleci-rust-dind)
 fi
 
 # if arguments are given, add it as build targets
@@ -36,6 +35,5 @@ for build_target in "${build_targets[@]}"; do
                 --build-arg RUST_BIN_DIR_NAME="${RUST_BIN_DIR_NAME}" \
                 . ;;
         "testnet-bundle") docker build -f ./docker/Dockerfile -t interledgerrs/testnet-bundle:${docker_image_tag} . ;;
-        "circleci-rust-dind") docker build -f ./.circleci/circleci-rust-dind.dockerfile -t interledgerrs/circleci-rust-dind:${docker_image_tag} . ;;
     esac
 done

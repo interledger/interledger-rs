@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Set the build target to `target_name` ($1) and build a `release` binary.
+# `crate_name` ($2) is expected to be the same as bin name.
+
 # e.g. x86_64-unknown-linux-musl x86_64-apple-darwin
 target_name=$1
 # e.g. ilp-node
