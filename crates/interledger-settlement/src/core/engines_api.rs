@@ -8,7 +8,9 @@ use super::{
     types::{Quantity, SettlementEngine},
 };
 use bytes::buf::FromBuf;
+use bytes::Bytes;
 use futures::Future;
+use http::StatusCode;
 use hyper::Response;
 use interledger_http::error::default_rejection_handler;
 
@@ -57,14 +59,22 @@ where
                 // Wrap do_send_outgoing_message in a closure to be invoked by
                 // the idempotency wrapper
                 let create_account_fn = move || engine.create_account(account_id);
-                make_idempotent_call(store, create_account_fn, input_hash, idempotency_key)
-                    .map_err::<_, Rejection>(move |err| err.into())
-                    .and_then(move |(status_code, message)| {
-                        Ok(Response::builder()
-                            .status(status_code)
-                            .body(message)
-                            .unwrap())
-                    })
+                make_idempotent_call(
+                    store,
+                    create_account_fn,
+                    input_hash,
+                    idempotency_key,
+                    StatusCode::CREATED,
+                    Bytes::from("CREATED"),
+                )
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |(status_code, message)| {
+                    Ok(Response::builder()
+                        .header("Content-Type", "application/json")
+                        .status(status_code)
+                        .body(message)
+                        .unwrap())
+                })
             },
         );
 
@@ -87,14 +97,22 @@ where
                 let input = format!("{}{:?}", id, quantity);
                 let input_hash = get_hash_of(input.as_ref());
                 let send_money_fn = move || engine.send_money(id, quantity);
-                make_idempotent_call(store, send_money_fn, input_hash, idempotency_key)
-                    .map_err::<_, Rejection>(move |err| err.into())
-                    .and_then(move |(status_code, message)| {
-                        Ok(Response::builder()
-                            .status(status_code)
-                            .body(message)
-                            .unwrap())
-                    })
+                make_idempotent_call(
+                    store,
+                    send_money_fn,
+                    input_hash,
+                    idempotency_key,
+                    StatusCode::CREATED,
+                    Bytes::from("EXECUTED"),
+                )
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |(status_code, message)| {
+                    Ok(Response::builder()
+                        .header("Content-Type", "application/json")
+                        .status(status_code)
+                        .body(message)
+                        .unwrap())
+                })
             },
         );
 
@@ -123,14 +141,22 @@ where
                 // Wrap do_send_outgoing_message in a closure to be invoked by
                 // the idempotency wrapper
                 let receive_message_fn = move || engine.receive_message(id, message);
-                make_idempotent_call(store, receive_message_fn, input_hash, idempotency_key)
-                    .map_err::<_, Rejection>(move |err| err.into())
-                    .and_then(move |(status_code, message)| {
-                        Ok(Response::builder()
-                            .status(status_code)
-                            .body(message)
-                            .unwrap())
-                    })
+                make_idempotent_call(
+                    store,
+                    receive_message_fn,
+                    input_hash,
+                    idempotency_key,
+                    StatusCode::CREATED,
+                    Bytes::from("RECEIVED"),
+                )
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |(status_code, message)| {
+                    Ok(Response::builder()
+                        .header("Content-Type", "application/json")
+                        .status(status_code)
+                        .body(message)
+                        .unwrap())
+                })
             },
         );
 
@@ -221,7 +247,7 @@ mod tests {
             _account_id: String,
             _money: Quantity,
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok((StatusCode::from_u16(200).unwrap(), Bytes::from("OK"))))
+            Box::new(ok(ApiResponse::Default))
         }
 
         fn receive_message(
@@ -229,20 +255,14 @@ mod tests {
             _account_id: String,
             _message: Vec<u8>,
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok((
-                StatusCode::from_u16(200).unwrap(),
-                Bytes::from("RECEIVED"),
-            )))
+            Box::new(ok(ApiResponse::Default))
         }
 
         fn create_account(
             &self,
             _account_id: String,
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok((
-                StatusCode::from_u16(201).unwrap(),
-                Bytes::from("CREATED"),
-            )))
+            Box::new(ok(ApiResponse::Default))
         }
     }
 
@@ -262,13 +282,13 @@ mod tests {
         };
 
         let ret = settlement_call("1".to_owned(), 100, 6);
-        assert_eq!(ret.status().as_u16(), 200);
-        assert_eq!(ret.body(), "OK");
+        assert_eq!(ret.status(), StatusCode::CREATED);
+        assert_eq!(ret.body(), "EXECUTED");
 
         // is idempotent
         let ret = settlement_call("1".to_owned(), 100, 6);
-        assert_eq!(ret.status().as_u16(), 200);
-        assert_eq!(ret.body(), "OK");
+        assert_eq!(ret.status(), StatusCode::CREATED);
+        assert_eq!(ret.body(), "EXECUTED");
 
         // // fails with different id and same data
         let ret = settlement_call("42".to_owned(), 100, 6);
@@ -287,8 +307,8 @@ mod tests {
 
         let cache_hits = store.cache_hits.read();
         assert_eq!(*cache_hits, 4);
-        assert_eq!(cached_data.status, 200);
-        assert_eq!(cached_data.body, "OK".to_string());
+        assert_eq!(cached_data.status, 201);
+        assert_eq!(cached_data.body, "EXECUTED".to_string());
     }
 
     #[test]
@@ -307,12 +327,12 @@ mod tests {
         };
 
         let ret = messages_call("1", vec![0]);
-        assert_eq!(ret.status().as_u16(), 200);
+        assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "RECEIVED");
 
         // is idempotent
         let ret = messages_call("1", vec![0]);
-        assert_eq!(ret.status().as_u16(), 200);
+        assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "RECEIVED");
 
         // // fails with different id and same data
@@ -332,7 +352,7 @@ mod tests {
 
         let cache_hits = store.cache_hits.read();
         assert_eq!(*cache_hits, 4);
-        assert_eq!(cached_data.status, 200);
+        assert_eq!(cached_data.status, 201);
         assert_eq!(cached_data.body, "RECEIVED".to_string());
     }
 
@@ -352,12 +372,12 @@ mod tests {
         };
 
         let ret = create_account_call("1");
-        assert_eq!(ret.status().as_u16(), 201);
+        assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "CREATED");
 
         // is idempotent
         let ret = create_account_call("1");
-        assert_eq!(ret.status().as_u16(), 201);
+        assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "CREATED");
 
         // fails with different id
