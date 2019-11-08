@@ -53,6 +53,16 @@ pub enum ApiResponse {
 /// Trait consumed by the Settlement Engine HTTP API. Every settlement engine
 /// MUST implement this trait, so that it can be then be exposed over the API.
 pub trait SettlementEngine {
+    fn create_account(
+        &self,
+        account_id: String,
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+
+    fn delete_account(
+        &self,
+        account_id: String,
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+
     fn send_money(
         &self,
         account_id: String,
@@ -63,11 +73,6 @@ pub trait SettlementEngine {
         &self,
         account_id: String,
         message: Vec<u8>,
-    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
-
-    fn create_account(
-        &self,
-        account_id: String,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
 }
 
