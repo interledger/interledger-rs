@@ -260,6 +260,13 @@ impl LeftoversStore for TestStore {
             (BigUint::from(0u32), 1)
         }))
     }
+
+    fn clear_uncredited_settlement_amount(
+        &self,
+        _account_id: u64,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unreachable!()
+    }
 }
 
 impl TestStore {

@@ -61,6 +61,41 @@ fn saves_and_gets_uncredited_settlement_amount_properly() {
 }
 
 #[test]
+fn clears_uncredited_settlement_amount_properly() {
+    block_on(test_store().and_then(|(store, context, _accs)| {
+        let amounts = vec![
+            (BigUint::from(5u32), 11),   // 5
+            (BigUint::from(855u32), 12), // 905
+            (BigUint::from(1u32), 10),   // 1005 total
+        ];
+        let acc = AccountId::new();
+        let mut f = Vec::new();
+        for a in amounts {
+            let s = store.clone();
+            f.push(s.save_uncredited_settlement_amount(acc, a));
+        }
+        join_all(f)
+            .map_err(|err| eprintln!("Redis error: {:?}", err))
+            .and_then(move |_| {
+                store
+                    .clear_uncredited_settlement_amount(acc)
+                    .map_err(|err| eprintln!("Redis error: {:?}", err))
+                    .and_then(move |_| {
+                        store
+                            .get_uncredited_settlement_amount(acc)
+                            .map_err(|err| eprintln!("Redis error: {:?}", err))
+                            .and_then(move |amount| {
+                                assert_eq!(amount, (BigUint::from(0u32), 0));
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
 fn credits_prepaid_amount() {
     block_on(test_store().and_then(|(store, context, accs)| {
         let id = accs[0].id();

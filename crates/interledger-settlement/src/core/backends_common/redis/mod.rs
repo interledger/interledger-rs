@@ -298,6 +298,22 @@ impl LeftoversStore for EngineRedisStore {
                 }),
         )
     }
+
+    fn clear_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
+        Box::new(
+            cmd("DEL")
+                .arg(uncredited_amount_key(account_id))
+                .query_async(self.connection.clone())
+                .map_err(move |err| {
+                    error!("Error clearing uncredited_settlement_amount: {:?}", err)
+                })
+                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
+        )
+    }
 }
 
 #[cfg(test)]

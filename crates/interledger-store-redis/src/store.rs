@@ -564,6 +564,8 @@ impl RedisStore {
             pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
                 .ignore();
 
+            pipe.del(uncredited_amount_key(id));
+
             pipe.query_async(connection)
                 .map_err(|err| error!("Error deleting account from DB: {:?}", err))
                 .and_then(move |(connection, _ret): (RedisReconnect, Value)| {
@@ -1924,6 +1926,22 @@ impl LeftoversStore for RedisStore {
                         Either::B(ok(scaled_amount))
                     }
                 }),
+        )
+    }
+
+    fn clear_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
+        Box::new(
+            cmd("DEL")
+                .arg(uncredited_amount_key(account_id))
+                .query_async(self.connection.clone())
+                .map_err(move |err| {
+                    error!("Error clearing uncredited_settlement_amount: {:?}", err)
+                })
+                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
         )
     }
 }
