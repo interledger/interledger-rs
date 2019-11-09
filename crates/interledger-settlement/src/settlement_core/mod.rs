@@ -1,11 +1,13 @@
 /// The REST API
 pub mod api;
-/// Common backend utils for the IdempotentStore adn LeftoversStore traits
-pub mod backends_common;
 /// Expose useful utilities for implementing idempotent functionalities
 pub mod idempotency;
 /// Expose useful traits
 pub mod types;
+/// Common backend utils for the IdempotentStore and LeftoversStore traits
+/// Only exported if the `backends_common` feature flag is enabled
+#[cfg(feature = "backends_common")]
+pub mod backends_common;
 
 use num_bigint::BigUint;
 use num_traits::Zero;

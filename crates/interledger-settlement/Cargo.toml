@@ -39,4 +39,5 @@ rand = "0.7.2"
 
 [features]
 settlement_api = []
+backends_common = ["redis"]
 redis = ["redis_crate"]
