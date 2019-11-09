@@ -403,8 +403,9 @@ impl InterledgerNode {
                             if let Some(username) = default_spsp_account {
                                 api.default_spsp_account(username);
                             }
+                            api.node_version(env!("CARGO_PKG_VERSION").to_string());
                             // add an API of ILP over HTTP and add rejection handler
-                            let api = api.into_warp_filter(Some(env!("CARGO_PKG_VERSION").to_owned()))
+                            let api = api.into_warp_filter()
                                 .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
                                     let http = debug_span!(target: "interledger-node", "http");
                                     let _http_scope = http.enter();
