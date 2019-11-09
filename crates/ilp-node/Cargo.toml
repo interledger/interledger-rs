@@ -8,6 +8,10 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
 
+[features]
+default = ["balance-tracking"]
+balance-tracking = []
+
 [dependencies]
 bytes = { version = "0.4.12", default-features = false }
 clap = { version = "2.33.0", default-features = false }
