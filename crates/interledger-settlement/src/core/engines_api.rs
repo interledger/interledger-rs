@@ -78,6 +78,39 @@ where
             },
         );
 
+    // DELETE /accounts/:id (optional idempotency-key header)
+    let del_account = warp::delete2()
+        .and(account_id)
+        .and(warp::path::end())
+        .and(idempotency)
+        .and(with_engine.clone())
+        .and(with_store.clone())
+        .and_then(
+            move |id: String, idempotency_key: Option<String>, engine: E, store: S| {
+                let input_hash = get_hash_of(id.as_ref());
+
+                // Wrap do_send_outgoing_message in a closure to be invoked by
+                // the idempotency wrapper
+                let delete_account_fn = move || engine.delete_account(id);
+                make_idempotent_call(
+                    store,
+                    delete_account_fn,
+                    input_hash,
+                    idempotency_key,
+                    StatusCode::NO_CONTENT,
+                    Bytes::from("DELETED"),
+                )
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |(status_code, message)| {
+                    Ok(Response::builder()
+                        .header("Content-Type", "application/json")
+                        .status(status_code)
+                        .body(message)
+                        .unwrap())
+                })
+            },
+        );
+
     // POST /accounts/:account_id/settlements (optional idempotency-key header)
     // Body is a Quantity object
     let settlement_endpoint = account_id.and(warp::path("settlements"));
@@ -161,6 +194,7 @@ where
         );
 
     accounts
+        .or(del_account)
         .or(settlements)
         .or(messages)
         .recover(default_rejection_handler)
@@ -398,5 +432,41 @@ mod tests {
         assert_eq!(*cache_hits, 2);
         assert_eq!(cached_data.status, 201);
         assert_eq!(cached_data.body, "CREATED".to_string());
+    }
+
+    #[test]
+    fn idempotent_delete_account() {
+        let store = test_store();
+        let engine = TestEngine;
+        let api = create_settlement_engine_filter(engine, store.clone());
+
+        let delete_account_call = move |id: &str| {
+            warp::test::request()
+                .method("DELETE")
+                .path(&format!("/accounts/{}", id))
+                .header("Idempotency-Key", IDEMPOTENCY)
+                .reply(&api)
+        };
+
+        let ret = delete_account_call("1");
+        assert_eq!(ret.status(), StatusCode::NO_CONTENT);
+        assert_eq!(ret.body(), "DELETED");
+
+        // is idempotent
+        let ret = delete_account_call("1");
+        assert_eq!(ret.status(), StatusCode::NO_CONTENT);
+        assert_eq!(ret.body(), "DELETED");
+
+        // fails with different id
+        let ret = delete_account_call("42");
+        check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
+
+        let cache = store.cache.read();
+        let cached_data = cache.get(&IDEMPOTENCY.to_string()).unwrap();
+
+        let cache_hits = store.cache_hits.read();
+        assert_eq!(*cache_hits, 2);
+        assert_eq!(cached_data.status, 204);
+        assert_eq!(cached_data.body, "DELETED".to_string());
     }
 }
