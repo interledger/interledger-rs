@@ -130,6 +130,12 @@ pub trait LeftoversStore {
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
 
+    /// Clears any uncredited settlement amount associated with the account
+    fn clear_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
     // Gets the current amount of leftovers in the store
     fn get_uncredited_settlement_amount(
         &self,
