@@ -79,8 +79,11 @@ pub fn query_cryptocompare(
             let rates = res
                 .data
                 .into_iter()
-                .filter(|asset| asset.raw.is_some())
-                .map(|asset| (asset.coin_info.name.to_uppercase(), asset.raw.unwrap().usd.price))
+                .filter_map(|asset| if let Some(raw) = asset.raw {
+                    Some((asset.coin_info.name.to_uppercase(), raw.usd.price))
+                  } else {
+                    None
+                  })
                 .chain(once(("USD".to_string(), 1.0)));
             Ok(HashMap::from_iter(rates))
         })
