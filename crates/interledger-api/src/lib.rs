@@ -213,6 +213,7 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     // connection when an account is added with BTP details
     btp: BtpOutgoingService<B, A>,
     server_secret: Bytes,
+    node_version: Option<String>,
 }
 
 impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
@@ -253,6 +254,7 @@ where
             outgoing_handler,
             btp,
             server_secret,
+            node_version: None,
         }
     }
 
@@ -261,10 +263,12 @@ where
         self
     }
 
-    pub fn into_warp_filter(
-        self,
-        node_version: Option<String>,
-    ) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    pub fn node_version(&mut self, version: String) -> &mut Self {
+        self.node_version = Some(version);
+        self
+    }
+
+    pub fn into_warp_filter(self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
         routes::accounts_api(
             self.server_secret,
             self.admin_api_token.clone(),
@@ -276,18 +280,14 @@ where
         )
         .or(routes::node_settings_api(
             self.admin_api_token,
-            node_version,
+            self.node_version,
             self.store,
         ))
         .boxed()
     }
 
-    pub fn bind(
-        self,
-        addr: SocketAddr,
-        node_version: Option<String>,
-    ) -> impl Future<Item = (), Error = ()> {
-        warp::serve(self.into_warp_filter(node_version)).bind(addr)
+    pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
+        warp::serve(self.into_warp_filter()).bind(addr)
     }
 }
 
