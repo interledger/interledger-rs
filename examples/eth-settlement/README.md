@@ -91,12 +91,12 @@ done
 
 ### 1. Prepare interledger.rs
 
-First of all, we have to prepare `interledger.rs`. You could either:
+First of all, we have to prepare `interledger.rs`. You can either:
 
 1. Download compiled binaries
 1. Compile from the source code
 
-If you would like to play more deeply with interledger.rs, compiling from the source is considerable. It would take less time to download compiled binaries otherwise.
+Compiling the source code relatively slow, so we recommend downloading the pre-built binaries unless you want to modify some part of the code.
 
 #### Download Compiled Binaries
 
