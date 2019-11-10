@@ -338,3 +338,29 @@ pub trait AddressStore: Clone {
     /// Get's the store's ilp address from memory
     fn get_ilp_address(&self) -> Address;
 }
+
+impl<I, A> IncomingService<A> for Box<I>
+where
+    I: IncomingService<A>,
+    I::Future: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+    A: Account,
+{
+    type Future = BoxedIlpFuture;
+
+    fn handle_request(&mut self, request: IncomingRequest<A>) -> BoxedIlpFuture {
+        Box::new((**self).handle_request(request))
+    }
+}
+
+impl<O, A> OutgoingService<A> for Box<O>
+where
+    O: OutgoingService<A>,
+    O::Future: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+    A: Account,
+{
+    type Future = BoxedIlpFuture;
+
+    fn send_request(&mut self, request: OutgoingRequest<A>) -> BoxedIlpFuture {
+        Box::new((**self).send_request(request))
+    }
+}

@@ -303,46 +303,46 @@ impl InterledgerNode {
                             // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
                             // service to others like the router and then call handle_incoming on it to set up the incoming handler
                             let outgoing_service = btp_server_service.clone();
-                            let outgoing_service = HttpClientService::new(
+                            let outgoing_service = Box::new(HttpClientService::new(
                                 store.clone(),
                                 outgoing_service,
-                            );
+                            ));
 
-                            let outgoing_service = outgoing_service.wrap(outgoing_metrics);
+                            let outgoing_service = Box::new(outgoing_service.wrap(outgoing_metrics));
 
                             // Note: the expiry shortener must come after the Validator so that the expiry duration
                             // is shortened before we check whether there is enough time left
-                            let outgoing_service = ValidatorService::outgoing(
+                            let outgoing_service = Box::new(ValidatorService::outgoing(
                                 store.clone(),
                                 outgoing_service
-                            );
+                            ));
                             let outgoing_service =
-                                ExpiryShortenerService::new(outgoing_service);
-                            let outgoing_service = StreamReceiverService::new(
+                                Box::new(ExpiryShortenerService::new(outgoing_service));
+                            let outgoing_service = Box::new(StreamReceiverService::new(
                                 secret_seed.clone(),
                                 store.clone(),
                                 outgoing_service,
-                            );
+                            ));
                             #[cfg(feature = "balance-tracking")]
-                            let outgoing_service = BalanceService::new(
+                            let outgoing_service = Box::new(BalanceService::new(
                                 store.clone(),
                                 outgoing_service,
-                            );
-                            let outgoing_service = ExchangeRateService::new(
+                            ));
+                            let outgoing_service = Box::new(ExchangeRateService::new(
                                 exchange_rate_spread,
                                 store.clone(),
                                 outgoing_service,
-                            );
+                            ));
 
                             // Set up the Router and Routing Manager
-                            let incoming_service = Router::new(
+                            let incoming_service = Box::new(Router::new(
                                 store.clone(),
                                 // Add tracing to add the outgoing request details to the incoming span
                                 outgoing_service.clone().wrap(trace_forwarding),
-                            );
+                            ));
 
                             // Add tracing to track the outgoing request details
-                            let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
+                            let outgoing_service = Box::new(outgoing_service.wrap(trace_outgoing).in_current_span());
 
                             let mut ccp_builder = CcpRouteManagerBuilder::new(
                                 ilp_address.clone(),
@@ -354,38 +354,38 @@ impl InterledgerNode {
                             if let Some(ms) = route_broadcast_interval {
                                 ccp_builder.broadcast_interval(ms);
                             }
-                            let incoming_service = ccp_builder.to_service();
-                            let incoming_service = EchoService::new(store.clone(), incoming_service);
-                            let incoming_service = SettlementMessageService::new(incoming_service);
-                            let incoming_service = IldcpService::new(incoming_service);
+                            let incoming_service = Box::new(ccp_builder.to_service());
+                            let incoming_service = Box::new(EchoService::new(store.clone(), incoming_service));
+                            let incoming_service = Box::new(SettlementMessageService::new(incoming_service));
+                            let incoming_service = Box::new(IldcpService::new(incoming_service));
                             let incoming_service =
-                                MaxPacketAmountService::new(
+                                Box::new(MaxPacketAmountService::new(
                                     store.clone(),
                                     incoming_service
-                            );
+                            ));
                             let incoming_service =
-                                ValidatorService::incoming(store.clone(), incoming_service);
-                            let incoming_service = RateLimitService::new(
+                                Box::new(ValidatorService::incoming(store.clone(), incoming_service));
+                            let incoming_service = Box::new(RateLimitService::new(
                                 store.clone(),
                                 incoming_service,
-                            );
+                            ));
 
                             // Add tracing to track the incoming request details
-                            let incoming_service = incoming_service.wrap(trace_incoming).in_current_span();
+                            let incoming_service = Box::new(incoming_service.wrap(trace_incoming).in_current_span());
 
-                            let incoming_service = incoming_service.wrap(incoming_metrics);
+                            let incoming_service = Box::new(incoming_service.wrap(incoming_metrics));
 
                             // Handle incoming packets sent via BTP
-                            btp_server_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
+                            btp_server_service.handle_incoming(Box::new(incoming_service.clone().wrap(|request, mut next| {
                                 let btp = debug_span!(target: "interledger-node", "btp");
                                 let _btp_scope = btp.enter();
                                 next.handle_request(request).in_current_span()
-                            }).in_current_span());
-                            btp_client_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
+                            }).in_current_span()));
+                            btp_client_service.handle_incoming(Box::new(incoming_service.clone().wrap(|request, mut next| {
                                 let btp = debug_span!(target: "interledger-node", "btp");
                                 let _btp_scope = btp.enter();
                                 next.handle_request(request).in_current_span()
-                            }).in_current_span());
+                            }).in_current_span()));
 
                             // Node HTTP API
                             let mut api = NodeApi::new(
@@ -411,7 +411,8 @@ impl InterledgerNode {
                                     let _http_scope = http.enter();
                                     next.handle_request(request).in_current_span()
                                 }).in_current_span(), store.clone()).as_filter())
-                                .recover(default_rejection_handler);
+                                .recover(default_rejection_handler)
+                                .boxed();
 
                             // Mount the BTP endpoint at /ilp/btp
                             let btp_endpoint = warp::path("ilp")
