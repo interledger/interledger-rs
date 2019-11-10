@@ -9,7 +9,7 @@ use interledger_service::{Account as AccountTrait, Username};
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
-use interledger_settlement::{SettlementAccount, SettlementEngineDetails};
+use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use log::error;
 use redis::{
     from_redis_value, ErrorKind, FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,

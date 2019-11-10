@@ -1,4 +1,4 @@
-use crate::error::*;
+use super::types::ApiResponse;
 use bytes::Bytes;
 use futures::executor::spawn;
 use futures::{
@@ -6,6 +6,7 @@ use futures::{
     Future,
 };
 use http::StatusCode;
+use interledger_http::error::*;
 use log::error;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -85,9 +86,14 @@ pub fn make_idempotent_call<S, F>(
     non_idempotent_function: F,
     input_hash: [u8; 32],
     idempotency_key: Option<String>,
+    // As per the spec, the success status code is independent of the
+    // implemented engine's functionality
+    status_code: StatusCode,
+    // The default value is used when the engine returns a default return type
+    default_return_value: Bytes,
 ) -> impl Future<Item = (StatusCode, Bytes), Error = ApiError>
 where
-    F: FnOnce() -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>,
+    F: FnOnce() -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>,
     S: IdempotentStore + Clone + Send + Sync + 'static,
 {
     if let Some(idempotency_key) = idempotency_key {
@@ -128,7 +134,13 @@ where
                                     ).map_err(move |_| error!("Failed to connect to the store! The request will not be idempotent if retried.")));
                                     ret
                                 }})
-                            .and_then(
+                            .map(move |ret| {
+                                let data = match ret {
+                                    ApiResponse::Default => default_return_value,
+                                    ApiResponse::Data(d) => d,
+                                };
+                                (status_code, data)
+                            }).and_then(
                                 move |ret: (StatusCode, Bytes)| {
                                     store
                                         .save_idempotent_data(
@@ -152,7 +164,15 @@ where
     } else {
         // otherwise just make the call w/o any idempotency saves
         Either::B(
-            non_idempotent_function().and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
+            non_idempotent_function()
+                .map(move |ret| {
+                    let data = match ret {
+                        ApiResponse::Default => default_return_value,
+                        ApiResponse::Data(d) => d,
+                    };
+                    (status_code, data)
+                })
+                .and_then(move |ret: (StatusCode, Bytes)| Ok((ret.0, ret.1))),
         )
     }
 }

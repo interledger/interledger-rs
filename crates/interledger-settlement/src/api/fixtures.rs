@@ -1,11 +1,11 @@
-use crate::Quantity;
+use crate::core::types::Quantity;
 use interledger_packet::Address;
 #[cfg(test)]
 use lazy_static::lazy_static;
 use mockito::Matcher;
 use std::str::FromStr;
 
-use crate::test_helpers::TestAccount;
+use super::test_helpers::TestAccount;
 
 pub static DATA: &str = "DATA_FOR_SETTLEMENT_ENGINE";
 pub static BODY: &str = "hi";

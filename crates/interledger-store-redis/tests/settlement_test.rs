@@ -5,9 +5,12 @@ use common::*;
 use futures::future::join_all;
 use http::StatusCode;
 use interledger_api::NodeStore;
-use interledger_http::idempotency::{IdempotentData, IdempotentStore};
+
 use interledger_service::{Account, AccountStore};
-use interledger_settlement::{LeftoversStore, SettlementAccount, SettlementStore};
+use interledger_settlement::core::{
+    idempotency::{IdempotentData, IdempotentStore},
+    types::{LeftoversStore, SettlementAccount, SettlementStore},
+};
 use interledger_store_redis::AccountId;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -48,6 +51,41 @@ fn saves_and_gets_uncredited_settlement_amount_properly() {
                             .and_then(move |ret| {
                                 // 1 uncredited unit for scale 9
                                 assert_eq!(ret, (BigUint::from(5u32), 12));
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn clears_uncredited_settlement_amount_properly() {
+    block_on(test_store().and_then(|(store, context, _accs)| {
+        let amounts = vec![
+            (BigUint::from(5u32), 11),   // 5
+            (BigUint::from(855u32), 12), // 905
+            (BigUint::from(1u32), 10),   // 1005 total
+        ];
+        let acc = AccountId::new();
+        let mut f = Vec::new();
+        for a in amounts {
+            let s = store.clone();
+            f.push(s.save_uncredited_settlement_amount(acc, a));
+        }
+        join_all(f)
+            .map_err(|err| eprintln!("Redis error: {:?}", err))
+            .and_then(move |_| {
+                store
+                    .clear_uncredited_settlement_amount(acc)
+                    .map_err(|err| eprintln!("Redis error: {:?}", err))
+                    .and_then(move |_| {
+                        store
+                            .get_uncredited_settlement_amount(acc)
+                            .map_err(|err| eprintln!("Redis error: {:?}", err))
+                            .and_then(move |amount| {
+                                assert_eq!(amount, (BigUint::from(0u32), 0));
                                 let _ = context;
                                 Ok(())
                             })

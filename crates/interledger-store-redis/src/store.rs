@@ -32,16 +32,15 @@ use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
-use interledger_http::{
-    idempotency::{IdempotentData, IdempotentStore},
-    HttpStore,
-};
+use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::{
-    scale_with_precision_loss, Convert, ConvertDetails, LeftoversStore, SettlementStore,
+use interledger_settlement::core::{
+    idempotency::{IdempotentData, IdempotentStore},
+    scale_with_precision_loss,
+    types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
@@ -564,6 +563,8 @@ impl RedisStore {
 
             pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
                 .ignore();
+
+            pipe.del(uncredited_amount_key(id));
 
             pipe.query_async(connection)
                 .map_err(|err| error!("Error deleting account from DB: {:?}", err))
@@ -1925,6 +1926,22 @@ impl LeftoversStore for RedisStore {
                         Either::B(ok(scaled_amount))
                     }
                 }),
+        )
+    }
+
+    fn clear_uncredited_settlement_amount(
+        &self,
+        account_id: Self::AccountId,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
+        Box::new(
+            cmd("DEL")
+                .arg(uncredited_amount_key(account_id))
+                .query_async(self.connection.clone())
+                .map_err(move |err| {
+                    error!("Error clearing uncredited_settlement_amount: {:?}", err)
+                })
+                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
         )
     }
 }

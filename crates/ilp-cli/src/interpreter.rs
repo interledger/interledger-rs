@@ -5,83 +5,68 @@ use std::{borrow::Cow, collections::HashMap};
 use tungstenite::{connect, handshake::client::Request};
 use url::Url;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    // Custom errors
+    #[error("Usage error")]
     UsageErr(&'static str),
-    ClientErr(reqwest::Error),
-    ResponseErr(String),
+    #[error("Invalid protocol in URL: {0}")]
+    ProtocolErr(String),
+    // Foreign errors
+    #[error("Error sending HTTP request: {0}")]
+    SendErr(#[from] reqwest::Error),
+    #[error("Error receving HTTP response from testnet: {0}")]
+    TestnetErr(reqwest::Error),
+    #[error("Error altering URL scheme")]
+    SchemeErr(()), // TODO: should be part of UrlError, see https://github.com/servo/rust-url/issues/299
+    #[error("Error parsing URL: {0}")]
+    UrlErr(#[from] url::ParseError),
+    #[error("WebSocket error: {0}")]
+    WebsocketErr(#[from] tungstenite::error::Error),
 }
 
 pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
     let client = NodeClient {
         client: Client::new(),
-        // `--node` has a a default value, so will never be None
-        url: matches.value_of("node_url").unwrap(),
+        url: matches.value_of("node_url").unwrap(), // infallible unwrap
     };
 
     // Dispatch based on parsed input
     match matches.subcommand() {
-        // Execute the specified subcommand
-        (ilp_cli_subcommand, Some(ilp_cli_matches)) => {
-            // Send HTTP request
-            match ilp_cli_subcommand {
-                "accounts" => match ilp_cli_matches.subcommand() {
-                    (accounts_subcommand, Some(accounts_matches)) => match accounts_subcommand {
-                        "balance" => client.get_account_balance(accounts_matches),
-                        "create" => client.post_accounts(accounts_matches),
-                        "delete" => client.delete_account(accounts_matches),
-                        "incoming-payments" => {
-                            client.ws_account_payments_incoming(accounts_matches)
-                        }
-                        "info" => client.get_account(accounts_matches),
-                        "list" => client.get_accounts(accounts_matches),
-                        "update" => client.put_account(accounts_matches),
-                        "update-settings" => client.put_account_settings(accounts_matches),
-                        command => panic!("Unhandled `ilp-cli accounts` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help accounts")),
-                },
-                "pay" => client.post_account_payments(ilp_cli_matches),
-                "rates" => match ilp_cli_matches.subcommand() {
-                    (rates_subcommand, Some(rates_matches)) => match rates_subcommand {
-                        "list" => client.get_rates(rates_matches),
-                        "set-all" => client.put_rates(rates_matches),
-                        command => panic!("Unhandled `ilp-cli rates` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help rates")),
-                },
-                "routes" => match ilp_cli_matches.subcommand() {
-                    (routes_subcommand, Some(routes_matches)) => match routes_subcommand {
-                        "list" => client.get_routes(routes_matches),
-                        "set" => client.put_route_static(routes_matches),
-                        "set-all" => client.put_routes_static(routes_matches),
-                        command => panic!("Unhandled `ilp-cli routes` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help routes")),
-                },
-                "settlement-engines" => match ilp_cli_matches.subcommand() {
-                    (settlement_engines_subcommand, Some(settlement_engines_matches)) => {
-                        match settlement_engines_subcommand {
-                            "set-all" => client.put_settlement_engines(settlement_engines_matches),
-                            command => panic!(
-                                "Unhandled `ilp-cli settlement-engines` subcommand: {}",
-                                command
-                            ),
-                        }
-                    }
-                    _ => Err(Error::UsageErr("ilp-cli help settlement-engines")),
-                },
-                "status" => client.get_root(ilp_cli_matches),
-                "testnet" => match ilp_cli_matches.subcommand() {
-                    (testnet_subcommand, Some(testnet_matches)) => match testnet_subcommand {
-                        "setup" => client.xpring_account(testnet_matches),
-                        command => panic!("Unhandled `ilp-cli testnet` subcommand: {}", command),
-                    },
-                    _ => Err(Error::UsageErr("ilp-cli help testnet")),
-                },
-                command => panic!("Unhandled `ilp-cli` subcommand: {}", command),
+        ("accounts", Some(accounts_matches)) => match accounts_matches.subcommand() {
+            ("balance", Some(submatches)) => client.get_account_balance(submatches),
+            ("create", Some(submatches)) => client.post_accounts(submatches),
+            ("delete", Some(submatches)) => client.delete_account(submatches),
+            ("incoming-payments", Some(submatches)) => {
+                client.ws_account_payments_incoming(submatches)
             }
-        }
+            ("info", Some(submatches)) => client.get_account(submatches),
+            ("list", Some(submatches)) => client.get_accounts(submatches),
+            ("update", Some(submatches)) => client.put_account(submatches),
+            ("update-settings", Some(submatches)) => client.put_account_settings(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help accounts")),
+        },
+        ("pay", Some(pay_matches)) => client.post_account_payments(pay_matches),
+        ("rates", Some(rates_matches)) => match rates_matches.subcommand() {
+            ("list", Some(submatches)) => client.get_rates(submatches),
+            ("set-all", Some(submatches)) => client.put_rates(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help rates")),
+        },
+        ("routes", Some(routes_matches)) => match routes_matches.subcommand() {
+            ("list", Some(submatches)) => client.get_routes(submatches),
+            ("set", Some(submatches)) => client.put_route_static(submatches),
+            ("set-all", Some(submatches)) => client.put_routes_static(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help routes")),
+        },
+        ("settlement-engines", Some(settlement_matches)) => match settlement_matches.subcommand() {
+            ("set-all", Some(submatches)) => client.put_settlement_engines(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help settlement-engines")),
+        },
+        ("status", Some(status_matches)) => client.get_root(status_matches),
+        ("testnet", Some(testnet_matches)) => match testnet_matches.subcommand() {
+            ("setup", Some(submatches)) => client.xpring_account(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help testnet")),
+        },
         _ => Err(Error::UsageErr("ilp-cli help")),
     }
 }
@@ -95,12 +80,12 @@ impl NodeClient<'_> {
     // GET /accounts/:username/balance
     fn get_account_balance(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("username").unwrap();
+        let user = args.remove("username").unwrap(); // infallible unwrap
         self.client
             .get(&format!("{}/accounts/{}/balance", self.url, user))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // POST /accounts
@@ -111,7 +96,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /accounts/:username
@@ -122,7 +107,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // DELETE /accounts/:username
@@ -132,7 +117,7 @@ impl NodeClient<'_> {
             .delete(&format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // WebSocket /accounts/:username/payments/incoming
@@ -141,15 +126,18 @@ impl NodeClient<'_> {
         let mut url = Url::parse(&format!(
             "{}/accounts/{}/payments/incoming",
             self.url, args["username"]
-        ))
-        .expect("Could not parse URL");
+        ))?;
 
-        url.set_scheme(match url.scheme() {
-            "http" => "ws",
-            "https" => "wss",
-            _ => panic!("Unexpected URL protocol"),
-        })
-        .expect("Could not alter URL scheme");
+        let scheme = match url.scheme() {
+            "http" => Ok("ws"),
+            "https" => Ok("wss"),
+            s => Err(Error::ProtocolErr(format!(
+                "{} (only HTTP and HTTPS are supported)",
+                s
+            ))),
+        }?;
+
+        url.set_scheme(scheme).map_err(Error::SchemeErr)?;
 
         let mut request: Request = url.into();
         request.add_header(
@@ -157,11 +145,9 @@ impl NodeClient<'_> {
             Cow::Owned(format!("Bearer {}", auth)),
         );
 
-        let (mut socket, _) = connect(request).expect("Could not connect to WebSocket host");
+        let (mut socket, _) = connect(request)?;
         loop {
-            let msg = socket
-                .read_message()
-                .expect("Could not receive WebSocket message");
+            let msg = socket.read_message()?;
             println!("{}", msg);
         }
     }
@@ -173,7 +159,7 @@ impl NodeClient<'_> {
             .get(&format!("{}/accounts/{}", self.url, args["username"]))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /accounts
@@ -183,31 +169,31 @@ impl NodeClient<'_> {
             .get(&format!("{}/accounts", self.url))
             .bearer_auth(auth)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /accounts/:username/settings
     fn put_account_settings(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("username").unwrap();
+        let user = args.remove("username").unwrap(); // infallible unwrap
         self.client
             .put(&format!("{}/accounts/{}/settings", self.url, user))
             .bearer_auth(auth)
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // POST /accounts/:username/payments
     fn post_account_payments(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, mut args) = extract_args(matches);
-        let user = args.remove("sender_username").unwrap();
+        let user = args.remove("sender_username").unwrap(); // infallible unwrap
         self.client
             .post(&format!("{}/accounts/{}/payments", self.url, user))
             .bearer_auth(&format!("{}:{}", user, auth))
             .json(&args)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /rates
@@ -215,7 +201,7 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/rates", self.url))
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /rates
@@ -226,7 +212,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&rate_pairs)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /routes
@@ -234,7 +220,7 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/routes", self.url))
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /routes/static/:prefix
@@ -245,7 +231,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .body(args["destination"].to_string())
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT routes/static
@@ -256,7 +242,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&route_pairs)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // PUT /settlement/engines
@@ -267,7 +253,7 @@ impl NodeClient<'_> {
             .bearer_auth(auth)
             .json(&engine_pairs)
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
 
     // GET /
@@ -275,8 +261,9 @@ impl NodeClient<'_> {
         self.client
             .get(&format!("{}/", self.url))
             .send()
-            .map_err(Error::ClientErr)
+            .map_err(Error::SendErr)
     }
+
     /*
     {"http_endpoint": "https://rs3.xpring.dev/ilp", // ilp_over_http_url
     "passkey": "b0i3q9tbvfgek",  // ilp_over_http_outgoing_token = username:passkey
@@ -288,7 +275,6 @@ impl NodeClient<'_> {
     "payment_pointer": "$rs3.xpring.dev/accounts/user_g31tuju4/spsp"}
     routing_relation Parent
     */
-
     fn xpring_account(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, cli_args) = extract_args(matches);
         // Note the Xpring API expects the asset code in lowercase
@@ -296,32 +282,17 @@ impl NodeClient<'_> {
         let foreign_args: XpringResponse = self
             .client
             .get(&format!("https://xpring.io/api/accounts/{}", asset))
-            .send()
-            .map_err(|err| {
-                Error::ResponseErr(format!(
-                    "Error requesting credentials from Xpring Testnet Signup API: {:?}",
-                    err
-                ))
-            })?
+            .send()?
             .json()
-            .map_err(|err| {
-                Error::ResponseErr(format!(
-                    "Got unexpected response from Xpring Testnet Signup API: {:?}",
-                    err
-                ))
-            })?;
+            .map_err(Error::TestnetErr)?;
         let mut args = HashMap::new();
-        let token = format!(
-            "{}:{}",
-            foreign_args.username.clone(),
-            foreign_args.passkey.clone()
-        );
-        args.insert("ilp_over_http_url", foreign_args.http_endpoint.clone());
+        let token = format!("{}:{}", foreign_args.username, foreign_args.passkey);
+        args.insert("ilp_over_http_url", foreign_args.http_endpoint);
         args.insert("ilp_over_http_outgoing_token", token.clone());
-        args.insert("ilp_over_btp_url", foreign_args.btp_endpoint.clone());
+        args.insert("ilp_over_btp_url", foreign_args.btp_endpoint);
         args.insert("ilp_over_btp_outgoing_token", token.clone());
         args.insert("asset_scale", foreign_args.asset_scale.to_string());
-        args.insert("asset_code", foreign_args.asset_code.clone());
+        args.insert("asset_code", foreign_args.asset_code);
         args.insert("username", format!("xpring_{}", asset));
         args.insert("routing_relation", String::from("Parent")); // TODO: weird behavior when deleting and re-inserting accounts with this
                                                                  // TODO should we set different parameters?
@@ -336,12 +307,12 @@ impl NodeClient<'_> {
             .send();
 
         if matches.is_present("return_testnet_credential") {
-            result.expect("Error creating account for testnet node on our local node");
+            result?;
             Ok(Response::from(
-                http::Response::builder().body(token).unwrap(),
+                http::Response::builder().body(token).unwrap(), // infallible unwrap
             ))
         } else {
-            result.map_err(Error::ClientErr)
+            result.map_err(Error::SendErr)
         }
     }
 }

@@ -1,10 +1,10 @@
-use super::{SettlementAccount, SE_ILP_ADDRESS};
+use crate::core::types::{SettlementAccount, SE_ILP_ADDRESS};
 use futures::{
     future::{err, Either},
     Future, Stream,
 };
 use interledger_packet::{ErrorCode, FulfillBuilder, RejectBuilder};
-use interledger_service::{BoxedIlpFuture, IncomingRequest, IncomingService};
+use interledger_service::{Account, BoxedIlpFuture, IncomingRequest, IncomingService};
 use log::error;
 use reqwest::r#async::Client;
 use std::marker::PhantomData;
@@ -22,7 +22,7 @@ pub struct SettlementMessageService<I, A> {
 impl<I, A> SettlementMessageService<I, A>
 where
     I: IncomingService<A>,
-    A: SettlementAccount,
+    A: SettlementAccount + Account,
 {
     pub fn new(next: I) -> Self {
         SettlementMessageService {
@@ -36,7 +36,7 @@ where
 impl<I, A> IncomingService<A> for SettlementMessageService<I, A>
 where
     I: IncomingService<A> + Send,
-    A: SettlementAccount,
+    A: SettlementAccount + Account,
 {
     type Future = BoxedIlpFuture;
 
@@ -121,8 +121,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{BODY, DATA, SERVICE_ADDRESS, TEST_ACCOUNT_0};
-    use crate::test_helpers::{block_on, mock_message, test_service};
+    use crate::api::fixtures::{BODY, DATA, SERVICE_ADDRESS, TEST_ACCOUNT_0};
+    use crate::api::test_helpers::{block_on, mock_message, test_service};
     use interledger_packet::{Address, Fulfill, PrepareBuilder, Reject};
     use std::str::FromStr;
     use std::time::SystemTime;

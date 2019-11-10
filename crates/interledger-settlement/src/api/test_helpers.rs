@@ -1,22 +1,26 @@
 use super::*;
-use crate::api::scale_with_precision_loss;
-use crate::Convert;
-use crate::{LeftoversStore, SettlementEngineDetails};
+use crate::core::{
+    idempotency::*,
+    scale_with_precision_loss,
+    types::{
+        Convert, ConvertDetails, LeftoversStore, SettlementAccount, SettlementEngineDetails,
+        SettlementStore,
+    },
+};
 use bytes::Bytes;
 use futures::{
     future::{err, ok},
     Future,
 };
 use hyper::StatusCode;
-use interledger_http::idempotency::*;
+use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService, Username,
 };
-
-use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use mockito::mock;
+use num_bigint::BigUint;
 
-use crate::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
+use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -88,7 +92,7 @@ impl SettlementStore for TestStore {
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: <Self::Account as Account>::AccountId,
+        account_id: u64,
         amount: u64,
         _idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -104,7 +108,7 @@ impl SettlementStore for TestStore {
 
     fn refund_settlement(
         &self,
-        _account_id: <Self::Account as Account>::AccountId,
+        _account_id: u64,
         _settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let ret = if self.should_fail { err(()) } else { ok(()) };
@@ -255,6 +259,13 @@ impl LeftoversStore for TestStore {
         } else {
             (BigUint::from(0u32), 1)
         }))
+    }
+
+    fn clear_uncredited_settlement_amount(
+        &self,
+        _account_id: u64,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unreachable!()
     }
 }
 

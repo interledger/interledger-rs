@@ -1,8 +1,9 @@
-use super::{Quantity, SettlementAccount};
+use crate::core::types::{Quantity, SettlementAccount};
 use futures::{
     future::{err, Either},
     Future,
 };
+use interledger_service::Account;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
 use serde_json::json;
@@ -20,7 +21,7 @@ impl SettlementClient {
         }
     }
 
-    pub fn send_settlement<A: SettlementAccount>(
+    pub fn send_settlement<A: SettlementAccount + Account>(
         &self,
         account: A,
         amount: u64,
@@ -68,8 +69,8 @@ impl Default for SettlementClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::TEST_ACCOUNT_0;
-    use crate::test_helpers::{block_on, mock_settlement};
+    use crate::api::fixtures::TEST_ACCOUNT_0;
+    use crate::api::test_helpers::{block_on, mock_settlement};
     use mockito::Matcher;
 
     #[test]

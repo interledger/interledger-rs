@@ -11,6 +11,8 @@ use std::sync::Arc;
 
 use crate::metrics::{incoming_metrics, outgoing_metrics};
 use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
+#[cfg(feature = "balance-tracking")]
+use interledger::service_util::BalanceService;
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
@@ -25,10 +27,10 @@ use interledger::{
         OutgoingService, Username,
     },
     service_util::{
-        BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
-        ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
+        EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
+        MaxPacketAmountService, RateLimitService, ValidatorService,
     },
-    settlement::{create_settlements_filter, SettlementMessageService},
+    settlement::api::{create_settlements_filter, SettlementMessageService},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };
@@ -321,6 +323,7 @@ impl InterledgerNode {
                                 store.clone(),
                                 outgoing_service,
                             );
+                            #[cfg(feature = "balance-tracking")]
                             let outgoing_service = BalanceService::new(
                                 store.clone(),
                                 outgoing_service,
@@ -400,6 +403,7 @@ impl InterledgerNode {
                             if let Some(username) = default_spsp_account {
                                 api.default_spsp_account(username);
                             }
+                            api.node_version(env!("CARGO_PKG_VERSION").to_string());
                             // add an API of ILP over HTTP and add rejection handler
                             let api = api.into_warp_filter()
                                 .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
