@@ -1,5 +1,5 @@
 use futures::Future;
-use ilp_node::InterledgerNode;
+use interledger_node::InterledgerNode;
 use reqwest::r#async::Client;
 use secrecy::SecretString;
 use serde_json::{self, json, Value};

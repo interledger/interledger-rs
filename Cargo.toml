@@ -9,6 +9,7 @@ members = [
   "./crates/interledger-ccp",
   "./crates/interledger-http",
   "./crates/interledger-ildcp",
+  "./crates/interledger-node",
   "./crates/interledger-packet",
   "./crates/interledger-router",
   "./crates/interledger-service",

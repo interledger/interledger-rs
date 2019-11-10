@@ -1,5 +1,5 @@
 use futures::{future::join_all, stream::*, sync::mpsc, Future};
-use ilp_node::InterledgerNode;
+use interledger_node::InterledgerNode;
 use serde_json::json;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::{debug, error_span};

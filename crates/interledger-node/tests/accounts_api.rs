@@ -12,8 +12,8 @@ use test_helpers::*;
 use tokio::runtime::Builder as RuntimeBuilder;
 use warp::http;
 
-use ilp_node::InterledgerNode;
 use interledger::{packet::Address, stream::StreamDelivery};
+use interledger_node::InterledgerNode;
 
 // Integration tests of accounts APIs
 // These are very rough tests. It confirms only that the paths and HTTP methods are working correctly.

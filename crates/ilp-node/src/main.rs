@@ -3,6 +3,7 @@
 use clap::{crate_version, App, Arg, ArgMatches};
 use config::{Config, Source};
 use config::{FileFormat, Value};
+use interledger_node::InterledgerNode;
 use libc::{c_int, isatty};
 use std::{
     ffi::{OsStr, OsString},
@@ -14,6 +15,7 @@ use tracing_subscriber::{
     fmt::{time::ChronoUtc, Subscriber},
 };
 
+<<<<<<< HEAD
 #[cfg(feature = "google-pubsub")]
 mod google_pubsub;
 mod metrics;
@@ -21,6 +23,8 @@ mod node;
 mod trace;
 use node::InterledgerNode;
 
+=======
+>>>>>>> refactor(node): separate node lib and bin
 pub fn main() {
     Subscriber::builder()
         .with_timer(ChronoUtc::rfc3339())

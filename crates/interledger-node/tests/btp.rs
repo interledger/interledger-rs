@@ -1,5 +1,5 @@
 use futures::{future::join_all, Future};
-use ilp_node::InterledgerNode;
+use interledger_node::InterledgerNode;
 use serde_json::{self, json};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::error_span;

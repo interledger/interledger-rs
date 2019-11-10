@@ -730,17 +730,18 @@ dependencies = [
 name = "ilp-node"
 version = "0.5.2"
 dependencies = [
+<<<<<<< HEAD
  "approx 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
+=======
+>>>>>>> refactor(node): separate node lib and bin
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "config 0.9.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
- "hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "interledger 0.5.1",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "interledger-node 0.5.2",
  "libc 0.2.65 (registry+https://github.com/rust-lang/crates.io-index)",
+<<<<<<< HEAD
  "metrics 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics-core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics-runtime 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -762,6 +763,9 @@ dependencies = [
  "uuid 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "warp 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "yup-oauth2 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+=======
+ "tracing-subscriber 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+>>>>>>> refactor(node): separate node lib and bin
 ]
 
 [[package]]
@@ -917,6 +921,38 @@ dependencies = [
  "interledger-service 0.3.0",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "interledger-node"
+version = "0.5.2"
+dependencies = [
+ "approx 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "interledger 0.5.1",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "metrics 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "metrics-core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "metrics-runtime 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "net2 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redis 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "reqwest 0.9.22 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ring 0.16.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "secrecy 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-retry 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-futures 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-subscriber 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uuid 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "warp 0.1.20 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

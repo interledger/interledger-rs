@@ -3,7 +3,7 @@ mod test_helpers;
 
 use approx::relative_eq;
 use futures::Future;
-use ilp_node::InterledgerNode;
+use interledger_node::InterledgerNode;
 use redis_helpers::*;
 use reqwest::{self, r#async::Body};
 use serde_json::{json, Number, Value};
