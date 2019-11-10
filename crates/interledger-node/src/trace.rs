@@ -115,13 +115,10 @@ pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
 /// Log whether the response was a Fulfill or Reject
 fn trace_response(result: Result<Fulfill, Reject>) -> Result<Fulfill, Reject> {
     match result {
-        Ok(ref fulfill) => {
-            debug_span!(target: "interledger-node", "", fulfillment = %hex::encode(fulfill.fulfillment())).in_scope(
-                || {
-                    info!(target: "interledger-node", result = "fulfill");
-                },
-            )
-        }
+        Ok(ref fulfill) => debug_span!("", fulfillment = %hex::encode(fulfill.fulfillment()))
+            .in_scope(|| {
+                info!(result = "fulfill");
+            }),
         Err(ref reject) => if let Some(ref address) = reject.triggered_by() {
             info_span!(target: "interledger-node",
                 "",
@@ -136,7 +133,7 @@ fn trace_response(result: Result<Fulfill, Reject>) -> Result<Fulfill, Reject> {
                 reject.triggered_by = "")
         }
         .in_scope(|| {
-            info!(target: "interledger-node", result = "reject");
+            info!(result = "reject");
         }),
     };
 

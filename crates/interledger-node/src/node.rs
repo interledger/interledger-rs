@@ -270,10 +270,10 @@ impl InterledgerNode {
         Box::new(RedisStoreBuilder::new(self.redis_connection.clone(), redis_secret)
         .node_ilp_address(ilp_address.clone())
         .connect()
-        .map_err(move |err| error!(target: "interledger-node", "Error connecting to Redis: {:?} {:?}", redis_addr, err))
+        .map_err(move |err| error!("Error connecting to Redis: {:?} {:?}", redis_addr, err))
         .and_then(move |store| {
                 store.clone().get_btp_outgoing_accounts()
-                .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
+                .map_err(|_| error!("Error getting accounts"))
                 .and_then(move |btp_accounts| {
                     let outgoing_service =
                         outgoing_service_fn(move |request: OutgoingRequest<Account>| {
@@ -281,7 +281,7 @@ impl InterledgerNode {
                             // because there's a good chance they'll be offline
                             if request.prepare.destination().scheme() != "peer"
                                 || request.to.routing_relation() != RoutingRelation::Child {
-                                error!(target: "interledger-node", "No route found for outgoing request");
+                                error!("No route found for outgoing request");
                             }
                             Err(RejectBuilder {
                                 code: ErrorCode::F02_UNREACHABLE,
@@ -386,12 +386,12 @@ impl InterledgerNode {
 
                             // Handle incoming packets sent via BTP
                             btp_server_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
-                                let btp = debug_span!(target: "interledger-node", "btp");
+                                let btp = debug_span!("btp");
                                 let _btp_scope = btp.enter();
                                 next.handle_request(request).in_current_span()
                             }).in_current_span());
                             btp_client_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
-                                let btp = debug_span!(target: "interledger-node", "btp");
+                                let btp = debug_span!("btp");
                                 let _btp_scope = btp.enter();
                                 next.handle_request(request).in_current_span()
                             }).in_current_span());
@@ -402,7 +402,7 @@ impl InterledgerNode {
                                 admin_auth_token,
                                 store.clone(),
                                 incoming_service.clone().wrap(|request, mut next| {
-                                    let api = debug_span!(target: "interledger-node", "api");
+                                    let api = debug_span!("api");
                                     let _api_scope = api.enter();
                                     next.handle_request(request).in_current_span()
                                 }).in_current_span(),
@@ -416,7 +416,7 @@ impl InterledgerNode {
                             // add an API of ILP over HTTP and add rejection handler
                             let api = api.into_warp_filter()
                                 .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
-                                    let http = debug_span!(target: "interledger-node", "http");
+                                    let http = debug_span!("http");
                                     let _http_scope = http.enter();
                                     next.handle_request(request).in_current_span()
                                 }).in_current_span(), store.clone()).as_filter())
@@ -431,7 +431,7 @@ impl InterledgerNode {
                             // because the API includes error handling and consumes the request.
                             // TODO should we just make BTP part of the API?
                             let api = btp_endpoint.or(api).with(warp::log("interledger-api")).boxed();
-                            info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
+                            info!("Interledger.rs node HTTP API listening on: {}", http_bind_address);
                             spawn(warp::serve(api).bind(http_bind_address));
 
                             // Settlement API
@@ -439,7 +439,7 @@ impl InterledgerNode {
                                 store.clone(),
                                 outgoing_service.clone(),
                             );
-                            info!(target: "interledger-node", "Settlement API listening on: {}", settlement_api_bind_address);
+                            info!("Settlement API listening on: {}", settlement_api_bind_address);
                             spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
 
                             // Exchange Rate Polling
@@ -447,7 +447,7 @@ impl InterledgerNode {
                                 let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, exchange_rate_poll_failure_tolerance, store.clone());
                                 exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
                             } else {
-                                debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
+                                debug!("Not using exchange rate provider. Rates must be set via the HTTP API");
                             }
 
                             Ok(())
@@ -499,17 +499,17 @@ impl InterledgerNode {
                         warp::serve(filter)
                             .bind(prometheus.bind_address)
                             .map_err(|_| {
-                                error!(target: "interledger-node", "Error binding Prometheus server to the configured address")
+                                error!("Error binding Prometheus server to the configured address")
                             }),
                     )
                 }
                 Err(e) => {
-                    error!(target: "interledger-node", "Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
+                    error!("Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
                     Either::B(err(()))
                 }
             }
         } else {
-            error!(target: "interledger-node", "No prometheus configuration provided");
+            error!("No prometheus configuration provided");
             Either::B(err(()))
         })
     }
@@ -527,15 +527,15 @@ impl InterledgerNode {
     ) -> impl Future<Item = AccountId, Error = ()> {
         let redis_secret = generate_redis_secret(&self.secret_seed);
         result(self.redis_connection.clone().into_connection_info())
-            .map_err(|err| error!(target: "interledger-node", "Invalid Redis connection details: {:?}", err))
+            .map_err(|err| error!("Invalid Redis connection details: {:?}", err))
             .and_then(move |redis_url| RedisStoreBuilder::new(redis_url, redis_secret).connect())
-            .map_err(|err| error!(target: "interledger-node", "Error connecting to Redis: {:?}", err))
+            .map_err(|err| error!("Error connecting to Redis: {:?}", err))
             .and_then(move |store| {
                 store
                     .insert_account(account)
-                    .map_err(|_| error!(target: "interledger-node", "Unable to create account"))
+                    .map_err(|_| error!("Unable to create account"))
                     .and_then(|account| {
-                        debug!(target: "interledger-node", "Created account: {}", account.id());
+                        debug!("Created account: {}", account.id());
                         Ok(account.id())
                     })
             })

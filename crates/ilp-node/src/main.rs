@@ -15,16 +15,6 @@ use tracing_subscriber::{
     fmt::{time::ChronoUtc, Subscriber},
 };
 
-<<<<<<< HEAD
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
-mod metrics;
-mod node;
-mod trace;
-use node::InterledgerNode;
-
-=======
->>>>>>> refactor(node): separate node lib and bin
 pub fn main() {
     Subscriber::builder()
         .with_timer(ChronoUtc::rfc3339())
