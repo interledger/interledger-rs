@@ -5,7 +5,7 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::settlement_core::types::{SettlementAccount, SettlementStore};
+use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
 use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};

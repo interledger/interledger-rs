@@ -1,4 +1,4 @@
-use crate::settlement_core::types::{SettlementAccount, SE_ILP_ADDRESS};
+use crate::core::types::{SettlementAccount, SE_ILP_ADDRESS};
 use futures::{
     future::{err, Either},
     Future, Stream,
@@ -121,8 +121,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement_api::fixtures::{BODY, DATA, SERVICE_ADDRESS, TEST_ACCOUNT_0};
-    use crate::settlement_api::test_helpers::{block_on, mock_message, test_service};
+    use crate::api::fixtures::{BODY, DATA, SERVICE_ADDRESS, TEST_ACCOUNT_0};
+    use crate::api::test_helpers::{block_on, mock_message, test_service};
     use interledger_packet::{Address, Fulfill, PrepareBuilder, Reject};
     use std::str::FromStr;
     use std::time::SystemTime;

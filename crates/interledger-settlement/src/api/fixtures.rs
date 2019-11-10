@@ -1,4 +1,4 @@
-use crate::settlement_core::types::Quantity;
+use crate::core::types::Quantity;
 use interledger_packet::Address;
 #[cfg(test)]
 use lazy_static::lazy_static;

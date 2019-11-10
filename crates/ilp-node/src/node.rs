@@ -30,7 +30,7 @@ use interledger::{
         EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
         MaxPacketAmountService, RateLimitService, ValidatorService,
     },
-    settlement::settlement_api::{create_settlements_filter, SettlementMessageService},
+    settlement::api::{create_settlements_filter, SettlementMessageService},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };

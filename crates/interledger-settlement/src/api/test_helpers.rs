@@ -1,5 +1,5 @@
 use super::*;
-use crate::settlement_core::{
+use crate::core::{
     idempotency::*,
     scale_with_precision_loss,
     types::{

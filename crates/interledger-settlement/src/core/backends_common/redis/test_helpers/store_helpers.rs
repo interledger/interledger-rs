@@ -1,5 +1,5 @@
 use super::redis_helpers::TestContext;
-use crate::settlement_core::backends_common::redis::{EngineRedisStore, EngineRedisStoreBuilder};
+use crate::core::backends_common::redis::{EngineRedisStore, EngineRedisStoreBuilder};
 
 use env_logger;
 use futures::Future;

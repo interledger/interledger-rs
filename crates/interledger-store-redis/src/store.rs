@@ -37,7 +37,7 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
-use interledger_settlement::settlement_core::{
+use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     scale_with_precision_loss,
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
