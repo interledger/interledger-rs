@@ -5,7 +5,7 @@ use futures::{
 };
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-use interledger_settlement::settlement_core::types::{Convert, ConvertDetails};
+use interledger_settlement::core::types::{Convert, ConvertDetails};
 use log::{debug, error, trace, warn};
 use reqwest::r#async::Client;
 use secrecy::SecretString;

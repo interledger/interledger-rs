@@ -7,7 +7,7 @@ use http::StatusCode;
 use interledger_api::NodeStore;
 
 use interledger_service::{Account, AccountStore};
-use interledger_settlement::settlement_core::{
+use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     types::{LeftoversStore, SettlementAccount, SettlementStore},
 };

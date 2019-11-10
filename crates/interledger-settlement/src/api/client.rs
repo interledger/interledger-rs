@@ -1,4 +1,4 @@
-use crate::settlement_core::types::{Quantity, SettlementAccount};
+use crate::core::types::{Quantity, SettlementAccount};
 use futures::{
     future::{err, Either},
     Future,
@@ -69,8 +69,8 @@ impl Default for SettlementClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement_api::fixtures::TEST_ACCOUNT_0;
-    use crate::settlement_api::test_helpers::{block_on, mock_settlement};
+    use crate::api::fixtures::TEST_ACCOUNT_0;
+    use crate::api::test_helpers::{block_on, mock_settlement};
     use mockito::Matcher;
 
     #[test]

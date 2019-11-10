@@ -1,4 +1,4 @@
-use crate::settlement_core::{
+use crate::core::{
     get_hash_of,
     idempotency::*,
     scale_with_precision_loss,
@@ -337,8 +337,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement_api::fixtures::*;
-    use crate::settlement_api::test_helpers::*;
+    use crate::api::fixtures::*;
+    use crate::api::test_helpers::*;
     use serde_json::Value;
 
     fn check_error_status_and_message(response: Response<Bytes>, status_code: u16, message: &str) {

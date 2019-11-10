@@ -1,7 +1,6 @@
 /// # Settlement Engine API
 ///
-/// Web service which exposes settlement related endpoints as described in RFC536,
-/// See [forum discussion](https://forum.interledger.org/t/settlement-architecture/545) for more context.
+/// Web service which exposes settlement related endpoints as described in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/),
 /// All endpoints are idempotent.
 use super::{
     get_hash_of,
@@ -145,8 +144,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement_core::idempotency::IdempotentData;
-    use crate::settlement_core::types::ApiResponse;
+    use crate::core::idempotency::IdempotentData;
+    use crate::core::types::ApiResponse;
     use bytes::Bytes;
     use futures::future::ok;
     use http::StatusCode;

@@ -2,8 +2,8 @@ use futures::Future;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{
-    settlement_api::SettlementClient,
-    settlement_core::types::{SettlementAccount, SettlementStore},
+    api::SettlementClient,
+    core::types::{SettlementAccount, SettlementStore},
 };
 use log::{debug, error};
 use std::marker::PhantomData;
