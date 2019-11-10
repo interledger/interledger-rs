@@ -4,6 +4,10 @@
 ## Overview
 This example shows how to configure Interledger.rs nodes and use an Ethereum network (testnet or mainnet) as a settlement ledger for payments sent between the nodes. If you are new to Ethereum, you can learn about it [here](https://www.ethereum.org/beginners/). To learn about settlement in Interledger, refer to [Peering, Clearing and Settling](https://github.com/interledger/rfcs/blob/master/0032-peering-clearing-settlement/0032-peering-clearing-settlement.md).
 
+To run the full example, you can use [`run-md.sh`](../../scripts/run-md.sh) as described [here](../README.md). Otherwise, you can walk through each step below.
+
+Each of the services write their logs to files found under the `logs` directory. You can run `tail -f logs/node_a.log`, for example, to watch the logs of Node A.
+
 ![overview](images/overview.svg)
 
 ## Prerequisites
@@ -240,6 +244,7 @@ else
 export RUST_LOG=interledger=debug
 git clone https://github.com/interledger-rs/settlement-engines
 cd settlement-engines
+mkdir -p logs
 
 # Start Alice's settlement engine
 cargo run --features "ethereum" -- ethereum-ledger \
