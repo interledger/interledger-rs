@@ -23,7 +23,7 @@ $ ../../scripts/run-md.sh README.md
 $ (some command) | ../../scripts/run-md.sh
 ```
 
-The script basically downloads compiled binaries and uses it. You could also make the script use the source code.  Try specifying `SOURCE_MODE=1` as follows.
+By default, the script will download compiled binaries to use with the examples. If you want it to build the project from the source code instead, you can set `SOURCE_MODE=1` as follows:
 
 ```bash #
 SOURCE_MODE=1 ../../scripts/run-md.sh README.md
