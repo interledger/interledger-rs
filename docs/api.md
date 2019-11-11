@@ -250,7 +250,13 @@ Health check.
 
 Admin only.
 
-Sets the exchange rates for the node.
+Sets the exchange rates for the node. Note that the rates should be expressed by strength. For example, the present rates might look like:
+
+- USD: 1
+- EUR: 1.105
+- BTC: 8564.7348
+
+If we are relaying currency `A` of an account of `Alice` to currency `B` of an account of `Bob` and the rates of `A` and `B` are `1` and `2` respectively, then the currency `B` is stronger than `A`. So `Bob` will receive the amount multiplied by `0.5` (`1 / 2`). For instance, if `Alice` sends `100` to `Bob`, `Bob` will receive `50`, not `200`.
 
 #### Request
 
