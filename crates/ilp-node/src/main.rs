@@ -106,8 +106,24 @@ pub fn main() {
                 This amount is kept as the node operator's profit, or may cover \
                 fluctuations in exchange rates.
                 For example, take an incoming packet with an amount of 100. If the \
-                exchange rate is 1:2 and the spread is 0.01, the amount on the \
-                    outgoing packet would be 198 (instead of 200 without the spread).")
+                exchange rate is 1:0.5 and the spread is 0.01, the amount on the \
+                    outgoing packet would be 198 (instead of 200 without the spread)."),
+        Arg::with_name("prometheus.bind_address")
+            .long("prometheus.bind_address")
+            .takes_value(true)
+            .help("IP address and port to host the Prometheus endpoint on."),
+        Arg::with_name("prometheus.histogram_window")
+            .long("prometheus.histogram_window")
+            .takes_value(true)
+            .help("Amount of time, in milliseconds, that the node will collect data \
+                points for the Prometheus histograms. Defaults to 300000ms (5 minutes)."),
+        Arg::with_name("prometheus.histogram_granularity")
+            .long("prometheus.histogram_granularity")
+            .takes_value(true)
+            .help("Granularity, in milliseconds, that the node will use to roll off \
+                old data. For example, a value of 1000ms (1 second) would mean that the \
+                node forgets the oldest 1 second of histogram data points every second. \
+                Defaults to 10000ms (10 seconds)."),
         ]);
 
     let mut config = get_env_config("ilp");
