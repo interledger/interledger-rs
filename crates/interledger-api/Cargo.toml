@@ -1,6 +1,6 @@
 [package]
 name = "interledger-api"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "API for managing an Interledger node"
 license = "Apache-2.0"
