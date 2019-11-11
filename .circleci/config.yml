@@ -61,11 +61,7 @@ jobs:
           command: |
             # install system dependeicies
             sudo apt-get update
-            sudo apt-get install -y curl jq redis-server redis-tools lsof libssl-dev
-
-            # install rust components
-            cargo install cargo-audit
-            rustup component add clippy
+            sudo apt-get install -y redis-server redis-tools lsof libssl-dev
 
             # install nvm
             curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
@@ -99,7 +95,9 @@ jobs:
       - checkout
       - run:
           # builds release profile images to be released
+          # consider parallelizing
           name: Build Docker Images
+          no_output_timeout: 15m
           command: |
             if [ "${CIRCLE_BRANCH}" = "master" ] || [[ "${CIRCLE_TAG}" =~ ^ilp-node- ]]; then
               export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
@@ -162,7 +160,7 @@ jobs:
       - run:
           name: Install Rust
           command: |
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.38.0
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
       - run:
           # Builds release profile binaries
           # The artifact is stored in release-builds directory, which is persistent
@@ -170,7 +168,7 @@ jobs:
           command: |
             crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
             printf "Building crate_name: %s, tag: %s\n" "${crate_name}" "${CIRCLE_TAG}"
-            ./.circleci/release/build.sh x86_64-apple-darwin ${crate_name}
+            cargo build --release --package "${crate_name}" --bin "${crate_name}" --target x86_64-apple-darwin
             mkdir -p /tmp/release-builds/x86_64-apple-darwin
             cp target/x86_64-apple-darwin/release/${crate_name} /tmp/release-builds/x86_64-apple-darwin/${crate_name}
       - persist_to_workspace:
@@ -193,10 +191,6 @@ jobs:
       - run:
           name: Install Dependencies
           command: |
-            # install system dependeicies
-            sudo apt-get update
-            sudo apt-get install -y curl jq
-
             # install nvm
             curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
             export NVM_DIR="/home/circleci/.nvm"

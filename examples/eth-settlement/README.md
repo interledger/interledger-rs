@@ -96,7 +96,7 @@ First of all, we have to prepare `interledger.rs`. You can either:
 1. Download compiled binaries
 1. Compile from the source code
 
-Compiling the source code relatively slow, so we recommend downloading the pre-built binaries unless you want to modify some part of the code.
+Compiling the source code is relatively slow, so we recommend downloading the pre-built binaries unless you want to modify some part of the code.
 
 #### Download Compiled Binaries
 
@@ -173,6 +173,9 @@ if [ ${SOURCE_MODE} -eq 1 ]; then
 -->
 ```bash
 # These aliases make our command invocations more natural
+# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node` or `ilp-cli`.
+# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
+
 alias ilp-node="cargo run --quiet --bin ilp-node --"
 alias ilp-cli="cargo run --quiet --bin ilp-cli --"
 
@@ -371,8 +374,6 @@ printf "\nStarting nodes...\n"
 # Note that the configuration options can be passed as environment variables
 # or saved to a YAML, JSON or TOML file and passed to the node as a positional argument.
 # You can also pass it from STDIN.
-# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node`.
-# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
 
 # Start Alice's node
 ilp-node \
@@ -424,7 +425,7 @@ ilp-cli accounts create alice \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token in_alice \
     --ilp-over-http-url http://localhost:7770/ilp \
-    --settle-to 0 > logs/account-alice-alice.log
+    --settle-to 0 &> logs/account-alice-alice.log
 
 printf "Adding Bob's Account...\n"
 ilp-cli --node http://localhost:8770 accounts create bob \
@@ -435,7 +436,7 @@ ilp-cli --node http://localhost:8770 accounts create bob \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token in_bob \
     --ilp-over-http-url http://localhost:8770/ilp \
-    --settle-to 0 > logs/account-bob-bob.log
+    --settle-to 0 &> logs/account-bob-bob.log
 
 printf "Adding Bob's account on Alice's node...\n"
 ilp-cli accounts create bob \
@@ -450,7 +451,7 @@ ilp-cli accounts create bob \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
-    --routing-relation Peer > logs/account-alice-bob.log &
+    --routing-relation Peer &> logs/account-alice-bob.log &
 
 printf "Adding Alice's account on Bob's node...\n"
 ilp-cli --node http://localhost:8770 accounts create alice \
@@ -465,7 +466,7 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --ilp-over-http-url http://localhost:7770/ilp \
     --settle-threshold 500 \
     --settle-to 0 \
-    --routing-relation Peer > logs/account-bob-alice.log &
+    --routing-relation Peer &> logs/account-bob-alice.log &
 
 sleep 2
 ```
