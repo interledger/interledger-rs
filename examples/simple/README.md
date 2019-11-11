@@ -72,12 +72,12 @@ done
 
 ### 1. Prepare interledger.rs
 
-First of all, we have to prepare `interledger.rs`. You could either:
+First of all, we have to prepare `interledger.rs`. You can either:
 
 1. Download compiled binaries
 1. Compile from the source code
 
-If you would like to play more deeply with interledger.rs, compiling from the source is considerable. It would take less time to download compiled binaries otherwise.
+Compiling the source code is relatively slow, so we recommend downloading the pre-built binaries unless you want to modify some part of the code.
 
 #### Download Compiled Binaries
 
@@ -154,6 +154,9 @@ if [ ${SOURCE_MODE} -eq 1 ]; then
 -->
 ```bash
 # These aliases make our command invocations more natural
+# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node` or `ilp-cli`.
+# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
+
 alias ilp-node="cargo run --quiet --bin ilp-node --"
 alias ilp-cli="cargo run --quiet --bin ilp-cli --"
 
@@ -207,8 +210,7 @@ export RUST_LOG=interledger=debug
 # Note that the configuration options can be passed as environment variables
 # or saved to a YAML, JSON or TOML file and passed to the node as a positional argument.
 # You can also pass it from STDIN.
-# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node`.
-# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
+
 ilp-node \
 --ilp_address example.node_a \
 --secret_seed 8852500887504328225458511465394229327394647958135038836332350604 \
@@ -264,7 +266,7 @@ ilp-cli accounts create alice \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-over-http-incoming-token alice-password \
-    >logs/account-node_a-alice.log 2>/dev/null
+    &>logs/account-node_a-alice.log
 
 printf "Creating Node B's account on Node A...\n"
 ilp-cli accounts create node_b \
@@ -273,7 +275,7 @@ ilp-cli accounts create node_b \
     --ilp-address example.node_b \
     --ilp-over-http-outgoing-token node_a:node_a-password \
     --ilp-over-http-url 'http://localhost:8770/ilp' \
-    >logs/account-node_a-node_b.log 2>/dev/null
+    &>logs/account-node_a-node_b.log
 
 # Insert accounts on Node B
 # One account represents Bob and the other represents Node A's account with Node B
@@ -283,7 +285,7 @@ ilp-cli --node http://localhost:8770 accounts create bob \
     --auth admin-b \
     --asset-code ABC \
     --asset-scale 9 \
-    >logs/account-node_b-bob.log 2>/dev/null
+    &>logs/account-node_b-bob.log
 
 printf "Creating Node A's account on Node B...\n"
 ilp-cli --node http://localhost:8770 accounts create node_a \
@@ -291,7 +293,7 @@ ilp-cli --node http://localhost:8770 accounts create node_a \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-over-http-incoming-token node_a-password \
-    >logs/account-node_b-node_a.log 2>/dev/null
+    &>logs/account-node_b-node_a.log
 ```
 
 ### 5. Sending a Payment

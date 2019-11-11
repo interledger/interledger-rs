@@ -19,13 +19,6 @@ function free_ports() {
         fi
     done
 
-    # ports of redis
-    for port in $(seq 6379 6385); do
-        if lsof -tPi :${port} >/dev/null ; then
-            kill `lsof -tPi :${port}`
-        fi
-    done
-
     # ports of ganache + node + se
     for port in 8545 7770 8770 9770 3000 3001 3002 3003; do
         if lsof -tPi :${port} >/dev/null ; then

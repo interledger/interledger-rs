@@ -111,12 +111,12 @@ done
 
 ### 1. Prepare interledger.rs
 
-First of all, we have to prepare `interledger.rs`. You could either:
+First of all, we have to prepare `interledger.rs`. You can either:
 
 1. Download compiled binaries
 1. Compile from the source code
 
-If you would like to play more deeply with interledger.rs, compiling from the source is considerable. It would take less time to download compiled binaries otherwise.
+Compiling the source code is relatively slow, so we recommend downloading the pre-built binaries unless you want to modify some part of the code.
 
 #### Download Compiled Binaries
 
@@ -193,6 +193,9 @@ if [ ${SOURCE_MODE} -eq 1 ]; then
 -->
 ```bash
 # These aliases make our command invocations more natural
+# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node` or `ilp-cli`.
+# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
+
 alias ilp-node="cargo run --quiet --bin ilp-node --"
 alias ilp-cli="cargo run --quiet --bin ilp-cli --"
 
@@ -425,8 +428,6 @@ printf "\nStarting nodes...\n"
 # Note that the configuration options can be passed as environment variables
 # or saved to a YAML, JSON or TOML file and passed to the node as a positional argument.
 # You can also pass it from STDIN.
-# Be aware that we are using `--` to differentiate arguments for `cargo` from `ilp-node`.
-# Arguments before `--` are used for `cargo`, after are used for `ilp-node`.
 
 # Start Alice's node
 ilp-node \
@@ -492,7 +493,7 @@ ilp-cli accounts create alice \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token alice_password \
     --ilp-over-http-url http://localhost:7770/ilp \
-    --settle-to 0 > logs/account-alice-alice.log 2>/dev/null
+    --settle-to 0 &> logs/account-alice-alice.log
 
 printf "Adding Charlie's Account...\n"
 ilp-cli --node http://localhost:9770 accounts create charlie \
@@ -503,7 +504,7 @@ ilp-cli --node http://localhost:9770 accounts create charlie \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token charlie_password \
     --ilp-over-http-url http://localhost:9770/ilp \
-    --settle-to 0 > logs/account-charlie-charlie.log 2>/dev/null
+    --settle-to 0 &> logs/account-charlie-charlie.log
 
 printf "Adding Bob's account on Alice's node (ETH Peer relation)...\n"
 ilp-cli accounts create bob \
@@ -518,7 +519,7 @@ ilp-cli accounts create bob \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
-    --routing-relation Peer > logs/account-alice-bob.log 2>/dev/null &
+    --routing-relation Peer &> logs/account-alice-bob.log &
 
 printf "Adding Alice's account on Bob's node (ETH Peer relation)...\n"
 ilp-cli --node http://localhost:8770 accounts create alice \
@@ -534,7 +535,7 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
-    --routing-relation Peer > logs/account-bob-alice.log 2>/dev/null
+    --routing-relation Peer &> logs/account-bob-alice.log
 
 printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
 ilp-cli --node http://localhost:8770 accounts create charlie \
@@ -550,7 +551,7 @@ ilp-cli --node http://localhost:8770 accounts create charlie \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
-    --routing-relation Child > logs/account-bob-charlie.log 2>/dev/null &
+    --routing-relation Child &> logs/account-bob-charlie.log &
 
 # We have to wait here to ensure that the parent account is created because
 # the child account tries to acquire its ILP address from the parent account.
@@ -570,7 +571,7 @@ ilp-cli --node http://localhost:9770 accounts create bob \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
-    --routing-relation Parent > logs/account-charlie-bob.log 2>/dev/null
+    --routing-relation Parent &> logs/account-charlie-bob.log
 
 sleep 2
 ```
@@ -589,7 +590,7 @@ ilp-cli --node http://localhost:8770 rates set-all \
     --auth hi_bob \
     --pair ETH 1 \
     --pair XRP 1 \
-    &>/dev/null
+    >/dev/null
 ```
 
 ### 8. Sending a Payment
