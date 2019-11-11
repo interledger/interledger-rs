@@ -14,7 +14,7 @@ use interledger_service::{
     Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
+use interledger_settlement::core::types::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};

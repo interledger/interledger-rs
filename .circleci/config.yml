@@ -5,7 +5,7 @@ jobs:
       - image: circleci/rust
         environment:
           CARGO_HOME: /home/circleci/.cargo
-    resource_class: medium+
+    resource_class: large
     steps:
       - checkout
       - restore_cache:

@@ -1,6 +1,6 @@
 [package]
 name = "interledger-ccp"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Implementation of the Interledger Dynamic Configuration Protocol (ILDCP)"
 license = "Apache-2.0"
@@ -12,8 +12,8 @@ bytes = { version = "0.4.12", default-features = false }
 byteorder = { version = "1.3.2", default-features = false }
 futures = { version = "0.1.29", default-features = false }
 hex = { version = "0.4.0", default-features = false }
-interledger-packet = { path = "../interledger-packet", version = "^0.3.0", default-features = false }
-interledger-service = { path = "../interledger-service", version = "^0.3.0", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 lazy_static = { version = "1.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 parking_lot = { version = "0.9.0", default-features = false }

@@ -1,9 +1,9 @@
 use super::crypto::*;
 use super::packet::*;
 use base64;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, Utc};
-use futures::{future::result, sync::mpsc::UnboundedSender, Future};
+use futures::{future::result, sync::mpsc::UnboundedSender};
 use hex;
 use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
@@ -12,11 +12,17 @@ use interledger_packet::{
 use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username};
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::time::SystemTime;
 
-const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_secret_generator";
+// Note we are using the same magic bytes as the Javascript
+// implementation but this is not strictly necessary. These
+// magic bytes need to be the same for the server that creates the
+// STREAM details for a given packet and for the server that fulfills
+// it, but in the vast majority of cases those two servers will be
+// running the same STREAM implementation so it doesn't matter what
+// this string is.
+const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_shared_secret";
 
 /// A STREAM connection generator that creates `destination_account` and `shared_secret` values
 /// based on a single root secret.
@@ -41,49 +47,39 @@ impl ConnectionGenerator {
     /// Generate the STREAM parameters for the given ILP address and the configured server secret.
     ///
     /// The `destination_account` is generated such that the `shared_secret` can be re-derived
-    /// from a Prepare packet's destination and the same server secret. If the address is modified
-    /// in any way, the server will not be able to re-derive the secret and the packet will be rejected.
-    // TODO make sure this is an ILP address
+    /// from a Prepare packet's destination and the same server secret.
     pub fn generate_address_and_secret(&self, base_address: &Address) -> (Address, [u8; 32]) {
-        let random_bytes = generate_token();
-        // base_address + "." + 32-bytes encoded as base64url
-        let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
+        let token = base64::encode_config(&generate_token(), base64::URL_SAFE_NO_PAD);
+        // Note the shared secret is generated from the base64-encoded version of the token,
+        // rather than from the unencoded bytes
+        let shared_secret = hmac_sha256(&self.secret_generator[..], &token.as_bytes()[..]);
         // Note that the unwrap here is safe because we know the base_address
         // is valid and adding base64-url characters will always be valid
-        let destination_account = base_address
-            .with_suffix(
-                &base64::encode_config(&random_bytes[..], base64::URL_SAFE_NO_PAD).as_ref(),
-            )
-            .unwrap();
-
-        let auth_tag = &hmac_sha256(&shared_secret[..], destination_account.as_ref())[..14];
-
-        // can we avoid the copy?
-        let mut dest = destination_account.to_bytes();
-        dest.extend(base64::encode_config(auth_tag, base64::URL_SAFE_NO_PAD).bytes());
-        let destination_account = Address::try_from(dest).unwrap();
+        let destination_account = base_address.with_suffix(&token.as_ref()).unwrap();
 
         debug!("Generated address: {}", destination_account,);
         (destination_account, shared_secret)
     }
 
-    /// Rederive the `shared_secret` from a `destination_account`. This will return an
-    /// error if the address has been modified in any way or if the packet was not generated
-    /// with the same server secret.
+    /// Rederive the `shared_secret` from a `destination_account`.
+    ///
+    /// Although it is not strictly necessary, this uses the same logic as the Javascript
+    /// STREAM server. Because this STREAM server is intended to be used as part of a node with
+    /// forwarding capabilities, rather than as a standalone receiver, it will try forwarding
+    /// any packets that it is unable to decrypt. An alternative algorithm for rederiving
+    /// the shared secret could include an auth tag to definitively check whether the packet
+    /// is meant for this receiver before attempting to decrypt the packet. That will be more
+    /// important if/when we want to use STREAM for sending larger amounts of data and want
+    /// to avoid copying the STREAM data packet before decrypting it.
+    ///
+    /// This method returns a Result in case we want to change the internal
+    /// logic in the future.
     pub fn rederive_secret(&self, destination_account: &Address) -> Result<[u8; 32], ()> {
         let local_part = destination_account.segments().rev().next().unwrap();
-        let local_part =
-            base64::decode_config(local_part, base64::URL_SAFE_NO_PAD).map_err(|_| ())?;
-        if local_part.len() == 32 {
-            let (random_bytes, auth_tag) = local_part.split_at(18);
-            let shared_secret = hmac_sha256(&self.secret_generator[..], &random_bytes[..]);
-            let dest: &[u8] = destination_account.as_ref();
-            let derived_auth_tag = &hmac_sha256(&shared_secret[..], &dest[..dest.len() - 19])[..14];
-            if derived_auth_tag == auth_tag {
-                return Ok(shared_secret);
-            }
-        }
-        Err(())
+        // Note this computes the HMAC with the token _encoded as UTF8_,
+        // rather than decoding the base64 first.
+        let shared_secret = hmac_sha256(&self.secret_generator[..], &local_part.as_bytes()[..]);
+        Ok(shared_secret)
     }
 }
 
@@ -150,10 +146,6 @@ where
 
     /// Try fulfilling the request if it is for this STREAM server or pass it to the next
     /// outgoing handler if not.
-    ///
-    /// The method used for generating the `destination_account` and `shared_secret` enables
-    /// the server to check whether the Prepare packet was created with STREAM parameters
-    /// that this server would have created or not.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
         let to_username = request.to.username().clone();
         let from_username = request.from.username().clone();
@@ -167,25 +159,33 @@ where
         // The case where the request is bound for this server
         if dest.starts_with(to_address.as_ref()) {
             if let Ok(shared_secret) = self.connection_generator.rederive_secret(&destination) {
-                return Box::new(
-                    result(receive_money(
-                        &shared_secret,
-                        &to_address,
-                        request.to.asset_code(),
-                        request.to.asset_scale(),
-                        request.prepare,
-                    ))
-                    .and_then(move |fulfill| {
-                        store.publish_payment_notification(PaymentNotification {
-                            to_username,
-                            from_username,
-                            amount,
-                            destination: destination.clone(),
-                            timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
-                        });
-                        Ok(fulfill)
-                    }),
+                let response = receive_money(
+                    &shared_secret,
+                    &to_address,
+                    request.to.asset_code(),
+                    request.to.asset_scale(),
+                    &request.prepare,
                 );
+                match response {
+                    Ok(ref _fulfill) => store.publish_payment_notification(PaymentNotification {
+                        to_username,
+                        from_username,
+                        amount,
+                        destination: destination.clone(),
+                        timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                    }),
+                    Err(ref reject) => {
+                        if reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
+                            // Assume the packet isn't for us if the decryption step fails.
+                            // Note this means that if the packet data is modified in any way,
+                            // the sender will likely see an error like F02: Unavailable (this is
+                            // a bit confusing but the packet data should not be modified at all
+                            // under normal circumstances).
+                            return Box::new(self.next.send_request(request));
+                        }
+                    }
+                };
+                return Box::new(result(response));
             }
         }
         Box::new(self.next.send_request(request))
@@ -200,7 +200,7 @@ fn receive_money(
     ilp_address: &Address,
     asset_code: &str,
     asset_scale: u8,
-    prepare: Prepare,
+    prepare: &Prepare,
 ) -> Result<Fulfill, Reject> {
     // Generate fulfillment
     let fulfillment = generate_fulfillment(&shared_secret[..], prepare.data());
@@ -210,17 +210,27 @@ fn receive_money(
     // Parse STREAM packet
     // TODO avoid copying data
     let prepare_amount = prepare.amount();
-    let stream_packet =
-        StreamPacket::from_encrypted(shared_secret, prepare.into_data()).map_err(|_| {
-            debug!("Unable to parse data, rejecting Prepare packet");
-            RejectBuilder {
-                code: ErrorCode::F06_UNEXPECTED_PAYMENT,
-                message: b"Could not decrypt data",
-                triggered_by: Some(ilp_address),
-                data: &[],
-            }
-            .build()
-        })?;
+
+    // Note that we are copying the Prepare packet data. This is a bad idea
+    // in cases where STREAM is used to send a significant amount of data.
+    // This implementation doesn't currently support handling the STREAM data
+    // so copying the bytes of the other STREAM frames shouldn't be a big
+    // performance hit in practice.
+    // The data is copied so that we can take the Prepare packet by
+    // reference in the case that the decryption fails and we want to pass
+    // the request on to the next service.
+    let copied_data = BytesMut::from(prepare.data());
+
+    let stream_packet = StreamPacket::from_encrypted(shared_secret, copied_data).map_err(|_| {
+        debug!("Unable to parse data, rejecting Prepare packet");
+        RejectBuilder {
+            code: ErrorCode::F06_UNEXPECTED_PAYMENT,
+            message: b"Could not decrypt data",
+            triggered_by: Some(ilp_address),
+            data: &[],
+        }
+        .build()
+    })?;
 
     let mut response_frames: Vec<Frame> = Vec::new();
 
@@ -328,21 +338,6 @@ mod connection_generator {
             shared_secret
         );
     }
-
-    #[test]
-    fn errors_if_it_cannot_rederive_secret() {
-        let server_secret = [9; 32];
-        let receiver_address = Address::from_str("example.receiver").unwrap();
-        let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
-        let (destination_account, _shared_secret) =
-            connection_generator.generate_address_and_secret(&receiver_address);
-
-        let destination_account = destination_account.with_suffix(b"extra").unwrap();
-
-        assert!(connection_generator
-            .rederive_secret(&destination_account)
-            .is_err());
-    }
 }
 
 #[cfg(test)]
@@ -363,6 +358,7 @@ fn test_stream_packet() -> StreamPacket {
 mod receiving_money {
     use super::*;
     use interledger_packet::PrepareBuilder;
+    use std::convert::TryFrom;
 
     use std::str::FromStr;
     use std::time::UNIX_EPOCH;
@@ -390,7 +386,7 @@ mod receiving_money {
         let shared_secret = connection_generator
             .rederive_secret(&prepare.destination())
             .unwrap();
-        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, prepare);
+        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_ok());
     }
 
@@ -418,7 +414,7 @@ mod receiving_money {
         let shared_secret = connection_generator
             .rederive_secret(&prepare.destination())
             .unwrap();
-        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, prepare);
+        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_ok());
     }
 
@@ -447,7 +443,7 @@ mod receiving_money {
         let shared_secret = connection_generator
             .rederive_secret(&prepare.destination())
             .unwrap();
-        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, prepare);
+        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_err());
     }
 
@@ -486,8 +482,35 @@ mod receiving_money {
         let shared_secret = connection_generator
             .rederive_secret(&prepare.destination())
             .unwrap();
-        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, prepare);
+        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn fulfills_packets_sent_to_javascript_receiver() {
+        // This was created by the JS ilp-protocol-stream library
+        let ilp_address = Address::from_str("test.peerB").unwrap();
+        let prepare = Prepare::try_from(bytes::BytesMut::from(hex::decode("0c819900000000000001f43230313931303238323134313533383338f31a96346c613011947f39a0f1f4e573c2fc3e7e53797672b01d2898e90c9a0723746573742e70656572422e4e6a584430754a504275477a353653426d4933755836682d3b6cc484c0d4e9282275d4b37c6ae18f35b497ddbfcbce6d9305b9451b4395c3158aa75e05bf27582a237109ec6ca0129d840da7abd96826c8147d0d").unwrap())).unwrap();
+        let condition = prepare.execution_condition().to_vec();
+        let server_secret = Bytes::from(vec![0u8; 32]);
+        let connection_generator = ConnectionGenerator::new(server_secret);
+        let shared_secret = connection_generator
+            .rederive_secret(&prepare.destination())
+            .expect("Receiver should be able to rederive the shared secret");
+        assert_eq!(
+            &shared_secret[..],
+            hex::decode("b7d09d2e16e6f83c55b60e42fcd7c2b8ed49624a1df73c59b383dbe2e8690309")
+                .unwrap()
+                .as_ref() as &[u8],
+            "did not regenerate the same shared secret",
+        );
+        let fulfill = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare)
+            .expect("Receiver should be able to generate the fulfillment");
+        assert_eq!(
+            &hash_sha256(fulfill.fulfillment())[..],
+            &condition[..],
+            "fulfillment generated does not hash to the expected condition"
+        );
     }
 }
 
@@ -499,6 +522,7 @@ mod stream_receiver_service {
     use interledger_packet::PrepareBuilder;
     use interledger_service::outgoing_service_fn;
 
+    use std::convert::TryFrom;
     use std::str::FromStr;
     use std::time::UNIX_EPOCH;
     #[test]
@@ -577,9 +601,17 @@ mod stream_receiver_service {
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
             DummyStore,
-            outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> BoxedIlpFuture {
-                panic!("shouldn't get here")
-            }),
+            outgoing_service_fn(
+                |_: OutgoingRequest<TestAccount>| -> Result<Fulfill, Reject> {
+                    Err(RejectBuilder {
+                        code: ErrorCode::F02_UNREACHABLE,
+                        message: &[],
+                        data: &[],
+                        triggered_by: None,
+                    }
+                    .build())
+                },
+            ),
         );
 
         let result = service

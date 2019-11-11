@@ -1,23 +1,25 @@
-use super::{
-    Convert, ConvertDetails, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
-    SE_ILP_ADDRESS,
+use crate::core::{
+    get_hash_of,
+    idempotency::*,
+    scale_with_precision_loss,
+    types::{
+        ApiResponse, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
+        CONVERSION_ERROR_TYPE, NO_ENGINE_CONFIGURED_ERROR_TYPE, SE_ILP_ADDRESS,
+    },
 };
 use bytes::buf::FromBuf;
 use bytes::Bytes;
 use futures::{
-    future::{err, ok, result, Either},
+    future::{err, result},
     Future,
 };
 use hyper::{Response, StatusCode};
-use interledger_http::{error::*, idempotency::*};
+use interledger_http::error::*;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
-use num_traits::Zero;
-use ring::digest::{digest, SHA256};
-use serde_json::json;
 use std::{
     str::{self, FromStr},
     time::{Duration, SystemTime},
@@ -28,20 +30,6 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
-
-// Number conversion errors
-pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "Conversion error",
-    status: StatusCode::INTERNAL_SERVER_ERROR,
-};
-
-// Account without an engine error
-pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
-    r#type: &ProblemType::Default,
-    title: "No settlement engine configured",
-    status: StatusCode::NOT_FOUND,
-};
 
 pub fn create_settlements_filter<S, O, A>(
     store: S,
@@ -57,7 +45,7 @@ where
         + Sync
         + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    A: SettlementAccount + Account + Send + Sync + 'static,
 {
     let with_store = warp::any().map(move || store.clone()).boxed();
     let idempotency = warp::header::optional::<String>("idempotency-key");
@@ -85,22 +73,21 @@ where
                 let receive_settlement_fn = move || {
                     do_receive_settlement(store_clone, account_id, quantity, idempotency_key_clone)
                 };
-                make_idempotent_call(store, receive_settlement_fn, input_hash, idempotency_key)
-                    .map_err::<_, Rejection>(move |err| err.into())
-                    .and_then(move |(status_code, message)| {
-                        match serde_json::from_slice::<Quantity>(&message) {
-                            Ok(quantity) => {
-                                let resp = Response::builder()
-                                    .status(status_code)
-                                    .body(serde_json::to_string(&quantity).unwrap())
-                                    .unwrap();
-                                Either::A(ok(resp))
-                            }
-                            Err(_) => Either::B(err(warp::reject::custom(
-                                "could not convert to quantity",
-                            ))),
-                        }
-                    })
+                make_idempotent_call(
+                    store,
+                    receive_settlement_fn,
+                    input_hash,
+                    idempotency_key,
+                    StatusCode::CREATED,
+                    "RECEIVED".into(),
+                )
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |(status_code, message)| {
+                    Ok(Response::builder()
+                        .status(status_code)
+                        .body(message)
+                        .unwrap())
+                })
             },
         );
 
@@ -133,14 +120,21 @@ where
                 let send_outgoing_message_fn = move || {
                     do_send_outgoing_message(store_clone, outgoing_handler, account_id, message)
                 };
-                make_idempotent_call(store, send_outgoing_message_fn, input_hash, idempotency_key)
-                    .map_err::<_, Rejection>(move |err| err.into())
-                    .and_then(move |(status_code, message)| {
-                        Ok(Response::builder()
-                            .status(status_code)
-                            .body(message)
-                            .unwrap())
-                    })
+                make_idempotent_call(
+                    store,
+                    send_outgoing_message_fn,
+                    input_hash,
+                    idempotency_key,
+                    StatusCode::CREATED,
+                    "SENT".into(),
+                )
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |(status_code, message)| {
+                    Ok(Response::builder()
+                        .status(status_code)
+                        .body(message)
+                        .unwrap())
+                })
             },
         );
 
@@ -155,7 +149,7 @@ fn do_receive_settlement<S, A>(
     account_id: String,
     body: Quantity,
     idempotency_key: Option<String>,
-) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>
+) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>
 where
     S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
         + SettlementStore<Account = A>
@@ -165,7 +159,7 @@ where
         + Send
         + Sync
         + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    A: SettlementAccount + Account + Send + Sync + 'static,
 {
     let store_clone = store.clone();
     let engine_amount = body.amount;
@@ -257,11 +251,7 @@ where
                         ApiError::from_api_error_type(&error_type).detail(error_msg)
                     })
                     .and_then(move |_| {
-                        // the connector "lies" and tells the engine that it
-                        // settled the full amount. Precision loss is handled by
-                        // the connector.
-                        let quantity = json!(Quantity::new(total_amount, asset_scale));
-                        Ok((StatusCode::OK, quantity.to_string().into()))
+                        Ok(ApiResponse::Default)
                     })
                 })
             }))
@@ -272,7 +262,7 @@ fn do_send_outgoing_message<S, O, A>(
     mut outgoing_handler: O,
     account_id: String,
     body: Vec<u8>,
-) -> Box<dyn Future<Item = (StatusCode, Bytes), Error = ApiError> + Send>
+) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>
 where
     S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
         + SettlementStore<Account = A>
@@ -283,7 +273,7 @@ where
         + Sync
         + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    A: SettlementAccount + Send + Sync + 'static,
+    A: SettlementAccount + Account + Send + Sync + 'static,
 {
     Box::new(result(A::AccountId::from_str(&account_id)
             .map_err(move |_| {
@@ -341,56 +331,15 @@ where
             })
             .and_then(move |fulfill| {
                 let data = Bytes::from(fulfill.data());
-                Ok((StatusCode::OK, data))
+                Ok(ApiResponse::Data(data))
             }))
-}
-
-pub fn scale_with_precision_loss(
-    amount: BigUint,
-    local_scale: u8,
-    remote_scale: u8,
-) -> (BigUint, BigUint) {
-    // It's safe to unwrap here since BigUint's normalize_scale cannot fail.
-    let scaled = amount
-        .normalize_scale(ConvertDetails {
-            from: remote_scale,
-            to: local_scale,
-        })
-        .unwrap();
-
-    if local_scale < remote_scale {
-        // If we ended up downscaling, scale the value back up back,
-        // and return any precision loss
-        // note that `from` and `to` are reversed compared to the previous call
-        let upscaled = scaled
-            .normalize_scale(ConvertDetails {
-                from: local_scale,
-                to: remote_scale,
-            })
-            .unwrap();
-        let precision_loss = if upscaled < amount {
-            amount - upscaled
-        } else {
-            Zero::zero()
-        };
-        (scaled, precision_loss)
-    } else {
-        // there is no need to do anything further if we upscaled
-        (scaled, Zero::zero())
-    }
-}
-
-fn get_hash_of(preimage: &[u8]) -> [u8; 32] {
-    let mut hash = [0; 32];
-    hash.copy_from_slice(digest(&SHA256, preimage).as_ref());
-    hash
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::*;
-    use crate::test_helpers::*;
+    use crate::api::fixtures::*;
+    use crate::api::test_helpers::*;
     use serde_json::Value;
 
     fn check_error_status_and_message(response: Response<Bytes>, status_code: u16, message: &str) {
@@ -421,8 +370,8 @@ mod tests {
     // Settlement Tests
     mod settlement_tests {
         use super::*;
+        use serde_json::json;
 
-        const CONNECTOR_SCALE: u8 = 9;
         const OUR_SCALE: u8 = 11;
 
         fn settlement_call<F>(
@@ -458,13 +407,13 @@ mod tests {
             // we send a settlement with scale OUR_SCALE, the connector should respond
             // with 2 less 0's.
             let response = settlement_call(&api, &id, 200, OUR_SCALE, Some(IDEMPOTENCY));
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
+            assert_eq!(response.status(), StatusCode::CREATED);
 
             // check that it's idempotent
             let response = settlement_call(&api, &id, 200, OUR_SCALE, Some(IDEMPOTENCY));
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
+            assert_eq!(response.status(), StatusCode::CREATED);
 
             // fails with different account id
             let response = settlement_call(&api, "2", 200, OUR_SCALE, Some(IDEMPOTENCY));
@@ -492,8 +441,8 @@ mod tests {
 
             // works without idempotency key
             let response = settlement_call(&api, &id, 400, OUR_SCALE, None);
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(4, CONNECTOR_SCALE));
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
+            assert_eq!(response.status(), StatusCode::CREATED);
 
             let s = store.clone();
             let cache = s.cache.read();
@@ -501,9 +450,8 @@ mod tests {
 
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 4);
-            assert_eq!(cached_data.status, StatusCode::OK);
-            let quantity: Quantity = serde_json::from_slice(&cached_data.body).unwrap();
-            assert_eq!(quantity, Quantity::new(2, CONNECTOR_SCALE));
+            assert_eq!(cached_data.status, StatusCode::CREATED);
+            assert_eq!(cached_data.body, &Bytes::from("RECEIVED"));
         }
 
         #[test]
@@ -516,8 +464,7 @@ mod tests {
 
             // Send 205 with scale 11, 2 decimals lost -> 0.05 leftovers
             let response = settlement_call(&api, &id, 205, 11, None);
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(2, 9)); // there was a precision loss
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
 
             // balance should be 2
             assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 2);
@@ -531,10 +478,7 @@ mod tests {
 
             // Send 855 with scale 12, 3 decimals lost -> 0.855 leftovers,
             let response = settlement_call(&api, &id, 855, 12, None);
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(0, 9)); // there was full precision loss
-                                                       // balance should remain unchanged since the leftovers were smaller
-                                                       // than a unit's worth
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
             assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 2);
             // total leftover: 0.905 = 0.05 + 0.855
             assert_eq!(
@@ -547,10 +491,7 @@ mod tests {
 
             // send 110 with scale 11, 2 decimals lost -> 0.1 leftover
             let response = settlement_call(&api, &id, 110, 11, None);
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(1, 9)); // there was some precision loss
-                                                       // total leftover 1.005 = 0.905 + 0.1
-                                                       // leftovers will get applied on the next settlement
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
             assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 3);
             assert_eq!(
                 store
@@ -563,9 +504,7 @@ mod tests {
             // send 5 with scale 9, will consume the leftovers and increase
             // total balance by 6 while updating the rest of the leftovers
             let response = settlement_call(&api, &id, 5, 9, None);
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(6, 9)); // there was no precision loss
-                                                       // 5 from this call + 3 from before + 1 from leftovers = 9
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
             assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 9);
             assert_eq!(
                 store
@@ -577,8 +516,7 @@ mod tests {
 
             // we send a payment with a smaller scale than the account now
             let response = settlement_call(&api, &id, 2, 7, None);
-            let quantity = serde_json::from_slice::<Quantity>(&response.body()).unwrap();
-            assert_eq!(quantity, Quantity::new(200, 9)); // there was no precision loss
+            assert_eq!(response.body(), &Bytes::from("RECEIVED"));
             assert_eq!(store.get_balance(TEST_ACCOUNT_0.id), 209);
             // leftovers are still the same
             assert_eq!(
@@ -702,11 +640,11 @@ mod tests {
             let api = test_api(store.clone(), true);
 
             let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            assert_eq!(ret.status(), StatusCode::OK);
+            assert_eq!(ret.status(), StatusCode::CREATED);
             assert_eq!(ret.body(), &Bytes::from("hello!"));
 
             let ret = messages_call(&api, &id, &[], Some(IDEMPOTENCY));
-            assert_eq!(ret.status(), StatusCode::OK);
+            assert_eq!(ret.status(), StatusCode::CREATED);
             assert_eq!(ret.body(), &Bytes::from("hello!"));
 
             // Using the same idempotency key with different arguments MUST
@@ -740,7 +678,7 @@ mod tests {
             let cached_data = cache.get(IDEMPOTENCY).unwrap();
             let cache_hits = s.cache_hits.read();
             assert_eq!(*cache_hits, 4);
-            assert_eq!(cached_data.status, StatusCode::OK);
+            assert_eq!(cached_data.status, StatusCode::CREATED);
             assert_eq!(cached_data.body, &Bytes::from("hello!"));
         }
 

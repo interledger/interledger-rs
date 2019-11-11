@@ -5,8 +5,7 @@ use futures::{
 };
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-// TODO remove the dependency on interledger_settlement, that doesn't really make sense for this minor import
-use interledger_settlement::{Convert, ConvertDetails};
+use interledger_settlement::core::types::{Convert, ConvertDetails};
 use log::{debug, error, trace, warn};
 use reqwest::r#async::Client;
 use secrecy::SecretString;
@@ -95,7 +94,11 @@ where
                 .store
                 .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
             {
-                rates[1] / rates[0]
+                // Exchange rates are expressed as `base asset / asset`. To calculate the outgoing amount,
+                // we multiply by the incoming asset's rate and divide by the outgoing asset's rate. For example,
+                // if an incoming packet is denominated in an asset worth 1 USD and the outgoing asset is worth
+                // 10 USD, the outgoing amount will be 1/10th of the source amount.
+                rates[0] / rates[1]
             } else {
                 error!(
                     "No exchange rates available for assets: {}, {}",
@@ -334,23 +337,25 @@ mod tests {
 
     #[test]
     fn exchange_rate_ok() {
-        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.0);
-        assert_eq!(ret.1[0].prepare.amount(), 200);
+        // if `to` is worth $2, and `from` is worth 1, then they receive half
+        // the amount of units
+        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, 0.0);
+        assert_eq!(ret.1[0].prepare.amount(), 100);
 
         let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0, 0.0);
-        assert_eq!(ret.1[0].prepare.amount(), 666_666);
+        assert_eq!(ret.1[0].prepare.amount(), 1_500_000);
     }
 
     #[test]
     fn exchange_conversion_error() {
         // rejects f64 that does not fit in u64
-        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 1, 2.0, 0.0);
+        let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject.message().starts_with(b"Could not cast"));
 
         // `Convert` errored
-        let ret = exchange_rate(std::u64::MAX, 1, 1.0, 255, std::f64::MAX, 0.0);
+        let ret = exchange_rate(std::u64::MAX, 1, std::f64::MAX, 255, 1.0, 0.0);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject.message().starts_with(b"Could not convert"));
@@ -359,14 +364,15 @@ mod tests {
     #[test]
     fn applies_spread() {
         let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.01);
-        assert_eq!(ret.1[0].prepare.amount(), 198);
+        assert_eq!(ret.1[0].prepare.amount(), 49);
 
         // Negative spread is unusual but possible
-        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, -0.01);
-        assert_eq!(ret.1[0].prepare.amount(), 202);
+        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, -0.01);
+        assert_eq!(ret.1[0].prepare.amount(), 101);
 
         // Rounds down
-        let ret = exchange_rate(1, 1, 1.0, 1, 2.0, 0.01);
+        let ret = exchange_rate(4, 1, 1.0, 1, 2.0, 0.01);
+        // this would've been 2, but it becomes 1.99 and gets rounded down to 1
         assert_eq!(ret.1[0].prepare.amount(), 1);
 
         // Spread >= 1 means the node takes everything

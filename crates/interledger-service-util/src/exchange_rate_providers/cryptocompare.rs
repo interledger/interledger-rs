@@ -38,7 +38,7 @@ struct Record {
     #[serde(rename = "CoinInfo")]
     coin_info: CoinInfo,
     #[serde(rename = "RAW")]
-    raw: Raw,
+    raw: Option<Raw>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -79,7 +79,11 @@ pub fn query_cryptocompare(
             let rates = res
                 .data
                 .into_iter()
-                .map(|asset| (asset.coin_info.name.to_uppercase(), asset.raw.usd.price))
+                .filter_map(|asset| if let Some(raw) = asset.raw {
+                    Some((asset.coin_info.name.to_uppercase(), raw.usd.price))
+                  } else {
+                    None
+                  })
                 .chain(once(("USD".to_string(), 1.0)));
             Ok(HashMap::from_iter(rates))
         })

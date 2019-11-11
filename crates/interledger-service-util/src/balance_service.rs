@@ -1,7 +1,10 @@
 use futures::Future;
 use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::*;
-use interledger_settlement::{SettlementAccount, SettlementClient, SettlementStore};
+use interledger_settlement::{
+    api::SettlementClient,
+    core::types::{SettlementAccount, SettlementStore},
+};
 use log::{debug, error};
 use std::marker::PhantomData;
 use tokio_executor::spawn;

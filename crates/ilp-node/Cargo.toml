@@ -1,6 +1,6 @@
 [package]
 name = "ilp-node"
-version = "0.5.2"
+version = "0.6.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger node (sender, connector, receiver bundle)"
 license = "Apache-2.0"
@@ -8,13 +8,20 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
 
+[features]
+default = ["balance-tracking"]
+balance-tracking = []
+# This is an experimental feature that enables submitting packet
+# records to Google Cloud PubSub. This may be removed in the future.
+google-pubsub = ["base64", "chrono", "parking_lot", "reqwest", "serde_json", "yup-oauth2"]
+
 [dependencies]
 bytes = { version = "0.4.12", default-features = false }
 clap = { version = "2.33.0", default-features = false }
 config = { version = "0.9.3", default-features = false, features = ["json", "toml", "yaml"] }
 futures = { version = "0.1.29", default-features = false }
 hex = { version = "0.4.0", default-features = false }
-interledger = { path = "../interledger", version = "^0.5.1", default-features = false, features = ["node"] }
+interledger = { path = "../interledger", version = "^0.6.0", default-features = false, features = ["node"] }
 lazy_static = { version = "1.4.0", default-features = false }
 metrics = { version = "0.12.0", default-features = false, features = ["std"] }
 metrics-core = { version = "0.5.1", default-features = false }
@@ -30,6 +37,14 @@ libc = { version = "0.2.62", default-features = false }
 warp = { version = "0.1.20", default-features = false, features = ["websocket"] }
 secrecy = { version = "0.5.0", default-features = false, features = ["alloc", "serde"] }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
+
+# For google-pubsub
+base64 = { version = "0.10.1", default-features = false, optional = true }
+chrono = { version = "0.4.9", default-features = false, features = [], optional = true}
+parking_lot = { version = "0.9.0", default-features = false, optional = true }
+reqwest = { version = "0.9.22", default-features = false, features = ["default-tls"], optional = true }
+serde_json = { version = "1.0.41", default-features = false, optional = true }
+yup-oauth2 = { version = "3.1.1", default-features = false, optional = true }
 
 [dev-dependencies]
 approx = { version = "0.3.2", default-features = false }

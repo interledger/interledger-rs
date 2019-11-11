@@ -5,13 +5,13 @@ use futures::{
     Future,
 };
 use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
+use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::SettlementAccount;
+use interledger_settlement::core::types::SettlementAccount;
 use log::{error, trace};
 use serde::Serialize;
-use serde_json::json;
 use std::{
     collections::HashMap,
     iter::FromIterator,
@@ -20,8 +20,18 @@ use std::{
 use url::Url;
 use warp::{self, Filter, Rejection};
 
+// TODO add more to this response
+#[derive(Clone, Serialize)]
+struct StatusResponse {
+    status: String,
+    ilp_address: Address,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+}
+
 pub fn node_settings_api<S, A>(
     admin_api_token: String,
+    node_version: Option<String>,
     store: S,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
@@ -53,12 +63,11 @@ where
         .and(warp::path::end())
         .and(with_store.clone())
         .map(move |store: S| {
-            // TODO add more to this response
-            warp::reply::json(&json!({
-                "status": "Ready".to_string(),
-                "ilp_address": store.get_ilp_address(),
-                "version": env!("CARGO_PKG_VERSION"),
-            }))
+            warp::reply::json(&StatusResponse {
+                status: "Ready".to_string(),
+                ilp_address: store.get_ilp_address(),
+                version: node_version.clone(),
+            })
         })
         .boxed();
 

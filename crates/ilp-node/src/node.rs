@@ -9,8 +9,12 @@ pub use interledger::api::AccountDetails;
 pub use interledger::service_util::ExchangeRateProvider;
 use std::sync::Arc;
 
+#[cfg(feature = "google-pubsub")]
+use crate::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 use crate::metrics::{incoming_metrics, outgoing_metrics};
 use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
+#[cfg(feature = "balance-tracking")]
+use interledger::service_util::BalanceService;
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{connect_client, create_btp_service_and_filter, BtpStore},
@@ -25,10 +29,10 @@ use interledger::{
         OutgoingService, Username,
     },
     service_util::{
-        BalanceService, EchoService, ExchangeRateFetcher, ExchangeRateService,
-        ExpiryShortenerService, MaxPacketAmountService, RateLimitService, ValidatorService,
+        EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
+        MaxPacketAmountService, RateLimitService, ValidatorService,
     },
-    settlement::{create_settlements_filter, SettlementMessageService},
+    settlement::api::{create_settlements_filter, SettlementMessageService},
     store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };
@@ -211,6 +215,8 @@ pub struct InterledgerNode {
     /// If this configuration is not provided, the node will not collect metrics.
     #[serde(default)]
     pub prometheus: Option<PrometheusConfig>,
+    #[cfg(feature = "google-pubsub")]
+    pub google_pubsub: Option<PubsubConfig>,
 }
 
 impl InterledgerNode {
@@ -253,6 +259,8 @@ impl InterledgerNode {
         let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
         let exchange_rate_poll_failure_tolerance = self.exchange_rate_poll_failure_tolerance;
         let exchange_rate_spread = self.exchange_rate_spread;
+        #[cfg(feature = "google-pubsub")]
+        let google_pubsub = self.google_pubsub.clone();
 
         debug!(target: "interledger-node",
             "Starting Interledger node with ILP address: {}",
@@ -321,6 +329,7 @@ impl InterledgerNode {
                                 store.clone(),
                                 outgoing_service,
                             );
+                            #[cfg(feature = "balance-tracking")]
                             let outgoing_service = BalanceService::new(
                                 store.clone(),
                                 outgoing_service,
@@ -330,6 +339,9 @@ impl InterledgerNode {
                                 store.clone(),
                                 outgoing_service,
                             );
+
+                            #[cfg(feature = "google-pubsub")]
+                            let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
 
                             // Set up the Router and Routing Manager
                             let incoming_service = Router::new(
@@ -400,6 +412,7 @@ impl InterledgerNode {
                             if let Some(username) = default_spsp_account {
                                 api.default_spsp_account(username);
                             }
+                            api.node_version(env!("CARGO_PKG_VERSION").to_string());
                             // add an API of ILP over HTTP and add rejection handler
                             let api = api.into_warp_filter()
                                 .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {

@@ -5,7 +5,7 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::{SettlementAccount, SettlementStore};
+use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
 use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
@@ -213,6 +213,7 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     // connection when an account is added with BTP details
     btp: BtpOutgoingService<B, A>,
     server_secret: Bytes,
+    node_version: Option<String>,
 }
 
 impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
@@ -253,11 +254,17 @@ where
             outgoing_handler,
             btp,
             server_secret,
+            node_version: None,
         }
     }
 
     pub fn default_spsp_account(&mut self, username: Username) -> &mut Self {
         self.default_spsp_account = Some(username);
+        self
+    }
+
+    pub fn node_version(&mut self, version: String) -> &mut Self {
+        self.node_version = Some(version);
         self
     }
 
@@ -271,7 +278,11 @@ where
             self.btp,
             self.store.clone(),
         )
-        .or(routes::node_settings_api(self.admin_api_token, self.store))
+        .or(routes::node_settings_api(
+            self.admin_api_token,
+            self.node_version,
+            self.store,
+        ))
         .boxed()
     }
 
