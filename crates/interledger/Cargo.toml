@@ -38,7 +38,7 @@ trace = ["interledger-service/trace"]
 
 [dependencies]
 interledger-api = { path = "../interledger-api", version = "^0.2.0", optional = true, default-features = false }
-interledger-btp = { path = "../interledger-btp", version = "^0.3.0", optional = true, default-features = false }
+interledger-btp = { path = "../interledger-btp", version = "^0.4.0", optional = true, default-features = false }
 interledger-ccp = { path = "../interledger-ccp", version = "^0.2.1", optional = true, default-features = false }
 interledger-http = { path = "../interledger-http", version = "^0.3.0", optional = true, default-features = false }
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.3.0", optional = true, default-features = false }
