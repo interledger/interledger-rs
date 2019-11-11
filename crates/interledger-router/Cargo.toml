@@ -1,6 +1,6 @@
 [package]
 name = "interledger-router"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Router for Interledger requests"
 license = "Apache-2.0"
