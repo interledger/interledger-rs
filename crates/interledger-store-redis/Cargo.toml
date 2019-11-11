@@ -23,7 +23,7 @@ interledger-router = { path = "../interledger-router", version = "^0.4.0", defau
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 interledger-service-util = { path = "../interledger-service-util", version = "^0.4.0", default-features = false }
 interledger-settlement = { path = "../interledger-settlement", version = "^0.3.0", default-features = false }
-interledger-stream = { path = "../interledger-stream", version = "^0.3.0", default-features = false }
+interledger-stream = { path = "../interledger-stream", version = "^0.4.0", default-features = false }
 lazy_static = { version = "1.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 parking_lot = { version = "0.9.0", default-features = false }
