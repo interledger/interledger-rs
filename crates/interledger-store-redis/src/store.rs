@@ -63,6 +63,7 @@ use tokio_executor::spawn;
 use tokio_timer::Interval;
 use url::Url;
 use zeroize::Zeroize;
+use tokio::timer::Delay;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 
@@ -984,13 +985,25 @@ impl NodeStore for RedisStore {
             account.username.clone(),
             account.id
         );
+
         let encrypted = account
             .clone()
             .encrypt_tokens(&encryption_key.expose_secret().0);
-        Box::new(
-            self.redis_insert_account(encrypted)
-                .and_then(move |_| Ok(account)),
-        )
+
+        if account.username == Username::from_str("alice_on_a").unwrap() {
+            let insert_account = self.redis_insert_account(encrypted);
+            Box::new(
+                Delay::new(Instant::now() + Duration::from_millis(3000))
+                    .map_err(|_| ())
+                    .and_then(move |_| insert_account)
+                    .and_then(move |_| Ok(account))
+            )
+        } else {
+            Box::new(
+                self.redis_insert_account(encrypted)
+                    .and_then(move |_| Ok(account)),
+            )
+        }
     }
 
     fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
