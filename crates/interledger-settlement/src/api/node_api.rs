@@ -1,16 +1,19 @@
-use crate::core::{
-    get_hash_of,
-    idempotency::*,
-    scale_with_precision_loss,
-    types::{
-        ApiResponse, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
-        CONVERSION_ERROR_TYPE, NO_ENGINE_CONFIGURED_ERROR_TYPE, SE_ILP_ADDRESS,
+use crate::{
+    api::SettlementClient,
+    core::{
+        get_hash_of,
+        idempotency::*,
+        scale_with_precision_loss,
+        types::{
+            ApiResponse, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
+            CONVERSION_ERROR_TYPE, NO_ENGINE_CONFIGURED_ERROR_TYPE, SE_ILP_ADDRESS,
+        },
     },
 };
 use bytes::buf::FromBuf;
 use bytes::Bytes;
 use futures::{
-    future::{err, result},
+    future::{err, result, Either},
     Future,
 };
 use hyper::{Response, StatusCode};
@@ -91,6 +94,50 @@ where
             },
         );
 
+    // GET /accounts/:account_id/deposit (optional idempotency-key header)
+    // This will return a json of the address that the client needs to send money to
+    let deposit_endpoint = account_id_filter.and(warp::path("deposit"));
+    let deposit = warp::get2()
+        .and(deposit_endpoint)
+        .and(warp::path::end())
+        .and(with_store.clone())
+        .and_then(move |account_id: String, store: S| {
+            let client = SettlementClient::new();
+            // Convert to the desired data types
+            let account_id = match A::AccountId::from_str(&account_id) {
+                Ok(a) => a,
+                Err(_) => {
+                    let error_msg = format!("Unable to parse account id: {}", account_id);
+                    error!("{}", error_msg);
+                    return Either::A(err(ApiError::invalid_account_id(Some(&account_id)).into()));
+                }
+            };
+            Either::B(
+                store
+                    .get_accounts(vec![account_id])
+                    .map_err(move |_err| {
+                        let err = ApiError::account_not_found()
+                            .detail(format!("Account {} was not found", account_id));
+                        error!("{}", err);
+                        err.into()
+                    })
+                    .and_then(move |accounts| {
+                        let account = &accounts[0];
+                        client
+                            .get_payment_info(account.clone())
+                            .map_err::<_, Rejection>(move |_| {
+                                ApiError::internal_server_error().into()
+                            })
+                            .and_then(move |message| {
+                                Ok(Response::builder()
+                                    .status(StatusCode::OK)
+                                    .body(message.to_string())
+                                    .unwrap())
+                            })
+                    }),
+            )
+        });
+
     // POST /accounts/:account_id/messages (optional idempotency-key header)
     // Body is a Vec<u8> object
     let with_outgoing_handler = warp::any().map(move || outgoing_handler.clone()).boxed();
@@ -140,6 +187,7 @@ where
 
     settlements
         .or(messages)
+        .or(deposit)
         .recover(default_rejection_handler)
         .boxed()
 }
@@ -365,6 +413,44 @@ mod tests {
             scale_with_precision_loss(BigUint::from(1u32), 9, 6),
             (BigUint::from(1000u32), BigUint::from(0u32))
         );
+    }
+
+    // Deposit Tests
+    mod deposit_tests {
+        use super::*;
+        use serde_json::json;
+
+        fn deposit_call<F>(api: &F, id: &str) -> Response<Bytes>
+        where
+            F: warp::Filter + 'static,
+            F::Extract: warp::Reply,
+        {
+            warp::test::request()
+                .method("GET")
+                .path(&format!("/accounts/{}/deposit", id))
+                .reply(api)
+        }
+
+        #[test]
+        fn deposit_ok() {
+            let id = TEST_ACCOUNT_0.clone().id.to_string();
+            let store = test_store(false, true);
+            let api = test_api(store.clone(), false);
+            let m = mock_deposit().create();
+
+            // The operator accounts are configured to work with CONNECTOR_SCALE
+            // = 9. When
+            // we send a settlement with scale OUR_SCALE, the connector should respond
+            // with 2 less 0's.
+            let response = deposit_call(&api, &id);
+            println!("response bodyu {:?}", response.body());
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.body(),
+                &Bytes::from(json!({"address": "some_address", "currency": "ETH"}).to_string())
+            );
+            m.assert();
+        }
     }
 
     // Settlement Tests

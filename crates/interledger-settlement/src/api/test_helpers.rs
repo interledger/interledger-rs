@@ -19,8 +19,11 @@ use interledger_service::{
 };
 use mockito::mock;
 use num_bigint::BigUint;
+use serde_json::json;
 
-use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
+use super::fixtures::{
+    BODY, DEPOSIT_API, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0,
+};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -320,6 +323,13 @@ pub fn mock_message(status_code: usize) -> mockito::Mock {
         .match_header("Content-Type", "application/octet-stream")
         .with_status(status_code)
         .with_body(BODY)
+}
+
+pub fn mock_deposit() -> mockito::Mock {
+    mock("GET", DEPOSIT_API.clone())
+        .with_status(200)
+        // This can be anything by the engine as long as the wallet can interpret it
+        .with_body(json!({"address": "some_address", "currency": "ETH"}).to_string())
 }
 
 // Futures helper taken from the store_helpers in interledger-store-redis.

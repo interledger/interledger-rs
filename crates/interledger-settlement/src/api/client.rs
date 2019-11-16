@@ -6,7 +6,7 @@ use futures::{
 use interledger_service::Account;
 use log::{debug, error, trace};
 use reqwest::r#async::Client;
-use serde_json::json;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -19,6 +19,41 @@ impl SettlementClient {
         SettlementClient {
             http_client: Client::new(),
         }
+    }
+
+    pub fn get_payment_info<A: SettlementAccount + Account>(
+        &self,
+        account: A,
+    ) -> impl Future<Item = Value, Error = ()> {
+        if let Some(settlement_engine) = account.settlement_engine_details() {
+            let mut settlement_engine_url = settlement_engine.url;
+            settlement_engine_url
+                .path_segments_mut()
+                .expect("Invalid settlement engine URL")
+                .push("accounts")
+                .push(&account.id().to_string())
+                .push("deposit");
+            debug!("Fetching deposit address for account {}", account.id());
+            let settlement_engine_url_clone = settlement_engine_url.clone();
+            return Either::A(self.http_client.get(settlement_engine_url.as_ref())
+                .send()
+                .map_err(move |err| error!("Error fetching payment info from settlement engine {}: {:?}", settlement_engine_url, err))
+                .and_then(move |mut response| {
+                    if response.status().is_success() {
+                        trace!("Fetched account {} information by engine {}", account.id(), settlement_engine_url_clone);
+                    } else {
+                        error!("Error fetching account {} information. Settlement engine responded with HTTP code: {}", account.id(), response.status());
+                    }
+                    response.json()
+                    .map_err(|_| ())
+                    .and_then(move |ret| Ok(ret))
+                }));
+        }
+        error!(
+            "Cannot get payment info for account {} because it has no engine configured",
+            account.id()
+        );
+        Either::B(err(()))
     }
 
     pub fn send_settlement<A: SettlementAccount + Account>(
