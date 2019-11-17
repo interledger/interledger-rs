@@ -93,6 +93,25 @@ pub struct TestStore {
 impl SettlementStore for TestStore {
     type Account = TestAccount;
 
+    fn withdraw_funds(
+        &self,
+        account_id: u64,
+        amount: u64,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let mut accounts = self.accounts.write();
+        for mut a in &mut *accounts {
+            if a.id() == account_id {
+                if a.balance > amount as i64 {
+                    a.balance -= amount as i64
+                } else {
+                    return Box::new(err(()));
+                }
+            }
+        }
+        let ret = if self.should_fail { err(()) } else { ok(()) };
+        Box::new(ret)
+    }
+
     fn update_balance_for_incoming_settlement(
         &self,
         account_id: u64,
@@ -280,6 +299,15 @@ impl TestStore {
             cache: Arc::new(RwLock::new(HashMap::new())),
             cache_hits: Arc::new(RwLock::new(0)),
             uncredited_settlement_amount: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn set_balance(&self, account_id: u64, balance: u64) {
+        let mut accounts = self.accounts.write();
+        for mut a in &mut *accounts {
+            if a.id() == account_id {
+                a.balance = balance as i64;
+            }
         }
     }
 

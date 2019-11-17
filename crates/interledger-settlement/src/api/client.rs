@@ -46,7 +46,6 @@ impl SettlementClient {
                     }
                     response.json()
                     .map_err(|_| ())
-                    .and_then(move |ret| Ok(ret))
                 }));
         }
         error!(
