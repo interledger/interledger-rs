@@ -112,6 +112,8 @@ lazy_static! {
     static ref REFUND_SETTLEMENT: Script = Script::new(include_str!("lua/refund_settlement.lua"));
 
     static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new(include_str!("lua/process_incoming_settlement.lua"));
+
+    static ref WITHDRAW_FUNDS: Script = Script::new(include_str!("lua/withdraw_funds.lua"));
 }
 
 pub struct RedisStoreBuilder {
@@ -1701,6 +1703,34 @@ impl IdempotentStore for RedisStore {
 
 impl SettlementStore for RedisStore {
     type Account = Account;
+
+    fn withdraw_funds(
+        &self,
+        account_id: AccountId,
+        amount: u64,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(
+            WITHDRAW_FUNDS
+                .arg(account_id)
+                .arg(amount)
+                .invoke_async(self.connection.clone())
+                .map_err(move |err| {
+                    error!(
+                        "Error withdrawing funds from account: {} for amount: {}: {:?}",
+                        account_id, amount, err
+                    )
+                })
+                .and_then(move |(_connection, balance): (_, i64)| {
+                    trace!(
+                        "Processed withdrawal from account: {} for amount: {}. Balance is now: {}",
+                        account_id,
+                        amount,
+                        balance
+                    );
+                    Ok(())
+                }),
+        )
+    }
 
     fn update_balance_for_incoming_settlement(
         &self,

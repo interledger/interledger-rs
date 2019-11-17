@@ -14,6 +14,7 @@ use interledger_settlement::core::{
 use interledger_store::account::AccountId;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
+use redis::Value;
 use redis::{aio::SharedConnection, cmd};
 use url::Url;
 
@@ -251,6 +252,221 @@ fn credits_balance_owed() {
                                         },
                                     )
                             })
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn withdraw_funds_fails_negative_balance() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let id = accs[0].id();
+        context
+            .shared_async_connection()
+            .map_err(|err| panic!(err))
+            .and_then(move |conn| {
+                cmd("HMSET")
+                    .arg(format!("accounts:{}", id))
+                    .arg("balance")
+                    .arg(-200)
+                    .arg("prepaid_amount")
+                    .arg(199)
+                    .query_async(conn)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(_, _): (SharedConnection, Value)| {
+                        // Fails because negative balance
+                        store.withdraw_funds(id, 100).and_then(move |_| {
+                            let _ = context;
+                            Ok(())
+                        })
+                    })
+            })
+    }))
+    .unwrap_err()
+}
+
+#[test]
+fn withdraw_funds_fails_requested_too_much() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let id = accs[0].id();
+        context
+            .shared_async_connection()
+            .map_err(|err| panic!(err))
+            .and_then(move |conn| {
+                cmd("HMSET")
+                    .arg(format!("accounts:{}", id))
+                    .arg("balance")
+                    .arg(100)
+                    .arg("prepaid_amount")
+                    .arg(100)
+                    .query_async(conn)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(_, _): (SharedConnection, Value)| {
+                        // Fails because 100+100=200, and we requested 201 which is more than that
+                        store.withdraw_funds(id, 201).and_then(move |_| {
+                            let _ = context;
+                            Ok(())
+                        })
+                    })
+            })
+    }))
+    .unwrap_err()
+}
+
+#[test]
+fn withdraw_funds_fails_more_than_min_balance() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let id = accs[0].id();
+        context
+            .shared_async_connection()
+            .map_err(|err| panic!(err))
+            .and_then(move |conn| {
+                cmd("HMSET")
+                    .arg(format!("accounts:{}", id))
+                    .arg("balance")
+                    .arg(100)
+                    .arg("prepaid_amount")
+                    .arg(100)
+                    .arg("min_balance")
+                    .arg(100)
+                    .query_async(conn)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(_, _): (SharedConnection, Value)| {
+                        // Fails because 100+100-100=100, and we requested 101 which is more than that
+                        store.withdraw_funds(id, 101).and_then(move |_| {
+                            let _ = context;
+                            Ok(())
+                        })
+                    })
+            })
+    }))
+    .unwrap_err()
+}
+
+#[test]
+fn withdraw_funds_prepaid_more_than_requested() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let id = accs[0].id();
+        context
+            .shared_async_connection()
+            .map_err(|err| panic!(err))
+            .and_then(move |conn| {
+                cmd("HMSET")
+                    .arg(format!("accounts:{}", id))
+                    .arg("balance")
+                    .arg(100)
+                    .arg("prepaid_amount")
+                    .arg(105)
+                    .query_async(conn)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(conn, _): (SharedConnection, Value)| {
+                        // the prepaid amount is sufficient so the balance should be untouched
+                        store.withdraw_funds(id, 100).and_then(move |_| {
+                            cmd("HMGET")
+                                .arg(format!("accounts:{}", id))
+                                .arg("balance")
+                                .arg("prepaid_amount")
+                                .query_async(conn)
+                                .map_err(|err| panic!(err))
+                                .and_then(
+                                    move |(_, (balance, prepaid_amount)): (
+                                        SharedConnection,
+                                        (i64, i64),
+                                    )| {
+                                        assert_eq!(balance, 100);
+                                        assert_eq!(prepaid_amount, 5);
+                                        let _ = context;
+                                        Ok(())
+                                    },
+                                )
+                        })
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn withdraw_funds_prepaid_bigger_than_zero() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let id = accs[0].id();
+        context
+            .shared_async_connection()
+            .map_err(|err| panic!(err))
+            .and_then(move |conn| {
+                cmd("HMSET")
+                    .arg(format!("accounts:{}", id))
+                    .arg("balance")
+                    .arg(100)
+                    .arg("prepaid_amount")
+                    .arg(5)
+                    .query_async(conn)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(conn, _): (SharedConnection, Value)| {
+                        // the prepaid amount is sufficient so the balance should be untouched
+                        store.withdraw_funds(id, 100).and_then(move |_| {
+                            cmd("HMGET")
+                                .arg(format!("accounts:{}", id))
+                                .arg("balance")
+                                .arg("prepaid_amount")
+                                .query_async(conn)
+                                .map_err(|err| panic!(err))
+                                .and_then(
+                                    move |(_, (balance, prepaid_amount)): (
+                                        SharedConnection,
+                                        (i64, i64),
+                                    )| {
+                                        assert_eq!(balance, 5);
+                                        assert_eq!(prepaid_amount, 0);
+                                        let _ = context;
+                                        Ok(())
+                                    },
+                                )
+                        })
+                    })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn withdraw_funds_prepaid_zero() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let id = accs[0].id();
+        context
+            .shared_async_connection()
+            .map_err(|err| panic!(err))
+            .and_then(move |conn| {
+                cmd("HMSET")
+                    .arg(format!("accounts:{}", id))
+                    .arg("balance")
+                    .arg(100)
+                    .arg("prepaid_amount")
+                    .arg(0)
+                    .query_async(conn)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(conn, _): (SharedConnection, Value)| {
+                        // the prepaid amount is sufficient so the balance should be untouched
+                        store.withdraw_funds(id, 99).and_then(move |_| {
+                            cmd("HMGET")
+                                .arg(format!("accounts:{}", id))
+                                .arg("balance")
+                                .arg("prepaid_amount")
+                                .query_async(conn)
+                                .map_err(|err| panic!(err))
+                                .and_then(
+                                    move |(_, (balance, prepaid_amount)): (
+                                        SharedConnection,
+                                        (i64, i64),
+                                    )| {
+                                        assert_eq!(balance, 1);
+                                        assert_eq!(prepaid_amount, 0);
+                                        let _ = context;
+                                        Ok(())
+                                    },
+                                )
+                        })
                     })
             })
     }))
