@@ -32,6 +32,7 @@ impl Client {
         &self,
         engine_url: Url,
         id: T,
+        extra: Option<Vec<u8>>,
     ) -> impl Future<Item = StatusCode, Error = reqwest::Error> {
         let mut se_url = engine_url.clone();
         se_url
@@ -49,7 +50,7 @@ impl Client {
         let create_settlement_engine_account = move || {
             client
                 .post(se_url.as_ref())
-                .json(&json!({"id" : id.to_string()}))
+                .json(&json!({ "id": id.to_string(), "extra": extra }))
                 .send()
                 .and_then(move |response| {
                     // If the account is not found on the peer's connector, the

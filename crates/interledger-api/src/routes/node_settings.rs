@@ -245,7 +245,7 @@ where
                                 // account is the one we just configured as the default for the account's asset code
                                 if let Some(details) = account.settlement_engine_details() {
                                     if Some(&details.url) == asset_to_url_map.get(account.asset_code()) {
-                                        return Some(client.create_engine_account(details.url, account.id())
+                                        return Some(client.create_engine_account(details.url, account.id(), None)
                                             .map_err(|_| ApiError::internal_server_error().into())
                                             .and_then(move |status_code| {
                                                 if status_code.is_success() {

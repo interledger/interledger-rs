@@ -199,6 +199,7 @@ pub struct AccountDetails {
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub packets_per_minute_limit: Option<u32>,
     pub settlement_engine_url: Option<String>,
+    pub settlement_extra: Option<Vec<u8>>,
 }
 
 pub struct NodeApi<S, I, O, B, A: Account> {

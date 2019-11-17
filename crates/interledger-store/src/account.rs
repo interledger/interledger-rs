@@ -611,6 +611,7 @@ mod redis_account {
             amount_per_minute_limit: None,
             packets_per_minute_limit: None,
             settlement_engine_url: None,
+            settlement_extra: None,
         };
     }
 

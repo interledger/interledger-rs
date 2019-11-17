@@ -202,6 +202,7 @@ where
             let store_clone = store.clone();
             let handler = outgoing_handler_clone.clone();
             let btp = btp_clone.clone();
+            let extra = account_details.settlement_extra.clone();
             store
                 .insert_account(account_details.clone())
                 .map_err(move |_| {
@@ -210,7 +211,7 @@ where
                     ApiError::internal_server_error().into()
                 })
                 .and_then(move |account| {
-                    connect_to_external_services(handler, account, store_clone, btp)
+                    connect_to_external_services(handler, account, store_clone, btp, extra)
                 })
                 .and_then(|account: A| Ok(warp::reply::json(&account)))
         })
@@ -241,11 +242,12 @@ where
                 let store_clone = store.clone();
                 let handler = outgoing_handler.clone();
                 let btp = btp.clone();
+                let extra = account_details.settlement_extra.clone();
                 store
                     .update_account(id, account_details)
                     .map_err::<_, Rejection>(move |_| ApiError::internal_server_error().into())
                     .and_then(move |account| {
-                        connect_to_external_services(handler, account, store_clone, btp)
+                        connect_to_external_services(handler, account, store_clone, btp, extra)
                     })
                     .and_then(|account: A| Ok(warp::reply::json(&account)))
             },
@@ -551,6 +553,7 @@ fn connect_to_external_services<O, A, S, B>(
     account: A,
     store: S,
     btp: BtpOutgoingService<B, A>,
+    settlement_extra: Option<Vec<u8>>
 ) -> impl Future<Item = A, Error = warp::reject::Rejection>
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
@@ -600,7 +603,7 @@ where
                     se_url.clone()
                 );
                 Either::A(
-                    http_client.create_engine_account(se_url, id)
+                    http_client.create_engine_account(se_url, id, settlement_extra)
                     .map_err(|_| ApiError::internal_server_error().into())
                     .and_then(move |status_code| {
                         if status_code.is_success() {
