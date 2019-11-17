@@ -94,6 +94,12 @@ pub trait SettlementAccount: Account {
 pub trait SettlementStore {
     type Account: Account;
 
+    fn withdraw_funds(
+        &self,
+        account_id: <Self::Account as Account>::AccountId,
+        amount: u64,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
     fn update_balance_for_incoming_settlement(
         &self,
         account_id: <Self::Account as Account>::AccountId,

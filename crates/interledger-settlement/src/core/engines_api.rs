@@ -20,7 +20,11 @@ use warp::{self, reject::Rejection, Filter};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash)]
 pub struct CreateAccount {
+    /// The account ID on the node which should be the same in the engine
     id: String,
+    /// Optional additional data provided to instantiate an account.
+    /// This potentially is the account's address on the specified ledger
+    extra: Option<Vec<u8>>,
 }
 
 /// Returns a Settlement Engine filter which exposes a Warp-compatible
@@ -407,7 +411,13 @@ mod tests {
             warp::test::request()
                 .method("POST")
                 .path("/accounts")
-                .body(json!(CreateAccount { id: id.to_string() }).to_string())
+                .body(
+                    json!(CreateAccount {
+                        id: id.to_string(),
+                        extra: None
+                    })
+                    .to_string(),
+                )
                 .header("Idempotency-Key", IDEMPOTENCY)
                 .reply(&api)
         };
