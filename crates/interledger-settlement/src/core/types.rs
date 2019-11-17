@@ -29,6 +29,15 @@ lazy_static! {
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Hash)]
+pub struct CreateAccount {
+    /// The account ID on the node which should be the same in the engine
+    pub id: String,
+    /// Optional additional data provided to instantiate an account.
+    /// This potentially is the account's address on the specified ledger
+    pub extra: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Quantity {
     pub amount: String,
@@ -55,7 +64,7 @@ pub enum ApiResponse {
 pub trait SettlementEngine {
     fn create_account(
         &self,
-        account_id: String,
+        create_account_request: CreateAccount,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
 
     fn delete_account(

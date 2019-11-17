@@ -553,7 +553,7 @@ fn connect_to_external_services<O, A, S, B>(
     account: A,
     store: S,
     btp: BtpOutgoingService<B, A>,
-    settlement_extra: Option<Vec<u8>>
+    settlement_extra: Option<Vec<u8>>,
 ) -> impl Future<Item = A, Error = warp::reject::Rejection>
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,

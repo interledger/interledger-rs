@@ -5,7 +5,7 @@
 use super::{
     get_hash_of,
     idempotency::{make_idempotent_call, IdempotentStore},
-    types::{Quantity, SettlementEngine},
+    types::{CreateAccount, Quantity, SettlementEngine},
 };
 use bytes::buf::FromBuf;
 use bytes::Bytes;
@@ -13,19 +13,7 @@ use futures::Future;
 use http::StatusCode;
 use hyper::Response;
 use interledger_http::error::default_rejection_handler;
-
-use serde::{Deserialize, Serialize};
-
 use warp::{self, reject::Rejection, Filter};
-
-#[derive(Serialize, Deserialize, Debug, Clone, Hash)]
-pub struct CreateAccount {
-    /// The account ID on the node which should be the same in the engine
-    pub id: String,
-    /// Optional additional data provided to instantiate an account.
-    /// This potentially is the account's address on the specified ledger
-    pub extra: Option<Vec<u8>>,
-}
 
 /// Returns a Settlement Engine filter which exposes a Warp-compatible
 /// idempotent API which forwards calls to the provided settlement engine which
@@ -53,16 +41,13 @@ where
         .and(with_engine.clone())
         .and(with_store.clone())
         .and_then(
-            move |idempotency_key: Option<String>,
-                  account_id: CreateAccount,
-                  engine: E,
-                  store: S| {
-                let account_id = account_id.id;
-                let input_hash = get_hash_of(account_id.as_ref());
+            move |idempotency_key: Option<String>, account: CreateAccount, engine: E, store: S| {
+                let input = format!("{}{:?}", account.id, account.extra);
+                let input_hash = get_hash_of(input.as_ref());
 
                 // Wrap do_send_outgoing_message in a closure to be invoked by
                 // the idempotency wrapper
-                let create_account_fn = move || engine.create_account(account_id);
+                let create_account_fn = move || engine.create_account(account);
                 make_idempotent_call(
                     store,
                     create_account_fn,
@@ -298,7 +283,7 @@ mod tests {
 
         fn create_account(
             &self,
-            _account_id: String,
+            _account_id: CreateAccount,
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
             Box::new(ok(ApiResponse::Default))
         }
