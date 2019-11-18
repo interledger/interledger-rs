@@ -87,10 +87,10 @@ fn two_nodes_btp() {
     }))
     .expect("Error creating node_b.");
 
-    let alice_fut = join_all(vec![
-        create_account_on_node(node_a_http, alice_on_a, "admin"),
-        create_account_on_node(node_a_http, b_on_a, "admin"),
-    ]);
+    // FIXME This should be fixed after SQL store is implemented.
+    // https://github.com/interledger-rs/interledger-rs/issues/464
+    let alice_fut = create_account_on_node(node_a_http, alice_on_a, "admin")
+        .and_then(move |_| create_account_on_node(node_a_http, b_on_a, "admin"));
 
     runtime.spawn(
         node_a
