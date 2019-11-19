@@ -69,11 +69,15 @@ impl Auth {
             Some(part) => Username::from_str(part)?,
             None => return Err("no username found when parsing auth token".to_owned()),
         };
-        let password = match parts.next() {
-            Some(part) => part.to_owned(),
-            None => return Err("no password found when parsing auth token".to_owned()),
-        };
-        Ok(Auth { username, password })
+        let remaining: Vec<&str> = parts.collect();
+        if remaining.is_empty() {
+            Err("no password found when parsing auth token".to_owned())
+        } else {
+            Ok(Auth {
+                username,
+                password: remaining.join(":"),
+            })
+        }
     }
 }
 
@@ -118,6 +122,11 @@ mod tests {
             Auth::new("interledger", "rust").unwrap()
         );
 
+        assert_eq!(
+            Auth::from_str("Bearer interledger:rust:test").unwrap(),
+            Auth::new("interledger", "rust:test").unwrap()
+        );
+
         assert!(Auth::from_str("SomethingElse asdf").is_err());
         assert!(Auth::from_str("Basic asdf").is_err());
         assert!(Auth::from_str("Bearer asdf").is_err());
@@ -125,6 +134,10 @@ mod tests {
         assert_eq!(
             Auth::new("interledger", "rust").unwrap().to_bearer(),
             "Bearer interledger:rust"
+        );
+        assert_eq!(
+            Auth::new("interledger", "rust:test").unwrap().to_bearer(),
+            "Bearer interledger:rust:test"
         );
     }
 }
