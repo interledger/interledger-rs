@@ -19,6 +19,7 @@ use std::{
     str,
     time::{Duration, SystemTime},
 };
+const REJECT_COUNTER: u8 = 50;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct StreamDelivery {
@@ -95,6 +96,7 @@ where
                 sequence: 1,
                 rejected_packets: 0,
                 error: None,
+                rejectcounter: 0,
             }
         })
 }
@@ -114,6 +116,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     sequence: u64,
     rejected_packets: u64,
     error: Option<Error>,
+    rejectcounter: u8,
 }
 
 struct PendingRequest {
@@ -279,6 +282,7 @@ where
         // TODO should we check the fulfillment and expiry or can we assume the plugin does that?
         self.congestion_controller.fulfill(amount);
         self.should_send_source_account = false;
+        self.rejectcounter = 0;
 
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
@@ -317,12 +321,13 @@ where
         self.source_amount += amount;
         self.congestion_controller.reject(amount, &reject);
         self.rejected_packets += 1;
+        self.rejectcounter += 1;
         debug!(
             "Prepare {} with amount {} was rejected with code: {} ({} left to send)",
             sequence,
             amount,
             reject.code(),
-            self.source_amount
+            self.source_amount,
         );
 
         // if we receive a reject, try to update our asset code/scale
@@ -385,6 +390,12 @@ where
         // TODO maybe don't have loops here and in try_send_money
         loop {
             self.poll_pending_requests()?;
+            if self.rejectcounter == REJECT_COUNTER {
+                return Err(Error::RejectPacketsError(format!(
+                    "Number of continuous rejected packets exceeded {}",
+                    self.rejectcounter
+                )));
+            }
 
             if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
                 if self.state == SendMoneyFutureState::SendMoney {

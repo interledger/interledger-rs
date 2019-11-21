@@ -8,4 +8,6 @@ pub enum Error {
     PollError(String),
     #[fail(display = "Error polling: {}", _0)]
     SendMoneyError(String),
+    #[fail(display = "Error connecting: {}", _0)]
+    RejectPacketsError(String),
 }
