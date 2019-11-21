@@ -19,6 +19,7 @@ use std::{
     str,
     time::{Duration, SystemTime},
 };
+const MAX_CONSECUTIVE_REJECTS: u8 = 50;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct StreamDelivery {
@@ -93,8 +94,9 @@ where
                 },
                 should_send_source_account: true,
                 sequence: 1,
-                rejected_packets: 0,
+                total_rejects: 0,
                 error: None,
+                consecutive_rejects: 0,
             }
         })
 }
@@ -112,8 +114,9 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     receipt: StreamDelivery,
     should_send_source_account: bool,
     sequence: u64,
-    rejected_packets: u64,
+    total_rejects: u64,
     error: Option<Error>,
+    consecutive_rejects: u8,
 }
 
 struct PendingRequest {
@@ -279,6 +282,7 @@ where
         // TODO should we check the fulfillment and expiry or can we assume the plugin does that?
         self.congestion_controller.fulfill(amount);
         self.should_send_source_account = false;
+        self.consecutive_rejects = 0;
 
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
@@ -316,13 +320,14 @@ where
     fn handle_reject(&mut self, sequence: u64, amount: u64, reject: Reject) {
         self.source_amount += amount;
         self.congestion_controller.reject(amount, &reject);
-        self.rejected_packets += 1;
+        self.total_rejects += 1;
+        self.consecutive_rejects += 1;
         debug!(
             "Prepare {} with amount {} was rejected with code: {} ({} left to send)",
             sequence,
             amount,
             reject.code(),
-            self.source_amount
+            self.source_amount,
         );
 
         // if we receive a reject, try to update our asset code/scale
@@ -385,6 +390,12 @@ where
         // TODO maybe don't have loops here and in try_send_money
         loop {
             self.poll_pending_requests()?;
+            if self.consecutive_rejects == MAX_CONSECUTIVE_REJECTS {
+                return Err(Error::TooManyRejectedPacketsError(format!(
+                    "Number of continuous rejected packets exceeded {}",
+                    self.consecutive_rejects
+                )));
+            }
 
             if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
                 if self.state == SendMoneyFutureState::SendMoney {
@@ -393,7 +404,7 @@ where
                 } else {
                     self.state = SendMoneyFutureState::Closed;
                     debug!(
-                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.receipt.delivered_amount, self.sequence - 1, self.rejected_packets,
+                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.receipt.delivered_amount, self.sequence - 1, self.total_rejects,
                     );
                     return Ok(Async::Ready((
                         self.receipt.clone(),
