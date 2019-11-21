@@ -33,7 +33,8 @@ use interledger::{
         MaxPacketAmountService, RateLimitService, ValidatorService,
     },
     settlement::api::{create_settlements_filter, SettlementMessageService},
-    store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    store_common::account::{Account, AccountId},
+    store_redis::{ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;

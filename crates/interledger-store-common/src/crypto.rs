@@ -13,13 +13,25 @@ use std::ptr;
 use zeroize::Zeroize;
 
 #[derive(Debug)]
-pub struct EncryptionKey(pub(crate) aead::LessSafeKey);
+pub struct EncryptionKey(aead::LessSafeKey);
+
+impl EncryptionKey {
+    pub fn inner(&self) -> &aead::LessSafeKey {
+        &self.0
+    }
+}
 
 #[derive(Debug)]
-pub struct DecryptionKey(pub(crate) aead::LessSafeKey);
+pub struct DecryptionKey(aead::LessSafeKey);
+
+impl DecryptionKey {
+    pub fn inner(&self) -> &aead::LessSafeKey {
+        &self.0
+    }
+}
 
 #[derive(Debug)]
-pub struct GenerationKey(pub(crate) hmac::Key);
+pub struct GenerationKey(hmac::Key);
 
 impl DebugSecret for EncryptionKey {}
 impl DebugSecret for DecryptionKey {}

@@ -33,32 +33,32 @@ use secrecy::SecretBytes;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
-    pub(crate) id: AccountId,
-    pub(crate) username: Username,
+    pub id: AccountId,
+    pub username: Username,
     #[serde(serialize_with = "address_to_string")]
-    pub(crate) ilp_address: Address,
+    pub ilp_address: Address,
     // TODO add additional routes
-    pub(crate) asset_code: String,
-    pub(crate) asset_scale: u8,
-    pub(crate) max_packet_amount: u64,
-    pub(crate) min_balance: Option<i64>,
-    pub(crate) ilp_over_http_url: Option<Url>,
+    pub asset_code: String,
+    pub asset_scale: u8,
+    pub max_packet_amount: u64,
+    pub min_balance: Option<i64>,
+    pub ilp_over_http_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_http_incoming_token: Option<SecretBytes>,
+    pub ilp_over_http_incoming_token: Option<SecretBytes>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_http_outgoing_token: Option<SecretBytes>,
-    pub(crate) ilp_over_btp_url: Option<Url>,
+    pub ilp_over_http_outgoing_token: Option<SecretBytes>,
+    pub ilp_over_btp_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_btp_incoming_token: Option<SecretBytes>,
+    pub ilp_over_btp_incoming_token: Option<SecretBytes>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_btp_outgoing_token: Option<SecretBytes>,
-    pub(crate) settle_threshold: Option<i64>,
-    pub(crate) settle_to: Option<i64>,
-    pub(crate) routing_relation: RoutingRelation,
-    pub(crate) round_trip_time: u32,
-    pub(crate) packets_per_minute_limit: Option<u32>,
-    pub(crate) amount_per_minute_limit: Option<u64>,
-    pub(crate) settlement_engine_url: Option<Url>,
+    pub ilp_over_btp_outgoing_token: Option<SecretBytes>,
+    pub settle_threshold: Option<i64>,
+    pub settle_to: Option<i64>,
+    pub routing_relation: RoutingRelation,
+    pub round_trip_time: u32,
+    pub packets_per_minute_limit: Option<u32>,
+    pub amount_per_minute_limit: Option<u64>,
+    pub settlement_engine_url: Option<Url>,
 }
 
 fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
@@ -186,7 +186,7 @@ impl Account {
 
 #[derive(Debug, Clone)]
 pub struct AccountWithEncryptedTokens {
-    pub(super) account: Account,
+    pub account: Account,
 }
 
 impl AccountWithEncryptedTokens {

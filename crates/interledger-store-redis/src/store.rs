@@ -15,8 +15,6 @@
 //    get <key>             get the value of a key
 //    hgetall <key>         the flattened list of every key/value entry within a hash
 
-use super::account::*;
-use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use super::reconnect::RedisReconnect;
 use bytes::Bytes;
 use futures::{
@@ -27,7 +25,6 @@ use futures::{
 use log::{debug, error, trace, warn};
 use std::collections::{HashMap, HashSet};
 
-use super::account::AccountId;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
@@ -41,6 +38,10 @@ use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     scale_with_precision_loss,
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
+};
+use interledger_store_common::{
+    account::{Account, AccountId, AccountWithEncryptedTokens},
+    crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
@@ -602,7 +603,7 @@ impl AccountStore for RedisStore {
                         let accounts = accounts
                             .into_iter()
                             .map(|account| {
-                                account.decrypt_tokens(&decryption_key.expose_secret().0)
+                                account.decrypt_tokens(decryption_key.expose_secret().inner())
                             })
                             .collect();
                         Ok(accounts)
@@ -839,7 +840,8 @@ impl BtpStore for RedisStore {
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
-                            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
+                            let account =
+                                account.decrypt_tokens(decryption_key.expose_secret().inner());
                             if let Some(t) = account.ilp_over_btp_incoming_token.clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
@@ -903,7 +905,7 @@ impl BtpStore for RedisStore {
                                                 .into_iter()
                                                 .map(|account| {
                                                     account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
+                                                        decryption_key.expose_secret().inner(),
                                                     )
                                                 })
                                                 .collect();
@@ -939,7 +941,8 @@ impl HttpStore for RedisStore {
                 .and_then(
                     move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
                         if let Some(account) = account {
-                            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
+                            let account =
+                                account.decrypt_tokens(decryption_key.expose_secret().inner());
                             if let Some(t) = account.ilp_over_http_incoming_token.clone() {
                                 let t = t.expose_secret().clone();
                                 if t == Bytes::from(token) {
@@ -986,7 +989,7 @@ impl NodeStore for RedisStore {
         );
         let encrypted = account
             .clone()
-            .encrypt_tokens(&encryption_key.expose_secret().0);
+            .encrypt_tokens(encryption_key.expose_secret().inner());
         Box::new(
             self.redis_insert_account(encrypted)
                 .and_then(move |_| Ok(account)),
@@ -995,11 +998,9 @@ impl NodeStore for RedisStore {
 
     fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
-        Box::new(
-            self.redis_delete_account(id).and_then(move |account| {
-                Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
-            }),
-        )
+        Box::new(self.redis_delete_account(id).and_then(move |account| {
+            Ok(account.decrypt_tokens(decryption_key.expose_secret().inner()))
+        }))
     }
 
     fn update_account(
@@ -1020,11 +1021,11 @@ impl NodeStore for RedisStore {
         );
         let encrypted = account
             .clone()
-            .encrypt_tokens(&encryption_key.expose_secret().0);
+            .encrypt_tokens(encryption_key.expose_secret().inner());
         Box::new(
             self.redis_update_account(encrypted)
                 .and_then(move |account| {
-                    Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
+                    Ok(account.decrypt_tokens(decryption_key.expose_secret().inner()))
                 }),
         )
     }
@@ -1043,25 +1044,25 @@ impl NodeStore for RedisStore {
             ilp_over_http_url: settings.ilp_over_http_url,
             ilp_over_btp_incoming_token: settings.ilp_over_btp_incoming_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    encryption_key.expose_secret().inner(),
                     token.expose_secret().as_bytes(),
                 )
             }),
             ilp_over_http_incoming_token: settings.ilp_over_http_incoming_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    encryption_key.expose_secret().inner(),
                     token.expose_secret().as_bytes(),
                 )
             }),
             ilp_over_btp_outgoing_token: settings.ilp_over_btp_outgoing_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    encryption_key.expose_secret().inner(),
                     token.expose_secret().as_bytes(),
                 )
             }),
             ilp_over_http_outgoing_token: settings.ilp_over_http_outgoing_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    encryption_key.expose_secret().inner(),
                     token.expose_secret().as_bytes(),
                 )
             }),
@@ -1070,7 +1071,7 @@ impl NodeStore for RedisStore {
         Box::new(
             self.redis_modify_account(id, settings)
                 .and_then(move |account| {
-                    Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
+                    Ok(account.decrypt_tokens(decryption_key.expose_secret().inner()))
                 }),
         )
     }
@@ -1092,7 +1093,9 @@ impl NodeStore for RedisStore {
                 .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
                     let accounts: Vec<Account> = accounts
                         .into_iter()
-                        .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
+                        .map(|account| {
+                            account.decrypt_tokens(decryption_key.expose_secret().inner())
+                        })
                         .collect();
                     Ok(accounts)
                 })
@@ -1403,7 +1406,7 @@ impl RouteManagerStore for RedisStore {
                                                 .into_iter()
                                                 .map(|account| {
                                                     account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
+                                                        decryption_key.expose_secret().inner(),
                                                     )
                                                 })
                                                 .collect();
@@ -1458,7 +1461,7 @@ impl RouteManagerStore for RedisStore {
                                                 .into_iter()
                                                 .map(|account| {
                                                     account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
+                                                        decryption_key.expose_secret().inner(),
                                                     )
                                                 })
                                                 .collect();

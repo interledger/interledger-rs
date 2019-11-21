@@ -114,6 +114,12 @@ pub mod spsp {
     pub use interledger_spsp::*;
 }
 
+/// Common facilities for backend stores
+#[cfg(feature = "store-common")]
+pub mod store_common {
+    pub use interledger_store_common::*;
+}
+
 /// Store implementation backed by Redis
 #[cfg(feature = "store-redis")]
 pub mod store_redis {
