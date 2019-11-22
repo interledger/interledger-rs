@@ -114,7 +114,7 @@ pub mod spsp {
     pub use interledger_spsp::*;
 }
 
-/// Store implementation backed by Redis
+/// Data store implementations
 #[cfg(feature = "store")]
 pub mod store {
     pub use interledger_store::*;
