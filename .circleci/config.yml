@@ -246,7 +246,7 @@ jobs:
 
             # latest release, only if on the master branch
             # tag the current commit as (crate_name)-latest, and release it
-            if [ "${CIRCLE_TAG}" == "master" ]; then
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
               tag_name="${crate_name}-latest"
               LOG_DIR=logs/${tag_name} ./.circleci/release/github_tag.sh \
                 ${tag_name} \
