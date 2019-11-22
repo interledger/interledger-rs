@@ -289,8 +289,8 @@ if [ ${SOURCE_MODE} -ne 1 ]; then
 ```bash
 pushd ~/.interledger/bin &>/dev/null
 
-if [ ! -e "interledger-settlement-engines" ]; then
-    curl -L https://github.com/interledger-rs/settlement-engines/releases/download/interledger-settlement-engines-latest/interledger-settlement-engines-x86_64-unknown-linux-musl.tar.gz | tar xzv
+if [ ! -e "ilp-settlement-ethereum" ]; then
+    curl -L https://github.com/interledger-rs/settlement-engines/releases/download/ilp-settlement-ethereum-latest/ilp-settlement-ethereum-x86_64-unknown-linux-musl.tar.gz | tar xzv
 fi
 
 popd &>/dev/null
@@ -307,8 +307,8 @@ popd &>/dev/null
 ```bash
 pushd ~/.interledger/bin &>/dev/null
 
-if [ ! -e "interledger-settlement-engines" ]; then
-    curl -L https://github.com/interledger-rs/settlement-engines/releases/download/interledger-settlement-engines-latest/interledger-settlement-engines-x86_64-apple-darwin.tar.gz | tar xzv -
+if [ ! -e "ilp-settlement-ethereum" ]; then
+    curl -L https://github.com/interledger-rs/settlement-engines/releases/download/ilp-settlement-ethereum-latest/ilp-settlement-ethereum-x86_64-apple-darwin.tar.gz | tar xzv -
 fi
 
 popd &>/dev/null
@@ -344,9 +344,9 @@ Then install `settlement-engines` as follows.
 -->
 ```bash
 # This alias makes our command invocations more natural
-alias interledger-settlement-engines="cargo run --quiet --features "ethereum" --bin interledger-settlement-engines --"
+alias ilp-settlement-ethereum="cargo run --quiet --bin ilp-settlement-ethereum --"
 
-cargo build --features "ethereum" --bin interledger-settlement-engines
+cargo build --bin ilp-settlement-ethereum
 ```
 <!--!
     popd &>/dev/null
@@ -372,7 +372,7 @@ export RUST_LOG=interledger=debug
 mkdir -p logs
 
 # Start Alice's settlement engine (ETH)
-interledger-settlement-engines ethereum-ledger \
+ilp-settlement-ethereum \
 --private_key 380eb0f3d505f087e438eca80bc4df9a7faa24f868e69fc0440261a0fc0567dc \
 --confirmations 0 \
 --poll_frequency 1000 \
@@ -384,7 +384,7 @@ interledger-settlement-engines ethereum-ledger \
 &> logs/node-alice-settlement-engine-eth.log &
 
 # Start Bob's settlement engine (ETH, XRPL)
-interledger-settlement-engines ethereum-ledger \
+ilp-settlement-ethereum \
 --private_key cc96601bc52293b53c4736a12af9130abf347669b3813f9ec4cafdf6991b087e \
 --confirmations 0 \
 --poll_frequency 1000 \
