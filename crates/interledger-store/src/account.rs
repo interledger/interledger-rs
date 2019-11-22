@@ -5,7 +5,7 @@ use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_packet::Address;
-use interledger_service::{Account as AccountTrait, Username};
+use interledger_service::{Account as AccountTrait, AccountId, Username};
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
@@ -23,7 +23,7 @@ use std::{
     collections::HashMap,
     str::{self, FromStr},
 };
-use uuid::{parser::ParseError, Uuid};
+use uuid::parser::ParseError;
 
 use url::Url;
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
@@ -240,47 +240,47 @@ impl AccountWithEncryptedTokens {
     }
 }
 
-// Uuid does not implement ToRedisArgs and FromRedisValue.
+// AccountId does not implement ToRedisArgs and FromRedisValue.
 // Rust does not allow implementing foreign traits on foreign data types.
-// As a result, we wrap Uuid in a local data type, and implement the necessary
+// As a result, we wrap AccountId in a local data type, and implement the necessary
 // traits for that.
 #[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
-pub struct AccountId(Uuid);
+pub struct RedisAccountId(pub AccountId);
 
-impl AccountId {
+impl RedisAccountId {
     pub fn new() -> Self {
-        let uid = Uuid::new_v4();
-        AccountId(uid)
+        let id = AccountId::new();
+        RedisAccountId(id)
     }
 }
 
-impl FromStr for AccountId {
+impl FromStr for RedisAccountId {
     type Err = ParseError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let uid = Uuid::from_str(&src)?;
-        Ok(AccountId(uid))
+        let id = AccountId::from_str(&src)?;
+        Ok(RedisAccountId(id))
     }
 }
 
-impl Display for AccountId {
+impl Display for RedisAccountId {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        f.write_str(&self.0.to_hyphenated().to_string())
+        f.write_str(&(self.0).0.to_hyphenated().to_string())
     }
 }
 
-impl ToRedisArgs for AccountId {
+impl ToRedisArgs for RedisAccountId {
     fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
-        out.write_arg(self.0.to_hyphenated().to_string().as_bytes().as_ref());
+        out.write_arg((self.0).0.to_hyphenated().to_string().as_bytes().as_ref());
     }
 }
 
-impl FromRedisValue for AccountId {
+impl FromRedisValue for RedisAccountId {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let account_id = String::from_redis_value(v)?;
-        let uid = Uuid::from_str(&account_id)
+        let id = AccountId::from_str(&account_id)
             .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid account id string")))?;
-        Ok(AccountId(uid))
+        Ok(RedisAccountId(id))
     }
 }
 
@@ -290,7 +290,7 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
         let account = &self.account;
 
         "id".write_redis_args(&mut rv);
-        account.id.write_redis_args(&mut rv);
+        RedisAccountId(account.id).write_redis_args(&mut rv);
         "username".write_redis_args(&mut rv);
         account
             .username
@@ -405,9 +405,11 @@ impl FromRedisValue for AccountWithEncryptedTokens {
         let round_trip_time: Option<u32> = get_value_option("round_trip_time", &hash)?;
         let round_trip_time: u32 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
 
+        let rid: RedisAccountId = get_value("id", &hash)?;
+
         Ok(AccountWithEncryptedTokens {
             account: Account {
-                id: get_value("id", &hash)?,
+                id: rid.0,
                 username,
                 ilp_address,
                 asset_code: get_value("asset_code", &hash)?,
@@ -497,9 +499,7 @@ fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>
 }
 
 impl AccountTrait for Account {
-    type AccountId = AccountId;
-
-    fn id(&self) -> Self::AccountId {
+    fn id(&self) -> AccountId {
         self.id
     }
 

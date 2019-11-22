@@ -10,7 +10,7 @@
 //! we know about.
 
 use futures::Future;
-use interledger_service::Account;
+use interledger_service::{Account, AccountId};
 use std::collections::HashMap;
 use std::{fmt, str::FromStr};
 
@@ -107,7 +107,7 @@ pub trait RouteManagerStore: Clone {
 
     fn get_accounts_to_send_routes_to(
         &self,
-        ignore_accounts: Vec<<Self::Account as Account>::AccountId>,
+        ignore_accounts: Vec<AccountId>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
     fn get_accounts_to_receive_routes_from(

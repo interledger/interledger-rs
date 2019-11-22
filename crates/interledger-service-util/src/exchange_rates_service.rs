@@ -461,10 +461,8 @@ mod tests {
     }
 
     impl Account for TestAccount {
-        type AccountId = u64;
-
-        fn id(&self) -> u64 {
-            0
+        fn id(&self) -> AccountId {
+            AccountId::new()
         }
 
         fn username(&self) -> &Username {

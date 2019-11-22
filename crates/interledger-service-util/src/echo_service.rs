@@ -251,11 +251,10 @@ mod echo_tests {
     }
 
     #[derive(Debug, Clone)]
-    struct TestAccount(u64);
+    struct TestAccount(AccountId);
 
     impl Account for TestAccount {
-        type AccountId = u64;
-        fn id(&self) -> u64 {
+        fn id(&self) -> AccountId {
             self.0
         }
 
@@ -314,7 +313,7 @@ mod echo_tests {
             source_address: &source_address,
         }
         .build();
-        let from = TestAccount(1);
+        let from = TestAccount(AccountId::new());
 
         // test
         let result = echo_service
@@ -360,7 +359,7 @@ mod echo_tests {
             data,
         }
         .build();
-        let from = TestAccount(1);
+        let from = TestAccount(AccountId::new());
 
         // test
         let result = echo_service
@@ -406,7 +405,7 @@ mod echo_tests {
             source_address: &source_address,
         }
         .build();
-        let from = TestAccount(1);
+        let from = TestAccount(AccountId::new());
 
         // test
         let result = echo_service
@@ -447,7 +446,7 @@ mod echo_tests {
             data,
         }
         .build();
-        let from = TestAccount(1);
+        let from = TestAccount(AccountId::new());
 
         // test
         let result = echo_service
@@ -489,7 +488,7 @@ mod echo_tests {
             data,
         }
         .build();
-        let from = TestAccount(1);
+        let from = TestAccount(AccountId::new());
 
         // test
         let result = echo_service

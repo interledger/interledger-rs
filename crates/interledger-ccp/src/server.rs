@@ -16,8 +16,8 @@ use futures::{
 use interledger_packet::PrepareBuilder;
 use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
 use interledger_service::{
-    Account, AddressStore, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest,
-    OutgoingService,
+    Account, AccountId, AddressStore, BoxedIlpFuture, IncomingRequest, IncomingService,
+    OutgoingRequest, OutgoingService,
 };
 #[cfg(test)]
 use lazy_static::lazy_static;
@@ -162,13 +162,13 @@ pub struct CcpRouteManager<I, O, S, A: Account> {
     /// When the peer sends us an update, we apply that update to this view of their table.
     /// Updates from peers are applied to our local_table if they are better than the
     /// existing best route and if they do not attempt to overwrite configured routes.
-    incoming_tables: Arc<RwLock<HashMap<A::AccountId, RoutingTable<A>>>>,
+    incoming_tables: Arc<RwLock<HashMap<AccountId, RoutingTable<A>>>>,
     store: S,
     /// If we get final errors while sending to specific accounts, we'll
     /// wait before trying to broadcast to them
     /// This maps the account ID to the number of route brodcast intervals
     /// we should wait before trying again
-    unavailable_accounts: Arc<Mutex<HashMap<A::AccountId, BackoffParams>>>,
+    unavailable_accounts: Arc<Mutex<HashMap<AccountId, BackoffParams>>>,
 }
 
 impl<I, O, S, A> CcpRouteManager<I, O, S, A>
@@ -677,7 +677,7 @@ where
         let self_clone = self.clone();
         let unavailable_accounts = self.unavailable_accounts.clone();
         // Check which accounts we should skip this iteration
-        let accounts_to_skip: Vec<A::AccountId> = {
+        let accounts_to_skip: Vec<AccountId> = {
             trace!("Checking accounts to skip");
             let mut unavailable_accounts = self.unavailable_accounts.lock();
             let mut skip = Vec::new();
@@ -898,7 +898,7 @@ where
 fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     local_routes: &HashMap<String, A>,
     configured_routes: &HashMap<String, A>,
-    incoming_tables: &HashMap<A::AccountId, RoutingTable<A>>,
+    incoming_tables: &HashMap<AccountId, RoutingTable<A>>,
     prefix: &str,
 ) -> Option<(A, Route)> {
     // Check if we have a configured route for that specific prefix
@@ -1003,30 +1003,30 @@ mod ranking_routes {
         static ref LOCAL: HashMap<String, TestAccount> = HashMap::from_iter(vec![
             (
                 "example.a".to_string(),
-                TestAccount::new(1, "example.local.one")
+                TestAccount::new(AccountId::from_slice(&[1; 16]).unwrap(), "example.local.one")
             ),
             (
                 "example.b".to_string(),
-                TestAccount::new(2, "example.local.two")
+                TestAccount::new(AccountId::from_slice(&[2; 16]).unwrap(), "example.local.two")
             ),
             (
                 "example.c".to_string(),
-                TestAccount::new(3, "example.local.three")
+                TestAccount::new(AccountId::from_slice(&[3; 16]).unwrap(), "example.local.three")
             ),
         ]);
         static ref CONFIGURED: HashMap<String, TestAccount> = HashMap::from_iter(vec![
             (
                 "example.a".to_string(),
-                TestAccount::new(4, "example.local.four")
+                TestAccount::new(AccountId::from_slice(&[4; 16]).unwrap(), "example.local.four")
             ),
             (
                 "example.b".to_string(),
-                TestAccount::new(5, "example.local.five")
+                TestAccount::new(AccountId::from_slice(&[5; 16]).unwrap(), "example.local.five")
             ),
         ]);
-        static ref INCOMING: HashMap<u64, RoutingTable<TestAccount>> = {
+        static ref INCOMING: HashMap<AccountId, RoutingTable<TestAccount>> = {
             let mut child_table = RoutingTable::default();
-            let mut child = TestAccount::new(6, "example.child");
+            let mut child = TestAccount::new(AccountId::from_slice(&[6; 16]).unwrap(), "example.child");
             child.relation = RoutingRelation::Child;
             child_table.add_route(
                 child.clone(),
@@ -1038,7 +1038,7 @@ mod ranking_routes {
                 },
             );
             let mut peer_table_1 = RoutingTable::default();
-            let peer_1 = TestAccount::new(7, "example.peer1");
+            let peer_1 = TestAccount::new(AccountId::from_slice(&[7; 16]).unwrap(), "example.peer1");
             peer_table_1.add_route(
                 peer_1.clone(),
                 Route {
@@ -1068,7 +1068,7 @@ mod ranking_routes {
                 },
             );
             let mut peer_table_2 = RoutingTable::default();
-            let peer_2 = TestAccount::new(8, "example.peer2");
+            let peer_2 = TestAccount::new(AccountId::from_slice(&[8; 16]).unwrap(), "example.peer2");
             peer_table_2.add_route(
                 peer_2.clone(),
                 Route {
@@ -1078,39 +1078,54 @@ mod ranking_routes {
                     props: Vec::new(),
                 },
             );
-            HashMap::from_iter(vec![(6, child_table), (7, peer_table_1), (8, peer_table_2)])
+            HashMap::from_iter(vec![(AccountId::from_slice(&[6; 16]).unwrap(), child_table), (AccountId::from_slice(&[7; 16]).unwrap(), peer_table_1), (AccountId::from_slice(&[8; 16]).unwrap(), peer_table_2)])
         };
     }
 
     #[test]
     fn prioritizes_configured_routes() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.a");
-        assert_eq!(best_route.unwrap().0.id(), 4);
+        assert_eq!(
+            best_route.unwrap().0.id(),
+            AccountId::from_slice(&[4; 16]).unwrap()
+        );
     }
 
     #[test]
     fn prioritizes_shorter_configured_routes() {
         let best_route =
             get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.a.sub-prefix");
-        assert_eq!(best_route.unwrap().0.id(), 4);
+        assert_eq!(
+            best_route.unwrap().0.id(),
+            AccountId::from_slice(&[4; 16]).unwrap()
+        );
     }
 
     #[test]
     fn prioritizes_local_routes_over_broadcasted_ones() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.c");
-        assert_eq!(best_route.unwrap().0.id(), 3);
+        assert_eq!(
+            best_route.unwrap().0.id(),
+            AccountId::from_slice(&[3; 16]).unwrap()
+        );
     }
 
     #[test]
     fn prioritizes_children_over_peers() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.d");
-        assert_eq!(best_route.unwrap().0.id(), 6);
+        assert_eq!(
+            best_route.unwrap().0.id(),
+            AccountId::from_slice(&[6; 16]).unwrap()
+        );
     }
 
     #[test]
     fn prioritizes_shorter_paths() {
         let best_route = get_best_route_for_prefix(&LOCAL, &CONFIGURED, &INCOMING, "example.e");
-        assert_eq!(best_route.unwrap().0.id(), 7);
+        assert_eq!(
+            best_route.unwrap().0.id(),
+            AccountId::from_slice(&[7; 16]).unwrap()
+        );
     }
 
     #[test]
@@ -1485,14 +1500,16 @@ mod handle_route_update_request {
     #[test]
     fn doesnt_overwrite_configured_or_local_routes() {
         let mut service = test_service();
+        let id1 = AccountId::from_slice(&[1; 16]).unwrap();
+        let id2 = AccountId::from_slice(&[2; 16]).unwrap();
         let store = TestStore::with_routes(
             HashMap::from_iter(vec![(
                 "example.prefix1".to_string(),
-                TestAccount::new(9, "example.account9"),
+                TestAccount::new(id1, "example.account9"),
             )]),
             HashMap::from_iter(vec![(
                 "example.prefix2".to_string(),
-                TestAccount::new(10, "example.account10"),
+                TestAccount::new(id2, "example.account10"),
             )]),
         );
         service.store = store;
@@ -1513,7 +1530,7 @@ mod handle_route_update_request {
                 .unwrap()
                 .0
                 .id(),
-            9
+            id1
         );
         assert_eq!(
             (*service.local_table.read())
@@ -1521,7 +1538,7 @@ mod handle_route_update_request {
                 .unwrap()
                 .0
                 .id(),
-            10
+            id2
         );
     }
 
@@ -1726,19 +1743,25 @@ mod send_route_updates {
     use crate::fixtures::*;
     use crate::test_helpers::*;
     use interledger_service::*;
-    use std::{iter::FromIterator, str::FromStr};
+    use std::{collections::HashSet, iter::FromIterator, str::FromStr};
 
     #[test]
     fn broadcasts_to_all_accounts_we_send_updates_to() {
         let (service, outgoing_requests) = test_service_with_routes();
         service.send_route_updates().wait().unwrap();
-        let mut accounts: Vec<u64> = outgoing_requests
+        let accounts: HashSet<AccountId> = outgoing_requests
             .lock()
             .iter()
             .map(|request| request.to.id())
             .collect();
-        accounts.sort_unstable();
-        assert_eq!(accounts, vec![1, 2]);
+        let expected: HashSet<AccountId> = [
+            AccountId::from_slice(&[1; 16]).unwrap(),
+            AccountId::from_slice(&[2; 16]).unwrap(),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        assert_eq!(accounts, expected);
     }
 
     #[test]
@@ -1769,7 +1792,7 @@ mod send_route_updates {
 
         service
             .handle_route_update_request(IncomingRequest {
-                from: TestAccount::new(10, "example.peer"),
+                from: TestAccount::new(AccountId::new(), "example.peer"),
                 prepare: RouteUpdateRequest {
                     routing_table_id: [0; 16],
                     current_epoch_index: 1,
@@ -1805,6 +1828,7 @@ mod send_route_updates {
 
     #[test]
     fn broadcasts_withdrawn_routes() {
+        let id10 = AccountId::from_slice(&[10; 16]).unwrap();
         let (service, outgoing_requests) = test_service_with_routes();
 
         // This is normally spawned as a task when the service is created
@@ -1812,7 +1836,7 @@ mod send_route_updates {
 
         service
             .handle_route_update_request(IncomingRequest {
-                from: TestAccount::new(10, "example.peer"),
+                from: TestAccount::new(id10, "example.peer"),
                 prepare: RouteUpdateRequest {
                     routing_table_id: [0; 16],
                     current_epoch_index: 1,
@@ -1834,7 +1858,7 @@ mod send_route_updates {
             .unwrap();
         service
             .handle_route_update_request(IncomingRequest {
-                from: TestAccount::new(10, "example.peer"),
+                from: TestAccount::new(id10, "example.peer"),
                 prepare: RouteUpdateRequest {
                     routing_table_id: [0; 16],
                     current_epoch_index: 4,
@@ -1867,15 +1891,17 @@ mod send_route_updates {
 
     #[test]
     fn backs_off_sending_to_unavailable_child_accounts() {
+        let id1 = AccountId::from_slice(&[1; 16]).unwrap();
+        let id2 = AccountId::from_slice(&[2; 16]).unwrap();
         let local_routes = HashMap::from_iter(vec![
             (
                 "example.local.1".to_string(),
-                TestAccount::new(1, "example.local.1"),
+                TestAccount::new(id1, "example.local.1"),
             ),
             (
                 "example.connector.other-local".to_string(),
                 TestAccount {
-                    id: 2,
+                    id: id2,
                     ilp_address: Address::from_str("example.connector.other-local").unwrap(),
                     relation: RoutingRelation::Child,
                 },
@@ -1923,7 +1949,7 @@ mod send_route_updates {
         {
             let lock = service.unavailable_accounts.lock();
             let backoff = lock
-                .get(&2)
+                .get(&id2)
                 .expect("Should have added chlid to unavailable accounts");
             assert_eq!(backoff.max, 1);
             assert_eq!(backoff.skip_intervals, 1);
@@ -1937,7 +1963,7 @@ mod send_route_updates {
         {
             let lock = service.unavailable_accounts.lock();
             let backoff = lock
-                .get(&2)
+                .get(&id2)
                 .expect("Should have added chlid to unavailable accounts");
             assert_eq!(backoff.max, 1);
             assert_eq!(backoff.skip_intervals, 0);
@@ -1951,7 +1977,7 @@ mod send_route_updates {
         {
             let lock = service.unavailable_accounts.lock();
             let backoff = lock
-                .get(&2)
+                .get(&id2)
                 .expect("Should have added chlid to unavailable accounts");
             assert_eq!(backoff.max, 2);
             assert_eq!(backoff.skip_intervals, 2);
@@ -1960,15 +1986,17 @@ mod send_route_updates {
 
     #[test]
     fn resets_backoff_on_route_control_request() {
+        let id1 = AccountId::from_slice(&[1; 16]).unwrap();
+        let id2 = AccountId::from_slice(&[2; 16]).unwrap();
         let child_account = TestAccount {
-            id: 2,
+            id: id2,
             ilp_address: Address::from_str("example.connector.other-local").unwrap(),
             relation: RoutingRelation::Child,
         };
         let local_routes = HashMap::from_iter(vec![
             (
                 "example.local.1".to_string(),
-                TestAccount::new(1, "example.local.1"),
+                TestAccount::new(id1, "example.local.1"),
             ),
             (
                 "example.connector.other-local".to_string(),
@@ -2017,7 +2045,7 @@ mod send_route_updates {
         {
             let lock = service.unavailable_accounts.lock();
             let backoff = lock
-                .get(&2)
+                .get(&id2)
                 .expect("Should have added chlid to unavailable accounts");
             assert_eq!(backoff.max, 1);
             assert_eq!(backoff.skip_intervals, 1);
@@ -2032,7 +2060,7 @@ mod send_route_updates {
             .unwrap();
         {
             let lock = service.unavailable_accounts.lock();
-            assert!(lock.get(&2).is_none());
+            assert!(lock.get(&id2).is_none());
         }
 
         *outgoing_requests.lock() = Vec::new();

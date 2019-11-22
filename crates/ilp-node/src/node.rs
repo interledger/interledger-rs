@@ -25,7 +25,7 @@ use interledger::{
     packet::{ErrorCode, RejectBuilder},
     router::Router,
     service::{
-        outgoing_service_fn, Account as AccountTrait, IncomingService, OutgoingRequest,
+        outgoing_service_fn, Account as AccountTrait, AccountId, IncomingService, OutgoingRequest,
         OutgoingService, Username,
     },
     service_util::{
@@ -33,10 +33,7 @@ use interledger::{
         MaxPacketAmountService, RateLimitService, ValidatorService,
     },
     settlement::api::{create_settlements_filter, SettlementMessageService},
-    store::{
-        account::{Account, AccountId},
-        redis::RedisStoreBuilder,
-    },
+    store::{account::Account, redis::RedisStoreBuilder},
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;

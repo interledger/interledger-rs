@@ -8,8 +8,8 @@ use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
 use std::str::FromStr;
 
-use interledger_service::{Account as AccountTrait, AddressStore};
-use interledger_store::account::{Account, AccountId};
+use interledger_service::{Account as AccountTrait, AccountId, AddressStore};
+use interledger_store::account::Account;
 
 #[test]
 fn get_balance() {
