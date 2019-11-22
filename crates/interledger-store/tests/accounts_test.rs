@@ -11,7 +11,7 @@ use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountStore, AddressStore, Username};
 use interledger_service_util::BalanceStore;
-use interledger_store_redis::AccountId;
+use interledger_store::account::AccountId;
 use log::{debug, error};
 use redis::Client;
 use secrecy::SecretString;

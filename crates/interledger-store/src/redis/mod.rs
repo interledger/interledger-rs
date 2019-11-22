@@ -14,10 +14,11 @@
 //    smembers <key>        list the members of a set
 //    get <key>             get the value of a key
 //    hgetall <key>         the flattened list of every key/value entry within a hash
+mod reconnect;
+use reconnect::RedisReconnect;
 
-use super::account::*;
+use super::account::{Account, AccountId, AccountWithEncryptedTokens};
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
-use super::reconnect::RedisReconnect;
 use bytes::Bytes;
 use futures::{
     future::{err, ok, result, Either},
@@ -27,7 +28,6 @@ use futures::{
 use log::{debug, error, trace, warn};
 use std::collections::{HashMap, HashSet};
 
-use super::account::AccountId;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
