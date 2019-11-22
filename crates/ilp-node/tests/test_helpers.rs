@@ -4,7 +4,7 @@ use interledger::stream::StreamDelivery;
 use interledger::{
     packet::Address,
     service::Account as AccountTrait,
-    store_redis::{Account, AccountId},
+    store::account::{Account, AccountId},
 };
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Serialize;

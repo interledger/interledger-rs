@@ -5,7 +5,10 @@ use futures::Future;
 use interledger_api::NodeStore;
 use interledger_packet::Address;
 use interledger_service::{Account as AccountTrait, AddressStore};
-use interledger_store_redis::{Account, RedisStore, RedisStoreBuilder};
+use interledger_store::{
+    account::Account,
+    redis::{RedisStore, RedisStoreBuilder},
+};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::str::FromStr;

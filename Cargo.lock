@@ -805,7 +805,7 @@ dependencies = [
  "interledger-service-util 0.4.0",
  "interledger-settlement 0.3.0",
  "interledger-spsp 0.4.0",
- "interledger-store-redis 0.4.0",
+ "interledger-store 0.4.0",
  "interledger-stream 0.4.0",
 ]
 
@@ -1037,7 +1037,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "interledger-store-redis"
+name = "interledger-store"
 version = "0.4.0"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",

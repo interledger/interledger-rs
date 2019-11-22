@@ -11,7 +11,7 @@ use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     types::{LeftoversStore, SettlementAccount, SettlementStore},
 };
-use interledger_store_redis::AccountId;
+use interledger_store::account::AccountId;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use redis::{aio::SharedConnection, cmd};

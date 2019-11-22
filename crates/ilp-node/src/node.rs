@@ -33,12 +33,16 @@ use interledger::{
         MaxPacketAmountService, RateLimitService, ValidatorService,
     },
     settlement::api::{create_settlements_filter, SettlementMessageService},
-    store_redis::{Account, AccountId, ConnectionInfo, IntoConnectionInfo, RedisStoreBuilder},
+    store::{
+        account::{Account, AccountId},
+        redis::RedisStoreBuilder,
+    },
     stream::StreamReceiverService,
 };
 use lazy_static::lazy_static;
 use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;
+use redis::{ConnectionInfo, IntoConnectionInfo};
 use ring::hmac;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
