@@ -330,6 +330,7 @@ mod tests {
         sync::{Arc, Mutex},
         time::SystemTime,
     };
+    use secrecy::ExposeSecret;
 
     lazy_static! {
         pub static ref ALICE: Username = Username::from_str("alice").unwrap();
@@ -382,6 +383,54 @@ mod tests {
         // Need to catch when spread > 1
         let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 2.0);
         assert_eq!(ret.1[0].prepare.amount(), 0);
+    }
+
+    #[test]
+    fn deserialize_yaml_exchange_rate_provider() {
+        let deserialized: Option<ExchangeRateProvider> = serde_yaml::from_str(r#"crypto_compare: test"#).ok();
+        assert!(deserialized.is_some());
+        assert!(match deserialized.unwrap() {
+            ExchangeRateProvider::CryptoCompare(secret) => *secret.expose_secret() == "test".to_owned(),
+            _ => false,
+        });
+
+        let deserialized: Option<ExchangeRateProvider> = serde_yaml::from_str(r#"cryptocompare: test"#).ok();
+        assert!(deserialized.is_some());
+        assert!(match deserialized.unwrap() {
+            ExchangeRateProvider::CryptoCompare(secret) => *secret.expose_secret() == "test".to_owned(),
+            _ => false,
+        });
+
+        let deserialized: Option<ExchangeRateProvider> = serde_yaml::from_str(r#"Cryptocompare: test"#).ok();
+        assert!(deserialized.is_some());
+        assert!(match deserialized.unwrap() {
+            ExchangeRateProvider::CryptoCompare(secret) => *secret.expose_secret() == "test".to_owned(),
+            _ => false,
+        });
+    }
+
+    #[test]
+    fn deserialize_json_exchange_rate_provider() {
+        let deserialized: Option<ExchangeRateProvider> = serde_json::from_str(r#"{ "crypto_compare": "test" }"#).ok();
+        assert!(deserialized.is_some());
+        assert!(match deserialized.unwrap() {
+            ExchangeRateProvider::CryptoCompare(secret) => *secret.expose_secret() == "test".to_owned(),
+            _ => false,
+        });
+
+        let deserialized: Option<ExchangeRateProvider> = serde_json::from_str(r#"{ "cryptocompare": "test" }"#).ok();
+        assert!(deserialized.is_some());
+        assert!(match deserialized.unwrap() {
+            ExchangeRateProvider::CryptoCompare(secret) => *secret.expose_secret() == "test".to_owned(),
+            _ => false,
+        });
+
+        let deserialized: Option<ExchangeRateProvider> = serde_json::from_str(r#"{ "Cryptocompare": "test" }"#).ok();
+        assert!(deserialized.is_some());
+        assert!(match deserialized.unwrap() {
+            ExchangeRateProvider::CryptoCompare(secret) => *secret.expose_secret() == "test".to_owned(),
+            _ => false,
+        });
     }
 
     // Instantiates an exchange rate service and returns the fulfill/reject
