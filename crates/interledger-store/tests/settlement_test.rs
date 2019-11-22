@@ -6,12 +6,11 @@ use futures::future::join_all;
 use http::StatusCode;
 use interledger_api::NodeStore;
 
-use interledger_service::{Account, AccountStore};
+use interledger_service::{Account, AccountId, AccountStore};
 use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     types::{LeftoversStore, SettlementAccount, SettlementStore},
 };
-use interledger_store::account::AccountId;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use redis::{aio::SharedConnection, cmd};

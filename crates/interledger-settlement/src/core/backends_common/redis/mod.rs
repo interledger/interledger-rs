@@ -16,13 +16,15 @@ use redis_crate::{
 use std::collections::HashMap as SlowHashMap;
 use std::str::FromStr;
 
+use interledger_service::AccountId;
+
 use log::{debug, error, trace};
 
 #[cfg(test)]
 mod test_helpers;
 
 static UNCREDITED_AMOUNT_KEY: &str = "uncredited_engine_settlement_amount";
-fn uncredited_amount_key(account_id: String) -> String {
+fn uncredited_amount_key(account_id: AccountId) -> String {
     format!("{}:{}", UNCREDITED_AMOUNT_KEY, account_id)
 }
 
@@ -219,16 +221,15 @@ impl FromRedisValue for AmountWithScale {
 }
 
 impl LeftoversStore for EngineRedisStore {
-    type AccountId = String;
     type AssetType = BigUint;
 
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
         Box::new(
             cmd("LRANGE")
-                .arg(uncredited_amount_key(account_id.to_string()))
+                .arg(uncredited_amount_key(account_id))
                 .arg(0)
                 .arg(-1)
                 .query_async(self.connection.clone())
@@ -239,7 +240,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
@@ -266,7 +267,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let connection = self.connection.clone();
@@ -280,7 +281,7 @@ impl LeftoversStore for EngineRedisStore {
                         scale_with_precision_loss(amount.0, local_scale, amount.1);
                     let mut pipe = redis_crate::pipe();
                     pipe.atomic();
-                    pipe.del(uncredited_amount_key(account_id.clone())).ignore();
+                    pipe.del(uncredited_amount_key(account_id)).ignore();
                     pipe.rpush(
                         uncredited_amount_key(account_id),
                         AmountWithScale {
@@ -301,7 +302,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn clear_uncredited_settlement_amount(
         &self,
-        account_id: Self::AccountId,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
         Box::new(

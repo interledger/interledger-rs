@@ -180,12 +180,10 @@ lazy_static! {
 }
 #[cfg(test)]
 #[derive(Clone, Debug)]
-struct TestAccount(u64);
+struct TestAccount(AccountId);
 #[cfg(test)]
 impl Account for TestAccount {
-    type AccountId = u64;
-
-    fn id(&self) -> u64 {
+    fn id(&self) -> AccountId {
         self.0
     }
 
@@ -258,7 +256,7 @@ mod incoming {
         );
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount(0),
+                from: TestAccount(AccountId::new()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -294,7 +292,7 @@ mod incoming {
         );
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount(0),
+                from: TestAccount(AccountId::new()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -367,8 +365,8 @@ mod outgoing {
         );
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount(1),
-                to: TestAccount(2),
+                from: TestAccount(AccountId::new()),
+                to: TestAccount(AccountId::new()),
                 original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
@@ -405,8 +403,8 @@ mod outgoing {
         );
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount(1),
-                to: TestAccount(2),
+                from: TestAccount(AccountId::new()),
+                to: TestAccount(AccountId::new()),
                 original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),

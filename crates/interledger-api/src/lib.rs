@@ -3,7 +3,9 @@ use futures::Future;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
+use interledger_service::{
+    Account, AccountId, AddressStore, IncomingService, OutgoingService, Username,
+};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
@@ -80,18 +82,18 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
 
     fn delete_account(
         &self,
-        id: <Self::Account as Account>::AccountId,
+        id: AccountId,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
     fn update_account(
         &self,
-        id: <Self::Account as Account>::AccountId,
+        id: AccountId,
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
     fn modify_account_settings(
         &self,
-        id: <Self::Account as Account>::AccountId,
+        id: AccountId,
         settings: AccountSettings,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
 
@@ -100,17 +102,17 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
 
     fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
-        R: IntoIterator<Item = (String, <Self::Account as Account>::AccountId)>;
+        R: IntoIterator<Item = (String, AccountId)>;
 
     fn set_static_route(
         &self,
         prefix: String,
-        account_id: <Self::Account as Account>::AccountId,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn set_default_route(
         &self,
-        account_id: <Self::Account as Account>::AccountId,
+        account_id: AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn set_settlement_engines(

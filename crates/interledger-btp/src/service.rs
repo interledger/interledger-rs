@@ -62,7 +62,7 @@ impl From<warp::Error> for WsError {
 pub struct BtpOutgoingService<O, A: Account> {
     // TODO support multiple connections per account
     ilp_address: Address,
-    connections: Arc<RwLock<HashMap<A::AccountId, UnboundedSender<Message>>>>,
+    connections: Arc<RwLock<HashMap<AccountId, UnboundedSender<Message>>>>,
     pending_outgoing: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
     incoming_sender: UnboundedSender<(A, u32, Prepare)>,

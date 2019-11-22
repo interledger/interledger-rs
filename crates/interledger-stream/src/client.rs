@@ -421,7 +421,7 @@ mod send_money_tests {
     #[test]
     fn stops_at_final_errors() {
         let account = TestAccount {
-            id: 0,
+            id: AccountId::new(),
             asset_code: "XYZ".to_string(),
             asset_scale: 9,
             ilp_address: Address::from_str("example.destination").unwrap(),

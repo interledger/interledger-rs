@@ -23,7 +23,7 @@ pub mod test_helpers {
     use futures::{future::ok, sync::mpsc::UnboundedSender, Future};
     use interledger_packet::Address;
     use interledger_router::RouterStore;
-    use interledger_service::{Account, AccountStore, AddressStore, Username};
+    use interledger_service::{Account, AccountId, AccountStore, AddressStore, Username};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -38,16 +38,14 @@ pub mod test_helpers {
 
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct TestAccount {
-        pub id: u64,
+        pub id: AccountId,
         pub ilp_address: Address,
         pub asset_scale: u8,
         pub asset_code: String,
     }
 
     impl Account for TestAccount {
-        type AccountId = u64;
-
-        fn id(&self) -> u64 {
+        fn id(&self) -> AccountId {
             self.id
         }
 
@@ -76,7 +74,7 @@ pub mod test_helpers {
 
         fn add_payment_notification_subscription(
             &self,
-            _account_id: u64,
+            _account_id: AccountId,
             _sender: UnboundedSender<PaymentNotification>,
         ) {
         }
@@ -94,7 +92,7 @@ pub mod test_helpers {
 
         fn get_accounts(
             &self,
-            _account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
+            _account_ids: Vec<AccountId>,
         ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(vec![self.route.1.clone()]))
         }
@@ -103,13 +101,13 @@ pub mod test_helpers {
         fn get_account_id_from_username(
             &self,
             _username: &Username,
-        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-            Box::new(ok(1))
+        ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+            Box::new(ok(AccountId::new()))
         }
     }
 
     impl RouterStore for TestStore {
-        fn routing_table(&self) -> Arc<HashMap<String, u64>> {
+        fn routing_table(&self) -> Arc<HashMap<String, AccountId>> {
             Arc::new(HashMap::from_iter(
                 vec![(self.route.0.clone(), self.route.1.id())].into_iter(),
             ))
@@ -146,7 +144,7 @@ mod send_money_to_receiver {
     use interledger_packet::Address;
     use interledger_packet::{ErrorCode, RejectBuilder};
     use interledger_router::Router;
-    use interledger_service::outgoing_service_fn;
+    use interledger_service::{outgoing_service_fn, AccountId};
     use std::str::FromStr;
     use tokio::runtime::Runtime;
 
@@ -155,7 +153,7 @@ mod send_money_to_receiver {
         let server_secret = Bytes::from(&[0; 32][..]);
         let destination_address = Address::from_str("example.receiver").unwrap();
         let account = TestAccount {
-            id: 0,
+            id: AccountId::new(),
             ilp_address: destination_address.clone(),
             asset_code: "XYZ".to_string(),
             asset_scale: 9,
@@ -187,7 +185,7 @@ mod send_money_to_receiver {
         let run = send_money(
             server,
             &test_helpers::TestAccount {
-                id: 0,
+                id: AccountId::new(),
                 asset_code: "XYZ".to_string(),
                 asset_scale: 9,
                 ilp_address: destination_address,

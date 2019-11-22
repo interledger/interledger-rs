@@ -78,16 +78,14 @@ mod client_server {
 
     #[derive(Clone, Debug)]
     pub struct TestAccount {
-        pub id: u64,
+        pub id: AccountId,
         pub ilp_over_btp_incoming_token: Option<String>,
         pub ilp_over_btp_outgoing_token: Option<String>,
         pub ilp_over_btp_url: Option<Url>,
     }
 
     impl Account for TestAccount {
-        type AccountId = u64;
-
-        fn id(&self) -> u64 {
+        fn id(&self) -> AccountId {
             self.id
         }
 
@@ -132,7 +130,7 @@ mod client_server {
 
         fn get_accounts(
             &self,
-            account_ids: Vec<<<Self as AccountStore>::Account as Account>::AccountId>,
+            account_ids: Vec<AccountId>,
         ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
             let accounts: Vec<TestAccount> = self
                 .accounts
@@ -156,8 +154,8 @@ mod client_server {
         fn get_account_id_from_username(
             &self,
             _username: &Username,
-        ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-            Box::new(ok(1))
+        ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+            Box::new(ok(AccountId::new()))
         }
     }
 
@@ -207,7 +205,7 @@ mod client_server {
 
                 let server_store = TestStore {
                     accounts: Arc::new(vec![TestAccount {
-                        id: 0,
+                        id: AccountId::new(),
                         ilp_over_btp_incoming_token: Some("alice:test_auth_token".to_string()),
                         ilp_over_btp_outgoing_token: None,
                         ilp_over_btp_url: None,
@@ -237,7 +235,7 @@ mod client_server {
                 let server = warp::serve(filter);
 
                 let account = TestAccount {
-                    id: 0,
+                    id: AccountId::new(),
                     ilp_over_btp_url: Some(Url::parse(&format!("btp+ws://{}", bind_addr)).unwrap()),
                     ilp_over_btp_outgoing_token: Some("alice:test_auth_token".to_string()),
                     ilp_over_btp_incoming_token: None,
