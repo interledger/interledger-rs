@@ -2,10 +2,10 @@
 
 # initialize global variables
 function init() {
-    if [ -n "$USE_DOCKER" ] && [ "$USE_DOCKER" -ne "0" ]; then
-        USE_DOCKER=1
+    if [ -n "$SOURCE_MODE" ] && [ "$SOURCE_MODE" -ne "0" ]; then
+        SOURCE_MODE=1
     else
-        USE_DOCKER=0
+        SOURCE_MODE=0
     fi
 
     if [ -n "$TEST_MODE" ] && [ "$TEST_MODE" -ne "0" ]; then
@@ -13,26 +13,23 @@ function init() {
     else
         TEST_MODE=0
     fi
+}
 
-    # set global settlement engine dir so that the engine never gets compiled many times when test
-    # furthermore, we cannot clone `settlement-engine` in `interledger-rs` directory.
-    if [ -z "${SETTLEMENT_ENGINE_INSTALLL_DIR}" ]; then
-        SETTLEMENT_ENGINE_INSTALLL_DIR=$(cd ~; pwd)
-    fi
-
-    # define commands
-    CMD_DOCKER=docker
-    if [ -n "$USE_SUDO" ] && [ "$USE_SUDO" -ne "0" ]; then
-        CMD_DOCKER="sudo $CMD_DOCKER"
+# run pre_test_hook function only if it exists
+function run_pre_test_hook {
+    # only when the hook is defined
+    type pre_test_hook &>/dev/null
+    if [ $? -eq 0 ]; then
+        pre_test_hook
     fi
 }
 
-# run hook_before_kill function only if it exists
-function run_hook_before_kill {
+# run post_test_hook function only if it exists
+function run_post_test_hook {
     # only when the hook is defined
-    type hook_before_kill &>/dev/null
+    type post_test_hook &>/dev/null
     if [ $? -eq 0 ]; then
-        hook_before_kill
+        post_test_hook
     fi
 }
 
@@ -56,7 +53,6 @@ function wait_to_serve() {
     while :
     do
         printf "."
-        sleep 1
         curl $1 &> /dev/null
         if [ $? -eq 0 ]; then
             break
@@ -64,6 +60,7 @@ function wait_to_serve() {
         if [ $timeout -ge 0 ] && [ $(($SECONDS - $start)) -ge $timeout ]; then
           return 1
         fi
+        sleep 1
     done
     return 0
 }
@@ -81,7 +78,6 @@ function wait_to_get_http_response_body() {
     while :
     do
         printf "."
-        sleep 1
         local json=$(curl "$@" 2> /dev/null)
         if [ "$json" = "$expected" ]; then
             break
@@ -89,6 +85,7 @@ function wait_to_get_http_response_body() {
         if [ $timeout -ge 0 ] && [ $(($SECONDS - $start)) -ge $timeout ]; then
           return 1
         fi
+        sleep 1
     done
     return 0
 }
@@ -141,5 +138,21 @@ function test_equals_or_exit() {
         return 0
     else
         error_and_exit "Test failed. Expected: $expected_value, Got: $TEST_RESULT"
+    fi
+}
+
+function is_linux() {
+    if [[ $(uname) =~ Linux ]]; then
+        echo 1
+    else
+        echo 0
+    fi
+}
+
+function is_macos() {
+    if [[ $(uname) =~ Darwin ]]; then
+        echo 1
+    else
+        echo 0
     fi
 }

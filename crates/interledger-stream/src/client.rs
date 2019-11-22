@@ -322,6 +322,7 @@ where
         self.congestion_controller.reject(amount, &reject);
         self.total_rejects += 1;
         self.consecutive_rejects += 1;
+
         debug!(
             "Prepare {} with amount {} was rejected with code: {} ({} left to send)",
             sequence,

@@ -3,34 +3,23 @@ jobs:
   build:
     docker:
       - image: circleci/rust
-        environment:
-          CARGO_HOME: /home/circleci/.cargo
-    resource_class: medium+
+    resource_class: large
+    environment:
+      CARGO_HOME: /home/circleci/.cargo
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
-            - cargo-cache-1-{{ checksum "Cargo.toml" }}
-            - cargo-cache-1-
       - run:
-          name: Install Cargo Extensions
+          name: Install Dependencies
           command: |
-            # cargo-audit started requiring libcurl3
-            echo "deb http://security.ubuntu.com/ubuntu xenial-security main" | sudo tee -a /etc/apt/sources.list
-            sudo apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 3B4FE6ACC0B21F32
+            # install system dependeicies
             sudo apt-get update
-            sudo apt-get install libcurl3 -y
-            cargo install --quiet cargo-audit || true # cargo-kcov
-            rustup component add rustfmt clippy || true
+            sudo apt-get install -y redis-server redis-tools libssl-dev
+
+            # install rust components
+            cargo install cargo-audit
+            rustup component add clippy
       - run:
-          name: Install Redis
-          command: |
-            sudo apt-get update
-            sudo apt-get install redis-server
-            redis-server --version
-      - run:
-          name: Reduce codegen units
+          name: Reduce codegen Units
           # If we don't include this, the linker runs out of memory when building
           # the project on CI. We don't include this normally though because
           # it should be able to build with more units on other machines
@@ -56,30 +45,279 @@ jobs:
       - run:
           name: Audit Dependencies
           command: cargo audit
-      # - run:
-      #     name: Install kcov
-      #     command: >-
-      #       kcov --version ||
-      #       (sudo apt-get install cmake g++ pkg-config jq libcurl4-openssl-dev libelf-dev libdw-dev binutils-dev libiberty-dev
-      #       && cargo kcov --print-install-kcov-sh | sh)
-      # - run:
-      #     name: Generate Coverage Report
-      #     # Enable sudo to avoid the error: "Can't set personality: Operation not permitted"
-      #     # See discussion in https://github.com/travis-ci/travis-ci/issues/9061
-      #     sudo: required
-      #     command:
-      #       cargo kcov --all --verbose
-      #       # -- --verify
-      #       # --exclude-region="kcov-ignore-start:kcov-ignore-end"
-      #       # --exclude-pattern="$CARGO_HOME,**/tests/**"
-      #       # --exclude-line="^(\)*\}*,*)$"
-      #     environment:
-      #       # Configure the redis tests to use a unix socket instead of TCP
-      #       REDISRS_SERVER_TYPE: unix
-      # - run:
-      #     name: Upload Code Coverage
-      #     command: "bash <(curl -s https://codecov.io/bash)"
-      - save_cache:
-          key: cargo-cache-1-{{ checksum "Cargo.toml" }}-{{ .Branch }}
+  test-md:
+    docker:
+      - image: circleci/rust
+    resource_class: large
+    environment:
+      # setting BASH_ENV to custom file because .bashrc of circleci/rust doesn't work with
+      # non-interactive shell.
+      BASH_ENV: /home/circleci/.bash_circleci
+      CARGO_HOME: /home/circleci/.cargo
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            # install system dependeicies
+            sudo apt-get update
+            sudo apt-get install -y redis-server redis-tools lsof libssl-dev
+
+            # install nvm
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+            export NVM_DIR="/home/circleci/.nvm"
+            source $NVM_DIR/nvm.sh
+            nvm install "v11.15.0"
+
+            # install yarn & components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
+            curl -o- -L https://yarnpkg.com/install.sh | bash
+            export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
+            yarn global add ganache-cli ilp-settlement-xrp conventional-changelog-cli
+
+            # env
+            echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
+            echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
+            echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
+      - run:
+          name: Run run-md Test
+          command: |
+            scripts/run-md-test.sh
+      - store_artifacts:
+          path: /tmp/run-md-test
+          destination: run-md-test
+  update-docker-images:
+    docker:
+      - image: circleci/rust
+    resource_class: medium+
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - run:
+          # builds release profile images to be released
+          # consider parallelizing
+          name: Build Docker Images
+          no_output_timeout: 15m
+          command: |
+            if [ "${CIRCLE_BRANCH}" = "master" ] || [[ "${CIRCLE_TAG}" =~ ^ilp-node- ]]; then
+              export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+              docker/docker-build.sh ilp-node testnet-bundle
+            fi
+
+            if [ "${CIRCLE_BRANCH}" = "master" ] || [[ "${CIRCLE_TAG}" =~ ^ilp-cli- ]]; then
+              export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+              docker/docker-build.sh ilp-cli
+            fi
+          environment:
+            PROFILE: "release"
+      - run:
+          name: Push to DockerHub
+          command: |
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
+            if [ "${CIRCLE_BRANCH}" = "master" ] || [[ "${CIRCLE_TAG}" =~ ^ilp-node- ]]; then
+              DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
+              echo "Pushing docker image of tag: interledgerrs/ilp-node:${DOCKER_IMAGE_TAG}"
+              docker push interledgerrs/ilp-node:${DOCKER_IMAGE_TAG}
+              docker push interledgerrs/testnet-bundle:${DOCKER_IMAGE_TAG}
+            fi
+
+            if [ "${CIRCLE_BRANCH}" = "master" ] || [[ "${CIRCLE_TAG}" =~ ^ilp-cli- ]]; then
+              DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${CIRCLE_TAG})
+              echo "Pushing docker image of tag: interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}"
+              docker push interledgerrs/ilp-cli:${DOCKER_IMAGE_TAG}
+            fi
+  build-release-binary-linux:
+    docker:
+      - image: circleci/rust
+    resource_class: medium+
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - run:
+          # Builds release profile binaries
+          # The artifact is stored in release-builds directory, which is persistent
+          name: Build binary
+          command: |
+            crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
+            printf "Building crate_name: %s, tag: %s\n" "${crate_name}" "${CIRCLE_TAG}"
+            mkdir -p /tmp/release-builds/x86_64-unknown-linux-musl
+            ./.circleci/release/build_musl_binary.sh ${crate_name} /tmp/release-builds/x86_64-unknown-linux-musl/${crate_name}
+      - persist_to_workspace:
+          root: /tmp/release-builds
           paths:
-            - /home/circleci/.cargo
+            - x86_64-unknown-linux-musl/*
+      - store_artifacts:
+          path: /tmp/release-builds/x86_64-unknown-linux-musl
+          destination: release-builds/x86_64-unknown-linux-musl
+  build-release-binary-darwin:
+    macos:
+      xcode: "10.2.0"
+    resource_class: medium+
+    steps:
+      - checkout
+      - run:
+          name: Install Rust
+          command: |
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      - run:
+          # Builds release profile binaries
+          # The artifact is stored in release-builds directory, which is persistent
+          name: Build binary
+          command: |
+            crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
+            printf "Building crate_name: %s, tag: %s\n" "${crate_name}" "${CIRCLE_TAG}"
+            cargo build --release --package "${crate_name}" --bin "${crate_name}" --target x86_64-apple-darwin
+            mkdir -p /tmp/release-builds/x86_64-apple-darwin
+            cp target/x86_64-apple-darwin/release/${crate_name} /tmp/release-builds/x86_64-apple-darwin/${crate_name}
+      - persist_to_workspace:
+          root: /tmp/release-builds
+          paths:
+            - x86_64-apple-darwin/*
+      - store_artifacts:
+          path: /tmp/release-builds/x86_64-apple-darwin
+          destination: release-builds/x86_64-apple-darwin
+  release-binaries:
+    docker:
+      - image: circleci/rust
+    environment:
+      BASH_ENV: /home/circleci/.bash_circleci
+      CARGO_HOME: /home/circleci/.cargo
+    steps:
+      - attach_workspace:
+          at: /tmp/release-builds
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            # install nvm
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+            export NVM_DIR="/home/circleci/.nvm"
+            source $NVM_DIR/nvm.sh
+            nvm install "v11.15.0"
+
+            # install yarn & components (conventional-changelog-cli)
+            curl -o- -L https://yarnpkg.com/install.sh | bash
+            export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
+            yarn global add conventional-changelog-cli
+
+            # env
+            echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
+            echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
+            echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
+      - run:
+          name: Release Binaries
+          command: |
+            mkdir -p logs
+            crate_name=$(./.circleci/release/get_crate_name.sh ${CIRCLE_TAG})
+
+            # linux musl
+            base_dir=/tmp/release-builds/x86_64-unknown-linux-musl
+            pushd ${base_dir}
+            musl_zip="${base_dir}/${crate_name}-x86_64-unknown-linux-musl.zip"
+            musl_tar_gz="${base_dir}/${crate_name}-x86_64-unknown-linux-musl.tar.gz"
+            zip $(basename ${musl_zip}) ${crate_name}
+            tar -zcvf $(basename ${musl_tar_gz}) ${crate_name}
+            popd
+
+            # macOS
+            base_dir=/tmp/release-builds/x86_64-apple-darwin
+            pushd ${base_dir}
+            darwin_zip="${base_dir}/${crate_name}-x86_64-apple-darwin.zip"
+            darwin_tar_gz="${base_dir}/${crate_name}-x86_64-apple-darwin.tar.gz"
+            zip $(basename ${darwin_zip}) ${crate_name}
+            tar -zcvf $(basename ${darwin_tar_gz}) ${crate_name}
+            popd
+
+            # Auto-generate a release note
+            release_note=logs/release_note.txt
+            conventional-changelog -t ${crate_name}- -p angular > ${release_note}
+
+            # tag release
+            ./.circleci/release/github_release.sh \
+              ${CIRCLE_TAG} \
+              ${CIRCLE_TAG} \
+              ${release_note} \
+              ${musl_zip} \
+              ${musl_tar_gz} \
+              ${darwin_zip} \
+              ${darwin_tar_gz}
+
+            # latest release, only if on the master branch
+            # tag the current commit as (crate_name)-latest, and release it
+            if [ "${CIRCLE_TAG}" == "master" ]; then
+              tag_name="${crate_name}-latest"
+              LOG_DIR=logs/${tag_name} ./.circleci/release/github_tag.sh \
+                ${tag_name} \
+                "The latest release of ${crate_name}." \
+                "$(git rev-parse HEAD)" \
+                "commit"
+              ./.circleci/release/github_release.sh \
+                ${tag_name} \
+                ${tag_name} \
+                ${release_note} \
+                ${musl_zip} \
+                ${musl_tar_gz} \
+                ${darwin_zip} \
+                ${darwin_tar_gz}
+            fi
+      - store_artifacts:
+          path: logs
+          destination: release-binaries-logs
+
+workflows:
+  version: 2
+  test-and-release:
+    jobs:
+      - build:
+          filters:
+            tags:
+              only: # we need this to kick builds when tags are given
+                - /.*/
+      - test-md:
+          filters:
+            tags:
+              only: # we need this to kick builds when tags are given
+                - /.*/
+      - update-docker-images: # updates docker images on DockerHub, only if the branch is master or something is tagged
+          filters:
+            branches:
+              only: # master branch will be tagged as `latest` image
+                - master
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build
+      - build-release-binary-linux:
+          filters:
+            branches:
+              ignore: # no branch pushes are built
+                - /.*/
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build
+      - build-release-binary-darwin:
+          filters:
+            branches:
+              ignore: # no branch pushes are built
+                - /.*/
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build
+      - release-binaries:
+          filters:
+            branches:
+              ignore: # no branch pushes are built
+                - /.*/
+            tags:
+              only: # whatever tagged binary crates
+                - /^(ilp-node-|ilp-cli-).*$/
+          requires:
+            - build-release-binary-linux
+            - build-release-binary-darwin
