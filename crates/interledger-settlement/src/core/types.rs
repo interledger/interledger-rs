@@ -83,6 +83,11 @@ pub trait SettlementEngine {
         account_id: String,
         message: Vec<u8>,
     ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+
+    fn get_payment_info(
+        &self,
+        account_id: String,
+    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
 }
 
 // TODO: Since we still haven't finalized all the settlement details, we might

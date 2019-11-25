@@ -14,6 +14,7 @@ use http::StatusCode;
 use hyper::Response;
 use interledger_http::error::default_rejection_handler;
 use warp::{self, reject::Rejection, Filter};
+use crate::core::types::ApiResponse;
 
 /// Returns a Settlement Engine filter which exposes a Warp-compatible
 /// idempotent API which forwards calls to the provided settlement engine which
@@ -66,6 +67,27 @@ where
                 })
             },
         );
+
+    let deposit_endpoint = account_id.and(warp::path("deposit"));
+    let deposit = warp::get2()
+        .and(deposit_endpoint)
+        .and(warp::path::end())
+        .and(with_engine.clone())
+        .and_then(move |id: String, engine: E| {
+            engine.get_payment_info(id)
+            .map_err::<_, Rejection>(move |err| err.into())
+            .and_then(move |message| {
+                let ret = match message {
+                    ApiResponse::Default => Bytes::from("No deposit information found"),
+                    ApiResponse::Data(d) => d,
+                };
+                Ok(Response::builder()
+                    .header("Content-Type", "application/json")
+                    .status(StatusCode::OK)
+                    .body(ret)
+                    .unwrap())
+            })
+        });
 
     // DELETE /accounts/:id (optional idempotency-key header)
     let del_account = warp::delete2()
@@ -184,6 +206,7 @@ where
 
     accounts
         .or(del_account)
+        .or(deposit)
         .or(settlements)
         .or(messages)
         .recover(default_rejection_handler)
@@ -194,7 +217,6 @@ where
 mod tests {
     use super::*;
     use crate::core::idempotency::IdempotentData;
-    use crate::core::types::ApiResponse;
     use bytes::Bytes;
     use futures::future::ok;
     use http::StatusCode;
@@ -289,6 +311,13 @@ mod tests {
         }
 
         fn delete_account(
+            &self,
+            _account_id: String,
+        ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
+            Box::new(ok(ApiResponse::Default))
+        }
+
+        fn get_payment_info(
             &self,
             _account_id: String,
         ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
