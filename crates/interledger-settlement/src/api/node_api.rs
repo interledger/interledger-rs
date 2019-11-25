@@ -13,13 +13,13 @@ use crate::{
 use bytes::buf::FromBuf;
 use bytes::Bytes;
 use futures::{
-    future::{err, result, Either},
+    future::{err, result},
     Future,
 };
 use hyper::{Response, StatusCode};
 use interledger_http::error::*;
 use interledger_packet::PrepareBuilder;
-use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
+use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService, Username};
 use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -96,46 +96,49 @@ where
 
     // GET /accounts/:account_id/deposit
     // This will return a json of the address that the client needs to send money to
-    let deposit_endpoint = account_id_filter.and(warp::path("deposit"));
+    let account_username_to_id = warp::path("accounts")
+        .and(warp::path::param2::<Username>())
+        .and(with_store.clone())
+        .and_then(|username: Username, store: S| {
+            store
+                .get_account_id_from_username(&username)
+                .map_err::<_, Rejection>(move |_| {
+                    // TODO differentiate between server error and not found
+                    error!("Error getting account id from username: {}", username);
+                    ApiError::account_not_found().into()
+                })
+        })
+        .boxed();
+    let deposit_endpoint = account_username_to_id.and(warp::path("deposit"));
     let deposit = warp::get2()
         .and(deposit_endpoint)
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(move |account_id: String, store: S| {
+        .and_then(move |account_id: A::AccountId, store: S| {
             let client = SettlementClient::new();
             // Convert to the desired data types
-            let account_id = match A::AccountId::from_str(&account_id) {
-                Ok(a) => a,
-                Err(_) => {
-                    let error_msg = format!("Unable to parse account id: {}", account_id);
-                    error!("{}", error_msg);
-                    return Either::A(err(ApiError::invalid_account_id(Some(&account_id)).into()));
-                }
-            };
-            Either::B(
-                store
-                    .get_accounts(vec![account_id])
-                    .map_err(move |_err| {
-                        let err = ApiError::account_not_found()
-                            .detail(format!("Account {} was not found", account_id));
-                        error!("{}", err);
-                        err.into()
-                    })
-                    .and_then(move |accounts| {
-                        let account = &accounts[0];
-                        client
-                            .get_payment_info(account.clone())
-                            .map_err::<_, Rejection>(move |_| {
-                                ApiError::internal_server_error().into()
-                            })
-                            .and_then(move |message| {
-                                Ok(Response::builder()
-                                    .status(StatusCode::OK)
-                                    .body(message.to_string())
-                                    .unwrap())
-                            })
-                    }),
-            )
+            store
+                .get_accounts(vec![account_id])
+                .map_err(move |_err| {
+                    let err = ApiError::account_not_found()
+                        .detail(format!("Account {} was not found", account_id));
+                    error!("{}", err);
+                    err.into()
+                })
+                .and_then(move |accounts| {
+                    let account = &accounts[0];
+                    client
+                        .get_payment_info(account.clone())
+                        .map_err::<_, Rejection>(move |_| {
+                            ApiError::internal_server_error().into()
+                        })
+                        .and_then(move |message| {
+                            Ok(Response::builder()
+                                .status(StatusCode::OK)
+                                .body(message.to_string())
+                                .unwrap())
+                        })
+                })
         });
 
     // POST /accounts/:account_id/withdrawals (optional idempotency-key header)
@@ -578,26 +581,25 @@ mod tests {
         use super::*;
         use serde_json::json;
 
-        fn deposit_call<F>(api: &F, id: &str) -> Response<Bytes>
+        fn deposit_call<F>(api: &F, username: &str) -> Response<Bytes>
         where
             F: warp::Filter + 'static,
             F::Extract: warp::Reply,
         {
             warp::test::request()
                 .method("GET")
-                .path(&format!("/accounts/{}/deposit", id))
+                .path(&format!("/accounts/{}/deposit", username))
                 .reply(api)
         }
 
         #[test]
         fn deposit_ok() {
-            let id = TEST_ACCOUNT_0.clone().id.to_string();
             let store = test_store(false, true);
             let api = test_api(store.clone(), false);
             let m = mock_deposit().create();
 
             // the engine responds with the payment details
-            let response = deposit_call(&api, &id);
+            let response = deposit_call(&api, "alice");
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(
                 response.body(),

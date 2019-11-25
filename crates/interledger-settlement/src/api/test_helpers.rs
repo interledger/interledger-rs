@@ -200,7 +200,7 @@ impl AccountStore for TestStore {
         &self,
         _username: &Username,
     ) -> Box<dyn Future<Item = u64, Error = ()> + Send> {
-        Box::new(ok(1))
+        Box::new(ok(0))
     }
 }
 
