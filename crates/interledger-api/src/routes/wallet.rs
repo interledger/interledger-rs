@@ -14,9 +14,14 @@ use interledger_settlement::{
     },
 };
 use log::error;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use warp::{self, Filter, Rejection};
+
+#[derive(Serialize, Deserialize, Clone)]
+struct WithdrawalRequest {
+    amount: u64,
+}
 
 pub fn wallet_api<S, A>(
     admin_api_token: String,
@@ -145,13 +150,13 @@ where
             move |account_id: A::AccountId,
                   idempotency_key: Option<String>,
                   // This has to be u64 sinc we're going to try subtracting it from our balance in the connector
-                  quantity: u64,
+                  quantity: WithdrawalRequest,
                   store: S| {
-                let input = format!("{}{:?}", account_id, quantity);
+                let input = format!("{}{:?}", account_id, quantity.amount);
                 let input_hash = get_hash_of(input.as_ref());
 
                 let store_clone = store.clone();
-                let withdraw_fn = move || do_withdraw(store_clone, account_id, quantity);
+                let withdraw_fn = move || do_withdraw(store_clone, account_id, quantity.amount);
                 make_idempotent_call(
                     store,
                     withdraw_fn,
@@ -208,7 +213,7 @@ where
             // TODO: is there any race condition where this future completes and executes the request on the engine simultaneously with another call?
             store_clone.withdraw_funds(account_id, amount)
             .map_err(move |_err| {
-                let error_msg = format!("Error reducing account's balance: {}", account_id);
+                let error_msg = format!("Error reducing account's balance by {}: {}", amount, account_id);
                 error!("{}", error_msg);
                 let error_type = ApiErrorType {
                     r#type: &ProblemType::Default,
@@ -284,7 +289,7 @@ mod tests {
                 .method("POST")
                 .header("Authorization", "Bearer token")
                 .path(&format!("/accounts/{}/withdrawals", username))
-                .body(amount.to_string());
+                .json(&WithdrawalRequest { amount });
 
             if let Some(idempotency_key) = idempotency_key {
                 response = response.header("Idempotency-Key", idempotency_key);

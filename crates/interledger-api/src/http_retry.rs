@@ -2,9 +2,9 @@
 use futures::future::Future;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
 use http::StatusCode;
+use interledger_settlement::core::types::CreateAccount;
 use log::trace;
 use reqwest::r#async::Client as HttpClient;
-use serde_json::json;
 use std::{default::Default, fmt::Display, time::Duration};
 use url::Url;
 
@@ -39,10 +39,14 @@ impl Client {
             .path_segments_mut()
             .expect("Invalid settlement engine URL")
             .push(ACCOUNTS_ENDPOINT);
+        let req = CreateAccount {
+            id: id.to_string(),
+            extra,
+        };
         trace!(
-            "Sending account {} creation request to settlement engine: {:?}",
-            id,
-            se_url.clone()
+            "Sending account creation request to settlement engine at URL {:?}: {:?}",
+            se_url.clone(),
+            req,
         );
 
         // The actual HTTP request which gets made to the engine
@@ -50,7 +54,7 @@ impl Client {
         let create_settlement_engine_account = move || {
             client
                 .post(se_url.as_ref())
-                .json(&json!({ "id": id.to_string(), "extra": extra }))
+                .json(&req)
                 .send()
                 .and_then(move |response| {
                     // If the account is not found on the peer's connector, the
