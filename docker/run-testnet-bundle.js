@@ -163,8 +163,7 @@ function runXrpSettlementEngine() {
 
 function runEthSettlementEngine({ ethKey, ethUrl }) {
     console.log('Starting ETH settlement engine...')
-    const eth = spawn('interledger-settlement-engines', [
-        'ethereum-ledger',
+    const eth = spawn('ilp-settlement-ethereum', [
         '--settlement_api_bind_address=127.0.0.1:3002',
         `--ethereum_url=${ethUrl}`,
         `--private_key=${ethKey}`,
@@ -174,7 +173,7 @@ function runEthSettlementEngine({ ethKey, ethUrl }) {
         '--chain_id=4'
     ], {
         env: {
-            'RUST_LOG': process.env.RUST_LOG || 'interledger=debug',
+            'RUST_LOG': process.env.RUST_LOG || 'interledger=debug,ilp_settlement_ethereum=debug',
             'RUST_BACKTRACE': process.env.RUST_BACKTRACE || '1'
         },
         stdio: 'inherit'
