@@ -1,7 +1,6 @@
 *       @emschwartz
 
 # Settlement
-/crates/interledger-settlement-engines @gakonst @emschwartz
 /crates/interledger-settlement @gakonst @emschwartz
 
 # Examples and Docs
