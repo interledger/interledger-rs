@@ -36,7 +36,7 @@ To run the Interledger.rs components by themselves (rather than the `testnet-bun
 ```bash #
 docker pull interledgerrs/node
 docker pull interledgerrs/ilp-cli
-docker pull interledgerrs/settlement-engines
+docker pull interledgerrs/ilp-settlement-ethereum
 ```
 
 #### Run
@@ -48,8 +48,8 @@ docker run -it interledgerrs/node
 # This is a simple CLI for interacting with the node's HTTP API
 docker run -it --rm interledgerrs/ilp-cli
 
-# This includes the Settlement Engines written in Rust
-docker run -it interledgerrs/settlement-engines
+# This includes the Ethereum Settlement Engines written in Rust
+docker run -it interledgerrs/ilp-settlement-ethereum
 ```
 
 ### Building From Source

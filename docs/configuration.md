@@ -1,6 +1,6 @@
 ## How to Specify Configurations
 
-Interledger.rs binaries such as `ilp-node` and `interledger-settlement-engines` accept configuration options in the following ways:
+Interledger.rs binaries such as `ilp-node` and `ilp-settlement-ethereum` accept configuration options in the following ways:
 
 ### Environment variables
 

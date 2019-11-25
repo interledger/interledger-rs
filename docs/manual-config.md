@@ -147,10 +147,14 @@ Note that we have to spin up a Redis which the settlement engine is going to con
 To spin up a Ethereum settlement engine,
 
 ```bash
+# This should be done outside of the interledger-rs directory, otherwise it will cause an error.
+git clone https://github.com/interledger-rs/settlement-engines
+cd settlement-engines
+
 mkdir -p logs
 redis-server --port 6380 &> logs/redis_se.log &
 
-cargo run --all-features --bin interledger-settlement-engines -- ethereum-ledger \
+cargo run --bin ilp-settlement-ethereum -- \
 --private_key "${SE_ETH_SECRET}" \
 --chain_id 4 \
 --confirmations 0 \
