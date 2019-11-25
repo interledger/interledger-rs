@@ -32,7 +32,7 @@ impl Client {
         &self,
         engine_url: Url,
         id: T,
-        extra: Option<Vec<u8>>,
+        extra: Option<String>,
     ) -> impl Future<Item = StatusCode, Error = reqwest::Error> {
         let mut se_url = engine_url.clone();
         se_url

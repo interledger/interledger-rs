@@ -144,7 +144,7 @@ fn accounts_create<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("settlement_engine_url")
                 .long("settlement-engine-url")
                 .takes_value(true),
-            Arg::with_name("settlement-extra")
+            Arg::with_name("settlement_extra")
                 .long("settlement-extra")
                 .takes_value(true),
         ])
@@ -218,7 +218,7 @@ fn accounts_update<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("settlement_engine_url")
                 .long("settlement-engine-url")
                 .takes_value(true),
-            Arg::with_name("settlement-extra")
+            Arg::with_name("settlement_extra")
                 .long("settlement-extra")
                 .takes_value(true),
         ])
