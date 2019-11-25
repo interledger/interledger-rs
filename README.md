@@ -57,6 +57,7 @@ docker run -it interledgerrs/settlement-engines
 #### Prerequisites
 
 - Git
+- [Redis](https://redis.io/)
 - [Rust](https://www.rust-lang.org/tools/install) - latest stable version
 
 #### Install
@@ -83,6 +84,22 @@ cargo run -p ilp-cli -- # Put CLI args after the "--"
 Append the `--help` flag to see available options.
 
 See [configuration](./docs/configuration.md) for more details on how the node is configured.
+
+#### Configuration of Redis
+
+We have some account settings such as `amount_per_minute_limit` or `packets_per_minute_limit`. In order to enable these options, you need to load the [redis-cell](https://github.com/brandur/redis-cell) module as follows. *You don't need to load this module unless you use the rate-limit options.*
+
+```
+# in your redis config file
+# libredis_cell.so file will be found in crates/interledger-store/external
+loadmodule /path/to/modules/libredis_cell.so
+```
+
+or you can specify an argument when you start up the redis instance as follows.
+
+```
+redis-server --loadmodule /path/to/modules/libredis_cell.so
+```
 
 ## Examples
 
