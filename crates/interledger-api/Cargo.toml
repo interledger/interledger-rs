@@ -31,6 +31,12 @@ reqwest = { version = "0.9.22", default-features = false, features = ["default-t
 url = { version = "2.1.0", default-features = false, features = ["serde"] }
 warp = { version = "0.1.20", default-features = false }
 secrecy = { version = "0.5.0", default-features = false, features = ["serde"] }
+hyper = "0.12.35"
+
+[dev-dependencies]
+mockito = "0.22.0"
+lazy_static = "1.4.0"
+parking_lot = "0.9.0"
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }

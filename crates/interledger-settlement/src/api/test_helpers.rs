@@ -19,11 +19,8 @@ use interledger_service::{
 };
 use mockito::mock;
 use num_bigint::BigUint;
-use serde_json::json;
 
-use super::fixtures::{
-    BODY, DEPOSIT_API, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0,
-};
+use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -302,15 +299,6 @@ impl TestStore {
         }
     }
 
-    pub fn set_balance(&self, account_id: u64, balance: u64) {
-        let mut accounts = self.accounts.write();
-        for mut a in &mut *accounts {
-            if a.id() == account_id {
-                a.balance = balance as i64;
-            }
-        }
-    }
-
     pub fn get_balance(&self, account_id: u64) -> i64 {
         let accounts = &*self.accounts.read();
         for a in accounts {
@@ -351,13 +339,6 @@ pub fn mock_message(status_code: usize) -> mockito::Mock {
         .match_header("Content-Type", "application/octet-stream")
         .with_status(status_code)
         .with_body(BODY)
-}
-
-pub fn mock_deposit() -> mockito::Mock {
-    mock("GET", DEPOSIT_API.clone())
-        .with_status(200)
-        // This can be anything by the engine as long as the wallet can interpret it
-        .with_body(json!({"address": "some_address", "currency": "ETH"}).to_string())
 }
 
 // Futures helper taken from the store_helpers in interledger-store-redis.

@@ -7,6 +7,7 @@ use super::{
     idempotency::{make_idempotent_call, IdempotentStore},
     types::{CreateAccount, Quantity, SettlementEngine},
 };
+use crate::core::types::ApiResponse;
 use bytes::buf::FromBuf;
 use bytes::Bytes;
 use futures::Future;
@@ -14,7 +15,6 @@ use http::StatusCode;
 use hyper::Response;
 use interledger_http::error::default_rejection_handler;
 use warp::{self, reject::Rejection, Filter};
-use crate::core::types::ApiResponse;
 
 /// Returns a Settlement Engine filter which exposes a Warp-compatible
 /// idempotent API which forwards calls to the provided settlement engine which
@@ -74,19 +74,20 @@ where
         .and(warp::path::end())
         .and(with_engine.clone())
         .and_then(move |id: String, engine: E| {
-            engine.get_payment_info(id)
-            .map_err::<_, Rejection>(move |err| err.into())
-            .and_then(move |message| {
-                let ret = match message {
-                    ApiResponse::Default => Bytes::from("No deposit information found"),
-                    ApiResponse::Data(d) => d,
-                };
-                Ok(Response::builder()
-                    .header("Content-Type", "application/json")
-                    .status(StatusCode::OK)
-                    .body(ret)
-                    .unwrap())
-            })
+            engine
+                .get_payment_info(id)
+                .map_err::<_, Rejection>(move |err| err.into())
+                .and_then(move |message| {
+                    let ret = match message {
+                        ApiResponse::Default => Bytes::from("No deposit information found"),
+                        ApiResponse::Data(d) => d,
+                    };
+                    Ok(Response::builder()
+                        .header("Content-Type", "application/json")
+                        .status(StatusCode::OK)
+                        .body(ret)
+                        .unwrap())
+                })
         });
 
     // DELETE /accounts/:id (optional idempotency-key header)

@@ -5,7 +5,10 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
+use interledger_settlement::core::{
+    idempotency::IdempotentStore,
+    types::{SettlementAccount, SettlementStore},
+};
 use interledger_stream::StreamNotificationsStore;
 use serde::{de, Deserialize, Serialize};
 use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
@@ -225,6 +228,7 @@ where
         + SettlementStore<Account = A>
         + StreamNotificationsStore<Account = A>
         + RouterStore
+        + IdempotentStore
         + ExchangeRateStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
@@ -280,10 +284,11 @@ where
             self.store.clone(),
         )
         .or(routes::node_settings_api(
-            self.admin_api_token,
+            self.admin_api_token.clone(),
             self.node_version,
-            self.store,
+            self.store.clone(),
         ))
+        .or(routes::wallet_api(self.admin_api_token, self.store))
         .boxed()
     }
 

@@ -1,13 +1,10 @@
-use crate::{
-    api::SettlementClient,
-    core::{
-        get_hash_of,
-        idempotency::*,
-        scale_with_precision_loss,
-        types::{
-            ApiResponse, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
-            CONVERSION_ERROR_TYPE, NO_ENGINE_CONFIGURED_ERROR_TYPE, SE_ILP_ADDRESS,
-        },
+use crate::core::{
+    get_hash_of,
+    idempotency::*,
+    scale_with_precision_loss,
+    types::{
+        ApiResponse, LeftoversStore, Quantity, SettlementAccount, SettlementStore,
+        CONVERSION_ERROR_TYPE, NO_ENGINE_CONFIGURED_ERROR_TYPE, SE_ILP_ADDRESS,
     },
 };
 use bytes::buf::FromBuf;
@@ -19,7 +16,7 @@ use futures::{
 use hyper::{Response, StatusCode};
 use interledger_http::error::*;
 use interledger_packet::PrepareBuilder;
-use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService, Username};
+use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -94,91 +91,6 @@ where
             },
         );
 
-    // GET /accounts/:account_id/deposit
-    // This will return a json of the address that the client needs to send money to
-    let account_username_to_id = warp::path("accounts")
-        .and(warp::path::param2::<Username>())
-        .and(with_store.clone())
-        .and_then(|username: Username, store: S| {
-            store
-                .get_account_id_from_username(&username)
-                .map_err::<_, Rejection>(move |_| {
-                    // TODO differentiate between server error and not found
-                    error!("Error getting account id from username: {}", username);
-                    ApiError::account_not_found().into()
-                })
-        })
-        .boxed();
-    let deposit_endpoint = account_username_to_id.and(warp::path("deposit"));
-    let deposit = warp::get2()
-        .and(deposit_endpoint)
-        .and(warp::path::end())
-        .and(with_store.clone())
-        .and_then(move |account_id: A::AccountId, store: S| {
-            let client = SettlementClient::new();
-            // Convert to the desired data types
-            store
-                .get_accounts(vec![account_id])
-                .map_err(move |_err| {
-                    let err = ApiError::account_not_found()
-                        .detail(format!("Account {} was not found", account_id));
-                    error!("{}", err);
-                    err.into()
-                })
-                .and_then(move |accounts| {
-                    let account = &accounts[0];
-                    client
-                        .get_payment_info(account.clone())
-                        .map_err::<_, Rejection>(move |_| {
-                            ApiError::internal_server_error().into()
-                        })
-                        .and_then(move |message| {
-                            Ok(Response::builder()
-                                .status(StatusCode::OK)
-                                .body(message.to_string())
-                                .unwrap())
-                        })
-                })
-        });
-
-    // POST /accounts/:account_id/withdrawals (optional idempotency-key header)
-    // This will withdraw funds from the node. e.g if you have 50 units, you are allowed to execute a 50 unit withdrawal via the engine: the body should contain the withdrawal information as a bytes array, whcih the engine will interpret
-    let withdrawals_endpoint = account_id_filter.and(warp::path("withdrawals"));
-    let withdrawals = warp::post2()
-        .and(withdrawals_endpoint)
-        .and(warp::path::end())
-        .and(idempotency)
-        .and(warp::body::json())
-        .and(with_store.clone())
-        .and_then(
-            move |account_id: String,
-                  idempotency_key: Option<String>,
-                  // This has to be u64 sinc we're going to try subtracting it from our balance in the connector
-                  quantity: u64,
-                  store: S| {
-                let input = format!("{}{:?}", account_id, quantity);
-                let input_hash = get_hash_of(input.as_ref());
-
-                let store_clone = store.clone();
-                let withdraw_fn = move || do_withdraw(store_clone, account_id, quantity);
-                make_idempotent_call(
-                    store,
-                    withdraw_fn,
-                    input_hash,
-                    idempotency_key,
-                    StatusCode::CREATED,
-                    "WITHDREW".into(),
-                )
-                .map_err::<_, Rejection>(move |err| err.into())
-                .and_then(move |(status_code, message)| {
-                    Ok(Response::builder()
-                        .status(status_code)
-                        .body(message)
-                        .unwrap())
-                })
-            },
-        );
-
     // POST /accounts/:account_id/messages (optional idempotency-key header)
     // Body is a Vec<u8> object
     let with_outgoing_handler = warp::any().map(move || outgoing_handler.clone()).boxed();
@@ -228,87 +140,8 @@ where
 
     settlements
         .or(messages)
-        .or(deposit)
-        .or(withdrawals)
         .recover(default_rejection_handler)
         .boxed()
-}
-
-fn do_withdraw<S, A>(
-    store: S,
-    account_id: String,
-    // assume this is in the account's scale
-    amount: u64,
-) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>
-where
-    S: LeftoversStore<AccountId = <A as Account>::AccountId, AssetType = BigUint>
-        + SettlementStore<Account = A>
-        + AccountStore<Account = A>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-    A: SettlementAccount + Account + Send + Sync + 'static,
-{
-    let store_clone = store.clone();
-    // Convert to the desired data types
-    let account_id = match A::AccountId::from_str(&account_id) {
-        Ok(a) => a,
-        Err(_) => {
-            let error_msg = format!("Unable to parse account id: {}", account_id);
-            error!("{}", error_msg);
-            return Box::new(err(ApiError::invalid_account_id(Some(&account_id))));
-        }
-    };
-
-    // TODO: currently we do fetch account_id -> check if has engine details -> reduce its balance -> if successful send message to engine, we should be able to reduce these db calls, even though they "should" be infrequent
-    Box::new(
-        store.get_accounts(vec![account_id])
-        .map_err(move |_err| {
-            let err = ApiError::account_not_found().detail(format!("Account {} was not found", account_id));
-            error!("{}", err);
-            err
-        })
-        .and_then(move |accounts| {
-            let account = &accounts[0];
-            if account.settlement_engine_details().is_some() {
-                Ok(account.clone())
-            } else {
-                let error_msg = format!("Account {} does not have settlement engine details configured. Will not attempt to withdraw", account.id());
-                error!("{}", error_msg);
-                Err(ApiError::from_api_error_type(&NO_ENGINE_CONFIGURED_ERROR_TYPE).detail(error_msg))
-            }
-        })
-        .and_then(move |account| {
-            // TODO: is there any race condition where this future completes and executes the request on the engine simultaneously with another call?
-            store_clone.withdraw_funds(account_id, amount)
-            .map_err(move |_err| {
-                let error_msg = format!("Error reducing account's balance: {}", account_id);
-                error!("{}", error_msg);
-                let error_type = ApiErrorType {
-                    r#type: &ProblemType::Default,
-                    status: StatusCode::INTERNAL_SERVER_ERROR,
-                    title: "Load uncredited settlement amount error", 
-                };
-                ApiError::from_api_error_type(&error_type).detail(error_msg)
-            })
-            .and_then(move |_| {
-                let client = SettlementClient::new();
-                client.send_settlement(account.clone(), amount)
-                .map_err(move |_err| {
-                    let error_msg = format!("Error executing withdrawal from engine for account: {}", account_id);
-                    error!("{}", error_msg);
-                    let error_type = ApiErrorType {
-                        r#type: &ProblemType::Default,
-                        status: StatusCode::INTERNAL_SERVER_ERROR,
-                        title: "Execute withdrawal error", 
-                    };
-                    ApiError::from_api_error_type(&error_type).detail(error_msg)
-                })
-                .and_then(move |_| Ok(ApiResponse::Default))
-            })
-        })
-    )
 }
 
 fn do_receive_settlement<S, A>(
@@ -532,81 +365,6 @@ mod tests {
             scale_with_precision_loss(BigUint::from(1u32), 9, 6),
             (BigUint::from(1000u32), BigUint::from(0u32))
         );
-    }
-
-    // Withdrawal Tests
-    mod withdrawals_tests {
-        use super::*;
-
-        fn withdrawal_call<F>(
-            api: &F,
-            id: &str,
-            amount: u64,
-            idempotency_key: Option<String>,
-        ) -> Response<Bytes>
-        where
-            F: warp::Filter + 'static,
-            F::Extract: warp::Reply,
-        {
-            let mut response = warp::test::request()
-                .method("POST")
-                .path(&format!("/accounts/{}/withdrawals", id))
-                .body(amount.to_string());
-
-            if let Some(idempotency_key) = idempotency_key {
-                response = response.header("Idempotency-Key", idempotency_key);
-            }
-            response.reply(api)
-        }
-
-        #[test]
-        fn withdrawal_ok() {
-            let id = TEST_ACCOUNT_0.clone().id.to_string();
-            let store = test_store(false, true);
-            let api = test_api(store.clone(), false);
-            let m = mock_settlement(200).create();
-
-            // will try to reduce the account's balance by 100
-            // should fail
-            store.set_balance(TEST_ACCOUNT_0.id, 200);
-            let response = withdrawal_call(&api, &id, 100, None);
-            assert_eq!(response.status(), StatusCode::CREATED);
-            assert_eq!(response.body(), "WITHDREW");
-            m.assert();
-        }
-    }
-
-    // Deposit Tests
-    mod deposit_tests {
-        use super::*;
-        use serde_json::json;
-
-        fn deposit_call<F>(api: &F, username: &str) -> Response<Bytes>
-        where
-            F: warp::Filter + 'static,
-            F::Extract: warp::Reply,
-        {
-            warp::test::request()
-                .method("GET")
-                .path(&format!("/accounts/{}/deposit", username))
-                .reply(api)
-        }
-
-        #[test]
-        fn deposit_ok() {
-            let store = test_store(false, true);
-            let api = test_api(store.clone(), false);
-            let m = mock_deposit().create();
-
-            // the engine responds with the payment details
-            let response = deposit_call(&api, "alice");
-            assert_eq!(response.status(), StatusCode::OK);
-            assert_eq!(
-                response.body(),
-                &Bytes::from(json!({"address": "some_address", "currency": "ETH"}).to_string())
-            );
-            m.assert();
-        }
     }
 
     // Settlement Tests
