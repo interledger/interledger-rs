@@ -609,7 +609,7 @@ where
                         if status_code.is_success() {
                             trace!("Account {} created on the SE", id);
                         } else {
-                            error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                            error!("Error creating account {} on the engine. Settlement engine responded with HTTP code: {}", id, status_code);
                         }
                         Ok(())
                     })

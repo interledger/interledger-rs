@@ -35,7 +35,7 @@ pub struct CreateAccount {
     pub id: String,
     /// Optional additional data provided to instantiate an account.
     /// This potentially is the account's address on the specified ledger
-    pub extra: Option<Vec<u8>>,
+    pub extra: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
