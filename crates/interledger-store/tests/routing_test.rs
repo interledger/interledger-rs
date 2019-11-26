@@ -6,7 +6,7 @@ use interledger_ccp::RouteManagerStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountId, AddressStore, Username};
-use interledger_store::{account::Account, redis::RedisAccountId};
+use interledger_store::account::Account;
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;
@@ -65,9 +65,9 @@ fn polls_for_route_updates() {
                                         redis::cmd("HMSET")
                                             .arg("routes:current")
                                             .arg("example.alice")
-                                            .arg(RedisAccountId(bob_id))
+                                            .arg(bob_id.to_string())
                                             .arg("example.charlie")
-                                            .arg(RedisAccountId(alice_id))
+                                            .arg(alice_id.to_string())
                                             .query_async(connection)
                                             .and_then(
                                                 |(_connection, _result): (_, redis::Value)| Ok(()),
@@ -198,15 +198,13 @@ fn saves_routes_to_db() {
                         .arg("routes:current")
                         .query_async(connection)
                         .map_err(|err| panic!(err))
-                        .and_then(
-                            move |(_conn, routes): (_, HashMap<String, RedisAccountId>)| {
-                                assert_eq!(routes["example.a"].0, account0_id);
-                                assert_eq!(routes["example.b"].0, account0_id);
-                                assert_eq!(routes["example.c"].0, account1_id);
-                                assert_eq!(routes.len(), 3);
-                                Ok(())
-                            },
-                        )
+                        .and_then(move |(_conn, routes): (_, HashMap<String, String>)| {
+                            assert_eq!(routes["example.a"], account0_id.to_string());
+                            assert_eq!(routes["example.b"], account0_id.to_string());
+                            assert_eq!(routes["example.c"], account1_id.to_string());
+                            assert_eq!(routes.len(), 3);
+                            Ok(())
+                        })
                 })
             })
             .and_then(move |_| {
@@ -274,10 +272,10 @@ fn adds_static_routes_to_redis() {
                         .arg("routes:static")
                         .query_async(connection)
                         .map_err(|err| panic!(err))
-                        .and_then(move |(_, routes): (_, HashMap<String, RedisAccountId>)| {
-                            assert_eq!(routes["example.a"].0, accs[0].id());
-                            assert_eq!(routes["example.b"].0, accs[0].id());
-                            assert_eq!(routes["example.c"].0, accs[1].id());
+                        .and_then(move |(_, routes): (_, HashMap<String, String>)| {
+                            assert_eq!(routes["example.a"], accs[0].id().to_string());
+                            assert_eq!(routes["example.b"], accs[0].id().to_string());
+                            assert_eq!(routes["example.c"], accs[1].id().to_string());
                             assert_eq!(routes.len(), 3);
                             let _ = context;
                             Ok(())
