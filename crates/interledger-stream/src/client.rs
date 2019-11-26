@@ -17,8 +17,12 @@ use std::{
     cell::Cell,
     cmp::min,
     str,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
+
+// Maximum time we should wait since last fulfill before we error out to avoid
+// getting into an infinite loop of sending packets and effectively DoSing ourselves
+const MAX_TIME_SINCE_LAST_FULFILL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct StreamDelivery {
@@ -95,6 +99,7 @@ where
                 sequence: 1,
                 rejected_packets: 0,
                 error: None,
+                last_fulfill_time: Instant::now(),
             }
         })
 }
@@ -114,6 +119,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     sequence: u64,
     rejected_packets: u64,
     error: Option<Error>,
+    last_fulfill_time: Instant,
 }
 
 struct PendingRequest {
@@ -136,10 +142,9 @@ where
     A: Account,
 {
     fn try_send_money(&mut self) -> Result<bool, Error> {
-        // Fire off requests until the congestion controller tells us to stop or we've sent the total amount
+        // Fire off requests until the congestion controller tells us to stop or we've sent the total amount or maximum time since last fulfill has elapsed
         let mut sent_packets = false;
         loop {
-            // Determine the amount to send
             let amount = min(
                 self.source_amount,
                 self.congestion_controller.get_max_amount(),
@@ -279,6 +284,7 @@ where
         // TODO should we check the fulfillment and expiry or can we assume the plugin does that?
         self.congestion_controller.fulfill(amount);
         self.should_send_source_account = false;
+        self.last_fulfill_time = Instant::now();
 
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
@@ -385,6 +391,12 @@ where
         // TODO maybe don't have loops here and in try_send_money
         loop {
             self.poll_pending_requests()?;
+            if self.last_fulfill_time.elapsed() >= MAX_TIME_SINCE_LAST_FULFILL {
+                return Err(Error::TimeoutError(format!(
+                    "Time since last fulfill exceeded the maximum time limit of {:?} secs",
+                    self.last_fulfill_time.elapsed().as_secs()
+                )));
+            }
 
             if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
                 if self.state == SendMoneyFutureState::SendMoney {
