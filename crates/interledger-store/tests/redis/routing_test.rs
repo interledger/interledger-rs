@@ -1,12 +1,11 @@
-mod common;
-
-use common::*;
+use super::{fixtures::*, redis_helpers::*, store_helpers::*};
+use futures::future::Future;
 use interledger_api::{AccountDetails, NodeStore};
 use interledger_ccp::RouteManagerStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountId, AddressStore, Username};
-use interledger_store::account::Account;
+use interledger_store::{account::Account, redis::RedisStoreBuilder};
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;

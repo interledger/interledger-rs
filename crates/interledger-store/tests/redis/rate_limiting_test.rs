@@ -1,6 +1,5 @@
-mod common;
-use common::*;
-use futures::future::join_all;
+use super::{fixtures::*, store_helpers::*};
+use futures::future::{join_all, Future};
 use interledger_service::{AccountId, AddressStore};
 use interledger_service_util::{RateLimitError, RateLimitStore};
 use interledger_store::account::Account;
