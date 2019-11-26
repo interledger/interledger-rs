@@ -282,7 +282,7 @@ impl RedisStoreBuilder {
 /// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
-    pub ilp_address: Arc<RwLock<Address>>,
+    ilp_address: Arc<RwLock<Address>>,
     connection: RedisReconnect,
     subscriptions: Arc<RwLock<HashMap<AccountId, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
@@ -298,7 +298,7 @@ pub struct RedisStore {
 }
 
 impl RedisStore {
-    pub fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
+    fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
         let mut pipe = redis::pipe();
         pipe.smembers("accounts");
         pipe.query_async(self.connection.clone())
@@ -2031,14 +2031,7 @@ fn update_routes(
 // As a result, we wrap AccountId in a local data type, and implement the necessary
 // traits for that.
 #[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
-pub struct RedisAccountId(pub AccountId);
-
-impl RedisAccountId {
-    pub fn new() -> Self {
-        let id = AccountId::new();
-        RedisAccountId(id)
-    }
-}
+struct RedisAccountId(AccountId);
 
 impl FromStr for RedisAccountId {
     type Err = ParseError;

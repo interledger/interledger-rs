@@ -45,7 +45,7 @@ fn picks_up_parent_during_initialization() {
                                 // the store's ilp address is the store's
                                 // username appended to the parent's address
                                 assert_eq!(
-                                    *store.ilp_address.read(),
+                                    store.get_ilp_address(),
                                     Address::from_str("example.bob.node").unwrap()
                                 );
                                 let _ = context;
