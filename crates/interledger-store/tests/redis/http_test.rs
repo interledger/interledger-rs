@@ -1,6 +1,5 @@
-mod common;
-
-use common::*;
+use super::store_helpers::*;
+use futures::future::Future;
 use interledger_btp::BtpAccount;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;

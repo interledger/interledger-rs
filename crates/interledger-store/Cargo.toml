@@ -15,6 +15,11 @@ store-redis = ["redis", "uuid"]
 name = "interledger_store"
 path = "src/lib.rs"
 
+[[test]]
+name = "redis_tests"
+path = "tests/redis/redis_tests.rs"
+required-features = ["store-redis"]
+
 [dependencies]
 bytes = { version = "0.4.12", default-features = false }
 futures = { version = "0.1.29", default-features = false }

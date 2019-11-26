@@ -1,7 +1,5 @@
-mod common;
-
-use common::*;
-use futures::future::{self, Either};
+use super::{fixtures::*, store_helpers::*};
+use futures::future::{self, Either, Future};
 use interledger_api::NodeStore;
 use interledger_packet::Address;
 use interledger_service::{AccountStore, Username};

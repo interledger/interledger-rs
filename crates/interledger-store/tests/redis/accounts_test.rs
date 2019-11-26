@@ -1,8 +1,5 @@
-mod common;
-
-use common::*;
-
-use futures::future::{result, Either};
+use super::{fixtures::*, redis_helpers::*, store_helpers::*};
+use futures::future::{result, Either, Future};
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::{BtpAccount, BtpStore};
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
@@ -11,6 +8,7 @@ use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountId, AccountStore, AddressStore, Username};
 use interledger_service_util::BalanceStore;
+use interledger_store::redis::RedisStoreBuilder;
 use log::{debug, error};
 use redis::Client;
 use secrecy::SecretString;
