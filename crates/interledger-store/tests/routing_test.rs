@@ -6,7 +6,7 @@ use interledger_ccp::RouteManagerStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountId, AddressStore, Username};
-use interledger_store::account::{Account, RedisAccountId};
+use interledger_store::{account::Account, redis::RedisAccountId};
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use tokio_timer::sleep;

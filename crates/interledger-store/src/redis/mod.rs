@@ -17,7 +17,7 @@
 mod reconnect;
 use reconnect::RedisReconnect;
 
-use super::account::{Account, AccountWithEncryptedTokens, RedisAccountId};
+use super::account::{Account, AccountWithEncryptedTokens};
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use bytes::Bytes;
 use futures::{
@@ -26,7 +26,10 @@ use futures::{
     Future, Stream,
 };
 use log::{debug, error, trace, warn};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
@@ -38,7 +41,9 @@ use interledger_router::RouterStore;
 use interledger_service::{
     Account as AccountTrait, AccountId, AccountStore, AddressStore, Username,
 };
-use interledger_service_util::{BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore};
+use interledger_service_util::{
+    BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore, DEFAULT_ROUND_TRIP_TIME,
+};
 use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     scale_with_precision_loss,
@@ -49,10 +54,11 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use parking_lot::RwLock;
 use redis::{
-    self, cmd, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue, PipelineCommands,
-    PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
+    self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
+    PipelineCommands, PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
 };
-use secrecy::{ExposeSecret, Secret};
+use secrecy::{ExposeSecret, Secret, SecretBytes};
+use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
     iter::{self, FromIterator},
@@ -64,9 +70,11 @@ use std::{
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 use url::Url;
+use uuid::parser::ParseError;
 use zeroize::Zeroize;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
+const ACCOUNT_DETAILS_FIELDS: usize = 21;
 
 static PARENT_ILP_KEY: &str = "parent_node_account_address";
 static ROUTES_KEY: &str = "routes:current";
@@ -2016,6 +2024,264 @@ fn update_routes(
                 Ok(())
             },
         )
+}
+
+// AccountId does not implement ToRedisArgs and FromRedisValue.
+// Rust does not allow implementing foreign traits on foreign data types.
+// As a result, we wrap AccountId in a local data type, and implement the necessary
+// traits for that.
+#[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
+pub struct RedisAccountId(pub AccountId);
+
+impl RedisAccountId {
+    pub fn new() -> Self {
+        let id = AccountId::new();
+        RedisAccountId(id)
+    }
+}
+
+impl FromStr for RedisAccountId {
+    type Err = ParseError;
+
+    fn from_str(src: &str) -> Result<Self, Self::Err> {
+        let id = AccountId::from_str(&src)?;
+        Ok(RedisAccountId(id))
+    }
+}
+
+impl Display for RedisAccountId {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        f.write_str(&(self.0).0.to_hyphenated().to_string())
+    }
+}
+
+impl ToRedisArgs for RedisAccountId {
+    fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
+        out.write_arg((self.0).0.to_hyphenated().to_string().as_bytes().as_ref());
+    }
+}
+
+impl FromRedisValue for RedisAccountId {
+    fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
+        let account_id = String::from_redis_value(v)?;
+        let id = AccountId::from_str(&account_id)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid account id string")))?;
+        Ok(RedisAccountId(id))
+    }
+}
+
+impl ToRedisArgs for AccountWithEncryptedTokens {
+    fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
+        let mut rv = Vec::with_capacity(ACCOUNT_DETAILS_FIELDS * 2);
+        let account = &self.account;
+
+        "id".write_redis_args(&mut rv);
+        RedisAccountId(account.id).write_redis_args(&mut rv);
+        "username".write_redis_args(&mut rv);
+        account
+            .username
+            .as_bytes()
+            .to_vec()
+            .write_redis_args(&mut rv);
+        if !account.ilp_address.is_empty() {
+            "ilp_address".write_redis_args(&mut rv);
+            rv.push(account.ilp_address.to_bytes().to_vec());
+        }
+        if !account.asset_code.is_empty() {
+            "asset_code".write_redis_args(&mut rv);
+            account.asset_code.write_redis_args(&mut rv);
+        }
+        "asset_scale".write_redis_args(&mut rv);
+        account.asset_scale.write_redis_args(&mut rv);
+        "max_packet_amount".write_redis_args(&mut rv);
+        account.max_packet_amount.write_redis_args(&mut rv);
+        "routing_relation".write_redis_args(&mut rv);
+        account
+            .routing_relation
+            .to_string()
+            .write_redis_args(&mut rv);
+        "round_trip_time".write_redis_args(&mut rv);
+        account.round_trip_time.write_redis_args(&mut rv);
+
+        // Write optional fields
+        if let Some(ilp_over_http_url) = account.ilp_over_http_url.as_ref() {
+            "ilp_over_http_url".write_redis_args(&mut rv);
+            ilp_over_http_url.as_str().write_redis_args(&mut rv);
+        }
+        if let Some(ilp_over_http_incoming_token) = account.ilp_over_http_incoming_token.as_ref() {
+            "ilp_over_http_incoming_token".write_redis_args(&mut rv);
+            ilp_over_http_incoming_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
+        }
+        if let Some(ilp_over_http_outgoing_token) = account.ilp_over_http_outgoing_token.as_ref() {
+            "ilp_over_http_outgoing_token".write_redis_args(&mut rv);
+            ilp_over_http_outgoing_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
+        }
+        if let Some(ilp_over_btp_url) = account.ilp_over_btp_url.as_ref() {
+            "ilp_over_btp_url".write_redis_args(&mut rv);
+            ilp_over_btp_url.as_str().write_redis_args(&mut rv);
+        }
+        if let Some(ilp_over_btp_incoming_token) = account.ilp_over_btp_incoming_token.as_ref() {
+            "ilp_over_btp_incoming_token".write_redis_args(&mut rv);
+            ilp_over_btp_incoming_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
+        }
+        if let Some(ilp_over_btp_outgoing_token) = account.ilp_over_btp_outgoing_token.as_ref() {
+            "ilp_over_btp_outgoing_token".write_redis_args(&mut rv);
+            ilp_over_btp_outgoing_token
+                .expose_secret()
+                .as_ref()
+                .write_redis_args(&mut rv);
+        }
+        if let Some(settle_threshold) = account.settle_threshold {
+            "settle_threshold".write_redis_args(&mut rv);
+            settle_threshold.write_redis_args(&mut rv);
+        }
+        if let Some(settle_to) = account.settle_to {
+            "settle_to".write_redis_args(&mut rv);
+            settle_to.write_redis_args(&mut rv);
+        }
+        if let Some(limit) = account.packets_per_minute_limit {
+            "packets_per_minute_limit".write_redis_args(&mut rv);
+            limit.write_redis_args(&mut rv);
+        }
+        if let Some(limit) = account.amount_per_minute_limit {
+            "amount_per_minute_limit".write_redis_args(&mut rv);
+            limit.write_redis_args(&mut rv);
+        }
+        if let Some(min_balance) = account.min_balance {
+            "min_balance".write_redis_args(&mut rv);
+            min_balance.write_redis_args(&mut rv);
+        }
+        if let Some(settlement_engine_url) = &account.settlement_engine_url {
+            "settlement_engine_url".write_redis_args(&mut rv);
+            settlement_engine_url.as_str().write_redis_args(&mut rv);
+        }
+
+        debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
+        debug_assert!((rv.len() % 2) == 0);
+
+        ToRedisArgs::make_arg_vec(&rv, out);
+    }
+}
+
+impl FromRedisValue for AccountWithEncryptedTokens {
+    fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
+        let hash: HashMap<String, Value> = HashMap::from_redis_value(v)?;
+        let ilp_address: String = get_value("ilp_address", &hash)?;
+        let ilp_address = Address::from_str(&ilp_address)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid ILP address")))?;
+        let username: String = get_value("username", &hash)?;
+        let username = Username::from_str(&username)
+            .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid username")))?;
+        let routing_relation: Option<String> = get_value_option("routing_relation", &hash)?;
+        let routing_relation = if let Some(relation) = routing_relation {
+            RoutingRelation::from_str(relation.as_str())
+                .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid Routing Relation")))?
+        } else {
+            RoutingRelation::NonRoutingAccount
+        };
+        let round_trip_time: Option<u32> = get_value_option("round_trip_time", &hash)?;
+        let round_trip_time: u32 = round_trip_time.unwrap_or(DEFAULT_ROUND_TRIP_TIME);
+
+        let rid: RedisAccountId = get_value("id", &hash)?;
+
+        Ok(AccountWithEncryptedTokens {
+            account: Account {
+                id: rid.0,
+                username,
+                ilp_address,
+                asset_code: get_value("asset_code", &hash)?,
+                asset_scale: get_value("asset_scale", &hash)?,
+                ilp_over_http_url: get_url_option("ilp_over_http_url", &hash)?,
+                ilp_over_http_incoming_token: get_bytes_option(
+                    "ilp_over_http_incoming_token",
+                    &hash,
+                )?
+                .map(SecretBytes::from),
+                ilp_over_http_outgoing_token: get_bytes_option(
+                    "ilp_over_http_outgoing_token",
+                    &hash,
+                )?
+                .map(SecretBytes::from),
+                ilp_over_btp_url: get_url_option("ilp_over_btp_url", &hash)?,
+                ilp_over_btp_incoming_token: get_bytes_option(
+                    "ilp_over_btp_incoming_token",
+                    &hash,
+                )?
+                .map(SecretBytes::from),
+                ilp_over_btp_outgoing_token: get_bytes_option(
+                    "ilp_over_btp_outgoing_token",
+                    &hash,
+                )?
+                .map(SecretBytes::from),
+                max_packet_amount: get_value("max_packet_amount", &hash)?,
+                min_balance: get_value_option("min_balance", &hash)?,
+                settle_threshold: get_value_option("settle_threshold", &hash)?,
+                settle_to: get_value_option("settle_to", &hash)?,
+                routing_relation,
+                round_trip_time,
+                packets_per_minute_limit: get_value_option("packets_per_minute_limit", &hash)?,
+                amount_per_minute_limit: get_value_option("amount_per_minute_limit", &hash)?,
+                settlement_engine_url: get_url_option("settlement_engine_url", &hash)?,
+            },
+        })
+    }
+}
+
+fn get_value<V>(key: &str, map: &HashMap<String, Value>) -> Result<V, RedisError>
+where
+    V: FromRedisValue,
+{
+    if let Some(ref value) = map.get(key) {
+        from_redis_value(value)
+    } else {
+        Err(RedisError::from((
+            ErrorKind::TypeError,
+            "Account is missing field",
+            key.to_string(),
+        )))
+    }
+}
+
+fn get_value_option<V>(key: &str, map: &HashMap<String, Value>) -> Result<Option<V>, RedisError>
+where
+    V: FromRedisValue,
+{
+    if let Some(ref value) = map.get(key) {
+        from_redis_value(value).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_bytes_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Bytes>, RedisError> {
+    if let Some(ref value) = map.get(key) {
+        let vec: Vec<u8> = from_redis_value(value)?;
+        Ok(Some(Bytes::from(vec)))
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>, RedisError> {
+    if let Some(ref value) = map.get(key) {
+        let value: String = from_redis_value(value)?;
+        if let Ok(url) = Url::parse(&value) {
+            Ok(Some(url))
+        } else {
+            Err(RedisError::from((ErrorKind::TypeError, "Invalid URL")))
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
