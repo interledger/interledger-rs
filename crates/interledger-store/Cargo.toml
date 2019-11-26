@@ -7,6 +7,10 @@ license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
+[features]
+default = ["store-redis"]
+store-redis = ["redis", "uuid"]
+
 [lib]
 name = "interledger_store"
 path = "src/lib.rs"
@@ -27,7 +31,6 @@ interledger-stream = { path = "../interledger-stream", version = "^0.4.0", defau
 lazy_static = { version = "1.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 parking_lot = { version = "0.9.0", default-features = false }
-redis = { version = "0.13.0", default-features = false, features = ["executor"] }
 ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.41", default-features = false }
@@ -35,10 +38,13 @@ tokio-executor = { version = "0.1.8", default-features = false }
 tokio-timer = { version = "0.2.11", default-features = false }
 url = { version = "2.1.0", default-features = false, features = ["serde"] }
 http = { version = "0.1.18", default-features = false }
-uuid = { version = "0.7.4", default-features = false, features = ["serde"] }
 secrecy = { version = "0.5.0", default-features = false, features = ["serde", "bytes"] }
 zeroize = { version = "1.0.0", default-features = false, features = ["bytes"] }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
+
+# store-redis feature
+redis = { version = "0.13.0", default-features = false, features = ["executor"], optional = true }
+uuid = { version = "0.7.4", default-features = false, features = ["serde"], optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.7.0", default-features = false }
