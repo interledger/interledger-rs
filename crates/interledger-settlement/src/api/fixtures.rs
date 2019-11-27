@@ -21,7 +21,7 @@ lazy_static! {
     );
     pub static ref SERVICE_ADDRESS: Address = Address::from_str("example.connector").unwrap();
     pub static ref MESSAGES_API: Matcher =
-        Matcher::Regex(r"^/accounts/[0-9a-fA-F-]*/messages$".to_string());
+        Matcher::Regex(r"^/accounts/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/messages$".to_string());
     pub static ref SETTLEMENT_API: Matcher =
-        Matcher::Regex(r"^/accounts/[0-9a-fA-F-]*/settlements$".to_string());
+        Matcher::Regex(r"^/accounts/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/settlements$".to_string());
 }
