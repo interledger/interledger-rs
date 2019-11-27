@@ -16,6 +16,7 @@ mod server;
 pub use client::{pay, query};
 pub use server::SpspResponder;
 
+// TODO should these error variants be renamed to remove the 'Error' suffix from each one?
 #[derive(Fail, Debug)]
 pub enum Error {
     #[fail(display = "Unable to query SPSP server: {:?}", _0)]

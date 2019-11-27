@@ -17,6 +17,10 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
         .header("Accept", "application/spsp4+json")
         .send()
         .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))
+        .and_then(|res| {
+            res.error_for_status()
+                .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))
+        })
         .and_then(|mut res| {
             res.json::<SpspResponse>()
                 .map_err(|err| Error::InvalidSpspServerResponseError(format!("{:?}", err)))
@@ -41,7 +45,7 @@ where
         let dest = spsp.destination_account;
         result(Address::try_from(dest).map_err(move |err| {
             error!("Error parsing address");
-            Error::InvalidResponseError(err.to_string())
+            Error::InvalidSpspServerResponseError(err.to_string())
         }))
         .and_then(move |addr| {
             debug!("Sending SPSP payment to address: {}", addr);
