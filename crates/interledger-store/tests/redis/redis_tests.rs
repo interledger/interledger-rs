@@ -88,19 +88,14 @@ mod redis_helpers {
     // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
     #![allow(dead_code)]
 
-    use redis;
-
+    use futures::Future;
+    use redis_crate::{self, RedisError};
     use std::env;
     use std::fs;
+    use std::path::PathBuf;
     use std::process;
     use std::thread::sleep;
     use std::time::Duration;
-
-    use std::path::PathBuf;
-
-    use futures::Future;
-
-    use redis::RedisError;
 
     #[derive(PartialEq)]
     enum ServerType {
@@ -110,7 +105,7 @@ mod redis_helpers {
 
     pub struct RedisServer {
         pub process: process::Child,
-        addr: redis::ConnectionAddr,
+        addr: redis_crate::ConnectionAddr,
     }
 
     impl ServerType {
@@ -164,13 +159,13 @@ mod redis_helpers {
                         .arg(server_port.to_string())
                         .arg("--bind")
                         .arg("127.0.0.1");
-                    redis::ConnectionAddr::Tcp("127.0.0.1".to_string(), server_port)
+                    redis_crate::ConnectionAddr::Tcp("127.0.0.1".to_string(), server_port)
                 }
                 ServerType::Unix => {
                     let (a, b) = rand::random::<(u64, u64)>();
                     let path = format!("/tmp/redis-rs-test-{}-{}.sock", a, b);
                     cmd.arg("--port").arg("0").arg("--unixsocket").arg(&path);
-                    redis::ConnectionAddr::Unix(PathBuf::from(&path))
+                    redis_crate::ConnectionAddr::Unix(PathBuf::from(&path))
                 }
             };
 
@@ -182,14 +177,14 @@ mod redis_helpers {
             self.process.wait().unwrap();
         }
 
-        pub fn get_client_addr(&self) -> &redis::ConnectionAddr {
+        pub fn get_client_addr(&self) -> &redis_crate::ConnectionAddr {
             &self.addr
         }
 
         pub fn stop(&mut self) {
             let _ = self.process.kill();
             let _ = self.process.wait();
-            if let redis::ConnectionAddr::Unix(ref path) = *self.get_client_addr() {
+            if let redis_crate::ConnectionAddr::Unix(ref path) = *self.get_client_addr() {
                 fs::remove_file(&path).ok();
             }
         }
@@ -203,14 +198,14 @@ mod redis_helpers {
 
     pub struct TestContext {
         pub server: RedisServer,
-        pub client: redis::Client,
+        pub client: redis_crate::Client,
     }
 
     impl TestContext {
         pub fn new() -> TestContext {
             let server = RedisServer::new();
 
-            let client = redis::Client::open(redis::ConnectionInfo {
+            let client = redis_crate::Client::open(redis_crate::ConnectionInfo {
                 addr: Box::new(server.get_client_addr().clone()),
                 db: 0,
                 passwd: None,
@@ -234,25 +229,27 @@ mod redis_helpers {
                     }
                 }
             }
-            redis::cmd("FLUSHDB").execute(&mut con);
+            redis_crate::cmd("FLUSHDB").execute(&mut con);
 
             TestContext { server, client }
         }
 
         // This one was added and not in the original file
-        pub fn get_client_connection_info(&self) -> redis::ConnectionInfo {
-            redis::ConnectionInfo {
+        pub fn get_client_connection_info(&self) -> redis_crate::ConnectionInfo {
+            redis_crate::ConnectionInfo {
                 addr: Box::new(self.server.get_client_addr().clone()),
                 db: 0,
                 passwd: None,
             }
         }
 
-        pub fn connection(&self) -> redis::Connection {
+        pub fn connection(&self) -> redis_crate::Connection {
             self.client.get_connection().unwrap()
         }
 
-        pub fn async_connection(&self) -> impl Future<Item = redis::aio::Connection, Error = ()> {
+        pub fn async_connection(
+            &self,
+        ) -> impl Future<Item = redis_crate::aio::Connection, Error = ()> {
             self.client
                 .get_async_connection()
                 .map_err(|err| panic!(err))
@@ -264,7 +261,7 @@ mod redis_helpers {
 
         pub fn shared_async_connection(
             &self,
-        ) -> impl Future<Item = redis::aio::SharedConnection, Error = RedisError> {
+        ) -> impl Future<Item = redis_crate::aio::SharedConnection, Error = RedisError> {
             self.client.get_shared_async_connection()
         }
     }

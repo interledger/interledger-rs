@@ -4,7 +4,7 @@ use futures::{
 };
 use log::{debug, error};
 use parking_lot::RwLock;
-use redis::{
+use redis_crate::{
     aio::{ConnectionLike, SharedConnection},
     Client, ConnectionInfo, RedisError, Value,
 };

@@ -1,20 +1,14 @@
 // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
 #![allow(dead_code)]
 
-use redis;
-
+use futures::Future;
+use redis::{self, ConnectionAddr, ConnectionInfo, RedisError};
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 use std::process;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
-
-use std::path::PathBuf;
-
-use futures::Future;
-
-use redis::{ConnectionAddr, ConnectionInfo, RedisError};
-
 use tokio::timer::Delay;
 
 #[allow(unused)]

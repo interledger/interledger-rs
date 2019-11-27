@@ -10,7 +10,7 @@ use interledger_settlement::core::{
 };
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
-use redis::{aio::SharedConnection, cmd};
+use redis_crate::{aio::SharedConnection, cmd};
 use url::Url;
 use uuid::Uuid;
 

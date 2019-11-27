@@ -10,7 +10,7 @@ use interledger_service::{AccountStore, AddressStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store::redis::RedisStoreBuilder;
 use log::{debug, error};
-use redis::Client;
+use redis_crate::Client;
 use secrecy::SecretString;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -32,12 +32,12 @@ fn picks_up_parent_during_initialization() {
                 // previous account insertion. that means that when we connect
                 // to the store we will always get the configured parent (if
                 // there was one))
-                redis::cmd("SET")
+                redis_crate::cmd("SET")
                     .arg("parent_node_account_address")
                     .arg("example.bob.node")
                     .query_async(connection)
                     .map_err(|err| panic!(err))
-                    .and_then(move |(_, _): (_, redis::Value)| {
+                    .and_then(move |(_, _): (_, redis_crate::Value)| {
                         RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
                             .connect()
                             .and_then(move |store| {
@@ -174,7 +174,7 @@ fn update_accounts() {
             .map_err(|err| panic!(err))
             .and_then(move |connection| {
                 let id = accounts[0].id();
-                redis::cmd("HMSET")
+                redis_crate::cmd("HMSET")
                     .arg(format!("accounts:{}", id))
                     .arg("balance")
                     .arg(600)
@@ -182,7 +182,7 @@ fn update_accounts() {
                     .arg(400)
                     .query_async(connection)
                     .map_err(|err| panic!(err))
-                    .and_then(move |(_, _): (_, redis::Value)| {
+                    .and_then(move |(_, _): (_, redis_crate::Value)| {
                         let mut new = ACCOUNT_DETAILS_0.clone();
                         new.asset_code = String::from("TUV");
                         store.update_account(id, new).and_then(move |account| {

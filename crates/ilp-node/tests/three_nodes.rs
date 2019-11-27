@@ -4,10 +4,8 @@ use serde_json::json;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::{debug, error_span};
 use tracing_futures::Instrument;
-
 mod redis_helpers;
 use redis_helpers::*;
-
 mod test_helpers;
 use interledger::packet::Address;
 use interledger::stream::StreamDelivery;
