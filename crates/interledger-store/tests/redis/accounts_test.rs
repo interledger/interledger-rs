@@ -6,13 +6,14 @@ use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_service::Account as AccountTrait;
-use interledger_service::{AccountId, AccountStore, AddressStore, Username};
+use interledger_service::{AccountStore, AddressStore, Username};
 use interledger_service_util::BalanceStore;
 use interledger_store::redis::RedisStoreBuilder;
 use log::{debug, error};
 use redis::Client;
 use secrecy::SecretString;
 use std::str::FromStr;
+use uuid::Uuid;
 
 #[test]
 fn picks_up_parent_during_initialization() {
@@ -433,7 +434,7 @@ fn gets_multiple() {
     block_on(test_store().and_then(|(store, context, accs)| {
         let store_clone = store.clone();
         // set account ids in reverse order
-        let account_ids: Vec<AccountId> = accs.iter().rev().map(|a| a.id()).collect::<_>();
+        let account_ids: Vec<Uuid> = accs.iter().rev().map(|a| a.id()).collect::<_>();
         store_clone
             .get_accounts(account_ids)
             .and_then(move |accounts| {
@@ -474,7 +475,7 @@ fn decrypts_outgoing_tokens_acc() {
 fn errors_for_unknown_accounts() {
     let result = block_on(test_store().and_then(|(store, context, _accs)| {
         store
-            .get_accounts(vec![AccountId::new(), AccountId::new()])
+            .get_accounts(vec![Uuid::new_v4(), Uuid::new_v4()])
             .then(move |result| {
                 let _ = context;
                 result

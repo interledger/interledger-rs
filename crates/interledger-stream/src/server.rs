@@ -9,13 +9,12 @@ use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
     RejectBuilder,
 };
-use interledger_service::{
-    Account, AccountId, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username,
-};
+use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::time::SystemTime;
+use uuid::Uuid;
 
 // Note we are using the same magic bytes as the Javascript
 // implementation but this is not strictly necessary. These
@@ -100,7 +99,7 @@ pub trait StreamNotificationsStore {
 
     fn add_payment_notification_subscription(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         sender: UnboundedSender<PaymentNotification>,
     );
 
@@ -559,13 +558,13 @@ mod stream_receiver_service {
         let result = service
             .send_request(OutgoingRequest {
                 from: TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_address: Address::from_str("example.sender").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
                 to: TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_address: ilp_address.clone(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
@@ -619,13 +618,13 @@ mod stream_receiver_service {
         let result = service
             .send_request(OutgoingRequest {
                 from: TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_address: Address::from_str("example.sender").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
                 to: TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_address: ilp_address.clone(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
@@ -677,14 +676,14 @@ mod stream_receiver_service {
         let result = service
             .send_request(OutgoingRequest {
                 from: TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_address: Address::from_str("example.sender").unwrap(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,
                 },
                 original_amount: prepare.amount(),
                 to: TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_address: ilp_address.clone(),
                     asset_code: "XYZ".to_string(),
                     asset_scale: 9,

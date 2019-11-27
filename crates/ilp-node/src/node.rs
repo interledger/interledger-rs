@@ -25,7 +25,7 @@ use interledger::{
     packet::{ErrorCode, RejectBuilder},
     router::Router,
     service::{
-        outgoing_service_fn, Account as AccountTrait, AccountId, IncomingService, OutgoingRequest,
+        outgoing_service_fn, Account as AccountTrait, IncomingService, OutgoingRequest,
         OutgoingService, Username,
     },
     service_util::{
@@ -47,6 +47,7 @@ use tokio::spawn;
 use tracing::{debug, debug_span, error, info};
 use tracing_futures::Instrument;
 use url::Url;
+use uuid::Uuid;
 use warp::{
     self,
     http::{Response, StatusCode},
@@ -522,10 +523,7 @@ impl InterledgerNode {
 
     #[doc(hidden)]
     #[allow(dead_code)]
-    pub fn insert_account(
-        &self,
-        account: AccountDetails,
-    ) -> impl Future<Item = AccountId, Error = ()> {
+    pub fn insert_account(&self, account: AccountDetails) -> impl Future<Item = Uuid, Error = ()> {
         let redis_secret = generate_redis_secret(&self.secret_seed);
         result(self.redis_connection.clone().into_connection_info())
             .map_err(|err| error!(target: "interledger-node", "Invalid Redis connection details: {:?}", err))

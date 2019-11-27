@@ -1,13 +1,11 @@
-use bytes::Bytes;
-use futures::{future::result, Future};
-use http::StatusCode;
-
 use crate::core::{
     idempotency::{IdempotentData, IdempotentStore},
     scale_with_precision_loss,
     types::{Convert, ConvertDetails, LeftoversStore},
 };
-
+use bytes::Bytes;
+use futures::{future::result, Future};
+use http::StatusCode;
 use num_bigint::BigUint;
 use redis_crate::{
     self, aio::SharedConnection, cmd, Client, ConnectionInfo, ErrorKind, FromRedisValue,
@@ -15,8 +13,7 @@ use redis_crate::{
 };
 use std::collections::HashMap as SlowHashMap;
 use std::str::FromStr;
-
-use interledger_service::AccountId;
+use uuid::Uuid;
 
 use log::{debug, error, trace};
 
@@ -24,7 +21,7 @@ use log::{debug, error, trace};
 mod test_helpers;
 
 static UNCREDITED_AMOUNT_KEY: &str = "uncredited_engine_settlement_amount";
-fn uncredited_amount_key(account_id: AccountId) -> String {
+fn uncredited_amount_key(account_id: Uuid) -> String {
     format!("{}:{}", UNCREDITED_AMOUNT_KEY, account_id)
 }
 
@@ -225,7 +222,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
         Box::new(
             cmd("LRANGE")
@@ -240,7 +237,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
@@ -267,7 +264,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let connection = self.connection.clone();
@@ -302,7 +299,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn clear_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
         Box::new(

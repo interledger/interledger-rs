@@ -2,17 +2,17 @@ use super::{fixtures::*, store_helpers::*};
 use futures::future::{self, Either, Future};
 use interledger_api::NodeStore;
 use interledger_packet::Address;
+use interledger_service::{Account as AccountTrait, AddressStore};
 use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
-use std::str::FromStr;
-
-use interledger_service::{Account as AccountTrait, AccountId, AddressStore};
 use interledger_store::account::Account;
+use std::str::FromStr;
+use uuid::Uuid;
 
 #[test]
 fn get_balance() {
     block_on(test_store().and_then(|(store, context, _accs)| {
-        let account_id = AccountId::new();
+        let account_id = Uuid::new_v4();
         context
             .async_connection()
             .map_err(move |err| panic!(err))

@@ -3,13 +3,14 @@ use futures::Future;
 use http::StatusCode;
 use interledger_http::error::{ApiError, ApiErrorType, ProblemType};
 use interledger_packet::Address;
-use interledger_service::{Account, AccountId};
+use interledger_service::Account;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::ops::{Div, Mul};
 use std::str::FromStr;
 use url::Url;
+use uuid::Uuid;
 
 // Account without an engine error
 pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
@@ -96,14 +97,14 @@ pub trait SettlementStore {
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         amount: u64,
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     fn refund_settlement(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 }
@@ -115,7 +116,7 @@ pub trait LeftoversStore {
     fn save_uncredited_settlement_amount(
         &self,
         // The account id that for which there was a precision loss
-        account_id: AccountId,
+        account_id: Uuid,
         // The amount for which precision loss occurred, along with their scale
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
@@ -125,20 +126,20 @@ pub trait LeftoversStore {
     /// the new leftover value.
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
 
     /// Clears any uncredited settlement amount associated with the account
     fn clear_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     // Gets the current amount of leftovers in the store
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send>;
 }
 

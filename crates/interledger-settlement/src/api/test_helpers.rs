@@ -15,11 +15,11 @@ use futures::{
 use hyper::StatusCode;
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{
-    incoming_service_fn, outgoing_service_fn, Account, AccountId, AccountStore, IncomingService,
-    Username,
+    incoming_service_fn, outgoing_service_fn, Account, AccountStore, IncomingService, Username,
 };
 use mockito::mock;
 use num_bigint::BigUint;
+use uuid::Uuid;
 
 use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
 use lazy_static::lazy_static;
@@ -32,7 +32,7 @@ use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct TestAccount {
-    pub id: AccountId,
+    pub id: Uuid,
     pub url: Url,
     pub ilp_address: Address,
     pub no_details: bool,
@@ -44,7 +44,7 @@ lazy_static! {
 }
 
 impl Account for TestAccount {
-    fn id(&self) -> AccountId {
+    fn id(&self) -> Uuid {
         self.id
     }
 
@@ -83,7 +83,7 @@ pub struct TestStore {
     pub should_fail: bool,
     pub cache: Arc<RwLock<HashMap<String, IdempotentData>>>,
     pub cache_hits: Arc<RwLock<u64>>,
-    pub uncredited_settlement_amount: Arc<RwLock<HashMap<AccountId, (BigUint, u8)>>>,
+    pub uncredited_settlement_amount: Arc<RwLock<HashMap<Uuid, (BigUint, u8)>>>,
 }
 
 impl SettlementStore for TestStore {
@@ -91,7 +91,7 @@ impl SettlementStore for TestStore {
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         amount: u64,
         _idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -107,7 +107,7 @@ impl SettlementStore for TestStore {
 
     fn refund_settlement(
         &self,
-        _account_id: AccountId,
+        _account_id: Uuid,
         _settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let ret = if self.should_fail { err(()) } else { ok(()) };
@@ -151,7 +151,7 @@ impl AccountStore for TestStore {
 
     fn get_accounts(
         &self,
-        account_ids: Vec<AccountId>,
+        account_ids: Vec<Uuid>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let accounts: Vec<TestAccount> = self
             .accounts
@@ -176,8 +176,8 @@ impl AccountStore for TestStore {
     fn get_account_id_from_username(
         &self,
         _username: &Username,
-    ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
-        Box::new(ok(AccountId::new()))
+    ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
+        Box::new(ok(Uuid::new_v4()))
     }
 }
 
@@ -186,7 +186,7 @@ impl LeftoversStore for TestStore {
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
@@ -231,7 +231,7 @@ impl LeftoversStore for TestStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let mut guard = self.uncredited_settlement_amount.write();
@@ -249,7 +249,7 @@ impl LeftoversStore for TestStore {
 
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
         let leftovers = self.uncredited_settlement_amount.read();
         Box::new(ok(if let Some(a) = leftovers.get(&account_id) {
@@ -261,7 +261,7 @@ impl LeftoversStore for TestStore {
 
     fn clear_uncredited_settlement_amount(
         &self,
-        _account_id: AccountId,
+        _account_id: Uuid,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         unreachable!()
     }
@@ -278,7 +278,7 @@ impl TestStore {
         }
     }
 
-    pub fn get_balance(&self, account_id: AccountId) -> i64 {
+    pub fn get_balance(&self, account_id: Uuid) -> i64 {
         let accounts = &*self.accounts.read();
         for a in accounts {
             if a.id() == account_id {
@@ -292,7 +292,7 @@ impl TestStore {
 // Test Service
 
 impl TestAccount {
-    pub fn new(id: AccountId, url: &str, ilp_address: &str) -> Self {
+    pub fn new(id: Uuid, url: &str, ilp_address: &str) -> Self {
         Self {
             id,
             url: Url::parse(url).unwrap(),

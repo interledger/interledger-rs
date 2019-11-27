@@ -240,7 +240,7 @@ mod table {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
-    use interledger_service::AccountId;
+    use uuid::Uuid;
 
     #[test]
     fn sets_id_if_update_has_different() {
@@ -313,7 +313,7 @@ mod table {
     fn converts_to_a_simplified_table() {
         let mut table = RoutingTable::new([0; 16]);
         table.add_route(
-            TestAccount::new(AccountId::from_slice(&[1; 16]).unwrap(), "example.one"),
+            TestAccount::new(Uuid::from_slice(&[1; 16]).unwrap(), "example.one"),
             Route {
                 prefix: "example.one".to_string(),
                 path: Vec::new(),
@@ -322,7 +322,7 @@ mod table {
             },
         );
         table.add_route(
-            TestAccount::new(AccountId::from_slice(&[2; 16]).unwrap(), "example.two"),
+            TestAccount::new(Uuid::from_slice(&[2; 16]).unwrap(), "example.two"),
             Route {
                 prefix: "example.two".to_string(),
                 path: Vec::new(),
@@ -334,11 +334,11 @@ mod table {
         assert_eq!(simplified.len(), 2);
         assert_eq!(
             simplified.get("example.one").unwrap().id,
-            AccountId::from_slice(&[1; 16]).unwrap()
+            Uuid::from_slice(&[1; 16]).unwrap()
         );
         assert_eq!(
             simplified.get("example.two").unwrap().id,
-            AccountId::from_slice(&[2; 16]).unwrap()
+            Uuid::from_slice(&[2; 16]).unwrap()
         );
     }
 }

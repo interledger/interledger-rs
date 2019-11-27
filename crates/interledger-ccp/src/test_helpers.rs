@@ -19,17 +19,17 @@ use std::{iter::FromIterator, sync::Arc};
 
 lazy_static! {
     pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
-        id: AccountId::new(),
+        id: Uuid::new_v4(),
         ilp_address: Address::from_str("example.peer").unwrap(),
         relation: RoutingRelation::Peer,
     };
     pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
-        id: AccountId::new(),
+        id: Uuid::new_v4(),
         ilp_address: Address::from_str("example.me.nonroutingaccount").unwrap(),
         relation: RoutingRelation::NonRoutingAccount,
     };
     pub static ref CHILD_ACCOUNT: TestAccount = TestAccount {
-        id: AccountId::new(),
+        id: Uuid::new_v4(),
         ilp_address: Address::from_str("example.me.child").unwrap(),
         relation: RoutingRelation::Child,
     };
@@ -39,13 +39,13 @@ lazy_static! {
 
 #[derive(Clone, Debug)]
 pub struct TestAccount {
-    pub id: AccountId,
+    pub id: Uuid,
     pub ilp_address: Address,
     pub relation: RoutingRelation,
 }
 
 impl TestAccount {
-    pub fn new(id: AccountId, ilp_address: &str) -> TestAccount {
+    pub fn new(id: Uuid, ilp_address: &str) -> TestAccount {
         TestAccount {
             id,
             ilp_address: Address::from_str(ilp_address).unwrap(),
@@ -55,7 +55,7 @@ impl TestAccount {
 }
 
 impl Account for TestAccount {
-    fn id(&self) -> AccountId {
+    fn id(&self) -> Uuid {
         self.id
     }
 
@@ -145,7 +145,7 @@ impl RouteManagerStore for TestStore {
 
     fn get_accounts_to_send_routes_to(
         &self,
-        ignore_accounts: Vec<AccountId>,
+        ignore_accounts: Vec<Uuid>,
     ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
         let mut accounts: Vec<TestAccount> = self
             .local
@@ -232,12 +232,12 @@ pub fn test_service_with_routes() -> (
     let local_routes = HashMap::from_iter(vec![
         (
             "example.local.1".to_string(),
-            TestAccount::new(AccountId::from_slice(&[1; 16]).unwrap(), "example.local.1"),
+            TestAccount::new(Uuid::from_slice(&[1; 16]).unwrap(), "example.local.1"),
         ),
         (
             "example.connector.other-local".to_string(),
             TestAccount {
-                id: AccountId::from_slice(&[3; 16]).unwrap(),
+                id: Uuid::from_slice(&[3; 16]).unwrap(),
                 ilp_address: Address::from_str("example.connector.other-local").unwrap(),
                 relation: RoutingRelation::NonRoutingAccount,
             },
@@ -245,10 +245,7 @@ pub fn test_service_with_routes() -> (
     ]);
     let configured_routes = HashMap::from_iter(vec![(
         "example.configured.1".to_string(),
-        TestAccount::new(
-            AccountId::from_slice(&[2; 16]).unwrap(),
-            "example.configured.1",
-        ),
+        TestAccount::new(Uuid::from_slice(&[2; 16]).unwrap(), "example.configured.1"),
     )]);
     let store = TestStore::with_routes(local_routes, configured_routes);
     let outgoing_requests: Arc<Mutex<Vec<OutgoingRequest<TestAccount>>>> =
