@@ -21,7 +21,7 @@ pub enum Error {
     #[fail(display = "Unable to query SPSP server: {:?}", _0)]
     HttpError(String),
     #[fail(display = "Got invalid SPSP response from server: {:?}", _0)]
-    InvalidResponseError(String),
+    InvalidSpspServerResponseError(String),
     #[fail(display = "STREAM error: {}", _0)]
     StreamError(StreamError),
     #[fail(display = "Error sending money: {}", _0)]

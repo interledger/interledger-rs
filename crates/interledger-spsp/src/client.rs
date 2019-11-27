@@ -19,7 +19,7 @@ pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
         .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))
         .and_then(|mut res| {
             res.json::<SpspResponse>()
-                .map_err(|err| Error::InvalidResponseError(format!("{:?}", err)))
+                .map_err(|err| Error::InvalidSpspServerResponseError(format!("{:?}", err)))
         })
 }
 
