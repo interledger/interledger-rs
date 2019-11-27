@@ -8,8 +8,8 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [features]
-default = ["store-redis"]
-store-redis = ["redis", "uuid"]
+default = ["redis"]
+redis = ["redis_crate", "uuid"]
 
 [lib]
 name = "interledger_store"
@@ -18,7 +18,7 @@ path = "src/lib.rs"
 [[test]]
 name = "redis_tests"
 path = "tests/redis/redis_tests.rs"
-required-features = ["store-redis"]
+required-features = ["redis"]
 
 [dependencies]
 bytes = { version = "0.4.12", default-features = false }
@@ -48,7 +48,7 @@ zeroize = { version = "1.0.0", default-features = false, features = ["bytes"] }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 
 # store-redis feature
-redis = { version = "0.13.0", default-features = false, features = ["executor"], optional = true }
+redis_crate = { package = "redis", version = "0.13.0", default-features = false, features = ["executor"], optional = true }
 uuid = { version = "0.8.1", default-features = false, features = ["serde"], optional = true }
 
 [dev-dependencies]

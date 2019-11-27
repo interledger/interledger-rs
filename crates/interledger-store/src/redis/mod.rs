@@ -46,7 +46,7 @@ use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
 use num_bigint::BigUint;
 use parking_lot::RwLock;
-use redis::{
+use redis_crate::{
     self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
     PipelineCommands, PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
 };
@@ -172,7 +172,7 @@ impl RedisStoreBuilder {
                 // that was configured due to adding a parent. If no parent was
                 // found, use the builder's provided address (local.host) or the
                 // one we decided to override it with
-                redis::cmd("GET")
+                redis_crate::cmd("GET")
                     .arg(PARENT_ILP_KEY)
                     .query_async(connection.clone())
                     .map_err(|err| {
@@ -296,7 +296,7 @@ pub struct RedisStore {
 
 impl RedisStore {
     fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<Uuid>, Error = ()> {
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.smembers("accounts");
         pipe.query_async(self.connection.clone())
             .map_err(|err| error!("Error getting account IDs: {:?}", err))
@@ -315,7 +315,7 @@ impl RedisStore {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
         // Check that there isn't already an account with values that MUST be unique
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.exists(accounts_key(account.id));
         pipe.hexists("usernames", account.username().as_ref());
         if account.routing_relation == RoutingRelation::Parent {
@@ -336,7 +336,7 @@ impl RedisStore {
                     }
             })
             .and_then(move |(connection, account)| {
-                let mut pipe = redis::pipe();
+                let mut pipe = redis_crate::pipe();
                 pipe.atomic();
 
                 // Add the account key to the list of accounts
@@ -392,7 +392,7 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         Box::new(
             // Check to make sure an account with this ID already exists
-            redis::cmd("EXISTS")
+            redis_crate::cmd("EXISTS")
                 .arg(accounts_key(account.id))
                 // TODO this needs to be atomic with the insertions later,
                 // waiting on #186
@@ -409,7 +409,7 @@ impl RedisStore {
                         );
                         return Either::A(err(()));
                     }
-                    let mut pipe = redis::pipe();
+                    let mut pipe = redis_crate::pipe();
                     pipe.atomic();
 
                     // Add the account key to the list of accounts
@@ -470,7 +470,7 @@ impl RedisStore {
         let connection = self.connection.clone();
         let self_clone = self.clone();
 
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.atomic();
 
         if let Some(ref endpoint) = settings.ilp_over_btp_url {
@@ -554,7 +554,7 @@ impl RedisStore {
         let routing_table = self.routes.clone();
         Box::new(self.redis_get_account(id).and_then(move |encrypted| {
             let account = encrypted.account.clone();
-            let mut pipe = redis::pipe();
+            let mut pipe = redis_crate::pipe();
             pipe.atomic();
 
             pipe.srem("accounts", RedisAccountId(account.id)).ignore();
@@ -682,7 +682,7 @@ impl StreamNotificationsStore for RedisStore {
                         "Publishing payment notification {} for account {}",
                         message, account_id
                     );
-                    redis::cmd("PUBLISH")
+                    redis_crate::cmd("PUBLISH")
                         .arg(format!("{}{}", STREAM_NOTIFICATIONS_PREFIX, account_id))
                         .arg(message)
                         .query_async(connection)
@@ -1100,7 +1100,7 @@ impl NodeStore for RedisStore {
     // TODO limit the number of results and page through them
     fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         let connection = self.connection.clone();
         pipe.smembers("accounts");
         Box::new(self.get_all_accounts_ids().and_then(move |account_ids| {
@@ -1131,7 +1131,7 @@ impl NodeStore for RedisStore {
             .collect();
         let accounts: HashSet<_> =
             HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| account_id));
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         for account_id in accounts {
             pipe.exists(accounts_key((*account_id).0));
         }
@@ -1148,7 +1148,7 @@ impl NodeStore for RedisStore {
                 }
             })
             .and_then(move |connection| {
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.atomic()
             .del(STATIC_ROUTES_KEY)
             .ignore()
@@ -1313,7 +1313,7 @@ impl AddressStore for RedisStore {
                     // node's ilp address. Currently this is not possible, as
                     // account.ilp_address() cannot access any state that exists
                     // on the store.
-                    let mut pipe = redis::pipe();
+                    let mut pipe = redis_crate::pipe();
                     for account in accounts {
                         // Update the address and routes of all children and non-routing accounts.
                         if account.routing_relation() != RoutingRelation::Parent
@@ -1547,7 +1547,7 @@ impl RouteManagerStore for RedisStore {
 
         // Save routes to Redis
         let routing_tale = self.routes.clone();
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.atomic()
             .del(ROUTES_KEY)
             .ignore()
@@ -1576,7 +1576,7 @@ impl RateLimitStore for RedisStore {
         prepare_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = RateLimitError> + Send> {
         if account.amount_per_minute_limit.is_some() || account.packets_per_minute_limit.is_some() {
-            let mut pipe = redis::pipe();
+            let mut pipe = redis_crate::pipe();
             let packet_limit = account.packets_per_minute_limit.is_some();
             let amount_limit = account.amount_per_minute_limit.is_some();
 
@@ -1698,7 +1698,7 @@ impl IdempotentStore for RedisStore {
         status_code: StatusCode,
         data: Bytes,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
             .arg(&prefixed_idempotency_key(idempotency_key.clone()))
@@ -1877,7 +1877,7 @@ impl LeftoversStore for RedisStore {
         &self,
         account_id: Uuid,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
-        let mut pipe = redis::pipe();
+        let mut pipe = redis_crate::pipe();
         pipe.atomic();
         // get the amounts and instantly delete them
         pipe.lrange(uncredited_amount_key(account_id.to_string()), 0, -1);
@@ -1980,7 +1980,7 @@ fn update_routes(
     connection: RedisReconnect,
     routing_table: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
 ) -> impl Future<Item = (), Error = ()> {
-    let mut pipe = redis::pipe();
+    let mut pipe = redis_crate::pipe();
     pipe.hgetall(ROUTES_KEY)
         .hgetall(STATIC_ROUTES_KEY)
         .get(DEFAULT_ROUTE_KEY);
@@ -2275,7 +2275,7 @@ fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>
 mod tests {
     use super::*;
     use futures::future;
-    use redis::IntoConnectionInfo;
+    use redis_crate::IntoConnectionInfo;
     use tokio::runtime::Runtime;
 
     #[test]

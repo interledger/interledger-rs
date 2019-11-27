@@ -62,7 +62,7 @@ fn polls_for_route_updates() {
                                 connection
                                     .map_err(|err| panic!(err))
                                     .and_then(move |connection| {
-                                        redis::cmd("HMSET")
+                                        redis_crate::cmd("HMSET")
                                             .arg("routes:current")
                                             .arg("example.alice")
                                             .arg(bob_id.to_string())
@@ -70,7 +70,12 @@ fn polls_for_route_updates() {
                                             .arg(alice_id.to_string())
                                             .query_async(connection)
                                             .and_then(
-                                                |(_connection, _result): (_, redis::Value)| Ok(()),
+                                                |(_connection, _result): (
+                                                    _,
+                                                    redis_crate::Value,
+                                                )| {
+                                                    Ok(())
+                                                },
                                             )
                                             .map_err(|err| panic!(err))
                                             .and_then(|_| {
@@ -194,7 +199,7 @@ fn saves_routes_to_db() {
             ])
             .and_then(move |_| {
                 get_connection.and_then(move |connection| {
-                    redis::cmd("HGETALL")
+                    redis_crate::cmd("HGETALL")
                         .arg("routes:current")
                         .query_async(connection)
                         .map_err(|err| panic!(err))
@@ -268,7 +273,7 @@ fn adds_static_routes_to_redis() {
             ])
             .and_then(move |_| {
                 get_connection.and_then(|connection| {
-                    redis::cmd("HGETALL")
+                    redis_crate::cmd("HGETALL")
                         .arg("routes:static")
                         .query_async(connection)
                         .map_err(|err| panic!(err))

@@ -17,7 +17,7 @@ fn get_balance() {
             .async_connection()
             .map_err(move |err| panic!(err))
             .and_then(move |connection| {
-                redis::cmd("HMSET")
+                redis_crate::cmd("HMSET")
                     .arg(format!("accounts:{}", account_id))
                     .arg("balance")
                     .arg(600)
@@ -25,7 +25,7 @@ fn get_balance() {
                     .arg(400)
                     .query_async(connection)
                     .map_err(|err| panic!(err))
-                    .and_then(move |(_, _): (_, redis::Value)| {
+                    .and_then(move |(_, _): (_, redis_crate::Value)| {
                         let account = Account::try_from(
                             account_id,
                             ACCOUNT_DETAILS_0.clone(),
