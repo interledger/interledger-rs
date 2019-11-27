@@ -16,7 +16,7 @@ use futures::{
 use hyper::{Response, StatusCode};
 use interledger_http::error::*;
 use interledger_packet::PrepareBuilder;
-use interledger_service::{Account, AccountId, AccountStore, OutgoingRequest, OutgoingService};
+use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -24,6 +24,7 @@ use std::{
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
+use uuid::Uuid;
 use warp::{self, reject::Rejection, Filter};
 
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
@@ -166,7 +167,7 @@ where
     let engine_scale = body.scale;
 
     // Convert to the desired data types
-    let account_id = match AccountId::from_str(&account_id) {
+    let account_id = match Uuid::from_str(&account_id) {
         Ok(a) => a,
         Err(_) => {
             let error_msg = format!("Unable to parse account id: {}", account_id);
@@ -275,7 +276,7 @@ where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: SettlementAccount + Account + Send + Sync + 'static,
 {
-    Box::new(result(AccountId::from_str(&account_id)
+    Box::new(result(Uuid::from_str(&account_id)
             .map_err(move |_| {
                 let err = ApiError::invalid_account_id(Some(&account_id));
                 error!("{}", err);

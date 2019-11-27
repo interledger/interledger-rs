@@ -417,11 +417,12 @@ mod send_money_tests {
     use parking_lot::Mutex;
     use std::str::FromStr;
     use std::sync::Arc;
+    use uuid::Uuid;
 
     #[test]
     fn stops_at_final_errors() {
         let account = TestAccount {
-            id: AccountId::new(),
+            id: Uuid::new_v4(),
             asset_code: "XYZ".to_string(),
             asset_scale: 9,
             ilp_address: Address::from_str("example.destination").unwrap(),

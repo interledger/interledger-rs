@@ -1,14 +1,15 @@
 use super::{fixtures::*, store_helpers::*};
 use futures::future::{join_all, Future};
-use interledger_service::{AccountId, AddressStore};
+use interledger_service::AddressStore;
 use interledger_service_util::{RateLimitError, RateLimitStore};
 use interledger_store::account::Account;
+use uuid::Uuid;
 
 #[test]
 fn rate_limits_number_of_packets() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let account = Account::try_from(
-            AccountId::new(),
+            Uuid::new_v4(),
             ACCOUNT_DETAILS_0.clone(),
             store.get_ilp_address(),
         )
@@ -32,7 +33,7 @@ fn rate_limits_number_of_packets() {
 fn limits_amount_throughput() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let account = Account::try_from(
-            AccountId::new(),
+            Uuid::new_v4(),
             ACCOUNT_DETAILS_1.clone(),
             store.get_ilp_address(),
         )
@@ -56,7 +57,7 @@ fn limits_amount_throughput() {
 fn refunds_throughput_limit_for_rejected_packets() {
     block_on(test_store().and_then(|(store, context, _accs)| {
         let account = Account::try_from(
-            AccountId::new(),
+            Uuid::new_v4(),
             ACCOUNT_DETAILS_1.clone(),
             store.get_ilp_address(),
         )

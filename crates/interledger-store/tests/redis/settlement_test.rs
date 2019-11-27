@@ -3,8 +3,7 @@ use bytes::Bytes;
 use futures::future::{join_all, Future};
 use http::StatusCode;
 use interledger_api::NodeStore;
-
-use interledger_service::{Account, AccountId, AccountStore};
+use interledger_service::{Account, AccountStore};
 use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     types::{LeftoversStore, SettlementAccount, SettlementStore},
@@ -13,6 +12,7 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use redis::{aio::SharedConnection, cmd};
 use url::Url;
+use uuid::Uuid;
 
 lazy_static! {
     static ref IDEMPOTENCY_KEY: String = String::from("AJKJNUjM0oyiAN46");
@@ -26,7 +26,7 @@ fn saves_and_gets_uncredited_settlement_amount_properly() {
             (BigUint::from(855u32), 12), // 905
             (BigUint::from(1u32), 10),   // 1005 total
         ];
-        let acc = AccountId::new();
+        let acc = Uuid::new_v4();
         let mut f = Vec::new();
         for a in amounts {
             let s = store.clone();
@@ -65,7 +65,7 @@ fn clears_uncredited_settlement_amount_properly() {
             (BigUint::from(855u32), 12), // 905
             (BigUint::from(1u32), 10),   // 1005 total
         ];
-        let acc = AccountId::new();
+        let acc = Uuid::new_v4();
         let mut f = Vec::new();
         for a in amounts {
             let s = store.clone();

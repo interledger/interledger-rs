@@ -25,12 +25,6 @@ use futures::{
     sync::mpsc::UnboundedSender,
     Future, Stream,
 };
-use log::{debug, error, trace, warn};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-};
-
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
@@ -38,9 +32,7 @@ use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
 use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{
-    Account as AccountTrait, AccountId, AccountStore, AddressStore, Username,
-};
+use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{
     BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore, DEFAULT_ROUND_TRIP_TIME,
 };
@@ -51,6 +43,7 @@ use interledger_settlement::core::{
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
+use log::{debug, error, trace, warn};
 use num_bigint::BigUint;
 use parking_lot::RwLock;
 use redis::{
@@ -61,6 +54,10 @@ use secrecy::{ExposeSecret, Secret, SecretBytes};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
+use std::{
     iter::{self, FromIterator},
     str,
     str::FromStr,
@@ -70,7 +67,7 @@ use std::{
 use tokio_executor::spawn;
 use tokio_timer::Interval;
 use url::Url;
-use uuid::parser::ParseError;
+use uuid::Uuid;
 use zeroize::Zeroize;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
@@ -91,7 +88,7 @@ fn prefixed_idempotency_key(idempotency_key: String) -> String {
     format!("idempotency-key:{}", idempotency_key)
 }
 
-fn accounts_key(account_id: AccountId) -> String {
+fn accounts_key(account_id: Uuid) -> String {
     format!("accounts:{}", account_id)
 }
 
@@ -237,7 +234,7 @@ impl RedisStoreBuilder {
                                 sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
                                     let channel_name = msg.get_channel_name();
                                     if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
-                                        if let Ok(account_id) = AccountId::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
+                                        if let Ok(account_id) = Uuid::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
                                             let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
                                                 Ok(s) => s,
                                                 Err(e) => {
@@ -255,7 +252,7 @@ impl RedisStoreBuilder {
                                                 None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
                                             }
                                         } else {
-                                            error!("Invalid AccountId in channel name: {}", channel_name);
+                                            error!("Invalid Uuid in channel name: {}", channel_name);
                                         }
                                     } else {
                                         warn!("Ignoring unexpected message from Redis subscription for channel: {}", channel_name);
@@ -284,7 +281,7 @@ impl RedisStoreBuilder {
 pub struct RedisStore {
     ilp_address: Arc<RwLock<Address>>,
     connection: RedisReconnect,
-    subscriptions: Arc<RwLock<HashMap<AccountId, UnboundedSender<PaymentNotification>>>>,
+    subscriptions: Arc<RwLock<HashMap<Uuid, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     /// The store keeps the routing table in memory so that it can be returned
     /// synchronously while the Router is processing packets.
@@ -292,19 +289,19 @@ pub struct RedisStore {
     /// table after polling the store for updates.
     /// The inner `Arc<HashMap>` is used so that the `routing_table` method can
     /// return a reference to the routing table without cloning the underlying data.
-    routes: Arc<RwLock<Arc<HashMap<String, AccountId>>>>,
+    routes: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
     encryption_key: Arc<Secret<EncryptionKey>>,
     decryption_key: Arc<Secret<DecryptionKey>>,
 }
 
 impl RedisStore {
-    fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<AccountId>, Error = ()> {
+    fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<Uuid>, Error = ()> {
         let mut pipe = redis::pipe();
         pipe.smembers("accounts");
         pipe.query_async(self.connection.clone())
             .map_err(|err| error!("Error getting account IDs: {:?}", err))
             .and_then(|(_conn, account_ids): (_, Vec<Vec<RedisAccountId>>)| {
-                let account_ids: Vec<AccountId> = account_ids[0].iter().map(|rid| rid.0).collect();
+                let account_ids: Vec<Uuid> = account_ids[0].iter().map(|rid| rid.0).collect();
                 Ok(account_ids)
             })
     }
@@ -467,7 +464,7 @@ impl RedisStore {
 
     fn redis_modify_account(
         &self,
-        id: AccountId,
+        id: Uuid,
         settings: EncryptedAccountSettings,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
         let connection = self.connection.clone();
@@ -536,7 +533,7 @@ impl RedisStore {
 
     fn redis_get_account(
         &self,
-        id: AccountId,
+        id: Uuid,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
         Box::new(
             LOAD_ACCOUNTS
@@ -551,7 +548,7 @@ impl RedisStore {
 
     fn redis_delete_account(
         &self,
-        id: AccountId,
+        id: Uuid,
     ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
         let connection = self.connection.clone();
         let routing_table = self.routes.clone();
@@ -604,7 +601,7 @@ impl AccountStore for RedisStore {
     // TODO cache results to avoid hitting Redis for each packet
     fn get_accounts(
         &self,
-        account_ids: Vec<AccountId>,
+        account_ids: Vec<Uuid>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
@@ -635,7 +632,7 @@ impl AccountStore for RedisStore {
     fn get_account_id_from_username(
         &self,
         username: &Username,
-    ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
+    ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
         let username = username.clone();
         Box::new(
             cmd("HGET")
@@ -661,7 +658,7 @@ impl StreamNotificationsStore for RedisStore {
 
     fn add_payment_notification_subscription(
         &self,
-        id: AccountId,
+        id: Uuid,
         sender: UnboundedSender<PaymentNotification>,
     ) {
         trace!("Added payment notification listener for {}", id);
@@ -986,7 +983,7 @@ impl HttpStore for RedisStore {
 }
 
 impl RouterStore for RedisStore {
-    fn routing_table(&self) -> Arc<HashMap<String, AccountId>> {
+    fn routing_table(&self) -> Arc<HashMap<String, Uuid>> {
         self.routes.read().clone()
     }
 }
@@ -999,7 +996,7 @@ impl NodeStore for RedisStore {
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let encryption_key = self.encryption_key.clone();
-        let id = AccountId::new();
+        let id = Uuid::new_v4();
         let account = match Account::try_from(id, account, self.get_ilp_address()) {
             Ok(account) => account,
             Err(_) => return Box::new(err(())),
@@ -1018,7 +1015,7 @@ impl NodeStore for RedisStore {
         )
     }
 
-    fn delete_account(&self, id: AccountId) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+    fn delete_account(&self, id: Uuid) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         Box::new(
             self.redis_delete_account(id).and_then(move |account| {
@@ -1029,7 +1026,7 @@ impl NodeStore for RedisStore {
 
     fn update_account(
         &self,
-        id: AccountId,
+        id: Uuid,
         account: AccountDetails,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         let encryption_key = self.encryption_key.clone();
@@ -1056,7 +1053,7 @@ impl NodeStore for RedisStore {
 
     fn modify_account_settings(
         &self,
-        id: AccountId,
+        id: Uuid,
         settings: AccountSettings,
     ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
         let encryption_key = self.encryption_key.clone();
@@ -1126,7 +1123,7 @@ impl NodeStore for RedisStore {
 
     fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
     where
-        R: IntoIterator<Item = (String, AccountId)>,
+        R: IntoIterator<Item = (String, Uuid)>,
     {
         let routes: Vec<(String, RedisAccountId)> = routes
             .into_iter()
@@ -1168,7 +1165,7 @@ impl NodeStore for RedisStore {
     fn set_static_route(
         &self,
         prefix: String,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routing_table = self.routes.clone();
         let prefix_clone = prefix.clone();
@@ -1199,10 +1196,7 @@ impl NodeStore for RedisStore {
         )
     }
 
-    fn set_default_route(
-        &self,
-        account_id: AccountId,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    fn set_default_route(&self, account_id: Uuid) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let routing_table = self.routes.clone();
         // TODO replace this with a lua script to do both calls at once
         Box::new(
@@ -1398,7 +1392,7 @@ impl RouteManagerStore for RedisStore {
 
     fn get_accounts_to_send_routes_to(
         &self,
-        ignore_accounts: Vec<AccountId>,
+        ignore_accounts: Vec<Uuid>,
     ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
         let decryption_key = self.decryption_key.clone();
         Box::new(
@@ -1525,7 +1519,7 @@ impl RouteManagerStore for RedisStore {
                         .map(|account| (account.ilp_address.to_string(), account.clone())),
                 );
 
-                let account_map: HashMap<AccountId, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
+                let account_map: HashMap<Uuid, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
                 let configured_table: HashMap<String, Account> = HashMap::from_iter(static_routes.into_iter()
                     .filter_map(|(prefix, account_id)| {
                         if let Some(account) = account_map.get(&account_id.0) {
@@ -1738,7 +1732,7 @@ impl SettlementStore for RedisStore {
 
     fn update_balance_for_incoming_settlement(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         amount: u64,
         idempotency_key: Option<String>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
@@ -1758,7 +1752,7 @@ impl SettlementStore for RedisStore {
 
     fn refund_settlement(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         settle_amount: u64,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
@@ -1881,7 +1875,7 @@ impl LeftoversStore for RedisStore {
 
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
         let mut pipe = redis::pipe();
         pipe.atomic();
@@ -1902,7 +1896,7 @@ impl LeftoversStore for RedisStore {
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
@@ -1929,7 +1923,7 @@ impl LeftoversStore for RedisStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let connection = self.connection.clone();
@@ -1964,7 +1958,7 @@ impl LeftoversStore for RedisStore {
 
     fn clear_uncredited_settlement_amount(
         &self,
-        account_id: AccountId,
+        account_id: Uuid,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
         Box::new(
@@ -1984,7 +1978,7 @@ type RouteVec = Vec<(String, RedisAccountId)>;
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 fn update_routes(
     connection: RedisReconnect,
-    routing_table: Arc<RwLock<Arc<HashMap<String, AccountId>>>>,
+    routing_table: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
 ) -> impl Future<Item = (), Error = ()> {
     let mut pipe = redis::pipe();
     pipe.hgetall(ROUTES_KEY)
@@ -2026,38 +2020,38 @@ fn update_routes(
         )
 }
 
-// AccountId does not implement ToRedisArgs and FromRedisValue.
+// Uuid does not implement ToRedisArgs and FromRedisValue.
 // Rust does not allow implementing foreign traits on foreign data types.
-// As a result, we wrap AccountId in a local data type, and implement the necessary
+// As a result, we wrap Uuid in a local data type, and implement the necessary
 // traits for that.
 #[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
-struct RedisAccountId(AccountId);
+struct RedisAccountId(Uuid);
 
 impl FromStr for RedisAccountId {
-    type Err = ParseError;
+    type Err = uuid::Error;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let id = AccountId::from_str(&src)?;
+        let id = Uuid::from_str(&src)?;
         Ok(RedisAccountId(id))
     }
 }
 
 impl Display for RedisAccountId {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        f.write_str(&(self.0).0.to_hyphenated().to_string())
+        f.write_str(&self.0.to_hyphenated().to_string())
     }
 }
 
 impl ToRedisArgs for RedisAccountId {
     fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
-        out.write_arg((self.0).0.to_hyphenated().to_string().as_bytes().as_ref());
+        out.write_arg(self.0.to_hyphenated().to_string().as_bytes().as_ref());
     }
 }
 
 impl FromRedisValue for RedisAccountId {
     fn from_redis_value(v: &Value) -> Result<Self, RedisError> {
         let account_id = String::from_redis_value(v)?;
-        let id = AccountId::from_str(&account_id)
+        let id = Uuid::from_str(&account_id)
             .map_err(|_| RedisError::from((ErrorKind::TypeError, "Invalid account id string")))?;
         Ok(RedisAccountId(id))
     }

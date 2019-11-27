@@ -28,48 +28,12 @@
 
 use futures::{Future, IntoFuture};
 use interledger_packet::{Address, Fulfill, Prepare, Reject};
-use serde::{Deserialize, Serialize};
 use std::{
-    cmp::Eq,
-    fmt::{self, Debug, Display},
-    hash::Hash,
+    fmt::{self, Debug},
     marker::PhantomData,
-    str::FromStr,
     sync::Arc,
 };
-use uuid::{parser::ParseError, BytesError, Uuid};
-
-#[derive(Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, Copy, Clone)]
-pub struct AccountId(pub Uuid);
-
-impl AccountId {
-    pub fn new() -> Self {
-        let uid = Uuid::new_v4();
-        AccountId(uid)
-    }
-}
-
-impl AccountId {
-    pub fn from_slice(b: &[u8]) -> Result<Self, BytesError> {
-        let uid = Uuid::from_slice(b)?;
-        Ok(AccountId(uid))
-    }
-}
-
-impl FromStr for AccountId {
-    type Err = ParseError;
-
-    fn from_str(src: &str) -> Result<Self, Self::Err> {
-        let uid = Uuid::from_str(&src)?;
-        Ok(AccountId(uid))
-    }
-}
-
-impl Display for AccountId {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        f.write_str(&self.0.to_hyphenated().to_string())
-    }
-}
+use uuid::Uuid;
 
 mod auth;
 pub use auth::{Auth as AuthToken, Username};
@@ -85,7 +49,7 @@ pub use trace::*;
 /// Store implementations will implement these Account traits for a concrete type that
 /// they will load from the database.
 pub trait Account: Clone + Send + Sized + Debug {
-    fn id(&self) -> AccountId;
+    fn id(&self) -> Uuid;
     fn username(&self) -> &Username;
     fn ilp_address(&self) -> &Address;
     fn asset_scale(&self) -> u8;
@@ -202,13 +166,13 @@ pub trait AccountStore {
 
     fn get_accounts(
         &self,
-        account_ids: Vec<AccountId>,
+        account_ids: Vec<Uuid>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
     fn get_account_id_from_username(
         &self,
         username: &Username,
-    ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send>;
+    ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send>;
 }
 
 /// Create an IncomingService that calls the given handler for each request.

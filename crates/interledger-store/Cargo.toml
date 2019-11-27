@@ -49,7 +49,7 @@ num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 
 # store-redis feature
 redis = { version = "0.13.0", default-features = false, features = ["executor"], optional = true }
-uuid = { version = "0.7.4", default-features = false, features = ["serde"], optional = true }
+uuid = { version = "0.8.1", default-features = false, features = ["serde"], optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.7.0", default-features = false }

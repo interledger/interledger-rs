@@ -330,6 +330,7 @@ mod tests {
         sync::{Arc, Mutex},
         time::SystemTime,
     };
+    use uuid::Uuid;
 
     lazy_static! {
         pub static ref ALICE: Username = Username::from_str("alice").unwrap();
@@ -461,8 +462,8 @@ mod tests {
     }
 
     impl Account for TestAccount {
-        fn id(&self) -> AccountId {
-            AccountId::new()
+        fn id(&self) -> Uuid {
+            Uuid::new_v4()
         }
 
         fn username(&self) -> &Username {

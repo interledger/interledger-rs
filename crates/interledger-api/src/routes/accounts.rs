@@ -11,8 +11,7 @@ use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
 use interledger_router::RouterStore;
 use interledger_service::{
-    Account, AccountId, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService,
-    Username,
+    Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::SettlementAccount;
@@ -23,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
 use std::str::FromStr;
+use uuid::Uuid;
 use warp::{self, Filter, Rejection};
 
 #[derive(Deserialize, Debug)]
@@ -126,9 +126,9 @@ where
         .and_then(
             |path_username: Username, auth_string: String, store: S, admin_auth_header: String| {
                 store.get_account_id_from_username(&path_username).then(
-                    move |account_id: Result<AccountId, _>| {
+                    move |account_id: Result<Uuid, _>| {
                         if account_id.is_err() {
-                            return Either::A(err::<AccountId, Rejection>(
+                            return Either::A(err::<Uuid, Rejection>(
                                 ApiError::account_not_found().into(),
                             ));
                         }
@@ -237,20 +237,18 @@ where
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(
-            move |id: AccountId, account_details: AccountDetails, store: S| {
-                let store_clone = store.clone();
-                let handler = outgoing_handler.clone();
-                let btp = btp.clone();
-                store
-                    .update_account(id, account_details)
-                    .map_err::<_, Rejection>(move |_| ApiError::internal_server_error().into())
-                    .and_then(move |account| {
-                        connect_to_external_services(handler, account, store_clone, btp)
-                    })
-                    .and_then(|account: A| Ok(warp::reply::json(&account)))
-            },
-        )
+        .and_then(move |id: Uuid, account_details: AccountDetails, store: S| {
+            let store_clone = store.clone();
+            let handler = outgoing_handler.clone();
+            let btp = btp.clone();
+            store
+                .update_account(id, account_details)
+                .map_err::<_, Rejection>(move |_| ApiError::internal_server_error().into())
+                .and_then(move |account| {
+                    connect_to_external_services(handler, account, store_clone, btp)
+                })
+                .and_then(|account: A| Ok(warp::reply::json(&account)))
+        })
         .boxed();
 
     // GET /accounts/:username
@@ -259,7 +257,7 @@ where
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
-        .and_then(|id: AccountId, store: S| {
+        .and_then(|id: Uuid, store: S| {
             store
                 .get_accounts(vec![id])
                 .map_err::<_, Rejection>(|_| ApiError::account_not_found().into())
@@ -274,7 +272,7 @@ where
         .and(warp::path::end())
         .and(admin_or_authorized_user_only.clone())
         .and(with_store.clone())
-        .and_then(|id: AccountId, store: S| {
+        .and_then(|id: Uuid, store: S| {
             // TODO reduce the number of store calls it takes to get the balance
             store
                 .get_accounts(vec![id])
@@ -301,7 +299,7 @@ where
         .and(warp::path::end())
         .and(admin_only.clone())
         .and(with_store.clone())
-        .and_then(|id: AccountId, store: S| {
+        .and_then(|id: Uuid, store: S| {
             store
                 .delete_account(id)
                 .map_err::<_, Rejection>(move |_| {
@@ -320,7 +318,7 @@ where
         .and(admin_or_authorized_user_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|id: AccountId, settings: AccountSettings, store: S| {
+        .and_then(|id: Uuid, settings: AccountSettings, store: S| {
             store
                 .modify_account_settings(id, settings)
                 .map_err::<_, Rejection>(move |_| {
@@ -340,7 +338,7 @@ where
         .and(admin_or_authorized_user_only.clone())
         .and(warp::ws2())
         .and(with_store.clone())
-        .map(|id: AccountId, ws: warp::ws::Ws2, store: S| {
+        .map(|id: Uuid, ws: warp::ws::Ws2, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
                 let (tx, rx) = futures::sync::mpsc::unbounded::<PaymentNotification>();
                 store.add_payment_notification_subscription(id, tx);
@@ -391,7 +389,7 @@ where
         .and(warp::path("spsp"))
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(move |id: AccountId, store: S| {
+        .and_then(move |id: Uuid, store: S| {
             let server_secret_clone = server_secret_clone.clone();
             store
                 .get_accounts(vec![id])

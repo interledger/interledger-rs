@@ -4,26 +4,24 @@ use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_http::HttpAccount;
 use interledger_packet::Address;
-use interledger_service::{Account as AccountTrait, AccountId, Username};
+use interledger_service::{Account as AccountTrait, Username};
 use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use log::error;
-
 use ring::aead;
+use secrecy::ExposeSecret;
+use secrecy::SecretBytes;
 use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use std::str::{self, FromStr};
-
 use url::Url;
-
-use secrecy::ExposeSecret;
-use secrecy::SecretBytes;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
-    pub(crate) id: AccountId,
+    pub(crate) id: Uuid,
     pub(crate) username: Username,
     #[serde(serialize_with = "address_to_string")]
     pub(crate) ilp_address: Address,
@@ -70,7 +68,7 @@ where
 
 impl Account {
     pub fn try_from(
-        id: AccountId,
+        id: Uuid,
         details: AccountDetails,
         node_ilp_address: Address,
     ) -> Result<Account, ()> {
@@ -231,7 +229,7 @@ impl AccountWithEncryptedTokens {
 }
 
 impl AccountTrait for Account {
-    fn id(&self) -> AccountId {
+    fn id(&self) -> Uuid {
         self.id
     }
 
@@ -348,7 +346,7 @@ mod test {
 
     #[test]
     fn from_account_details() {
-        let id = AccountId::new();
+        let id = Uuid::new_v4();
         let account = Account::try_from(
             id,
             ACCOUNT_DETAILS.clone(),

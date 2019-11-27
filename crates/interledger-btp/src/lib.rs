@@ -57,6 +57,7 @@ mod client_server {
         time::{Duration, SystemTime},
     };
     use tokio::runtime::Runtime;
+    use uuid::Uuid;
 
     use lazy_static::lazy_static;
 
@@ -78,14 +79,14 @@ mod client_server {
 
     #[derive(Clone, Debug)]
     pub struct TestAccount {
-        pub id: AccountId,
+        pub id: Uuid,
         pub ilp_over_btp_incoming_token: Option<String>,
         pub ilp_over_btp_outgoing_token: Option<String>,
         pub ilp_over_btp_url: Option<Url>,
     }
 
     impl Account for TestAccount {
-        fn id(&self) -> AccountId {
+        fn id(&self) -> Uuid {
             self.id
         }
 
@@ -130,7 +131,7 @@ mod client_server {
 
         fn get_accounts(
             &self,
-            account_ids: Vec<AccountId>,
+            account_ids: Vec<Uuid>,
         ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
             let accounts: Vec<TestAccount> = self
                 .accounts
@@ -154,8 +155,8 @@ mod client_server {
         fn get_account_id_from_username(
             &self,
             _username: &Username,
-        ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
-            Box::new(ok(AccountId::new()))
+        ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
+            Box::new(ok(Uuid::new_v4()))
         }
     }
 
@@ -205,7 +206,7 @@ mod client_server {
 
                 let server_store = TestStore {
                     accounts: Arc::new(vec![TestAccount {
-                        id: AccountId::new(),
+                        id: Uuid::new_v4(),
                         ilp_over_btp_incoming_token: Some("alice:test_auth_token".to_string()),
                         ilp_over_btp_outgoing_token: None,
                         ilp_over_btp_url: None,
@@ -235,7 +236,7 @@ mod client_server {
                 let server = warp::serve(filter);
 
                 let account = TestAccount {
-                    id: AccountId::new(),
+                    id: Uuid::new_v4(),
                     ilp_over_btp_url: Some(Url::parse(&format!("btp+ws://{}", bind_addr)).unwrap()),
                     ilp_over_btp_outgoing_token: Some("alice:test_auth_token".to_string()),
                     ilp_over_btp_incoming_token: None,

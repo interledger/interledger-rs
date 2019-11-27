@@ -145,7 +145,7 @@ mod tests {
     use super::*;
     use futures::future::ok;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
-    use interledger_service::{outgoing_service_fn, AccountId};
+    use interledger_service::outgoing_service_fn;
     use lazy_static::lazy_static;
     use parking_lot::Mutex;
     use std::collections::HashMap;
@@ -153,9 +153,10 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
     use std::time::UNIX_EPOCH;
+    use uuid::Uuid;
 
     #[derive(Debug, Clone)]
-    struct TestAccount(AccountId);
+    struct TestAccount(Uuid);
 
     lazy_static! {
         pub static ref ALICE: Username = Username::from_str("alice").unwrap();
@@ -163,7 +164,7 @@ mod tests {
     }
 
     impl Account for TestAccount {
-        fn id(&self) -> AccountId {
+        fn id(&self) -> Uuid {
             self.0
         }
 
@@ -186,7 +187,7 @@ mod tests {
 
     #[derive(Clone)]
     struct TestStore {
-        routes: HashMap<String, AccountId>,
+        routes: HashMap<String, Uuid>,
     }
 
     impl AccountStore for TestStore {
@@ -194,7 +195,7 @@ mod tests {
 
         fn get_accounts(
             &self,
-            account_ids: Vec<AccountId>,
+            account_ids: Vec<Uuid>,
         ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
             Box::new(ok(account_ids.into_iter().map(TestAccount).collect()))
         }
@@ -203,8 +204,8 @@ mod tests {
         fn get_account_id_from_username(
             &self,
             _username: &Username,
-        ) -> Box<dyn Future<Item = AccountId, Error = ()> + Send> {
-            Box::new(ok(AccountId::new()))
+        ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
+            Box::new(ok(Uuid::new_v4()))
         }
     }
 
@@ -228,7 +229,7 @@ mod tests {
     }
 
     impl RouterStore for TestStore {
-        fn routing_table(&self) -> Arc<HashMap<String, AccountId>> {
+        fn routing_table(&self) -> Arc<HashMap<String, Uuid>> {
             Arc::new(self.routes.clone())
         }
     }
@@ -250,7 +251,7 @@ mod tests {
 
         let result = router
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -269,7 +270,7 @@ mod tests {
         let mut router = Router::new(
             TestStore {
                 routes: HashMap::from_iter(
-                    vec![("example.other".to_string(), AccountId::new())].into_iter(),
+                    vec![("example.other".to_string(), Uuid::new_v4())].into_iter(),
                 ),
             },
             outgoing_service_fn(|_| {
@@ -283,7 +284,7 @@ mod tests {
 
         let result = router
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -302,7 +303,7 @@ mod tests {
         let mut router = Router::new(
             TestStore {
                 routes: HashMap::from_iter(
-                    vec![("example.destination".to_string(), AccountId::new())].into_iter(),
+                    vec![("example.destination".to_string(), Uuid::new_v4())].into_iter(),
                 ),
             },
             outgoing_service_fn(|_| {
@@ -316,7 +317,7 @@ mod tests {
 
         let result = router
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -334,7 +335,7 @@ mod tests {
     fn catch_all_route() {
         let mut router = Router::new(
             TestStore {
-                routes: HashMap::from_iter(vec![(String::new(), AccountId::new())].into_iter()),
+                routes: HashMap::from_iter(vec![(String::new(), Uuid::new_v4())].into_iter()),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -347,7 +348,7 @@ mod tests {
 
         let result = router
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -366,7 +367,7 @@ mod tests {
         let mut router = Router::new(
             TestStore {
                 routes: HashMap::from_iter(
-                    vec![("example.".to_string(), AccountId::new())].into_iter(),
+                    vec![("example.".to_string(), Uuid::new_v4())].into_iter(),
                 ),
             },
             outgoing_service_fn(|_| {
@@ -380,7 +381,7 @@ mod tests {
 
         let result = router
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -396,9 +397,9 @@ mod tests {
 
     #[test]
     fn finds_longest_matching_prefix() {
-        let id0 = AccountId::from_slice(&[0; 16]).unwrap();
-        let id1 = AccountId::from_slice(&[1; 16]).unwrap();
-        let id2 = AccountId::from_slice(&[2; 16]).unwrap();
+        let id0 = Uuid::from_slice(&[0; 16]).unwrap();
+        let id1 = Uuid::from_slice(&[1; 16]).unwrap();
+        let id2 = Uuid::from_slice(&[2; 16]).unwrap();
         let to: Arc<Mutex<Option<TestAccount>>> = Arc::new(Mutex::new(None));
         let to_clone = to.clone();
         let mut router = Router::new(

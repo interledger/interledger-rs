@@ -174,16 +174,18 @@ use lazy_static::lazy_static;
 #[cfg(test)]
 use std::str::FromStr;
 #[cfg(test)]
+use uuid::Uuid;
+#[cfg(test)]
 lazy_static! {
     pub static ref ALICE: Username = Username::from_str("alice").unwrap();
     pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
 }
 #[cfg(test)]
 #[derive(Clone, Debug)]
-struct TestAccount(AccountId);
+struct TestAccount(Uuid);
 #[cfg(test)]
 impl Account for TestAccount {
-    fn id(&self) -> AccountId {
+    fn id(&self) -> Uuid {
         self.0
     }
 
@@ -256,7 +258,7 @@ mod incoming {
         );
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -292,7 +294,7 @@ mod incoming {
         );
         let result = validator
             .handle_request(IncomingRequest {
-                from: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
                     amount: 100,
@@ -365,8 +367,8 @@ mod outgoing {
         );
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount(AccountId::new()),
-                to: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
+                to: TestAccount(Uuid::new_v4()),
                 original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
@@ -403,8 +405,8 @@ mod outgoing {
         );
         let result = validator
             .send_request(OutgoingRequest {
-                from: TestAccount(AccountId::new()),
-                to: TestAccount(AccountId::new()),
+                from: TestAccount(Uuid::new_v4()),
+                to: TestAccount(Uuid::new_v4()),
                 original_amount: 100,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),

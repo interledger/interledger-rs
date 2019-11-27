@@ -1,11 +1,7 @@
 use futures::{stream::Stream, Future};
 use hex;
 use interledger::stream::StreamDelivery;
-use interledger::{
-    packet::Address,
-    service::{Account as AccountTrait, AccountId},
-    store::account::Account,
-};
+use interledger::{packet::Address, service::Account as AccountTrait, store::account::Account};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Serialize;
 use serde_json::json;
@@ -13,6 +9,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str;
 use tracing_subscriber;
+use uuid::Uuid;
 
 pub fn install_tracing_subscriber() {
     tracing_subscriber::fmt::Subscriber::builder()
@@ -129,7 +126,7 @@ pub fn get_all_accounts(
 }
 
 #[allow(unused)]
-pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, AccountId> {
+pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, Uuid> {
     let mut map = HashMap::new();
     for a in accounts {
         map.insert(a.ilp_address().clone(), a.id());
