@@ -9,7 +9,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 
 [features]
 default = ["redis"]
-redis = ["redis_crate", "uuid"]
+redis = ["redis_crate"]
 
 [lib]
 name = "interledger_store"
@@ -46,10 +46,10 @@ http = { version = "0.1.18", default-features = false }
 secrecy = { version = "0.5.0", default-features = false, features = ["serde", "bytes"] }
 zeroize = { version = "1.0.0", default-features = false, features = ["bytes"] }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
+uuid = { version = "0.8.1", default-features = false, features = ["serde"] }
 
-# store-redis feature
+# redis feature
 redis_crate = { package = "redis", version = "0.13.0", default-features = false, features = ["executor"], optional = true }
-uuid = { version = "0.8.1", default-features = false, features = ["serde"], optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.7.0", default-features = false }
