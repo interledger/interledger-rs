@@ -137,8 +137,11 @@ impl CongestionController {
                         self.max_packet_amount = Some(new_max_packet_amount);
                     }
                 } else {
-                    // TODO lower the max packet amount anyway
                     warn!("Got F08: Amount Too Large Error without max packet amount details attached");
+                    if let Some(max_packet_amount) = self.max_packet_amount {
+                        self.max_packet_amount =
+                            Some((max_packet_amount as f64 / self.decrease_factor) as u64);
+                    }
                 }
             }
             _ => {
@@ -296,18 +299,27 @@ mod tests {
                 }
                 .build(),
             );
-
             assert_eq!(controller.get_max_amount(), 100);
 
             let amount = controller.get_max_amount();
             controller.prepare(amount);
-            controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 100);
+            controller.reject(
+                amount,
+                &RejectBuilder {
+                    code: ErrorCode::F08_AMOUNT_TOO_LARGE,
+                    message: &[],
+                    triggered_by: None,
+                    data: &[],
+                }
+                .build(),
+            );
+            // it was decreased by the decrease factor
+            assert_eq!(controller.get_max_amount(), amount / 2);
 
             let amount = controller.get_max_amount();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 100);
+            assert_eq!(controller.get_max_amount(), 50);
         }
 
         #[test]
