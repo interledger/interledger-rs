@@ -449,7 +449,9 @@ ilp-node \
 --settlement_api_bind_address 127.0.0.1:8771 \
 &> logs/node-bob.log &
 
-# Start Charlie's node
+# Start Charlie's node 
+# You can add `--ilp_address example.bob.charlie` but it is not necessary
+# since the address will get fetched via ILDCP request when Bob is added as a parent.
 ilp-node \
 --secret_seed 1232362131122139900555208458637022875563691455429373719368053354 \
 --admin_auth_token hi_charlie \
@@ -483,8 +485,6 @@ printf "Creating accounts:\n"
 # For authenticating to nodes, we can set credentials as an environment variable or a CLI argument
 export ILP_CLI_API_AUTH=hi_alice
 
-# Adding settlement accounts should be done at the same time because it checks each other
-
 printf "Adding Alice's account...\n"
 ilp-cli accounts create alice \
     --ilp-address example.alice \
@@ -494,17 +494,6 @@ ilp-cli accounts create alice \
     --ilp-over-http-incoming-token alice_password \
     --ilp-over-http-url http://localhost:7770/ilp \
     --settle-to 0 &> logs/account-alice-alice.log
-
-printf "Adding Charlie's Account...\n"
-ilp-cli --node http://localhost:9770 accounts create charlie \
-    --auth hi_charlie \
-    --ilp-address example.bob.charlie \
-    --asset-code XRP \
-    --asset-scale 6 \
-    --max-packet-amount 100 \
-    --ilp-over-http-incoming-token charlie_password \
-    --ilp-over-http-url http://localhost:9770/ilp \
-    --settle-to 0 &> logs/account-charlie-charlie.log
 
 printf "Adding Bob's account on Alice's node (ETH Peer relation)...\n"
 ilp-cli accounts create bob \
@@ -538,9 +527,10 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --routing-relation Peer &> logs/account-bob-alice.log
 
 printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
+# you can optionally provide --ilp-address example.bob.charlie as an argument, 
+# but the node is smart enough to figure it by itself
 ilp-cli --node http://localhost:8770 accounts create charlie \
     --auth hi_bob \
-    --ilp-address example.bob.charlie \
     --asset-code XRP \
     --asset-scale 6 \
     --max-packet-amount 100 \
@@ -553,9 +543,17 @@ ilp-cli --node http://localhost:8770 accounts create charlie \
     --settle-to 0 \
     --routing-relation Child &> logs/account-bob-charlie.log &
 
-# We have to wait here to ensure that the parent account is created because
-# the child account tries to acquire its ILP address from the parent account.
-sleep 2
+printf "Adding Charlie's Account...\n"
+# there is no need to specify an address, it will get added as localhost.charlie 
+# initially, and then it will be converted to example.bob.charlie
+ilp-cli --node http://localhost:9770 accounts create charlie \
+    --auth hi_charlie \
+    --asset-code XRP \
+    --asset-scale 6 \
+    --max-packet-amount 100 \
+    --ilp-over-http-incoming-token charlie_password \
+    --ilp-over-http-url http://localhost:9770/ilp \
+    --settle-to 0 &> logs/account-charlie-charlie.log
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
 ilp-cli --node http://localhost:9770 accounts create bob \
