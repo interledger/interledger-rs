@@ -352,7 +352,7 @@ mod tests {
         // rejects f64 that does not fit in u64
         let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0);
         let reject = ret.0.unwrap_err();
-        assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
+        assert_eq!(reject.code(), ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT);
         assert!(reject.message().starts_with(b"Could not cast"));
 
         // `Convert` errored
