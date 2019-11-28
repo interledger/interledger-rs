@@ -146,7 +146,7 @@ where
                     // When it gets cast to a u64, it will end up being 0.
                     if outgoing_amount != 0.0 && outgoing_amount as u64 == 0 {
                         return Box::new(err(RejectBuilder {
-                            code: ErrorCode::F08_AMOUNT_TOO_LARGE,
+                            code: ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT,
                             message: format!(
                                 "Could not cast outgoing amount to u64 {}",
                                 outgoing_amount,
