@@ -135,7 +135,8 @@ Admin or account-holder only.
 
 ```json
 {
-    "balance": 1000
+    "balance": 1e-7,
+    "asset_code": "ABC"
 }
 ```
 

@@ -278,17 +278,23 @@ where
                 .get_accounts(vec![id])
                 .map_err(|_| warp::reject::not_found())
                 .and_then(move |mut accounts| {
+                    let account = accounts.pop().unwrap();
+                    let acc_clone = account.clone();
+                    let asset_scale = acc_clone.asset_scale();
+                    let asset_code = acc_clone.asset_code().to_owned();
                     store
-                        .get_balance(accounts.pop().unwrap())
+                        .get_balance(account)
                         .map_err(move |_| {
                             error!("Error getting balance for account: {}", id);
                             ApiError::internal_server_error().into()
                         })
-                })
-                .and_then(|balance: i64| {
-                    Ok(warp::reply::json(&json!({
-                        "balance": balance,
-                    })))
+                        .and_then(move |balance: i64| {
+                            Ok(warp::reply::json(&json!({
+                                // normalize to the base unit
+                                "balance": balance as f64 / 10_u64.pow(asset_scale.into()) as f64,
+                                "asset_code": asset_code,
+                            })))
+                        })
                 })
         })
         .boxed();
