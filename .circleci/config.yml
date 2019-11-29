@@ -82,6 +82,9 @@ jobs:
           name: Run run-md Test
           command: |
             scripts/run-md-test.sh
+          environment:
+            # run scripts in source mode so that the branch's build is used
+            SOURCE_MODE: 1
       - store_artifacts:
           path: /tmp/run-md-test
           destination: run-md-test

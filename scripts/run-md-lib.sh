@@ -69,7 +69,7 @@ function wait_to_serve() {
 # $2 = timeout, -1 = don't timeout
 # $3.. = curl arguments (excludes curl itself)
 #
-# wait_to_get '{"balance":"0"}' -1 -H "Authorization: Bearer xxx" "http://localhost/"
+# wait_to_get '{"balance":0, "asset_code": "ABC"}' -1 -H "Authorization: Bearer xxx" "http://localhost/"
 function wait_to_get_http_response_body() {
     local expected=$1
     local timeout=$2
