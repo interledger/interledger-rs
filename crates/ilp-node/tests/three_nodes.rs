@@ -269,9 +269,30 @@ fn three_nodes() {
                             assert_eq!(receipt.delivered_amount, 2);
                             assert_eq!(receipt.delivered_asset_scale.unwrap(), 6);
                             get_balances().and_then(move |ret| {
-                                assert_eq!(ret[0], -1000);
-                                assert_eq!(ret[1], 2);
-                                assert_eq!(ret[2], 2);
+                                // -1000 divided by asset scale 9
+                                assert_eq!(
+                                    ret[0],
+                                    BalanceData {
+                                        asset_code: "XYZ".to_owned(),
+                                        balance: -1e-6
+                                    }
+                                );
+                                // 2 divided by asset scale 6
+                                assert_eq!(
+                                    ret[1],
+                                    BalanceData {
+                                        asset_code: "ABC".to_owned(),
+                                        balance: 2e-6
+                                    }
+                                );
+                                // 2 divided by asset scale 6
+                                assert_eq!(
+                                    ret[2],
+                                    BalanceData {
+                                        asset_code: "ABC".to_owned(),
+                                        balance: 2e-6
+                                    }
+                                );
                                 Ok(())
                             })
                         })
@@ -296,9 +317,30 @@ fn three_nodes() {
                             assert_eq!(receipt.delivered_amount, 500_000);
                             assert_eq!(receipt.delivered_asset_scale.unwrap(), 9);
                             get_balances().and_then(move |ret| {
-                                assert_eq!(ret[0], 499_000);
-                                assert_eq!(ret[1], -998);
-                                assert_eq!(ret[2], -998);
+                                // 499,000 divided by asset scale 9
+                                assert_eq!(
+                                    ret[0],
+                                    BalanceData {
+                                        asset_code: "XYZ".to_owned(),
+                                        balance: 499e-6
+                                    }
+                                );
+                                // -998 divided by asset scale 6
+                                assert_eq!(
+                                    ret[1],
+                                    BalanceData {
+                                        asset_code: "ABC".to_owned(),
+                                        balance: -998e-6
+                                    }
+                                );
+                                // -998 divided by asset scale 6
+                                assert_eq!(
+                                    ret[2],
+                                    BalanceData {
+                                        asset_code: "ABC".to_owned(),
+                                        balance: -998e-6
+                                    }
+                                );
                                 Ok(())
                             })
                         })
