@@ -26,9 +26,10 @@ pub fn random_secret() -> String {
     hex::encode(bytes)
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug, PartialEq)]
 pub struct BalanceData {
-    pub balance: i64,
+    pub balance: f64,
+    pub asset_code: String,
 }
 
 #[allow(unused)]
@@ -139,7 +140,7 @@ pub fn get_balance<T: Display>(
     account_id: T,
     node_port: u16,
     admin_token: &str,
-) -> impl Future<Item = i64, Error = ()> {
+) -> impl Future<Item = BalanceData, Error = ()> {
     let client = reqwest::r#async::Client::new();
     client
         .get(&format!(
@@ -155,6 +156,6 @@ pub fn get_balance<T: Display>(
         })
         .and_then(|body| {
             let ret: BalanceData = serde_json::from_slice(&body).unwrap();
-            Ok(ret.balance)
+            Ok(ret)
         })
 }
