@@ -108,7 +108,9 @@ fn three_nodes() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", node1_settlement),
         "secret_seed": random_secret(),
         "route_broadcast_interval": Some(200),
-        "exchange_rate_poll_interval": 60000,
+        "exchange_rate": {
+            "poll_interval": 60000,
+        },
     }))
     .expect("Error creating node1.");
 
@@ -120,7 +122,9 @@ fn three_nodes() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", node2_settlement),
         "secret_seed": random_secret(),
         "route_broadcast_interval": Some(200),
-        "exchange_rate_poll_interval": 60000,
+        "exchange_rate": {
+            "poll_interval": 60000,
+        },
     }))
     .expect("Error creating node2.");
 
@@ -132,7 +136,9 @@ fn three_nodes() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", node3_settlement),
         "secret_seed": random_secret(),
         "route_broadcast_interval": Some(200),
-        "exchange_rate_poll_interval": 60000,
+        "exchange_rate": {
+            "poll_interval": 60000,
+        },
     }))
     .expect("Error creating node3.");
 

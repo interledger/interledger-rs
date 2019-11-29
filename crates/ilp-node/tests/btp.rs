@@ -70,7 +70,9 @@ fn two_nodes_btp() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_a_settlement),
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
-        "exchange_rate_poll_interval": 60000,
+        "exchange_rate": {
+            "poll_interval": 60000
+        },
     }))
     .expect("Error creating node_a.");
 
@@ -83,7 +85,9 @@ fn two_nodes_btp() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_b_settlement),
         "secret_seed": random_secret(),
         "route_broadcast_interval": Some(200),
-        "exchange_rate_poll_interval": 60000,
+        "exchange_rate": {
+            "poll_interval": 60000
+        },
     }))
     .expect("Error creating node_b.");
 

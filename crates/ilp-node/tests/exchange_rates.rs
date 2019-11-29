@@ -35,8 +35,10 @@ fn coincap() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", get_open_port(None)),
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
-        "exchange_rate_poll_interval": 60000,
-        "exchange_rate_provider": "CoinCap",
+        "exchange_rate": {
+            "poll_interval": 60000,
+            "provider": "CoinCap",
+        },
     }))
     .unwrap();
     runtime.spawn(node.serve());
@@ -110,11 +112,13 @@ fn cryptocompare() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", get_open_port(None)),
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
-        "exchange_rate_poll_interval": 60000,
-        "exchange_rate_provider": {
-            "crypto_compare": api_key
+        "exchange_rate": {
+            "poll_interval": 60000,
+            "provider": {
+                "crypto_compare": api_key
+            },
+            "spread": 0.0,
         },
-        "exchange_rate_spread": 0.0,
     }))
     .unwrap();
     runtime.spawn(node.serve());
