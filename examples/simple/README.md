@@ -2,10 +2,10 @@
 # For integration tests
 function post_test_hook() {
     if [ $TEST_MODE -eq 1 ]; then
-        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/alice/balance
-        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/node_b/balance
-        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/node_a/balance
-        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/bob/balance
+        test_equals_or_exit '{"asset_code":"ABC","balance":-5e-7}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"asset_code":"ABC","balance":5e-7}' test_http_response_body -H "Authorization: Bearer admin-a" http://localhost:7770/accounts/node_b/balance
+        test_equals_or_exit '{"asset_code":"ABC","balance":-5e-7}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/node_a/balance
+        test_equals_or_exit '{"asset_code":"ABC","balance":5e-7}' test_http_response_body -H "Authorization: Bearer admin-b" http://localhost:8770/accounts/bob/balance
     fi
 }
 -->

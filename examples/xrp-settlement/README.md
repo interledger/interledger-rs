@@ -2,10 +2,10 @@
 # For integration tests
 function post_test_hook() {
     if [ $TEST_MODE -eq 1 ]; then
-        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
-        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
-        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
-        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
+        test_equals_or_exit '{"asset_code":"XRP","balance":-0.0005}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"asset_code":"XRP","balance":0.0}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
+        test_equals_or_exit '{"asset_code":"XRP","balance":0.0}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
+        test_equals_or_exit '{"asset_code":"XRP","balance":0.0005}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
     fi
 }
 -->
@@ -408,7 +408,7 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"balance":0}' 20 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
+wait_to_get_http_response_body '{"asset_code":"XRP","balance":0.0}' 20 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
