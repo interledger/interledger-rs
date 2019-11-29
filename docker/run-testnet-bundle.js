@@ -134,7 +134,7 @@ function runNode({ httpBindAddress, adminAuthToken, secretSeed, nodeName }) {
     ],
         {
             env: {
-                'ILP_EXCHANGE_RATE_PROVIDER': 'CoinCap',
+                'ILP_EXCHANGE_RATE__PROVIDER': 'CoinCap',
                 'RUST_LOG': process.env.RUST_LOG || 'interledger=debug',
                 'RUST_BACKTRACE': process.env.RUST_BACKTRACE || '1'
             },

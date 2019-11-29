@@ -95,18 +95,19 @@ The configuration parameters are explained in the following format.
     - Non-negative Integer (in milliseconds)
     - `30000`
     - Interval, defined in milliseconds, on which the node will broadcast routing information to other nodes using CCP. Defaults to 30000ms (30 seconds).
-- exchange_rate_provider
-    - String (should be one of `CoinCap`, `CryptoCompare`)
-    - `CoinCap`
-    - Exchange rate API to poll for exchange rates. If this is not set, the node will not poll for rates and will instead use the rates set via the HTTP API. Note that [CryptoCompare](#using-cryptocompare) can also be used **when the node is configured via a config file or stdin**, because an API key must be provided to use that service.
-- exchange_rate_poll_interval
-    - Non-negative Integer (in milliseconds)
-    - `60000`
-    - Interval, defined in milliseconds, on which the node will poll the `exchange_rate_provider` (if specified) for exchange rates.
-- exchange_rate_spread
-    - Float
-    - `0.01`
-    - Spread, as a fraction, to add on top of the exchange rate. This amount is kept as the node operator's profit, or may cover fluctuations in exchange rates. For example, take an incoming packet with an amount of 100. If the exchange rate is 1:0.5 and the spread is 0.01, the amount on the outgoing packet would be 198 (instead of 200 without the spread).
+- exchange_rate
+    - provider
+        - String (should be one of `CoinCap`, `CryptoCompare`)
+        - `CoinCap`
+        - Exchange rate API to poll for exchange rates. If this is not set, the node will not poll for rates and will instead use the rates set via the HTTP API. Note that [CryptoCompare](#using-cryptocompare) can also be used **when the node is configured via a config file or stdin**, because an API key must be provided to use that service.
+    - poll_interval
+        - Non-negative Integer (in milliseconds)
+        - `60000`
+        - Interval, defined in milliseconds, on which the node will poll the `provider` (if specified) for exchange rates.
+    - spread
+        - Float
+        - `0.01`
+        - Spread, as a fraction, to add on top of the exchange rate. This amount is kept as the node operator's profit, or may cover fluctuations in exchange rates. For example, take an incoming packet with an amount of 100. If the exchange rate is 1:0.5 and the spread is 0.01, the amount on the outgoing packet would be 198 (instead of 200 without the spread).
 - [prometheus](https://prometheus.io/)
     - bind_address
         - Socket Address (`address:port`)
@@ -133,7 +134,7 @@ some-command | ilp-node
 Then `some-command` should output a config like:
 
 ```yaml
-exchange_rate_provider:
+exchange_rate.provider:
   CryptoCompare: insert_api_key_here
 ```
 

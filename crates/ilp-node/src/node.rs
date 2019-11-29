@@ -222,7 +222,10 @@ pub struct InterledgerNode {
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
     pub route_broadcast_interval: Option<u64>,
     #[serde(default)]
+    /// Configuration for calculating exchange rates between various pairs.
     pub exchange_rate: ExchangeRateConfig,
+    /// Configuration for [Prometheus](https://prometheus.io) metrics collection.
+    /// If this configuration is not provided, the node will not collect metrics.
     #[serde(default)]
     pub prometheus: Option<PrometheusConfig>,
     #[cfg(feature = "google-pubsub")]
