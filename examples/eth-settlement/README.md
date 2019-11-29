@@ -2,10 +2,10 @@
 # For integration tests
 function post_test_hook() {
     if [ $TEST_MODE -eq 1 ]; then
-        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
-        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
-        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
-        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
+        test_equals_or_exit '{"asset_code":"ETH","balance":-5e-16}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"asset_code":"ETH","balance":0.0}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
+        test_equals_or_exit '{"asset_code":"ETH","balance":0.0}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
+        test_equals_or_exit '{"asset_code":"ETH","balance":5e-16}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
     fi
 }
 -->
@@ -510,7 +510,7 @@ ilp-cli pay alice --auth in_alice \
 <!--!
 # wait untill the settlement is done
 printf "\nWaiting for Ethereum block to be mined"
-wait_to_get_http_response_body '{"balance":0}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
+wait_to_get_http_response_body '{"asset_code":"ETH","balance":0.0}' 10 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
