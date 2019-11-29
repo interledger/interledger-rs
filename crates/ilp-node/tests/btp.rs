@@ -155,8 +155,20 @@ fn two_nodes_btp() {
                         })
                         .and_then(move |_| {
                             get_balances().and_then(move |ret| {
-                                assert_eq!(ret[0], -1000);
-                                assert_eq!(ret[1], 1000);
+                                assert_eq!(
+                                    ret[0],
+                                    BalanceData {
+                                        asset_code: "XYZ".to_owned(),
+                                        balance: -1e-6
+                                    }
+                                );
+                                assert_eq!(
+                                    ret[1],
+                                    BalanceData {
+                                        asset_code: "XYZ".to_owned(),
+                                        balance: 1e-6
+                                    }
+                                );
                                 Ok(())
                             })
                         })
@@ -168,8 +180,20 @@ fn two_nodes_btp() {
                         })
                         .and_then(move |_| {
                             get_balances().and_then(move |ret| {
-                                assert_eq!(ret[0], 1000);
-                                assert_eq!(ret[1], -1000);
+                                assert_eq!(
+                                    ret[0],
+                                    BalanceData {
+                                        asset_code: "XYZ".to_owned(),
+                                        balance: 1e-6
+                                    }
+                                );
+                                assert_eq!(
+                                    ret[1],
+                                    BalanceData {
+                                        asset_code: "XYZ".to_owned(),
+                                        balance: -1e-6
+                                    }
+                                );
                                 Ok(())
                             })
                         })
