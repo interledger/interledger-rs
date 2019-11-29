@@ -403,16 +403,7 @@ fn accounts_test() {
                 assert!(res.error_for_status_ref().is_ok(), "{}", &content);
                 let json: Value = serde_json::from_str(&content)
                     .unwrap_or_else(|_| panic!("Could not parse JSON! JSON: {}", &content));
-                if let Value::Object(balance) = json {
-                    // TODO why isn't this a number?
-                    //assert_eq!(account.get("balance").expect("balance was expected"), &Value::Number(Number::from(0)));
-                    assert_eq!(
-                        balance.get("balance").expect("balance was expected"),
-                        &Value::Number(Number::from(0))
-                    );
-                } else {
-                    panic!("Invalid response JSON! {}", &content);
-                }
+                assert_eq!(json, json!({"balance": 0.0, "asset_code": ASSET_CODE}));
                 Ok(node)
             })
     };
