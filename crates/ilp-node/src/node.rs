@@ -69,12 +69,6 @@ fn default_http_bind_address() -> SocketAddr {
 fn default_redis_url() -> ConnectionInfo {
     DEFAULT_REDIS_URL.into_connection_info().unwrap()
 }
-fn default_exchange_rate_poll_interval() -> u64 {
-    60_000
-}
-fn default_exchange_rate_poll_failure_tolerance() -> u32 {
-    5
-}
 
 fn deserialize_optional_address<'de, D>(deserializer: D) -> Result<Option<Address>, D::Error>
 where
@@ -155,6 +149,43 @@ impl PrometheusConfig {
     }
 }
 
+/// Configuration for calculating exchange rates between various pairs.
+#[derive(Deserialize, Clone, Default)]
+pub struct ExchangeRateConfig {
+    /// Interval, defined in milliseconds, on which the node will poll the exchange rate provider.
+    /// Defaults to 60000ms (60 seconds).
+    #[serde(default = "ExchangeRateConfig::default_poll_interval")]
+    pub poll_interval: u64,
+    /// The number of consecutive failed polls to the exchange rate provider
+    /// that the connector will tolerate before invalidating the exchange rate cache.
+    #[serde(default = "ExchangeRateConfig::default_poll_failure_tolerance")]
+    pub poll_failure_tolerance: u32,
+    /// API to poll for exchange rates. Currently the supported options are:
+    /// - [CoinCap](https://docs.coincap.io)
+    /// - [CryptoCompare](https://cryptocompare.com) (note this requires an API key)
+    /// If this value is not set, the node will not poll for exchange rates and will
+    /// instead use the rates configured via the HTTP API.
+    #[serde(default)]
+    pub provider: Option<ExchangeRateProvider>,
+    /// Spread, as a fraction, to add on top of the exchange rate.
+    /// This amount is kept as the node operator's profit, or may cover
+    /// fluctuations in exchange rates.
+    /// For example, take an incoming packet with an amount of 100. If the
+    /// exchange rate is 1:2 and the spread is 0.01, the amount on the
+    /// outgoing packet would be 198 (instead of 200 without the spread).
+    #[serde(default)]
+    pub spread: f64,
+}
+
+impl ExchangeRateConfig {
+    fn default_poll_interval() -> u64 {
+        60_000
+    }
+    fn default_poll_failure_tolerance() -> u32 {
+        5
+    }
+}
+
 /// An all-in-one Interledger node that includes sender and receiver functionality,
 /// a connector, and a management API. The node uses Redis for persistence.
 #[derive(Deserialize, Clone)]
@@ -190,31 +221,8 @@ pub struct InterledgerNode {
     /// Interval, defined in milliseconds, on which the node will broadcast routing
     /// information to other nodes using CCP. Defaults to 30000ms (30 seconds).
     pub route_broadcast_interval: Option<u64>,
-    /// Interval, defined in milliseconds, on which the node will poll the exchange rate provider.
-    /// Defaults to 60000ms (60 seconds).
-    #[serde(default = "default_exchange_rate_poll_interval")]
-    pub exchange_rate_poll_interval: u64,
-    /// The number of consecutive failed polls to the exchange rate provider
-    /// that the connector will tolerate before invalidating the exchange rate cache.
-    #[serde(default = "default_exchange_rate_poll_failure_tolerance")]
-    pub exchange_rate_poll_failure_tolerance: u32,
-    /// API to poll for exchange rates. Currently the supported options are:
-    /// - [CoinCap](https://docs.coincap.io)
-    /// - [CryptoCompare](https://cryptocompare.com) (note this requires an API key)
-    /// If this value is not set, the node will not poll for exchange rates and will
-    /// instead use the rates configured via the HTTP API.
     #[serde(default)]
-    pub exchange_rate_provider: Option<ExchangeRateProvider>,
-    /// Spread, as a fraction, to add on top of the exchange rate.
-    /// This amount is kept as the node operator's profit, or may cover
-    /// fluctuations in exchange rates.
-    /// For example, take an incoming packet with an amount of 100. If the
-    /// exchange rate is 1:2 and the spread is 0.01, the amount on the
-    /// outgoing packet would be 198 (instead of 200 without the spread).
-    #[serde(default)]
-    pub exchange_rate_spread: f64,
-    /// Configuration for [Prometheus](https://prometheus.io) metrics collection.
-    /// If this configuration is not provided, the node will not collect metrics.
+    pub exchange_rate: ExchangeRateConfig,
     #[serde(default)]
     pub prometheus: Option<PrometheusConfig>,
     #[cfg(feature = "google-pubsub")]
@@ -257,10 +265,10 @@ impl InterledgerNode {
         let default_spsp_account = self.default_spsp_account.clone();
         let redis_addr = self.redis_connection.addr.clone();
         let route_broadcast_interval = self.route_broadcast_interval;
-        let exchange_rate_provider = self.exchange_rate_provider.clone();
-        let exchange_rate_poll_interval = self.exchange_rate_poll_interval;
-        let exchange_rate_poll_failure_tolerance = self.exchange_rate_poll_failure_tolerance;
-        let exchange_rate_spread = self.exchange_rate_spread;
+        let exchange_rate_provider = self.exchange_rate.provider.clone();
+        let exchange_rate_poll_interval = self.exchange_rate.poll_interval;
+        let exchange_rate_poll_failure_tolerance = self.exchange_rate.poll_failure_tolerance;
+        let exchange_rate_spread = self.exchange_rate.spread;
         #[cfg(feature = "google-pubsub")]
         let google_pubsub = self.google_pubsub.clone();
 

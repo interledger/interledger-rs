@@ -62,8 +62,10 @@ fn accounts_test() {
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_settlement_port),
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
-        "exchange_rate_poll_interval": 60000,
-        "exchange_rate_poll_failure_tolerance": 5,
+        "exchange_rate" : {
+            "poll_interval": 60000,
+            "poll_failure_tolerance": 5,
+        },
     }))
     .unwrap();
     let node_to_serve = node.clone();
