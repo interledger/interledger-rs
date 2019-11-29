@@ -67,9 +67,37 @@ impl From<ErrorCode> for [u8; 3] {
 
 impl fmt::Debug for ErrorCode {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let error_str = match *self {
+            ErrorCode::F00_BAD_REQUEST => "F00 (Bad Request)",
+            ErrorCode::F01_INVALID_PACKET => "F01 (Invalid Packet)",
+            ErrorCode::F02_UNREACHABLE => "F02 (Unreachable)",
+            ErrorCode::F03_INVALID_AMOUNT => "F03 (Invalid Amount)",
+            ErrorCode::F04_INSUFFICIENT_DESTINATION_AMOUNT => {
+                "F04 (Insufficient Destination Amount)"
+            }
+            ErrorCode::F05_WRONG_CONDITION => "F05 (Wrong Condition)",
+            ErrorCode::F06_UNEXPECTED_PAYMENT => "F06 (Unexpected Payment)",
+            ErrorCode::F07_CANNOT_RECEIVE => "F07 (Cannot Receive)",
+            ErrorCode::F08_AMOUNT_TOO_LARGE => "F08 (Amount Too Large)",
+            ErrorCode::F09_INVALID_PEER_RESPONSE => "F09 (Invalid Peer Response)",
+            ErrorCode::F99_APPLICATION_ERROR => "F99 (Application Error)",
+            ErrorCode::T00_INTERNAL_ERROR => "T00 (Internal Error)",
+            ErrorCode::T01_PEER_UNREACHABLE => "T01 (Peer Unreachable)",
+            ErrorCode::T02_PEER_BUSY => "T02 (Peer Busy)",
+            ErrorCode::T03_CONNECTOR_BUSY => "T03 (Connector Busy)",
+            ErrorCode::T04_INSUFFICIENT_LIQUIDITY => "T04 (Insufficient Liquidity)",
+            ErrorCode::T05_RATE_LIMITED => "T05 (Rate Limited)",
+            ErrorCode::T99_APPLICATION_ERROR => "T99 (Application Error)",
+            ErrorCode::R00_TRANSFER_TIMED_OUT => "R00 (Transfer Timed Out)",
+            ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT => "R01 (Insufficient Source Amount)",
+            ErrorCode::R02_INSUFFICIENT_TIMEOUT => "R02 (Insufficient Timeout)",
+            ErrorCode::R99_APPLICATION_ERROR => "R99 (Application Error)",
+            _ => str::from_utf8(&self.0[..]).map_err(|_| fmt::Error)?,
+        }
+        .to_owned();
         formatter
             .debug_tuple("ErrorCode")
-            .field(&str::from_utf8(&self.0[..]).map_err(|_| fmt::Error)?)
+            .field(&error_str)
             .finish()
     }
 }
@@ -100,7 +128,91 @@ mod test_error_code {
     fn test_debug_printing() {
         assert_eq!(
             format!("{:?}", ErrorCode::F00_BAD_REQUEST),
-            String::from("ErrorCode(\"F00\")")
+            String::from("ErrorCode(\"F00 (Bad Request)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F01_INVALID_PACKET),
+            String::from("ErrorCode(\"F01 (Invalid Packet)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F02_UNREACHABLE),
+            String::from("ErrorCode(\"F02 (Unreachable)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F03_INVALID_AMOUNT),
+            String::from("ErrorCode(\"F03 (Invalid Amount)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F04_INSUFFICIENT_DESTINATION_AMOUNT),
+            String::from("ErrorCode(\"F04 (Insufficient Destination Amount)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F05_WRONG_CONDITION),
+            String::from("ErrorCode(\"F05 (Wrong Condition)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F06_UNEXPECTED_PAYMENT),
+            String::from("ErrorCode(\"F06 (Unexpected Payment)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F07_CANNOT_RECEIVE),
+            String::from("ErrorCode(\"F07 (Cannot Receive)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F08_AMOUNT_TOO_LARGE),
+            String::from("ErrorCode(\"F08 (Amount Too Large)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F09_INVALID_PEER_RESPONSE),
+            String::from("ErrorCode(\"F09 (Invalid Peer Response)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::F99_APPLICATION_ERROR),
+            String::from("ErrorCode(\"F99 (Application Error)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T00_INTERNAL_ERROR),
+            String::from("ErrorCode(\"T00 (Internal Error)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T01_PEER_UNREACHABLE),
+            String::from("ErrorCode(\"T01 (Peer Unreachable)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T02_PEER_BUSY),
+            String::from("ErrorCode(\"T02 (Peer Busy)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T03_CONNECTOR_BUSY),
+            String::from("ErrorCode(\"T03 (Connector Busy)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T04_INSUFFICIENT_LIQUIDITY),
+            String::from("ErrorCode(\"T04 (Insufficient Liquidity)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T05_RATE_LIMITED),
+            String::from("ErrorCode(\"T05 (Rate Limited)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::T99_APPLICATION_ERROR),
+            String::from("ErrorCode(\"T99 (Application Error)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::R00_TRANSFER_TIMED_OUT),
+            String::from("ErrorCode(\"R00 (Transfer Timed Out)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT),
+            String::from("ErrorCode(\"R01 (Insufficient Source Amount)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::R02_INSUFFICIENT_TIMEOUT),
+            String::from("ErrorCode(\"R02 (Insufficient Timeout)\")")
+        );
+        assert_eq!(
+            format!("{:?}", ErrorCode::R99_APPLICATION_ERROR),
+            String::from("ErrorCode(\"R99 (Application Error)\")")
         );
     }
 
