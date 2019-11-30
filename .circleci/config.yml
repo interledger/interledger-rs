@@ -80,11 +80,9 @@ jobs:
             echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
       - run:
           name: Run run-md Test
+          # run scripts in source mode so that the branch's build is used
           command: |
-            scripts/run-md-test.sh
-          environment:
-            # run scripts in source mode so that the branch's build is used
-            SOURCE_MODE: 1
+            scripts/run-md-test.sh '^.*$' 1
       - store_artifacts:
           path: /tmp/run-md-test
           destination: run-md-test
