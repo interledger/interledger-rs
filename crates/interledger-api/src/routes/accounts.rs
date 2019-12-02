@@ -5,7 +5,10 @@ use futures::{
     Future, Stream,
 };
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
-use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
+use interledger_ccp::{
+    CcpRouteManager, CcpRoutingAccount, Mode, RouteControlRequest, RouteManagerStore,
+    RoutingRelation,
+};
 use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
@@ -40,6 +43,7 @@ pub fn accounts_api<I, O, S, A, B>(
     outgoing_handler: O,
     btp: BtpOutgoingService<B, A>,
     store: S,
+    ccp: CcpRouteManager<I, O, S, A>,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
@@ -50,7 +54,10 @@ where
         + BalanceStore<Account = A>
         + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
-        + RouterStore,
+        + RouterStore
+        + RouteManagerStore
+        + AddressStore
+        + RouteManagerStore<Account = A>,
     A: BtpAccount
         + CcpRoutingAccount
         + SettlementAccount
@@ -78,6 +85,7 @@ where
         .untuple_one()
         .boxed();
     let with_store = warp::any().map(move || store.clone()).boxed();
+    let with_ccp = warp::any().map(move || ccp.clone()).boxed();
     let admin_auth_header = format!("Bearer {}", admin_api_token);
     let with_admin_auth_header = warp::any().map(move || admin_auth_header.clone()).boxed();
     let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
@@ -305,15 +313,25 @@ where
         .and(warp::path::end())
         .and(admin_only.clone())
         .and(with_store.clone())
-        .and_then(|id: Uuid, store: S| {
-            store
-                .delete_account(id)
-                .map_err::<_, Rejection>(move |_| {
-                    error!("Error deleting account {}", id);
-                    ApiError::internal_server_error().into()
-                })
-                .and_then(|account| Ok(warp::reply::json(&account)))
-        })
+        .and(with_ccp.clone())
+        .and_then(
+            move |id: Uuid, store: S, mut ccp: CcpRouteManager<I, O, S, A>| {
+                store
+                    .delete_account(id)
+                    .map_err::<_, Rejection>(move |_| {
+                        error!("Error deleting account {}", id);
+                        ApiError::internal_server_error().into()
+                    })
+                    .and_then(move |account| {
+                        ccp.remove_account(account.ilp_address().clone())
+                            .map_err::<_, Rejection>(move |_| {
+                                error!("Error deleting routes from CCP for account {}", id);
+                                ApiError::internal_server_error().into()
+                            })
+                            .and_then(move |_| Ok(warp::reply::json(&account)))
+                    })
+            },
+        )
         .boxed();
 
     // PUT /accounts/:username/settings

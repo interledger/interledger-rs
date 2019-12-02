@@ -13,7 +13,7 @@ use uuid::Uuid;
 use warp::{self, Filter};
 mod routes;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
-use interledger_ccp::CcpRoutingAccount;
+use interledger_ccp::{CcpRouteManager, CcpRoutingAccount, RouteManagerStore};
 use secrecy::SecretString;
 use url::Url;
 
@@ -209,6 +209,7 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     btp: BtpOutgoingService<B, A>,
     server_secret: Bytes,
     node_version: Option<String>,
+    ccp: CcpRouteManager<I, O, S, A>,
 }
 
 impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
@@ -219,7 +220,9 @@ where
         + SettlementStore<Account = A>
         + StreamNotificationsStore<Account = A>
         + RouterStore
-        + ExchangeRateStore,
+        + RouteManagerStore<Account = A>
+        + ExchangeRateStore
+        + AddressStore,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + Send + Sync + 'static,
@@ -240,6 +243,7 @@ where
         incoming_handler: I,
         outgoing_handler: O,
         btp: BtpOutgoingService<B, A>,
+        ccp: CcpRouteManager<I, O, S, A>,
     ) -> Self {
         NodeApi {
             store,
@@ -250,6 +254,7 @@ where
             btp,
             server_secret,
             node_version: None,
+            ccp,
         }
     }
 
@@ -272,6 +277,7 @@ where
             self.outgoing_handler,
             self.btp,
             self.store.clone(),
+            self.ccp,
         )
         .or(routes::node_settings_api(
             self.admin_api_token,
