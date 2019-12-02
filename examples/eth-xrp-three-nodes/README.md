@@ -449,9 +449,11 @@ ilp-node \
 --settlement_api_bind_address 127.0.0.1:8771 \
 &> logs/node-bob.log &
 
-# Start Charlie's node 
-# You can add `--ilp_address example.bob.charlie` but it is not necessary
-# since the address will get fetched via ILDCP request when Bob is added as a parent.
+# Start Charlie's node. The --ilp_address field is omitted, so the node's address will 
+# be `local.host`. When a parent account is added, Charlie's node will send an ILDCP request
+# to them, which they will respond to with an address that they have assigned to Charlie.
+# Charlie will then proceed to set that as their node's address.
+# ILDCP documentation: https://interledger.org/rfcs/0031-dynamic-configuration-protocol/
 ilp-node \
 --secret_seed 1232362131122139900555208458637022875563691455429373719368053354 \
 --admin_auth_token hi_charlie \
@@ -544,8 +546,7 @@ ilp-cli --node http://localhost:8770 accounts create charlie \
     --routing-relation Child &> logs/account-bob-charlie.log &
 
 printf "Adding Charlie's Account...\n"
-# there is no need to specify an address, it will get added as localhost.charlie 
-# initially, and then it will be converted to example.bob.charlie
+# initially, Charlie gets added as local.host.charlie
 ilp-cli --node http://localhost:9770 accounts create charlie \
     --auth hi_charlie \
     --asset-code XRP \
@@ -556,6 +557,13 @@ ilp-cli --node http://localhost:9770 accounts create charlie \
     --settle-to 0 &> logs/account-charlie-charlie.log
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
+# Once a parent is added, Charlie's node address is updated to `example.bob.charlie, 
+# and then subsequently the addresses of all NonRoutingAccount and Child accounts get 
+# updated to ${NODE_ADDRESS}.${CHILD_USERNAME}, with the exception of the account whose
+# username matches the suffix of the node's address.
+# So in this case, Charlie's account address gets updated from local.host.charlie to example.bob.charlie
+# If Charlie had another Child account saved, say `alice`, Alice's address would become
+# `example.bob.charlie.alice`
 ilp-cli --node http://localhost:9770 accounts create bob \
     --auth hi_charlie \
     --ilp-address example.bob \
