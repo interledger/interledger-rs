@@ -580,6 +580,9 @@ impl RedisStore {
             pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
                 .ignore();
 
+            pipe.hdel(STATIC_ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
+                .ignore();
+
             pipe.del(uncredited_amount_key(id));
 
             pipe.query_async(connection)
@@ -1319,8 +1322,10 @@ impl AddressStore for RedisStore {
                         if account.routing_relation() != RoutingRelation::Parent
                             && account.routing_relation() != RoutingRelation::Peer
                         {
-                            // remove the old route
+                            // remove the old route and static route (if exists)
                             pipe.hdel(ROUTES_KEY, &account.ilp_address as &str).ignore();
+                            pipe.hdel(STATIC_ROUTES_KEY, &account.ilp_address as &str)
+                                .ignore();
 
                             // if the username of the account ends with the
                             // node's address, we're already configured so no
