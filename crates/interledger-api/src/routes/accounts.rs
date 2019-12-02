@@ -35,7 +35,7 @@ struct SpspPayRequest {
     source_amount: u64,
 }
 
-pub fn accounts_api<I, O, S, A, B>(
+pub fn accounts_api<I, O, S, A, B, CI, CO>(
     server_secret: Bytes,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
@@ -43,9 +43,11 @@ pub fn accounts_api<I, O, S, A, B>(
     outgoing_handler: O,
     btp: BtpOutgoingService<B, A>,
     store: S,
-    ccp: CcpRouteManager<I, O, S, A>,
+    ccp: CcpRouteManager<CI, CO, S, A>,
 ) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
+    CI: IncomingService<A> + Clone + Send + Sync + 'static,
+    CO: OutgoingService<A> + Clone + Send + Sync + 'static,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + Send + Sync + 'static,
@@ -315,7 +317,7 @@ where
         .and(with_store.clone())
         .and(with_ccp.clone())
         .and_then(
-            move |id: Uuid, store: S, mut ccp: CcpRouteManager<I, O, S, A>| {
+            move |id: Uuid, store: S, mut ccp: CcpRouteManager<CI, CO, S, A>| {
                 store
                     .delete_account(id)
                     .map_err::<_, Rejection>(move |_| {

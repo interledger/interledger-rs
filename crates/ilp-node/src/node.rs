@@ -421,6 +421,7 @@ impl InterledgerNode {
                                 }).in_current_span(),
                                 outgoing_service.clone(),
                                 btp.clone(),
+                                ccp_builder.to_service(),
                             );
                             if let Some(username) = default_spsp_account {
                                 api.default_spsp_account(username);

@@ -196,7 +196,7 @@ pub struct AccountDetails {
     pub settlement_engine_url: Option<String>,
 }
 
-pub struct NodeApi<S, I, O, B, A: Account> {
+pub struct NodeApi<S, I, O, B, CI, CO, A: Account> {
     store: S,
     admin_api_token: String,
     default_spsp_account: Option<Username>,
@@ -209,10 +209,10 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     btp: BtpOutgoingService<B, A>,
     server_secret: Bytes,
     node_version: Option<String>,
-    ccp: CcpRouteManager<I, O, S, A>,
+    ccp: CcpRouteManager<CI, CO, S, A>,
 }
 
-impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
+impl<S, I, O, B, CI, CO, A> NodeApi<S, I, O, B, CI, CO, A>
 where
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
@@ -223,6 +223,8 @@ where
         + RouteManagerStore<Account = A>
         + ExchangeRateStore
         + AddressStore,
+    CI: IncomingService<A> + Clone + Send + Sync + 'static,
+    CO: OutgoingService<A> + Clone + Send + Sync + 'static,
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + Send + Sync + 'static,
@@ -243,7 +245,7 @@ where
         incoming_handler: I,
         outgoing_handler: O,
         btp: BtpOutgoingService<B, A>,
-        ccp: CcpRouteManager<I, O, S, A>,
+        ccp: CcpRouteManager<CI, CO, S, A>,
     ) -> Self {
         NodeApi {
             store,
