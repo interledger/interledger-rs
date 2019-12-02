@@ -196,6 +196,20 @@ where
         })
     }
 
+    // Removes the routes corresponding to the provided account's ILP Address
+    pub fn remove_account(&mut self, ilp_address: Address) -> impl Future<Item = (), Error = ()> {
+        let prefix = ilp_address.to_string();
+        let mut local_table = self.local_table.write();
+        local_table.delete_route(&prefix);
+        self.forwarding_table.write().delete_route(&prefix);
+        self.store.set_routes(
+            local_table
+                .get_simplified_table()
+                .into_iter()
+                .map(|(prefix, account)| (prefix.to_string(), account)),
+        )
+    }
+
     fn update_ilp_address(&self) {
         let current_ilp_address = self.ilp_address.read();
         let ilp_address = self.store.get_ilp_address();
@@ -1256,6 +1270,7 @@ mod handle_route_update_request {
     use crate::test_helpers::*;
     use std::{
         iter::FromIterator,
+        str::FromStr,
         time::{Duration, SystemTime},
     };
 
@@ -1496,6 +1511,21 @@ mod handle_route_update_request {
                 .id(),
             ROUTING_ACCOUNT.id()
         );
+
+        // deletes a route associated with an address and updates the store
+        service
+            .remove_account(Address::from_str("example.prefix1").unwrap())
+            .wait()
+            .unwrap();
+        assert!((*service.local_table.read())
+            .get_route("example.prefix1")
+            .is_none());
+        assert!(service
+            .store
+            .routes
+            .lock()
+            .get(&"example.prefix1"[..])
+            .is_none());
     }
 
     #[test]
