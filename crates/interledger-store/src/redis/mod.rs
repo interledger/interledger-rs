@@ -1358,6 +1358,13 @@ impl AddressStore for RedisStore {
                                 RedisAccountId(account.id()),
                             )
                             .ignore();
+
+                            pipe.hset(
+                                STATIC_ROUTES_KEY,
+                                new_ilp_address.as_bytes(),
+                                RedisAccountId(account.id()),
+                            )
+                            .ignore();
                         }
                     }
                     pipe.query_async(connection.clone())

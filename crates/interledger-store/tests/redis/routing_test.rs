@@ -292,6 +292,111 @@ fn adds_static_routes_to_redis() {
 }
 
 #[test]
+fn delete_account_clears_route() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let get_connection = context.async_connection();
+        store.delete_account(accs[0].id()).and_then(move |_| {
+            get_connection.and_then(|connection| {
+                redis_crate::cmd("HGETALL")
+                    .arg("routes:current")
+                    .query_async(connection)
+                    .map_err(|err| panic!(err))
+                    .and_then(move |(_, routes): (_, HashMap<String, String>)| {
+                        // only 1 route left since the other got deleted
+                        assert_eq!(routes.len(), 1);
+                        let _ = context;
+                        Ok(())
+                    })
+            })
+        })
+    }))
+    .unwrap()
+}
+
+#[test]
+fn update_ilp_address_changes_routes() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let ilp_address = Address::from_str("test.parent.our_address").unwrap();
+        let get_connection = context.async_connection();
+        let get_connection2 = context.async_connection();
+        // sets the static routes
+        store
+            .clone()
+            .set_static_routes(vec![(accs[1].ilp_address().to_string(), accs[1].id())])
+            .and_then(move |_| {
+                // update the ilp address
+                store
+                    .set_ilp_address(ilp_address.clone())
+                    .and_then(move |_| {
+                        // check the updated routes
+                        get_connection.and_then(|connection| {
+                            redis_crate::cmd("HGETALL")
+                                .arg("routes:static")
+                                .query_async(connection)
+                                .map_err(|err| panic!(err))
+                                .and_then(move |(_, routes): (_, HashMap<String, String>)| {
+                                    // Bob's new address now corresponds to the new static route
+                                    assert_eq!(
+                                        *routes.get("test.parent.our_address.bob").unwrap(),
+                                        accs[1].id().to_string()
+                                    );
+                                    get_connection2.and_then(|connection| {
+                                        redis_crate::cmd("HGETALL")
+                                            .arg("routes:current")
+                                            .query_async(connection)
+                                            .map_err(|err| panic!(err))
+                                            .and_then(
+                                                move |(_, routes): (_, HashMap<String, String>)| {
+                                                    // Bob's new address now corresponds to the new route
+                                                    assert_eq!(
+                                                        *routes
+                                                            .get("test.parent.our_address.bob")
+                                                            .unwrap(),
+                                                        accs[1].id().to_string()
+                                                    );
+                                                    let _ = context;
+                                                    Ok(())
+                                                },
+                                            )
+                                    })
+                                })
+                        })
+                    })
+            })
+    }))
+    .unwrap();
+}
+
+#[test]
+fn delete_account_clears_static_route() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        let get_connection = context.async_connection();
+        store
+            .clone()
+            .set_static_routes(vec![(
+                accs[0].ilp_address().to_string().to_string(),
+                accs[0].id(),
+            )])
+            .and_then(move |_| {
+                store.delete_account(accs[0].id()).and_then(move |_| {
+                    get_connection.and_then(|connection| {
+                        redis_crate::cmd("HGETALL")
+                            .arg("routes:static")
+                            .query_async(connection)
+                            .map_err(|err| panic!(err))
+                            .and_then(move |(_, routes): (_, HashMap<String, String>)| {
+                                assert!(routes.is_empty());
+                                let _ = context;
+                                Ok(())
+                            })
+                    })
+                })
+            })
+    }))
+    .unwrap()
+}
+
+#[test]
 fn static_routes_override_others() {
     block_on(test_store().and_then(|(store, context, accs)| {
         let mut store_clone = store.clone();
