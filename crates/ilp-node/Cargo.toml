@@ -9,11 +9,18 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
 
 [features]
-default = ["balance-tracking"]
+default = ["balance-tracking", "redis"]
 balance-tracking = []
 # This is an experimental feature that enables submitting packet
 # records to Google Cloud PubSub. This may be removed in the future.
 google-pubsub = ["base64", "chrono", "parking_lot", "reqwest", "serde_json", "yup-oauth2"]
+redis = ["redis_crate", "interledger/redis"]
+
+[[test]]
+name = "redis_tests"
+path = "tests/redis/redis_tests.rs"
+required-features = ["redis"]
+
 
 [dependencies]
 bytes = { version = "0.4.12", default-features = false }
@@ -27,7 +34,7 @@ metrics = { version = "0.12.0", default-features = false, features = ["std"] }
 metrics-core = { version = "0.5.1", default-features = false }
 metrics-runtime = { version = "0.12.0", default-features = false, features = ["metrics-observer-prometheus"] }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"] }
-redis = { version = "0.13.0", default-features = false, features = ["executor"] }
+redis_crate = { package = "redis", version = "0.13.0", default-features = false, features = ["executor"], optional = true }
 ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false }
 tokio = { version = "0.1.22", default-features = false }
@@ -53,7 +60,6 @@ approx = { version = "0.3.2", default-features = false }
 base64 = { version = "0.10.1", default-features = false }
 net2 = { version = "0.2.33", default-features = false }
 rand = { version = "0.7.2", default-features = false }
-redis = { version = "0.13.0", default-features = false, features = ["executor"] }
 reqwest = { version = "0.9.22", default-features = false, features = ["default-tls"] }
 serde_json = { version = "1.0.41", default-features = false }
 tokio-retry = { version = "0.2.0", default-features = false }

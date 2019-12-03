@@ -8,7 +8,7 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [features]
-default = ["redis"]
+default = []
 redis = ["redis_crate"]
 
 [lib]

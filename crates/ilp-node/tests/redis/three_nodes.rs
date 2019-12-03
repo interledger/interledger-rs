@@ -1,16 +1,14 @@
+use crate::redis_helpers::*;
+use crate::test_helpers::*;
 use futures::{future::join_all, stream::*, sync::mpsc, Future};
 use ilp_node::InterledgerNode;
+use interledger::packet::Address;
+use interledger::stream::StreamDelivery;
 use serde_json::json;
+use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::{debug, error_span};
 use tracing_futures::Instrument;
-mod redis_helpers;
-use redis_helpers::*;
-mod test_helpers;
-use interledger::packet::Address;
-use interledger::stream::StreamDelivery;
-use std::str::FromStr;
-use test_helpers::*;
 
 const LOG_TARGET: &str = "interledger-tests-three-nodes";
 
@@ -28,12 +26,12 @@ fn three_nodes() {
     let mut connection_info3 = context.get_client_connection_info();
     connection_info3.db = 3;
 
-    let node1_http = get_open_port(Some(3010));
-    let node1_settlement = get_open_port(Some(3011));
-    let node2_http = get_open_port(Some(3020));
-    let node2_settlement = get_open_port(Some(3021));
-    let node3_http = get_open_port(Some(3030));
-    let node3_settlement = get_open_port(Some(3031));
+    let node1_http = get_open_port(None);
+    let node1_settlement = get_open_port(None);
+    let node2_http = get_open_port(None);
+    let node2_settlement = get_open_port(None);
+    let node3_http = get_open_port(None);
+    let node3_settlement = get_open_port(None);
 
     let mut runtime = RuntimeBuilder::new()
         .panic_handler(|err| std::panic::resume_unwind(err))
@@ -101,7 +99,7 @@ fn three_nodes() {
         "ilp_address": "example.alice",
         "default_spsp_account": "alice_on_a",
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(connection_info1),
+        "database_url": connection_info_to_string(connection_info1),
         "http_bind_address": format!("127.0.0.1:{}", node1_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node1_settlement),
         "secret_seed": random_secret(),
@@ -115,7 +113,7 @@ fn three_nodes() {
     let node2: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.bob",
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(connection_info2),
+        "database_url": connection_info_to_string(connection_info2),
         "http_bind_address": format!("127.0.0.1:{}", node2_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node2_settlement),
         "secret_seed": random_secret(),
@@ -129,7 +127,7 @@ fn three_nodes() {
     let node3: InterledgerNode = serde_json::from_value(json!({
         "default_spsp_account": "charlie_on_c",
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(connection_info3),
+        "database_url": connection_info_to_string(connection_info3),
         "http_bind_address": format!("127.0.0.1:{}", node3_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node3_settlement),
         "secret_seed": random_secret(),

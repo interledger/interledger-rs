@@ -1,3 +1,5 @@
+use crate::redis_helpers::*;
+use crate::test_helpers::*;
 use futures::Future;
 use ilp_node::InterledgerNode;
 use reqwest::r#async::Client;
@@ -9,11 +11,6 @@ use tokio_retry::{strategy::FibonacciBackoff, Retry};
 use tracing::error;
 use tracing_subscriber;
 
-mod redis_helpers;
-use redis_helpers::*;
-mod test_helpers;
-use test_helpers::*;
-
 #[test]
 fn coincap() {
     install_tracing_subscriber();
@@ -24,13 +21,13 @@ fn coincap() {
         .build()
         .unwrap();
 
-    let http_port = get_open_port(Some(3010));
+    let http_port = get_open_port(None);
 
     let node: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.one",
         "default_spsp_account": "one",
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(context.get_client_connection_info()),
+        "database_url": connection_info_to_string(context.get_client_connection_info()),
         "http_bind_address": format!("127.0.0.1:{}", http_port),
         "settlement_api_bind_address": format!("127.0.0.1:{}", get_open_port(None)),
         "secret_seed": random_secret(),
@@ -107,7 +104,7 @@ fn cryptocompare() {
         "ilp_address": "example.one",
         "default_spsp_account": "one",
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(context.get_client_connection_info()),
+        "database_url": connection_info_to_string(context.get_client_connection_info()),
         "http_bind_address": format!("127.0.0.1:{}", http_port),
         "settlement_api_bind_address": format!("127.0.0.1:{}", get_open_port(None)),
         "secret_seed": random_secret(),

@@ -1,9 +1,19 @@
 #![type_length_limit = "1152885"]
 
+mod metrics;
+mod node;
+mod trace;
+
+#[cfg(feature = "google-pubsub")]
+mod google_pubsub;
+#[cfg(feature = "redis")]
+mod redis_store;
+
 use clap::{crate_version, App, Arg, ArgMatches};
 use config::{Config, Source};
 use config::{FileFormat, Value};
 use libc::{c_int, isatty};
+use node::InterledgerNode;
 use std::{
     ffi::{OsStr, OsString},
     io::Read,
@@ -13,13 +23,6 @@ use tracing_subscriber::{
     filter::EnvFilter,
     fmt::{time::ChronoUtc, Subscriber},
 };
-
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
-mod metrics;
-mod node;
-mod trace;
-use node::InterledgerNode;
 
 pub fn main() {
     Subscriber::builder()
@@ -69,8 +72,10 @@ pub fn main() {
             .takes_value(true)
             .required(true)
             .help("HTTP Authorization token for the node admin (sent as a Bearer token)"),
-        Arg::with_name("redis_url")
-            .long("redis_url")
+        Arg::with_name("database_url")
+            .long("database_url")
+            // temporary alias for backwards compatibility
+            .alias("redis_url")
             .takes_value(true)
             .default_value("redis://127.0.0.1:6379")
             .help("Redis URI (for example, \"redis://127.0.0.1:6379\" or \"unix:/tmp/redis.sock\")"),
