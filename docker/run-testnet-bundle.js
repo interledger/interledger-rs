@@ -130,7 +130,7 @@ function runNode({ httpBindAddress, adminAuthToken, secretSeed, nodeName }) {
         `--http_bind_address=${httpBindAddress}`,
         `--admin_auth_token=${adminAuthToken}`,
         `--secret_seed=${secretSeed}`,
-        '--redis_url=unix:/tmp/redis.sock',
+        '--redis_url=redis+unix:/tmp/redis.sock',
         `--default_spsp_account=${nodeName}`
     ],
         {
@@ -170,7 +170,7 @@ function runEthSettlementEngine({ ethKey, ethUrl }) {
         `--private_key=${ethKey}`,
         '--poll_frequency=15000',
         '--confirmations=0',
-        '--redis_url=unix:/tmp/redis.sock?db=2',
+        '--redis_url=redis+unix:/tmp/redis.sock?db=2',
         '--chain_id=4'
     ], {
         env: {

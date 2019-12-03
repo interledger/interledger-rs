@@ -35,6 +35,7 @@ spsp = ["interledger-spsp", "stream"]
 store = ["interledger-store"]
 stream = ["interledger-stream", "ildcp"]
 trace = ["interledger-service/trace"]
+redis = ["interledger-store/redis"]
 
 [dependencies]
 interledger-api = { path = "../interledger-api", version = "^0.3.0", optional = true, default-features = false }

@@ -75,9 +75,9 @@ The configuration parameters are explained in the following format.
     - [ILP Addresses v2.0.0](https://github.com/interledger/rfcs/blob/master/0015-ilp-addresses/0015-ilp-addresses.md)
     - `g.my-node`
     - The ILP address of your node. The format should conform to the RFC above. If you are running a child node, you don't need to specify this.
-- redis_url
+- database_url
     - URL
-    - `redis://127.0.0.1:6379`, `unix:/tmp/redis.sock`
+    - `redis://127.0.0.1:6379`, `redis+unix:/tmp/redis.sock`
     - A URL of redis that the node connects to in order to store its data.
 - http_bind_address
     - Socket Address (`address:port`)

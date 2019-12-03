@@ -183,7 +183,7 @@ First, save your config file as `config.json` which contains:
 {
     "secret_seed": "<secret_seed>",
     "admin_auth_token": "<admin_auth_token>",
-    "redis_url": "redis://127.0.0.1:6379/",
+    "database_url": "redis://127.0.0.1:6379/",
     "http_bind_address": "127.0.0.1:7770",
     "settlement_api_bind_address": "127.0.0.1:7771"
 }

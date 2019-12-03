@@ -1,15 +1,11 @@
+use crate::redis_helpers::*;
+use crate::test_helpers::*;
 use futures::{future::join_all, Future};
 use ilp_node::InterledgerNode;
 use serde_json::{self, json};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::error_span;
 use tracing_futures::Instrument;
-
-mod redis_helpers;
-use redis_helpers::*;
-
-mod test_helpers;
-use test_helpers::*;
 
 #[test]
 fn two_nodes_btp() {
@@ -23,10 +19,10 @@ fn two_nodes_btp() {
     let mut connection_info2 = context.get_client_connection_info();
     connection_info2.db = 2;
 
-    let node_a_http = get_open_port(Some(3010));
-    let node_a_settlement = get_open_port(Some(3011));
-    let node_b_http = get_open_port(Some(3020));
-    let node_b_settlement = get_open_port(Some(3021));
+    let node_a_http = get_open_port(None);
+    let node_a_settlement = get_open_port(None);
+    let node_b_http = get_open_port(None);
+    let node_b_settlement = get_open_port(None);
 
     let mut runtime = RuntimeBuilder::new()
         .panic_handler(|err| std::panic::resume_unwind(err))
@@ -65,7 +61,7 @@ fn two_nodes_btp() {
 
     let node_a: InterledgerNode = serde_json::from_value(json!({
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(connection_info1),
+        "database_url": connection_info_to_string(connection_info1),
         "http_bind_address": format!("127.0.0.1:{}", node_a_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_a_settlement),
         "secret_seed": random_secret(),
@@ -80,7 +76,7 @@ fn two_nodes_btp() {
         "ilp_address": "example.parent",
         "default_spsp_account": "bob_on_b",
         "admin_auth_token": "admin",
-        "redis_connection": connection_info_to_string(connection_info2),
+        "database_url": connection_info_to_string(connection_info2),
         "http_bind_address": format!("127.0.0.1:{}", node_b_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_b_settlement),
         "secret_seed": random_secret(),
