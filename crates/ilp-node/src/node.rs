@@ -18,30 +18,38 @@ use interledger::service_util::BalanceService;
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{btp_service_as_filter, connect_client, BtpOutgoingService, BtpStore},
-    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RoutingRelation},
-    http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer},
+    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RouteManagerStore, RoutingRelation},
+    http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer, HttpStore},
     ildcp::IldcpService,
     packet::Address,
     packet::{ErrorCode, RejectBuilder},
-    router::Router,
+    router::{Router, RouterStore},
     service::{
-        outgoing_service_fn, Account as AccountTrait, IncomingService, OutgoingRequest,
-        OutgoingService, Username,
+        outgoing_service_fn, Account as AccountTrait, AccountStore, IncomingService,
+        OutgoingRequest, OutgoingService, Username,
     },
     service_util::{
-        EchoService, ExchangeRateFetcher, ExchangeRateService, ExpiryShortenerService,
-        MaxPacketAmountService, RateLimitService, ValidatorService,
+        BalanceStore, EchoService, ExchangeRateFetcher, ExchangeRateService, ExchangeRateStore,
+        ExpiryShortenerService, MaxPacketAmountAccount, MaxPacketAmountService, RateLimitAccount,
+        RateLimitService, RateLimitStore, RoundTripTimeAccount, ValidatorService,
     },
-    settlement::api::{create_settlements_filter, SettlementMessageService},
+    settlement::{
+        api::{create_settlements_filter, SettlementMessageService},
+        core::{
+            idempotency::IdempotentStore,
+            types::{LeftoversStore, SettlementAccount, SettlementStore},
+        },
+    },
     store::{account::Account, redis::RedisStoreBuilder},
-    stream::StreamReceiverService,
+    stream::{StreamNotificationsStore, StreamReceiverService},
 };
 use lazy_static::lazy_static;
 use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;
+use num_bigint::BigUint;
 use redis::{ConnectionInfo, IntoConnectionInfo};
 use ring::hmac;
-use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
+use serde::{de::Error as DeserializeError, Deserialize, Deserializer, Serialize};
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::spawn;
 use tracing::{debug, debug_span, error, info};
@@ -239,7 +247,7 @@ impl InterledgerNode {
     /// also run the Prometheus metrics server on the given address.
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
-    pub fn serve(&self) -> impl Future<Item = (), Error = ()> {
+    pub fn serve(self) -> impl Future<Item = (), Error = ()> {
         if self.prometheus.is_some() {
             Either::A(
                 self.serve_prometheus()
@@ -251,29 +259,14 @@ impl InterledgerNode {
         }
     }
 
-    #[allow(clippy::cognitive_complexity)]
-    fn serve_node(&self) -> impl Future<Item = (), Error = ()> {
+    fn serve_node(self) -> impl Future<Item = (), Error = ()> {
+        let redis_addr = self.redis_connection.addr.clone();
         let redis_secret = generate_redis_secret(&self.secret_seed);
-        let secret_seed = Bytes::from(&self.secret_seed[..]);
-        let http_bind_address = self.http_bind_address;
-        let settlement_api_bind_address = self.settlement_api_bind_address;
         let ilp_address = if let Some(address) = &self.ilp_address {
             address.clone()
         } else {
             DEFAULT_ILP_ADDRESS.clone()
         };
-        let ilp_address_clone = ilp_address.clone();
-        let ilp_address_clone2 = ilp_address.clone();
-        let admin_auth_token = self.admin_auth_token.clone();
-        let default_spsp_account = self.default_spsp_account.clone();
-        let redis_addr = self.redis_connection.addr.clone();
-        let route_broadcast_interval = self.route_broadcast_interval;
-        let exchange_rate_provider = self.exchange_rate.provider.clone();
-        let exchange_rate_poll_interval = self.exchange_rate.poll_interval;
-        let exchange_rate_poll_failure_tolerance = self.exchange_rate.poll_failure_tolerance;
-        let exchange_rate_spread = self.exchange_rate.spread;
-        #[cfg(feature = "google-pubsub")]
-        let google_pubsub = self.google_pubsub.clone();
 
         debug!(target: "interledger-node",
             "Starting Interledger node with ILP address: {}",
@@ -284,185 +277,243 @@ impl InterledgerNode {
         .node_ilp_address(ilp_address.clone())
         .connect()
         .map_err(move |err| error!(target: "interledger-node", "Error connecting to Redis: {:?} {:?}", redis_addr, err))
-        .and_then(move |store| {
-                store.clone().get_btp_outgoing_accounts()
-                .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
-                .and_then(move |btp_accounts| {
+        .and_then(move |store| self.chain_services(store, ilp_address)))
+    }
+
+    #[allow(clippy::cognitive_complexity)]
+    fn chain_services<S>(self, store: S, ilp_address: Address) -> impl Future<Item = (), Error = ()>
+    where
+        // Should we use a generic rather than the concrete Account type?
+        // I spent long enough banging my head against this that I don't care
+        // anymore, but feel free to take a whack at it.
+        /*A: AccountTrait
+        + SettlementAccount
+        + HttpAccount
+        + BtpAccount
+        + CcpRoutingAccount
+        + RateLimitAccount
+        + RoundTripTimeAccount
+        + MaxPacketAmountAccount
+        + Send
+        + Sync
+        + 'static
+        + Serialize
+        + Clone,*/
+        // Likewise, should this be generic?
+        //AT: ToString,
+        S: NodeStore<Account = Account>
+            + BtpStore<Account = Account>
+            + HttpStore<Account = Account>
+            + StreamNotificationsStore<Account = Account>
+            + BalanceStore
+            + SettlementStore<Account = Account>
+            + ExchangeRateStore
+            + BalanceStore
+            + SettlementStore<Account = Account>
+            + RouterStore<Account = Account>
+            + RouteManagerStore<Account = Account>
+            + RateLimitStore<Account = Account>
+            + LeftoversStore<AssetType = BigUint>
+            + IdempotentStore
+            + AccountStore<Account = Account>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+    {
+        let secret_seed = Bytes::from(&self.secret_seed[..]);
+        let http_bind_address = self.http_bind_address;
+        let settlement_api_bind_address = self.settlement_api_bind_address;
+        let ilp_address_clone = ilp_address.clone();
+        let ilp_address_clone2 = ilp_address.clone();
+        let admin_auth_token = self.admin_auth_token.clone();
+        let default_spsp_account = self.default_spsp_account.clone();
+        let route_broadcast_interval = self.route_broadcast_interval;
+        let exchange_rate_provider = self.exchange_rate.provider.clone();
+        let exchange_rate_poll_interval = self.exchange_rate.poll_interval;
+        let exchange_rate_poll_failure_tolerance = self.exchange_rate.poll_failure_tolerance;
+        let exchange_rate_spread = self.exchange_rate.spread;
+        #[cfg(feature = "google-pubsub")]
+        let google_pubsub = self.google_pubsub.clone();
+
+        store.clone().get_btp_outgoing_accounts()
+        .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
+        .and_then(move |btp_accounts| {
+            let outgoing_service =
+                outgoing_service_fn(move |request: OutgoingRequest<Account>| {
+                    // Don't log anything for failed route updates sent to child accounts
+                    // because there's a good chance they'll be offline
+                    if request.prepare.destination().scheme() != "peer"
+                        || request.to.routing_relation() != RoutingRelation::Child {
+                        error!(target: "interledger-node", "No route found for outgoing request");
+                    }
+                    Err(RejectBuilder {
+                        code: ErrorCode::F02_UNREACHABLE,
+                        message: &format!(
+                            // TODO we might not want to expose the internal account ID in the error
+                            "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
+                            request.to.id(),
+                            request.prepare.destination(),
+                        )
+                        .as_bytes(),
+                        triggered_by: Some(&ilp_address_clone),
+                        data: &[],
+                    }
+                    .build())
+                });
+
+            // Connect to all of the accounts that have outgoing ilp_over_btp_urls configured
+            // but don't fail if we are unable to connect
+            // TODO try reconnecting to those accounts later
+            connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service)
+            .and_then(
+                move |btp_client_service| {
+                    let btp_server_service = BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());
+                    let btp_server_service_clone = btp_server_service.clone();
+                    let btp = btp_client_service.clone();
+
+                    // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
+                    // service to others like the router and then call handle_incoming on it to set up the incoming handler
+                    let outgoing_service = btp_server_service.clone();
+                    let outgoing_service = HttpClientService::new(
+                        store.clone(),
+                        outgoing_service,
+                    );
+
+                    let outgoing_service = outgoing_service.wrap(outgoing_metrics);
+
+                    // Note: the expiry shortener must come after the Validator so that the expiry duration
+                    // is shortened before we check whether there is enough time left
+                    let outgoing_service = ValidatorService::outgoing(
+                        store.clone(),
+                        outgoing_service
+                    );
                     let outgoing_service =
-                        outgoing_service_fn(move |request: OutgoingRequest<Account>| {
-                            // Don't log anything for failed route updates sent to child accounts
-                            // because there's a good chance they'll be offline
-                            if request.prepare.destination().scheme() != "peer"
-                                || request.to.routing_relation() != RoutingRelation::Child {
-                                error!(target: "interledger-node", "No route found for outgoing request");
-                            }
-                            Err(RejectBuilder {
-                                code: ErrorCode::F02_UNREACHABLE,
-                                message: &format!(
-                                    // TODO we might not want to expose the internal account ID in the error
-                                    "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
-                                    request.to.id(),
-                                    request.prepare.destination(),
-                                )
-                                .as_bytes(),
-                                triggered_by: Some(&ilp_address_clone),
-                                data: &[],
-                            }
-                            .build())
-                        });
+                        ExpiryShortenerService::new(outgoing_service);
+                    let outgoing_service = StreamReceiverService::new(
+                        secret_seed.clone(),
+                        store.clone(),
+                        outgoing_service,
+                    );
+                    #[cfg(feature = "balance-tracking")]
+                    let outgoing_service = BalanceService::new(
+                        store.clone(),
+                        outgoing_service,
+                    );
+                    let outgoing_service = ExchangeRateService::new(
+                        exchange_rate_spread,
+                        store.clone(),
+                        outgoing_service,
+                    );
 
-                    // Connect to all of the accounts that have outgoing ilp_over_btp_urls configured
-                    // but don't fail if we are unable to connect
-                    // TODO try reconnecting to those accounts later
-                    connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
-                        move |btp_client_service| {
-                            let btp_server_service = BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());
-                            let btp_server_service_clone = btp_server_service.clone();
-                            let btp = btp_client_service.clone();
+                    #[cfg(feature = "google-pubsub")]
+                    let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
 
-                            // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
-                            // service to others like the router and then call handle_incoming on it to set up the incoming handler
-                            let outgoing_service = btp_server_service.clone();
-                            let outgoing_service = HttpClientService::new(
-                                store.clone(),
-                                outgoing_service,
-                            );
+                    // Set up the Router and Routing Manager
+                    let incoming_service = Router::new(
+                        store.clone(),
+                        // Add tracing to add the outgoing request details to the incoming span
+                        outgoing_service.clone().wrap(trace_forwarding),
+                    );
 
-                            let outgoing_service = outgoing_service.wrap(outgoing_metrics);
+                    // Add tracing to track the outgoing request details
+                    let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
 
-                            // Note: the expiry shortener must come after the Validator so that the expiry duration
-                            // is shortened before we check whether there is enough time left
-                            let outgoing_service = ValidatorService::outgoing(
-                                store.clone(),
-                                outgoing_service
-                            );
-                            let outgoing_service =
-                                ExpiryShortenerService::new(outgoing_service);
-                            let outgoing_service = StreamReceiverService::new(
-                                secret_seed.clone(),
-                                store.clone(),
-                                outgoing_service,
-                            );
-                            #[cfg(feature = "balance-tracking")]
-                            let outgoing_service = BalanceService::new(
-                                store.clone(),
-                                outgoing_service,
-                            );
-                            let outgoing_service = ExchangeRateService::new(
-                                exchange_rate_spread,
-                                store.clone(),
-                                outgoing_service,
-                            );
+                    let mut ccp_builder = CcpRouteManagerBuilder::new(
+                        ilp_address.clone(),
+                        store.clone(),
+                        outgoing_service.clone(),
+                        incoming_service,
+                    );
+                    ccp_builder.ilp_address(ilp_address.clone());
+                    if let Some(ms) = route_broadcast_interval {
+                        ccp_builder.broadcast_interval(ms);
+                    }
+                    let incoming_service = ccp_builder.to_service();
+                    let incoming_service = EchoService::new(store.clone(), incoming_service);
+                    let incoming_service = SettlementMessageService::new(incoming_service);
+                    let incoming_service = IldcpService::new(incoming_service);
+                    let incoming_service =
+                        MaxPacketAmountService::new(
+                            store.clone(),
+                            incoming_service
+                    );
+                    let incoming_service =
+                        ValidatorService::incoming(store.clone(), incoming_service);
+                    let incoming_service = RateLimitService::new(
+                        store.clone(),
+                        incoming_service,
+                    );
 
-                            #[cfg(feature = "google-pubsub")]
-                            let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
+                    // Add tracing to track the incoming request details
+                    let incoming_service = incoming_service.wrap(trace_incoming).in_current_span();
 
-                            // Set up the Router and Routing Manager
-                            let incoming_service = Router::new(
-                                store.clone(),
-                                // Add tracing to add the outgoing request details to the incoming span
-                                outgoing_service.clone().wrap(trace_forwarding),
-                            );
+                    let incoming_service = incoming_service.wrap(incoming_metrics);
 
-                            // Add tracing to track the outgoing request details
-                            let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
+                    // Handle incoming packets sent via BTP
+                    btp_server_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
+                        let btp = debug_span!(target: "interledger-node", "btp");
+                        let _btp_scope = btp.enter();
+                        next.handle_request(request).in_current_span()
+                    }).in_current_span());
+                    btp_client_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
+                        let btp = debug_span!(target: "interledger-node", "btp");
+                        let _btp_scope = btp.enter();
+                        next.handle_request(request).in_current_span()
+                    }).in_current_span());
 
-                            let mut ccp_builder = CcpRouteManagerBuilder::new(
-                                ilp_address.clone(),
-                                store.clone(),
-                                outgoing_service.clone(),
-                                incoming_service,
-                            );
-                            ccp_builder.ilp_address(ilp_address.clone());
-                            if let Some(ms) = route_broadcast_interval {
-                                ccp_builder.broadcast_interval(ms);
-                            }
-                            let incoming_service = ccp_builder.to_service();
-                            let incoming_service = EchoService::new(store.clone(), incoming_service);
-                            let incoming_service = SettlementMessageService::new(incoming_service);
-                            let incoming_service = IldcpService::new(incoming_service);
-                            let incoming_service =
-                                MaxPacketAmountService::new(
-                                    store.clone(),
-                                    incoming_service
-                            );
-                            let incoming_service =
-                                ValidatorService::incoming(store.clone(), incoming_service);
-                            let incoming_service = RateLimitService::new(
-                                store.clone(),
-                                incoming_service,
-                            );
+                    // Node HTTP API
+                    let mut api = NodeApi::new(
+                        secret_seed,
+                        admin_auth_token,
+                        store.clone(),
+                        incoming_service.clone().wrap(|request, mut next| {
+                            let api = debug_span!(target: "interledger-node", "api");
+                            let _api_scope = api.enter();
+                            next.handle_request(request).in_current_span()
+                        }).in_current_span(),
+                        outgoing_service.clone(),
+                        btp.clone(),
+                    );
+                    if let Some(username) = default_spsp_account {
+                        api.default_spsp_account(username);
+                    }
+                    api.node_version(env!("CARGO_PKG_VERSION").to_string());
+                    // add an API of ILP over HTTP and add rejection handler
+                    let api = api.into_warp_filter()
+                        .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
+                            let http = debug_span!(target: "interledger-node", "http");
+                            let _http_scope = http.enter();
+                            next.handle_request(request).in_current_span()
+                        }).in_current_span(), store.clone()).as_filter())
+                        .or(btp_service_as_filter(btp_server_service_clone, store.clone()))
+                        .recover(default_rejection_handler)
+                        .with(warp::log("interledger-api")).boxed();
 
-                            // Add tracing to track the incoming request details
-                            let incoming_service = incoming_service.wrap(trace_incoming).in_current_span();
+                    info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
+                    spawn(warp::serve(api).bind(http_bind_address));
 
-                            let incoming_service = incoming_service.wrap(incoming_metrics);
+                    // Settlement API
+                    let settlement_api = create_settlements_filter(
+                        store.clone(),
+                        outgoing_service.clone(),
+                    );
+                    info!(target: "interledger-node", "Settlement API listening on: {}", settlement_api_bind_address);
+                    spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
 
-                            // Handle incoming packets sent via BTP
-                            btp_server_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
-                                let btp = debug_span!(target: "interledger-node", "btp");
-                                let _btp_scope = btp.enter();
-                                next.handle_request(request).in_current_span()
-                            }).in_current_span());
-                            btp_client_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
-                                let btp = debug_span!(target: "interledger-node", "btp");
-                                let _btp_scope = btp.enter();
-                                next.handle_request(request).in_current_span()
-                            }).in_current_span());
+                    // Exchange Rate Polling
+                    if let Some(provider) = exchange_rate_provider {
+                        let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, exchange_rate_poll_failure_tolerance, store.clone());
+                        exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
+                    } else {
+                        debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
+                    }
 
-                            // Node HTTP API
-                            let mut api = NodeApi::new(
-                                secret_seed,
-                                admin_auth_token,
-                                store.clone(),
-                                incoming_service.clone().wrap(|request, mut next| {
-                                    let api = debug_span!(target: "interledger-node", "api");
-                                    let _api_scope = api.enter();
-                                    next.handle_request(request).in_current_span()
-                                }).in_current_span(),
-                                outgoing_service.clone(),
-                                btp.clone(),
-                            );
-                            if let Some(username) = default_spsp_account {
-                                api.default_spsp_account(username);
-                            }
-                            api.node_version(env!("CARGO_PKG_VERSION").to_string());
-                            // add an API of ILP over HTTP and add rejection handler
-                            let api = api.into_warp_filter()
-                                .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
-                                    let http = debug_span!(target: "interledger-node", "http");
-                                    let _http_scope = http.enter();
-                                    next.handle_request(request).in_current_span()
-                                }).in_current_span(), store.clone()).as_filter())
-                                .or(btp_service_as_filter(btp_server_service_clone, store.clone()))
-                                .recover(default_rejection_handler)
-                                .with(warp::log("interledger-api")).boxed();
-
-                            info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
-                            spawn(warp::serve(api).bind(http_bind_address));
-
-                            // Settlement API
-                            let settlement_api = create_settlements_filter(
-                                store.clone(),
-                                outgoing_service.clone(),
-                            );
-                            info!(target: "interledger-node", "Settlement API listening on: {}", settlement_api_bind_address);
-                            spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
-
-                            // Exchange Rate Polling
-                            if let Some(provider) = exchange_rate_provider {
-                                let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, exchange_rate_poll_failure_tolerance, store.clone());
-                                exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
-                            } else {
-                                debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
-                            }
-
-                            Ok(())
-                        },
-                    )
-                })
+                    Ok(())
+                },
+            )
         })
-        .in_current_span())
+.in_current_span()
     }
 
     /// Starts a Prometheus metrics server that will listen on the configured address.
@@ -522,7 +573,7 @@ impl InterledgerNode {
     }
 
     /// Run the node on the default Tokio runtime
-    pub fn run(&self) {
+    pub fn run(self) {
         tokio_run(self.serve());
     }
 
