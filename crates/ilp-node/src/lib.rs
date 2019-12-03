@@ -1,4 +1,4 @@
-#![type_length_limit = "1119051"]
+#![type_length_limit = "1152885"]
 
 #[cfg(feature = "google-pubsub")]
 mod google_pubsub;

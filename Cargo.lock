@@ -745,6 +745,7 @@ dependencies = [
  "metrics-core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics-runtime 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-bigint 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "redis 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",

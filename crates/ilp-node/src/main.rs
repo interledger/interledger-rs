@@ -1,4 +1,4 @@
-#![type_length_limit = "1119051"]
+#![type_length_limit = "1152885"]
 
 use clap::{crate_version, App, Arg, ArgMatches};
 use config::{Config, Source};

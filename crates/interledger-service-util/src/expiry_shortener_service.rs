@@ -39,6 +39,11 @@ impl<O> ExpiryShortenerService<O> {
     }
 }
 
+// TODO: the bounds in the module give really bad error messages;
+// consider the above ExpiryShortenerService impl which is unbounded,
+// so any type will implement it, but to actually do anything useful
+// the following bounds must be specified, leading to seemingly-unrelated
+// errors regarding OutgoingService in generic code
 impl<O, A> OutgoingService<A> for ExpiryShortenerService<O>
 where
     O: OutgoingService<A>,
