@@ -618,3 +618,138 @@ where
         })
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::routes::test_helpers::*;
+
+    #[test]
+    fn only_admin_can_create_account() {
+        let api = test_accounts_api();
+        let resp = api_call(&api, "POST", "/accounts", "admin", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "POST", "/accounts", "wrong", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_can_delete_account() {
+        let api = test_accounts_api();
+        let resp = api_call(&api, "DELETE", "/accounts/alice", "admin", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "DELETE", "/accounts/alice", "wrong", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_can_modify_whole_account() {
+        let api = test_accounts_api();
+        let resp = api_call(&api, "PUT", "/accounts/alice", "admin", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "PUT", "/accounts/alice", "wrong", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_can_get_all_accounts() {
+        let api = test_accounts_api();
+        let resp = api_call(&api, "GET", "/accounts", "admin", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "GET", "/accounts", "wrong", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_or_user_can_get_account() {
+        let api = test_accounts_api();
+        let resp = api_call(&api, "GET", "/accounts/alice", "admin", DETAILS.clone());
+        assert_eq!(resp.status().as_u16(), 200);
+
+        // TODO: Make this not require the username in the token
+        let resp = api_call(
+            &api,
+            "GET",
+            "/accounts/alice",
+            "alice:password",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(
+            &api,
+            "GET",
+            "/accounts/alice",
+            "alice:wrong",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_or_user_can_get_accounts_balance() {
+        let api = test_accounts_api();
+        let resp = api_call(
+            &api,
+            "GET",
+            "/accounts/alice/balance",
+            "admin",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 200);
+
+        // TODO: Make this not require the username in the token
+        let resp = api_call(
+            &api,
+            "GET",
+            "/accounts/alice/balance",
+            "alice:password",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(
+            &api,
+            "GET",
+            "/accounts/alice/balance",
+            "alice:wrong",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_or_user_can_modify_accounts_settings() {
+        let api = test_accounts_api();
+        let resp = api_call(
+            &api,
+            "PUT",
+            "/accounts/alice/settings",
+            "admin",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 200);
+
+        // TODO: Make this not require the username in the token
+        let resp = api_call(
+            &api,
+            "PUT",
+            "/accounts/alice/settings",
+            "alice:password",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(
+            &api,
+            "PUT",
+            "/accounts/alice/settings",
+            "alice:wrong",
+            DETAILS.clone(),
+        );
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+}

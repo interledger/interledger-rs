@@ -8,14 +8,14 @@ pub use node_settings::node_settings_api;
 pub mod test_helpers {
     use super::*;
     use crate::{AccountDetails, AccountSettings, NodeStore};
-    use bytes::{Bytes, BytesMut};
+    use bytes::Bytes;
     use futures::sync::mpsc::UnboundedSender;
     use futures::{
         future::{err, ok},
         Future,
     };
     use http::Response;
-    use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
+    use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
     use interledger_service::{
         incoming_service_fn, outgoing_service_fn, Account, AccountStore, AddressStore, Username,
     };
@@ -37,7 +37,6 @@ pub mod test_helpers {
     use url::Url;
     use uuid::Uuid;
 
-
     use serde_json::Value;
     pub fn api_call<F, T: ToString>(
         api: &F,
@@ -56,9 +55,7 @@ pub mod test_helpers {
             .header("Authorization", format!("Bearer {}", auth.to_string()));
 
         if let Some(d) = data {
-            ret = ret
-                .header("Content-type", "application/json")
-                .json(&d);
+            ret = ret.header("Content-type", "application/json").json(&d);
         }
 
         ret.reply(api)
@@ -74,7 +71,7 @@ pub mod test_helpers {
             }
             .build()))
         });
-        let outgoing = outgoing_service_fn(move |request| {
+        let outgoing = outgoing_service_fn(move |_request| {
             Box::new(ok(FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"hello!",
@@ -98,7 +95,7 @@ pub mod test_helpers {
     }
 
     /*
-     * Lots of boilerplate implementations of all necessary traits to launch 
+     * Lots of boilerplate implementations of all necessary traits to launch
      * the crate's APIs in unit tests
      */
 
@@ -196,7 +193,7 @@ pub mod test_helpers {
     }
 
     impl ExchangeRateStore for TestStore {
-        fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
+        fn get_exchange_rates(&self, _asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
             unimplemented!()
         }
 
@@ -220,32 +217,32 @@ pub mod test_helpers {
 
         fn insert_account(
             &self,
-            account: AccountDetails,
+            _account: AccountDetails,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
             Box::new(ok(TestAccount))
         }
 
         fn delete_account(
             &self,
-            id: Uuid,
+            _id: Uuid,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-            unimplemented!()
+            Box::new(ok(TestAccount))
         }
 
         fn update_account(
             &self,
-            id: Uuid,
-            account: AccountDetails,
+            _id: Uuid,
+            _account: AccountDetails,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-            unimplemented!()
+            Box::new(ok(TestAccount))
         }
 
         fn modify_account_settings(
             &self,
-            id: Uuid,
-            settings: AccountSettings,
+            _id: Uuid,
+            _settings: AccountSettings,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-            unimplemented!()
+            Box::new(ok(TestAccount))
         }
 
         fn get_all_accounts(
@@ -254,7 +251,7 @@ pub mod test_helpers {
             Box::new(ok(vec![TestAccount, TestAccount]))
         }
 
-        fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
+        fn set_static_routes<R>(&self, _routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
         where
             R: IntoIterator<Item = (String, Uuid)>,
         {
@@ -263,29 +260,29 @@ pub mod test_helpers {
 
         fn set_static_route(
             &self,
-            prefix: String,
-            account_id: Uuid,
+            _prefix: String,
+            _account_id: Uuid,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }
 
         fn set_default_route(
             &self,
-            account_id: Uuid,
+            _account_id: Uuid,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }
 
         fn set_settlement_engines(
             &self,
-            asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
+            _asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }
 
         fn get_asset_settlement_engine(
             &self,
-            asset_code: &str,
+            _asset_code: &str,
         ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send> {
             Box::new(ok(None))
         }
@@ -315,13 +312,13 @@ pub mod test_helpers {
 
         fn add_payment_notification_subscription(
             &self,
-            id: Uuid,
-            sender: UnboundedSender<PaymentNotification>,
+            _id: Uuid,
+            _sender: UnboundedSender<PaymentNotification>,
         ) {
             unimplemented!()
         }
 
-        fn publish_payment_notification(&self, payment: PaymentNotification) {
+        fn publish_payment_notification(&self, _payment: PaymentNotification) {
             unimplemented!()
         }
     }
@@ -329,31 +326,31 @@ pub mod test_helpers {
     impl BalanceStore for TestStore {
         fn get_balance(
             &self,
-            account: TestAccount,
+            _account: TestAccount,
         ) -> Box<dyn Future<Item = i64, Error = ()> + Send> {
-            unimplemented!()
+            Box::new(ok(1))
         }
 
         fn update_balances_for_prepare(
             &self,
-            from_account: TestAccount,
-            incoming_amount: u64,
+            _from_account: TestAccount,
+            _incoming_amount: u64,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }
 
         fn update_balances_for_fulfill(
             &self,
-            to_account: TestAccount,
-            outgoing_amount: u64,
+            _to_account: TestAccount,
+            _outgoing_amount: u64,
         ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
             unimplemented!()
         }
 
         fn update_balances_for_reject(
             &self,
-            from_account: TestAccount,
-            incoming_amount: u64,
+            _from_account: TestAccount,
+            _incoming_amount: u64,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
             unimplemented!()
         }
@@ -366,7 +363,6 @@ pub mod test_helpers {
             username: &Username,
             token: &str,
         ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-            dbg!(username, token);
             if username == &*USERNAME && token == AUTH_PASSWORD {
                 Box::new(ok(TestAccount))
             } else {
@@ -374,5 +370,4 @@ pub mod test_helpers {
             }
         }
     }
-
 }
