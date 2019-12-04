@@ -1,10 +1,12 @@
 use super::{error::*, HttpStore};
-use bytes::{buf::Buf, Bytes, BytesMut};
+use crate::error::default_rejection_handler;
+use bytes::{buf::Buf, BytesMut};
 use futures::{
     future::{err, Either, FutureResult},
     Future,
 };
 use interledger_packet::Prepare;
+use interledger_service::Username;
 use interledger_service::{AuthToken, IncomingRequest, IncomingService};
 use log::error;
 use std::{convert::TryFrom, net::SocketAddr};
@@ -38,12 +40,14 @@ where
         let store = self.store.clone();
 
         warp::post2()
+            .and(warp::path("accounts"))
+            .and(warp::path::param2::<Username>())
             .and(warp::path("ilp"))
             .and(warp::path::end())
-            .and(warp::header::<AuthToken>("authorization"))
-            .and_then(move |auth: AuthToken| {
+            .and(warp::header::<String>("authorization"))
+            .and_then(move |path_username: Username, password: String| {
                 store
-                    .get_account_from_http_auth(auth.username(), auth.password())
+                    .get_account_from_http_auth(&path_username, &password)
                     .map_err(move |_| -> Rejection {
                         error!(
                             "Invalid authorization provided for user: {}",
