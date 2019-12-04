@@ -82,13 +82,12 @@ pub fn send_money_to_username<T: Display + Debug>(
     from_auth: &str,
 ) -> impl Future<Item = StreamDelivery, Error = ()> {
     let client = reqwest::r#async::Client::new();
-    let auth = format!("{}:{}", from_username, from_auth);
     client
         .post(&format!(
             "http://localhost:{}/accounts/{}/payments",
             from_port, from_username
         ))
-        .header("Authorization", format!("Bearer {}", auth))
+        .header("Authorization", format!("Bearer {}", from_auth))
         .json(&json!({
             "receiver": format!("http://localhost:{}/accounts/{}/spsp", to_port, to_username),
             "source_amount": amount,
