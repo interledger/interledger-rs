@@ -1,13 +1,12 @@
 use super::{error::*, HttpStore};
-use crate::error::default_rejection_handler;
-use bytes::{buf::Buf, BytesMut};
+use bytes::{buf::Buf, Bytes, BytesMut};
 use futures::{
     future::{err, Either, FutureResult},
     Future,
 };
 use interledger_packet::Prepare;
 use interledger_service::Username;
-use interledger_service::{AuthToken, IncomingRequest, IncomingService};
+use interledger_service::{IncomingRequest, IncomingService};
 use log::error;
 use std::{convert::TryFrom, net::SocketAddr};
 use warp::{self, Filter, Rejection};
@@ -49,10 +48,7 @@ where
                 store
                     .get_account_from_http_auth(&path_username, &password)
                     .map_err(move |_| -> Rejection {
-                        error!(
-                            "Invalid authorization provided for user: {}",
-                            auth.username()
-                        );
+                        error!("Invalid authorization provided for user: {}", path_username,);
                         ApiError::unauthorized().into()
                     })
             })
@@ -94,5 +90,135 @@ where
 
     pub fn bind(&self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> + Send {
         warp::serve(self.as_filter()).bind(addr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::HttpAccount;
+    use bytes::{Bytes, BytesMut};
+    use futures::future::ok;
+    use http::Response;
+    use interledger_packet::{Address, ErrorCode, PrepareBuilder, RejectBuilder};
+    use interledger_service::{incoming_service_fn, Account};
+    use lazy_static::lazy_static;
+    use std::convert::TryInto;
+    use std::str::FromStr;
+    use std::time::SystemTime;
+    use url::Url;
+    use uuid::Uuid;
+
+    lazy_static! {
+        static ref USERNAME: Username = Username::from_str("alice").unwrap();
+        static ref ILP_ADDRESS: Address = Address::from_str("example.alice").unwrap();
+        pub static ref PREPARE_BYTES: BytesMut = PrepareBuilder {
+            amount: 0,
+            destination: ILP_ADDRESS.clone(),
+            expires_at: SystemTime::now(),
+            execution_condition: &[0; 32],
+            data: &[],
+        }
+        .build()
+        .try_into()
+        .unwrap();
+    }
+    const AUTH_PASSWORD: &str = "password";
+
+    fn api_call<F, T: ToString>(
+        api: &F,
+        endpoint: &str, // /ilp or /accounts/:username/ilp
+        auth: T,        // simple bearer or overloaded username+password
+    ) -> Response<Bytes>
+    where
+        F: warp::Filter + 'static,
+        F::Extract: warp::Reply,
+    {
+        warp::test::request()
+            .method("POST")
+            .path(endpoint)
+            .header("Authorization", auth.to_string())
+            .header("Content-length", 1000)
+            .body(PREPARE_BYTES.clone())
+            .reply(api)
+    }
+
+    #[test]
+    fn new_api_test() {
+        let store = TestStore;
+        let incoming = incoming_service_fn(|_request| {
+            Box::new(err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: b"No other incoming handler!",
+                data: &[],
+                triggered_by: None,
+            }
+            .build()))
+        });
+        let api = HttpServer::new(incoming, store)
+            .as_filter()
+            .recover(default_rejection_handler);
+
+        // Fails with overloaded token
+        let resp = api_call(
+            &api,
+            "/accounts/alice/ilp",
+            format!("{}:{}", USERNAME.to_string(), AUTH_PASSWORD),
+        );
+        assert_eq!(resp.status().as_u16(), 401);
+
+        // Works with just the password
+        let resp = api_call(&api, "/accounts/alice/ilp", AUTH_PASSWORD);
+        assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestAccount;
+    impl Account for TestAccount {
+        fn id(&self) -> Uuid {
+            Uuid::new_v4()
+        }
+
+        fn username(&self) -> &Username {
+            &USERNAME
+        }
+        fn ilp_address(&self) -> &Address {
+            &ILP_ADDRESS
+        }
+
+        fn asset_scale(&self) -> u8 {
+            9
+        }
+        fn asset_code(&self) -> &str {
+            "XYZ"
+        }
+    }
+
+    impl HttpAccount for TestAccount {
+        fn get_http_auth_token(&self) -> Option<&str> {
+            unimplemented!()
+        }
+
+        fn get_http_url(&self) -> Option<&Url> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestStore;
+
+    impl HttpStore for TestStore {
+        type Account = TestAccount;
+        fn get_account_from_http_auth(
+            &self,
+            username: &Username,
+            token: &str,
+        ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+            if username == &*USERNAME && token == AUTH_PASSWORD {
+                Box::new(ok(TestAccount))
+            } else {
+                Box::new(err(()))
+            }
+        }
     }
 }
