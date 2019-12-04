@@ -828,6 +828,7 @@ dependencies = [
  "interledger-settlement 0.3.0",
  "interledger-spsp 0.4.0",
  "interledger-stream 0.4.0",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.9.22 (registry+https://github.com/rust-lang/crates.io-index)",
  "secrecy 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
