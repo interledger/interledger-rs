@@ -273,6 +273,7 @@ where
         .or(put_static_routes)
         .or(put_static_route)
         .or(put_settlement_engines)
+        .recover(default_rejection_handler)
         .boxed()
 }
 
@@ -318,7 +319,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "PUT", "/rates", "wrong", Some(rates));
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -329,7 +330,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "PUT", "/routes/static", "wrong", Some(routes));
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -348,7 +349,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_put("wrong");
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -365,6 +366,6 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "PUT", "/settlement/engines", "wrong", Some(engines));
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 }
