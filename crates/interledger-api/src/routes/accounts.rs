@@ -11,7 +11,7 @@ use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
 use interledger_router::RouterStore;
 use interledger_service::{
-    Account, AddressStore, AuthToken, IncomingService, OutgoingRequest, OutgoingService, Username,
+    Account, AddressStore, IncomingService, OutgoingRequest, OutgoingService, Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::SettlementAccount;
@@ -21,9 +21,10 @@ use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
-use std::str::FromStr;
 use uuid::Uuid;
 use warp::{self, Filter, Rejection};
+
+pub const BEARER_TOKEN_START: usize = 7;
 
 #[derive(Deserialize, Debug)]
 struct SpspPayRequest {
@@ -125,7 +126,10 @@ where
         .and(with_admin_auth_header.clone())
         .and_then(
             |path_username: Username, auth_string: String, store: S, admin_auth_header: String| {
-                store.get_account_id_from_username(&path_username).then(
+                if auth_string.len() < BEARER_TOKEN_START {
+                    return Either::A(err(ApiError::bad_request().into()));
+                }
+                Either::B(store.get_account_id_from_username(&path_username).then(
                     move |account_id: Result<Uuid, _>| {
                         if account_id.is_err() {
                             return Either::A(err::<Uuid, Rejection>(
@@ -136,13 +140,12 @@ where
                         if auth_string == admin_auth_header {
                             return Either::A(ok(account_id));
                         }
-                        let auth = match AuthToken::from_str(&auth_string) {
-                            Ok(auth) => auth,
-                            Err(_) => return Either::A(err(ApiError::account_not_found().into())),
-                        };
                         Either::B(
                             store
-                                .get_account_from_http_auth(auth.username(), auth.password())
+                                .get_account_from_http_auth(
+                                    &path_username,
+                                    &auth_string[BEARER_TOKEN_START..],
+                                )
                                 .then(move |authorized_account: Result<A, _>| {
                                     if authorized_account.is_err() {
                                         return err(ApiError::unauthorized().into());
@@ -156,7 +159,7 @@ where
                                 }),
                         )
                     },
-                )
+                ))
             },
         )
         .boxed();
@@ -167,15 +170,12 @@ where
         .and(warp::header::<String>("authorization"))
         .and(with_store.clone())
         .and_then(|path_username: Username, auth_string: String, store: S| {
-            let auth: AuthToken = match AuthToken::from_str(&auth_string) {
-                Ok(auth) => auth,
-                Err(_) => {
-                    return Either::A(err::<A, Rejection>(ApiError::account_not_found().into()))
-                }
-            };
+            if auth_string.len() < BEARER_TOKEN_START {
+                return Either::A(err(ApiError::bad_request().into()));
+            }
             Either::B(
                 store
-                    .get_account_from_http_auth(auth.username(), auth.password())
+                    .get_account_from_http_auth(&path_username, &auth_string[BEARER_TOKEN_START..])
                     .then(move |authorized_account: Result<A, _>| {
                         if authorized_account.is_err() {
                             return err::<A, Rejection>(ApiError::unauthorized().into());
@@ -677,22 +677,10 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         // TODO: Make this not require the username in the token
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice",
-            "alice:password",
-            DETAILS.clone(),
-        );
+        let resp = api_call(&api, "GET", "/accounts/alice", "password", DETAILS.clone());
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice",
-            "alice:wrong",
-            DETAILS.clone(),
-        );
+        let resp = api_call(&api, "GET", "/accounts/alice", "wrong", DETAILS.clone());
         assert_eq!(resp.status().as_u16(), 401);
     }
 
@@ -713,7 +701,7 @@ mod tests {
             &api,
             "GET",
             "/accounts/alice/balance",
-            "alice:password",
+            "password",
             DETAILS.clone(),
         );
         assert_eq!(resp.status().as_u16(), 200);
@@ -722,7 +710,7 @@ mod tests {
             &api,
             "GET",
             "/accounts/alice/balance",
-            "alice:wrong",
+            "wrong",
             DETAILS.clone(),
         );
         assert_eq!(resp.status().as_u16(), 401);
@@ -745,7 +733,7 @@ mod tests {
             &api,
             "PUT",
             "/accounts/alice/settings",
-            "alice:password",
+            "password",
             DETAILS.clone(),
         );
         assert_eq!(resp.status().as_u16(), 200);
@@ -754,7 +742,7 @@ mod tests {
             &api,
             "PUT",
             "/accounts/alice/settings",
-            "alice:wrong",
+            "wrong",
             DETAILS.clone(),
         );
         assert_eq!(resp.status().as_u16(), 401);
