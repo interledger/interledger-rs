@@ -39,7 +39,7 @@ function clear_binaries() {
 }
 
 # $1 = target directory
-# $2 = docker mode in [01]
+# $2 = source mode in [01]
 # $3 = test name filter
 #
 # test_example examples/eth-settlement 0
