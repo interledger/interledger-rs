@@ -45,9 +45,9 @@ fn prometheus() {
         "username": "node_b",
         "asset_code": "XYZ",
         "asset_scale": 9,
-        "ilp_over_http_url": format!("http://localhost:{}/ilp", node_b_http),
+        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node_b_http, "node_a"),
         "ilp_over_http_incoming_token" : "token",
-        "ilp_over_http_outgoing_token" : "node_a:token",
+        "ilp_over_http_outgoing_token" : "token",
         "routing_relation": "Peer",
     });
 
@@ -56,9 +56,9 @@ fn prometheus() {
         "username": "node_a",
         "asset_code": "XYZ",
         "asset_scale": 9,
-        "ilp_over_http_url": format!("http://localhost:{}/ilp", node_a_http),
+        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node_a_http, "node_b"),
         "ilp_over_http_incoming_token" : "token",
-        "ilp_over_http_outgoing_token" : "node_b:token",
+        "ilp_over_http_outgoing_token" : "token",
         "routing_relation": "Peer",
     });
 
