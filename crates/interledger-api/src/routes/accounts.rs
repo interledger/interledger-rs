@@ -464,6 +464,7 @@ where
         .or(put_account_settings)
         .or(incoming_payment_notifications)
         .or(post_payments)
+        .recover(default_rejection_handler)
         .boxed()
 }
 
@@ -636,7 +637,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "POST", "/accounts", "wrong", DETAILS.clone());
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -646,7 +647,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "DELETE", "/accounts/alice", "wrong", DETAILS.clone());
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -656,7 +657,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "PUT", "/accounts/alice", "wrong", DETAILS.clone());
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -666,7 +667,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "GET", "/accounts", "wrong", DETAILS.clone());
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -692,7 +693,7 @@ mod tests {
             "alice:wrong",
             DETAILS.clone(),
         );
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -724,7 +725,7 @@ mod tests {
             "alice:wrong",
             DETAILS.clone(),
         );
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 
     #[test]
@@ -756,6 +757,6 @@ mod tests {
             "alice:wrong",
             DETAILS.clone(),
         );
-        assert_eq!(resp.status().as_u16(), 500);
+        assert_eq!(resp.status().as_u16(), 401);
     }
 }
