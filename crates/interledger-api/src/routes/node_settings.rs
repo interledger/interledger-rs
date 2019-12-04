@@ -275,3 +275,96 @@ where
         .or(put_settlement_engines)
         .boxed()
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::routes::test_helpers::{api_call, test_node_settings_api};
+    use serde_json::{json, Value};
+
+    #[test]
+    fn gets_status() {
+        let api = test_node_settings_api();
+        let resp = api_call(&api, "GET", "/", "", None);
+        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(
+            resp.body(),
+            &b"{\"status\":\"Ready\",\"ilp_address\":\"example.connector\"}"[..]
+        );
+    }
+
+    #[test]
+    fn gets_rates() {
+        let api = test_node_settings_api();
+        let resp = api_call(&api, "GET", "/rates", "", None);
+        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(
+            serde_json::from_slice::<Value>(resp.body()).unwrap(),
+            json!({"XYZ":2.0,"ABC":1.0})
+        );
+    }
+
+    #[test]
+    fn gets_routes() {
+        let api = test_node_settings_api();
+        let resp = api_call(&api, "GET", "/routes", "", None);
+        assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[test]
+    fn only_admin_can_put_rates() {
+        let api = test_node_settings_api();
+        let rates = json!({"ABC": 1.0});
+        let resp = api_call(&api, "PUT", "/rates", "admin", Some(rates.clone()));
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "PUT", "/rates", "wrong", Some(rates));
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_can_put_static_routes() {
+        let api = test_node_settings_api();
+        let routes = json!({"g.node1": "alice", "example.eu": "bob"});
+        let resp = api_call(&api, "PUT", "/routes/static", "admin", Some(routes.clone()));
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "PUT", "/routes/static", "wrong", Some(routes));
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_can_put_single_static_route() {
+        let api = test_node_settings_api();
+        let api_put = move |auth: &str| {
+            warp::test::request()
+                .method("PUT")
+                .path("/routes/static/g.node1")
+                .body("alice")
+                .header("Authorization", format!("Bearer {}", auth.to_string()))
+                .reply(&api)
+        };
+
+        let resp = api_put("admin");
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_put("wrong");
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn only_admin_can_put_engines() {
+        let api = test_node_settings_api();
+        let engines = json!({"ABC": "http://localhost:3000", "XYZ": "http://localhost:3001"});
+        let resp = api_call(
+            &api,
+            "PUT",
+            "/settlement/engines",
+            "admin",
+            Some(engines.clone()),
+        );
+        assert_eq!(resp.status().as_u16(), 200);
+
+        let resp = api_call(&api, "PUT", "/settlement/engines", "wrong", Some(engines));
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+}
