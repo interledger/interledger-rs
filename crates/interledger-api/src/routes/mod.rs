@@ -15,29 +15,26 @@ pub mod test_helpers {
         Future,
     };
     use http::Response;
-    use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
-    use interledger_service::{
-        incoming_service_fn, outgoing_service_fn, Account, AccountStore, AddressStore, Username,
-    };
-    // use std::convert::TryInto;
-    use std::str::FromStr;
-    // use std::time::SystemTime;
-    // use url::Url;
     use interledger_btp::{BtpAccount, BtpOutgoingService};
     use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
     use interledger_http::{HttpAccount, HttpStore};
+    use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
     use interledger_router::RouterStore;
+    use interledger_service::{
+        incoming_service_fn, outgoing_service_fn, Account, AccountStore, AddressStore, Username,
+    };
     use interledger_service_util::{BalanceStore, ExchangeRateStore};
     use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
     use interledger_stream::{PaymentNotification, StreamNotificationsStore};
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
+    use serde_json::Value;
     use std::collections::HashMap;
+    use std::str::FromStr;
     use std::sync::Arc;
     use url::Url;
     use uuid::Uuid;
 
-    use serde_json::Value;
     pub fn api_call<F, T: ToString>(
         api: &F,
         method: &str,
@@ -59,6 +56,10 @@ pub mod test_helpers {
         }
 
         ret.reply(api)
+    }
+
+    pub fn test_node_settings_api() -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        node_settings_api("admin".to_owned(), None, TestStore)
     }
 
     pub fn test_accounts_api() -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
@@ -194,21 +195,24 @@ pub mod test_helpers {
 
     impl ExchangeRateStore for TestStore {
         fn get_exchange_rates(&self, _asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
-            unimplemented!()
+            Ok(vec![1.0, 2.0])
         }
 
         fn set_exchange_rates(&self, _rates: HashMap<String, f64>) -> Result<(), ()> {
-            unimplemented!()
+            Ok(())
         }
 
         fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()> {
-            unimplemented!()
+            let mut ret = HashMap::new();
+            ret.insert("ABC".to_owned(), 1.0);
+            ret.insert("XYZ".to_owned(), 2.0);
+            Ok(ret)
         }
     }
 
     impl RouterStore for TestStore {
         fn routing_table(&self) -> Arc<HashMap<String, Uuid>> {
-            unimplemented!()
+            Arc::new(HashMap::new())
         }
     }
 
@@ -255,7 +259,7 @@ pub mod test_helpers {
         where
             R: IntoIterator<Item = (String, Uuid)>,
         {
-            unimplemented!()
+            Box::new(ok(()))
         }
 
         fn set_static_route(
@@ -263,7 +267,7 @@ pub mod test_helpers {
             _prefix: String,
             _account_id: Uuid,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-            unimplemented!()
+            Box::new(ok(()))
         }
 
         fn set_default_route(
@@ -277,7 +281,7 @@ pub mod test_helpers {
             &self,
             _asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
         ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-            unimplemented!()
+            Box::new(ok(()))
         }
 
         fn get_asset_settlement_engine(
