@@ -8,6 +8,7 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     r#async::{Chunk, Client, ClientBuilder, Response as HttpResponse},
 };
+use secrecy::{ExposeSecret, SecretString};
 use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone)]
@@ -63,11 +64,17 @@ where
                 request.to.id(),
                 url.as_str()
             );
-            let token = request.to.get_http_auth_token().unwrap_or("");
+            let token = request
+                .to
+                .get_http_auth_token()
+                .unwrap_or_else(|| SecretString::new("".to_owned()));
             Box::new(
                 self.client
                     .post(url.as_ref())
-                    .header("authorization", &format!("Bearer {}", token))
+                    .header(
+                        "authorization",
+                        &format!("Bearer {}", token.expose_secret()),
+                    )
                     .body(BytesMut::from(request.prepare).freeze())
                     .send()
                     .map_err(move |err| {
