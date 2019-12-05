@@ -11,8 +11,7 @@ use interledger_service_util::{
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use log::error;
 use ring::aead;
-use secrecy::ExposeSecret;
-use secrecy::SecretBytes;
+use secrecy::{ExposeSecret, SecretBytes, SecretString};
 use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use std::str::{self, FromStr};
@@ -255,10 +254,14 @@ impl HttpAccount for Account {
         self.ilp_over_http_url.as_ref()
     }
 
-    fn get_http_auth_token(&self) -> Option<&str> {
-        self.ilp_over_http_outgoing_token
-            .as_ref()
-            .map(|s| str::from_utf8(s.expose_secret().as_ref()).unwrap_or_default())
+    fn get_http_auth_token(&self) -> Option<SecretString> {
+        self.ilp_over_http_outgoing_token.as_ref().map(|s| {
+            SecretString::new(
+                str::from_utf8(s.expose_secret().as_ref())
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        })
     }
 }
 
@@ -356,12 +359,12 @@ mod test {
         assert_eq!(account.id(), id);
         // the HTTP token does not contain the username
         assert_eq!(
-            account.get_http_auth_token().unwrap(),
+            account.get_http_auth_token().unwrap().expose_secret(),
             "outgoing_auth_token",
         );
         assert_eq!(
             account.get_ilp_over_btp_outgoing_token().unwrap(),
-            "bob:outgoing_btp_token".as_bytes(),
+            b"bob:outgoing_btp_token",
         );
         assert_eq!(
             account.get_ilp_over_btp_url().unwrap().to_string(),

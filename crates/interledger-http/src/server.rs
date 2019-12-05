@@ -109,6 +109,7 @@ mod tests {
     use interledger_packet::{Address, ErrorCode, PrepareBuilder, RejectBuilder};
     use interledger_service::{incoming_service_fn, Account};
     use lazy_static::lazy_static;
+    use secrecy::SecretString;
     use std::convert::TryInto;
     use std::str::FromStr;
     use std::time::SystemTime;
@@ -201,7 +202,7 @@ mod tests {
     }
 
     impl HttpAccount for TestAccount {
-        fn get_http_auth_token(&self) -> Option<&str> {
+        fn get_http_auth_token(&self) -> Option<SecretString> {
             unimplemented!()
         }
 

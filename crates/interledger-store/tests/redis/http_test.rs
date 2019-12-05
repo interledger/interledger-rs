@@ -4,6 +4,7 @@ use interledger_btp::BtpAccount;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_service::{Account, Username};
+use secrecy::ExposeSecret;
 use std::str::FromStr;
 
 #[test]
@@ -21,7 +22,7 @@ fn gets_account_from_http_bearer_token() {
                 );
                 // this account is in Dylan's connector
                 assert_eq!(
-                    account.get_http_auth_token().unwrap(),
+                    account.get_http_auth_token().unwrap().expose_secret(),
                     "outgoing_auth_token",
                 );
                 assert_eq!(
@@ -45,7 +46,7 @@ fn decrypts_outgoing_tokens_http() {
             )
             .and_then(move |account| {
                 assert_eq!(
-                    account.get_http_auth_token().unwrap(),
+                    account.get_http_auth_token().unwrap().expose_secret(),
                     "outgoing_auth_token",
                 );
                 assert_eq!(
