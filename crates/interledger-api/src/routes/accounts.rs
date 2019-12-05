@@ -41,7 +41,7 @@ pub fn accounts_api<I, O, S, A, B>(
     outgoing_handler: O,
     btp: BtpOutgoingService<B, A>,
     store: S,
-) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
+) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
@@ -458,8 +458,6 @@ where
         .or(put_account_settings)
         .or(incoming_payment_notifications)
         .or(post_payments)
-        .recover(default_rejection_handler)
-        .boxed()
 }
 
 fn get_address_from_parent_and_update_routes<O, A, S>(
