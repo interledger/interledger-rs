@@ -494,7 +494,6 @@ ilp-cli accounts create alice \
     --asset-scale 6 \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token alice_password \
-    --ilp-over-http-url http://localhost:7770/ilp \
     --settle-to 0 &> logs/account-alice-alice.log
 
 printf "Adding Bob's account on Alice's node (ETH Peer relation)...\n"
@@ -505,8 +504,8 @@ ilp-cli accounts create bob \
     --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3000 \
     --ilp-over-http-incoming-token bob_password \
-    --ilp-over-http-outgoing-token alice:alice_password \
-    --ilp-over-http-url http://localhost:8770/ilp \
+    --ilp-over-http-outgoing-token alice_password \
+    --ilp-over-http-url http://localhost:8770/accounts/alice/ilp \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
@@ -521,8 +520,8 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3001 \
     --ilp-over-http-incoming-token alice_password \
-    --ilp-over-http-outgoing-token bob:bob_password \
-    --ilp-over-http-url http://localhost:7770/ilp \
+    --ilp-over-http-outgoing-token bob_password \
+    --ilp-over-http-url http://localhost:7770/accounts/bob/ilp \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
@@ -538,8 +537,8 @@ ilp-cli --node http://localhost:8770 accounts create charlie \
     --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3002 \
     --ilp-over-http-incoming-token charlie_password \
-    --ilp-over-http-outgoing-token bob:bob_other_password \
-    --ilp-over-http-url http://localhost:9770/ilp \
+    --ilp-over-http-outgoing-token bob_other_password \
+    --ilp-over-http-url http://localhost:9770/accounts/bob/ilp \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
@@ -553,7 +552,6 @@ ilp-cli --node http://localhost:9770 accounts create charlie \
     --asset-scale 6 \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token charlie_password \
-    --ilp-over-http-url http://localhost:9770/ilp \
     --settle-to 0 &> logs/account-charlie-charlie.log
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
@@ -572,8 +570,8 @@ ilp-cli --node http://localhost:9770 accounts create bob \
     --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3003 \
     --ilp-over-http-incoming-token bob_other_password \
-    --ilp-over-http-outgoing-token charlie:charlie_password \
-    --ilp-over-http-url http://localhost:8770/ilp \
+    --ilp-over-http-outgoing-token charlie_password \
+    --ilp-over-http-url http://localhost:8770/accounts/charlie/ilp \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
