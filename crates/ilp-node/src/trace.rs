@@ -61,6 +61,7 @@ pub fn trace_forwarding<A: Account>(
     let details_span = debug_span!(target: "interledger-node",
         "",
         to.username = %request.from.username(),
+        to.ilp_address = %request.to.ilp_address(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
     );
@@ -91,6 +92,7 @@ pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
         from.asset_code = %request.from.asset_code(),
         from.asset_scale = %request.from.asset_scale(),
         to.username = %request.from.username(),
+        to.ilp_address = %request.to.ilp_address(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
     );
@@ -132,7 +134,7 @@ fn trace_response(result: Result<Fulfill, Reject>) -> Result<Fulfill, Reject> {
             info_span!(target: "interledger-node",
                 "",
                 reject.code = %reject.code(),
-                reject.message = %str::from_utf8(reject.message()).unwrap_or_default(),
+                reject.message = %format!("\"{}\"", str::from_utf8(reject.message()).unwrap_or_default()),
                 reject.triggered_by = "")
         }
         .in_scope(|| {
