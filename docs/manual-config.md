@@ -30,7 +30,7 @@ If you want to just try out the Interledger testnet, you could try as follows.
 ```bash
 curl \
     -X POST \
-    -H "Authorization: Bearer ${username}:${token}" \
+    -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
     -d '{"receiver":"$their-payment-pointer.example","source_amount":500}' \
     https://rs3.xpring.dev/accounts/${Username}/payments
@@ -42,7 +42,7 @@ If someone sends you payments, you could confirm your balance increase as follow
 
 ```bash
 curl \
-    -H "Authorization: Bearer ${username}:${token}" \
+    -H "Authorization: Bearer ${token}" \
     https://rs3.xpring.dev/accounts/${Username}/balance
 ```
 
