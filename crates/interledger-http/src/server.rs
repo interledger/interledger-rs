@@ -13,6 +13,7 @@ use warp::{self, Filter, Rejection};
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_PACKET_SIZE: u64 = 40000;
+pub const BEARER_TOKEN_START: usize = 7;
 
 /// A warp filter that parses incoming ILP-Over-HTTP requests, validates the authorization,
 /// and passes the request to an IncomingService handler.
@@ -45,12 +46,17 @@ where
             .and(warp::path::end())
             .and(warp::header::<String>("authorization"))
             .and_then(move |path_username: Username, password: String| {
-                store
-                    .get_account_from_http_auth(&path_username, &password)
-                    .map_err(move |_| -> Rejection {
-                        error!("Invalid authorization provided for user: {}", path_username,);
-                        ApiError::unauthorized().into()
-                    })
+                if password.len() < BEARER_TOKEN_START {
+                    return Either::A(err(ApiError::bad_request().into()));
+                }
+                Either::B(
+                    store
+                        .get_account_from_http_auth(&path_username, &password[BEARER_TOKEN_START..])
+                        .map_err(move |_| -> Rejection {
+                            error!("Invalid authorization provided for user: {}", path_username);
+                            ApiError::unauthorized().into()
+                        }),
+                )
             })
             .and(warp::body::content_length_limit(MAX_PACKET_SIZE))
             .and(warp::body::concat())
@@ -125,10 +131,10 @@ mod tests {
     }
     const AUTH_PASSWORD: &str = "password";
 
-    fn api_call<F, T: ToString>(
+    fn api_call<F>(
         api: &F,
         endpoint: &str, // /ilp or /accounts/:username/ilp
-        auth: T,        // simple bearer or overloaded username+password
+        auth: &str,     // simple bearer or overloaded username+password
     ) -> Response<Bytes>
     where
         F: warp::Filter + 'static,
@@ -137,7 +143,7 @@ mod tests {
         warp::test::request()
             .method("POST")
             .path(endpoint)
-            .header("Authorization", auth.to_string())
+            .header("Authorization", format!("Bearer {}", auth))
             .header("Content-length", 1000)
             .body(PREPARE_BYTES.clone())
             .reply(api)
@@ -163,7 +169,7 @@ mod tests {
         let resp = api_call(
             &api,
             "/accounts/alice/ilp",
-            format!("{}:{}", USERNAME.to_string(), AUTH_PASSWORD),
+            &format!("{}:{}", USERNAME.to_string(), AUTH_PASSWORD),
         );
         assert_eq!(resp.status().as_u16(), 401);
 
