@@ -7,6 +7,7 @@ use error::*;
 use futures::Future;
 use interledger_service::{Account, Username};
 use mime::Mime;
+use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use url::Url;
 use warp::{self, filters::body::FullBody, Filter, Rejection};
@@ -22,7 +23,7 @@ pub use self::server::HttpServer;
 
 pub trait HttpAccount: Account {
     fn get_http_url(&self) -> Option<&Url>;
-    fn get_http_auth_token(&self) -> Option<&str>;
+    fn get_http_auth_token(&self) -> Option<SecretString>;
 }
 
 /// The interface for Stores that can be used with the HttpServerService.

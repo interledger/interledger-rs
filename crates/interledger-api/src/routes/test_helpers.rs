@@ -22,6 +22,7 @@ use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use lazy_static::lazy_static;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -142,7 +143,7 @@ impl Account for TestAccount {
 }
 
 impl HttpAccount for TestAccount {
-    fn get_http_auth_token(&self) -> Option<&str> {
+    fn get_http_auth_token(&self) -> Option<SecretString> {
         unimplemented!()
     }
 

@@ -270,7 +270,7 @@ impl LeftoversStore for EngineRedisStore {
         let connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         Box::new(
-            self.get_uncredited_settlement_amount(account_id.clone())
+            self.get_uncredited_settlement_amount(account_id)
                 .and_then(move |amount| {
                     // scale the amount from the max scale to the local scale, and then
                     // save any potential leftovers to the store

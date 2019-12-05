@@ -11,6 +11,7 @@ use interledger_service_util::BalanceStore;
 use interledger_store::redis::RedisStoreBuilder;
 use log::{debug, error};
 use redis_crate::Client;
+use secrecy::ExposeSecret;
 use secrecy::SecretString;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -230,8 +231,8 @@ fn modify_account_settings_unchanged() {
             .modify_account_settings(id, settings)
             .and_then(move |ret| {
                 assert_eq!(
-                    account.get_http_auth_token().unwrap(),
-                    ret.get_http_auth_token().unwrap()
+                    account.get_http_auth_token().unwrap().expose_secret(),
+                    ret.get_http_auth_token().unwrap().expose_secret(),
                 );
                 assert_eq!(
                     account.get_ilp_over_btp_outgoing_token().unwrap(),
@@ -264,7 +265,10 @@ fn modify_account_settings() {
         store
             .modify_account_settings(id, settings)
             .and_then(move |ret| {
-                assert_eq!(ret.get_http_auth_token().unwrap(), "test_token",);
+                assert_eq!(
+                    ret.get_http_auth_token().unwrap().expose_secret(),
+                    "test_token",
+                );
                 assert_eq!(
                     ret.get_ilp_over_btp_outgoing_token().unwrap(),
                     &b"dylan:test"[..],
@@ -457,8 +461,8 @@ fn decrypts_outgoing_tokens_acc() {
             .and_then(move |accounts| {
                 let account = accounts[0].clone();
                 assert_eq!(
-                    account.get_http_auth_token().unwrap(),
-                    acc.get_http_auth_token().unwrap(),
+                    account.get_http_auth_token().unwrap().expose_secret(),
+                    acc.get_http_auth_token().unwrap().expose_secret(),
                 );
                 assert_eq!(
                     account.get_ilp_over_btp_outgoing_token().unwrap(),
