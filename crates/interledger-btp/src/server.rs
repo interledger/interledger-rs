@@ -1,10 +1,10 @@
 use super::service::{BtpOutgoingService, WsError};
 use super::{packet::*, BtpAccount, BtpStore};
 use futures::{future::result, Async, AsyncSink, Future, Poll, Sink, Stream};
-use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, warn};
-use std::{str::FromStr, time::Duration};
+use secrecy::{ExposeSecret, SecretString};
+use std::time::Duration;
 use tokio_timer::Timeout;
 use tungstenite;
 use warp::{
@@ -30,29 +30,28 @@ const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// The warp filter handles the websocket upgrades and adds incoming connections
 /// to the BTP service so that it will handle each of the messages.
-pub fn create_btp_service_and_filter<O, S, A>(
-    ilp_address: Address,
+pub fn btp_service_as_filter<O, S, A>(
+    service: BtpOutgoingService<O, A>,
     store: S,
-    next_outgoing: O,
-) -> (
-    BtpOutgoingService<O, A>,
-    warp::filters::BoxedFilter<(impl warp::Reply,)>,
-)
+) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     S: BtpStore<Account = A> + Clone + Send + Sync + 'static,
     A: BtpAccount + 'static,
 {
-    let service = BtpOutgoingService::new(ilp_address, next_outgoing);
-    let service_clone = service.clone();
-    let filter = warp::ws2()
-        .map(move |ws: Ws2| {
+    warp::path("accounts")
+        .and(warp::path::param2::<Username>())
+        .and(warp::path("ilp"))
+        .and(warp::path("btp"))
+        .and(warp::path::end())
+        .and(warp::ws2())
+        .map(move |username: Username, ws: Ws2| {
             let store = store.clone();
-            let service_clone = service_clone.clone();
+            let service_clone = service.clone();
             ws.on_upgrade(move |ws: WebSocket| {
                 // TODO set max_message_size once https://github.com/seanmonstar/warp/pull/272 is merged
                 let service_clone = service_clone.clone();
-                Timeout::new(validate_auth(store, ws), WEBSOCKET_TIMEOUT)
+                Timeout::new(validate_auth(store, username, ws), WEBSOCKET_TIMEOUT)
                     .and_then(move |(account, connection)| {
                         debug!(
                             "Added connection for account {}: (id: {})",
@@ -68,8 +67,7 @@ where
                     })
             })
         })
-        .boxed();
-    (service, filter)
+        .boxed()
 }
 
 /// This wraps a warp Websocket connection to make it act like a
@@ -167,11 +165,12 @@ where
 
 struct Auth {
     request_id: u32,
-    token: AuthToken,
+    token: SecretString,
 }
 
 fn validate_auth<S, A>(
     store: S,
+    username: Username,
     connection: impl Stream<Item = Message, Error = warp::Error>
         + Sink<SinkItem = Message, SinkError = warp::Error>,
 ) -> impl Future<
@@ -187,9 +186,9 @@ where
     A: BtpAccount + 'static,
 {
     get_auth(connection).and_then(move |(auth, connection)| {
-        debug!("Got BTP connection for username: {}", auth.token.username());
+        debug!("Got BTP connection for username: {}", username);
         store
-            .get_account_from_btp_auth(&auth.token.username(), &auth.token.password())
+            .get_account_from_btp_auth(&username, &auth.token.expose_secret())
             .map_err(move |_| warn!("BTP connection does not correspond to an account"))
             .and_then(move |account| {
                 let auth_response = Message::binary(
@@ -245,29 +244,21 @@ fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
             match BtpMessage::from_bytes(message.as_bytes()) {
                 Ok(message) => {
                     let request_id = message.request_id;
-                    let mut username: Option<String> = None;
                     let mut token: Option<String> = None;
                     for protocol_data in message.protocol_data.iter() {
                         let protocol_name: &str = protocol_data.protocol_name.as_ref();
                         if protocol_name == "auth_token" {
                             token = String::from_utf8(protocol_data.data.clone()).ok();
-                        } else if protocol_name == "auth_username" {
-                            username = String::from_utf8(protocol_data.data.clone()).ok();
                         }
                     }
 
-                    match (username, token) {
-                        (Some(ref username), Some(ref token)) => {
-                            return AuthToken::new(username, token)
-                                .ok()
-                                .map(|token| Auth { request_id, token });
-                        }
-                        (None, Some(ref token)) => {
-                            return AuthToken::from_str(token)
-                                .ok()
-                                .map(|token| Auth { request_id, token });
-                        }
-                        _ => warn!("BTP packet is missing auth token"),
+                    if let Some(token) = token {
+                        return Some(Auth {
+                            request_id,
+                            token: SecretString::new(token.to_string()),
+                        });
+                    } else {
+                        warn!("BTP packet is missing auth token");
                     }
                 }
                 Err(err) => {

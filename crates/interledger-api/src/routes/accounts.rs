@@ -464,6 +464,7 @@ where
         .or(put_account_settings)
         .or(incoming_payment_notifications)
         .or(post_payments)
+        .boxed()
 }
 
 fn get_address_from_parent_and_update_routes<O, A, S>(
