@@ -334,9 +334,9 @@ mod test {
             ilp_over_http_url: Some("http://example.com/accounts/bob/ilp".to_string()),
             ilp_over_http_incoming_token: Some(SecretString::new("incoming_auth_token".to_string())),
             ilp_over_http_outgoing_token: Some(SecretString::new("outgoing_auth_token".to_string())),
-            ilp_over_btp_url: Some("btp+ws://example.com/ilp/btp".to_string()),
+            ilp_over_btp_url: Some("btp+ws://example.com/accounts/bob/ilp/btp".to_string()),
             ilp_over_btp_incoming_token: Some(SecretString::new("incoming_btp_token".to_string())),
-            ilp_over_btp_outgoing_token: Some(SecretString::new("bob:outgoing_btp_token".to_string())),
+            ilp_over_btp_outgoing_token: Some(SecretString::new("outgoing_btp_token".to_string())),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
             routing_relation: Some("Peer".to_string()),
@@ -364,11 +364,11 @@ mod test {
         );
         assert_eq!(
             account.get_ilp_over_btp_outgoing_token().unwrap(),
-            b"bob:outgoing_btp_token",
+            b"outgoing_btp_token",
         );
         assert_eq!(
             account.get_ilp_over_btp_url().unwrap().to_string(),
-            "btp+ws://example.com/ilp/btp",
+            "btp+ws://example.com/accounts/bob/ilp/btp",
         );
         assert_eq!(
             account.get_http_url().unwrap().to_string(),
