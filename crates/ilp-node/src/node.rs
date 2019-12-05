@@ -17,7 +17,7 @@ use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
 use interledger::service_util::BalanceService;
 use interledger::{
     api::{NodeApi, NodeStore},
-    btp::{connect_client, create_btp_service_and_filter, BtpStore},
+    btp::{btp_service_as_filter, connect_client, BtpOutgoingService, BtpStore},
     ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RoutingRelation},
     http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer},
     ildcp::IldcpService,
@@ -316,7 +316,8 @@ impl InterledgerNode {
                     // TODO try reconnecting to those accounts later
                     connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service).and_then(
                         move |btp_client_service| {
-                            let (btp_server_service, btp_filter) = create_btp_service_and_filter(ilp_address_clone2, store.clone(), btp_client_service.clone());
+                            let btp_server_service = BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());
+                            let btp_server_service_clone = btp_server_service.clone();
                             let btp = btp_client_service.clone();
 
                             // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
@@ -433,17 +434,10 @@ impl InterledgerNode {
                                     let _http_scope = http.enter();
                                     next.handle_request(request).in_current_span()
                                 }).in_current_span(), store.clone()).as_filter())
-                                .recover(default_rejection_handler);
+                                .or(btp_service_as_filter(btp_server_service_clone, store.clone()))
+                                .recover(default_rejection_handler)
+                                .with(warp::log("interledger-api")).boxed();
 
-                            // Mount the BTP endpoint at /ilp/btp
-                            let btp_endpoint = warp::path("ilp")
-                                .and(warp::path("btp"))
-                                .and(warp::path::end())
-                                .and(btp_filter);
-                            // Note that other endpoints added to the API must come first
-                            // because the API includes error handling and consumes the request.
-                            // TODO should we just make BTP part of the API?
-                            let api = btp_endpoint.or(api).with(warp::log("interledger-api")).boxed();
                             info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
                             spawn(warp::serve(api).bind(http_bind_address));
 
