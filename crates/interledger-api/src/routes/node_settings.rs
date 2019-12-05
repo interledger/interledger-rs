@@ -33,7 +33,7 @@ pub fn node_settings_api<S, A>(
     admin_api_token: String,
     node_version: Option<String>,
     store: S,
-) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
+) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
 where
     S: NodeStore<Account = A>
         + HttpStore<Account = A>
@@ -273,8 +273,6 @@ where
         .or(put_static_routes)
         .or(put_static_route)
         .or(put_settlement_engines)
-        .recover(default_rejection_handler)
-        .boxed()
 }
 
 #[cfg(test)]

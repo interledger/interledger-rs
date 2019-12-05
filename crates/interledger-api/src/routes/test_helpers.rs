@@ -11,6 +11,7 @@ use futures::{
 use http::Response;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
+use interledger_http::error::default_rejection_handler;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_router::RouterStore;
@@ -28,6 +29,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
+use warp::{self, Filter};
 
 pub fn api_call<F, T: ToString>(
     api: &F,
@@ -52,11 +54,13 @@ where
     ret.reply(api)
 }
 
-pub fn test_node_settings_api() -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
-    node_settings_api("admin".to_owned(), None, TestStore)
+pub fn test_node_settings_api(
+) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    node_settings_api("admin".to_owned(), None, TestStore).recover(default_rejection_handler)
 }
 
-pub fn test_accounts_api() -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+pub fn test_accounts_api(
+) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     let incoming = incoming_service_fn(|_request| {
         Box::new(err(RejectBuilder {
             code: ErrorCode::F02_UNREACHABLE,
@@ -87,6 +91,7 @@ pub fn test_accounts_api() -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
         btp,
         store,
     )
+    .recover(default_rejection_handler)
 }
 
 /*
