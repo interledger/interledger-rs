@@ -43,8 +43,8 @@ fn two_nodes_btp() {
         "username": "b_on_a",
         "asset_code": "XYZ",
         "asset_scale": 9,
-        "ilp_over_btp_url": format!("btp+ws://localhost:{}/ilp/btp", node_b_http),
-        "ilp_over_btp_outgoing_token" : "a_on_b:token",
+        "ilp_over_btp_url": format!("btp+ws://localhost:{}/accounts/{}/ilp/btp", node_b_http, "a_on_b"),
+        "ilp_over_btp_outgoing_token" : "token",
         "routing_relation": "Parent",
     });
 
