@@ -74,7 +74,6 @@ fn three_nodes() {
         "asset_code": "ABC",
         "asset_scale": 6,
         "ilp_over_btp_incoming_token" : "three",
-        "ilp_over_http_incoming_token" : "three",
         "min_balance": -1_000_000_000,
         "routing_relation": "Child",
     });
@@ -92,9 +91,8 @@ fn three_nodes() {
         "asset_scale": 6,
         "ilp_over_http_incoming_token" : "two",
         "ilp_over_http_outgoing_token": "three",
-        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node2_http, "charlie_on_b"),
-        "ilp_over_btp_url": format!("btp+ws://localhost:{}/ilp/btp", node2_http),
-        "ilp_over_btp_outgoing_token": "charlie_on_b:three",
+        "ilp_over_btp_url": format!("btp+ws://localhost:{}/accounts/{}/ilp/btp", node2_http, "charlie_on_b"),
+        "ilp_over_btp_outgoing_token": "three",
         "min_balance": -1_000_000_000,
         "routing_relation": "Parent",
     });
