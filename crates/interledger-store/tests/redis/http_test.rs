@@ -27,7 +27,7 @@ fn gets_account_from_http_bearer_token() {
                 );
                 assert_eq!(
                     &account.get_ilp_over_btp_outgoing_token().unwrap(),
-                    &format!("{}:btp_token", "dylan").as_bytes()
+                    b"btp_token",
                 );
                 let _ = context;
                 Ok(())
@@ -51,7 +51,7 @@ fn decrypts_outgoing_tokens_http() {
                 );
                 assert_eq!(
                     &account.get_ilp_over_btp_outgoing_token().unwrap(),
-                    &format!("{}:btp_token", "dylan").as_bytes()
+                    b"btp_token",
                 );
                 let _ = context;
                 Ok(())

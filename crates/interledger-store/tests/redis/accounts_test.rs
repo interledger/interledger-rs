@@ -255,7 +255,7 @@ fn modify_account_settings() {
             ilp_over_btp_outgoing_token: Some(SecretString::new("dylan:test".to_owned())),
             ilp_over_btp_incoming_token: Some(SecretString::new("btp_in_new".to_owned())),
             ilp_over_http_url: Some("http://example.com/accounts/dylan/ilp".to_owned()),
-            ilp_over_btp_url: Some("http://example.com/ilp/btp".to_owned()),
+            ilp_over_btp_url: Some("http://example.com/accounts/dylan/ilp/btp".to_owned()),
             settle_threshold: Some(-50),
             settle_to: Some(100),
         };
