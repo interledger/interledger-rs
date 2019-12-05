@@ -35,8 +35,8 @@ use std::{
 };
 use uuid::Uuid;
 
-mod auth;
-pub use auth::{Auth as AuthToken, Username};
+mod username;
+pub use username::Username;
 #[cfg(feature = "trace")]
 mod trace;
 #[cfg(feature = "trace")]
