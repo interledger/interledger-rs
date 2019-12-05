@@ -62,7 +62,8 @@ impl ConnectionGenerator {
         (destination_account, shared_secret)
     }
 
-    /// Rederive the `shared_secret` from a `destination_account`.
+    /// Rederive the `shared_secret` from the "local part" of a `destination_account`
+    /// that was appended by the STREAM server.
     ///
     /// Although it is not strictly necessary, this uses the same logic as the Javascript
     /// STREAM server. Because this STREAM server is intended to be used as part of a node with
@@ -75,11 +76,21 @@ impl ConnectionGenerator {
     ///
     /// This method returns a Result in case we want to change the internal
     /// logic in the future.
-    pub fn rederive_secret(&self, destination_account: &Address) -> Result<[u8; 32], ()> {
-        let local_part = destination_account.segments().rev().next().unwrap();
+    pub fn rederive_secret(
+        &self,
+        base_address: &Address,
+        destination_address: &Address,
+    ) -> Result<[u8; 32], ()> {
+        // The local part used to regenerate the shared secret is
+        // the next segment after the base address
+        let local_part = destination_address
+            .segments()
+            .skip(base_address.segments().count())
+            .next()
+            .unwrap_or_default();
         // Note this computes the HMAC with the token _encoded as UTF8_,
         // rather than decoding the base64 first.
-        let shared_secret = hmac_sha256(&self.secret_generator[..], &local_part.as_bytes()[..]);
+        let shared_secret = hmac_sha256(&self.secret_generator[..], local_part.as_bytes());
         Ok(shared_secret)
     }
 }
@@ -159,7 +170,10 @@ where
 
         // The case where the request is bound for this server
         if dest.starts_with(to_address.as_ref()) {
-            if let Ok(shared_secret) = self.connection_generator.rederive_secret(&destination) {
+            if let Ok(shared_secret) = self
+                .connection_generator
+                .rederive_secret(&to_address, &destination)
+            {
                 let response = receive_money(
                     &shared_secret,
                     &to_address,
@@ -222,16 +236,20 @@ fn receive_money(
     // the request on to the next service.
     let copied_data = BytesMut::from(prepare.data());
 
-    let stream_packet = StreamPacket::from_encrypted(shared_secret, copied_data).map_err(|_| {
-        debug!("Unable to parse data, rejecting Prepare packet");
-        RejectBuilder {
-            code: ErrorCode::F06_UNEXPECTED_PAYMENT,
-            message: b"Could not decrypt data",
-            triggered_by: Some(ilp_address),
-            data: &[],
-        }
-        .build()
-    })?;
+    let stream_packet =
+        StreamPacket::from_encrypted(shared_secret, copied_data).map_err(|err| {
+            debug!(
+                "Unable to parse STREAM packet from data, rejecting Prepare packet: {:?}",
+                err
+            );
+            RejectBuilder {
+                code: ErrorCode::F06_UNEXPECTED_PAYMENT,
+                message: b"Could not decrypt data",
+                triggered_by: Some(ilp_address),
+                data: &[],
+            }
+            .build()
+        })?;
 
     let mut response_frames: Vec<Frame> = Vec::new();
 
@@ -334,7 +352,7 @@ mod connection_generator {
 
         assert_eq!(
             connection_generator
-                .rederive_secret(&destination_account)
+                .rederive_secret(&receiver_address, &destination_account)
                 .unwrap(),
             shared_secret
         );
@@ -374,9 +392,8 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account.clone(),
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -384,38 +401,14 @@ mod receiving_money {
         }
         .build();
 
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
+        let shared_secret2 = connection_generator
+            .rederive_secret(&ilp_address, &prepare.destination())
             .unwrap();
-        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn fulfills_valid_packet_without_connection_tag() {
-        let ilp_address = Address::from_str("example.destination").unwrap();
-        let server_secret = Bytes::from(&[1; 32][..]);
-        let connection_generator = ConnectionGenerator::new(server_secret.clone());
-        let (destination_account, shared_secret) =
-            connection_generator.generate_address_and_secret(&ilp_address);
-        let stream_packet = test_stream_packet();
-        let data = stream_packet.into_encrypted(&shared_secret[..]);
-        let execution_condition = generate_condition(&shared_secret[..], &data);
-
-        let dest = Address::try_from(destination_account).unwrap();
-        let prepare = PrepareBuilder {
-            destination: dest,
-            amount: 100,
-            expires_at: UNIX_EPOCH,
-            data: &data[..],
-            execution_condition: &execution_condition,
-        }
-        .build();
-
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
-            .unwrap();
-        let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
+        assert_eq!(
+            shared_secret, shared_secret2,
+            "did not regenerate the same shared secret"
+        );
+        let result = receive_money(&shared_secret2, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_ok());
     }
 
@@ -442,7 +435,7 @@ mod receiving_money {
         .build();
 
         let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
+            .rederive_secret(&ilp_address, &prepare.destination())
             .unwrap();
         let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_err());
@@ -472,7 +465,7 @@ mod receiving_money {
 
         let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: dest.clone(),
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -481,7 +474,7 @@ mod receiving_money {
         .build();
 
         let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
+            .rederive_secret(&dest, &prepare.destination())
             .unwrap();
         let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_err());
@@ -496,11 +489,40 @@ mod receiving_money {
         let server_secret = Bytes::from(vec![0u8; 32]);
         let connection_generator = ConnectionGenerator::new(server_secret);
         let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
+            .rederive_secret(&ilp_address, &prepare.destination())
             .expect("Receiver should be able to rederive the shared secret");
         assert_eq!(
             &shared_secret[..],
             hex::decode("b7d09d2e16e6f83c55b60e42fcd7c2b8ed49624a1df73c59b383dbe2e8690309")
+                .unwrap()
+                .as_ref() as &[u8],
+            "did not regenerate the same shared secret",
+        );
+        let fulfill = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare)
+            .expect("Receiver should be able to generate the fulfillment");
+        assert_eq!(
+            &hash_sha256(fulfill.fulfillment())[..],
+            &condition[..],
+            "fulfillment generated does not hash to the expected condition"
+        );
+    }
+
+    #[test]
+    fn fulfills_packets_sent_to_javascript_receiver_with_encrypted_connection_tags() {
+        let ilp_address = Address::from_str("test.strata.tier2.spsp.0").unwrap();
+        let prepare = Prepare::try_from(bytes::BytesMut::from(hex::decode("0c82016f00000000000000003230313931323034323333373332323635dc7b79e2c1ae2c15b12154de85d58f0c26e73639e8928fe6ad820979f2511d99820108746573742e7374726174612e74696572322e737073702e302e61775f3876467a5f743149585959564b3538674d7a645a377e5a444d7a5a5459354e7a593459575a684d4749344e54526b4d445269595449794f544d794d6a6b324d6d56684e7a55334e4759304d6a526d5a4449784e54426c4f4467325a47566d4d47466b596d5a6c4e6d55354d7a426c5a54426a5a4463324e6a6c685a6a45325a5459794e7a677a5a5759305a6d59784f546b345a6d5578526b6451593370474f474e775157684e4d45343162466c704f466471616a4a6f656a5933655655776257356e4f444a4453474677626c4e4d52306c776232784f5431673563485a4d56456332654468796431427552772a586addb432c8c0f4463f183c50ca5cb461e9d9eff154e96129a0befb8d2bcf1f89973e7166a7d6b96d85").unwrap())).unwrap();
+        let condition = prepare.execution_condition().to_vec();
+        let server_secret = Bytes::from(
+            hex::decode("b6d56d045a596774f3ee74daac8a50bafc6260aa405ec8bfa46ba57e97bab91a")
+                .unwrap(),
+        );
+        let connection_generator = ConnectionGenerator::new(server_secret);
+        let shared_secret = connection_generator
+            .rederive_secret(&ilp_address, &prepare.destination())
+            .expect("Receiver should be able to rederive the shared secret");
+        assert_eq!(
+            &shared_secret[..],
+            hex::decode("020c0af8f6053a9119a9df077d9a47b7296627608d979001acf55a3ff0ee9429")
                 .unwrap()
                 .as_ref() as &[u8],
             "did not regenerate the same shared secret",
@@ -647,8 +669,14 @@ mod stream_receiver_service {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
-        let dest = dest.with_suffix(b"extra").unwrap();
+        let dest = Address::from_str(
+            format!(
+                "example.destination.other.{}",
+                destination_account.segments().last().unwrap()
+            )
+            .as_str(),
+        )
+        .unwrap();
 
         let prepare = PrepareBuilder {
             destination: dest,

@@ -1,7 +1,6 @@
 use bytes::BytesMut;
 #[cfg(test)]
 use lazy_static::lazy_static;
-use log::error;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
 
@@ -79,10 +78,7 @@ fn encrypt_with_nonce(
         additional_data,
         &mut plaintext,
     )
-    .unwrap_or_else(|err| {
-        error!("Error encrypting {:?}", err);
-        panic!(err);
-    });
+    .expect("Unable to encrypt data");
 
     // Rearrange the bytes so that the tag goes first (should have put it last in the JS implementation, but oh well)
     let auth_tag_position = plaintext.len() - AUTH_TAG_LENGTH;
@@ -122,9 +118,7 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
             aead::Aad::from(additional_data),
             &mut ciphertext,
         )
-        .map_err(|err| {
-            error!("Error decrypting {:?}", err);
-        })?
+        .map_err(|_| ())?
         .len();
     ciphertext.truncate(length);
     Ok(ciphertext)
