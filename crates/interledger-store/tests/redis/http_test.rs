@@ -22,7 +22,7 @@ fn gets_account_from_http_bearer_token() {
                 // this account is in Dylan's connector
                 assert_eq!(
                     account.get_http_auth_token().unwrap(),
-                    &format!("{}:outgoing_auth_token", "dylan")
+                    "outgoing_auth_token",
                 );
                 assert_eq!(
                     &account.get_ilp_over_btp_outgoing_token().unwrap(),
@@ -46,7 +46,7 @@ fn decrypts_outgoing_tokens_http() {
             .and_then(move |account| {
                 assert_eq!(
                     account.get_http_auth_token().unwrap(),
-                    &format!("{}:outgoing_auth_token", "dylan")
+                    "outgoing_auth_token",
                 );
                 assert_eq!(
                     &account.get_ilp_over_btp_outgoing_token().unwrap(),

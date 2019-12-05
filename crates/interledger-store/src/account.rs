@@ -327,13 +327,13 @@ mod test {
             asset_code: "XYZ".to_string(),
             max_packet_amount: 1000,
             min_balance: Some(-1000),
-            ilp_over_http_url: Some("http://example.com/ilp".to_string()),
             // we are Bob and we're using this account to peer with Alice
+            ilp_over_http_url: Some("http://example.com/accounts/bob/ilp".to_string()),
             ilp_over_http_incoming_token: Some(SecretString::new("incoming_auth_token".to_string())),
-            ilp_over_http_outgoing_token: Some(SecretString::new("bob:outgoing_auth_token".to_string())),
+            ilp_over_http_outgoing_token: Some(SecretString::new("outgoing_auth_token".to_string())),
             ilp_over_btp_url: Some("btp+ws://example.com/ilp/btp".to_string()),
-            ilp_over_btp_incoming_token: Some(SecretString::new("alice:btp_token".to_string())),
-            ilp_over_btp_outgoing_token: Some(SecretString::new("bob:btp_token".to_string())),
+            ilp_over_btp_incoming_token: Some(SecretString::new("incoming_btp_token".to_string())),
+            ilp_over_btp_outgoing_token: Some(SecretString::new("bob:outgoing_btp_token".to_string())),
             settle_threshold: Some(0),
             settle_to: Some(-1000),
             routing_relation: Some("Peer".to_string()),
@@ -354,17 +354,22 @@ mod test {
         )
         .unwrap();
         assert_eq!(account.id(), id);
+        // the HTTP token does not contain the username
         assert_eq!(
             account.get_http_auth_token().unwrap(),
-            format!("{}:outgoing_auth_token", "bob"),
+            "outgoing_auth_token",
         );
         assert_eq!(
             account.get_ilp_over_btp_outgoing_token().unwrap(),
-            format!("{}:btp_token", "bob").as_bytes(),
+            "bob:outgoing_btp_token".as_bytes(),
         );
         assert_eq!(
             account.get_ilp_over_btp_url().unwrap().to_string(),
             "btp+ws://example.com/ilp/btp",
+        );
+        assert_eq!(
+            account.get_http_url().unwrap().to_string(),
+            "http://example.com/accounts/bob/ilp",
         );
         assert_eq!(account.routing_relation(), RoutingRelation::Peer);
     }

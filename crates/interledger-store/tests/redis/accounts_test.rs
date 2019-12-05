@@ -249,12 +249,12 @@ fn modify_account_settings_unchanged() {
 fn modify_account_settings() {
     block_on(test_store().and_then(|(store, context, accounts)| {
         let settings = AccountSettings {
-            ilp_over_http_outgoing_token: Some(SecretString::new("dylan:test_token".to_owned())),
+            ilp_over_http_outgoing_token: Some(SecretString::new("test_token".to_owned())),
             ilp_over_http_incoming_token: Some(SecretString::new("http_in_new".to_owned())),
             ilp_over_btp_outgoing_token: Some(SecretString::new("dylan:test".to_owned())),
             ilp_over_btp_incoming_token: Some(SecretString::new("btp_in_new".to_owned())),
-            ilp_over_http_url: Some("http://example.com".to_owned()),
-            ilp_over_btp_url: Some("http://example.com".to_owned()),
+            ilp_over_http_url: Some("http://example.com/accounts/dylan/ilp".to_owned()),
+            ilp_over_btp_url: Some("http://example.com/ilp/btp".to_owned()),
             settle_threshold: Some(-50),
             settle_to: Some(100),
         };
@@ -264,7 +264,7 @@ fn modify_account_settings() {
         store
             .modify_account_settings(id, settings)
             .and_then(move |ret| {
-                assert_eq!(ret.get_http_auth_token().unwrap(), "dylan:test_token",);
+                assert_eq!(ret.get_http_auth_token().unwrap(), "test_token",);
                 assert_eq!(
                     ret.get_ilp_over_btp_outgoing_token().unwrap(),
                     &b"dylan:test"[..],

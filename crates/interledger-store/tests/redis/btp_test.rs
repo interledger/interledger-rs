@@ -32,7 +32,7 @@ fn decrypts_outgoing_tokens_btp() {
                 // the account is created on Dylan's connector
                 assert_eq!(
                     account.get_http_auth_token().unwrap(),
-                    &format!("{}:outgoing_auth_token", "dylan"),
+                    "outgoing_auth_token",
                 );
                 assert_eq!(
                     &account.get_ilp_over_btp_outgoing_token().unwrap(),
