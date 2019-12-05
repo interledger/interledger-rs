@@ -19,8 +19,8 @@ The format of the `Authorization` header is either of the following.
     - `Bearer admin-token`
     - `admin-token` is the token you specified as `admin_auth_token` when you spun up the node.
 1. User tokens
-    - `Bearer username:password`
-    - `username` and `password` are what you specified as `username` and `ilp_over_http_incoming_token` respectively when you created the account.
+    - `Bearer password`
+    - `password` is the token you specified as `ilp_over_http_incoming_token` when you created the account.
 
 
 ## The API

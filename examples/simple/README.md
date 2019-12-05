@@ -273,8 +273,8 @@ ilp-cli accounts create node_b \
     --asset-code ABC \
     --asset-scale 9 \
     --ilp-address example.node_b \
-    --ilp-over-http-outgoing-token node_a:node_a-password \
-    --ilp-over-http-url 'http://localhost:8770/ilp' \
+    --ilp-over-http-outgoing-token node_a-password \
+    --ilp-over-http-url 'http://localhost:8770/accounts/node_a/ilp' \
     &>logs/account-node_a-node_b.log
 
 # Insert accounts on Node B

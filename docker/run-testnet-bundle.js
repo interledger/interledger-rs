@@ -68,6 +68,7 @@ async function run() {
             --ilp-over-http-url=https://${config.nodeName}.localtunnel.me/ilp \
             --settle-threshold=1000 \
             --settle-to=0`)
+            // TODO: The outgoing token and HTTP url should be replaced with the new format
     }
 
     console.log('Using config: ', config)

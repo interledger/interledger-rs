@@ -81,7 +81,7 @@ jobs:
       - run:
           name: Run run-md Test
           command: |
-            scripts/run-md-test.sh
+            scripts/run-md-test.sh '^.*$' 1
       - store_artifacts:
           path: /tmp/run-md-test
           destination: run-md-test

@@ -190,7 +190,7 @@ impl NodeClient<'_> {
         let user = args.remove("sender_username").unwrap(); // infallible unwrap
         self.client
             .post(&format!("{}/accounts/{}/payments", self.url, user))
-            .bearer_auth(&format!("{}:{}", user, auth))
+            .bearer_auth(auth)
             .json(&args)
             .send()
             .map_err(Error::SendErr)

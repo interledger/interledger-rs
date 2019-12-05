@@ -2,10 +2,10 @@
 # For integration tests
 function post_test_hook() {
     if [ $TEST_MODE -eq 1 ]; then
-        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer alice:in_alice" http://localhost:7770/accounts/alice/balance
-        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer bob:bob_password" http://localhost:7770/accounts/bob/balance
-        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer alice:alice_password" http://localhost:8770/accounts/alice/balance
-        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer bob:in_bob" http://localhost:8770/accounts/bob/balance
+        test_equals_or_exit '{"balance":-500}' test_http_response_body -H "Authorization: Bearer in_alice" http://localhost:7770/accounts/alice/balance
+        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer bob_password" http://localhost:7770/accounts/bob/balance
+        test_equals_or_exit '{"balance":0}' test_http_response_body -H "Authorization: Bearer alice_password" http://localhost:8770/accounts/alice/balance
+        test_equals_or_exit '{"balance":500}' test_http_response_body -H "Authorization: Bearer in_bob" http://localhost:8770/accounts/bob/balance
     fi
 }
 -->
@@ -316,7 +316,6 @@ ilp-cli accounts create alice \
     --asset-scale 6 \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token in_alice \
-    --ilp-over-http-url http://localhost:7770/ilp \
     --settle-to 0 &> logs/account-alice-alice.log
 
 printf "Adding Bob's Account...\n"
@@ -327,7 +326,6 @@ ilp-cli --node http://localhost:8770 accounts create bob \
     --asset-scale 6 \
     --max-packet-amount 100 \
     --ilp-over-http-incoming-token in_bob \
-    --ilp-over-http-url http://localhost:8770/ilp \
     --settle-to 0 &> logs/account-bob-bob.log
 
 printf "Adding Bob's account on Alice's node...\n"
@@ -338,8 +336,8 @@ ilp-cli accounts create bob \
     --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3000 \
     --ilp-over-http-incoming-token bob_password \
-    --ilp-over-http-outgoing-token alice:alice_password \
-    --ilp-over-http-url http://localhost:8770/ilp \
+    --ilp-over-http-outgoing-token alice_password \
+    --ilp-over-http-url http://localhost:8770/accounts/alice/ilp \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
@@ -354,8 +352,8 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3001 \
     --ilp-over-http-incoming-token alice_password \
-    --ilp-over-http-outgoing-token bob:bob_password \
-    --ilp-over-http-url http://localhost:7770/ilp \
+    --ilp-over-http-outgoing-token bob_password \
+    --ilp-over-http-url http://localhost:7770/accounts/bob/ilp \
     --settle-threshold 500 \
     --min-balance -1000 \
     --settle-to 0 \
@@ -408,7 +406,7 @@ printf "\n"
 
 # wait untill the settlement is done
 printf "\nWaiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"balance":0}' 20 -H "Authorization: Bearer alice:alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
+wait_to_get_http_response_body '{"balance":0}' 20 -H "Authorization: Bearer alice_password" "http://localhost:8770/accounts/alice/balance" || error_and_exit "Could not confirm settlement."
 printf "done\n"
 -->
 
