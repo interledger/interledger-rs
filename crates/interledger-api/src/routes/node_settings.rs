@@ -273,6 +273,7 @@ where
         .or(put_static_routes)
         .or(put_static_route)
         .or(put_settlement_engines)
+        .boxed()
 }
 
 #[cfg(test)]
