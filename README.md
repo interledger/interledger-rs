@@ -85,7 +85,7 @@ Append the `--help` flag to see available options.
 
 See [configuration](./docs/configuration.md) for more details on how the node is configured.
 
-#### Configuration of Redis
+#### Configuring Redis
 
 We have some account settings such as `amount_per_minute_limit` or `packets_per_minute_limit`. In order to enable these options, you need to load the [redis-cell](https://github.com/brandur/redis-cell) module as follows. *You don't need to load this module unless you use the rate-limit options.*
 
