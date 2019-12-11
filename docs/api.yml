@@ -25,7 +25,7 @@ paths:
   # Default SPSP Account
   /.well_known/pay:
     get:
-      summary: The default SPSP account used on the node. This endpoint is only enabled if the node is run with the configuration option ILP_DEFAULT_SPSP_ACCOUNT.
+      summary: The default SPSP account used on the node. This endpoint is only enabled if the node is run with the configuration option ILP_DEFAULT_SPSP_ACCOUNT. The SPSP spec can be found at https://interledger.org/rfcs/0009-simple-payment-setup-protocol/
       responses:
         '200':
           description: The node's SPSP information
@@ -109,7 +109,7 @@ paths:
                 schema:
                   $ref: '#/components/schemas/Account'
     put:
-      summary: Edit an account's information
+      summary: Edit an account's information. This is an administrator-only call which allows modification of any field of the account, not to be confused with the /accounts/:username/settings endpoint which allows a user to edit some of their authorization related data.
       parameters:
         - in: header
           name: authorization
@@ -159,7 +159,7 @@ paths:
         required: true
         description: Username of the account whose information you are operating on
     put:
-      summary: Edit an account's settings (e.g. tokens, URLs, settlement thresholds)
+      summary: Edit an account's settings (e.g. tokens, URLs, settlement thresholds). This should not be confused with the administrator-only PUT /accounts/:username endpoint which allows changing any user parameter.
       tags:
         - admins
         - users
@@ -239,7 +239,7 @@ paths:
         required: true
         description: Username of the account whose information you are operating on
     post:
-      summary: Send payment to an account
+      summary: Send payment to an account. Note that even though this is a user-only endpoint, node operators have access to server secrets, meaning that they could issue payments from any account if they wished to.
       tags:
         - users
       parameters:
@@ -367,7 +367,7 @@ paths:
   # Rates endpoints
   /rates:
     get:
-      summary: Get all of the node's exchange rates (currently open, but might be converted to admin/user-only in the future)
+      summary: Get all of the node's exchange rates.
       responses:
         '200':
           description: The stored exchange rates
