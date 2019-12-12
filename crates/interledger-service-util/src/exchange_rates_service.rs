@@ -145,13 +145,29 @@ where
                     // is larger than the maximum value for a u64.
                     // When it gets cast to a u64, it will end up being 0.
                     if outgoing_amount != 0.0 && outgoing_amount as u64 == 0 {
-                        return Box::new(err(RejectBuilder {
-                            code: ErrorCode::F08_AMOUNT_TOO_LARGE,
-                            message: format!(
-                                "Could not cast outgoing amount to u64 {}",
-                                outgoing_amount,
+                        let (code, message) = if outgoing_amount < 1.0 {
+                            // user wanted to send a positive value but it got rounded down to 0
+                            (
+                                ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT,
+                                format!(
+                                    "Could not cast to f64, amount too small: {}",
+                                    outgoing_amount
+                                ),
                             )
-                            .as_bytes(),
+                        } else {
+                            // amount that arrived was too large for us to forward
+                            (
+                                ErrorCode::F08_AMOUNT_TOO_LARGE,
+                                format!(
+                                    "Could not cast to f64, amount too large: {}",
+                                    outgoing_amount
+                                ),
+                            )
+                        };
+
+                        return Box::new(err(RejectBuilder {
+                            code,
+                            message: message.as_bytes(),
                             triggered_by: Some(&ilp_address),
                             data: &[],
                         }
@@ -353,7 +369,17 @@ mod tests {
         let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
-        assert!(reject.message().starts_with(b"Could not cast"));
+        assert!(reject
+            .message()
+            .starts_with(b"Could not cast to f64, amount too large"));
+
+        // rejects f64 which gets rounded down to 0
+        let ret = exchange_rate(1, 2, 1.0, 1, 1.0, 0.0);
+        let reject = ret.0.unwrap_err();
+        assert_eq!(reject.code(), ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT);
+        assert!(reject
+            .message()
+            .starts_with(b"Could not cast to f64, amount too small"));
 
         // `Convert` errored
         let ret = exchange_rate(std::u64::MAX, 1, std::f64::MAX, 255, 1.0, 0.0);

@@ -1,6 +1,6 @@
 ## How to Specify Configurations
 
-Interledger.rs binaries such as `ilp-node` and `ilp-settlement-ethereum` accept configuration options in the following ways:
+The Interledger.rs node binary (`ilp-node`) can be configured in various ways:
 
 ### Environment variables
 
@@ -27,7 +27,7 @@ some_command | ilp-node
 
 ```bash #
 # Passing by a configuration file in JSON, TOML, YAML format.
-# The first argument after subcommands such as `node` is the path to the configuration file.
+# The first argument is the path to the configuration file.
 ilp-node config.yml
 ```
 
@@ -67,7 +67,7 @@ The configuration parameters are explained in the following format.
 - admin_auth_token
     - String
     - `naXg9PrfFAaY99s7`
-    - An arbitrary secret token that is used when you call the HTTP API of the node. You have to pass this token as a bearer token.
+    - An arbitrary secret token that is used for authenticating against administrative operations over the node's HTTP API. It must be passed as a Bearer token.
 
 ### Optional
 
@@ -90,7 +90,7 @@ The configuration parameters are explained in the following format.
 - default_spsp_account
     - String (should be an existing account username)
     - `my_account`
-    - When SPSP payments are sent to the root domain, the payment pointer is resolved to `<domain>/.well-known/pay`. This value determines which account those payments will be sent to.
+    - When SPSP payments are sent to the root domain, the payment pointer is resolved to `<domain>/.well-known/pay` (if not provided, this endpoint will not be exposed). This value determines which account those payments will be sent to.
 - route_broadcast_interval
     - Non-negative Integer (in milliseconds)
     - `30000`
