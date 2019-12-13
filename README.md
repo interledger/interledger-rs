@@ -76,9 +76,9 @@ You can find the Interledger Settlement Engines in a [separate repository](https
 
 ```bash #
 # This runs the ilp-node
-cargo run -p ilp-node -- # Put CLI args after the "--"
+cargo run --bin ilp-node -- # Put CLI args after the "--"
 
-cargo run -p ilp-cli -- # Put CLI args after the "--"
+cargo run --bin ilp-cli -- # Put CLI args after the "--"
 ```
 
 Append the `--help` flag to see available options.
