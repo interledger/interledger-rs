@@ -1,4 +1,4 @@
-#![type_length_limit = "1152885"]
+#![type_length_limit = "1152909"]
 
 mod metrics;
 mod node;
