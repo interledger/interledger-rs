@@ -34,7 +34,7 @@ fn coincap() {
         "route_broadcast_interval": 200,
         "exchange_rate": {
             "poll_interval": 60000,
-            "provider": "CoinCap",
+            "provider": "coincap",
         },
     }))
     .unwrap();
@@ -112,7 +112,7 @@ fn cryptocompare() {
         "exchange_rate": {
             "poll_interval": 60000,
             "provider": {
-                "crypto_compare": api_key
+                "cryptocompare": api_key
             },
             "spread": 0.0,
         },
