@@ -212,10 +212,10 @@ pub enum ExchangeRateProvider {
     /// Use the [CoinCap] API.
     ///
     /// Note that when configured with YAML, this MUST be specified as
-    /// "CoinCap", not "coin_cap".
+    /// "CoinCap", not "coincap".
     ///
     /// [CoinCap]: https://coincap.io/
-    #[serde(alias = "coin_cap", alias = "coincap", alias = "Coincap")]
+    #[serde(alias = "coincap")]
     CoinCap,
     /// Use the [CryptoCompare] API. Note this service requires an
     /// API key (but the free tier supports 100,000 requests / month at the
@@ -225,11 +225,7 @@ pub enum ExchangeRateProvider {
     /// "CryptoCompare", not "crypto_compare".
     ///
     /// [CryptoCompare]: https://cryptocompare.com
-    #[serde(
-        alias = "crypto_compare",
-        alias = "cryptocompare",
-        alias = "Cryptocompare"
-    )]
+    #[serde(alias = "cryptocompare")]
     CryptoCompare(SecretString),
 }
 
