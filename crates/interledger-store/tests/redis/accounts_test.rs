@@ -487,3 +487,36 @@ fn errors_for_unknown_accounts() {
     }));
     assert!(result.is_err());
 }
+
+#[test]
+fn loads_globally_configured_spreads() {
+    block_on(test_store().and_then(|(store, context, accs)| {
+        assert!(accs[0].spread().is_some());
+        assert!(accs[1].spread().is_none());
+        let account_ids = vec![accs[0].id(), accs[1].id()];
+        store
+            .clone()
+            .get_accounts(account_ids.clone())
+            .and_then(move |accounts| {
+                assert!(accounts[0].spread().is_some());
+                assert!(accounts[1].spread().is_none());
+
+                store
+                    .clone()
+                    .set_spreads(vec![("ABC".to_string(), 0.01), ("XYZ".to_string(), 0.02)])
+                    .and_then(move |_| {
+                        store.get_accounts(account_ids).and_then(move |accounts| {
+                            // It should not overwrite the spread that was individually configured
+                            assert_eq!(accounts[0].spread().unwrap(), 0.03);
+
+                            // It should set the spread for the account that did not have one configured
+                            assert!(accounts[1].spread().is_some());
+                            assert_eq!(accounts[1].spread().unwrap(), 0.01);
+                            let _ = context;
+                            Ok(())
+                        })
+                    })
+            })
+    }))
+    .unwrap()
+}

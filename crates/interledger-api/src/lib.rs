@@ -117,6 +117,16 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         &self,
         asset_code: &str,
     ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send>;
+
+    fn set_spreads(
+        &self,
+        asset_to_spread_map: impl IntoIterator<Item = (String, f64)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+
+    fn get_asset_spread(
+        &self,
+        asset_code: &str,
+    ) -> Box<dyn Future<Item = Option<f64>, Error = ()> + Send>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

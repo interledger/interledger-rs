@@ -79,6 +79,7 @@ static STATIC_ROUTES_KEY: &str = "routes:static";
 static DEFAULT_ROUTE_KEY: &str = "routes:default";
 static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement_engines";
+static SPREADS_KEY: &str = "spreads";
 
 fn uncredited_amount_key(account_id: impl ToString) -> String {
     format!("uncredited-amount:{}", account_id.to_string())
@@ -1277,6 +1278,38 @@ impl NodeStore for RedisStore {
                         None
                     }
                 }),
+        )
+    }
+
+    fn set_spreads(
+        &self,
+        asset_to_spread_map: impl IntoIterator<Item = (String, f64)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        let asset_to_spread_map: Vec<(String, f64)> = asset_to_spread_map
+            .into_iter()
+            .collect();
+        debug!("Setting settlement engines to {:?}", asset_to_spread_map);
+        Box::new(
+            cmd("HMSET")
+                .arg(SPREADS_KEY)
+                .arg(asset_to_spread_map)
+                .query_async(self.connection.clone())
+                .map_err(|err| error!("Error setting spreads: {:?}", err))
+                .and_then(|(_, _): (RedisReconnect, Value)| Ok(())),
+        )
+    }
+
+    fn get_asset_spread(
+        &self,
+        asset_code: &str,
+    ) -> Box<dyn Future<Item = Option<f64>, Error = ()> + Send> {
+        Box::new(
+            cmd("HGET")
+                .arg(SPREADS_KEY)
+                .arg(asset_code)
+                .query_async(self.connection.clone())
+                .map_err(|err| error!("Error getting settlement engine: {:?}", err))
+                .map(|(_, spread): (_, Option<f64>)| spread),
         )
     }
 }

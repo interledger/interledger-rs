@@ -8,6 +8,7 @@ local function into_dictionary(flat_map)
 end
 
 local settlement_engines = into_dictionary(redis.call('HGETALL', 'settlement_engines'))
+local spreads = into_dictionary(redis.call('HGETALL', 'spreads'))
 local accounts = {}
 
 -- TODO get rid of the two representations of account
@@ -35,6 +36,17 @@ for index, id in ipairs(ARGV) do
             if url ~= nil then
                 table.insert(account, 'settlement_engine_url')
                 table.insert(account, url)
+            end
+        end
+
+        -- If the account does not have a spread specified
+        -- but there is one configured for that currency, set the
+        -- account to use that url
+        if account_dict.spread == nil then
+            local spread = spreads[account_dict.asset_code]
+            if spread ~= nil then
+                table.insert(account, 'spread')
+                table.insert(account, spread)
             end
         end
 
