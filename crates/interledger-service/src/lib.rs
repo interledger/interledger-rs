@@ -54,7 +54,9 @@ pub trait Account: Clone + Send + Sized + Debug {
     fn ilp_address(&self) -> &Address;
     fn asset_scale(&self) -> u8;
     fn asset_code(&self) -> &str;
-    fn spread(&self) -> Option<f64> { None }
+    fn spread(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// A struct representing an incoming ILP Prepare packet or an outgoing one before the next hop is set.

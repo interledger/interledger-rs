@@ -489,6 +489,7 @@ fn errors_for_unknown_accounts() {
 }
 
 #[test]
+#[allow(clippy::float_cmp)]
 fn loads_globally_configured_spreads() {
     block_on(test_store().and_then(|(store, context, accs)| {
         assert!(accs[0].spread().is_some());
