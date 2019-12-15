@@ -266,6 +266,26 @@ where
         })
         .boxed();
 
+    // PUT /spreads
+    let put_spreads = warp::put2()
+        .and(warp::path("spreads"))
+        .and(warp::path::end())
+        .and(admin_only.clone())
+        .and(deserialize_json())
+        .and(with_store.clone())
+        // TODO: Can we make this accept both floats and strings?
+        .and_then(|asset_to_spread_map: HashMap<String, f64>, store: S| {
+            let asset_to_spread_map_clone = asset_to_spread_map.clone();
+            store
+                .set_spreads(asset_to_spread_map.clone())
+                .map_err::<_, Rejection>(|_| {
+                    error!("Error setting spreads");
+                    ApiError::internal_server_error().into()
+                })
+                .and_then(move |_| Ok(warp::reply::json(&asset_to_spread_map_clone)))
+        })
+        .boxed();
+
     get_root
         .or(put_rates)
         .or(get_rates)
@@ -273,6 +293,7 @@ where
         .or(put_static_routes)
         .or(put_static_route)
         .or(put_settlement_engines)
+        .or(put_spreads)
         .boxed()
 }
 
@@ -365,6 +386,26 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(&api, "PUT", "/settlement/engines", "wrong", Some(engines));
+        assert_eq!(resp.status().as_u16(), 401);
+    }
+
+    #[test]
+    fn only_admin_can_put_spreads() {
+        let api = test_node_settings_api();
+        let spreads = json!({"ABC": 0.01, "XYZ": 0.02});
+        let resp = api_call(&api, "PUT", "/spreads", "admin", Some(spreads.clone()));
+        assert_eq!(resp.status().as_u16(), 200);
+
+        // Does not work with strings / mixed types :/
+        let spreads = json!({"ABC": "0.01", "XYZ": "0.02"});
+        let resp = api_call(&api, "PUT", "/spreads", "admin", Some(spreads.clone()));
+        assert_eq!(resp.status().as_u16(), 400);
+
+        let spreads = json!({"ABC": 0.01, "XYZ": "0.02"});
+        let resp = api_call(&api, "PUT", "/spreads", "admin", Some(spreads.clone()));
+        assert_eq!(resp.status().as_u16(), 400);
+
+        let resp = api_call(&api, "PUT", "/settlement/engines", "wrong", Some(spreads));
         assert_eq!(resp.status().as_u16(), 401);
     }
 }

@@ -288,6 +288,20 @@ impl NodeStore for TestStore {
     ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send> {
         Box::new(ok(None))
     }
+
+    fn set_spreads(
+        &self,
+        _asset_to_url_map: impl IntoIterator<Item = (String, f64)>,
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        Box::new(ok(()))
+    }
+
+    fn get_asset_spread(
+        &self,
+        _asset_code: &str,
+    ) -> Box<dyn Future<Item = Option<f64>, Error = ()> + Send> {
+        Box::new(ok(None))
+    }
 }
 
 impl AddressStore for TestStore {
