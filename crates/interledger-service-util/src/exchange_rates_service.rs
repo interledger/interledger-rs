@@ -119,9 +119,11 @@ where
                 .build()));
             };
 
-            // Apply spread
-            // TODO should this be applied differently for "local" or same-currency packets?
-            let rate = rate * (1.0 - self.spread);
+            // Apply spread. Each account contributes to half of the applied spread
+            let spread = (request.from.spread().unwrap_or_else(|| self.spread)
+                + request.to.spread().unwrap_or_else(|| self.spread))
+                / 2.0;
+            let rate = rate * (1.0 - spread);
             let rate = if rate.is_finite() && rate.is_sign_positive() {
                 rate
             } else {
@@ -352,17 +354,17 @@ mod tests {
     fn exchange_rate_ok() {
         // if `to` is worth $2, and `from` is worth 1, then they receive half
         // the amount of units
-        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, 0.0);
+        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, 0.0, None, None);
         assert_eq!(ret.1[0].prepare.amount(), 100);
 
-        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0, 0.0);
+        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0, 0.0, None, None);
         assert_eq!(ret.1[0].prepare.amount(), 1_500_000);
     }
 
     #[test]
     fn exchange_conversion_error() {
         // rejects f64 that does not fit in u64
-        let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0);
+        let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0, None, None);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject
@@ -370,7 +372,7 @@ mod tests {
             .starts_with(b"Could not cast to f64, amount too large"));
 
         // rejects f64 which gets rounded down to 0
-        let ret = exchange_rate(1, 2, 1.0, 1, 1.0, 0.0);
+        let ret = exchange_rate(1, 2, 1.0, 1, 1.0, 0.0, None, None);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT);
         assert!(reject
@@ -378,7 +380,7 @@ mod tests {
             .starts_with(b"Could not cast to f64, amount too small"));
 
         // `Convert` errored
-        let ret = exchange_rate(std::u64::MAX, 1, std::f64::MAX, 255, 1.0, 0.0);
+        let ret = exchange_rate(std::u64::MAX, 1, std::f64::MAX, 255, 1.0, 0.0, None, None);
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject.message().starts_with(b"Could not convert"));
@@ -386,36 +388,56 @@ mod tests {
 
     #[test]
     fn applies_spread() {
-        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.01);
-        assert_eq!(ret.1[0].prepare.amount(), 49);
+        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.01, None, None);
+        // 50, take 1% of it, .5 -> 50-.5 = 49.5
+        assert_eq!(ret.1[0].prepare.amount(), 49); // 49.5, but gets rounded down
 
         // Negative spread is unusual but possible
-        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, -0.01);
+        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, -0.01, None, None);
         assert_eq!(ret.1[0].prepare.amount(), 101);
 
         // Rounds down
-        let ret = exchange_rate(4, 1, 1.0, 1, 2.0, 0.01);
+        let ret = exchange_rate(4, 1, 1.0, 1, 2.0, 0.01, None, None);
         // this would've been 2, but it becomes 1.99 and gets rounded down to 1
         assert_eq!(ret.1[0].prepare.amount(), 1);
 
         // Spread >= 1 means the node takes everything
-        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 1.0);
+        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 1.0, None, None);
         assert_eq!(ret.1[0].prepare.amount(), 0);
 
         // Need to catch when spread > 1
-        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 2.0);
+        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 2.0, None, None);
         assert_eq!(ret.1[0].prepare.amount(), 0);
+
+        // Account 1 has no spread applied to their transfers (set to Some(0.0))
+        let ret = exchange_rate(1000, 1, 1.0, 1, 2.0, 0.01, Some(0.0), None);
+        assert_eq!(ret.1[0].prepare.amount(), 497); // 497.5, but there's precision loss
+
+        // Account 2 has no spread applied to their transfers (set to Some(0.0))
+        let ret = exchange_rate(1000, 1, 1.0, 1, 2.0, 0.01, None, Some(0.0));
+        assert_eq!(ret.1[0].prepare.amount(), 497);
+
+        // Operator takes a different cut for both of these accounts (20% mean)
+        let ret = exchange_rate(1000, 1, 1.0, 1, 2.0, 0.01, Some(0.1), Some(0.3));
+        assert_eq!(ret.1[0].prepare.amount(), 400);
+
+        // Both accounts are whitelisted, so the operator takes no cut
+        let ret = exchange_rate(1000, 1, 1.0, 1, 2.0, 0.01, Some(0.0), Some(0.0));
+        assert_eq!(ret.1[0].prepare.amount(), 500);
     }
 
     // Instantiates an exchange rate service and returns the fulfill/reject
     // packet and the outgoing request after performing an asset conversion
+    #[allow(clippy::too_many_arguments)]
     fn exchange_rate(
         amount: u64,
         scale1: u8,
         rate1: f64,
         scale2: u8,
         rate2: f64,
-        spread: f64,
+        service_spread: f64,
+        from_spread: Option<f64>,
+        to_spread: Option<f64>,
     ) -> (Result<Fulfill, Reject>, Vec<OutgoingRequest<TestAccount>>) {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
@@ -427,11 +449,11 @@ mod tests {
             }
             .build()))
         });
-        let mut service = test_service(rate1, rate2, spread, outgoing);
+        let mut service = test_service(rate1, rate2, service_spread, outgoing);
         let result = service
             .send_request(OutgoingRequest {
-                from: TestAccount::new("ABC".to_owned(), scale1),
-                to: TestAccount::new("XYZ".to_owned(), scale2),
+                from: TestAccount::new("ABC".to_owned(), scale1, from_spread),
+                to: TestAccount::new("XYZ".to_owned(), scale2, to_spread),
                 original_amount: amount,
                 prepare: PrepareBuilder {
                     destination: Address::from_str("example.destination").unwrap(),
@@ -453,13 +475,15 @@ mod tests {
         ilp_address: Address,
         asset_code: String,
         asset_scale: u8,
+        spread: Option<f64>,
     }
     impl TestAccount {
-        fn new(asset_code: String, asset_scale: u8) -> Self {
+        fn new(asset_code: String, asset_scale: u8, spread: Option<f64>) -> Self {
             TestAccount {
                 ilp_address: Address::from_str("example.alice").unwrap(),
                 asset_code,
                 asset_scale,
+                spread,
             }
         }
     }
@@ -502,6 +526,10 @@ mod tests {
 
         fn ilp_address(&self) -> &Address {
             &self.ilp_address
+        }
+
+        fn spread(&self) -> Option<f64> {
+            self.spread
         }
     }
 
