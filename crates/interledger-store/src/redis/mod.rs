@@ -2151,6 +2151,10 @@ impl ToRedisArgs for AccountWithEncryptedTokens {
             "settlement_engine_url".write_redis_args(&mut rv);
             settlement_engine_url.as_str().write_redis_args(&mut rv);
         }
+        if let Some(spread) = account.spread {
+            "spread".write_redis_args(&mut rv);
+            spread.write_redis_args(&mut rv);
+        }
 
         debug_assert!(rv.len() <= ACCOUNT_DETAILS_FIELDS * 2);
         debug_assert!((rv.len() % 2) == 0);
@@ -2218,6 +2222,7 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                 packets_per_minute_limit: get_value_option("packets_per_minute_limit", &hash)?,
                 amount_per_minute_limit: get_value_option("amount_per_minute_limit", &hash)?,
                 settlement_engine_url: get_url_option("settlement_engine_url", &hash)?,
+                spread: get_value_option("spread", &hash)?,
             },
         })
     }

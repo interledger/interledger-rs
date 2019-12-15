@@ -46,6 +46,7 @@ pub struct Account {
     pub(crate) packets_per_minute_limit: Option<u32>,
     pub(crate) amount_per_minute_limit: Option<u64>,
     pub(crate) settlement_engine_url: Option<Url>,
+    pub(crate) spread: Option<f64>,
 }
 
 fn address_to_string<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
@@ -136,6 +137,7 @@ impl Account {
             packets_per_minute_limit: details.packets_per_minute_limit,
             amount_per_minute_limit: details.amount_per_minute_limit,
             settlement_engine_url,
+            spread: details.spread,
         })
     }
 
@@ -247,6 +249,10 @@ impl AccountTrait for Account {
     fn asset_scale(&self) -> u8 {
         self.asset_scale
     }
+
+    fn spread(&self) -> Option<f64> {
+        self.spread
+    }
 }
 
 impl HttpAccount for Account {
@@ -344,6 +350,7 @@ mod test {
             amount_per_minute_limit: None,
             packets_per_minute_limit: None,
             settlement_engine_url: None,
+            spread: None,
         };
     }
 

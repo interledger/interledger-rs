@@ -37,6 +37,7 @@ mod fixtures {
             amount_per_minute_limit: Some(1000),
             packets_per_minute_limit: Some(2),
             settlement_engine_url: Some("http://settlement.example".to_string()),
+            spread: None,
         };
         pub static ref ACCOUNT_DETAILS_1: AccountDetails = AccountDetails {
             ilp_address: None,
@@ -59,6 +60,7 @@ mod fixtures {
             amount_per_minute_limit: Some(1000),
             packets_per_minute_limit: Some(20),
             settlement_engine_url: None,
+            spread: None,
         };
         pub static ref ACCOUNT_DETAILS_2: AccountDetails = AccountDetails {
             ilp_address: None,
@@ -80,6 +82,7 @@ mod fixtures {
             amount_per_minute_limit: None,
             packets_per_minute_limit: None,
             settlement_engine_url: None,
+            spread: None,
         };
     }
 }
