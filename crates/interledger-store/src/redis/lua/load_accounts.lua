@@ -41,7 +41,7 @@ for index, id in ipairs(ARGV) do
 
         -- If the account does not have a spread specified
         -- but there is one configured for that currency, set the
-        -- account to use that url
+        -- account to use that spread
         if account_dict.spread == nil then
             local spread = spreads[account_dict.asset_code]
             if spread ~= nil then

@@ -1286,7 +1286,7 @@ impl NodeStore for RedisStore {
         asset_to_spread_map: impl IntoIterator<Item = (String, f64)>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let asset_to_spread_map: Vec<(String, f64)> = asset_to_spread_map.into_iter().collect();
-        debug!("Setting settlement engines to {:?}", asset_to_spread_map);
+        debug!("Setting per token spreads to {:?}", asset_to_spread_map);
         Box::new(
             cmd("HMSET")
                 .arg(SPREADS_KEY)
