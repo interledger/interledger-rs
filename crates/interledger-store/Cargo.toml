@@ -10,6 +10,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 [features]
 default = []
 redis = ["redis_crate"]
+sqlite = ["rusqlite"]
 
 [lib]
 name = "interledger_store"
@@ -50,6 +51,9 @@ uuid = { version = "0.8.1", default-features = false, features = ["serde"] }
 
 # redis feature
 redis_crate = { package = "redis", version = "0.13.0", default-features = false, features = ["executor"], optional = true }
+
+# sqlite feature
+rusqlite = { version = "0.21.0", default-features = false, optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.7.0", default-features = false }

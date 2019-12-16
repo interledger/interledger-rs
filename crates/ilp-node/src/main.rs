@@ -8,6 +8,8 @@ mod trace;
 mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
+#[cfg(feature = "sqlite")]
+mod sqlite_store;
 
 use clap::{crate_version, App, Arg, ArgMatches};
 use config::{Config, Source};
@@ -66,7 +68,7 @@ pub fn main() {
             .long("secret_seed")
             .takes_value(true)
             .required(true)
-            .help("Root secret used to derive encryption keys. This MUST NOT be changed after once you started up the node. You can generate a random secret by running `openssl rand -hex 32`"),
+            .help("Root secret used to derive encryption keys. This MUST NOT be changed once the node has been started. You can generate a random secret by running `openssl rand -hex 32`"),
         Arg::with_name("admin_auth_token")
             .long("admin_auth_token")
             .takes_value(true)
@@ -77,8 +79,8 @@ pub fn main() {
             // temporary alias for backwards compatibility
             .alias("redis_url")
             .takes_value(true)
-            .default_value("redis://127.0.0.1:6379")
-            .help("Redis URI (for example, \"redis://127.0.0.1:6379\" or \"unix:/tmp/redis.sock\")"),
+            .default_value(node::default_database_str())
+            .help(r#"Database URI (for example, "redis://127.0.0.1:6379" or "unix:/tmp/redis.sock")"#),
         Arg::with_name("http_bind_address")
             .long("http_bind_address")
             .takes_value(true)

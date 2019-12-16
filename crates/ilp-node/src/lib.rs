@@ -8,8 +8,7 @@ mod trace;
 mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
+#[cfg(feature = "sqlite")]
+mod sqlite_store;
 
 pub use node::*;
-#[allow(deprecated)]
-#[cfg(feature = "redis")]
-pub use redis_store::insert_account_with_redis_store;

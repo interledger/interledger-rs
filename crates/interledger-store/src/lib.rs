@@ -6,3 +6,5 @@ pub mod account;
 pub mod crypto;
 #[cfg(feature = "redis")]
 pub mod redis;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;

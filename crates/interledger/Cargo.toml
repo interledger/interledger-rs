@@ -36,6 +36,7 @@ store = ["interledger-store"]
 stream = ["interledger-stream", "ildcp"]
 trace = ["interledger-service/trace"]
 redis = ["interledger-store/redis"]
+sqlite = ["interledger-store/sqlite"]
 
 [dependencies]
 interledger-api = { path = "../interledger-api", version = "^0.3.0", optional = true, default-features = false }
@@ -50,7 +51,7 @@ interledger-service-util = { path = "../interledger-service-util", version = "^0
 interledger-settlement = { path = "../interledger-settlement", version = "^0.3.0", optional = true, default-features = false }
 interledger-spsp = { path = "../interledger-spsp", version = "^0.4.0", optional = true, default-features = false }
 interledger-stream = { path = "../interledger-stream", version = "^0.4.0", optional = true, default-features = false }
-interledger-store = { path = "../interledger-store", version = "^0.4.0", optional = true, default-features = false, features = ["redis"] }
+interledger-store = { path = "../interledger-store", version = "^0.4.0", optional = true, default-features = false }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }

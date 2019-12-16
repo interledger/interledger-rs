@@ -15,6 +15,7 @@ balance-tracking = []
 # records to Google Cloud PubSub. This may be removed in the future.
 google-pubsub = ["base64", "chrono", "parking_lot", "reqwest", "serde_json", "yup-oauth2"]
 redis = ["redis_crate", "interledger/redis"]
+sqlite = ["interledger/sqlite"]
 
 [[test]]
 name = "redis_tests"

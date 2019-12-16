@@ -38,6 +38,7 @@ use lazy_static::lazy_static;
 use metrics_core::{Builder, Drain, Observe};
 use metrics_runtime;
 use num_bigint::BigUint;
+use ring::hmac;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::sync::Arc;
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
@@ -56,6 +57,8 @@ use warp::{
 use crate::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 #[cfg(feature = "redis")]
 use crate::redis_store::*;
+#[cfg(feature = "sqlite")]
+use crate::sqlite_store::*;
 #[cfg(feature = "balance-tracking")]
 use interledger::service_util::BalanceService;
 
@@ -72,15 +75,22 @@ fn default_settlement_api_bind_address() -> SocketAddr {
 fn default_http_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7770))
 }
-// We allow unreachable code on the below function because there must always be exactly one default
-// regardless of how many data sources the crate is compiled to support,
-// but we don't know which will be enabled or in which quantities or configurations.
+
+// We allow unreachable code in the below function because there must always be exactly one default
+// regardless of how many databases the node is compiled with support for,
+// but we don't know which will be enabled or in which quantities or combinations.
 // This return-based pattern effectively gives us fallthrough behavior.
 #[allow(unreachable_code)]
-fn default_database_url() -> String {
+pub(crate) fn default_database_str() -> &'static str {
     #[cfg(feature = "redis")]
-    return default_redis_url();
-    panic!("no backing store configured")
+    return DEFAULT_REDIS_URL;
+    #[cfg(feature = "sqlite")]
+    return DEFAULT_SQLITE_URL;
+    panic!("Node not compiled with support for any database")
+}
+
+fn default_database_url() -> Url {
+    Url::parse(default_database_str()).expect("Invalid default URL")
 }
 
 fn deserialize_optional_address<'de, D>(deserializer: D) -> Result<Option<Address>, D::Error>
@@ -205,7 +215,7 @@ pub struct InterledgerNode {
         // temporary alias for backwards compatibility
         alias = "redis_url"
     )]
-    pub database_url: String,
+    pub database_url: Url,
     /// IP address and port to listen for HTTP connections
     /// This is used for both the API and ILP over HTTP packets
     #[serde(default = "default_http_bind_address")]
@@ -258,23 +268,13 @@ impl InterledgerNode {
             DEFAULT_ILP_ADDRESS.clone()
         };
 
-        // TODO: store a Url directly in InterledgerNode rather than a String?
-        let database_url = match Url::parse(&self.database_url) {
-            Ok(url) => url,
-            Err(e) => {
-                error!(
-                    "The string '{}' could not be parsed as a URL: {}",
-                    &self.database_url, e
-                );
-                return Box::new(err(()));
-            }
-        };
-
-        match database_url.scheme() {
+        match self.database_url.scheme() {
             #[cfg(feature = "redis")]
             "redis" | "redis+unix" => Box::new(serve_redis_node(self, ilp_address)),
+            #[cfg(feature = "sqlite")]
+            "sqlite" => Box::new(serve_sqlite_node(self, ilp_address)),
             other => {
-                error!("unsupported data source scheme: {}", other);
+                error!("unsupported database scheme: {}", other);
                 Box::new(err(()))
             }
         }
@@ -327,7 +327,8 @@ impl InterledgerNode {
         #[cfg(feature = "google-pubsub")]
         let google_pubsub = self.google_pubsub.clone();
 
-        store.clone().get_btp_outgoing_accounts()
+        store.clone()
+        .get_btp_outgoing_accounts()
         .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
         .and_then(move |btp_accounts| {
             let outgoing_service =
@@ -567,6 +568,19 @@ impl InterledgerNode {
     pub fn run(self) {
         tokio_run(self.serve());
     }
+}
+
+pub(crate) fn generate_database_secret(
+    node_seed: &[u8; 32],
+    magic_bytes: &'static str,
+) -> [u8; 32] {
+    let mut secret: [u8; 32] = [0; 32];
+    let sig = hmac::sign(
+        &hmac::Key::new(hmac::HMAC_SHA256, node_seed),
+        magic_bytes.as_bytes(),
+    );
+    secret.copy_from_slice(sig.as_ref());
+    secret
 }
 
 #[doc(hidden)]
