@@ -13,7 +13,6 @@ use redis_crate::{
 };
 use std::collections::HashMap as SlowHashMap;
 use std::str::FromStr;
-use uuid::Uuid;
 
 use log::{debug, error, trace};
 
@@ -21,7 +20,7 @@ use log::{debug, error, trace};
 mod test_helpers;
 
 static UNCREDITED_AMOUNT_KEY: &str = "uncredited_engine_settlement_amount";
-fn uncredited_amount_key(account_id: Uuid) -> String {
+fn uncredited_amount_key(account_id: &str) -> String {
     format!("{}:{}", UNCREDITED_AMOUNT_KEY, account_id)
 }
 
@@ -218,16 +217,16 @@ impl FromRedisValue for AmountWithScale {
 }
 
 impl LeftoversStore for EngineRedisStore {
-    type AccountId = Uuid;
+    type AccountId = String;
     type AssetType = BigUint;
 
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
         Box::new(
             cmd("LRANGE")
-                .arg(uncredited_amount_key(account_id))
+                .arg(uncredited_amount_key(&account_id))
                 .arg(0)
                 .arg(-1)
                 .query_async(self.connection.clone())
@@ -238,7 +237,7 @@ impl LeftoversStore for EngineRedisStore {
 
     fn save_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!(
@@ -252,7 +251,7 @@ impl LeftoversStore for EngineRedisStore {
             // When loading the amounts, we convert them to the appropriate data
             // type and sum them up.
             cmd("RPUSH")
-                .arg(uncredited_amount_key(account_id))
+                .arg(uncredited_amount_key(&account_id))
                 .arg(AmountWithScale {
                     num: uncredited_settlement_amount.0,
                     scale: uncredited_settlement_amount.1,
@@ -265,13 +264,13 @@ impl LeftoversStore for EngineRedisStore {
 
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
         let connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         Box::new(
-            self.get_uncredited_settlement_amount(account_id)
+            self.get_uncredited_settlement_amount(account_id.clone())
                 .and_then(move |amount| {
                     // scale the amount from the max scale to the local scale, and then
                     // save any potential leftovers to the store
@@ -279,9 +278,9 @@ impl LeftoversStore for EngineRedisStore {
                         scale_with_precision_loss(amount.0, local_scale, amount.1);
                     let mut pipe = redis_crate::pipe();
                     pipe.atomic();
-                    pipe.del(uncredited_amount_key(account_id)).ignore();
+                    pipe.del(uncredited_amount_key(&account_id)).ignore();
                     pipe.rpush(
-                        uncredited_amount_key(account_id),
+                        uncredited_amount_key(&account_id),
                         AmountWithScale {
                             num: precision_loss,
                             scale: std::cmp::max(local_scale, amount.1),
@@ -300,12 +299,12 @@ impl LeftoversStore for EngineRedisStore {
 
     fn clear_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
         Box::new(
             cmd("DEL")
-                .arg(uncredited_amount_key(account_id))
+                .arg(uncredited_amount_key(&account_id))
                 .query_async(self.connection.clone())
                 .map_err(move |err| {
                     error!("Error clearing uncredited_settlement_amount: {:?}", err)
