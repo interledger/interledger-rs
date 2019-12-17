@@ -45,6 +45,7 @@ use tokio::spawn;
 use tracing::{debug, debug_span, error, info};
 use tracing_futures::Instrument;
 use url::Url;
+use uuid::Uuid;
 use warp::{
     self,
     http::{Response, StatusCode},
@@ -298,7 +299,7 @@ impl InterledgerNode {
             + RouterStore<Account = Account>
             + RouteManagerStore<Account = Account>
             + RateLimitStore<Account = Account>
-            + LeftoversStore<AssetType = BigUint>
+            + LeftoversStore<AccountId = Uuid, AssetType = BigUint>
             + IdempotentStore
             + AccountStore<Account = Account>
             + Clone
