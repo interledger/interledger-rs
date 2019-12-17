@@ -97,7 +97,7 @@ jobs:
           # builds release profile images to be released
           # consider parallelizing
           name: Build Docker Images
-          no_output_timeout: 15m
+          no_output_timeout: 30m
           command: |
             if [ "${CIRCLE_BRANCH}" = "master" ] || [[ "${CIRCLE_TAG}" =~ ^ilp-node- ]]; then
               export DOCKER_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${CIRCLE_TAG})
