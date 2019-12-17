@@ -182,6 +182,7 @@ impl AccountStore for TestStore {
 }
 
 impl LeftoversStore for TestStore {
+    type AccountId = Uuid;
     type AssetType = BigUint;
 
     fn save_uncredited_settlement_amount(

@@ -218,6 +218,7 @@ impl FromRedisValue for AmountWithScale {
 }
 
 impl LeftoversStore for EngineRedisStore {
+    type AccountId = Uuid;
     type AssetType = BigUint;
 
     fn get_uncredited_settlement_amount(

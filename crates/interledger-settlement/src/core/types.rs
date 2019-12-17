@@ -110,13 +110,14 @@ pub trait SettlementStore {
 }
 
 pub trait LeftoversStore {
+    type AccountId: ToString;
     type AssetType: ToString;
 
     /// Saves the leftover data
     fn save_uncredited_settlement_amount(
         &self,
         // The account id that for which there was a precision loss
-        account_id: Uuid,
+        account_id: Self::AccountId,
         // The amount for which precision loss occurred, along with their scale
         uncredited_settlement_amount: (Self::AssetType, u8),
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
@@ -126,20 +127,20 @@ pub trait LeftoversStore {
     /// the new leftover value.
     fn load_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
         local_scale: u8,
     ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
 
     /// Clears any uncredited settlement amount associated with the account
     fn clear_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
     // Gets the current amount of leftovers in the store
     fn get_uncredited_settlement_amount(
         &self,
-        account_id: Uuid,
+        account_id: Self::AccountId,
     ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send>;
 }
 
