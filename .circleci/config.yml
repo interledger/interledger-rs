@@ -33,14 +33,14 @@ jobs:
           # do not run for more than 10 minutes under any circumstances
           # (We have had issues with bugs causing the tests to "run"
           # for 5 hours, wasting a ton of compute credits)
-          command: timeout 10m cargo test --all --all-features
+          command: timeout 10m cargo test --workspace --all-features
           environment:
             - RUST_LOG: "interledger=trace"
             - RUST_BACKTRACE: "full"
       - run:
           name: Check Style
           command: |
-            cargo fmt --all -- --check
+            cargo fmt -- --check
             cargo clippy --all-targets --all-features -- -D warnings
       - run:
           name: Audit Dependencies
