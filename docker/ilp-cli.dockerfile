@@ -8,8 +8,8 @@ COPY ./crates /usr/src/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
-# RUN cargo build --all-features --package ilp-node --package interledger-settlement-engines --package ilp-cli
-RUN cargo build --release --all-features --package ilp-cli
+# RUN cargo build --features 'balance-tracking redis google-pubsub' --package ilp-node --package interledger-settlement-engines --package ilp-cli
+RUN cargo build --release --features 'balance-tracking redis google-pubsub' --package ilp-cli
 
 FROM alpine
 

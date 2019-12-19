@@ -195,7 +195,7 @@ Then try:
 
 ```bash
 redis-server --port 6379 &> logs/redis.log &
-cargo run --all-features --bin ilp-node -- config.json &> logs/node.log &
+cargo run --features redis --bin ilp-node -- config.json &> logs/node.log &
 ```
 
 Now you have your own node running locally🎉

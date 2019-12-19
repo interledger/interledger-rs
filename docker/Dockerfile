@@ -8,13 +8,13 @@ COPY ./crates /usr/src/interledger-rs/crates
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
-# RUN cargo build --all-features --package ilp-node --package ilp-cli
-RUN cargo build --release --all-features --package ilp-node --package ilp-cli
+# RUN cargo build --features 'balance-tracking redis google-pubsub' --package ilp-node --package ilp-cli
+RUN cargo build --release --features 'balance-tracking redis google-pubsub' --package ilp-node --package ilp-cli
 
 WORKDIR /usr/src/
 RUN git clone https://github.com/interledger-rs/settlement-engines.git
 WORKDIR /usr/src/settlement-engines
-RUN cargo build --release --all-features --package ilp-settlement-ethereum
+RUN cargo build --release --features 'balance-tracking redis google-pubsub' --package ilp-settlement-ethereum
 
 FROM node:12-alpine
 
