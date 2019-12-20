@@ -11,6 +11,7 @@ use interledger_service::{Account, Username};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::SettlementAccount;
 use log::{error, trace};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -44,14 +45,16 @@ where
 {
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
-    let admin_only = warp::header::<String>("authorization")
-        .and_then(move |authorization| -> Result<(), Rejection> {
-            if authorization == admin_auth_header {
-                Ok(())
-            } else {
-                Err(ApiError::unauthorized().into())
-            }
-        })
+    let admin_only = warp::header::<SecretString>("authorization")
+        .and_then(
+            move |authorization: SecretString| -> Result<(), Rejection> {
+                if authorization.expose_secret() == &admin_auth_header {
+                    Ok(())
+                } else {
+                    Err(ApiError::unauthorized().into())
+                }
+            },
+        )
         // This call makes it so we do not pass on a () value on
         // success to the next filter, it just gets rid of it
         .untuple_one()

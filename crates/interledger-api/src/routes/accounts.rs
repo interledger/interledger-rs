@@ -18,6 +18,7 @@ use interledger_settlement::core::types::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
@@ -66,14 +67,16 @@ where
 
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
-    let admin_only = warp::header::<String>("authorization")
-        .and_then(move |authorization| -> Result<(), Rejection> {
-            if authorization == admin_auth_header {
-                Ok(())
-            } else {
-                Err(ApiError::unauthorized().into())
-            }
-        })
+    let admin_only = warp::header::<SecretString>("authorization")
+        .and_then(
+            move |authorization: SecretString| -> Result<(), Rejection> {
+                if authorization.expose_secret() == &admin_auth_header {
+                    Ok(())
+                } else {
+                    Err(ApiError::unauthorized().into())
+                }
+            },
+        )
         // This call makes it so we do not pass on a () value on
         // success to the next filter, it just gets rid of it
         .untuple_one()
@@ -121,12 +124,15 @@ where
     // unauthorized that the the request actually should not cause.
     // This function needs parameters which can be prepared by `account_username`.
     let admin_or_authorized_user_only = warp::filters::ext::get::<Username>()
-        .and(warp::header::<String>("authorization"))
+        .and(warp::header::<SecretString>("authorization"))
         .and(with_store.clone())
         .and(with_admin_auth_header.clone())
         .and_then(
-            |path_username: Username, auth_string: String, store: S, admin_auth_header: String| {
-                if auth_string.len() < BEARER_TOKEN_START {
+            |path_username: Username,
+             auth_string: SecretString,
+             store: S,
+             admin_auth_header: String| {
+                if auth_string.expose_secret().len() < BEARER_TOKEN_START {
                     return Either::A(err(ApiError::bad_request().into()));
                 }
                 Either::B(store.get_account_id_from_username(&path_username).then(
@@ -137,14 +143,14 @@ where
                             ));
                         }
                         let account_id = account_id.unwrap();
-                        if auth_string == admin_auth_header {
+                        if auth_string.expose_secret() == &admin_auth_header {
                             return Either::A(ok(account_id));
                         }
                         Either::B(
                             store
                                 .get_account_from_http_auth(
                                     &path_username,
-                                    &auth_string[BEARER_TOKEN_START..],
+                                    &auth_string.expose_secret()[BEARER_TOKEN_START..],
                                 )
                                 .then(move |authorized_account: Result<A, _>| {
                                     if authorized_account.is_err() {
@@ -167,28 +173,33 @@ where
     // The same structure as `admin_or_authorized_user_only`.
     // This function needs parameters which can be prepared by `account_username`.
     let authorized_user_only = warp::filters::ext::get::<Username>()
-        .and(warp::header::<String>("authorization"))
+        .and(warp::header::<SecretString>("authorization"))
         .and(with_store.clone())
-        .and_then(|path_username: Username, auth_string: String, store: S| {
-            if auth_string.len() < BEARER_TOKEN_START {
-                return Either::A(err(ApiError::bad_request().into()));
-            }
-            Either::B(
-                store
-                    .get_account_from_http_auth(&path_username, &auth_string[BEARER_TOKEN_START..])
-                    .then(move |authorized_account: Result<A, _>| {
-                        if authorized_account.is_err() {
-                            return err::<A, Rejection>(ApiError::unauthorized().into());
-                        }
-                        let authorized_account = authorized_account.unwrap();
-                        if &path_username == authorized_account.username() {
-                            ok(authorized_account)
-                        } else {
-                            err(ApiError::unauthorized().into())
-                        }
-                    }),
-            )
-        })
+        .and_then(
+            |path_username: Username, auth_string: SecretString, store: S| {
+                if auth_string.expose_secret().len() < BEARER_TOKEN_START {
+                    return Either::A(err(ApiError::bad_request().into()));
+                }
+                Either::B(
+                    store
+                        .get_account_from_http_auth(
+                            &path_username,
+                            &auth_string.expose_secret()[BEARER_TOKEN_START..],
+                        )
+                        .then(move |authorized_account: Result<A, _>| {
+                            if authorized_account.is_err() {
+                                return err::<A, Rejection>(ApiError::unauthorized().into());
+                            }
+                            let authorized_account = authorized_account.unwrap();
+                            if &path_username == authorized_account.username() {
+                                ok(authorized_account)
+                            } else {
+                                err(ApiError::unauthorized().into())
+                            }
+                        }),
+                )
+            },
+        )
         .boxed();
 
     // POST /accounts

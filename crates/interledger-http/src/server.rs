@@ -8,6 +8,7 @@ use interledger_packet::Prepare;
 use interledger_service::Username;
 use interledger_service::{IncomingRequest, IncomingService};
 use log::error;
+use secrecy::{ExposeSecret, SecretString};
 use std::{convert::TryFrom, net::SocketAddr};
 use warp::{self, Filter, Rejection};
 
@@ -44,14 +45,17 @@ where
             .and(warp::path::param2::<Username>())
             .and(warp::path("ilp"))
             .and(warp::path::end())
-            .and(warp::header::<String>("authorization"))
-            .and_then(move |path_username: Username, password: String| {
-                if password.len() < BEARER_TOKEN_START {
+            .and(warp::header::<SecretString>("authorization"))
+            .and_then(move |path_username: Username, password: SecretString| {
+                if password.expose_secret().len() < BEARER_TOKEN_START {
                     return Either::A(err(ApiError::bad_request().into()));
                 }
                 Either::B(
                     store
-                        .get_account_from_http_auth(&path_username, &password[BEARER_TOKEN_START..])
+                        .get_account_from_http_auth(
+                            &path_username,
+                            &password.expose_secret()[BEARER_TOKEN_START..],
+                        )
                         .map_err(move |_| -> Rejection {
                             error!("Invalid authorization provided for user: {}", path_username);
                             ApiError::unauthorized().into()
