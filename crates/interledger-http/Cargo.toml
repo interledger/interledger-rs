@@ -24,7 +24,7 @@ chrono = { version = "0.4.9", features = ["clock"], default-features = false }
 regex = { version ="1.3.1", default-features = false, features = ["std"] }
 lazy_static = { version ="1.4.0", default-features = false }
 mime = { version ="0.3.14", default-features = false }
-secrecy = "0.5.1"
+secrecy = "0.5.2"
 
 [dev-dependencies]
 uuid = { version = "0.8.1", features=["v4"]}
