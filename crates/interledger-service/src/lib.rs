@@ -26,7 +26,7 @@
 //!
 //! HttpServerService --> ValidatorService --> StreamReceiverService
 
-use futures::{Future, IntoFuture};
+use futures::{Future, future::TryFutureExt};
 use interledger_packet::{Address, Fulfill, Prepare, Reject};
 use std::{
     fmt::{self, Debug},
@@ -123,7 +123,7 @@ where
 
 /// Core service trait for handling IncomingRequests that asynchronously returns an ILP Fulfill or Reject packet.
 pub trait IncomingService<A: Account> {
-    type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
+    type Future: Future<Output = Result<Fulfill, Reject>> + Send + 'static;
 
     /// Receives an Incoming request, and modifies it in place and passes it
     /// to the next service. Alternatively, if the packet was intended for the service,
@@ -137,7 +137,7 @@ pub trait IncomingService<A: Account> {
     fn wrap<F, R>(self, f: F) -> WrappedService<F, Self, A>
     where
         F: Fn(IncomingRequest<A>, Self) -> R,
-        R: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+        R: Future<Output = Result<Fulfill, Reject>> + Send + 'static,
         Self: Clone + Sized,
     {
         WrappedService::wrap_incoming(self, f)
@@ -146,7 +146,7 @@ pub trait IncomingService<A: Account> {
 
 /// Core service trait for sending OutgoingRequests that asynchronously returns an ILP Fulfill or Reject packet.
 pub trait OutgoingService<A: Account> {
-    type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
+    type Future: Future<Output = Result<Fulfill, Reject>> + Send + 'static;
 
     /// Receives an Outgoing request, and modifies it in place and passes it
     /// to the next service. Alternatively, if the packet was intended for the service,
@@ -160,7 +160,7 @@ pub trait OutgoingService<A: Account> {
     fn wrap<F, R>(self, f: F) -> WrappedService<F, Self, A>
     where
         F: Fn(OutgoingRequest<A>, Self) -> R,
-        R: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+        R: Future<Output = Result<Fulfill, Reject>> + Send + 'static,
         Self: Clone + Sized,
     {
         WrappedService::wrap_outgoing(self, f)
@@ -168,7 +168,7 @@ pub trait OutgoingService<A: Account> {
 }
 
 /// A future that returns an ILP Fulfill or Reject packet.
-pub type BoxedIlpFuture = Box<dyn Future<Item = Fulfill, Error = Reject> + Send + 'static>;
+pub type BoxedIlpFuture = Box<dyn Future<Output = Result<Fulfill, Reject>> + Unpin + Send + 'static>;
 
 /// The base Store trait that can load a given account based on the ID.
 pub trait AccountStore {
@@ -180,21 +180,20 @@ pub trait AccountStore {
         &self,
         // The account ids (UUID format) of the accounts you are fetching
         account_ids: Vec<Uuid>,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Box<dyn Future<Output = Result<Vec<Self::Account>, ()>> + Send>;
 
-    /// Loads the account which corresponds to the provided username
+    /// Loads the account id which corresponds to the provided username
     fn get_account_id_from_username(
         &self,
         // The username of the account you are fetching
         username: &Username,
-    ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send>;
+    ) -> Box<dyn Future<Output = Result<Uuid, ()>> + Send>;
 }
 
 /// Create an IncomingService that calls the given handler for each request.
 pub fn incoming_service_fn<A, B, F>(handler: F) -> ServiceFn<F, A>
 where
     A: Account,
-    B: IntoFuture<Item = Fulfill, Error = Reject>,
     F: FnMut(IncomingRequest<A>) -> B,
 {
     ServiceFn {
@@ -207,7 +206,6 @@ where
 pub fn outgoing_service_fn<A, B, F>(handler: F) -> ServiceFn<F, A>
 where
     A: Account,
-    B: IntoFuture<Item = Fulfill, Error = Reject>,
     F: FnMut(OutgoingRequest<A>) -> B,
 {
     ServiceFn {
@@ -226,8 +224,7 @@ pub struct ServiceFn<F, A> {
 impl<F, A, B> IncomingService<A> for ServiceFn<F, A>
 where
     A: Account,
-    B: IntoFuture<Item = Fulfill, Error = Reject>,
-    <B as futures::future::IntoFuture>::Future: std::marker::Send + 'static,
+    B: TryFutureExt<Ok = Fulfill, Error = Reject> + Send + Unpin + 'static,
     F: FnMut(IncomingRequest<A>) -> B,
 {
     type Future = BoxedIlpFuture;
@@ -240,8 +237,7 @@ where
 impl<F, A, B> OutgoingService<A> for ServiceFn<F, A>
 where
     A: Account,
-    B: IntoFuture<Item = Fulfill, Error = Reject>,
-    <B as futures::future::IntoFuture>::Future: std::marker::Send + 'static,
+    B: TryFutureExt<Ok = Fulfill, Error = Reject> + Send + Unpin + 'static,
     F: FnMut(OutgoingRequest<A>) -> B,
 {
     type Future = BoxedIlpFuture;
@@ -269,7 +265,7 @@ where
     F: Fn(IncomingRequest<A>, IO) -> R,
     IO: IncomingService<A> + Clone,
     A: Account,
-    R: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+    R: Future<Output = Result<Fulfill, Reject>> + Send + 'static,
 {
     /// Wrap the given service such that the provided function will
     /// be called to handle each request. That function can
@@ -289,7 +285,7 @@ where
     F: Fn(IncomingRequest<A>, IO) -> R,
     IO: IncomingService<A> + Clone,
     A: Account,
-    R: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+    R: Future<Output = Result<Fulfill, Reject>> + Send + 'static,
 {
     type Future = R;
 
@@ -303,7 +299,7 @@ where
     F: Fn(OutgoingRequest<A>, IO) -> R,
     IO: OutgoingService<A> + Clone,
     A: Account,
-    R: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+    R: Future<Output = Result<Fulfill, Reject>> + Send + 'static,
 {
     /// Wrap the given service such that the provided function will
     /// be called to handle each request. That function can
@@ -323,7 +319,7 @@ where
     F: Fn(OutgoingRequest<A>, IO) -> R,
     IO: OutgoingService<A> + Clone,
     A: Account,
-    R: Future<Item = Fulfill, Error = Reject> + Send + 'static,
+    R: Future<Output = Result<Fulfill, Reject>> + Send + 'static,
 {
     type Future = R;
 
@@ -344,10 +340,10 @@ pub trait AddressStore: Clone {
         &self,
         // The new ILP Address of the node
         ilp_address: Address,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    ) -> Box<dyn Future<Output = Result<(), ()>> + Send>;
 
     /// Resets the node's ILP Address to local.host
-    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    fn clear_ilp_address(&self) -> Box<dyn Future<Output = Result<(), ()>> + Send>;
 
     /// Gets the node's ILP Address *synchronously*
     /// (the value is stored in memory because it is read often by all services)
