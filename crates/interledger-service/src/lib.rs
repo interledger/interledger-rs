@@ -39,8 +39,6 @@ mod username;
 pub use username::Username;
 #[cfg(feature = "trace")]
 mod trace;
-#[cfg(feature = "trace")]
-pub use trace::*;
 
 /// The base trait that Account types from other Services extend.
 /// This trait only assumes that the account has an ID that can be compared with others.
@@ -59,7 +57,9 @@ pub trait Account: Clone + Send + Sized + Debug {
 /// A struct representing an incoming ILP Prepare packet or an outgoing one before the next hop is set.
 #[derive(Clone)]
 pub struct IncomingRequest<A: Account> {
+    /// The account which the request originates from
     pub from: A,
+    /// The prepare packet attached to the request
     pub prepare: Prepare,
 }
 
@@ -80,9 +80,13 @@ where
 /// A struct representing an ILP Prepare packet with the incoming and outgoing accounts set.
 #[derive(Clone)]
 pub struct OutgoingRequest<A: Account> {
+    /// The account which the request originates from
     pub from: A,
+    /// The account which the packet is being sent to
     pub to: A,
+    /// The amount attached to the packet by its original sender
     pub original_amount: u64,
+    /// The prepare packet attached to the request
     pub prepare: Prepare,
 }
 
@@ -121,6 +125,9 @@ where
 pub trait IncomingService<A: Account> {
     type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
 
+    /// Receives an Incoming request, and modifies it in place and passes it
+    /// to the next service. Alternatively, if the packet was intended for the service,
+    /// it returns an ILP Fulfill or Reject packet.
     fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future;
 
     /// Wrap the given service such that the provided function will
@@ -141,6 +148,9 @@ pub trait IncomingService<A: Account> {
 pub trait OutgoingService<A: Account> {
     type Future: Future<Item = Fulfill, Error = Reject> + Send + 'static;
 
+    /// Receives an Outgoing request, and modifies it in place and passes it
+    /// to the next service. Alternatively, if the packet was intended for the service,
+    /// it returns an ILP Fulfill or Reject packet.
     fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future;
 
     /// Wrap the given service such that the provided function will
@@ -162,15 +172,20 @@ pub type BoxedIlpFuture = Box<dyn Future<Item = Fulfill, Error = Reject> + Send 
 
 /// The base Store trait that can load a given account based on the ID.
 pub trait AccountStore {
+    /// The provided account type. Must implement the `Account` trait.
     type Account: Account;
 
+    /// Loads the accounts which correspond to the provided account ids
     fn get_accounts(
         &self,
+        // The account ids (UUID format) of the accounts you are fetching
         account_ids: Vec<Uuid>,
     ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
 
+    /// Loads the account which corresponds to the provided username
     fn get_account_id_from_username(
         &self,
+        // The username of the account you are fetching
         username: &Username,
     ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send>;
 }
@@ -317,15 +332,24 @@ where
     }
 }
 
+/// A store responsible for managing the node's ILP Address. When
+/// an account is added as a parent via the REST API, the node will
+/// perform an ILDCP request to it. The parent will then return the ILP Address
+/// which has been assigned to the node. The node will then proceed to set its
+/// ILP Address to that value.
 pub trait AddressStore: Clone {
-    /// Saves the ILP Address in the store's memory and database
+    /// Saves the ILP Address in the database AND in the store's memory so that it can
+    /// be read without read overhead
     fn set_ilp_address(
         &self,
+        // The new ILP Address of the node
         ilp_address: Address,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
+    /// Resets the node's ILP Address to local.host
     fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
-    /// Get's the store's ilp address from memory
+    /// Gets the node's ILP Address *synchronously*
+    /// (the value is stored in memory because it is read often by all services)
     fn get_ilp_address(&self) -> Address;
 }
