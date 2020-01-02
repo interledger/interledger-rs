@@ -190,10 +190,10 @@ pub trait AccountStore {
 }
 
 /// Create an IncomingService that calls the given handler for each request.
-pub fn incoming_service_fn<A, B, F>(handler: F) -> ServiceFn<F, A>
+pub fn incoming_service_fn<A, F>(handler: F) -> ServiceFn<F, A>
 where
     A: Account,
-    F: FnMut(IncomingRequest<A>) -> B,
+    F: FnMut(IncomingRequest<A>) -> IlpResult,
 {
     ServiceFn {
         handler,
@@ -202,10 +202,10 @@ where
 }
 
 /// Create an OutgoingService that calls the given handler for each request.
-pub fn outgoing_service_fn<A, B, F>(handler: F) -> ServiceFn<F, A>
+pub fn outgoing_service_fn<A, F>(handler: F) -> ServiceFn<F, A>
 where
     A: Account,
-    F: FnMut(OutgoingRequest<A>) -> B,
+    F: FnMut(OutgoingRequest<A>) -> IlpResult,
 {
     ServiceFn {
         handler,
