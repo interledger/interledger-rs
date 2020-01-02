@@ -4,7 +4,7 @@ use interledger_service::*;
 use log::{debug, error};
 use std::convert::TryFrom;
 
-/// Get the ILP address and asset details for a given account.
+/// Sends an ILDCP Request and receives the ILP address and asset details for a given account.
 pub async fn get_ildcp_info<S, A>(service: &mut S, account: A) -> Result<IldcpResponse, ()>
 where
     S: IncomingService<A>,

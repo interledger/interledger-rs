@@ -27,7 +27,6 @@
 //! HttpServerService --> ValidatorService --> StreamReceiverService
 
 use async_trait::async_trait;
-use futures::Future;
 use interledger_packet::{Address, Fulfill, Prepare, Reject};
 use std::{
     fmt::{self, Debug},
@@ -322,17 +321,18 @@ where
 /// perform an ILDCP request to it. The parent will then return the ILP Address
 /// which has been assigned to the node. The node will then proceed to set its
 /// ILP Address to that value.
+#[async_trait]
 pub trait AddressStore: Clone {
     /// Saves the ILP Address in the database AND in the store's memory so that it can
     /// be read without read overhead
-    fn set_ilp_address(
+    async fn set_ilp_address(
         &self,
         // The new ILP Address of the node
         ilp_address: Address,
-    ) -> Box<dyn Future<Output = Result<(), ()>> + Send>;
+    ) -> Result<(), ()>;
 
     /// Resets the node's ILP Address to local.host
-    fn clear_ilp_address(&self) -> Box<dyn Future<Output = Result<(), ()>> + Send>;
+    async fn clear_ilp_address(&self) -> Result<(), ()>;
 
     /// Gets the node's ILP Address *synchronously*
     /// (the value is stored in memory because it is read often by all services)
