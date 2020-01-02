@@ -22,6 +22,7 @@ tracing-futures = { version = "0.1.1", default-features = true, features = ["tok
 unicase = { version = "2.5.1", default-features = false }
 unicode-normalization = { version = "0.1.8", default-features = false }
 uuid = { version = "0.8.1", default-features = false}
+async-trait = "0.1.22"
 
 [dev-dependencies]
 serde_json = { version = "1.0.41", default-features = false }
