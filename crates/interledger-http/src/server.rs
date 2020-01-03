@@ -1,16 +1,15 @@
 use super::{error::*, HttpStore};
-use bytes::{buf::Buf, Bytes, BytesMut};
-use futures::{
-    future::{err, Either, FutureResult},
-    Future,
-};
-use interledger_packet::Prepare;
+use bytes::{Bytes, BytesMut};
+use futures::future::ok;
+use futures::TryFutureExt;
+use interledger_packet::{Fulfill, Prepare, Reject};
 use interledger_service::Username;
 use interledger_service::{IncomingRequest, IncomingService};
 use log::error;
 use secrecy::{ExposeSecret, SecretString};
-use std::{convert::TryFrom, net::SocketAddr};
-use warp::{self, Filter, Rejection};
+use std::convert::TryFrom;
+use std::net::SocketAddr;
+use warp::{Filter, Rejection};
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_PACKET_SIZE: u64 = 40000;
@@ -35,71 +34,82 @@ where
 
     pub fn as_filter(
         &self,
-    ) -> impl warp::Filter<Extract = (warp::http::Response<Bytes>,), Error = warp::Rejection> + Clone
+    ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone + '_
     {
-        let incoming = self.incoming.clone();
-        let store = self.store.clone();
-
-        warp::post2()
+        let self_clone = self.clone();
+        warp::post()
             .and(warp::path("accounts"))
-            .and(warp::path::param2::<Username>())
+            .and(warp::path::param::<Username>())
             .and(warp::path("ilp"))
             .and(warp::path::end())
             .and(warp::header::<SecretString>("authorization"))
-            .and_then(move |path_username: Username, password: SecretString| {
-                if password.expose_secret().len() < BEARER_TOKEN_START {
-                    return Either::A(err(ApiError::bad_request().into()));
-                }
-                Either::B(
-                    store
-                        .get_account_from_http_auth(
-                            &path_username,
-                            &password.expose_secret()[BEARER_TOKEN_START..],
-                        )
-                        .map_err(move |_| -> Rejection {
-                            error!("Invalid authorization provided for user: {}", path_username);
-                            ApiError::unauthorized().into()
-                        }),
-                )
-            })
             .and(warp::body::content_length_limit(MAX_PACKET_SIZE))
-            .and(warp::body::concat())
-            .and_then(
-                move |account: S::Account,
-                      body: warp::body::FullBody|
-                      -> Either<_, FutureResult<_, Rejection>> {
-                    // TODO don't copy ILP packet
-                    let buffer = BytesMut::from(body.bytes());
-                    if let Ok(prepare) = Prepare::try_from(buffer) {
-                        Either::A(
-                            incoming
-                                .clone()
-                                .handle_request(IncomingRequest {
-                                    from: account,
-                                    prepare,
-                                })
-                                .then(|result| {
-                                    let bytes: BytesMut = match result {
-                                        Ok(fulfill) => fulfill.into(),
-                                        Err(reject) => reject.into(),
-                                    };
-                                    Ok(warp::http::Response::builder()
-                                        .header("Content-Type", "application/octet-stream")
-                                        .status(200)
-                                        .body(bytes.freeze())
-                                        .unwrap())
-                                }),
-                        )
-                    } else {
-                        error!("Body was not a valid Prepare packet");
-                        Either::B(err(ApiError::invalid_ilp_packet().into()))
-                    }
-                },
-            )
+            .and(warp::body::bytes())
+            .and_then(move |username, password, body| self.ilp_over_http(username, password, body))
     }
 
-    pub fn bind(&self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> + Send {
-        warp::serve(self.as_filter()).bind(addr)
+    #[inline]
+    async fn get_account(
+        &self,
+        path_username: &Username,
+        password: &SecretString,
+    ) -> Result<S::Account, ()> {
+        if password.expose_secret().len() < BEARER_TOKEN_START {
+            return Err(());
+        }
+        self.store
+            .get_account_from_http_auth(
+                &path_username,
+                &password.expose_secret()[BEARER_TOKEN_START..],
+            )
+            .await
+    }
+
+    #[inline]
+    async fn ilp_over_http(
+        &self,
+        path_username: Username,
+        password: SecretString,
+        body: bytes05::Bytes,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let account = self
+            .get_account(&path_username, &password)
+            .map_err(|_| -> Rejection {
+                error!("Invalid authorization provided for user: {}", path_username);
+                ApiError::unauthorized().into()
+            })
+            .await?;
+
+        let buffer = bytes::BytesMut::from(body.as_ref());
+        if let Ok(prepare) = Prepare::try_from(buffer) {
+            let result = self.incoming
+                .handle_request(IncomingRequest {
+                    from: account,
+                    prepare,
+                })
+                .await; // Awaiting this future causes the error.
+
+            let bytes: bytes05::BytesMut = match result {
+                Ok(fulfill) => fulfill.into(),
+                Err(reject) => reject.into(),
+            };
+
+            Ok(warp::http::Response::builder()
+                .header("Content-Type", "application/octet-stream")
+                .status(200)
+                // .body(bytes.freeze()) // TODO: bring this back
+                .body(bytes05::Bytes::new())
+                .unwrap())
+        } else {
+            error!("Body was not a valid Prepare packet");
+            Err(Rejection::from(ApiError::invalid_ilp_packet()))
+        }
+    }
+
+    // Do we really need to bind self to static?
+    pub async fn bind(&'static self, addr: SocketAddr) {
+        let filter = self.as_filter();
+        warp::serve(filter).run(addr).await
     }
 }
 
