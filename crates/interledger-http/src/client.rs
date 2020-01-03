@@ -104,7 +104,6 @@ where
 }
 
 async fn parse_packet_from_response(response: HttpResponse, ilp_address: Address) -> IlpResult {
-    let ilp_address_clone = ilp_address.clone();
     let response = response.error_for_status().map_err(|err| {
         error!("HTTP error sending ILP over HTTP packet: {:?}", err);
         let code = if let Some(status) = err.status() {

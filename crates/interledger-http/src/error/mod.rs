@@ -317,7 +317,7 @@ impl From<JsonDeserializeError> for Rejection {
 }
 
 // Receives `ApiError`s and `JsonDeserializeError` and return it in the RFC7807 format.
-pub fn default_rejection_handler(err: warp::Rejection) -> Result<Response, Rejection> {
+pub async fn default_rejection_handler(err: warp::Rejection) -> Result<impl Reply, Rejection> {
     if let Some(api_error) = err.find::<ApiError>() {
         Ok(api_error.clone().into_response())
     } else if let Some(json_error) = err.find::<JsonDeserializeError>() {

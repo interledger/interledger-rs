@@ -41,7 +41,7 @@ quick_error! {
             description(descr)
             display("Invalid Packet {}", descr)
         }
-        Other(err: Box<dyn std::error::Error>) {
+        Other(err: Box<dyn std::error::Error + Send>) {
             cause(&**err)
             description(err.description())
             display("Error {}", err.description())
