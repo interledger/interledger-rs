@@ -359,6 +359,15 @@ impl From<Fulfill> for BytesMut {
     }
 }
 
+impl From<Fulfill> for bytes05::BytesMut {
+    fn from(fulfill: Fulfill) -> Self {
+        // bytes 0.4
+        let b = fulfill.buffer.as_ref();
+        // convert to Bytes05
+        bytes05::BytesMut::from(b)
+    }
+}
+
 impl fmt::Debug for Fulfill {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
@@ -478,6 +487,15 @@ impl AsRef<[u8]> for Reject {
 impl From<Reject> for BytesMut {
     fn from(reject: Reject) -> Self {
         reject.buffer
+    }
+}
+
+impl From<Reject> for bytes05::BytesMut {
+    fn from(reject: Reject) -> Self {
+        // bytes 0.4
+        let b = reject.buffer.as_ref();
+        // convert to Bytes05
+        bytes05::BytesMut::from(b)
     }
 }
 
