@@ -37,8 +37,9 @@ use uuid::Uuid;
 
 mod username;
 pub use username::Username;
-#[cfg(feature = "trace")]
-mod trace;
+// TODO: Temporarily disable until we figure out what's going on with tracing and async_trait
+// #[cfg(feature = "trace")]
+// mod trace;
 
 pub type IlpResult = Result<Fulfill, Reject>;
 
