@@ -9,6 +9,7 @@
 //! updates are used by the `Router` to forward incoming packets to the best next hop
 //! we know about.
 
+use async_trait::async_trait;
 use futures::Future;
 use interledger_service::Account;
 use std::collections::HashMap;
@@ -98,25 +99,24 @@ pub trait CcpRoutingAccount: Account {
 type Routes<T> = HashMap<String, T>;
 type LocalAndConfiguredRoutes<T> = (Routes<T>, Routes<T>);
 
+#[async_trait]
 pub trait RouteManagerStore: Clone {
     type Account: CcpRoutingAccount;
 
     // TODO should we have a way to only get the details for specific routes?
-    fn get_local_and_configured_routes(
+    async fn get_local_and_configured_routes(
         &self,
-    ) -> Box<dyn Future<Item = LocalAndConfiguredRoutes<Self::Account>, Error = ()> + Send>;
+    ) -> Result<LocalAndConfiguredRoutes<Self::Account>, ()>;
 
-    fn get_accounts_to_send_routes_to(
+    async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Result<Vec<Self::Account>, ()>;
 
-    fn get_accounts_to_receive_routes_from(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    async fn get_accounts_to_receive_routes_from(&self) -> Result<Vec<Self::Account>, ()>;
 
-    fn set_routes(
+    async fn set_routes(
         &mut self,
-        routes: impl IntoIterator<Item = (String, Self::Account)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+        routes: impl IntoIterator<Item = (String, Self::Account)> + Send + 'async_trait,
+    ) -> Result<(), ()>;
 }

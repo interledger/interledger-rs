@@ -10,7 +10,7 @@ lazy_static! {
     static ref RANDOM: SystemRandom = SystemRandom::new();
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PrefixMap<T> {
     map: HashMap<String, T>,
 }
@@ -44,7 +44,7 @@ impl<T> PrefixMap<T> {
 /// When an Interledger node reloads, it will generate a new UUID for its routing table.
 /// Each update applied increments the epoch number, so it acts as a version tracker.
 /// This helps peers make sure they are in sync with one another and request updates if not.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RoutingTable<A> {
     id: [u8; 16],
     epoch: u32,
