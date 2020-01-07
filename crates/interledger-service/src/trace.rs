@@ -7,7 +7,7 @@ use async_trait::async_trait;
 impl<IO, A> IncomingService<A> for Instrumented<IO>
 where
     IO: IncomingService<A> + Clone + Send,
-    A: Account + 'async_trait,
+    A: Account + 'static, 
 {
     async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         let span = self.span().clone();
@@ -20,7 +20,7 @@ where
 impl<IO, A> OutgoingService<A> for Instrumented<IO>
 where
     IO: OutgoingService<A> + Clone + Send,
-    A: Account,
+    A: Account + 'static, 
 {
     async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
         let span = self.span().clone();

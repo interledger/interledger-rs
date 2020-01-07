@@ -110,8 +110,8 @@ where
             .and(warp::header::<SecretString>("authorization"))
             .and(warp::body::content_length_limit(MAX_PACKET_SIZE))
             .and(warp::body::bytes())
-            .and(with_store.clone())
-            .and(with_incoming.clone())
+            .and(with_store)
+            .and(with_incoming)
             .and_then(ilp_over_http)
     }
 

@@ -322,7 +322,7 @@ pub async fn default_rejection_handler(err: warp::Rejection) -> Result<impl Repl
         Ok(api_error.clone().into_response())
     } else if let Some(json_error) = err.find::<JsonDeserializeError>() {
         Ok(json_error.clone().into_response())
-    } else if let Some(_) = err.find::<warp::reject::MethodNotAllowed>() {
+    } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         Ok(ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE).into_response())
     } else {
         Err(err)
