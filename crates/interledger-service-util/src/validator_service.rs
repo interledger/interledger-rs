@@ -1,12 +1,12 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use futures::{future::err, Future};
+use futures::{future::err, Future, TryFutureExt, FutureExt};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use log::error;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
-use tokio::prelude::FutureExt;
 
 /// # Validator Service
 ///
@@ -51,21 +51,20 @@ where
     }
 }
 
+#[async_trait]
 impl<I, S, A> IncomingService<A> for ValidatorService<I, S, A>
 where
     I: IncomingService<A>,
     S: AddressStore,
     A: Account,
 {
-    type Future = BoxedIlpFuture;
-
     /// On receiving a request:
     /// 1. If the prepare packet in the request is not expired, forward it, otherwise return a reject
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
         let now = Utc::now();
         if expires_at >= now {
-            Box::new(self.next.handle_request(request))
+            self.next.handle_request(request).await
         } else {
             error!(
                 "Incoming packet expired {}ms ago at {:?} (time now: {:?})",
@@ -73,26 +72,24 @@ where
                 expires_at.to_rfc3339(),
                 expires_at.to_rfc3339(),
             );
-            let result = Box::new(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
                 triggered_by: Some(&self.store.get_ilp_address()),
                 data: &[],
             }
-            .build()));
-            Box::new(result)
+            .build());
         }
     }
 }
 
+#[async_trait]
 impl<O, S, A> OutgoingService<A> for ValidatorService<O, S, A>
 where
     O: OutgoingService<A>,
     S: AddressStore,
     A: Account,
 {
-    type Future = BoxedIlpFuture;
-
     /// On sending a request:
     /// 1. If the outgoing packet has expired, return a reject with the appropriate ErrorCode
     /// 1. Tries to forward the request
@@ -101,7 +98,7 @@ where
     ///     - If the forwarding is successful, it should receive a fulfill packet. Depending on if the hash of the fulfillment condition inside the fulfill is a preimage of the condition of the prepare:
     ///         - return the fulfill if it matches
     ///         - otherwise reject
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition()); // why?
 
@@ -111,58 +108,56 @@ where
         let ilp_address = self.store.get_ilp_address();
         let ilp_address_clone = ilp_address.clone();
         if time_left > Duration::zero() {
-            Box::new(
-                self.next
-                    .send_request(request)
-                    .timeout(time_left.to_std().expect("Time left must be positive"))
-                    .map_err(move |err| {
-                        // If the error was caused by the timer, into_inner will return None
-                        if let Some(reject) = err.into_inner() {
-                            reject
-                        } else {
-                            error!(
-                                "Outgoing request timed out after {}ms (expiry was: {})",
-                                time_left.num_milliseconds(),
-                                expires_at,
-                            );
-                            RejectBuilder {
-                                code: ErrorCode::R00_TRANSFER_TIMED_OUT,
-                                message: &[],
-                                triggered_by: Some(&ilp_address_clone),
-                                data: &[],
-                            }
-                            .build()
+            let fulfill = self
+                .next
+                .send_request(request)
+                .timeout(time_left.to_std().expect("Time left must be positive"))
+                .map_err(move |err| {
+                    // If the error was caused by the timer, into_inner will return None
+                    if let Some(reject) = err.into_inner() {
+                        reject
+                    } else {
+                        error!(
+                            "Outgoing request timed out after {}ms (expiry was: {})",
+                            time_left.num_milliseconds(),
+                            expires_at,
+                        );
+                        RejectBuilder {
+                            code: ErrorCode::R00_TRANSFER_TIMED_OUT,
+                            message: &[],
+                            triggered_by: Some(&ilp_address_clone),
+                            data: &[],
                         }
-                    })
-                    .and_then(move |fulfill| {
-                        let generated_condition = digest(&SHA256, fulfill.fulfillment());
-                        if generated_condition.as_ref() == condition {
-                            Ok(fulfill)
-                        } else {
-                            error!("Fulfillment did not match condition. Fulfillment: {}, hash: {}, actual condition: {}", hex::encode(fulfill.fulfillment()), hex::encode(generated_condition), hex::encode(condition));
-                            Err(RejectBuilder {
-                                code: ErrorCode::F09_INVALID_PEER_RESPONSE,
-                                message: b"Fulfillment did not match condition",
-                                triggered_by: Some(&ilp_address),
-                                data: &[],
-                            }
-                            .build())
-                        }
-                    }),
-            )
+                        .build()
+                    }
+                })
+                .await?;
+            let generated_condition = digest(&SHA256, fulfill.fulfillment());
+            if generated_condition.as_ref() == condition {
+                Ok(fulfill)
+            } else {
+                error!("Fulfillment did not match condition. Fulfillment: {}, hash: {}, actual condition: {}", hex::encode(fulfill.fulfillment()), hex::encode(generated_condition), hex::encode(condition));
+                Err(RejectBuilder {
+                    code: ErrorCode::F09_INVALID_PEER_RESPONSE,
+                    message: b"Fulfillment did not match condition",
+                    triggered_by: Some(&ilp_address),
+                    data: &[],
+                }
+                .build())
+            }
         } else {
             error!(
                 "Outgoing packet expired {}ms ago",
                 (Duration::zero() - time_left).num_milliseconds(),
             );
             // Already expired
-            Box::new(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
                 triggered_by: Some(&ilp_address),
                 data: &[],
             }
-            .build()))
+            .build());
         }
     }
 }

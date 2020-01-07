@@ -461,10 +461,7 @@ mod tests {
     #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        async fn set_ilp_address(
-            &self,
-            _ilp_address: Address,
-        ) -> Result<(), ()> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
             unimplemented!()
         }
 

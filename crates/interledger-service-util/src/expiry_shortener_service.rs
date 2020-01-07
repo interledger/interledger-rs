@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use interledger_service::{Account, OutgoingRequest, OutgoingService};
+use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService};
 use log::trace;
 
 pub const DEFAULT_ROUND_TRIP_TIME: u32 = 500;
@@ -39,19 +40,18 @@ impl<O> ExpiryShortenerService<O> {
     }
 }
 
+#[async_trait]
 impl<O, A> OutgoingService<A> for ExpiryShortenerService<O>
 where
-    O: OutgoingService<A>,
-    A: RoundTripTimeAccount,
+    O: OutgoingService<A> + Send + Sync + 'static,
+    A: RoundTripTimeAccount + Send + Sync + 'static,
 {
-    type Future = O::Future;
-
     /// On send request:
     /// 1. Get the sender and receiver's roundtrip time (default 1000ms)
     /// 2. Reduce the packet's expiry by that amount
     /// 3. Ensure that the packet expiry does not exceed the maximum expiry duration
     /// 4. Forward the request
-    fn send_request(&mut self, mut request: OutgoingRequest<A>) -> Self::Future {
+    async fn send_request(&mut self, mut request: OutgoingRequest<A>) -> IlpResult {
         let time_to_subtract =
             i64::from(request.from.round_trip_time() + request.to.round_trip_time());
         let new_expiry = DateTime::<Utc>::from(request.prepare.expires_at())
@@ -70,7 +70,7 @@ where
         };
 
         request.prepare.set_expires_at(new_expiry.into());
-        self.next.send_request(request)
+        self.next.send_request(request).await
     }
 }
 
@@ -121,8 +121,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn shortens_expiry_by_round_trip_time() {
+    #[tokio::test]
+    async fn shortens_expiry_by_round_trip_time() {
         let original_expiry = Utc::now() + Duration::milliseconds(30000);
         let mut service = ExpiryShortenerService::new(outgoing_service_fn(move |request| {
             if DateTime::<Utc>::from(request.prepare.expires_at())
@@ -157,12 +157,12 @@ mod tests {
                 .build(),
                 original_amount: 10,
             })
-            .wait()
+            .await
             .expect("Should have shortened expiry");
     }
 
-    #[test]
-    fn reduces_expiry_to_max_duration() {
+    #[tokio::test]
+    async fn reduces_expiry_to_max_duration() {
         let mut service = ExpiryShortenerService::new(outgoing_service_fn(move |request| {
             if DateTime::<Utc>::from(request.prepare.expires_at()) - Utc::now()
                 <= Duration::milliseconds(30000)
@@ -196,7 +196,7 @@ mod tests {
                 .build(),
                 original_amount: 10,
             })
-            .wait()
+            .await
             .expect("Should have shortened expiry");
     }
 }
