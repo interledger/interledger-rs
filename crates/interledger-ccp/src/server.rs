@@ -468,16 +468,19 @@ where
                 let table = &incoming_tables[&request.from.id()];
 
                 // TODO: Fix lifetime error
-                // #[cfg(not(test))]
-                // tokio::spawn({
-                //     let self_clone = self.clone();
-                //     async move { self_clone.send_route_control_request(
-                //         request.from.clone(),
-                //         table.id(),
-                //         table.epoch(),
-                //         ).await;
-                //     }
-                // });
+                #[cfg(not(test))]
+                tokio::spawn({
+                    let self_clone = self.clone();
+                    async move {
+                        self_clone
+                            .send_route_control_request(
+                                request.from.clone(),
+                                table.id(),
+                                table.epoch(),
+                            )
+                            .await;
+                    }
+                });
 
                 #[cfg(test)]
                 self.send_route_control_request(request.from.clone(), table.id(), table.epoch())
@@ -598,9 +601,13 @@ where
 
         // Update the local and forwarding tables
         if !better_routes.is_empty() || !withdrawn_routes.is_empty() {
-            let mut local_table = local_table.write().clone();
-            let mut forwarding_table = forwarding_table.write().clone();
-            let mut forwarding_table_updates = forwarding_table_updates.write().clone();
+            // These 3 make the future not `Send`. How can we fix this? Error says that
+            // local_table (and the other variables) are dropped while the await is still on.
+            // We could clone, but then we won't overwrite the object's values.
+            // Can this be fixed?
+            let mut local_table = local_table.write();
+            let mut forwarding_table = forwarding_table.write();
+            let mut forwarding_table_updates = forwarding_table_updates.write();
 
             let mut new_routes: Vec<Route> = Vec::with_capacity(better_routes.len());
 
