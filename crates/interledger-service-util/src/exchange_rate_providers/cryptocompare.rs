@@ -1,7 +1,7 @@
-use futures::Future;
+use futures::TryFutureExt;
 use lazy_static::lazy_static;
 use log::error;
-use reqwest::{r#async::Client, Url};
+use reqwest::{Client, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use std::{
@@ -47,11 +47,11 @@ struct Response {
     data: Vec<Record>,
 }
 
-pub fn query_cryptocompare(
+pub async fn query_cryptocompare(
     client: &Client,
     api_key: &SecretString,
-) -> impl Future<Item = HashMap<String, f64>, Error = ()> {
-    client
+) -> Result<HashMap<String, f64>, ()> {
+    let res = client
         .get(CRYPTOCOMPARE_URL.clone())
         // TODO don't copy the api key on every request
         .header(
@@ -60,31 +60,40 @@ pub fn query_cryptocompare(
         )
         .send()
         .map_err(|err| {
-            error!("Error fetching exchange rates from CryptoCompare: {:?}", err);
+            error!(
+                "Error fetching exchange rates from CryptoCompare: {:?}",
+                err
+            );
         })
-        .and_then(|res| {
-            res.error_for_status().map_err(|err| {
-                error!("HTTP error getting exchange rates from CryptoCompare: {:?}", err);
-            })
+        .await?;
+
+    let res = res.error_for_status().map_err(|err| {
+        error!(
+            "HTTP error getting exchange rates from CryptoCompare: {:?}",
+            err
+        );
+    })?;
+
+    let res: Response = res
+        .json()
+        .map_err(|err| {
+            error!(
+            "Error getting exchange rate response body from CryptoCompare, incorrect type: {:?}",
+            err
+        );
         })
-        .and_then(|mut res| {
-            res.json().map_err(|err| {
-                error!(
-                    "Error getting exchange rate response body from CryptoCompare, incorrect type: {:?}",
-                    err
-                );
-            })
+        .await?;
+
+    let rates = res
+        .data
+        .into_iter()
+        .filter_map(|asset| {
+            if let Some(raw) = asset.raw {
+                Some((asset.coin_info.name.to_uppercase(), raw.usd.price))
+            } else {
+                None
+            }
         })
-        .and_then(|res: Response| {
-            let rates = res
-                .data
-                .into_iter()
-                .filter_map(|asset| if let Some(raw) = asset.raw {
-                    Some((asset.coin_info.name.to_uppercase(), raw.usd.price))
-                  } else {
-                    None
-                  })
-                .chain(once(("USD".to_string(), 1.0)));
-            Ok(HashMap::from_iter(rates))
-        })
+        .chain(once(("USD".to_string(), 1.0)));
+    Ok(HashMap::from_iter(rates))
 }

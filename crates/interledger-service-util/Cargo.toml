@@ -11,19 +11,19 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 bytes = { version = "0.4.12", default-features = false }
 byteorder = { version = "1.3.2", default-features = false }
 chrono = { version = "0.4.9", default-features = false, features = ["clock"] }
-futures = { version = "0.1.29", default-features = false }
+futures = { version = "0.3.1", default-features = false }
 hex = { version = "0.4.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 interledger-settlement = { path = "../interledger-settlement", version = "^0.3.0", default-features = false, features = ["settlement_api"] }
 lazy_static = { version = "1.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
-reqwest = { version = "0.9.22", default-features = false, features = ["default-tls"] }
+reqwest = { version = "0.10.0", default-features = false, features = ["default-tls"] }
 ring = { version = "0.16.9", default-features = false }
 secrecy = { version = "0.5.1", default-features = false, features = ["alloc", "serde"] }
 serde = { version = "1.0.101", default-features = false, features = ["derive"]}
-tokio = { version = "0.1.22", default-features = false }
-tokio-executor = { version = "0.1.8", default-features = false }
+tokio = { version = "0.2.6", default-features = false, features = ["macros", "time"] }
+async-trait = "0.1.22"
 
 [dev-dependencies]
 uuid = { version = "0.8.1", default-features = false}
