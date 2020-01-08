@@ -601,80 +601,82 @@ where
 
         // Update the local and forwarding tables
         if !better_routes.is_empty() || !withdrawn_routes.is_empty() {
-            // These 3 make the future not `Send`. How can we fix this? Error says that
-            // local_table (and the other variables) are dropped while the await is still on.
-            // We could clone, but then we won't overwrite the object's values.
-            // Can this be fixed?
-            let mut local_table = local_table.write();
-            let mut forwarding_table = forwarding_table.write();
-            let mut forwarding_table_updates = forwarding_table_updates.write();
+            let update_routes = {
+                // These 3 make the future not `Send`. How can we fix this? Error says that
+                // local_table (and the other variables) are dropped while the await is still on.
+                // We could clone, but then we won't overwrite the object's values.
+                // Can this be fixed?
+                let mut local_table = local_table.write();
+                let mut forwarding_table = forwarding_table.write();
+                let mut forwarding_table_updates = forwarding_table_updates.write();
 
-            let mut new_routes: Vec<Route> = Vec::with_capacity(better_routes.len());
+                let mut new_routes: Vec<Route> = Vec::with_capacity(better_routes.len());
 
-            for (prefix, account, mut route) in better_routes {
-                debug!(
-                    "Setting new route for prefix: {} -> Account: {} (id: {})",
-                    prefix,
-                    account.username(),
-                    account.id(),
-                );
-                local_table.set_route(prefix.to_string(), account.clone(), route.clone());
+                for (prefix, account, mut route) in better_routes {
+                    debug!(
+                        "Setting new route for prefix: {} -> Account: {} (id: {})",
+                        prefix,
+                        account.username(),
+                        account.id(),
+                    );
+                    local_table.set_route(prefix.to_string(), account.clone(), route.clone());
 
-                // Update the forwarding table
+                    // Update the forwarding table
 
-                // Don't advertise routes that don't start with the global prefix
-                // or that advertise the whole global prefix
-                let address_scheme = ilp_address.scheme();
-                let correct_address_scheme =
-                    route.prefix.starts_with(address_scheme) && route.prefix != address_scheme;
-                // We do want to advertise our address
-                let is_our_address = route.prefix == &ilp_address as &str;
-                // Don't advertise local routes because advertising only our address
-                // will be enough to ensure the packet gets to us and we can route it
-                // to the correct account on our node
-                let is_local_route =
-                    route.prefix.starts_with(&ilp_address as &str) && route.path.is_empty();
-                let not_local_route = is_our_address || !is_local_route;
-                // Don't include routes we're also withdrawing
-                let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
+                    // Don't advertise routes that don't start with the global prefix
+                    // or that advertise the whole global prefix
+                    let address_scheme = ilp_address.scheme();
+                    let correct_address_scheme =
+                        route.prefix.starts_with(address_scheme) && route.prefix != address_scheme;
+                    // We do want to advertise our address
+                    let is_our_address = route.prefix == &ilp_address as &str;
+                    // Don't advertise local routes because advertising only our address
+                    // will be enough to ensure the packet gets to us and we can route it
+                    // to the correct account on our node
+                    let is_local_route =
+                        route.prefix.starts_with(&ilp_address as &str) && route.path.is_empty();
+                    let not_local_route = is_our_address || !is_local_route;
+                    // Don't include routes we're also withdrawing
+                    let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
 
-                if correct_address_scheme && not_local_route && not_withdrawn_route {
-                    let old_route = forwarding_table.get_route(prefix);
-                    if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                        route.path.insert(0, ilp_address.to_string());
-                        // Each hop hashes the auth before forwarding
-                        route.auth = hash(&route.auth);
-                        forwarding_table.set_route(
-                            prefix.to_string(),
-                            account.clone(),
-                            route.clone(),
-                        );
-                        new_routes.push(route);
+                    if correct_address_scheme && not_local_route && not_withdrawn_route {
+                        let old_route = forwarding_table.get_route(prefix);
+                        if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
+                            route.path.insert(0, ilp_address.to_string());
+                            // Each hop hashes the auth before forwarding
+                            route.auth = hash(&route.auth);
+                            forwarding_table.set_route(
+                                prefix.to_string(),
+                                account.clone(),
+                                route.clone(),
+                            );
+                            new_routes.push(route);
+                        }
                     }
                 }
-            }
 
-            for prefix in withdrawn_routes.iter() {
-                debug!("Removed route for prefix: {}", prefix);
-                local_table.delete_route(prefix);
-                forwarding_table.delete_route(prefix);
-            }
+                for prefix in withdrawn_routes.iter() {
+                    debug!("Removed route for prefix: {}", prefix);
+                    local_table.delete_route(prefix);
+                    forwarding_table.delete_route(prefix);
+                }
 
-            let epoch = forwarding_table.increment_epoch();
-            forwarding_table_updates.push((
-                new_routes,
-                withdrawn_routes.iter().map(|s| s.to_string()).collect(),
-            ));
-            debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
+                let epoch = forwarding_table.increment_epoch();
+                forwarding_table_updates.push((
+                    new_routes,
+                    withdrawn_routes.iter().map(|s| s.to_string()).collect(),
+                ));
+                debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
 
-            store
-                .set_routes(
+                store.set_routes(
                     local_table
                         .get_simplified_table()
                         .into_iter()
                         .map(|(prefix, account)| (prefix.to_string(), account)),
                 )
-                .await
+            };
+
+            update_routes.await
         } else {
             // The routing table hasn't changed
             Ok(())

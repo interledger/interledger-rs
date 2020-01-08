@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use futures::{future::err, Future, TryFutureExt, FutureExt};
+use futures::{future::err, Future, FutureExt, TryFutureExt};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
