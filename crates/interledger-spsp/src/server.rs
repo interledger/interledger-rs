@@ -1,12 +1,14 @@
 use super::SpspResponse;
 use bytes::Bytes;
-use futures::future::{ok, FutureResult, IntoFuture};
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_packet::Address;
 use interledger_stream::ConnectionGenerator;
 use log::debug;
 use std::error::Error as StdError;
-use std::{fmt, str};
+use std::{
+    fmt, str,
+    task::{Context, Poll},
+};
 
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.
@@ -47,24 +49,17 @@ impl SpspResponder {
     }
 }
 
-impl HttpService for SpspResponder {
-    type ReqBody = Body;
-    type ResBody = Body;
+impl HttpService<Request<Body>> for SpspResponder {
+    type Response = Response<Body>;
     type Error = Error;
-    type Future = FutureResult<Response<Body>, Error>;
+    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn call(&mut self, _request: Request<Self::ReqBody>) -> Self::Future {
-        ok(self.generate_http_response())
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Ok(()).into()
     }
-}
 
-impl IntoFuture for SpspResponder {
-    type Item = Self;
-    type Error = Never;
-    type Future = FutureResult<Self::Item, Self::Error>;
-
-    fn into_future(self) -> Self::Future {
-        ok(self)
+    fn call(&mut self, _request: Request<Body>) -> Self::Future {
+        futures::future::ok(self.generate_http_response())
     }
 }
 
@@ -87,11 +82,10 @@ impl StdError for Never {
 #[cfg(test)]
 mod spsp_server_test {
     use super::*;
-    use futures::Future;
     use std::str::FromStr;
 
-    #[test]
-    fn spsp_response_headers() {
+    #[tokio::test]
+    async fn spsp_response_headers() {
         let addr = Address::from_str("example.receiver").unwrap();
         let mut responder = SpspResponder::new(addr, Bytes::from(&[0; 32][..]));
         let response = responder
@@ -103,7 +97,7 @@ mod spsp_server_test {
                     .body(Body::empty())
                     .unwrap(),
             )
-            .wait()
+            .await
             .unwrap();
         assert_eq!(
             response.headers().get("Content-Type").unwrap(),
