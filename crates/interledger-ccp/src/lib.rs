@@ -10,7 +10,6 @@
 //! we know about.
 
 use async_trait::async_trait;
-use futures::Future;
 use interledger_service::Account;
 use std::collections::HashMap;
 use std::{fmt, str::FromStr};

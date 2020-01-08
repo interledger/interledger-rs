@@ -110,12 +110,12 @@ where
         self.prefix_map.resolve(prefix)
     }
 
-    pub fn get_simplified_table(&self) -> HashMap<&str, A> {
+    pub fn get_simplified_table(&self) -> HashMap<String, A> {
         HashMap::from_iter(
             self.prefix_map
                 .map
                 .iter()
-                .map(|(address, (account, _route))| (address.as_str(), account.clone())),
+                .map(|(address, (account, _route))| (address.clone(), account.clone())),
         )
     }
 

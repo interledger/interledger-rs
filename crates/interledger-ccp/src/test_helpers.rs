@@ -2,11 +2,6 @@
 use super::*;
 use crate::{packet::CCP_RESPONSE, server::CcpRouteManager};
 use async_trait::async_trait;
-use futures::TryFutureExt;
-use futures::{
-    future::{err, ok},
-    Future,
-};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AddressStore, IncomingService, OutgoingRequest,
@@ -87,7 +82,7 @@ impl CcpRoutingAccount for TestAccount {
 pub struct TestStore {
     pub local: HashMap<String, TestAccount>,
     pub configured: HashMap<String, TestAccount>,
-    pub routes: HashMap<String, TestAccount>,
+    pub routes: Arc<Mutex<HashMap<String, TestAccount>>>,
 }
 
 impl TestStore {
@@ -95,7 +90,7 @@ impl TestStore {
         TestStore {
             local: HashMap::new(),
             configured: HashMap::new(),
-            routes: HashMap::new(),
+            routes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -106,7 +101,7 @@ impl TestStore {
         TestStore {
             local,
             configured,
-            routes: HashMap::new(),
+            routes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -148,7 +143,7 @@ impl RouteManagerStore for TestStore {
             .local
             .values()
             .chain(self.configured.values())
-            .chain(self.routes.values())
+            .chain(self.routes.lock().values())
             .filter(|account| {
                 account.should_send_routes() && !ignore_accounts.contains(&account.id)
             })
@@ -163,7 +158,7 @@ impl RouteManagerStore for TestStore {
             .local
             .values()
             .chain(self.configured.values())
-            .chain(self.routes.values())
+            .chain(self.routes.lock().values())
             .filter(|account| account.should_receive_routes())
             .cloned()
             .collect();
@@ -175,7 +170,7 @@ impl RouteManagerStore for TestStore {
         &mut self,
         routes: impl IntoIterator<Item = (String, TestAccount)> + Send + 'async_trait,
     ) -> Result<(), ()> {
-        self.routes = HashMap::from_iter(routes.into_iter());
+        *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Ok(())
     }
 }
