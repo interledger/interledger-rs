@@ -6,6 +6,7 @@
 //! Because this protocol uses WebSockets, only one party needs to have a publicly-accessible HTTPS
 //! endpoint but both sides can send and receive ILP packets.
 
+use async_trait::async_trait;
 use futures::Future;
 use interledger_service::{Account, Username};
 use url::Url;
@@ -14,11 +15,11 @@ mod client;
 mod errors;
 mod oer;
 mod packet;
-mod server;
+// mod server;
 mod service;
 
 pub use self::client::{connect_client, connect_to_service_account, parse_btp_url};
-pub use self::server::btp_service_as_filter;
+// pub use self::server::btp_service_as_filter; // This is consumed only by the node.
 pub use self::service::{BtpOutgoingService, BtpService};
 
 pub trait BtpAccount: Account {
@@ -27,26 +28,25 @@ pub trait BtpAccount: Account {
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
+#[async_trait]
 pub trait BtpStore {
     type Account: BtpAccount;
 
     /// Load Account details based on the auth token received via BTP.
-    fn get_account_from_btp_auth(
+    async fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Result<Self::Account, ()>;
 
     /// Load accounts that have a ilp_over_btp_url configured
-    fn get_btp_outgoing_accounts(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, ()>;
 }
 
 #[cfg(test)]
 mod client_server {
     use super::*;
-    use futures::future::{err, lazy, ok, result};
+    use futures::future::{err, lazy, ok};
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
     use net2::TcpBuilder;
@@ -126,13 +126,11 @@ mod client_server {
         accounts: Arc<Vec<TestAccount>>,
     }
 
+    #[async_trait]
     impl AccountStore for TestStore {
         type Account = TestAccount;
 
-        fn get_accounts(
-            &self,
-            account_ids: Vec<Uuid>,
-        ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<Self::Account>, ()> {
             let accounts: Vec<TestAccount> = self
                 .accounts
                 .iter()
@@ -145,53 +143,47 @@ mod client_server {
                 })
                 .collect();
             if accounts.len() == account_ids.len() {
-                Box::new(ok(accounts))
+                Ok(accounts)
             } else {
-                Box::new(err(()))
+                Err(())
             }
         }
 
         // stub implementation (not used in these tests)
-        fn get_account_id_from_username(
-            &self,
-            _username: &Username,
-        ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
-            Box::new(ok(Uuid::new_v4()))
+        async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+            Ok(Uuid::new_v4())
         }
     }
 
+    #[async_trait]
     impl BtpStore for TestStore {
         type Account = TestAccount;
 
-        fn get_account_from_btp_auth(
+        async fn get_account_from_btp_auth(
             &self,
             username: &Username,
             token: &str,
-        ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-            Box::new(result(
-                self.accounts
-                    .iter()
-                    .find(|account| {
-                        if let Some(account_token) = &account.ilp_over_btp_incoming_token {
-                            account_token == token && account.username() == username
-                        } else {
-                            false
-                        }
-                    })
-                    .cloned()
-                    .ok_or(()),
-            ))
+        ) -> Result<Self::Account, ()> {
+            self.accounts
+                .iter()
+                .find(|account| {
+                    if let Some(account_token) = &account.ilp_over_btp_incoming_token {
+                        account_token == token && account.username() == username
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .ok_or(())
         }
 
-        fn get_btp_outgoing_accounts(
-            &self,
-        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
-            Box::new(ok(self
+        async fn get_btp_outgoing_accounts(&self) -> Result<Vec<TestAccount>, ()> {
+            Ok(self
                 .accounts
                 .iter()
                 .filter(|account| account.ilp_over_btp_url.is_some())
                 .cloned()
-                .collect()))
+                .collect())
         }
     }
 
