@@ -93,7 +93,7 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
 
     async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
     where
-        R: IntoIterator<Item = (String, Uuid)>;
+        R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait;
 
     async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()>;
 
@@ -101,7 +101,7 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
 
     async fn set_settlement_engines(
         &self,
-        asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
+        asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
     ) -> Result<(), ()>;
 
     async fn get_asset_settlement_engine(&self, asset_code: &str) -> Result<Option<Url>, ()>;
