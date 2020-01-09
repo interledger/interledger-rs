@@ -11,7 +11,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 bytes = { version = "0.4.12", default-features = false }
 futures = { version = "0.1.29", default-features = false }
 futures-retry = { version = "0.3.3", default-features = false }
-http = { version = "0.1.18", default-features = false }
+http = { version = "0.2.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
 interledger-http = { path = "../interledger-http", version = "^0.4.0", default-features = false }
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.4.0", default-features = false }

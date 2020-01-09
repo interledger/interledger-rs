@@ -42,7 +42,7 @@ serde_json = { version = "1.0.41", default-features = false }
 tokio-executor = { version = "0.1.8", default-features = false }
 tokio-timer = { version = "0.2.11", default-features = false }
 url = { version = "2.1.0", default-features = false, features = ["serde"] }
-http = { version = "0.1.18", default-features = false }
+http = { version = "0.2.0", default-features = false }
 secrecy = { version = "0.5.1", default-features = false, features = ["serde", "bytes"] }
 zeroize = { version = "1.0.0", default-features = false, features = ["bytes"] }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
