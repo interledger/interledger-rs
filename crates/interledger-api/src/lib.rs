@@ -18,7 +18,7 @@ use uuid::Uuid;
 use warp::{self, Filter};
 
 pub(crate) mod http_retry;
-// mod routes;
+mod routes;
 
 // This enum and the following functions are used to allow clients to send either
 // numbers or strings and have them be properly deserialized into the appropriate
