@@ -1,15 +1,17 @@
 use base64;
 use chrono::Utc;
 use futures::{
+    compat::Future01CompatExt,
     future::{ok, Either},
-    Future,
+    Future, TryFutureExt,
 };
 use interledger::{
+    ccp::CcpRoutingAccount,
     packet::Address,
-    service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username},
+    service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username},
 };
 use parking_lot::Mutex;
-use reqwest::r#async::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::spawn;
@@ -58,16 +60,17 @@ struct PacketRecord {
     timestamp: String,
 }
 
+use std::pin::Pin;
 /// Create an Interledger service wrapper that publishes records
 /// of fulfilled packets to Google Cloud PubSub.
 ///
 /// This is an experimental feature that may be removed in the future.
-pub fn create_google_pubsub_wrapper<
+pub async fn create_google_pubsub_wrapper<
     A: Account + 'static,
     O: OutgoingService<A> + Clone + Send + 'static,
 >(
     config: Option<PubsubConfig>,
-) -> impl Fn(OutgoingRequest<A>, O) -> BoxedIlpFuture + Clone {
+) -> impl Fn(OutgoingRequest<A>, O) -> Pin<Box<Future<Output = IlpResult>>> + Clone {
     // If Google credentials were passed in, create an HTTP client and
     // OAuth2 client that will automatically fetch and cache access tokens
     let utilities = if let Some(config) = config {
@@ -91,10 +94,16 @@ pub fn create_google_pubsub_wrapper<
         None
     };
 
-    move |request: OutgoingRequest<A>, mut next: O| -> BoxedIlpFuture {
+    move |request: OutgoingRequest<A>, mut next: O| -> Pin<Box<Future<Output = IlpResult>>> {
+        let mut next_clone = next.clone();
+        let mut next_clone2 = next.clone();
         match &utilities {
             // Just pass the request on if no Google Pubsub details were configured
-            None => Box::new(next.send_request(request)),
+            // Due to using async_trait this becomes a Box::pin!
+            None => Box::pin(async move {
+                let fulfill = next_clone.send_request(request).await?;
+                Ok(fulfill)
+            }),
             Some((client, api_endpoint, token_fetcher)) => {
                 let prev_hop_account = request.from.username().clone();
                 let prev_hop_asset_code = request.from.asset_code().to_string();
@@ -108,78 +117,80 @@ pub fn create_google_pubsub_wrapper<
                 let client = client.clone();
                 let api_endpoint = api_endpoint.clone();
                 let token_fetcher = token_fetcher.clone();
-
-                Box::new(next.send_request(request).map(move |fulfill| {
+                Box::pin(async move {
                     // Only fulfilled packets are published for now
+                    let fulfill = next_clone2.send_request(request).await?;
                     let fulfillment = base64::encode(fulfill.fulfillment());
 
-                    let get_token_future = token_fetcher.lock()
+                    let get_token_future = token_fetcher
+                        .lock()
                         .token(TOKEN_SCOPES)
+                        .compat()
+                        .map_ok(|token: yup_oauth2::Token| token.access_token)
                         .map_err(|err| {
                             error!("Error fetching OAuth token for Google PubSub: {:?}", err)
                         });
+
                     // Spawn a task to submit the packet to PubSub so we
                     // don't block returning the fulfillment
                     // Note this means that if there is a problem submitting the
                     // packet record to PubSub, it will only log an error
-                    spawn(
-                        get_token_future
-                            .and_then(move |token| {
-                                let record = PacketRecord {
-                                    prev_hop_account,
-                                    prev_hop_asset_code,
-                                    prev_hop_asset_scale,
-                                    prev_hop_amount,
-                                    next_hop_account,
-                                    next_hop_asset_code,
-                                    next_hop_asset_scale,
-                                    next_hop_amount,
-                                    destination_ilp_address,
-                                    fulfillment,
-                                    timestamp: Utc::now().to_rfc3339(),
-                                };
-                                let data = base64::encode(&serde_json::to_string(&record).unwrap());
+                    spawn(async move {
+                        let token = get_token_future.await?;
 
-                                client
-                                    .post(api_endpoint.as_str())
-                                    .bearer_auth(token.access_token)
-                                    .json(&PubsubRequest {
-                                        messages: vec![PubsubMessage {
-                                            // TODO should there be an ID?
-                                            message_id: None,
-                                            data: Some(data),
-                                            attributes: None,
-                                            publish_time: None,
-                                        }],
-                                    })
-                                    .send()
-                                    .map_err(|err| {
-                                        error!(
-                                            "Error sending packet details to Google PubSub: {:?}",
-                                            err
-                                        )
-                                    })
-                                    .and_then(|mut res| {
-                                        if res.status().is_success() {
-                                            Either::A(ok(()))
-                                        } else {
-                                            let status = res.status();
-                                            Either::B(res.text()
-                                                .map_err(|err| error!("Error getting response body: {:?}", err))
-                                                .and_then(move |body| {
-                                                    error!(
-                                                        %status,
-                                                        "Error sending packet details to Google PubSub: {}",
-                                                        body
-                                                    );
-                                                    Ok(())
-                                                }))
-                                        }
-                                    })
-                            }),
-                    );
-                    fulfill
-                }))
+                        let record = PacketRecord {
+                            prev_hop_account,
+                            prev_hop_asset_code,
+                            prev_hop_asset_scale,
+                            prev_hop_amount,
+                            next_hop_account,
+                            next_hop_asset_code,
+                            next_hop_asset_scale,
+                            next_hop_amount,
+                            destination_ilp_address,
+                            fulfillment,
+                            timestamp: Utc::now().to_rfc3339(),
+                        };
+                        let data = base64::encode(&serde_json::to_string(&record).unwrap());
+
+                        let res = client
+                            .post(api_endpoint.as_str())
+                            .bearer_auth(token)
+                            .json(&PubsubRequest {
+                                messages: vec![PubsubMessage {
+                                    // TODO should there be an ID?
+                                    message_id: None,
+                                    data: Some(data),
+                                    attributes: None,
+                                    publish_time: None,
+                                }],
+                            })
+                            .send()
+                            .map_err(|err| {
+                                error!("Error sending packet details to Google PubSub: {:?}", err)
+                            })
+                            .await?;
+
+                        if res.status().is_success() {
+                            return Ok(());
+                        } else {
+                            let status = res.status();
+                            let body = res
+                                .text()
+                                .map_err(|err| error!("Error getting response body: {:?}", err))
+                                .await?;
+                            error!(
+                                %status,
+                                "Error sending packet details to Google PubSub: {}",
+                                body
+                            );
+                        }
+
+                        Ok::<(), ()>(())
+                    });
+
+                    Ok(fulfill)
+                })
             }
         }
     }

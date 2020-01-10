@@ -1,4 +1,4 @@
-#![type_length_limit = "1152909"]
+#![type_length_limit = "2000000"]
 
 mod metrics;
 mod node;
@@ -10,6 +10,3 @@ mod google_pubsub;
 mod redis_store;
 
 pub use node::*;
-#[allow(deprecated)]
-#[cfg(feature = "redis")]
-pub use redis_store::insert_account_with_redis_store;
