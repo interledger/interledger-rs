@@ -15,11 +15,11 @@ mod client;
 mod errors;
 mod oer;
 mod packet;
-// mod server;
+mod server;
 mod service;
 
 pub use self::client::{connect_client, connect_to_service_account, parse_btp_url};
-// pub use self::server::btp_service_as_filter; // This is consumed only by the node.
+pub use self::server::btp_service_as_filter; // This is consumed only by the node.
 pub use self::service::{BtpOutgoingService, BtpService};
 
 pub trait BtpAccount: Account {
