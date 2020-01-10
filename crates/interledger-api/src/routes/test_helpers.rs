@@ -1,4 +1,4 @@
-use crate::{routes::node_settings_api, AccountDetails, AccountSettings, NodeStore};
+use crate::{routes::{node_settings_api, accounts_api}, AccountDetails, AccountSettings, NodeStore};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::channel::mpsc::UnboundedSender;
@@ -58,40 +58,40 @@ pub fn test_node_settings_api(
     node_settings_api("admin".to_owned(), None, TestStore).recover(default_rejection_handler)
 }
 
-// pub fn test_accounts_api(
-// ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-//     let incoming = incoming_service_fn(|_request| {
-//         Err(RejectBuilder {
-//             code: ErrorCode::F02_UNREACHABLE,
-//             message: b"No other incoming handler!",
-//             data: &[],
-//             triggered_by: None,
-//         }
-//         .build())
-//     });
-//     let outgoing = outgoing_service_fn(move |_request| {
-//         Ok(FulfillBuilder {
-//             fulfillment: &[0; 32],
-//             data: b"hello!",
-//         }
-//         .build())
-//     });
-//     let btp = BtpOutgoingService::new(
-//         Address::from_str("example.alice").unwrap(),
-//         outgoing.clone(),
-//     );
-//     let store = TestStore;
-//     accounts_api(
-//         Bytes::from("admin"),
-//         "admin".to_owned(),
-//         None,
-//         incoming,
-//         outgoing,
-//         btp,
-//         store,
-//     )
-//     .recover(default_rejection_handler)
-// }
+pub fn test_accounts_api(
+) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    let incoming = incoming_service_fn(|_request| {
+        Err(RejectBuilder {
+            code: ErrorCode::F02_UNREACHABLE,
+            message: b"No other incoming handler!",
+            data: &[],
+            triggered_by: None,
+        }
+        .build())
+    });
+    let outgoing = outgoing_service_fn(move |_request| {
+        Ok(FulfillBuilder {
+            fulfillment: &[0; 32],
+            data: b"hello!",
+        }
+        .build())
+    });
+    let btp = BtpOutgoingService::new(
+        Address::from_str("example.alice").unwrap(),
+        outgoing.clone(),
+    );
+    let store = TestStore;
+    accounts_api(
+        Bytes::from("admin"),
+        "admin".to_owned(),
+        None,
+        incoming,
+        outgoing,
+        btp,
+        store,
+    )
+    .recover(default_rejection_handler)
+}
 
 /*
  * Lots of boilerplate implementations of all necessary traits to launch
