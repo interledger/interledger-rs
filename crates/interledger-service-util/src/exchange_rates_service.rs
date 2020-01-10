@@ -251,18 +251,21 @@ where
     }
 
     // TODO: This compiles on nightly but fails on 1.39?
-    pub fn spawn_interval(self, interval: Duration) {
-        debug!("Starting interval to poll exchange rate provider: {:?} for rates", self.provider);
-        let interval = async move {
-            let mut interval = tokio::time::interval(interval);
-            while let _ = interval.tick().await {
-                // Ignore errors so that they don't cause the Interval to stop
-                let _ = self.update_rates().await;
-            }
-            Ok::<(), ()>(())
-        };
-        tokio::spawn(interval);
-    }
+    // pub fn spawn_interval(self, interval: Duration) {
+    //     debug!(
+    //         "Starting interval to poll exchange rate provider: {:?} for rates",
+    //         self.provider
+    //     );
+    //     let interval = async move {
+    //         let mut interval = tokio::time::interval(interval);
+    //         while let _ = interval.tick().await {
+    //             // Ignore errors so that they don't cause the Interval to stop
+    //             let _ = self.update_rates().await;
+    //         }
+    //         Ok::<(), ()>(())
+    //     };
+    //     tokio::spawn(interval);
+    // }
 
     async fn fetch_rates(&self) -> Result<HashMap<String, f64>, ()> {
         match self.provider {

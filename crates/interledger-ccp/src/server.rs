@@ -681,7 +681,6 @@ where
 
             update_routes.await
         } else {
-            dbg!("not chagned");
             // The routing table hasn't changed
             Ok(())
         }

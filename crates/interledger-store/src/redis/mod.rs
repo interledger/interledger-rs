@@ -1835,7 +1835,6 @@ async fn update_routes(
     mut connection: RedisReconnect,
     routing_table: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
 ) -> Result<(), ()> {
-    println!("updating routes");
     let mut pipe = redis_crate::pipe();
     pipe.hgetall(ROUTES_KEY)
         .hgetall(STATIC_ROUTES_KEY)
