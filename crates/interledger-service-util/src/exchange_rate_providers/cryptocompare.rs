@@ -51,13 +51,12 @@ pub async fn query_cryptocompare(
     client: &Client,
     api_key: &SecretString,
 ) -> Result<HashMap<String, f64>, ()> {
+    // ref: https://github.com/rust-lang/rust/pull/64856
+    let header = format!("Apikey {}", api_key.expose_secret()).to_string();
     let res = client
         .get(CRYPTOCOMPARE_URL.clone())
         // TODO don't copy the api key on every request
-        .header(
-            "Authorization",
-            format!("Apikey {}", api_key.expose_secret()).as_str(),
-        )
+        .header("Authorization", header)
         .send()
         .map_err(|err| {
             error!(

@@ -50,6 +50,8 @@ impl Client {
         // If the account is not found on the peer's connector, the
         // retry logic will not get triggered. When the counterparty
         // tries to add the account, they will complete the handshake.
+
+        let msg = format!("[Engine: {}, Account: {}]", engine_url, id);
         let res = FutureRetry::new(
             move || {
                 client
@@ -60,7 +62,7 @@ impl Client {
             },
             IoHandler::new(
                 self.max_retries,
-                format!("[Engine: {}, Account: {}]", engine_url, id),
+                msg,
             ),
         )
         .await?;

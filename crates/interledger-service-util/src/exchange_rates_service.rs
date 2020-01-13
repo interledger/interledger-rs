@@ -258,11 +258,11 @@ where
         );
         let interval = async move {
             let mut interval = tokio::time::interval(interval);
-            while let _ = interval.tick().await {
+            loop {
+                interval.tick().await;
                 // Ignore errors so that they don't cause the Interval to stop
                 let _ = self.update_rates().await;
             }
-            Ok::<(), ()>(())
         };
         tokio::spawn(interval);
     }
