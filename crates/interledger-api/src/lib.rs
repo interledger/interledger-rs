@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::Future;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
 use interledger_http::{HttpAccount, HttpStore};
@@ -252,28 +251,26 @@ where
     }
 
     pub fn into_warp_filter(self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
-        let routes = warp::any().map(|| "Hello, World!");
-        routes.boxed()
-        // routes::accounts_api(
-        //     self.server_secret,
-        //     self.admin_api_token.clone(),
-        //     self.default_spsp_account,
-        //     self.incoming_handler,
-        //     self.outgoing_handler,
-        //     self.btp,
-        //     self.store.clone(),
-        // )
-        // .or(routes::node_settings_api(
-        //     self.admin_api_token,
-        //     self.node_version,
-        //     self.store,
-        // ))
-        // .boxed()
+        routes::accounts_api(
+            self.server_secret,
+            self.admin_api_token.clone(),
+            self.default_spsp_account,
+            self.incoming_handler,
+            self.outgoing_handler,
+            self.btp,
+            self.store.clone(),
+        )
+        .or(routes::node_settings_api(
+            self.admin_api_token,
+            self.node_version,
+            self.store,
+        ))
+        .boxed()
     }
 
-    // pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
-    //     warp::serve(self.into_warp_filter()).bind(addr)
-    // }
+    pub async fn bind(self, addr: SocketAddr) {
+        warp::serve(self.into_warp_filter()).bind(addr).await
+    }
 }
 
 #[cfg(test)]

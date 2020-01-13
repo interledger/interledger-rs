@@ -1,11 +1,10 @@
-use crate::{routes::{node_settings_api, accounts_api}, AccountDetails, AccountSettings, NodeStore};
+use crate::{
+    routes::{accounts_api, node_settings_api},
+    AccountDetails, AccountSettings, NodeStore,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::channel::mpsc::UnboundedSender;
-use futures::{
-    future::{err, ok},
-    Future,
-};
 use http::Response;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
@@ -41,6 +40,7 @@ where
     F: warp::Filter + 'static,
     F::Extract: warp::Reply,
 {
+    println!("calling {:?}, {:?} {:?}", method, endpoint, data);
     let mut ret = warp::test::request()
         .method(method)
         .path(endpoint)

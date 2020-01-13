@@ -1,9 +1,6 @@
 use crate::{http_retry::Client, number_or_string, AccountDetails, AccountSettings, NodeStore};
 use bytes::Bytes;
-use futures::{
-    future::{err, join_all, ok, Either},
-    Future, Stream, TryFutureExt,
-};
+use futures::{future::join_all, TryFutureExt};
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
 use interledger_http::{error::*, HttpAccount, HttpStore};
@@ -16,14 +13,14 @@ use interledger_service::{
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
-use interledger_stream::{PaymentNotification, StreamNotificationsStore};
+use interledger_stream::StreamNotificationsStore;
 use log::{debug, error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
 use uuid::Uuid;
-use warp::{self, Filter, Rejection};
+use warp::{self, reply::Json, Filter, Rejection};
 
 pub const BEARER_TOKEN_START: usize = 7;
 
@@ -65,366 +62,377 @@ where
 {
     // TODO can we make any of the Filters const or put them in lazy_static?
     let with_store = warp::any().map(move || store.clone()).boxed();
-    // let admin_auth_header = format!("Bearer {}", admin_api_token);
-    // let with_admin_auth_header = warp::any().map(move || admin_auth_header.clone()).boxed();
-    // let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
+    let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
 
-    // // Helper filters
-    // let admin_auth_header = format!("Bearer {}", admin_api_token);
-    // let admin_only = warp::header::<SecretString>("authorization")
-    //     .and_then(move |authorization: SecretString| {
-    //         // ugly clone to make function Fn
-    //         let header = admin_auth_header.clone();
-    //         async move {
-    //             if authorization.expose_secret() == &header {
-    //                 Ok(())
-    //             } else {
-    //                 Err(Rejection::from(ApiError::unauthorized()))
-    //             }
-    //         }
-    //     })
-    //     .untuple_one()
-    //     .boxed();
-
-    // // Note that the following path filters should be applied before others
-    // // (such as method and authentication) to avoid triggering unexpected errors for requests
-    // // that do not match this path.
-    // let accounts = warp::path("accounts");
-    // let accounts_index = accounts.and(warp::path::end());
+    // Helper filters
+    let admin_auth_header = format!("Bearer {}", admin_api_token);
+    let admin_auth_header_clone = admin_auth_header.clone();
+    let with_admin_auth_header = warp::any().map(move || admin_auth_header.clone()).boxed();
+    let admin_only = warp::header::<SecretString>("authorization")
+        .and_then(move |authorization: SecretString| {
+            let admin_auth_header = admin_auth_header_clone.clone();
+            async move {
+                if authorization.expose_secret() == &admin_auth_header {
+                    println!("autorized!");
+                    Ok::<(), Rejection>(())
+                } else {
+                    println!("unautorized!");
+                    Err(Rejection::from(ApiError::unauthorized()))
+                }
+            }
+        })
+        // This call makes it so we do not pass on a () value on
+        // success to the next filter, it just gets rid of it
+        .untuple_one()
+        .boxed();
 
     // Converts an account username to an account id or errors out
     let account_username_to_id = warp::path::param::<Username>()
         .and(with_store.clone())
-        .and_then(move |username: Username, store: S| async move {
-            store
-                .get_account_id_from_username(&username)
-                .map_err(|_| {
-                    // TODO differentiate between server error and not found
-                    error!("Error getting account id from username: {}", username);
-                    Rejection::from(ApiError::account_not_found())
-                })
-                .await
+        .and_then(move |username: Username, store: S| {
+            async move {
+                store
+                    .get_account_id_from_username(&username)
+                    .map_err(|_| {
+                        // TODO differentiate between server error and not found
+                        error!("Error getting account id from username: {}", username);
+                        Rejection::from(ApiError::account_not_found())
+                    })
+                    .await
+            }
         })
         .boxed();
 
-    // // Checks if the account is an admin or if they have provided a valid password
-    // let admin_or_authorized_user_only = warp::path::param::<Username>()
-    //     .and(warp::header::<SecretString>("authorization"))
-    //     .and(with_store.clone())
-    //     .and(with_admin_auth_header.clone())
-    //     .and_then(
-    //         |path_username: Username,
-    //          auth_string: SecretString,
-    //          store: S,
-    //          admin_auth_header: String| {
-    //             async move {
-    //                 if auth_string.expose_secret().len() < BEARER_TOKEN_START {
-    //                     return Err(Rejection::from(ApiError::bad_request()));
-    //                 }
+    let is_authorized_user = move |store: S, path_username: Username, auth_string: SecretString| {
+        async move {
+            if auth_string.expose_secret().len() < BEARER_TOKEN_START {
+                return Err(Rejection::from(ApiError::bad_request()));
+            }
 
-    //                 let account_id = store
-    //                     .get_account_id_from_username(&path_username)
-    //                     .map_err(|_| {
-    //                         // TODO differentiate between server error and not found
-    //                         error!("Error getting account id from username: {}", path_username);
-    //                         Rejection::from(ApiError::account_not_found())
-    //                     })
-    //                     .await?;
+            // Try getting the account from the store
+            let authorized_account = store
+                .get_account_from_http_auth(
+                    &path_username,
+                    &auth_string.expose_secret()[BEARER_TOKEN_START..],
+                )
+                .map_err(|_| Rejection::from(ApiError::unauthorized()))
+                .await?;
 
-    //                 // If it's an admin, there's no need for more checks
-    //                 if auth_string.expose_secret() == &admin_auth_header {
-    //                     return Ok(account_id);
-    //                 }
+            // Only return the account if the provided username matched the fetched one
+            // This maybe is redundant?
+            if &path_username == authorized_account.username() {
+                Ok(authorized_account)
+            } else {
+                Err(ApiError::unauthorized().into())
+            }
+        }
+    };
 
-    //                 // Try getting the account from the store
-    //                 let authorized_account = store
-    //                     .get_account_from_http_auth(
-    //                         &path_username,
-    //                         &auth_string.expose_secret()[BEARER_TOKEN_START..],
-    //                     )
-    //                     .map_err(|_| Rejection::from(ApiError::unauthorized()))
-    //                     .await?;
+    // Checks if the account is an admin or if they have provided a valid password
+    let admin_or_authorized_user_only = warp::path::param::<Username>()
+        .and(warp::header::<SecretString>("authorization"))
+        .and(with_store.clone())
+        .and(with_admin_auth_header)
+        .and_then(
+            move |path_username: Username,
+                  auth_string: SecretString,
+                  store: S,
+                  admin_auth_header: String| {
+                async move {
+                    // If it's an admin, there's no need for more checks
+                    if auth_string.expose_secret() == &admin_auth_header {
+                        let account_id = store
+                            .get_account_id_from_username(&path_username)
+                            .map_err(|_| {
+                                // TODO differentiate between server error and not found
+                                error!("Error getting account id from username: {}", path_username);
+                                Rejection::from(ApiError::account_not_found())
+                            })
+                            .await?;
+                        return Ok(account_id);
+                    }
+                    let account = is_authorized_user(store, path_username, auth_string).await?;
+                    Ok::<Uuid, Rejection>(account.id())
+                }
+            },
+        )
+        .boxed();
 
-    //                 // Only return the account if the provided username matched the fetched one
-    //                 // This maybe is redundant?
-    //                 if &path_username == authorized_account.username() {
-    //                     Ok(authorized_account.id())
-    //                 } else {
-    //                     Err(ApiError::unauthorized().into())
-    //                 }
-    //             }
-    //         },
-    //     )
-    //     .boxed();
-
-    // // Checks if the account has provided a valid password (same as admin-or-auth call, minus one call, can we refactor them together?)
-    // let authorized_user_only = warp::path::param::<Username>()
-    //     .and(warp::header::<SecretString>("authorization"))
-    //     .and(with_store.clone())
-    //     .and(with_admin_auth_header.clone())
-    //     .and_then(
-    //         |path_username: Username,
-    //          auth_string: SecretString,
-    //          store: S,
-    //          admin_auth_header: String| {
-    //             async move {
-    //                 if auth_string.expose_secret().len() < BEARER_TOKEN_START {
-    //                     return Err(Rejection::from(ApiError::bad_request()));
-    //                 }
-
-    //                 // Try getting the account from the store
-    //                 let authorized_account = store
-    //                     .get_account_from_http_auth(
-    //                         &path_username,
-    //                         &auth_string.expose_secret()[BEARER_TOKEN_START..],
-    //                     )
-    //                     .map_err(|_| Rejection::from(ApiError::unauthorized()))
-    //                     .await?;
-
-    //                 // Only return the account if the provided username matched the fetched one
-    //                 // This maybe is redundant?
-    //                 if &path_username == authorized_account.username() {
-    //                     Ok(authorized_account.id())
-    //                 } else {
-    //                     Err(ApiError::unauthorized().into())
-    //                 }
-    //             }
-    //         },
-    //     )
-    //     .boxed();
+    // Checks if the account has provided a valid password (same as admin-or-auth call, minus one call, can we refactor them together?)
+    let authorized_user_only = warp::path::param::<Username>()
+        .and(warp::header::<SecretString>("authorization"))
+        .and(with_store.clone())
+        .and_then(
+            move |path_username: Username, auth_string: SecretString, store: S| {
+                async move {
+                    let account = is_authorized_user(store, path_username, auth_string).await?;
+                    Ok::<A, Rejection>(account)
+                }
+            },
+        )
+        .boxed();
 
     // // POST /accounts
-    // let btp_clone = btp.clone();
-    // let outgoing_handler_clone = outgoing_handler.clone();
-    // let post_accounts = warp::post()
-    //     .and(accounts_index)
-    //     .and(admin_only.clone())
+    let btp_clone = btp.clone();
+    let outgoing_handler_clone = outgoing_handler.clone();
+    let post_accounts = warp::post()
+        .and(warp::path("accounts"))
+        .and(warp::path::end())
+        .and(admin_only.clone())
+        .and(deserialize_json()) // Why does warp::body::json not work?
+        .and(with_store.clone())
+        .and_then(move |account_details: AccountDetails, store: S| {
+            let store_clone = store.clone();
+            let handler = outgoing_handler_clone.clone();
+            let btp = btp_clone.clone();
+            async move {
+                let account = store
+                    .insert_account(account_details.clone())
+                    .map_err(move |_| {
+                        error!("Error inserting account into store: {:?}", account_details);
+                        // TODO need more information
+                        Rejection::from(ApiError::internal_server_error())
+                    })
+                    .await?;
+
+                connect_to_external_services(handler, account.clone(), store_clone, btp).await?;
+                Ok::<Json, Rejection>(warp::reply::json(&account))
+            }
+        })
+        .boxed();
+
+    // GET /accounts
+    let get_accounts = warp::get()
+        .and(warp::path("accounts"))
+        .and(warp::path::end())
+        .and(admin_only.clone())
+        .and(with_store.clone())
+        .and_then(|store: S| {
+            async move {
+                let accounts = store
+                    .get_all_accounts()
+                    .map_err(|_| Rejection::from(ApiError::internal_server_error()))
+                    .await?;
+                Ok::<Json, Rejection>(warp::reply::json(&accounts))
+            }
+        })
+        .boxed();
+
+    // PUT /accounts/:username
+    let put_account = warp::put()
+        .and(warp::path("accounts"))
+        .and(account_username_to_id.clone())
+        .and(warp::path::end())
+        .and(admin_only.clone())
+        .and(deserialize_json()) // warp::body::json() is not able to decode this!
+        .and(with_store.clone())
+        .and_then(move |id: Uuid, account_details: AccountDetails, store: S| {
+            let outgoing_handler = outgoing_handler.clone();
+            let btp = btp.clone();
+            async move {
+                let account = store
+                    .update_account(id, account_details)
+                    .map_err(|_| Rejection::from(ApiError::internal_server_error()))
+                    .await?;
+                connect_to_external_services(outgoing_handler, account.clone(), store, btp).await?;
+
+                Ok::<Json, Rejection>(warp::reply::json(&account))
+            }
+        })
+        .boxed();
+
+    // GET /accounts/:username
+    let get_account = warp::get()
+        .and(warp::path("accounts"))
+        // takes the username and the authorization header and checks if it's authorized, returns the uid
+        .and(admin_or_authorized_user_only.clone())
+        .and(warp::path::end())
+        .and(with_store.clone())
+        .and_then(|id: Uuid, store: S| {
+            async move {
+                let accounts = store
+                    .get_accounts(vec![id])
+                    .map_err(|_| Rejection::from(ApiError::account_not_found()))
+                    .await?;
+
+                Ok::<Json, Rejection>(warp::reply::json(&accounts[0]))
+            }
+        })
+        .boxed();
+
+    // GET /accounts/:username/balance
+    let get_account_balance = warp::get()
+        .and(warp::path("accounts"))
+        // takes the username and the authorization header and checks if it's authorized, returns the uid
+        .and(admin_or_authorized_user_only.clone())
+        .and(warp::path("balance"))
+        .and(warp::path::end())
+        .and(with_store.clone())
+        .and_then(|id: Uuid, store: S| {
+            async move {
+                // TODO reduce the number of store calls it takes to get the balance
+                let mut accounts = store
+                    .get_accounts(vec![id])
+                    .map_err(|_| warp::reject::not_found())
+                    .await?;
+                let account = accounts.pop().unwrap();
+
+                let balance = store
+                    .get_balance(account.clone())
+                    .map_err(move |_| {
+                        error!("Error getting balance for account: {}", id);
+                        Rejection::from(ApiError::internal_server_error())
+                    })
+                    .await?;
+
+                let asset_scale = account.asset_scale();
+                let asset_code = account.asset_code().to_owned();
+                Ok::<Json, Rejection>(warp::reply::json(&json!({
+                    // normalize to the base unit
+                    "balance": balance as f64 / 10_u64.pow(asset_scale.into()) as f64,
+                    "asset_code": asset_code,
+                })))
+            }
+        })
+        .boxed();
+
+    // DELETE /accounts/:username
+    let delete_account = warp::delete()
+        .and(warp::path("accounts"))
+        .and(account_username_to_id.clone())
+        .and(warp::path::end())
+        .and(admin_only)
+        .and(with_store.clone())
+        .and_then(|id: Uuid, store: S| {
+            async move {
+                let account = store
+                    .delete_account(id)
+                    .map_err(|_| {
+                        error!("Error deleting account {}", id);
+                        Rejection::from(ApiError::internal_server_error())
+                    })
+                    .await?;
+                Ok::<Json, Rejection>(warp::reply::json(&account))
+            }
+        })
+        .boxed();
+
+    // PUT /accounts/:username/settings
+    let put_account_settings = warp::put()
+        .and(warp::path("accounts"))
+        .and(admin_or_authorized_user_only)
+        .and(warp::path("settings"))
+        .and(warp::path::end())
+        .and(deserialize_json())
+        .and(with_store.clone())
+        .and_then(|id: Uuid, settings: AccountSettings, store: S| {
+            async move {
+                let modified_account = store
+                    .modify_account_settings(id, settings)
+                    .map_err(move |_| {
+                        error!("Error updating account settings {}", id);
+                        Rejection::from(ApiError::internal_server_error())
+                    })
+                    .await?;
+                Ok::<Json, Rejection>(warp::reply::json(&modified_account))
+            }
+        })
+        .boxed();
+
+    // TODO: Re-enable.
+    // (Websocket) /accounts/:username/payments/incoming
+    // let incoming_payment_notifications = account_username
+    //     .clone()
+    //     .and(warp::path("payments"))
+    //     .and(warp::path("incoming"))
+    //     .and(warp::path::end())
+    //     .and(admin_or_authorized_user_only.clone())
+    //     .and(warp::ws2())
     //     .and(with_store.clone())
-    //     .and_then(move |account_details: AccountDetails, store: S| async move {
-    //             let store_clone = store.clone();
-    //             let handler = outgoing_handler_clone.clone();
-    //             let btp = btp_clone.clone();
-    //             let account = store
-    //                 .insert_account(account_details.clone())
-    //                 .map_err(move |_| {
-    //                     error!("Error inserting account into store: {:?}", account_details);
-    //                     // TODO need more information
-    //                     Rejection::from(ApiError::internal_server_error())
+    //     .map(|id: Uuid, ws: warp::ws::Ws2, store: S| {
+    //         ws.on_upgrade(move |ws: warp::ws::WebSocket| {
+    //             let (tx, rx) = futures::sync::mpsc::unbounded::<PaymentNotification>();
+    //             store.add_payment_notification_subscription(id, tx);
+    //             rx.map_err(|_| -> warp::Error { unreachable!("unbounded rx never errors") })
+    //                 .map(|notification| {
+    //                     warp::ws::Message::text(serde_json::to_string(&notification).unwrap())
     //                 })
-    //                 .await?;
-
-    //             // connect_to_external_services(handler, account, store_clone, btp).await?;
-    //             warp::reply::json(&account.unwrap())
-    //     });
-        // .boxed();
-
-    //     // GET /accounts
-    //     let get_accounts = warp::get2()
-    //         .and(accounts_index)
-    //         .and(admin_only.clone())
-    //         .and(with_store.clone())
-    //         .and_then(|store: S| {
-    //             store
-    //                 .get_all_accounts()
-    //                 .map_err::<_, Rejection>(|_| ApiError::internal_server_error().into())
-    //                 .and_then(|accounts| Ok(warp::reply::json(&accounts)))
+    //                 .forward(ws)
+    //                 .map(|_| ())
+    //                 .map_err(|err| error!("Error forwarding notifications to websocket: {:?}", err))
     //         })
-    //         .boxed();
+    //     })
+    //     .boxed();
 
-    //     // PUT /accounts/:username
-    //     let put_account = warp::put2()
-    //         .and(account_username_to_id.clone())
-    //         .and(warp::path::end())
-    //         .and(admin_only.clone())
-    //         .and(deserialize_json())
-    //         .and(with_store.clone())
-    //         .and_then(move |id: Uuid, account_details: AccountDetails, store: S| {
-    //             let store_clone = store.clone();
-    //             let handler = outgoing_handler.clone();
-    //             let btp = btp.clone();
-    //             store
-    //                 .update_account(id, account_details)
-    //                 .map_err::<_, Rejection>(move |_| ApiError::internal_server_error().into())
-    //                 .and_then(move |account| {
-    //                     connect_to_external_services(handler, account, store_clone, btp)
-    //                 })
-    //                 .and_then(|account: A| Ok(warp::reply::json(&account)))
-    //         })
-    //         .boxed();
+    // POST /accounts/:username/payments
+    let post_payments = warp::post()
+        .and(warp::path("accounts"))
+        .and(authorized_user_only)
+        .and(warp::path("payments"))
+        .and(warp::path::end())
+        .and(deserialize_json())
+        .and(with_incoming_handler)
+        .and_then(
+            move |account: A, pay_request: SpspPayRequest, incoming_handler: I| {
+                async move {
+                    let receipt = pay(
+                        incoming_handler,
+                        account.clone(),
+                        &pay_request.receiver,
+                        pay_request.source_amount,
+                    )
+                    .map_err(|err| {
+                        error!("Error sending SPSP payment: {:?}", err);
+                        // TODO give a different error message depending on what type of error it is
+                        Rejection::from(ApiError::internal_server_error())
+                    })
+                    .await?;
 
-    //     // GET /accounts/:username
-    //     let get_account = warp::get2()
-    //         .and(account_username.clone())
-    //         .and(warp::path::end())
-    //         .and(admin_or_authorized_user_only.clone())
-    //         .and(with_store.clone())
-    //         .and_then(|id: Uuid, store: S| {
-    //             store
-    //                 .get_accounts(vec![id])
-    //                 .map_err::<_, Rejection>(|_| ApiError::account_not_found().into())
-    //                 .and_then(|accounts| Ok(warp::reply::json(&accounts[0])))
-    //         })
-    //         .boxed();
-
-    //     // GET /accounts/:username/balance
-    //     let get_account_balance = warp::get2()
-    //         .and(account_username.clone())
-    //         .and(warp::path("balance"))
-    //         .and(warp::path::end())
-    //         .and(admin_or_authorized_user_only.clone())
-    //         .and(with_store.clone())
-    //         .and_then(|id: Uuid, store: S| {
-    //             // TODO reduce the number of store calls it takes to get the balance
-    //             store
-    //                 .get_accounts(vec![id])
-    //                 .map_err(|_| warp::reject::not_found())
-    //                 .and_then(move |mut accounts| {
-    //                     let account = accounts.pop().unwrap();
-    //                     let acc_clone = account.clone();
-    //                     let asset_scale = acc_clone.asset_scale();
-    //                     let asset_code = acc_clone.asset_code().to_owned();
-    //                     store
-    //                         .get_balance(account)
-    //                         .map_err(move |_| {
-    //                             error!("Error getting balance for account: {}", id);
-    //                             ApiError::internal_server_error().into()
-    //                         })
-    //                         .and_then(move |balance: i64| {
-    //                             Ok(warp::reply::json(&json!({
-    //                                 // normalize to the base unit
-    //                                 "balance": balance as f64 / 10_u64.pow(asset_scale.into()) as f64,
-    //                                 "asset_code": asset_code,
-    //                             })))
-    //                         })
-    //                 })
-    //         })
-    //         .boxed();
-
-    //     // DELETE /accounts/:username
-    //     let delete_account = warp::delete2()
-    //         .and(account_username_to_id.clone())
-    //         .and(warp::path::end())
-    //         .and(admin_only.clone())
-    //         .and(with_store.clone())
-    //         .and_then(|id: Uuid, store: S| {
-    //             store
-    //                 .delete_account(id)
-    //                 .map_err::<_, Rejection>(move |_| {
-    //                     error!("Error deleting account {}", id);
-    //                     ApiError::internal_server_error().into()
-    //                 })
-    //                 .and_then(|account| Ok(warp::reply::json(&account)))
-    //         })
-    //         .boxed();
-
-    //     // PUT /accounts/:username/settings
-    //     let put_account_settings = warp::put2()
-    //         .and(account_username.clone())
-    //         .and(warp::path("settings"))
-    //         .and(warp::path::end())
-    //         .and(admin_or_authorized_user_only.clone())
-    //         .and(deserialize_json())
-    //         .and(with_store.clone())
-    //         .and_then(|id: Uuid, settings: AccountSettings, store: S| {
-    //             store
-    //                 .modify_account_settings(id, settings)
-    //                 .map_err::<_, Rejection>(move |_| {
-    //                     error!("Error updating account settings {}", id);
-    //                     ApiError::internal_server_error().into()
-    //                 })
-    //                 .and_then(|settings| Ok(warp::reply::json(&settings)))
-    //         })
-    //         .boxed();
-
-    //     // (Websocket) /accounts/:username/payments/incoming
-    //     let incoming_payment_notifications = account_username
-    //         .clone()
-    //         .and(warp::path("payments"))
-    //         .and(warp::path("incoming"))
-    //         .and(warp::path::end())
-    //         .and(admin_or_authorized_user_only.clone())
-    //         .and(warp::ws2())
-    //         .and(with_store.clone())
-    //         .map(|id: Uuid, ws: warp::ws::Ws2, store: S| {
-    //             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
-    //                 let (tx, rx) = futures::sync::mpsc::unbounded::<PaymentNotification>();
-    //                 store.add_payment_notification_subscription(id, tx);
-    //                 rx.map_err(|_| -> warp::Error { unreachable!("unbounded rx never errors") })
-    //                     .map(|notification| {
-    //                         warp::ws::Message::text(serde_json::to_string(&notification).unwrap())
-    //                     })
-    //                     .forward(ws)
-    //                     .map(|_| ())
-    //                     .map_err(|err| error!("Error forwarding notifications to websocket: {:?}", err))
-    //             })
-    //         })
-    //         .boxed();
-
-    //     // POST /accounts/:username/payments
-    //     let post_payments = warp::post2()
-    //         .and(account_username.clone())
-    //         .and(warp::path("payments"))
-    //         .and(warp::path::end())
-    //         .and(authorized_user_only.clone())
-    //         .and(deserialize_json())
-    //         .and(with_incoming_handler.clone())
-    //         .and_then(
-    //             move |account: A, pay_request: SpspPayRequest, incoming_handler: I| {
-    //                 pay(
-    //                     incoming_handler,
-    //                     account.clone(),
-    //                     &pay_request.receiver,
-    //                     pay_request.source_amount,
-    //                 )
-    //                 .and_then(move |receipt| {
-    //                     debug!("Sent SPSP payment, receipt: {:?}", receipt);
-    //                     Ok(warp::reply::json(&json!(receipt)))
-    //                 })
-    //                 .map_err::<_, Rejection>(|err| {
-    //                     error!("Error sending SPSP payment: {:?}", err);
-    //                     // TODO give a different error message depending on what type of error it is
-    //                     ApiError::internal_server_error().into()
-    //                 })
-    //             },
-    //         )
-    //         .boxed();
+                    debug!("Sent SPSP payment, receipt: {:?}", receipt);
+                    Ok::<Json, Rejection>(warp::reply::json(&json!(receipt)))
+                }
+            },
+        )
+        .boxed();
 
     // GET /accounts/:username/spsp
     let server_secret_clone = server_secret.clone();
     let get_spsp = warp::get()
-        .and(account_username_to_id.clone())
+        .and(account_username_to_id)
         .and(warp::path("spsp"))
         .and(warp::path::end())
         .and(with_store.clone())
         .and_then(move |id: Uuid, store: S| {
             let server_secret_clone = server_secret_clone.clone();
             async move {
-            let accounts = store
-                .get_accounts(vec![id])
-                .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-                .await?;
-            // TODO return the response without instantiating an SpspResponder (use a simple fn)
-            Ok::<_, Rejection>(SpspResponder::new(
-                accounts[0].ilp_address().clone(),
-                server_secret_clone.clone(),
-            )
-            .generate_http_response())
-        }})
+                let accounts = store
+                    .get_accounts(vec![id])
+                    .map_err(|_| Rejection::from(ApiError::internal_server_error()))
+                    .await?;
+                // TODO return the response without instantiating an SpspResponder (use a simple fn)
+                Ok::<_, Rejection>(
+                    SpspResponder::new(
+                        accounts[0].ilp_address().clone(),
+                        server_secret_clone.clone(),
+                    )
+                    .generate_http_response(),
+                )
+            }
+        })
         .boxed();
 
-        // GET /.well-known/pay
-        // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
-        // with no path resolves to
-        let server_secret_clone = server_secret.clone();
-        let get_spsp_well_known = warp::get()
-            .and(warp::path(".well-known"))
-            .and(warp::path("pay"))
-            .and(warp::path::end())
-            .and(with_store.clone())
-            .and_then(move |store: S| {
-                let default_spsp_account = default_spsp_account.clone();
-                let server_secret_clone = server_secret_clone.clone();
-                async move {
+    // GET /.well-known/pay
+    // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
+    // with no path resolves to
+    let get_spsp_well_known = warp::get()
+        .and(warp::path(".well-known"))
+        .and(warp::path("pay"))
+        .and(warp::path::end())
+        .and(with_store)
+        .and_then(move |store: S| {
+            let default_spsp_account = default_spsp_account.clone();
+            let server_secret_clone = server_secret.clone();
+            async move {
                 // TODO don't clone this
                 if let Some(username) = default_spsp_account.clone() {
                     let id = store
@@ -432,8 +440,9 @@ where
                         .map_err(|_| {
                             error!("Account not found: {}", username);
                             warp::reject::not_found()
-                        }).await?;
-                
+                        })
+                        .await?;
+
                     // TODO this shouldn't take multiple store calls
                     let mut accounts = store
                         .get_accounts(vec![id])
@@ -442,29 +451,32 @@ where
 
                     let account = accounts.pop().unwrap();
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
-                    Ok::<_, Rejection>(SpspResponder::new(
-                        account.ilp_address().clone(),
-                        server_secret_clone.clone(),
+                    Ok::<_, Rejection>(
+                        SpspResponder::new(
+                            account.ilp_address().clone(),
+                            server_secret_clone.clone(),
+                        )
+                        .generate_http_response(),
                     )
-                    .generate_http_response())
                 } else {
                     Err(Rejection::from(ApiError::not_found()))
                 }
-            }})
-            .boxed();
+            }
+        })
+        .boxed();
 
     get_spsp
-            .or(get_spsp_well_known)
-    //         .or(post_accounts)
-    //         .or(get_accounts)
-    //         .or(put_account)
-    //         .or(get_account)
-    //         .or(get_account_balance)
-    //         .or(delete_account)
-    //         .or(put_account_settings)
-    //         .or(incoming_payment_notifications)
-    //         .or(post_payments)
-    .boxed()
+        .or(get_spsp_well_known)
+        .or(post_accounts)
+        .or(get_accounts)
+        .or(put_account)
+        .or(delete_account)
+        .or(get_account)
+        .or(get_account_balance)
+        .or(put_account_settings)
+        // .or(incoming_payment_notifications) // Commented out until tungenstite ws support is added
+        .or(post_payments)
+        .boxed()
 }
 
 async fn get_address_from_parent_and_update_routes<O, A, S>(
@@ -619,6 +631,48 @@ where
     Ok(account)
 }
 
+// TODO: Do we really need this custom deserialization function?
+// You'd expect that Serde would be able to handle this.
+use interledger_http::error;
+use mime::Mime;
+use serde::de::DeserializeOwned;
+pub fn deserialize_json<T: DeserializeOwned + Send>(
+) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
+    warp::header::<String>("content-type")
+        .and(warp::body::bytes())
+        .and_then(|content_type: String, buf: bytes05::Bytes| {
+            async move {
+                let mime_type: Mime = content_type.parse().map_err(|_| {
+                    Rejection::from(
+                        error::ApiError::bad_request().detail("Invalid content-type header."),
+                    )
+                })?;
+                if mime_type.type_() != mime::APPLICATION_JSON.type_() {
+                    return Err(Rejection::from(
+                        error::ApiError::bad_request().detail("Invalid content-type."),
+                    ));
+                } else if let Some(charset) = mime_type.get_param("charset") {
+                    // Charset should be UTF-8
+                    // https://tools.ietf.org/html/rfc8259#section-8.1
+                    if charset != mime::UTF_8 {
+                        return Err(Rejection::from(
+                            error::ApiError::bad_request().detail("Charset should be UTF-8."),
+                        ));
+                    }
+                }
+
+                let deserializer = &mut serde_json::Deserializer::from_slice(&buf);
+                serde_path_to_error::deserialize(deserializer).map_err(|err| {
+                    warp::reject::custom(JsonDeserializeError {
+                        category: err.inner().classify(),
+                        detail: err.inner().to_string(),
+                        path: err.path().clone(),
+                    })
+                })
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::routes::test_helpers::*;
@@ -656,10 +710,10 @@ mod tests {
     #[tokio::test]
     async fn only_admin_can_get_all_accounts() {
         let api = test_accounts_api();
-        let resp = api_call(&api, "GET", "/accounts", "admin", DETAILS.clone()).await;
+        let resp = api_call(&api, "GET", "/accounts", "admin", None).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "GET", "/accounts", "wrong", DETAILS.clone()).await;
+        let resp = api_call(&api, "GET", "/accounts", "wrong", None).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
@@ -680,32 +734,14 @@ mod tests {
     #[tokio::test]
     async fn only_admin_or_user_can_get_accounts_balance() {
         let api = test_accounts_api();
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice/balance",
-            "admin",
-            DETAILS.clone(),
-        ).await;
+        let resp = api_call(&api, "GET", "/accounts/alice/balance", "admin", None).await;
         assert_eq!(resp.status().as_u16(), 200);
 
         // TODO: Make this not require the username in the token
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice/balance",
-            "password",
-            DETAILS.clone(),
-        ).await;
+        let resp = api_call(&api, "GET", "/accounts/alice/balance", "password", None).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice/balance",
-            "wrong",
-            DETAILS.clone(),
-        ).await;
+        let resp = api_call(&api, "GET", "/accounts/alice/balance", "wrong", None).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
@@ -718,7 +754,8 @@ mod tests {
             "/accounts/alice/settings",
             "admin",
             DETAILS.clone(),
-        ).await;
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 200);
 
         // TODO: Make this not require the username in the token
@@ -728,7 +765,8 @@ mod tests {
             "/accounts/alice/settings",
             "password",
             DETAILS.clone(),
-        ).await;
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(
@@ -737,7 +775,50 @@ mod tests {
             "/accounts/alice/settings",
             "wrong",
             DETAILS.clone(),
-        ).await;
+        )
+        .await;
+        assert_eq!(resp.status().as_u16(), 401);
+    }
+
+    #[tokio::test]
+    async fn only_admin_or_user_can_send_payment() {
+        let payment: Option<serde_json::Value> = Some(serde_json::json!({
+            "receiver": "some_receiver",
+            "source_amount" : 10,
+        }));
+        let api = test_accounts_api();
+        let resp = api_call(
+            &api,
+            "POST",
+            "/accounts/alice/payments",
+            "password",
+            payment.clone(),
+        )
+        .await;
+        // This should return an internal server error since we're making an invalid payment request
+        // We could have set up a mockito mock to set that pay is called correctly but we merely want
+        // to check that authorization and paths work as expected
+        assert_eq!(resp.status().as_u16(), 500);
+
+        // Note that the operator has indirect access to the user's token since they control the store
+        let resp = api_call(
+            &api,
+            "POST",
+            "/accounts/alice/payments",
+            "admin",
+            payment.clone(),
+        )
+        .await;
+        assert_eq!(resp.status().as_u16(), 401);
+
+        let resp = api_call(
+            &api,
+            "POST",
+            "/accounts/alice/payments",
+            "wrong",
+            payment.clone(),
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 }

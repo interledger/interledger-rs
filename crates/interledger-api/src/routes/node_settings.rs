@@ -1,9 +1,5 @@
 use crate::{http_retry::Client, ExchangeRates, NodeStore};
-use bytes::Buf;
-use futures::{
-    future::{err, join_all, Either},
-    Future, TryFutureExt,
-};
+use futures::TryFutureExt;
 use interledger_http::{error::*, HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
@@ -48,10 +44,9 @@ where
     let admin_auth_header = format!("Bearer {}", admin_api_token);
     let admin_only = warp::header::<SecretString>("authorization")
         .and_then(move |authorization: SecretString| {
-            let authorization_clone = authorization.clone();
             let admin_auth_header = admin_auth_header.clone();
             async move {
-                if authorization_clone.expose_secret() == &admin_auth_header {
+                if authorization.expose_secret() == &admin_auth_header {
                     Ok::<(), Rejection>(())
                 } else {
                     Err(Rejection::from(ApiError::unauthorized()))
@@ -232,9 +227,9 @@ where
         .and(warp::path("settlement"))
         .and(warp::path("engines"))
         .and(warp::path::end())
-        .and(admin_only.clone())
+        .and(admin_only)
         .and(warp::body::json())
-        .and(with_store.clone())
+        .and(with_store)
         .and_then(move |asset_to_url_map: HashMap<String, Url>, store: S| async move {
             let asset_to_url_map_clone = asset_to_url_map.clone();
             store
