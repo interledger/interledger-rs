@@ -16,6 +16,7 @@ use interledger_service::{
 use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
+use std::cmp::Ordering as StdOrdering;
 use std::collections::HashMap;
 use std::{
     cmp::min,
@@ -185,13 +186,13 @@ where
     pub async fn start_broadcast_interval(&self, interval: u64) -> Result<(), ()> {
         self.request_all_routes().await?;
         let mut interval = tokio::time::interval(Duration::from_millis(interval));
-        while let _ = interval.tick().await {
+        loop {
+            interval.tick().await;
             // ensure we have the latest ILP Address from the store
             self.update_ilp_address();
             // Do not consume the result if an error since we want to keep the loop going
             let _ = self.broadcast_routes().await;
         }
-        Ok(())
     }
 
     fn update_ilp_address(&self) {
@@ -424,38 +425,24 @@ where
                 {
                     tokio::spawn({
                         let self_clone = self.clone();
-                        async move {
-                            self_clone
-                                .update_best_routes(Some(
-                                    prefixes_updated
-                                        .into_iter()
-                                        .map(|s| s.to_string())
-                                        .collect(),
-                                ))
-                                .await
-                        }
+                        async move { self_clone.update_best_routes(Some(prefixes_updated)).await }
                     });
                 }
 
                 #[cfg(test)]
                 {
                     let ilp_address = self.ilp_address.clone();
-                    self.update_best_routes(Some(
-                        prefixes_updated
-                            .into_iter()
-                            .map(|s| s.to_string())
-                            .collect(),
-                    ))
-                    .map_err(move |_| {
-                        RejectBuilder {
-                            code: ErrorCode::T00_INTERNAL_ERROR,
-                            message: b"Error processing route update",
-                            data: &[],
-                            triggered_by: Some(&ilp_address.read()),
-                        }
-                        .build()
-                    })
-                    .await?;
+                    self.update_best_routes(Some(prefixes_updated))
+                        .map_err(move |_| {
+                            RejectBuilder {
+                                code: ErrorCode::T00_INTERNAL_ERROR,
+                                message: b"Error processing route update",
+                                data: &[],
+                                triggered_by: Some(&ilp_address.read()),
+                            }
+                            .build()
+                        })
+                        .await?;
                 }
                 Ok(CCP_RESPONSE.clone())
             }
@@ -476,7 +463,7 @@ where
                     let table = table.clone();
                     let self_clone = self.clone();
                     async move {
-                        self_clone
+                        let _ = self_clone
                             .send_route_control_request(
                                 request.from.clone(),
                                 table.id(),
@@ -487,7 +474,8 @@ where
                 });
 
                 #[cfg(test)]
-                self.send_route_control_request(request.from.clone(), table.id(), table.epoch())
+                let _ = self
+                    .send_route_control_request(request.from.clone(), table.id(), table.epoch())
                     .await;
                 Err(reject)
             }
@@ -668,7 +656,10 @@ where
                 let epoch = forwarding_table.increment_epoch();
                 forwarding_table_updates.push((
                     new_routes,
-                    withdrawn_routes.iter().map(|s| s.to_string()).collect(),
+                    withdrawn_routes
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect(),
                 ));
                 debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
 
@@ -886,8 +877,8 @@ where
             from_epoch_index,
             to_epoch_index,
             current_epoch_index,
-            new_routes: new_routes.clone(),
-            withdrawn_routes: withdrawn_routes.clone(),
+            new_routes,
+            withdrawn_routes,
             speaker: self.ilp_address.read().clone(),
             hold_down_time: DEFAULT_ROUTE_EXPIRY_TIME,
         }
@@ -977,24 +968,27 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
             (account, route),
             |(best_account, best_route), (account, route)| {
                 // Prioritize child > peer > parent
-                if best_account.routing_relation() > account.routing_relation() {
-                    return (best_account, best_route);
-                } else if best_account.routing_relation() < account.routing_relation() {
-                    return (account, route);
-                }
-
-                // Prioritize shortest path
-                if best_route.path.len() < route.path.len() {
-                    return (best_account, best_route);
-                } else if best_route.path.len() > route.path.len() {
-                    return (account, route);
-                }
-
-                // Finally base it on account ID
-                if best_account.id().to_string() < account.id().to_string() {
-                    (best_account, best_route)
-                } else {
-                    (account, route)
+                match best_account
+                    .routing_relation()
+                    .cmp(&account.routing_relation())
+                {
+                    StdOrdering::Greater => (best_account, best_route),
+                    StdOrdering::Less => (account, route),
+                    _ => {
+                        // Prioritize shortest path
+                        match best_route.path.len().cmp(&route.path.len()) {
+                            StdOrdering::Less => (best_account, best_route),
+                            StdOrdering::Greater => (account, route),
+                            _ => {
+                                // Finally base it on account ID
+                                if best_account.id().to_string() < account.id().to_string() {
+                                    (best_account, best_route)
+                                } else {
+                                    (account, route)
+                                }
+                            }
+                        }
+                    }
                 }
             },
         );
@@ -1063,7 +1057,7 @@ mod ranking_routes {
             let mut child = TestAccount::new(Uuid::from_slice(&[6; 16]).unwrap(), "example.child");
             child.relation = RoutingRelation::Child;
             child_table.add_route(
-                child.clone(),
+                child,
                 Route {
                     prefix: "example.d".to_string(),
                     path: vec!["example.one".to_string()],
@@ -1092,7 +1086,7 @@ mod ranking_routes {
                 },
             );
             peer_table_1.add_route(
-                peer_1.clone(),
+                peer_1,
                 Route {
                     // This route should be overridden by the configured "example.a" route
                     prefix: "example.a.sub-prefix".to_string(),
@@ -1104,7 +1098,7 @@ mod ranking_routes {
             let mut peer_table_2 = RoutingTable::default();
             let peer_2 = TestAccount::new(Uuid::from_slice(&[8; 16]).unwrap(), "example.peer2");
             peer_table_2.add_route(
-                peer_2.clone(),
+                peer_2,
                 Route {
                     prefix: "example.e".to_string(),
                     path: vec!["example.one".to_string(), "example.two".to_string()],
