@@ -26,11 +26,13 @@ struct RateResponse {
 }
 
 pub async fn query_coincap(client: &Client) -> Result<HashMap<String, f64>, ()> {
+    println!("querying coincap");
     let (assets, rates) = futures::future::join(
         query_coincap_endpoint(client, COINCAP_ASSETS_URL.clone()),
         query_coincap_endpoint(client, COINCAP_RATES_URL.clone()),
     )
     .await;
+    println!("queryied coincap {:?} {:?}", assets, rates);
 
     let all_rates: HashMap<String, f64> = assets?
         .data

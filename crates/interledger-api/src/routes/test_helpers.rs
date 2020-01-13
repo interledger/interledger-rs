@@ -40,7 +40,6 @@ where
     F: warp::Filter + 'static,
     F::Extract: warp::Reply,
 {
-    println!("calling {:?}, {:?} {:?}", method, endpoint, data);
     let mut ret = warp::test::request()
         .method(method)
         .path(endpoint)

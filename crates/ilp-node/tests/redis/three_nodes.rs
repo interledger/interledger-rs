@@ -65,7 +65,11 @@ async fn three_nodes() {
         "username": "charlie_on_b",
         "asset_code": "ABC",
         "asset_scale": 6,
-        "ilp_over_btp_incoming_token" : "three",
+        // "ilp_over_btp_incoming_token" : "three",
+        // TODO: remove these and replace with BTP once it's solved
+        "ilp_over_http_outgoing_token": "two",
+        "ilp_over_http_incoming_token": "three",
+        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node3_http, "bob_on_c"),
         "min_balance": -1_000_000_000,
         "routing_relation": "Child",
     });
@@ -81,13 +85,15 @@ async fn three_nodes() {
         "username": "bob_on_c",
         "asset_code": "ABC",
         "asset_scale": 6,
-        "ilp_over_http_incoming_token" : "two",
         "ilp_over_http_outgoing_token": "three",
-        "ilp_over_btp_url": format!("btp+ws://localhost:{}/accounts/{}/ilp/btp", node2_http, "charlie_on_b"),
-        "ilp_over_btp_outgoing_token": "three",
+        "ilp_over_http_incoming_token" : "two",
+        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node2_http, "charlie_on_b"),
         "min_balance": -1_000_000_000,
         "routing_relation": "Parent",
     });
+    // json! does not take comments into account!
+    // "ilp_over_btp_url": format!("btp+ws://localhost:{}/accounts/{}/ilp/btp", node2_http, "charlie_on_b"),
+    // "ilp_over_btp_outgoing_token": "three",
 
     let node1: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.alice",
@@ -133,12 +139,20 @@ async fn three_nodes() {
     .expect("Error creating node3.");
 
     node1.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node1")).await.unwrap();
-    create_account_on_node(node1_http, alice_on_alice, "admin").await.unwrap();
-    create_account_on_node(node1_http, bob_on_alice, "admin").await.unwrap();
+    create_account_on_node(node1_http, alice_on_alice, "admin")
+        .await
+        .unwrap();
+    create_account_on_node(node1_http, bob_on_alice, "admin")
+        .await
+        .unwrap();
 
     node2.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node2")).await.unwrap();
-    create_account_on_node(node2_http, alice_on_bob, "admin").await.unwrap();
-    create_account_on_node(node2_http, charlie_on_bob, "admin").await.unwrap();
+    create_account_on_node(node2_http, alice_on_bob, "admin")
+        .await
+        .unwrap();
+    create_account_on_node(node2_http, charlie_on_bob, "admin")
+        .await
+        .unwrap();
     // Also set exchange rates
     let client = reqwest::Client::new();
     client
@@ -146,11 +160,16 @@ async fn three_nodes() {
         .header("Authorization", "Bearer admin")
         .json(&json!({"ABC": 1, "XYZ": 2}))
         .send()
-        .await.unwrap();
+        .await
+        .unwrap();
 
     node3.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node3")).await.unwrap();
-    create_account_on_node(node3_http, charlie_on_charlie, "admin").await.unwrap();
-    create_account_on_node(node3_http, bob_on_charlie, "admin").await.unwrap();
+    let acc = create_account_on_node(node3_http, charlie_on_charlie, "admin")
+        .await
+        .unwrap();
+    create_account_on_node(node3_http, bob_on_charlie, "admin")
+        .await
+        .unwrap();
 
     delay(1000).await;
 
@@ -173,7 +192,9 @@ async fn three_nodes() {
         "charlie_on_c",
         "alice_on_a",
         "default account holder",
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         receipt.from,
@@ -225,7 +246,9 @@ async fn three_nodes() {
         "alice_on_a",
         "charlie_on_c",
         "default account holder",
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         receipt.from,

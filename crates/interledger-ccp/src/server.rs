@@ -672,10 +672,6 @@ where
                 ));
                 debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
 
-                dbg!(
-                    "updating store routing table",
-                    local_table.get_simplified_table()
-                );
                 store.set_routes(local_table.get_simplified_table())
             };
 
@@ -1515,7 +1511,6 @@ mod handle_route_update_request {
             })
             .await
             .unwrap();
-        dbg!("store routes", &service.store.routes);
         assert_eq!(
             service
                 .store

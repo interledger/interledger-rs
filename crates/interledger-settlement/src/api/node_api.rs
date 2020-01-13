@@ -49,7 +49,6 @@ where
     let input_hash = get_hash_of(input.as_ref());
 
     let idempotency_key_clone = idempotency_key.clone();
-    println!("got settlement idem pey {:?}", idempotency_key.clone());
     let store_clone = store.clone();
     let (status_code, message) = make_idempotent_call(
         store,

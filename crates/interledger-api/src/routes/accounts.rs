@@ -73,10 +73,8 @@ where
             let admin_auth_header = admin_auth_header_clone.clone();
             async move {
                 if authorization.expose_secret() == &admin_auth_header {
-                    println!("autorized!");
                     Ok::<(), Rejection>(())
                 } else {
-                    println!("unautorized!");
                     Err(Rejection::from(ApiError::unauthorized()))
                 }
             }
@@ -398,6 +396,7 @@ where
     // GET /accounts/:username/spsp
     let server_secret_clone = server_secret.clone();
     let get_spsp = warp::get()
+        .and(warp::path("accounts"))
         .and(account_username_to_id)
         .and(warp::path("spsp"))
         .and(warp::path::end())
@@ -676,6 +675,7 @@ pub fn deserialize_json<T: DeserializeOwned + Send>(
 #[cfg(test)]
 mod tests {
     use crate::routes::test_helpers::*;
+    // TODO: Add test for GET /accounts/:username/spsp and /.well_known
 
     #[tokio::test]
     async fn only_admin_can_create_account() {

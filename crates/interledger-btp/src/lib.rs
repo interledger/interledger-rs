@@ -213,13 +213,15 @@ mod client_server {
                 .build())
             }),
         );
-        btp_service.clone().handle_incoming(incoming_service_fn(|_| {
-            Ok(FulfillBuilder {
-                fulfillment: &[0; 32],
-                data: b"test data",
-            }
-            .build())
-        }));
+        btp_service
+            .clone()
+            .handle_incoming(incoming_service_fn(|_| {
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
+            }));
         let filter = btp_service_as_filter(btp_service.clone(), server_store);
         let server = warp::serve(filter);
         // Spawn the server and listen for incoming connections
@@ -229,8 +231,7 @@ mod client_server {
         let account = TestAccount {
             id: Uuid::new_v4(),
             ilp_over_btp_url: Some(
-                Url::parse(&format!("btp+ws://{}/accounts/alice/ilp/btp", bind_addr))
-                    .unwrap(),
+                Url::parse(&format!("btp+ws://{}/accounts/alice/ilp/btp", bind_addr)).unwrap(),
             ),
             ilp_over_btp_outgoing_token: Some("test_auth_token".to_string()),
             ilp_over_btp_incoming_token: None,
@@ -252,17 +253,21 @@ mod client_server {
                 }
                 .build())
             }),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
-        let mut btp_service = btp_service.handle_incoming(incoming_service_fn(move |_| {
-            Err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &[],
-                data: &[],
-                triggered_by: Some(&addr),
-            }
-            .build())
-        })).await;
+        let mut btp_service = btp_service
+            .handle_incoming(incoming_service_fn(move |_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &[],
+                    data: &[],
+                    triggered_by: Some(&addr),
+                }
+                .build())
+            }))
+            .await;
 
         let res = btp_service
             .send_request(OutgoingRequest {
@@ -277,8 +282,8 @@ mod client_server {
                     data: b"test data",
                 }
                 .build(),
-            }).await;
-            dbg!(&res);
+            })
+            .await;
         assert!(res.is_ok());
         btp_service.close();
     }

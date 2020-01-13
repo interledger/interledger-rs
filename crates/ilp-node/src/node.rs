@@ -249,7 +249,7 @@ impl InterledgerNode {
         //         Err(())
         //     }
         // } else {
-            self.serve_node().await
+        self.serve_node().await
         // }
     }
 
@@ -394,7 +394,7 @@ impl InterledgerNode {
         let incoming_service = Router::new(
             store.clone(),
             // Add tracing to add the outgoing request details to the incoming span
-            outgoing_service.clone() // .wrap(trace_forwarding),
+            outgoing_service.clone(), // .wrap(trace_forwarding),
         );
 
         // Add tracing to track the outgoing request details
@@ -491,10 +491,10 @@ impl InterledgerNode {
                 store.clone(),
             )
             .as_filter())
-            .or(btp_service_as_filter(
-                btp_server_service_clone,
-                store.clone(),
-            ))
+            // .or(btp_service_as_filter(
+            //     btp_server_service_clone,
+            //     store.clone(),
+            // ))
             .recover(default_rejection_handler)
             .with(warp::log("interledger-api"))
             .boxed();
@@ -514,9 +514,9 @@ impl InterledgerNode {
                 exchange_rate_poll_failure_tolerance,
                 store.clone(),
             );
-        // This function does not compile on 1.39 for some reason.
-        // exchange_rate_fetcher
-        //     .spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
+            // This function does not compile on 1.39 for some reason.
+            exchange_rate_fetcher
+                .spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
         } else {
             debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
         }

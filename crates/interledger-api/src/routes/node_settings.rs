@@ -197,7 +197,6 @@ where
         .and(with_store.clone())
         .and_then(|prefix: String, body: bytes05::Bytes, store: S| {
             async move {
-                println!("TRYING TO PARSE USERNAEME");
                 let username_str =
                     str::from_utf8(&body).map_err(|_| Rejection::from(ApiError::bad_request()))?;
                 let username = Username::from_str(username_str)

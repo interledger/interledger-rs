@@ -37,7 +37,7 @@ pub async fn create_account_on_node<T: Serialize>(
     api_port: u16,
     data: T,
     auth: &str,
-) -> Result<String, ()> {
+) -> Result<Account, ()> {
     let client = reqwest::Client::new();
     let res = client
         .post(&format!("http://localhost:{}/accounts", api_port))
@@ -50,9 +50,7 @@ pub async fn create_account_on_node<T: Serialize>(
 
     let res = res.error_for_status().map_err(|_| ())?;
 
-    let data: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
-
-    Ok(str::from_utf8(&data).unwrap().to_string())
+    Ok(res.json::<Account>().map_err(|_| ()).await.unwrap())
 }
 
 #[allow(unused)]
@@ -101,7 +99,6 @@ pub async fn send_money_to_username<T: Display + Debug>(
         .await?;
 
     let res = res.error_for_status().map_err(|_| ())?;
-    // does this work?
     Ok(res.json::<StreamDelivery>().await.unwrap())
 }
 
