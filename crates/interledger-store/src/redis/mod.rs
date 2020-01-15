@@ -288,24 +288,22 @@ pub struct RedisStore {
 }
 
 impl RedisStore {
-    fn get_all_accounts_ids(&self) -> impl Future<Item = Vec<Uuid>, Error = ()> {
-        let mut pipe = redis_crate::pipe();
-        pipe.smembers("accounts");
-        pipe.query_async(self.connection.clone())
+    async fn get_all_accounts_ids(&self) -> Result<Vec<Uuid>, ()> {
+        let mut connection = self.connection.clone();
+        let account_ids: Vec<RedisAccountId> = connection
+            .smembers("accounts")
             .map_err(|err| error!("Error getting account IDs: {:?}", err))
-            .and_then(|(_conn, account_ids): (_, Vec<Vec<RedisAccountId>>)| {
-                let account_ids: Vec<Uuid> = account_ids[0].iter().map(|rid| rid.0).collect();
-                Ok(account_ids)
-            })
+            .await?;
+        Ok(account_ids.iter().map(|rid| rid.0).collect())
     }
 
-    fn redis_insert_account(
-        &self,
+    async fn redis_insert_account(
+        &mut self,
         encrypted: AccountWithEncryptedTokens,
-    ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
+    ) -> Result<AccountWithEncryptedTokens, ()> {
         let account = encrypted.account.clone();
         let ret = encrypted.clone();
-        let connection = self.connection.clone();
+        let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
         // Check that there isn't already an account with values that MUST be unique
         let mut pipe = redis_crate::pipe();
@@ -315,153 +313,166 @@ impl RedisStore {
             pipe.exists(PARENT_ILP_KEY);
         }
 
-        Box::new(pipe.query_async(connection.clone())
+        let results: Vec<bool> = pipe
+            .query_async(&mut connection.clone())
             .map_err(|err| {
-                error!("Error checking whether account details already exist: {:?}", err)
+                error!(
+                    "Error checking whether account details already exist: {:?}",
+                    err
+                )
             })
-            .and_then(
-                move |(connection, results): (RedisReconnect, Vec<bool>)| {
-                    if results.iter().any(|val| *val) {
-                        warn!("An account already exists with the same {}. Cannot insert account: {:?}", account.id, account);
-                        Err(())
-                    } else {
-                        Ok((connection, account))
-                    }
-            })
-            .and_then(move |(connection, account)| {
-                let mut pipe = redis_crate::pipe();
-                pipe.atomic();
+            .await?;
+        if results.iter().any(|val| *val) {
+            warn!(
+                "An account already exists with the same {}. Cannot insert account: {:?}",
+                account.id, account
+            );
+            return Err(());
+        }
 
-                // Add the account key to the list of accounts
-                pipe.sadd("accounts", RedisAccountId(account.id)).ignore();
+        let mut pipe = redis_crate::pipe();
+        pipe.atomic();
 
-                // Save map for Username -> Account ID
-                pipe.hset("usernames", account.username().as_ref(), RedisAccountId(account.id)).ignore();
+        // Add the account key to the list of accounts
+        pipe.sadd("accounts", RedisAccountId(account.id)).ignore();
 
-                // Set account details
-                pipe.cmd("HMSET")
-                    .arg(accounts_key(account.id))
-                    .arg(encrypted).ignore();
+        // Save map for Username -> Account ID
+        pipe.hset(
+            "usernames",
+            account.username().as_ref(),
+            RedisAccountId(account.id),
+        )
+        .ignore();
 
-                // Set balance-related details
-                pipe.hset_multiple(accounts_key(account.id), &[("balance", 0), ("prepaid_amount", 0)]).ignore();
+        // Set account details
+        pipe.cmd("HMSET")
+            .arg(accounts_key(account.id))
+            .arg(encrypted)
+            .ignore();
 
-                if account.should_send_routes() {
-                    pipe.sadd("send_routes_to", RedisAccountId(account.id)).ignore();
-                }
+        // Set balance-related details
+        pipe.hset_multiple(
+            accounts_key(account.id),
+            &[("balance", 0), ("prepaid_amount", 0)],
+        )
+        .ignore();
 
-                if account.should_receive_routes() {
-                    pipe.sadd("receive_routes_from", RedisAccountId(account.id)).ignore();
-                }
+        if account.should_send_routes() {
+            pipe.sadd("send_routes_to", RedisAccountId(account.id))
+                .ignore();
+        }
 
-                if account.ilp_over_btp_url.is_some() {
-                    pipe.sadd("btp_outgoing", RedisAccountId(account.id)).ignore();
-                }
+        if account.should_receive_routes() {
+            pipe.sadd("receive_routes_from", RedisAccountId(account.id))
+                .ignore();
+        }
 
-                // Add route to routing table
-                pipe.hset(ROUTES_KEY, account.ilp_address.to_bytes().to_vec(), RedisAccountId(account.id))
-                    .ignore();
+        if account.ilp_over_btp_url.is_some() {
+            pipe.sadd("btp_outgoing", RedisAccountId(account.id))
+                .ignore();
+        }
 
-                // The parent account settings are done via the API. We just
-                // had to check for the existence of a parent
-                pipe.query_async(connection)
-                    .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-                    .and_then(move |(connection, _ret): (RedisReconnect, Value)| {
-                        update_routes(connection, routing_table)
-                    })
-                    .and_then(move |_| {
-                        debug!("Inserted account {} (ILP address: {})", account.id, account.ilp_address);
-                        Ok(ret)
-                    })
-            }))
+        // Add route to routing table
+        pipe.hset(
+            ROUTES_KEY,
+            account.ilp_address.to_bytes().to_vec(),
+            RedisAccountId(account.id),
+        )
+        .ignore();
+
+        // The parent account settings are done via the API. We just
+        // had to check for the existence of a parent
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error inserting account into DB: {:?}", err))
+            .await?;
+
+        update_routes(connection, routing_table).await?;
+        debug!(
+            "Inserted account {} (ILP address: {})",
+            account.id, account.ilp_address
+        );
+        Ok(ret)
     }
 
-    fn redis_update_account(
+    async fn redis_update_account(
         &self,
         encrypted: AccountWithEncryptedTokens,
-    ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
+    ) -> Result<AccountWithEncryptedTokens, ()> {
         let account = encrypted.account.clone();
-        let connection = self.connection.clone();
+        let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
-        Box::new(
-            // Check to make sure an account with this ID already exists
-            redis_crate::cmd("EXISTS")
-                .arg(accounts_key(account.id))
-                // TODO this needs to be atomic with the insertions later,
-                // waiting on #186
-                // TODO: Do not allow this update to happen if
-                // AccountDetails.RoutingRelation == Parent and parent is
-                // already set
-                .query_async(connection.clone())
-                .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
-                .and_then(move |(connection, exists): (RedisReconnect, bool)| {
-                    if !exists {
-                        warn!(
-                            "No account exists with ID {}, cannot update account {:?}",
-                            account.id, account
-                        );
-                        return Either::A(err(()));
-                    }
-                    let mut pipe = redis_crate::pipe();
-                    pipe.atomic();
 
-                    // Add the account key to the list of accounts
-                    pipe.sadd("accounts", RedisAccountId(account.id)).ignore();
+        // Check to make sure an account with this ID already exists
+        // TODO this needs to be atomic with the insertions later,
+        // waiting on #186
+        // TODO: Do not allow this update to happen if
+        // AccountDetails.RoutingRelation == Parent and parent is
+        // already set
+        let exists: bool = connection
+            .exists(accounts_key(account.id))
+            .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
+            .await?;
 
-                    // Set account details
-                    pipe.cmd("HMSET")
-                        .arg(accounts_key(account.id))
-                        .arg(encrypted.clone())
-                        .ignore();
+        if !exists {
+            warn!(
+                "No account exists with ID {}, cannot update account {:?}",
+                account.id, account
+            );
+            return Err(());
+        }
+        let mut pipe = redis_crate::pipe();
+        pipe.atomic();
 
-                    if account.should_send_routes() {
-                        pipe.sadd("send_routes_to", RedisAccountId(account.id))
-                            .ignore();
-                    }
+        // Add the account key to the list of accounts
+        pipe.sadd("accounts", RedisAccountId(account.id)).ignore();
 
-                    if account.should_receive_routes() {
-                        pipe.sadd("receive_routes_from", RedisAccountId(account.id))
-                            .ignore();
-                    }
+        // Set account details
+        pipe.cmd("HMSET")
+            .arg(accounts_key(account.id))
+            .arg(encrypted.clone())
+            .ignore();
 
-                    if account.ilp_over_btp_url.is_some() {
-                        pipe.sadd("btp_outgoing", RedisAccountId(account.id))
-                            .ignore();
-                    }
+        if account.should_send_routes() {
+            pipe.sadd("send_routes_to", RedisAccountId(account.id))
+                .ignore();
+        }
 
-                    // Add route to routing table
-                    pipe.hset(
-                        ROUTES_KEY,
-                        account.ilp_address.to_bytes().to_vec(),
-                        RedisAccountId(account.id),
-                    )
-                    .ignore();
+        if account.should_receive_routes() {
+            pipe.sadd("receive_routes_from", RedisAccountId(account.id))
+                .ignore();
+        }
 
-                    Either::B(
-                        pipe.query_async(connection)
-                            .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-                            .and_then(move |(connection, _ret): (RedisReconnect, Value)| {
-                                update_routes(connection, routing_table)
-                            })
-                            .and_then(move |_| {
-                                debug!(
-                                    "Inserted account {} (id: {}, ILP address: {})",
-                                    account.username, account.id, account.ilp_address
-                                );
-                                Ok(encrypted)
-                            }),
-                    )
-                }),
+        if account.ilp_over_btp_url.is_some() {
+            pipe.sadd("btp_outgoing", RedisAccountId(account.id))
+                .ignore();
+        }
+
+        // Add route to routing table
+        pipe.hset(
+            ROUTES_KEY,
+            account.ilp_address.to_bytes().to_vec(),
+            RedisAccountId(account.id),
         )
+        .ignore();
+
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error inserting account into DB: {:?}", err))
+            .await?;
+        update_routes(connection, routing_table).await?;
+        debug!(
+            "Inserted account {} (id: {}, ILP address: {})",
+            account.username, account.id, account.ilp_address
+        );
+        Ok(encrypted)
     }
 
-    fn redis_modify_account(
+    async fn redis_modify_account(
         &self,
         id: Uuid,
         settings: EncryptedAccountSettings,
-    ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
+    ) -> Result<AccountWithEncryptedTokens, ()> {
         let connection = self.connection.clone();
-        let self_clone = self.clone();
+        let mut self_clone = self.clone();
 
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
@@ -514,77 +525,63 @@ impl RedisStore {
             pipe.hset(accounts_key(id), "settle_to", settle_to);
         }
 
-        Box::new(
-            pipe.query_async(connection.clone())
-                .map_err(|err| error!("Error modifying user account: {:?}", err))
-                .and_then(move |(_connection, _ret): (RedisReconnect, Value)| {
-                    // return the updated account
-                    self_clone.redis_get_account(id)
-                }),
-        )
+        pipe.query_async(&mut connection.clone())
+            .map_err(|err| error!("Error modifying user account: {:?}", err))
+            .await?;
+
+        // return the updated account
+        self_clone.redis_get_account(id).await
     }
 
-    fn redis_get_account(
-        &self,
-        id: Uuid,
-    ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
-        Box::new(
-            LOAD_ACCOUNTS
-                .arg(id.to_string())
-                .invoke_async(self.connection.clone())
-                .map_err(|err| error!("Error loading accounts: {:?}", err))
-                .and_then(|(_, mut accounts): (_, Vec<AccountWithEncryptedTokens>)| {
-                    accounts.pop().ok_or(())
-                }),
-        )
+    async fn redis_get_account(&mut self, id: Uuid) -> Result<AccountWithEncryptedTokens, ()> {
+        let mut accounts: Vec<AccountWithEncryptedTokens> = LOAD_ACCOUNTS
+            .arg(id.to_string())
+            .invoke_async(&mut self.connection.clone())
+            .map_err(|err| error!("Error loading accounts: {:?}", err))
+            .await?;
+        accounts.pop().ok_or(())
     }
 
-    fn redis_delete_account(
-        &self,
-        id: Uuid,
-    ) -> Box<dyn Future<Item = AccountWithEncryptedTokens, Error = ()> + Send> {
-        let connection = self.connection.clone();
+    async fn redis_delete_account(&mut self, id: Uuid) -> Result<AccountWithEncryptedTokens, ()> {
+        let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
-        Box::new(self.redis_get_account(id).and_then(move |encrypted| {
-            let account = encrypted.account.clone();
-            let mut pipe = redis_crate::pipe();
-            pipe.atomic();
+        let encrypted = self.redis_get_account(id).await?;
+        let account = encrypted.account.clone();
+        let mut pipe = redis_crate::pipe();
+        pipe.atomic();
 
-            pipe.srem("accounts", RedisAccountId(account.id)).ignore();
+        pipe.srem("accounts", RedisAccountId(account.id)).ignore();
 
-            pipe.del(accounts_key(account.id)).ignore();
-            pipe.hdel("usernames", account.username().as_ref()).ignore();
+        pipe.del(accounts_key(account.id)).ignore();
+        pipe.hdel("usernames", account.username().as_ref()).ignore();
 
-            if account.should_send_routes() {
-                pipe.srem("send_routes_to", RedisAccountId(account.id))
-                    .ignore();
-            }
-
-            if account.should_receive_routes() {
-                pipe.srem("receive_routes_from", RedisAccountId(account.id))
-                    .ignore();
-            }
-
-            if account.ilp_over_btp_url.is_some() {
-                pipe.srem("btp_outgoing", RedisAccountId(account.id))
-                    .ignore();
-            }
-
-            pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
+        if account.should_send_routes() {
+            pipe.srem("send_routes_to", RedisAccountId(account.id))
                 .ignore();
+        }
 
-            pipe.del(uncredited_amount_key(id));
+        if account.should_receive_routes() {
+            pipe.srem("receive_routes_from", RedisAccountId(account.id))
+                .ignore();
+        }
 
-            pipe.query_async(connection)
-                .map_err(|err| error!("Error deleting account from DB: {:?}", err))
-                .and_then(move |(connection, _ret): (RedisReconnect, Value)| {
-                    update_routes(connection, routing_table)
-                })
-                .and_then(move |_| {
-                    debug!("Deleted account {}", account.id);
-                    Ok(encrypted)
-                })
-        }))
+        if account.ilp_over_btp_url.is_some() {
+            pipe.srem("btp_outgoing", RedisAccountId(account.id))
+                .ignore();
+        }
+
+        pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
+            .ignore();
+
+        pipe.del(uncredited_amount_key(id));
+
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error deleting account from DB: {:?}", err))
+            .await?;
+
+        update_routes(connection, routing_table).await?;
+        debug!("Deleted account {}", account.id);
+        Ok(encrypted)
     }
 }
 
