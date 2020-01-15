@@ -1293,163 +1293,103 @@ impl AddressStore for RedisStore {
 
 type RoutingTable<A> = HashMap<String, A>;
 
+#[async_trait]
 impl RouteManagerStore for RedisStore {
     type Account = Account;
 
-    fn get_accounts_to_send_routes_to(
+    async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
-        let decryption_key = self.decryption_key.clone();
-        Box::new(
-            cmd("SMEMBERS")
-                .arg("send_routes_to")
-                .query_async(self.connection.clone())
-                .map_err(|err| error!("Error getting members of set send_routes_to: {:?}", err))
-                .and_then(
-                    move |(connection, account_ids): (RedisReconnect, Vec<RedisAccountId>)| {
-                        if account_ids.is_empty() {
-                            Either::A(ok(Vec::new()))
-                        } else {
-                            let mut script = LOAD_ACCOUNTS.prepare_invoke();
-                            for id in account_ids.iter() {
-                                if !ignore_accounts.contains(&id.0) {
-                                    script.arg(id.to_string());
-                                }
-                            }
-                            Either::B(
-                                script
-                                    .invoke_async(connection.clone())
-                                    .map_err(|err| {
-                                        error!(
-                                            "Error getting accounts to send routes to: {:?}",
-                                            err
-                                        )
-                                    })
-                                    .and_then(
-                                        move |(_connection, accounts): (
-                                            RedisReconnect,
-                                            Vec<AccountWithEncryptedTokens>,
-                                        )| {
-                                            let accounts: Vec<Account> = accounts
-                                                .into_iter()
-                                                .map(|account| {
-                                                    account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
-                                                    )
-                                                })
-                                                .collect();
-                                            Ok(accounts)
-                                        },
-                                    ),
-                            )
-                        }
-                    },
-                ),
-        )
+    ) -> Result<Vec<Account>, ()> {
+        let mut connection = self.connection.clone();
+
+        let account_ids: Vec<RedisAccountId> = connection
+            .smembers("send_routes_to")
+            .map_err(|err| error!("Error getting members of set send_routes_to: {:?}", err))
+            .await?;
+        let account_ids: Vec<Uuid> = account_ids
+            .into_iter()
+            .map(|id| id.0)
+            .filter(|id| !ignore_accounts.contains(&id))
+            .collect();
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let accounts = self.get_accounts(account_ids).await?;
+        Ok(accounts)
     }
 
-    fn get_accounts_to_receive_routes_from(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
-        let decryption_key = self.decryption_key.clone();
-        Box::new(
-            cmd("SMEMBERS")
-                .arg("receive_routes_from")
-                .query_async(self.connection.clone())
-                .map_err(|err| {
-                    error!(
-                        "Error getting members of set receive_routes_from: {:?}",
-                        err
-                    )
-                })
-                .and_then(
-                    |(connection, account_ids): (RedisReconnect, Vec<RedisAccountId>)| {
-                        if account_ids.is_empty() {
-                            Either::A(ok(Vec::new()))
-                        } else {
-                            let mut script = LOAD_ACCOUNTS.prepare_invoke();
-                            for id in account_ids.iter() {
-                                script.arg(id.to_string());
-                            }
-                            Either::B(
-                                script
-                                    .invoke_async(connection.clone())
-                                    .map_err(|err| {
-                                        error!(
-                                            "Error getting accounts to receive routes from: {:?}",
-                                            err
-                                        )
-                                    })
-                                    .and_then(
-                                        move |(_connection, accounts): (
-                                            RedisReconnect,
-                                            Vec<AccountWithEncryptedTokens>,
-                                        )| {
-                                            let accounts: Vec<Account> = accounts
-                                                .into_iter()
-                                                .map(|account| {
-                                                    account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
-                                                    )
-                                                })
-                                                .collect();
-                                            Ok(accounts)
-                                        },
-                                    ),
-                            )
-                        }
-                    },
-                ),
-        )
+    async fn get_accounts_to_receive_routes_from(&self) -> Result<Vec<Account>, ()> {
+        let mut connection = self.connection.clone();
+        let account_ids: Vec<RedisAccountId> = connection
+            .smembers("receive_routes_from")
+            .map_err(|err| {
+                error!(
+                    "Error getting members of set receive_routes_from: {:?}",
+                    err
+                )
+            })
+            .await?;
+        let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
+
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let accounts = self.get_accounts(account_ids).await?;
+        Ok(accounts)
     }
 
-    fn get_local_and_configured_routes(
+    async fn get_local_and_configured_routes(
         &self,
-    ) -> Box<dyn Future<Item = (RoutingTable<Account>, RoutingTable<Account>), Error = ()> + Send>
-    {
-        let get_static_routes = cmd("HGETALL")
+    ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), ()> {
+        let mut connection = self.connection.clone();
+        let static_routes: Vec<(String, RedisAccountId)> = cmd("HGETALL")
             .arg(STATIC_ROUTES_KEY)
-            .query_async(self.connection.clone())
+            .query_async(&mut connection)
             .map_err(|err| error!("Error getting static routes: {:?}", err))
-            .and_then(
-                |(_, static_routes): (RedisReconnect, Vec<(String, RedisAccountId)>)| {
-                    Ok(static_routes)
-                },
-            );
-        Box::new(self.get_all_accounts().join(get_static_routes).and_then(
-            |(accounts, static_routes)| {
-                let local_table = HashMap::from_iter(
-                    accounts
-                        .iter()
-                        .map(|account| (account.ilp_address.to_string(), account.clone())),
-                );
+            .await?;
 
-                let account_map: HashMap<Uuid, &Account> = HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
-                let configured_table: HashMap<String, Account> = HashMap::from_iter(static_routes.into_iter()
-                    .filter_map(|(prefix, account_id)| {
-                        if let Some(account) = account_map.get(&account_id.0) {
-                            Some((prefix, (*account).clone()))
-                        } else {
-                            warn!("No account for ID: {}, ignoring configured route for prefix: {}", account_id, prefix);
-                            None
-                        }
-                    }));
+        let accounts = self.get_all_accounts().await?;
 
-                Ok((local_table, configured_table))
-            },
-        ))
+        let local_table = HashMap::from_iter(
+            accounts
+                .iter()
+                .map(|account| (account.ilp_address.to_string(), account.clone())),
+        );
+
+        let account_map: HashMap<Uuid, &Account> =
+            HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
+        let configured_table: HashMap<String, Account> = HashMap::from_iter(
+            static_routes
+                .into_iter()
+                .filter_map(|(prefix, account_id)| {
+                    if let Some(account) = account_map.get(&account_id.0) {
+                        Some((prefix, (*account).clone()))
+                    } else {
+                        warn!(
+                            "No account for ID: {}, ignoring configured route for prefix: {}",
+                            account_id, prefix
+                        );
+                        None
+                    }
+                }),
+        );
+
+        Ok((local_table, configured_table))
     }
 
-    fn set_routes(
+    async fn set_routes(
         &mut self,
-        routes: impl IntoIterator<Item = (String, Account)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        routes: impl IntoIterator<Item = (String, Account)> + Send + 'async_trait,
+    ) -> Result<(), ()> {
         let routes: Vec<(String, RedisAccountId)> = routes
             .into_iter()
             .map(|(prefix, account)| (prefix, RedisAccountId(account.id)))
             .collect();
         let num_routes = routes.len();
+        let mut connection = self.connection.clone();
 
         // Save routes to Redis
         let routing_tale = self.routes.clone();
@@ -1459,14 +1399,13 @@ impl RouteManagerStore for RedisStore {
             .ignore()
             .hset_multiple(ROUTES_KEY, &routes)
             .ignore();
-        Box::new(
-            pipe.query_async(self.connection.clone())
-                .map_err(|err| error!("Error setting routes: {:?}", err))
-                .and_then(move |(connection, _): (RedisReconnect, Value)| {
-                    trace!("Saved {} routes to Redis", num_routes);
-                    update_routes(connection, routing_tale)
-                }),
-        )
+
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error setting routes: {:?}", err))
+            .await?;
+        trace!("Saved {} routes to Redis", num_routes);
+
+        update_routes(connection, routing_tale).await
     }
 }
 
