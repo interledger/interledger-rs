@@ -14,6 +14,8 @@ interledger-service = { path = "../interledger-service", version = "^0.4.0", def
 log = { version = "0.4.8", default-features = false }
 parking_lot = { version = "0.9.0", default-features = false }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"]}
+async-trait = "0.1.22"
 
 [dev-dependencies]
 lazy_static = { version = "1.4.0", default-features = false }
+tokio = { version = "0.2.6", features = ["rt-core", "macros"]}
