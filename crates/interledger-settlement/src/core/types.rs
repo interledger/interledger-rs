@@ -1,5 +1,5 @@
+use async_trait::async_trait;
 use bytes::Bytes;
-use futures::Future;
 use http::StatusCode;
 use interledger_http::error::{ApiError, ApiErrorType, ProblemType};
 use interledger_packet::Address;
@@ -51,30 +51,19 @@ pub enum ApiResponse {
     Data(Bytes),
 }
 
+pub type ApiResult = Result<ApiResponse, ApiError>;
+
 /// Trait consumed by the Settlement Engine HTTP API. Every settlement engine
 /// MUST implement this trait, so that it can be then be exposed over the API.
+#[async_trait]
 pub trait SettlementEngine {
-    fn create_account(
-        &self,
-        account_id: String,
-    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+    async fn create_account(&self, account_id: String) -> ApiResult;
 
-    fn delete_account(
-        &self,
-        account_id: String,
-    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+    async fn delete_account(&self, account_id: String) -> ApiResult;
 
-    fn send_money(
-        &self,
-        account_id: String,
-        money: Quantity,
-    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+    async fn send_money(&self, account_id: String, money: Quantity) -> ApiResult;
 
-    fn receive_message(
-        &self,
-        account_id: String,
-        message: Vec<u8>,
-    ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send>;
+    async fn receive_message(&self, account_id: String, message: Vec<u8>) -> ApiResult;
 }
 
 // TODO: Since we still haven't finalized all the settlement details, we might
@@ -92,56 +81,54 @@ pub trait SettlementAccount: Account {
     }
 }
 
+#[async_trait]
 pub trait SettlementStore {
     type Account: Account;
 
-    fn update_balance_for_incoming_settlement(
+    async fn update_balance_for_incoming_settlement(
         &self,
         account_id: Uuid,
         amount: u64,
         idempotency_key: Option<String>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    ) -> Result<(), ()>;
 
-    fn refund_settlement(
-        &self,
-        account_id: Uuid,
-        settle_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    async fn refund_settlement(&self, account_id: Uuid, settle_amount: u64) -> Result<(), ()>;
 }
 
+#[async_trait]
 pub trait LeftoversStore {
     type AccountId: ToString;
     type AssetType: ToString;
 
     /// Saves the leftover data
-    fn save_uncredited_settlement_amount(
+    async fn save_uncredited_settlement_amount(
         &self,
         // The account id that for which there was a precision loss
         account_id: Self::AccountId,
         // The amount for which precision loss occurred, along with their scale
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    ) -> Result<(), ()>;
 
     /// Returns the leftover data scaled to `local_scale` from the saved scale.
     /// If any precision loss occurs during the scaling, it should be saved as
     /// the new leftover value.
-    fn load_uncredited_settlement_amount(
+    async fn load_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
         local_scale: u8,
-    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send>;
+    ) -> Result<Self::AssetType, ()>;
 
     /// Clears any uncredited settlement amount associated with the account
-    fn clear_uncredited_settlement_amount(
+    async fn clear_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+    ) -> Result<(), ()>;
 
     // Gets the current amount of leftovers in the store
-    fn get_uncredited_settlement_amount(
+    async fn get_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send>;
+    ) -> Result<(Self::AssetType, u8), ()>;
 }
 
 #[derive(Debug)]
@@ -234,12 +221,9 @@ mod tests {
     fn u64_test() {
         // overflows
         let huge_number = std::u64::MAX / 10;
-        assert_eq!(
-            huge_number
-                .normalize_scale(ConvertDetails { from: 1, to: 18 })
-                .unwrap_err(),
-            (),
-        );
+        assert!(huge_number
+            .normalize_scale(ConvertDetails { from: 1, to: 18 })
+            .is_err(),);
         // 1 unit with scale 1, is 1 unit with scale 1
         assert_eq!(
             1u64.normalize_scale(ConvertDetails { from: 1, to: 1 })
@@ -310,15 +294,12 @@ mod tests {
     #[test]
     fn f64_test() {
         // overflow
-        assert_eq!(
-            std::f64::MAX
-                .normalize_scale(ConvertDetails {
-                    from: 1,
-                    to: std::u8::MAX,
-                })
-                .unwrap_err(),
-            ()
-        );
+        assert!(std::f64::MAX
+            .normalize_scale(ConvertDetails {
+                from: 1,
+                to: std::u8::MAX,
+            })
+            .is_err(),);
 
         // 1 unit with base 1, is 1 unit with base 1
         assert_eq!(
