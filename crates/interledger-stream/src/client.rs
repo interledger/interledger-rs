@@ -4,7 +4,7 @@ use super::error::Error;
 use super::packet::*;
 use bytes::Bytes;
 use bytes::BytesMut;
-use futures::{Async, Future, Poll};
+use futures::TryFutureExt;
 use interledger_ildcp::get_ildcp_info;
 use interledger_packet::{
     Address, ErrorClass, ErrorCode as IlpErrorCode, Fulfill, PacketType as IlpPacketType,
@@ -14,7 +14,6 @@ use interledger_service::*;
 use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use std::{
-    cell::Cell,
     cmp::min,
     str,
     time::{Duration, Instant, SystemTime},
@@ -48,13 +47,13 @@ impl StreamDelivery {
 /// Send a given amount of money using the STREAM transport protocol.
 ///
 /// This returns the amount delivered, as reported by the receiver and in the receiver's asset's units.
-pub fn send_money<S, A>(
+pub async fn send_money<S, A>(
     service: S,
     from_account: &A,
     destination_account: Address,
     shared_secret: &[u8],
     source_amount: u64,
-) -> impl Future<Item = (StreamDelivery, S), Error = Error>
+) -> Result<(StreamDelivery, S), Error>
 where
     S: IncomingService<A> + Clone,
     A: Account,
@@ -62,70 +61,80 @@ where
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
-    get_ildcp_info(&mut service.clone(), from_account.clone())
+    let account_details = get_ildcp_info(&mut service.clone(), from_account.clone())
         .map_err(|_err| Error::ConnectionError("Unable to get ILDCP info: {:?}".to_string()))
-        .and_then(move |account_details| {
-            let source_account = account_details.ilp_address();
-            if source_account.scheme() != destination_account.scheme() {
-                warn!("Destination ILP address starts with a different scheme prefix (\"{}\') than ours (\"{}\'), this probably isn't going to work",
-                destination_account.scheme(),
-                source_account.scheme());
+        .await?;
+
+    let source_account = account_details.ilp_address();
+    if source_account.scheme() != destination_account.scheme() {
+        warn!("Destination ILP address starts with a different scheme prefix (\"{}\') than ours (\"{}\'), this probably isn't going to work",
+        destination_account.scheme(),
+        source_account.scheme());
+    }
+
+    let mut sender = SendMoneyFuture {
+        state: SendMoneyFutureState::SendMoney,
+        next: service.clone(),
+        from_account: from_account.clone(),
+        source_account,
+        destination_account: destination_account.clone(),
+        shared_secret,
+        source_amount,
+        // Try sending the full amount first
+        // TODO make this configurable -- in different scenarios you might prioritize
+        // sending as much as possible per packet vs getting money flowing ASAP differently
+        congestion_controller: CongestionController::new(source_amount, source_amount / 10, 2.0),
+        receipt: StreamDelivery {
+            from: from_account.ilp_address().clone(),
+            to: destination_account,
+            sent_amount: source_amount,
+            sent_asset_scale: from_account.asset_scale(),
+            sent_asset_code: from_account.asset_code().to_string(),
+            delivered_asset_scale: None,
+            delivered_asset_code: None,
+            delivered_amount: 0,
+        },
+        should_send_source_account: true,
+        sequence: 1,
+        rejected_packets: 0,
+        error: None,
+        last_fulfill_time: Instant::now(),
+    };
+
+    loop {
+        if let Some(error) = sender.error.take() {
+            error!("Send money stopped because of error: {:?}", error);
+            return Err(error);
+        }
+
+        // Error if we haven't received a fulfill over a timeout period
+        if sender.last_fulfill_time.elapsed() >= MAX_TIME_SINCE_LAST_FULFILL {
+            return Err(Error::TimeoutError(format!(
+                "Time since last fulfill exceeded the maximum time limit of {:?} secs",
+                sender.last_fulfill_time.elapsed().as_secs()
+            )));
+        }
+
+        // a. If we've sent everything and there's no pending requests coose the connection
+        if sender.source_amount == 0 {
+            // Try closing the connection if it still thinks it's sending
+            if sender.state == SendMoneyFutureState::SendMoney {
+                sender.state = SendMoneyFutureState::Closing;
+                sender.try_send_connection_close().await?;
+            } else {
+                sender.state = SendMoneyFutureState::Closed;
+                debug!(
+                    "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", sender.receipt.delivered_amount, sender.sequence - 1, sender.rejected_packets,
+                );
+
+                // Connection is finally closed, we can now return the receipt and the next service
+                return Ok((sender.receipt, service));
             }
-
-            SendMoneyFuture {
-                state: SendMoneyFutureState::SendMoney,
-                next: Some(service),
-                from_account: from_account.clone(),
-                source_account,
-                destination_account: destination_account.clone(),
-                shared_secret,
-                source_amount,
-                // Try sending the full amount first
-                // TODO make this configurable -- in different scenarios you might prioritize
-                // sending as much as possible per packet vs getting money flowing ASAP differently
-                congestion_controller: CongestionController::new(source_amount, source_amount / 10, 2.0),
-                pending_requests: Cell::new(Vec::new()),
-                receipt: StreamDelivery {
-                    from: from_account.ilp_address().clone(),
-                    to: destination_account,
-                    sent_amount: source_amount,
-                    sent_asset_scale: from_account.asset_scale(),
-                    sent_asset_code: from_account.asset_code().to_string(),
-                    delivered_asset_scale: None,
-                    delivered_asset_code: None,
-                    delivered_amount: 0,
-                },
-                should_send_source_account: true,
-                sequence: 1,
-                rejected_packets: 0,
-                error: None,
-                last_fulfill_time: Instant::now(),
-            }
-        })
-}
-
-struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
-    state: SendMoneyFutureState,
-    next: Option<S>,
-    from_account: A,
-    source_account: Address,
-    destination_account: Address,
-    shared_secret: Bytes,
-    source_amount: u64,
-    congestion_controller: CongestionController,
-    pending_requests: Cell<Vec<PendingRequest>>,
-    receipt: StreamDelivery,
-    should_send_source_account: bool,
-    sequence: u64,
-    rejected_packets: u64,
-    error: Option<Error>,
-    last_fulfill_time: Instant,
-}
-
-struct PendingRequest {
-    sequence: u64,
-    amount: u64,
-    future: BoxedIlpFuture,
+        // b. We still need to send more packets!
+        } else {
+            sender.try_send_money().await?
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -136,82 +145,99 @@ enum SendMoneyFutureState {
     Closed,
 }
 
+struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
+    state: SendMoneyFutureState,
+    next: S,
+    from_account: A,
+    source_account: Address,
+    destination_account: Address,
+    shared_secret: Bytes,
+    source_amount: u64,
+    congestion_controller: CongestionController,
+    receipt: StreamDelivery,
+    should_send_source_account: bool,
+    sequence: u64,
+    rejected_packets: u64,
+    error: Option<Error>,
+    last_fulfill_time: Instant,
+}
+
 impl<S, A> SendMoneyFuture<S, A>
 where
     S: IncomingService<A>,
     A: Account,
 {
-    fn try_send_money(&mut self) -> Result<bool, Error> {
-        // Fire off requests until the congestion controller tells us to stop or we've sent the total amount or maximum time since last fulfill has elapsed
-        let mut sent_packets = false;
-        loop {
-            let amount = min(
-                self.source_amount,
-                self.congestion_controller.get_max_amount(),
-            );
-            if amount == 0 {
-                break;
-            }
-            self.source_amount -= amount;
-
-            // Load up the STREAM packet
-            let sequence = self.next_sequence();
-            let mut frames = vec![Frame::StreamMoney(StreamMoneyFrame {
-                stream_id: 1,
-                shares: 1,
-            })];
-            if self.should_send_source_account {
-                frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: self.source_account.clone(),
-                }));
-            }
-            let stream_packet = StreamPacketBuilder {
-                ilp_packet_type: IlpPacketType::Prepare,
-                // TODO enforce min exchange rate
-                prepare_amount: 0,
-                sequence,
-                frames: &frames,
-            }
-            .build();
-
-            // Create the ILP Prepare packet
-            debug!(
-                "Sending packet {} with amount: {} and encrypted STREAM packet: {:?}",
-                sequence, amount, stream_packet
-            );
-            let data = stream_packet.into_encrypted(&self.shared_secret);
-            let execution_condition = generate_condition(&self.shared_secret, &data);
-            let prepare = PrepareBuilder {
-                destination: self.destination_account.clone(),
-                amount,
-                execution_condition: &execution_condition,
-                expires_at: SystemTime::now() + Duration::from_secs(30),
-                // TODO don't copy the data
-                data: &data[..],
-            }
-            .build();
-
-            // Send it!
-            self.congestion_controller.prepare(amount);
-            if let Some(ref mut next) = self.next {
-                let send_request = next.handle_request(IncomingRequest {
-                    from: self.from_account.clone(),
-                    prepare,
-                });
-                self.pending_requests.get_mut().push(PendingRequest {
-                    sequence,
-                    amount,
-                    future: Box::new(send_request),
-                });
-                sent_packets = true;
-            } else {
-                panic!("Polled after finish");
-            }
+    #[inline]
+    // Fire off requests until the congestion controller tells us to stop or we've sent the total amount or maximum time since last fulfill has elapsed
+    async fn try_send_money(&mut self) -> Result<(), Error> {
+        let amount = min(
+            self.source_amount,
+            self.congestion_controller.get_max_amount(),
+        );
+        if amount == 0 {
+            return Ok(());
         }
-        Ok(sent_packets)
+        self.source_amount -= amount;
+
+        // Load up the STREAM packet
+        let sequence = self.next_sequence();
+        let mut frames = vec![Frame::StreamMoney(StreamMoneyFrame {
+            stream_id: 1,
+            shares: 1,
+        })];
+
+        if self.should_send_source_account {
+            frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
+                source_account: self.source_account.clone(),
+            }));
+        }
+        let stream_packet = StreamPacketBuilder {
+            ilp_packet_type: IlpPacketType::Prepare,
+            // TODO enforce min exchange rate
+            prepare_amount: 0,
+            sequence,
+            frames: &frames,
+        }
+        .build();
+
+        // Create the ILP Prepare packet
+        debug!(
+            "Sending packet {} with amount: {} and encrypted STREAM packet: {:?}",
+            sequence, amount, stream_packet
+        );
+        let data = stream_packet.into_encrypted(&self.shared_secret);
+        let execution_condition = generate_condition(&self.shared_secret, &data);
+        let prepare = PrepareBuilder {
+            destination: self.destination_account.clone(),
+            amount,
+            execution_condition: &execution_condition,
+            expires_at: SystemTime::now() + Duration::from_secs(30),
+            // TODO don't copy the data
+            data: &data[..],
+        }
+        .build();
+
+        // Send it!
+        self.congestion_controller.prepare(amount);
+        let result = self
+            .next
+            .handle_request(IncomingRequest {
+                from: self.from_account.clone(),
+                prepare,
+            })
+            .await;
+
+        // Handle the response
+        match result {
+            Ok(fulfill) => self.handle_fulfill(sequence, amount, fulfill),
+            Err(reject) => self.handle_reject(sequence, amount, reject),
+        }
+
+        Ok(())
     }
 
-    fn try_send_connection_close(&mut self) -> Result<(), Error> {
+    #[inline]
+    async fn try_send_connection_close(&mut self) -> Result<(), Error> {
         let sequence = self.next_sequence();
         let stream_packet = StreamPacketBuilder {
             ilp_packet_type: IlpPacketType::Prepare,
@@ -236,48 +262,19 @@ where
 
         // Send it!
         debug!("Closing connection");
-        if let Some(ref mut next) = self.next {
-            let send_request = next.handle_request(IncomingRequest {
+        let result = self
+            .next
+            .handle_request(IncomingRequest {
                 from: self.from_account.clone(),
                 prepare,
-            });
-            self.pending_requests.get_mut().push(PendingRequest {
-                sequence,
-                amount: 0,
-                future: Box::new(send_request),
-            });
-        } else {
-            panic!("Polled after finish");
-        }
-        Ok(())
-    }
-
-    fn poll_pending_requests(&mut self) -> Poll<(), Error> {
-        let pending_requests = self.pending_requests.take();
-        let pending_requests = pending_requests
-            .into_iter()
-            .filter_map(|mut pending_request| match pending_request.future.poll() {
-                Ok(Async::NotReady) => Some(pending_request),
-                Ok(Async::Ready(fulfill)) => {
-                    self.handle_fulfill(pending_request.sequence, pending_request.amount, fulfill);
-                    None
-                }
-                Err(reject) => {
-                    self.handle_reject(pending_request.sequence, pending_request.amount, reject);
-                    None
-                }
             })
-            .collect();
-        self.pending_requests.set(pending_requests);
-
-        if let Some(error) = self.error.take() {
-            error!("Send money stopped because of error: {:?}", error);
-            Err(error)
-        } else if self.pending_requests.get_mut().is_empty() {
-            Ok(Async::Ready(()))
-        } else {
-            Ok(Async::NotReady)
+            .await;
+        match result {
+            Ok(fulfill) => self.handle_fulfill(sequence, 0, fulfill),
+            Err(reject) => self.handle_reject(sequence, 0, reject),
         }
+
+        Ok(())
     }
 
     fn handle_fulfill(&mut self, sequence: u64, amount: u64, fulfill: Fulfill) {
@@ -379,46 +376,6 @@ where
     }
 }
 
-impl<S, A> Future for SendMoneyFuture<S, A>
-where
-    S: IncomingService<A>,
-    A: Account,
-{
-    type Item = (StreamDelivery, S);
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        // TODO maybe don't have loops here and in try_send_money
-        loop {
-            self.poll_pending_requests()?;
-            if self.last_fulfill_time.elapsed() >= MAX_TIME_SINCE_LAST_FULFILL {
-                return Err(Error::TimeoutError(format!(
-                    "Time since last fulfill exceeded the maximum time limit of {:?} secs",
-                    self.last_fulfill_time.elapsed().as_secs()
-                )));
-            }
-
-            if self.source_amount == 0 && self.pending_requests.get_mut().is_empty() {
-                if self.state == SendMoneyFutureState::SendMoney {
-                    self.state = SendMoneyFutureState::Closing;
-                    self.try_send_connection_close()?;
-                } else {
-                    self.state = SendMoneyFutureState::Closed;
-                    debug!(
-                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", self.receipt.delivered_amount, self.sequence - 1, self.rejected_packets,
-                    );
-                    return Ok(Async::Ready((
-                        self.receipt.clone(),
-                        self.next.take().unwrap(),
-                    )));
-                }
-            } else if !self.try_send_money()? {
-                return Ok(Async::NotReady);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod send_money_tests {
     use super::*;
@@ -431,8 +388,8 @@ mod send_money_tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
-    #[test]
-    fn stops_at_final_errors() {
+    #[tokio::test]
+    async fn stops_at_final_errors() {
         let account = TestAccount {
             id: Uuid::new_v4(),
             asset_code: "XYZ".to_string(),
@@ -457,7 +414,7 @@ mod send_money_tests {
             &[0; 32][..],
             100,
         )
-        .wait();
+        .await;
         assert!(result.is_err());
         assert_eq!(requests.lock().len(), 1);
     }
