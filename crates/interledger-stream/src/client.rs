@@ -58,7 +58,8 @@ where
     S: IncomingService<A> + Clone,
     A: Account,
 {
-    let shared_secret = Bytes::from(shared_secret);
+    // todo: can we avoid copying here?
+    let shared_secret = Bytes::copy_from_slice(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
     let account_details = get_ildcp_info(&mut service.clone(), from_account.clone())
@@ -283,7 +284,7 @@ where
         self.should_send_source_account = false;
         self.last_fulfill_time = Instant::now();
 
-        if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
+        if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(fulfill.data())) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
                 // TODO check that the sequence matches our outgoing packet
 

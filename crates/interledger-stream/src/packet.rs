@@ -96,7 +96,7 @@ impl<'a> StreamPacketBuilder<'a> {
         }
 
         StreamPacket {
-            buffer_unencrypted: BytesMut::from(buffer_unencrypted),
+            buffer_unencrypted: BytesMut::from(&buffer_unencrypted[..]),
             sequence: self.sequence,
             ilp_packet_type: self.ilp_packet_type,
             prepare_amount: self.prepare_amount,
@@ -801,14 +801,14 @@ mod serialization {
             ]
         }
         .build();
-        static ref SERIALIZED: BytesMut = BytesMut::from(vec![
+        static ref SERIALIZED: BytesMut = BytesMut::from(&vec![
             1, 12, 1, 1, 1, 99, 1, 14, 1, 5, 1, 3, 111, 111, 112, 2, 13, 12, 101, 120, 97, 109,
             112, 108, 101, 46, 98, 108, 97, 104, 3, 3, 2, 3, 232, 4, 3, 2, 7, 208, 5, 3, 2, 11,
             184, 6, 3, 2, 15, 160, 7, 5, 3, 88, 89, 90, 9, 16, 8, 1, 76, 2, 4, 98, 108, 97, 104,
             17, 4, 1, 88, 1, 99, 18, 8, 1, 11, 2, 3, 219, 2, 1, 244, 19, 8, 1, 66, 2, 78, 32, 2,
             23, 112, 20, 11, 1, 34, 2, 35, 40, 5, 104, 101, 108, 108, 111, 21, 5, 1, 35, 2, 34, 62,
             22, 6, 2, 3, 120, 2, 173, 156
-        ]);
+        ][..]);
     }
 
     #[test]
@@ -846,7 +846,7 @@ mod serialization {
 
     #[test]
     fn it_saturates_max_money_frame_receive_max() {
-        let mut buffer = BytesMut::new();
+        let mut buffer = bytes04::BytesMut::new();
         buffer.put_var_uint(123); // stream_id
         buffer.put_var_octet_string(vec![
             // receive_max
@@ -859,7 +859,7 @@ mod serialization {
 
     #[test]
     fn it_saturates_money_blocked_frame_send_max() {
-        let mut buffer = BytesMut::new();
+        let mut buffer = bytes04::BytesMut::new();
         buffer.put_var_uint(123); // stream_id
         buffer.put_var_octet_string(vec![
             // send_max
