@@ -7,20 +7,136 @@ use super::{
     idempotency::{make_idempotent_call, IdempotentStore},
     types::{Quantity, SettlementEngine},
 };
-use bytes::buf::FromBuf;
 use bytes::Bytes;
-use futures::Future;
 use http::StatusCode;
 use hyper::Response;
 use interledger_http::error::default_rejection_handler;
-
 use serde::{Deserialize, Serialize};
-
-use warp::{self, reject::Rejection, Filter};
+use warp::Filter;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash)]
 pub struct CreateAccount {
     id: String,
+}
+
+async fn create_engine_account<E, S>(
+    idempotency_key: Option<String>,
+    account_id: CreateAccount,
+    engine: E,
+    store: S,
+) -> Result<impl warp::Reply, warp::Rejection>
+where
+    E: SettlementEngine + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
+{
+    let input_hash = get_hash_of(account_id.id.as_ref());
+    let (status_code, message) = make_idempotent_call(
+        store,
+        || engine.create_account(account_id.id),
+        input_hash,
+        idempotency_key,
+        StatusCode::CREATED,
+        Bytes::from("CREATED"),
+    )
+    .await?;
+
+    Ok(Response::builder()
+        .header("Content-Type", "application/json")
+        .status(status_code)
+        // Convert Bytes 0.4 to 0.5
+        .body(message.to_vec())
+        .unwrap())
+}
+
+async fn delete_engine_account<E, S>(
+    account_id: String,
+    idempotency_key: Option<String>,
+    engine: E,
+    store: S,
+) -> Result<impl warp::Reply, warp::Rejection>
+where
+    E: SettlementEngine + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
+{
+    let input_hash = get_hash_of(account_id.as_ref());
+    let (status_code, message) = make_idempotent_call(
+        store,
+        || engine.delete_account(account_id),
+        input_hash,
+        idempotency_key,
+        StatusCode::NO_CONTENT,
+        Bytes::from("DELETED"),
+    )
+    .await?;
+
+    Ok(Response::builder()
+        .header("Content-Type", "application/json")
+        .status(status_code)
+        // Convert Bytes 0.4 to 0.5
+        .body(message.to_vec())
+        .unwrap())
+}
+
+async fn engine_send_money<E, S>(
+    id: String,
+    idempotency_key: Option<String>,
+    quantity: Quantity,
+    engine: E,
+    store: S,
+) -> Result<impl warp::Reply, warp::Rejection>
+where
+    E: SettlementEngine + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
+{
+    let input = format!("{}{:?}", id, quantity);
+    let input_hash = get_hash_of(input.as_ref());
+    let (status_code, message) = make_idempotent_call(
+        store,
+        || engine.send_money(id, quantity),
+        input_hash,
+        idempotency_key,
+        StatusCode::CREATED,
+        Bytes::from("EXECUTED"),
+    )
+    .await?;
+
+    Ok(Response::builder()
+        .header("Content-Type", "application/json")
+        .status(status_code)
+        // Convert Bytes 0.4 to 0.5
+        .body(message.to_vec())
+        .unwrap())
+}
+
+async fn engine_receive_message<E, S>(
+    id: String,
+    idempotency_key: Option<String>,
+    message: bytes05::Bytes,
+    engine: E,
+    store: S,
+) -> Result<impl warp::Reply, warp::Rejection>
+where
+    E: SettlementEngine + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync + 'static,
+{
+    let input = format!("{}{:?}", id, message);
+    let input_hash = get_hash_of(input.as_ref());
+    let (status_code, message) = make_idempotent_call(
+        store,
+        || engine.receive_message(id, message.to_vec()),
+        input_hash,
+        idempotency_key,
+        StatusCode::CREATED,
+        Bytes::from("RECEIVED"),
+    )
+    .await?;
+
+    Ok(Response::builder()
+        .header("Content-Type", "application/json")
+        .status(status_code)
+        // Convert Bytes 0.4 to 0.5
+        .body(message.to_vec())
+        .unwrap())
 }
 
 /// Returns a Settlement Engine filter which exposes a Warp-compatible
@@ -37,161 +153,51 @@ where
     let with_store = warp::any().map(move || store.clone()).boxed();
     let with_engine = warp::any().map(move || engine.clone()).boxed();
     let idempotency = warp::header::optional::<String>("idempotency-key");
-    let account_id = warp::path("accounts").and(warp::path::param2::<String>()); // account_id
+    let account_id = warp::path("accounts").and(warp::path::param::<String>()); // account_id
 
     // POST /accounts/ (optional idempotency-key header)
     // Body is a Vec<u8> object
-    let accounts = warp::post2()
+    let accounts = warp::post()
         .and(warp::path("accounts"))
         .and(warp::path::end())
         .and(idempotency)
         .and(warp::body::json())
         .and(with_engine.clone())
         .and(with_store.clone())
-        .and_then(
-            move |idempotency_key: Option<String>,
-                  account_id: CreateAccount,
-                  engine: E,
-                  store: S| {
-                let account_id = account_id.id;
-                let input_hash = get_hash_of(account_id.as_ref());
+        .and_then(create_engine_account);
 
-                // Wrap do_send_outgoing_message in a closure to be invoked by
-                // the idempotency wrapper
-                let create_account_fn = move || engine.create_account(account_id);
-                make_idempotent_call(
-                    store,
-                    create_account_fn,
-                    input_hash,
-                    idempotency_key,
-                    StatusCode::CREATED,
-                    Bytes::from("CREATED"),
-                )
-                .map_err::<_, Rejection>(move |err| err.into())
-                .and_then(move |(status_code, message)| {
-                    Ok(Response::builder()
-                        .header("Content-Type", "application/json")
-                        .status(status_code)
-                        .body(message)
-                        .unwrap())
-                })
-            },
-        );
-
-    // DELETE /accounts/:id (optional idempotency-key header)
-    let del_account = warp::delete2()
+    // // DELETE /accounts/:id (optional idempotency-key header)
+    let del_account = warp::delete()
         .and(account_id)
         .and(warp::path::end())
         .and(idempotency)
         .and(with_engine.clone())
         .and(with_store.clone())
-        .and_then(
-            move |id: String, idempotency_key: Option<String>, engine: E, store: S| {
-                let input_hash = get_hash_of(id.as_ref());
+        .and_then(delete_engine_account);
 
-                // Wrap do_send_outgoing_message in a closure to be invoked by
-                // the idempotency wrapper
-                let delete_account_fn = move || engine.delete_account(id);
-                make_idempotent_call(
-                    store,
-                    delete_account_fn,
-                    input_hash,
-                    idempotency_key,
-                    StatusCode::NO_CONTENT,
-                    Bytes::from("DELETED"),
-                )
-                .map_err::<_, Rejection>(move |err| err.into())
-                .and_then(move |(status_code, message)| {
-                    Ok(Response::builder()
-                        .header("Content-Type", "application/json")
-                        .status(status_code)
-                        .body(message)
-                        .unwrap())
-                })
-            },
-        );
-
-    // POST /accounts/:account_id/settlements (optional idempotency-key header)
+    // POST /accounts/:aVcount_id/settlements (optional idempotency-key header)
     // Body is a Quantity object
     let settlement_endpoint = account_id.and(warp::path("settlements"));
-    let settlements = warp::post2()
+    let settlements = warp::post()
         .and(settlement_endpoint)
         .and(warp::path::end())
         .and(idempotency)
         .and(warp::body::json())
         .and(with_engine.clone())
         .and(with_store.clone())
-        .and_then(
-            move |id: String,
-                  idempotency_key: Option<String>,
-                  quantity: Quantity,
-                  engine: E,
-                  store: S| {
-                let input = format!("{}{:?}", id, quantity);
-                let input_hash = get_hash_of(input.as_ref());
-                let send_money_fn = move || engine.send_money(id, quantity);
-                make_idempotent_call(
-                    store,
-                    send_money_fn,
-                    input_hash,
-                    idempotency_key,
-                    StatusCode::CREATED,
-                    Bytes::from("EXECUTED"),
-                )
-                .map_err::<_, Rejection>(move |err| err.into())
-                .and_then(move |(status_code, message)| {
-                    Ok(Response::builder()
-                        .header("Content-Type", "application/json")
-                        .status(status_code)
-                        .body(message)
-                        .unwrap())
-                })
-            },
-        );
+        .and_then(engine_send_money);
 
     // POST /accounts/:account_id/messages (optional idempotency-key header)
     // Body is a Vec<u8> object
     let messages_endpoint = account_id.and(warp::path("messages"));
-    let messages = warp::post2()
+    let messages = warp::post()
         .and(messages_endpoint)
         .and(warp::path::end())
         .and(idempotency)
-        .and(warp::body::concat())
-        .and(with_engine.clone())
-        .and(with_store.clone())
-        .and_then(
-            move |id: String,
-                  idempotency_key: Option<String>,
-                  body: warp::body::FullBody,
-                  engine: E,
-                  store: S| {
-                // Gets called by our settlement engine, forwards the request outwards
-                // until it reaches the peer's settlement engine.
-                let message = Vec::from_buf(body);
-                let input = format!("{}{:?}", id, message);
-                let input_hash = get_hash_of(input.as_ref());
-
-                // Wrap do_send_outgoing_message in a closure to be invoked by
-                // the idempotency wrapper
-                let receive_message_fn = move || engine.receive_message(id, message);
-                make_idempotent_call(
-                    store,
-                    receive_message_fn,
-                    input_hash,
-                    idempotency_key,
-                    StatusCode::CREATED,
-                    Bytes::from("RECEIVED"),
-                )
-                .map_err::<_, Rejection>(move |err| err.into())
-                .and_then(move |(status_code, message)| {
-                    Ok(Response::builder()
-                        .header("Content-Type", "application/json")
-                        .status(status_code)
-                        .body(message)
-                        .unwrap())
-                })
-            },
-        );
+        .and(warp::body::bytes())
+        .and(with_engine)
+        .and(with_store)
+        .and_then(engine_receive_message);
 
     accounts
         .or(del_account)
@@ -205,17 +211,20 @@ where
 mod tests {
     use super::*;
     use crate::core::idempotency::IdempotentData;
-    use crate::core::types::ApiResponse;
+    use crate::core::types::{ApiResponse, ApiResult};
+    use async_trait::async_trait;
     use bytes::Bytes;
-    use futures::future::ok;
     use http::StatusCode;
-    use interledger_http::error::ApiError;
     use parking_lot::RwLock;
     use serde_json::{json, Value};
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    fn check_error_status_and_message(response: Response<Bytes>, status_code: u16, message: &str) {
+    fn check_error_status_and_message(
+        response: Response<bytes05::Bytes>,
+        status_code: u16,
+        message: &str,
+    ) {
         let err: Value = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(response.status().as_u16(), status_code);
         assert_eq!(err.get("status").unwrap(), status_code);
@@ -242,78 +251,66 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl IdempotentStore for TestStore {
-        fn load_idempotent_data(
+        async fn load_idempotent_data(
             &self,
             idempotency_key: String,
-        ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+        ) -> Result<Option<IdempotentData>, ()> {
             let cache = self.cache.read();
             if let Some(data) = cache.get(&idempotency_key) {
                 let mut guard = self.cache_hits.write();
                 *guard += 1; // used to test how many times this branch gets executed
-                Box::new(ok(Some(data.clone())))
+                Ok(Some(data.clone()))
             } else {
-                Box::new(ok(None))
+                Ok(None)
             }
         }
 
-        fn save_idempotent_data(
+        async fn save_idempotent_data(
             &self,
             idempotency_key: String,
             input_hash: [u8; 32],
             status_code: StatusCode,
             data: Bytes,
-        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        ) -> Result<(), ()> {
             let mut cache = self.cache.write();
             cache.insert(
                 idempotency_key,
                 IdempotentData::new(status_code, data, input_hash),
             );
-            Box::new(ok(()))
+            Ok(())
         }
     }
 
     pub static IDEMPOTENCY: &str = "abcd01234";
 
+    #[async_trait]
     impl SettlementEngine for TestEngine {
-        fn send_money(
-            &self,
-            _account_id: String,
-            _money: Quantity,
-        ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok(ApiResponse::Default))
+        async fn send_money(&self, _account_id: String, _money: Quantity) -> ApiResult {
+            Ok(ApiResponse::Default)
         }
 
-        fn receive_message(
-            &self,
-            _account_id: String,
-            _message: Vec<u8>,
-        ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok(ApiResponse::Default))
+        async fn receive_message(&self, _account_id: String, _message: Vec<u8>) -> ApiResult {
+            Ok(ApiResponse::Default)
         }
 
-        fn create_account(
-            &self,
-            _account_id: String,
-        ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok(ApiResponse::Default))
+        async fn create_account(&self, _account_id: String) -> ApiResult {
+            Ok(ApiResponse::Default)
         }
 
-        fn delete_account(
-            &self,
-            _account_id: String,
-        ) -> Box<dyn Future<Item = ApiResponse, Error = ApiError> + Send> {
-            Box::new(ok(ApiResponse::Default))
+        async fn delete_account(&self, _account_id: String) -> ApiResult {
+            Ok(ApiResponse::Default)
         }
     }
 
-    #[test]
-    fn idempotent_execute_settlement() {
+    #[tokio::test]
+    async fn idempotent_execute_settlement() {
         let store = test_store();
         let engine = TestEngine;
         let api = create_settlement_engine_filter(engine, store.clone());
 
-        let settlement_call = move |id, amount, scale| {
+        let settlement_call = |id, amount, scale| {
             warp::test::request()
                 .method("POST")
                 .path(&format!("/accounts/{}/settlements", id))
@@ -322,25 +319,25 @@ mod tests {
                 .reply(&api)
         };
 
-        let ret = settlement_call("1".to_owned(), 100, 6);
+        let ret = settlement_call("1".to_owned(), 100, 6).await;
         assert_eq!(ret.status(), StatusCode::CREATED);
         assert_eq!(ret.body(), "EXECUTED");
 
         // is idempotent
-        let ret = settlement_call("1".to_owned(), 100, 6);
+        let ret = settlement_call("1".to_owned(), 100, 6).await;
         assert_eq!(ret.status(), StatusCode::CREATED);
         assert_eq!(ret.body(), "EXECUTED");
 
         // // fails with different id and same data
-        let ret = settlement_call("42".to_owned(), 100, 6);
+        let ret = settlement_call("42".to_owned(), 100, 6).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         // fails with same id and different data
-        let ret = settlement_call("1".to_owned(), 42, 6);
+        let ret = settlement_call("1".to_owned(), 42, 6).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         // fails with different id and different data
-        let ret = settlement_call("42".to_owned(), 42, 6);
+        let ret = settlement_call("42".to_owned(), 42, 6).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         let cache = store.cache.read();
@@ -352,13 +349,13 @@ mod tests {
         assert_eq!(cached_data.body, "EXECUTED".to_string());
     }
 
-    #[test]
-    fn idempotent_receive_message() {
+    #[tokio::test]
+    async fn idempotent_receive_message() {
         let store = test_store();
         let engine = TestEngine;
         let api = create_settlement_engine_filter(engine, store.clone());
 
-        let messages_call = move |id, msg| {
+        let messages_call = |id, msg| {
             warp::test::request()
                 .method("POST")
                 .path(&format!("/accounts/{}/messages", id))
@@ -367,25 +364,25 @@ mod tests {
                 .reply(&api)
         };
 
-        let ret = messages_call("1", vec![0]);
+        let ret = messages_call("1", vec![0]).await;
         assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "RECEIVED");
 
         // is idempotent
-        let ret = messages_call("1", vec![0]);
+        let ret = messages_call("1", vec![0]).await;
         assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "RECEIVED");
 
         // // fails with different id and same data
-        let ret = messages_call("42", vec![0]);
+        let ret = messages_call("42", vec![0]).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         // fails with same id and different data
-        let ret = messages_call("1", vec![42]);
+        let ret = messages_call("1", vec![42]).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         // fails with different id and different data
-        let ret = messages_call("42", vec![42]);
+        let ret = messages_call("42", vec![42]).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         let cache = store.cache.read();
@@ -397,13 +394,13 @@ mod tests {
         assert_eq!(cached_data.body, "RECEIVED".to_string());
     }
 
-    #[test]
-    fn idempotent_create_account() {
+    #[tokio::test]
+    async fn idempotent_create_account() {
         let store = test_store();
         let engine = TestEngine;
         let api = create_settlement_engine_filter(engine, store.clone());
 
-        let create_account_call = move |id: &str| {
+        let create_account_call = |id: &str| {
             warp::test::request()
                 .method("POST")
                 .path("/accounts")
@@ -412,17 +409,17 @@ mod tests {
                 .reply(&api)
         };
 
-        let ret = create_account_call("1");
+        let ret = create_account_call("1").await;
         assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "CREATED");
 
         // is idempotent
-        let ret = create_account_call("1");
+        let ret = create_account_call("1").await;
         assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "CREATED");
 
         // fails with different id
-        let ret = create_account_call("42");
+        let ret = create_account_call("42").await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         let cache = store.cache.read();
@@ -434,13 +431,13 @@ mod tests {
         assert_eq!(cached_data.body, "CREATED".to_string());
     }
 
-    #[test]
-    fn idempotent_delete_account() {
+    #[tokio::test]
+    async fn idempotent_delete_account() {
         let store = test_store();
         let engine = TestEngine;
         let api = create_settlement_engine_filter(engine, store.clone());
 
-        let delete_account_call = move |id: &str| {
+        let delete_account_call = |id: &str| {
             warp::test::request()
                 .method("DELETE")
                 .path(&format!("/accounts/{}", id))
@@ -448,17 +445,17 @@ mod tests {
                 .reply(&api)
         };
 
-        let ret = delete_account_call("1");
+        let ret = delete_account_call("1").await;
         assert_eq!(ret.status(), StatusCode::NO_CONTENT);
         assert_eq!(ret.body(), "DELETED");
 
         // is idempotent
-        let ret = delete_account_call("1");
+        let ret = delete_account_call("1").await;
         assert_eq!(ret.status(), StatusCode::NO_CONTENT);
         assert_eq!(ret.body(), "DELETED");
 
         // fails with different id
-        let ret = delete_account_call("42");
+        let ret = delete_account_call("42").await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
         let cache = store.cache.read();
