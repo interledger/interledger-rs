@@ -3,13 +3,13 @@
 //! Client and server implementations of the [ILP-Over-HTTP](https://github.com/interledger/rfcs/blob/master/0035-ilp-over-http/0035-ilp-over-http.md) bilateral communication protocol.
 //! This protocol is intended primarily for server-to-server communication between peers on the Interledger network.
 use async_trait::async_trait;
+use bytes::Bytes;
 use interledger_service::{Account, Username};
 use mime::Mime;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use url::Url;
 use warp::{self, Filter, Rejection};
-use bytes::Bytes;
 
 mod client;
 mod server;
