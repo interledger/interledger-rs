@@ -79,7 +79,7 @@ async fn cryptocompare() {
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
         "exchange_rate": {
-            "poll_interval": 60000,
+            "poll_interval": 100,
             "provider": {
                 "cryptocompare": api_key
             },
@@ -88,6 +88,9 @@ async fn cryptocompare() {
     }))
     .unwrap();
     node.serve().await.unwrap();
+
+    // Wait a few seconds so our node can poll the API
+    tokio::time::delay_for(Duration::from_millis(1000)).await;
 
     let ret = Client::new()
         .get(&format!("http://localhost:{}/rates", http_port))
