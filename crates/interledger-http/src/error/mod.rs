@@ -12,7 +12,12 @@ use std::{
     error::Error as StdError,
     fmt::{self, Display},
 };
-use warp::{reject::custom, reply::json, reply::Response, Rejection, Reply};
+use warp::{
+    reject::{custom, Reject},
+    reply::json,
+    reply::Response,
+    Rejection, Reply,
+};
 
 /// API error type prefix of problems.
 /// This URL prefix is currently not published but we assume that in the future.
@@ -236,6 +241,8 @@ impl From<ApiError> for Rejection {
     }
 }
 
+impl Reject for ApiError {}
+
 lazy_static! {
     static ref MISSING_FIELD_REGEX: Regex = Regex::new("missing field `(.*)`").unwrap();
 }
@@ -248,6 +255,7 @@ pub struct JsonDeserializeError {
 }
 
 impl StdError for JsonDeserializeError {}
+impl Reject for JsonDeserializeError {}
 
 impl Display for JsonDeserializeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -309,12 +317,12 @@ impl From<JsonDeserializeError> for Rejection {
 }
 
 // Receives `ApiError`s and `JsonDeserializeError` and return it in the RFC7807 format.
-pub fn default_rejection_handler(err: warp::Rejection) -> Result<Response, Rejection> {
-    if let Some(api_error) = err.find_cause::<ApiError>() {
+pub async fn default_rejection_handler(err: warp::Rejection) -> Result<impl Reply, Rejection> {
+    if let Some(api_error) = err.find::<ApiError>() {
         Ok(api_error.clone().into_response())
-    } else if let Some(json_error) = err.find_cause::<JsonDeserializeError>() {
+    } else if let Some(json_error) = err.find::<JsonDeserializeError>() {
         Ok(json_error.clone().into_response())
-    } else if err.status() == http::status::StatusCode::METHOD_NOT_ALLOWED {
+    } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         Ok(ApiError::from_api_error_type(&DEFAULT_METHOD_NOT_ALLOWED_TYPE).into_response())
     } else {
         Err(err)
