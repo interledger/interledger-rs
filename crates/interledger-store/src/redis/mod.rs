@@ -797,11 +797,7 @@ impl ExchangeRateStore for RedisStore {
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
         let rates: Vec<f64> = asset_codes
             .iter()
-            .filter_map(|code| {
-                (*self.exchange_rates.read())
-                    .get(&code.to_string())
-                    .cloned()
-            })
+            .filter_map(|code| (*self.exchange_rates.read()).get(*code).cloned())
             .collect();
         if rates.len() == asset_codes.len() {
             Ok(rates)
@@ -821,103 +817,70 @@ impl ExchangeRateStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl BtpStore for RedisStore {
     type Account = Account;
 
-    fn get_account_from_btp_auth(
+    async fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Result<Self::Account, ()> {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that
         // necessary if redis is often used as a cache?)
         let decryption_key = self.decryption_key.clone();
+        let mut connection = self.connection.clone();
         let token = token.to_owned();
-        Box::new(
-            ACCOUNT_FROM_USERNAME
-                .arg(username.as_ref())
-                .invoke_async(self.connection.clone())
-                .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
-                .and_then(
-                    move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
-                        if let Some(account) = account {
-                            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-                            if let Some(t) = account.ilp_over_btp_incoming_token.clone() {
-                                let t = t.expose_secret().clone();
-                                if t == Bytes::from(token) {
-                                    Ok(account)
-                                } else {
-                                    debug!(
-                                        "Found account {} but BTP auth token was wrong",
-                                        account.username
-                                    );
-                                    Err(())
-                                }
-                            } else {
-                                debug!(
-                                    "Account {} does not have an incoming btp token configured",
-                                    account.username
-                                );
-                                Err(())
-                            }
-                        } else {
-                            warn!("No account found with BTP token");
-                            Err(())
-                        }
-                    },
-                ),
-        )
+        let username = username.to_owned(); // TODO: Can we avoid taking ownership?
+
+        let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
+            .arg(username.as_ref())
+            .invoke_async(&mut connection)
+            .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
+            .await?;
+
+        if let Some(account) = account {
+            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
+            if let Some(t) = account.ilp_over_btp_incoming_token.clone() {
+                let t = t.expose_secret().clone();
+                if t == Bytes::from(token) {
+                    Ok(account)
+                } else {
+                    debug!(
+                        "Found account {} but BTP auth token was wrong",
+                        account.username
+                    );
+                    Err(())
+                }
+            } else {
+                debug!(
+                    "Account {} does not have an incoming btp token configured",
+                    account.username
+                );
+                Err(())
+            }
+        } else {
+            warn!("No account found with BTP token");
+            Err(())
+        }
     }
 
-    fn get_btp_outgoing_accounts(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
-        let decryption_key = self.decryption_key.clone();
-        Box::new(
-            cmd("SMEMBERS")
-                .arg("btp_outgoing")
-                .query_async(self.connection.clone())
-                .map_err(|err| error!("Error getting members of set btp_outgoing: {:?}", err))
-                .and_then(
-                    move |(connection, account_ids): (RedisReconnect, Vec<RedisAccountId>)| {
-                        if account_ids.is_empty() {
-                            Either::A(ok(Vec::new()))
-                        } else {
-                            let mut script = LOAD_ACCOUNTS.prepare_invoke();
-                            for id in account_ids.iter() {
-                                script.arg(id.to_string());
-                            }
-                            Either::B(
-                                script
-                                    .invoke_async(connection.clone())
-                                    .map_err(|err| {
-                                        error!(
-                                        "Error getting accounts with outgoing BTP details: {:?}",
-                                        err
-                                    )
-                                    })
-                                    .and_then(
-                                        move |(_connection, accounts): (
-                                            RedisReconnect,
-                                            Vec<AccountWithEncryptedTokens>,
-                                        )| {
-                                            let accounts: Vec<Account> = accounts
-                                                .into_iter()
-                                                .map(|account| {
-                                                    account.decrypt_tokens(
-                                                        &decryption_key.expose_secret().0,
-                                                    )
-                                                })
-                                                .collect();
-                                            Ok(accounts)
-                                        },
-                                    ),
-                            )
-                        }
-                    },
-                ),
-        )
+    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, ()> {
+        let mut connection = self.connection.clone();
+
+        let account_ids: Vec<RedisAccountId> = connection
+            .smembers("btp_outgoing")
+            .map_err(|err| error!("Error getting members of set btp_outgoing: {:?}", err))
+            .await?;
+        let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
+
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let accounts = self.get_accounts(account_ids).await?;
+        Ok(accounts)
     }
 }
 
