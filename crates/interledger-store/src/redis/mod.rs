@@ -929,19 +929,14 @@ impl RouterStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl NodeStore for RedisStore {
     type Account = Account;
 
-    fn insert_account(
-        &self,
-        account: AccountDetails,
-    ) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+    async fn insert_account(&self, account: AccountDetails) -> Result<Account, ()> {
         let encryption_key = self.encryption_key.clone();
         let id = Uuid::new_v4();
-        let account = match Account::try_from(id, account, self.get_ilp_address()) {
-            Ok(account) => account,
-            Err(_) => return Box::new(err(())),
-        };
+        let account = Account::try_from(id, account, self.get_ilp_address())?;
         debug!(
             "Generated account id for {}: {}",
             account.username.clone(),
@@ -950,32 +945,24 @@ impl NodeStore for RedisStore {
         let encrypted = account
             .clone()
             .encrypt_tokens(&encryption_key.expose_secret().0);
-        Box::new(
-            self.redis_insert_account(encrypted)
-                .and_then(move |_| Ok(account)),
-        )
+        let mut self_clone = self.clone();
+
+        self_clone.redis_insert_account(encrypted).await?;
+        Ok(account)
     }
 
-    fn delete_account(&self, id: Uuid) -> Box<dyn Future<Item = Account, Error = ()> + Send> {
+    async fn delete_account(&self, id: Uuid) -> Result<Account, ()> {
         let decryption_key = self.decryption_key.clone();
-        Box::new(
-            self.redis_delete_account(id).and_then(move |account| {
-                Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
-            }),
-        )
+        let mut self_clone = self.clone();
+        let account = self_clone.redis_delete_account(id).await?;
+        Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
     }
 
-    fn update_account(
-        &self,
-        id: Uuid,
-        account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    async fn update_account(&self, id: Uuid, account: AccountDetails) -> Result<Self::Account, ()> {
         let encryption_key = self.encryption_key.clone();
         let decryption_key = self.decryption_key.clone();
-        let account = match Account::try_from(id, account, self.get_ilp_address()) {
-            Ok(account) => account,
-            Err(_) => return Box::new(err(())),
-        };
+        let account = Account::try_from(id, account, self.get_ilp_address())?;
+
         debug!(
             "Generated account id for {}: {}",
             account.username.clone(),
@@ -984,19 +971,16 @@ impl NodeStore for RedisStore {
         let encrypted = account
             .clone()
             .encrypt_tokens(&encryption_key.expose_secret().0);
-        Box::new(
-            self.redis_update_account(encrypted)
-                .and_then(move |account| {
-                    Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
-                }),
-        )
+
+        let account = self.redis_update_account(encrypted).await?;
+        Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
     }
 
-    fn modify_account_settings(
+    async fn modify_account_settings(
         &self,
         id: Uuid,
         settings: AccountSettings,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Result<Self::Account, ()> {
         let encryption_key = self.encryption_key.clone();
         let decryption_key = self.decryption_key.clone();
         let settings = EncryptedAccountSettings {
@@ -1030,42 +1014,41 @@ impl NodeStore for RedisStore {
             }),
         };
 
-        Box::new(
-            self.redis_modify_account(id, settings)
-                .and_then(move |account| {
-                    Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
-                }),
-        )
+        let account = self.redis_modify_account(id, settings).await?;
+        Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
     }
 
     // TODO limit the number of results and page through them
-    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, ()> {
         let decryption_key = self.decryption_key.clone();
-        let mut pipe = redis_crate::pipe();
-        let connection = self.connection.clone();
-        pipe.smembers("accounts");
-        Box::new(self.get_all_accounts_ids().and_then(move |account_ids| {
-            let mut script = LOAD_ACCOUNTS.prepare_invoke();
-            for id in account_ids.iter() {
-                script.arg(id.to_string());
-            }
-            script
-                .invoke_async(connection.clone())
-                .map_err(|err| error!("Error getting account ids: {:?}", err))
-                .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
-                    let accounts: Vec<Account> = accounts
-                        .into_iter()
-                        .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
-                        .collect();
-                    Ok(accounts)
-                })
-        }))
+        let mut connection = self.connection.clone();
+
+        let account_ids = self.get_all_accounts_ids().await?;
+
+        let mut script = LOAD_ACCOUNTS.prepare_invoke();
+        for id in account_ids.iter() {
+            script.arg(id.to_string());
+        }
+
+        let accounts: Vec<AccountWithEncryptedTokens> = script
+            .invoke_async(&mut connection)
+            .map_err(|err| error!("Error getting account ids: {:?}", err))
+            .await?;
+
+        // TODO this should be refactored so that it gets reused in multiple backends
+        let accounts: Vec<Account> = accounts
+            .into_iter()
+            .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
+            .collect();
+
+        Ok(accounts)
     }
 
-    fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
+    async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
     where
-        R: IntoIterator<Item = (String, Uuid)>,
+        R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait,
     {
+        let mut connection = self.connection.clone();
         let routes: Vec<(String, RedisAccountId)> = routes
             .into_iter()
             .map(|(s, id)| (s, RedisAccountId(id)))
@@ -1078,147 +1061,138 @@ impl NodeStore for RedisStore {
         }
 
         let routing_table = self.routes.clone();
-        Box::new(pipe.query_async(self.connection.clone())
-            .map_err(|err| error!("Error checking if accounts exist while setting static routes: {:?}", err))
-            .and_then(|(connection, accounts_exist): (RedisReconnect, Vec<bool>)| {
-                if accounts_exist.iter().all(|a| *a) {
-                    Ok(connection)
-                } else {
-                    error!("Error setting static routes because not all of the given accounts exist");
-                    Err(())
-                }
+
+        let accounts_exist: Vec<bool> = pipe
+            .query_async(&mut connection)
+            .map_err(|err| {
+                error!(
+                    "Error checking if accounts exist while setting static routes: {:?}",
+                    err
+                )
             })
-            .and_then(move |connection| {
+            .await?;
+
+        if !accounts_exist.iter().all(|a| *a) {
+            error!("Error setting static routes because not all of the given accounts exist");
+            return Err(());
+        }
+
         let mut pipe = redis_crate::pipe();
         pipe.atomic()
             .del(STATIC_ROUTES_KEY)
             .ignore()
             .hset_multiple(STATIC_ROUTES_KEY, &routes)
             .ignore();
-            pipe.query_async(connection)
-                .map_err(|err| error!("Error setting static routes: {:?}", err))
-                .and_then(move |(connection, _): (RedisReconnect, Value)| {
-                    update_routes(connection, routing_table)
-                })
-            }))
+
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error setting static routes: {:?}", err))
+            .await?;
+
+        update_routes(connection, routing_table).await?;
+        Ok(())
     }
 
-    fn set_static_route(
-        &self,
-        prefix: String,
-        account_id: Uuid,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()> {
         let routing_table = self.routes.clone();
         let prefix_clone = prefix.clone();
-        Box::new(
-        cmd("EXISTS")
-            .arg(accounts_key(account_id))
-            .query_async(self.connection.clone())
-            .map_err(|err| error!("Error checking if account exists before setting static route: {:?}", err))
-            .and_then(move |(connection, exists): (RedisReconnect, bool)| {
-                if exists {
-                    Ok(connection)
-                } else {
-                    error!("Cannot set static route for prefix: {} because account {} does not exist", prefix_clone, account_id);
-                    Err(())
-                }
+        let mut connection = self.connection.clone();
+
+        let exists: bool = connection
+            .exists(accounts_key(account_id))
+            .map_err(|err| {
+                error!(
+                    "Error checking if account exists before setting static route: {:?}",
+                    err
+                )
             })
-            .and_then(move |connection| {
-                cmd("HSET")
-                    .arg(STATIC_ROUTES_KEY)
-                    .arg(prefix)
-                    .arg(RedisAccountId(account_id))
-                    .query_async(connection)
-                    .map_err(|err| error!("Error setting static route: {:?}", err))
-                    .and_then(move |(connection, _): (RedisReconnect, Value)| {
-                        update_routes(connection, routing_table)
-                    })
-            })
-        )
+            .await?;
+        if !exists {
+            error!(
+                "Cannot set static route for prefix: {} because account {} does not exist",
+                prefix_clone, account_id
+            );
+            return Err(());
+        }
+
+        connection
+            .hset(STATIC_ROUTES_KEY, prefix, RedisAccountId(account_id))
+            .map_err(|err| error!("Error setting static route: {:?}", err))
+            .await?;
+
+        update_routes(connection, routing_table).await?;
+
+        Ok(())
     }
 
-    fn set_default_route(&self, account_id: Uuid) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    async fn set_default_route(&self, account_id: Uuid) -> Result<(), ()> {
         let routing_table = self.routes.clone();
         // TODO replace this with a lua script to do both calls at once
-        Box::new(
-            cmd("EXISTS")
-                .arg(accounts_key(account_id))
-                .query_async(self.connection.clone())
-                .map_err(|err| {
-                    error!(
-                        "Error checking if account exists before setting default route: {:?}",
-                        err
-                    )
-                })
-                .and_then(move |(connection, exists): (RedisReconnect, bool)| {
-                    if exists {
-                        Ok(connection)
-                    } else {
-                        error!(
-                            "Cannot set default route because account {} does not exist",
-                            account_id
-                        );
-                        Err(())
-                    }
-                })
-                .and_then(move |connection| {
-                    cmd("SET")
-                        .arg(DEFAULT_ROUTE_KEY)
-                        .arg(RedisAccountId(account_id))
-                        .query_async(connection)
-                        .map_err(|err| error!("Error setting default route: {:?}", err))
-                        .and_then(move |(connection, _): (RedisReconnect, Value)| {
-                            debug!("Set default route to account id: {}", account_id);
-                            update_routes(connection, routing_table)
-                        })
-                }),
-        )
+        let mut connection = self.connection.clone();
+        let exists: bool = connection
+            .exists(accounts_key(account_id))
+            .map_err(|err| {
+                error!(
+                    "Error checking if account exists before setting default route: {:?}",
+                    err
+                )
+            })
+            .await?;
+        if !exists {
+            error!(
+                "Cannot set default route because account {} does not exist",
+                account_id
+            );
+            return Err(());
+        }
+
+        connection
+            .set(DEFAULT_ROUTE_KEY, RedisAccountId(account_id))
+            .map_err(|err| error!("Error setting default route: {:?}", err))
+            .await?;
+        debug!("Set default route to account id: {}", account_id);
+        update_routes(connection, routing_table).await?;
+        Ok(())
     }
 
-    fn set_settlement_engines(
+    async fn set_settlement_engines(
         &self,
-        asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
+    ) -> Result<(), ()> {
+        let mut connection = self.connection.clone();
         let asset_to_url_map: Vec<(String, String)> = asset_to_url_map
             .into_iter()
             .map(|(asset_code, url)| (asset_code, url.to_string()))
             .collect();
         debug!("Setting settlement engines to {:?}", asset_to_url_map);
-        Box::new(
-            cmd("HMSET")
-                .arg(SETTLEMENT_ENGINES_KEY)
-                .arg(asset_to_url_map)
-                .query_async(self.connection.clone())
-                .map_err(|err| error!("Error setting settlement engines: {:?}", err))
-                .and_then(|(_, _): (RedisReconnect, Value)| Ok(())),
-        )
+        connection
+            .hset_multiple(SETTLEMENT_ENGINES_KEY, &asset_to_url_map)
+            .map_err(|err| error!("Error setting settlement engines: {:?}", err))
+            .await?;
+        Ok(())
     }
 
-    fn get_asset_settlement_engine(
-        &self,
-        asset_code: &str,
-    ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send> {
-        Box::new(
-            cmd("HGET")
-                .arg(SETTLEMENT_ENGINES_KEY)
-                .arg(asset_code)
-                .query_async(self.connection.clone())
-                .map_err(|err| error!("Error getting settlement engine: {:?}", err))
-                .map(|(_, url): (_, Option<String>)| {
-                    if let Some(url) = url {
-                        Url::parse(url.as_str())
-                            .map_err(|err| {
-                                error!(
-                                "Settlement engine URL loaded from Redis was not a valid URL: {:?}",
-                                err
-                            )
-                            })
-                            .ok()
-                    } else {
-                        None
-                    }
-                }),
-        )
+    async fn get_asset_settlement_engine(&self, asset_code: &str) -> Result<Option<Url>, ()> {
+        let mut connection = self.connection.clone();
+        let asset_code = asset_code.to_owned();
+
+        let url: Option<String> = connection
+            .hget(SETTLEMENT_ENGINES_KEY, asset_code)
+            .map_err(|err| error!("Error getting settlement engine: {:?}", err))
+            .await?;
+        if let Some(url) = url {
+            match Url::parse(url.as_str()) {
+                Ok(url) => Ok(Some(url)),
+                Err(err) => {
+                    error!(
+                        "Settlement engine URL loaded from Redis was not a valid URL: {:?}",
+                        err
+                    );
+                    Err(())
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 }
 
