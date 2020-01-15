@@ -43,8 +43,7 @@ where
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .status(status_code)
-        // Convert Bytes 0.4 to 0.5
-        .body(message.to_vec())
+        .body(message)
         .unwrap())
 }
 
@@ -72,8 +71,7 @@ where
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .status(status_code)
-        // Convert Bytes 0.4 to 0.5
-        .body(message.to_vec())
+        .body(message)
         .unwrap())
 }
 
@@ -103,15 +101,14 @@ where
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .status(status_code)
-        // Convert Bytes 0.4 to 0.5
-        .body(message.to_vec())
+        .body(message)
         .unwrap())
 }
 
 async fn engine_receive_message<E, S>(
     id: String,
     idempotency_key: Option<String>,
-    message: bytes05::Bytes,
+    message: Bytes,
     engine: E,
     store: S,
 ) -> Result<impl warp::Reply, warp::Rejection>
@@ -134,8 +131,7 @@ where
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .status(status_code)
-        // Convert Bytes 0.4 to 0.5
-        .body(message.to_vec())
+        .body(message)
         .unwrap())
 }
 
@@ -220,11 +216,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    fn check_error_status_and_message(
-        response: Response<bytes05::Bytes>,
-        status_code: u16,
-        message: &str,
-    ) {
+    fn check_error_status_and_message(response: Response<Bytes>, status_code: u16, message: &str) {
         let err: Value = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(response.status().as_u16(), status_code);
         assert_eq!(err.get("status").unwrap(), status_code);
