@@ -1,9 +1,7 @@
 use super::packet::*;
 use super::service::BtpOutgoingService;
 use super::BtpAccount;
-use futures::{
-    future::join_all, Future, Sink, SinkExt, Stream, StreamExt, TryFutureExt, TryStreamExt,
-};
+use futures::{future::join_all, SinkExt, StreamExt, TryFutureExt};
 use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, trace};
@@ -32,7 +30,7 @@ pub async fn connect_client<A, S>(
 ) -> Result<BtpOutgoingService<S, A>, ()>
 where
     S: OutgoingService<A> + Clone + 'static,
-    A: BtpAccount + 'static,
+    A: BtpAccount + Send + Sync + 'static,
 {
     let service = BtpOutgoingService::new(ilp_address, next_outgoing);
     let mut connect_btp = Vec::new();
@@ -55,7 +53,7 @@ pub async fn connect_to_service_account<O, A>(
 ) -> Result<(), ()>
 where
     O: OutgoingService<A> + Clone + 'static,
-    A: BtpAccount + 'static,
+    A: BtpAccount + Send + Sync + 'static,
 {
     let account_id = account.id();
     let mut url = account
@@ -81,13 +79,14 @@ where
         .await?;
 
     trace!(
-        "Connected to account {} (URI: {}), sending auth packet",
+        "Connected to account {} (UID: {}) (URI: {}), sending auth packet",
+        account.username(),
         account_id,
         url
     );
 
     // Send BTP authentication
-    let auth_packet = Message::Binary(
+    let auth_packet = Message::binary(
         BtpPacket::Message(BtpMessage {
             request_id: random(),
             protocol_data: vec![
@@ -108,7 +107,7 @@ where
 
     // TODO check that the response is a success before proceeding
     // (right now we just assume they'll close the connection if the auth didn't work)
-    let result = connection
+    let result = connection // this just a stream
         .send(auth_packet)
         .map_err(move |_| error!("Error sending auth packet on connection: {}", url))
         .await;
@@ -116,6 +115,7 @@ where
     match result {
         Ok(_) => {
             debug!("Connected to account {}'s server", account.id());
+            let connection = connection.filter_map(|v| async move { v.ok() });
             service.add_connection(account, connection);
             Ok(())
         }

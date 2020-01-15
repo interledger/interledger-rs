@@ -7,7 +7,6 @@
 //! endpoint but both sides can send and receive ILP packets.
 
 use async_trait::async_trait;
-use futures::Future;
 use interledger_service::{Account, Username};
 use url::Url;
 
@@ -17,6 +16,7 @@ mod oer;
 mod packet;
 mod server;
 mod service;
+mod wrapped_ws;
 
 pub use self::client::{connect_client, connect_to_service_account, parse_btp_url};
 pub use self::server::btp_service_as_filter; // This is consumed only by the node.
@@ -46,7 +46,6 @@ pub trait BtpStore {
 #[cfg(test)]
 mod client_server {
     use super::*;
-    use futures::future::{err, lazy, ok};
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
     use net2::TcpBuilder;
@@ -56,7 +55,6 @@ mod client_server {
         sync::Arc,
         time::{Duration, SystemTime},
     };
-    use tokio::runtime::Runtime;
     use uuid::Uuid;
 
     use lazy_static::lazy_static;
@@ -221,7 +219,8 @@ mod client_server {
                     data: b"test data",
                 }
                 .build())
-            }));
+            }))
+            .await;
         let filter = btp_service_as_filter(btp_service.clone(), server_store);
         let server = warp::serve(filter);
         // Spawn the server and listen for incoming connections
@@ -240,7 +239,7 @@ mod client_server {
         let addr = Address::from_str("example.address").unwrap();
         let addr_clone = addr.clone();
 
-        let btp_service = connect_client(
+        let btp_client = connect_client(
             addr.clone(),
             accounts,
             true,
@@ -257,7 +256,7 @@ mod client_server {
         .await
         .unwrap();
 
-        let mut btp_service = btp_service
+        let mut btp_client = btp_client
             .handle_incoming(incoming_service_fn(move |_| {
                 Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
@@ -269,7 +268,7 @@ mod client_server {
             }))
             .await;
 
-        let res = btp_service
+        let res = btp_client
             .send_request(OutgoingRequest {
                 from: account.clone(),
                 to: account.clone(),
@@ -284,6 +283,7 @@ mod client_server {
                 .build(),
             })
             .await;
+        dbg!(&res);
         assert!(res.is_ok());
         btp_service.close();
     }

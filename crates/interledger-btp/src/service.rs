@@ -6,65 +6,39 @@ use futures::{
         mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
-    future::err,
-    Future, Sink, Stream, StreamExt,
+    future, FutureExt, Sink, Stream, StreamExt,
 };
 use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
 use interledger_service::*;
+use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::collections::HashMap;
-use std::{
-    convert::TryFrom, error::Error, fmt, io, iter::IntoIterator, marker::PhantomData, sync::Arc,
-    time::Duration,
-};
+use std::{convert::TryFrom, iter::IntoIterator, marker::PhantomData, sync::Arc, time::Duration};
 use stream_cancel::{Trigger, Valve};
+use tokio::time;
 use tungstenite::Message;
 use uuid::Uuid;
-use warp;
 
 const PING_INTERVAL: u64 = 30; // seconds
 
+lazy_static! {
+    static ref PING: Message = Message::Ping(Vec::with_capacity(0));
+    static ref PONG: Message = Message::Pong(Vec::with_capacity(0));
+}
+
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
-
-#[derive(Debug)]
-pub enum WsError {
-    Tungstenite(tungstenite::Error),
-    Warp(warp::Error),
-}
-
-impl fmt::Display for WsError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            WsError::Tungstenite(err) => err.fmt(f),
-            WsError::Warp(err) => err.fmt(f),
-        }
-    }
-}
-
-impl Error for WsError {}
-
-impl From<tungstenite::Error> for WsError {
-    fn from(err: tungstenite::Error) -> Self {
-        WsError::Tungstenite(err)
-    }
-}
-
-impl From<warp::Error> for WsError {
-    fn from(err: warp::Error) -> Self {
-        WsError::Warp(err)
-    }
-}
 
 /// A container for BTP/WebSocket connections that implements OutgoingService
 /// for sending outgoing ILP Prepare packets over one of the connected BTP connections.
 #[derive(Clone)]
 pub struct BtpOutgoingService<O, A: Account> {
-    // TODO support multiple connections per account
     ilp_address: Address,
+    /// Outgoing messages for the receiver of the websocket indexed by account uid
     connections: Arc<RwLock<HashMap<Uuid, UnboundedSender<Message>>>>,
+    // Pending results which are
     pending_outgoing: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
     incoming_sender: UnboundedSender<(A, u32, Prepare)>,
@@ -73,10 +47,75 @@ pub struct BtpOutgoingService<O, A: Account> {
     stream_valve: Arc<Valve>,
 }
 
+// Handle the packets based on whether they are an incoming request or a response to something we sent.
+//  a. If it's a prepare packet, it gets buffered in the incoming_sender channel which will get consumed
+//     once an incoming handler is added
+//  b. If it's a Fulfill/Reject packet, it gets added to the pending_outgoing hashmap which gets consumed
+//     by the outgoing service implementation immediately
+// incoming_sender.unbounded_send basically sends data to the self.incoming_receiver
+// to be consumed when we setup the incoming handler
+// Set up a listener to handle incoming packets from the WebSocket connection
+async fn handle_message<A: BtpAccount>(
+    message: Message,
+    tx_clone: UnboundedSender<Message>,
+    account: A,
+    pending_requests: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
+    incoming_sender: UnboundedSender<(A, u32, Prepare)>,
+) {
+    if message.is_binary() {
+        match parse_ilp_packet(message) {
+            // Queues up the prepare packet
+            Ok((request_id, Packet::Prepare(prepare))) => {
+                trace!(
+                    "Got incoming Prepare packet on request ID: {} {:?}",
+                    request_id,
+                    prepare
+                );
+                let _ = incoming_sender
+                    .unbounded_send((account, request_id, prepare))
+                    .map_err(|err| error!("Unable to buffer incoming request: {:?}", err));
+            }
+            // Sends the fulfill/reject to the outgoing service
+            Ok((request_id, Packet::Fulfill(fulfill))) => {
+                trace!("Got fulfill response to request id {}", request_id);
+                if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
+                    let _ = channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill));
+                } else {
+                    warn!(
+                        "Got Fulfill packet that does not match an outgoing Prepare we sent: {:?}",
+                        fulfill
+                    );
+                }
+            }
+            Ok((request_id, Packet::Reject(reject))) => {
+                trace!("Got reject response to request id {}", request_id);
+                if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
+                    let _ = channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject));
+                } else {
+                    warn!(
+                        "Got Reject packet that does not match an outgoing Prepare we sent: {:?}",
+                        reject
+                    );
+                }
+            }
+            Err(_) => {
+                debug!("Unable to parse ILP packet from BTP packet (if this is the first time this appears, the packet was probably the auth response)");
+                // TODO Send error back
+            }
+        }
+    } else if message.is_ping() {
+        trace!("Responding to Ping message from account {}", account.id());
+        // Writes back the PONG to the websocket
+        let _ = tx_clone
+            .unbounded_send(PONG.clone())
+            .map_err(|err| error!("Error sending Pong message back: {:?}", err));
+    }
+}
+
 impl<O, A> BtpOutgoingService<O, A>
 where
     O: OutgoingService<A> + Clone,
-    A: BtpAccount + 'static,
+    A: BtpAccount + Send + Sync + 'static,
 {
     pub fn new(ilp_address: Address, next: O) -> Self {
         let (incoming_sender, incoming_receiver) = unbounded();
@@ -105,124 +144,95 @@ where
     // incoming Prepare packets are buffered in a channel (until an IncomingService is added
     // via the handle_incoming method), and ILP Fulfill and Reject packets will be
     // sent back to the Future that sent the outgoing request originally.
-    pub(crate) fn add_connection<T>(
+    pub(crate) fn add_connection(
         &self,
         account: A,
-        connection: impl Stream<Item = Result<Message, T>> + Sink<Message, Error = T> + Send + 'static,
-    ) where
-        T: Into<WsError>,
-    {
-        // TODO: Fix this!
-        unimplemented!()
-        // let account_id = account.id();
-        // // Set up a channel to forward outgoing packets to the WebSocket connection
-        // let (tx, rx) = unbounded();
-        // let (sink, stream) = connection.split();
-        // let (close_connection, valve) = Valve::new();
-        // let stream = valve.wrap(stream);
-        // let stream = self.stream_valve.wrap(stream);
-        // let forward_to_connection = sink
-        //     .send_all(rx.map_err(|_err| {
-        //         WsError::Tungstenite(io::Error::from(io::ErrorKind::ConnectionAborted).into())
-        //     }))
-        //     .then(move |_| {
-        //         debug!(
-        //             "Finished forwarding to WebSocket stream for account: {}",
-        //             account_id
-        //         );
-        //         drop(close_connection);
-        //         Ok(())
-        //     });
+        ws_stream: impl Stream<Item = Message> + Sink<Message> + Send + 'static,
+    ) {
+        let account_id = account.id();
+        // Set up a channel to forward outgoing packets to the WebSocket connection
+        let (client_tx, client_rx) = unbounded();
+        let (write, read) = ws_stream.split();
+        let (close_connection, valve) = Valve::new();
 
-        // // Send pings every PING_INTERVAL until the connection closes or the Service is dropped
-        // let tx_clone = tx.clone();
-        // let send_pings = valve
-        //     .wrap(
-        //         self.stream_valve
-        //             .wrap(Interval::new_interval(Duration::from_secs(PING_INTERVAL))),
-        //     )
-        //     .map_err(|err| {
-        //         warn!("Timer error on Ping interval: {:?}", err);
-        //     })
-        //     .for_each(move |_| {
-        //         if let Err(err) = tx_clone.unbounded_send(Message::Ping(Vec::with_capacity(0))) {
-        //             warn!(
-        //                 "Error sending Ping on connection to account {}: {:?}",
-        //                 account_id, err
-        //             );
-        //         }
-        //         Ok(())
-        //     });
-        // spawn(send_pings);
+        // tx -> rx -> write -> our peer
+        // Responsible mainly for responding to Pings
+        // TODO: We must somehow figure out how to merge this stream with the incoming one
+        let write_to_ws = client_rx.map(Ok).forward(write).then(move |_| {
+            async move {
+                debug!(
+                    "Finished forwarding to WebSocket stream for account: {}",
+                    account_id
+                );
+                drop(close_connection);
+                Ok::<(), ()>(())
+            }
+        });
+        tokio::spawn(write_to_ws);
 
-        // // Set up a listener to handle incoming packets from the WebSocket connection
-        // // TODO do we need all this cloning?
-        // let pending_requests = self.pending_outgoing.clone();
-        // let incoming_sender = self.incoming_sender.clone();
-        // let tx_clone = tx.clone();
-        // let handle_incoming = stream.map_err(move |err| error!("Error reading from WebSocket stream for account {}: {:?}", account_id, err)).for_each(move |message| {
-        //   // Handle the packets based on whether they are an incoming request or a response to something we sent
-        //   if message.is_binary() {
-        //       match parse_ilp_packet(message) {
-        //         Ok((request_id, Packet::Prepare(prepare))) => {
-        //             trace!("Got incoming Prepare packet on request ID: {} {:?}", request_id, prepare);
-        //             incoming_sender.clone().unbounded_send((account.clone(), request_id, prepare))
-        //                 .map_err(|err| error!("Unable to buffer incoming request: {:?}", err))
-        //         },
-        //         Ok((request_id, Packet::Fulfill(fulfill))) => {
-        //           trace!("Got fulfill response to request id {}", request_id);
-        //           if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
-        //             channel.send(Ok(fulfill)).map_err(|fulfill| error!("Error forwarding Fulfill packet back to the Future that sent the Prepare: {:?}", fulfill))
-        //           } else {
-        //             warn!("Got Fulfill packet that does not match an outgoing Prepare we sent: {:?}", fulfill);
-        //             Ok(())
-        //           }
-        //         }
-        //         Ok((request_id, Packet::Reject(reject))) => {
-        //           trace!("Got reject response to request id {}", request_id);
-        //           if let Some(channel) = (*pending_requests.lock()).remove(&request_id) {
-        //             channel.send(Err(reject)).map_err(|reject| error!("Error forwarding Reject packet back to the Future that sent the Prepare: {:?}", reject))
-        //           } else {
-        //             warn!("Got Reject packet that does not match an outgoing Prepare we sent: {:?}", reject);
-        //             Ok(())
-        //           }
-        //         },
-        //         Err(_) => {
-        //           debug!("Unable to parse ILP packet from BTP packet (if this is the first time this appears, the packet was probably the auth response)");
-        //           // TODO Send error back
-        //           Ok(())
-        //         }
-        //       }
-        //   } else if message.is_ping() {
-        //       trace!("Responding to Ping message from account {}", account.id());
-        //       tx_clone.unbounded_send(Message::Pong(Vec::new())).map_err(|err| error!("Error sending Pong message back: {:?}", err))
-        //   } else {
-        //       Ok(())
-        //   }
-        // }).then(move |result| {
-        //     debug!("Finished reading from WebSocket stream for account: {}", account_id);
-        //     result
-        // });
+        // Process incoming messages depending on their type
+        let pending_outgoing = self.pending_outgoing.clone();
+        let incoming_sender = self.incoming_sender.clone();
+        let client_tx_clone = client_tx.clone();
+        let handle_message_fn = move |msg: Message| {
+            handle_message(
+                msg,
+                client_tx_clone.clone(),
+                account.clone(),
+                pending_outgoing.clone(),
+                incoming_sender.clone(),
+            )
+        };
 
+        // Close connections triggers
+        let read = valve.wrap(read);
+        let read = self.stream_valve.wrap(read);
+        let read_from_ws = read.for_each(handle_message_fn).then(move |_| {
+            async move {
+                debug!(
+                    "Finished reading from WebSocket stream for account: {}",
+                    account_id
+                );
+                Ok::<(), ()>(())
+            }
+        });
+
+        // TODO: How can we drop the trigger when both the read and write spawn'ed futures
+        // have completed?
         // let connections = self.connections.clone();
         // let keep_connections_open = self.close_all_connections.clone();
-        // let handle_connection = handle_incoming
-        //     .select(forward_to_connection)
-        //     .then(move |_| {
-        //         let _ = keep_connections_open;
-        //         let mut connections = connections.write();
-        //         connections.remove(&account_id);
-        //         debug!(
-        //             "WebSocket connection closed for account {} ({} connections still open)",
-        //             account_id,
-        //             connections.len()
-        //         );
-        //         Ok(())
-        //     });
-        // spawn(handle_connection);
+        // .then(move |_| {
+        //     let _ = keep_connections_open;
+        //     let mut connections = connections.write();
+        //     connections.remove(&account_id);
+        //     debug!(
+        //         "WebSocket connection closed for account {} ({} connections still open)",
+        //         account_id,
+        //         connections.len()
+        //     );
+        //     future::ready(())
+        // });
+        tokio::spawn(read_from_ws);
 
-        // // Save the sender side of the channel so we have a way to forward outgoing requests to the WebSocket
-        // self.connections.write().insert(account_id, tx);
+        // Send pings every PING_INTERVAL until the connection closes (when `drop(close_connection)` is called)
+        // or the Service is dropped (which will implicitly drop `close_all_connections`, closing the stream_valve)
+        let tx_clone = client_tx.clone();
+        let ping_interval = time::interval(Duration::from_secs(PING_INTERVAL));
+        let repeat_until_service_drops = self.stream_valve.wrap(ping_interval);
+        let send_pings = valve.wrap(repeat_until_service_drops).for_each(move |_| {
+            // For each tick send a ping
+            if let Err(err) = tx_clone.unbounded_send(PING.clone()) {
+                warn!(
+                    "Error sending Ping on connection to account {}: {:?}",
+                    account_id, err
+                );
+            }
+            future::ready(())
+        });
+        tokio::spawn(send_pings);
+
+        // Save the sender side of the channel so we have a way to forward outgoing requests to the WebSocket
+        self.connections.write().insert(account_id, client_tx);
     }
 
     /// Convert this BtpOutgoingService into a bidirectional BtpService by adding a handler for incoming requests.
@@ -235,7 +245,6 @@ where
         // the incoming Prepare packets they get in self.pending_incoming
         // Now that we're adding an incoming handler, this will spawn a task to read
         // all Prepare packets from the buffer, handle them, and send the responses back
-        let incoming_handler_clone = incoming_handler.clone();
         let connections_clone = self.connections.clone();
         let mut handle_pending_incoming = self
             .pending_incoming
@@ -256,7 +265,7 @@ where
                     request.from.username(),
                     request.from.id()
                 );
-                let mut handler = incoming_handler_clone.clone();
+                let mut handler = incoming_handler.clone();
                 let packet = match handler.handle_request(request).await {
                     Ok(fulfill) => Packet::Fulfill(fulfill),
                     Err(reject) => Packet::Reject(reject),
@@ -265,7 +274,7 @@ where
                 // TODO: Is it OK to remove the results from here?
                 if let Some(connection) = connections_clone.clone().read().get(&account_id) {
                     let message = ilp_packet_to_ws_message(request_id, packet);
-                    connection.unbounded_send(message).map_err(move |err| {
+                    let _ = connection.unbounded_send(message).map_err(move |err| {
                         error!(
                             "Error sending response to account: {} {:?}",
                             account_id, err
@@ -314,11 +323,14 @@ where
             let keep_connections_open = self.close_all_connections.clone();
 
             trace!(
-                "Sending outgoing request {} to account {}",
+                "Sending outgoing request {} to {} ({})",
                 request_id,
+                request.to.username(),
                 account_id
             );
 
+            // Connection is an unbounded sender which sends to the rx that
+            // forwards to the sink which sends the data over
             match connection.unbounded_send(ilp_packet_to_ws_message(
                 request_id,
                 Packet::Prepare(request.prepare),
@@ -363,15 +375,15 @@ where
                     .build())
                 }
             }
-        } else if request.to.get_ilp_over_btp_url().is_some()
-            || request.to.get_ilp_over_btp_outgoing_token().is_some()
-        {
-            trace!(
-                "No open connection for account: {}, forwarding request to the next service",
-                request.to.id()
-            );
-            self.next.send_request(request).await
         } else {
+            if request.to.get_ilp_over_btp_url().is_some()
+                || request.to.get_ilp_over_btp_outgoing_token().is_some()
+            {
+                trace!(
+                    "No open connection for account: {}, forwarding request to the next service",
+                    request.to.username()
+                );
+            }
             self.next.send_request(request).await
         }
     }
@@ -387,7 +399,7 @@ impl<I, O, A> BtpService<I, O, A>
 where
     I: IncomingService<A> + Clone + Send + 'static,
     O: OutgoingService<A> + Clone,
-    A: BtpAccount + 'static,
+    A: BtpAccount + Send + Sync + 'static,
 {
     /// Close all of the open WebSocket connections
     pub fn close(&self) {
@@ -453,42 +465,31 @@ fn parse_ilp_packet(message: Message) -> Result<(u32, Packet), ()> {
 }
 
 fn ilp_packet_to_ws_message(request_id: u32, packet: Packet) -> Message {
-    match packet {
-        Packet::Prepare(prepare) => {
-            let data = BytesMut::from(prepare).to_vec();
-            let btp_packet = BtpMessage {
-                request_id,
-                protocol_data: vec![ProtocolData {
-                    protocol_name: "ilp".to_string(),
-                    content_type: ContentType::ApplicationOctetStream,
-                    data,
-                }],
-            };
-            Message::binary(btp_packet.to_bytes())
+    let (data, is_response) = match packet {
+        Packet::Prepare(prepare) => (BytesMut::from(prepare).to_vec(), false),
+        Packet::Fulfill(fulfill) => (BytesMut::from(fulfill).to_vec(), true),
+        Packet::Reject(reject) => (BytesMut::from(reject).to_vec(), true),
+    };
+    let btp_packet = if is_response {
+        BtpMessage {
+            request_id,
+            protocol_data: vec![ProtocolData {
+                protocol_name: "ilp".to_string(),
+                content_type: ContentType::ApplicationOctetStream,
+                data,
+            }],
         }
-        Packet::Fulfill(fulfill) => {
-            let data = BytesMut::from(fulfill).to_vec();
-            let btp_packet = BtpResponse {
-                request_id,
-                protocol_data: vec![ProtocolData {
-                    protocol_name: "ilp".to_string(),
-                    content_type: ContentType::ApplicationOctetStream,
-                    data,
-                }],
-            };
-            Message::binary(btp_packet.to_bytes())
+        .to_bytes()
+    } else {
+        BtpResponse {
+            request_id,
+            protocol_data: vec![ProtocolData {
+                protocol_name: "ilp".to_string(),
+                content_type: ContentType::ApplicationOctetStream,
+                data,
+            }],
         }
-        Packet::Reject(reject) => {
-            let data = BytesMut::from(reject).to_vec();
-            let btp_packet = BtpResponse {
-                request_id,
-                protocol_data: vec![ProtocolData {
-                    protocol_name: "ilp".to_string(),
-                    content_type: ContentType::ApplicationOctetStream,
-                    data,
-                }],
-            };
-            Message::binary(btp_packet.to_bytes())
-        }
-    }
+        .to_bytes()
+    };
+    Message::binary(btp_packet)
 }

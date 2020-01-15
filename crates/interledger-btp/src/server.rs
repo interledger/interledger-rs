@@ -1,22 +1,21 @@
-use super::service::{BtpOutgoingService, WsError};
 use super::{packet::*, BtpAccount, BtpStore};
-use futures::{Future, Sink, Stream};
+use super::{service::BtpOutgoingService, wrapped_ws::WsWrap};
+use futures::{FutureExt, Sink, Stream};
+use futures::{SinkExt, StreamExt, TryFutureExt};
 use interledger_service::*;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use secrecy::{ExposeSecret, SecretString};
-use std::time::Duration;
-use tungstenite;
+// use std::time::Duration;
 use warp::{
     self,
-    ws::{Message, WebSocket},
+    ws::{Message, WebSocket, Ws},
     Filter,
 };
 
 // Close the incoming websocket connection if the auth details
 // have not been received within this timeout
-const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
-
-// const MAX_MESSAGE_SIZE: usize = 40000;
+// const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_MESSAGE_SIZE: usize = 40000;
 
 /// Returns a BtpOutgoingService and a warp Filter.
 ///
@@ -36,242 +35,163 @@ pub fn btp_service_as_filter<O, S, A>(
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     S: BtpStore<Account = A> + Clone + Send + Sync + 'static,
-    A: BtpAccount + 'static,
+    A: BtpAccount + Send + Sync + 'static,
 {
-    let routes = warp::any().map(|| "Hello, World!");
-    routes.boxed()
-    // warp::path("accounts")
-    //     .and(warp::path::param2::<Username>())
-    //     .and(warp::path("ilp"))
-    //     .and(warp::path("btp"))
-    //     .and(warp::path::end())
-    //     .and(warp::ws2())
-    //     .map(move |username: Username, ws: Ws2| {
-    //         let store = store.clone();
-    //         let service_clone = service.clone();
-    //         ws.on_upgrade(move |ws: WebSocket| {
-    //             // TODO set max_message_size once https://github.com/seanmonstar/warp/pull/272 is merged
-    //             let service_clone = service_clone.clone();
-    //             Timeout::new(validate_auth(store, username, ws), WEBSOCKET_TIMEOUT)
-    //                 .and_then(move |(account, connection)| {
-    //                     debug!(
-    //                         "Added connection for account {}: (id: {})",
-    //                         account.username(),
-    //                         account.id()
-    //                     );
-    //                     service_clone.add_connection(account, WsWrap { connection });
-    //                     Ok(())
-    //                 })
-    //                 .or_else(|_| {
-    //                     warn!("Closing Websocket connection because of an error");
-    //                     Ok(())
-    //                 })
-    //         })
-    //     })
-    //     .boxed()
+    warp::path("accounts")
+        .and(warp::path::param::<Username>())
+        .and(warp::path("ilp"))
+        .and(warp::path("btp"))
+        .and(warp::path::end())
+        .and(warp::ws())
+        .map(move |username: Username, ws: Ws| {
+            // warp Websocket
+            let service_clone = service.clone();
+            let store_clone = store.clone();
+            ws.max_message_size(MAX_MESSAGE_SIZE)
+                .on_upgrade(|socket: WebSocket| {
+                    // wrapper over tungstenite Websocket
+                    add_connections(socket, username, service_clone, store_clone)
+                        .map(|result| result.unwrap())
+                })
+        })
+        .boxed()
 }
 
 /// This wraps a warp Websocket connection to make it act like a
 /// tungstenite Websocket connection. It is needed for
 /// compatibility with the BTP service that interacts with the
 /// websocket implementation from warp and tokio-tungstenite
-struct WsWrap<W> {
-    connection: W,
+async fn add_connections<O, S, A>(
+    socket: WebSocket,
+    username: Username,
+    service: BtpOutgoingService<O, A>,
+    store: S,
+) -> Result<(), ()>
+where
+    O: OutgoingService<A> + Clone + Send + Sync + 'static,
+    S: BtpStore<Account = A> + Clone + Send + Sync + 'static,
+    A: BtpAccount + Send + Sync + 'static,
+{
+    // We ignore all the errors
+    let socket = socket.filter_map(|v| async move { v.ok() });
+    match validate_auth(store, username, socket)
+        // .timeout(WEBSOCKET_TIMEOUT) // No method found?
+        .await
+    {
+        Ok((account, connection)) => {
+            // We need to wrap our Warp connection in order to cast the Sink type
+            // to tungstenite::Message. This probably can be implemented with SinkExt::with
+            // but couldn't figure out how.
+            service.add_connection(account.clone(), WsWrap { connection });
+            debug!(
+                "Added connection for account {}: (id: {})",
+                account.username(),
+                account.id()
+            );
+        }
+        Err(_) => {
+            warn!("Closing Websocket connection because of an error");
+        }
+    };
+
+    Ok(())
 }
 
-// impl<W> Stream for WsWrap<W>
-// where
-//     W: Stream<Item = Message, Error = warp::Error>
-//         + Sink<SinkItem = Message, SinkError = warp::Error>,
-// {
-//     type Item = tungstenite::Message;
-//     type Error = WsError;
+struct Auth {
+    request_id: u32,
+    token: SecretString,
+}
 
-//     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-//         match self.connection.poll() {
-//             Ok(Async::NotReady) => Ok(Async::NotReady),
-//             Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
-//             Ok(Async::Ready(Some(message))) => {
-//                 let message = if message.is_ping() {
-//                     tungstenite::Message::Ping(message.into_bytes())
-//                 } else if message.is_binary() {
-//                     tungstenite::Message::Binary(message.into_bytes())
-//                 } else if message.is_text() {
-//                     tungstenite::Message::Text(message.to_str().unwrap_or_default().to_string())
-//                 } else if message.is_close() {
-//                     tungstenite::Message::Close(None)
-//                 } else {
-//                     warn!(
-//                         "Got unexpected websocket message, closing connection: {:?}",
-//                         message
-//                     );
-//                     tungstenite::Message::Close(None)
-//                 };
-//                 Ok(Async::Ready(Some(message)))
-//             }
-//             Err(err) => Err(WsError::from(err)),
-//         }
-//     }
-// }
+async fn validate_auth<S, A>(
+    store: S,
+    username: Username,
+    connection: impl Stream<Item = Message> + Sink<Message>,
+) -> Result<(A, impl Stream<Item = Message> + Sink<Message>), ()>
+where
+    S: BtpStore<Account = A> + 'static,
+    A: BtpAccount + 'static,
+{
+    let (auth, mut connection) = get_auth(Box::pin(connection)).await?;
+    debug!("Got BTP connection for username: {}", username);
+    let account = store
+        .get_account_from_btp_auth(&username, &auth.token.expose_secret())
+        .map_err(move |_| warn!("BTP connection does not correspond to an account"))
+        .await?;
 
-// impl<W> Sink for WsWrap<W>
-// where
-//     W: Stream<Item = Message, Error = warp::Error>
-//         + Sink<SinkItem = Message, SinkError = warp::Error>,
-// {
-//     type SinkItem = tungstenite::Message;
-//     type SinkError = WsError;
+    let auth_response = Message::binary(
+        BtpResponse {
+            request_id: auth.request_id,
+            protocol_data: Vec::new(),
+        }
+        .to_bytes(),
+    );
 
-//     fn start_send(
-//         &mut self,
-//         item: Self::SinkItem,
-//     ) -> Result<AsyncSink<Self::SinkItem>, Self::SinkError> {
-//         match item {
-//             tungstenite::Message::Binary(data) => self
-//                 .connection
-//                 .start_send(Message::binary(data))
-//                 .map(|result| {
-//                     if let AsyncSink::NotReady(message) = result {
-//                         AsyncSink::NotReady(tungstenite::Message::Binary(message.into_bytes()))
-//                     } else {
-//                         AsyncSink::Ready
-//                     }
-//                 })
-//                 .map_err(WsError::from),
-//             tungstenite::Message::Text(data) => {
-//                 match self.connection.start_send(Message::text(data)) {
-//                     Ok(AsyncSink::NotReady(message)) => {
-//                         if let Ok(string) = String::from_utf8(message.into_bytes()) {
-//                             Ok(AsyncSink::NotReady(tungstenite::Message::text(string)))
-//                         } else {
-//                             Err(WsError::Tungstenite(tungstenite::Error::Utf8))
-//                         }
-//                     }
-//                     Ok(AsyncSink::Ready) => Ok(AsyncSink::Ready),
-//                     Err(err) => Err(WsError::from(err)),
-//                 }
-//             }
-//             // Ignore other message types because warp's WebSocket type doesn't
-//             // allow us to send any other types of messages
-//             // TODO make sure warp's websocket responds to pings and/or sends them to keep the
-//             // connection alive
-//             _ => Ok(AsyncSink::Ready),
-//         }
-//     }
+    let _ = connection.send(auth_response).await;
 
-//     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-//         self.connection.poll_complete().map_err(WsError::from)
-//     }
-// }
+    Ok((account, connection))
+}
 
-// struct Auth {
-//     request_id: u32,
-//     token: SecretString,
-// }
+/// Reads the first non-empty non-error binary message from the WebSocket and attempts to parse it as an AuthToken
+async fn get_auth(
+    connection: impl Stream<Item = Message> + Sink<Message> + Unpin,
+) -> Result<(Auth, impl Stream<Item = Message> + Sink<Message>), ()> {
+    // Skip non-binary messages like Pings and Pongs
+    // Note that the BTP protocol spec technically specifies that
+    // the auth message MUST be the first packet sent over the
+    // WebSocket connection. However, the JavaScript implementation
+    // of BTP sends a Ping packet first, so we should ignore it.
+    // (Be liberal in what you accept but strict in what you send)
+    // TODO: should we error if the client sends something other than a binary or ping packet first?
+    let mut connection =
+        connection.skip_while(move |message| futures::future::ready(!message.is_binary()));
 
-// fn validate_auth<S, A>(
-//     store: S,
-//     username: Username,
-//     connection: impl Stream<Item = Message, Error = warp::Error>
-//         + Sink<SinkItem = Message, SinkError = warp::Error>,
-// ) -> impl Future<
-//     Item = (
-//         A,
-//         impl Stream<Item = Message, Error = warp::Error>
-//             + Sink<SinkItem = Message, SinkError = warp::Error>,
-//     ),
-//     Error = (),
-// >
-// where
-//     S: BtpStore<Account = A> + 'static,
-//     A: BtpAccount + 'static,
-// {
-//     get_auth(connection).and_then(move |(auth, connection)| {
-//         debug!("Got BTP connection for username: {}", username);
-//         store
-//             .get_account_from_btp_auth(&username, &auth.token.expose_secret())
-//             .map_err(move |_| warn!("BTP connection does not correspond to an account"))
-//             .and_then(move |account| {
-//                 let auth_response = Message::binary(
-//                     BtpResponse {
-//                         request_id: auth.request_id,
-//                         protocol_data: Vec::new(),
-//                     }
-//                     .to_bytes(),
-//                 );
-//                 connection
-//                     .send(auth_response)
-//                     .map_err(|_err| error!("warp::Error sending auth response"))
-//                     .and_then(|connection| Ok((account, connection)))
-//             })
-//     })
-// }
+    // The first packet sent on the connection MUST be the auth packet
+    let message = connection.next().await;
+    match parse_auth(message) {
+        Some(auth) => Ok((auth, Box::pin(connection))),
+        None => {
+            warn!("Got a BTP connection where the first packet sent was not a valid BTP Auth message. Closing the connection");
+            Err(())
+        }
+    }
+}
 
-// fn get_auth(
-//     connection: impl Stream<Item = Message, Error = warp::Error>
-//         + Sink<SinkItem = Message, SinkError = warp::Error>,
-// ) -> impl Future<
-//     Item = (
-//         Auth,
-//         impl Stream<Item = Message, Error = warp::Error>
-//             + Sink<SinkItem = Message, SinkError = warp::Error>,
-//     ),
-//     Error = (),
-// > {
-//     connection
-//         .skip_while(|message| {
-//             // Skip non-binary messages like Pings and Pongs
-//             // Note that the BTP protocol spec technically specifies that
-//             // the auth message MUST be the first packet sent over the
-//             // WebSocket connection. However, the JavaScript implementation
-//             // of BTP sends a Ping packet first, so we should ignore it.
-//             // (Be liberal in what you accept but strict in what you send)
-//             Ok(!message.is_binary())
-//             // TODO: should we error if the client sends something other than a binary or ping packet first?
-//         })
-//         .into_future()
-//         .map_err(|_err| ())
-//         .and_then(move |(message, connection)| {
-//             // The first packet sent on the connection MUST be the auth packet
-//             result(parse_auth(message).map(|auth| (auth, connection)).ok_or_else(|| {
-//                 warn!("Got a BTP connection where the first packet sent was not a valid BTP Auth message. Closing the connection")
-//             }))
-//         })
-// }
+fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
+    if let Some(message) = ws_packet {
+        if message.is_binary() {
+            match BtpMessage::from_bytes(message.as_bytes()) {
+                Ok(message) => {
+                    let request_id = message.request_id;
+                    let mut token: Option<String> = None;
+                    // The primary data should be the "auth" with empty data
+                    // The secondary data MUST have the "auth_token" with the authorization
+                    // token set as the data field
+                    for protocol_data in message.protocol_data.iter() {
+                        let protocol_name: &str = protocol_data.protocol_name.as_ref();
+                        if protocol_name == "auth_token" {
+                            token = String::from_utf8(protocol_data.data.clone()).ok();
+                        }
+                    }
 
-// fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
-//     if let Some(message) = ws_packet {
-//         if message.is_binary() {
-//             match BtpMessage::from_bytes(message.as_bytes()) {
-//                 Ok(message) => {
-//                     let request_id = message.request_id;
-//                     let mut token: Option<String> = None;
-//                     for protocol_data in message.protocol_data.iter() {
-//                         let protocol_name: &str = protocol_data.protocol_name.as_ref();
-//                         if protocol_name == "auth_token" {
-//                             token = String::from_utf8(protocol_data.data.clone()).ok();
-//                         }
-//                     }
-
-//                     if let Some(token) = token {
-//                         return Some(Auth {
-//                             request_id,
-//                             token: SecretString::new(token.to_string()),
-//                         });
-//                     } else {
-//                         warn!("BTP packet is missing auth token");
-//                     }
-//                 }
-//                 Err(err) => {
-//                     warn!(
-//                         "warp::Error parsing BTP packet from Websocket message: {:?}",
-//                         err
-//                     );
-//                 }
-//             }
-//         } else {
-//             warn!("Websocket packet is not binary");
-//         }
-//     }
-//     None
-// }
+                    if let Some(token) = token {
+                        return Some(Auth {
+                            request_id,
+                            token: SecretString::new(token),
+                        });
+                    } else {
+                        warn!("BTP packet is missing auth token");
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        "warp::Error parsing BTP packet from Websocket message: {:?}",
+                        err
+                    );
+                }
+            }
+        } else {
+            warn!("Websocket packet is not binary");
+        }
+    }
+    None
+}
