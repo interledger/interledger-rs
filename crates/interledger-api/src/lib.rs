@@ -1,5 +1,7 @@
+use async_trait::async_trait;
 use bytes::Bytes;
-use futures::Future;
+use interledger_btp::{BtpAccount, BtpOutgoingService};
+use interledger_ccp::CcpRoutingAccount;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
@@ -7,17 +9,15 @@ use interledger_service::{Account, AddressStore, IncomingService, OutgoingServic
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
+use secrecy::SecretString;
 use serde::{de, Deserialize, Serialize};
 use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
+use url::Url;
 use uuid::Uuid;
 use warp::{self, Filter};
-mod routes;
-use interledger_btp::{BtpAccount, BtpOutgoingService};
-use interledger_ccp::CcpRoutingAccount;
-use secrecy::SecretString;
-use url::Url;
 
 pub(crate) mod http_retry;
+mod routes;
 
 // This enum and the following functions are used to allow clients to send either
 // numbers or strings and have them be properly deserialized into the appropriate
@@ -71,52 +71,39 @@ where
 // One argument against doing that is that the NodeStore allows admin-only
 // modifications to the values, whereas many of the other traits mostly
 // read from the configured values.
+#[async_trait]
 pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     type Account: Account;
 
-    fn insert_account(
-        &self,
-        account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    async fn insert_account(&self, account: AccountDetails) -> Result<Self::Account, ()>;
 
-    fn delete_account(&self, id: Uuid) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    async fn delete_account(&self, id: Uuid) -> Result<Self::Account, ()>;
 
-    fn update_account(
-        &self,
-        id: Uuid,
-        account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    async fn update_account(&self, id: Uuid, account: AccountDetails) -> Result<Self::Account, ()>;
 
-    fn modify_account_settings(
+    async fn modify_account_settings(
         &self,
         id: Uuid,
         settings: AccountSettings,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Result<Self::Account, ()>;
 
     // TODO limit the number of results and page through them
-    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, ()>;
 
-    fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
+    async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
     where
-        R: IntoIterator<Item = (String, Uuid)>;
+        R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait;
 
-    fn set_static_route(
+    async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()>;
+
+    async fn set_default_route(&self, account_id: Uuid) -> Result<(), ()>;
+
+    async fn set_settlement_engines(
         &self,
-        prefix: String,
-        account_id: Uuid,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+        asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
+    ) -> Result<(), ()>;
 
-    fn set_default_route(&self, account_id: Uuid) -> Box<dyn Future<Item = (), Error = ()> + Send>;
-
-    fn set_settlement_engines(
-        &self,
-        asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
-
-    fn get_asset_settlement_engine(
-        &self,
-        asset_code: &str,
-    ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send>;
+    async fn get_asset_settlement_engine(&self, asset_code: &str) -> Result<Option<Url>, ()>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -281,8 +268,8 @@ where
         .boxed()
     }
 
-    pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
-        warp::serve(self.into_warp_filter()).bind(addr)
+    pub async fn bind(self, addr: SocketAddr) {
+        warp::serve(self.into_warp_filter()).bind(addr).await
     }
 }
 
