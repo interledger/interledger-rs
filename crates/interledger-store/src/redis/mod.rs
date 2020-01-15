@@ -650,28 +650,34 @@ impl StreamNotificationsStore for RedisStore {
     fn publish_payment_notification(&self, payment: PaymentNotification) {
         let username = payment.to_username.clone();
         let message = serde_json::to_string(&payment).unwrap();
-        let connection = self.connection.clone();
-        spawn(
-            self.get_account_id_from_username(&username)
-                .map_err(move |_| {
+        let mut connection = self.connection.clone();
+        let self_clone = self.clone();
+        tokio::spawn(async move {
+            let account_id = self_clone
+                .get_account_id_from_username(&username)
+                .map_err(|_| {
                     error!(
                         "Failed to find account ID corresponding to username: {}",
                         username
                     )
                 })
-                .and_then(move |account_id| {
-                    debug!(
-                        "Publishing payment notification {} for account {}",
-                        message, account_id
-                    );
-                    redis_crate::cmd("PUBLISH")
-                        .arg(format!("{}{}", STREAM_NOTIFICATIONS_PREFIX, account_id))
-                        .arg(message)
-                        .query_async(connection)
-                        .map_err(move |err| error!("Error publish message to Redis: {:?}", err))
-                        .and_then(move |(_, _): (_, i32)| Ok(()))
-                }),
-        );
+                .await?;
+
+            debug!(
+                "Publishing payment notification {} for account {}",
+                message, account_id
+            );
+            // https://github.com/rust-lang/rust/issues/64960#issuecomment-544219926
+            let published_args = format!("{}{}", STREAM_NOTIFICATIONS_PREFIX, account_id.clone());
+            redis_crate::cmd("PUBLISH")
+                .arg(published_args)
+                .arg(message)
+                .query_async(&mut connection)
+                .map_err(move |err| error!("Error publish message to Redis: {:?}", err))
+                .await?;
+
+            Ok::<(), ()>(())
+        });
     }
 }
 
