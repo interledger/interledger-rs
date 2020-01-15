@@ -1409,17 +1409,18 @@ impl RouteManagerStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl RateLimitStore for RedisStore {
     type Account = Account;
 
     /// Apply rate limits for number of packets per minute and amount of money per minute
     ///
     /// This uses https://github.com/brandur/redis-cell so the redis-cell module MUST be loaded into redis before this is run
-    fn apply_rate_limits(
+    async fn apply_rate_limits(
         &self,
         account: Account,
         prepare_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = RateLimitError> + Send> {
+    ) -> Result<(), RateLimitError> {
         if account.amount_per_minute_limit.is_some() || account.packets_per_minute_limit.is_some() {
             let mut pipe = redis_crate::pipe();
             let packet_limit = account.packets_per_minute_limit.is_some();
@@ -1427,8 +1428,9 @@ impl RateLimitStore for RedisStore {
 
             if let Some(limit) = account.packets_per_minute_limit {
                 let limit = limit - 1;
+                let packets_limit = format!("limit:packets:{}", account.id);
                 pipe.cmd("CL.THROTTLE")
-                    .arg(format!("limit:packets:{}", account.id))
+                    .arg(packets_limit)
                     .arg(limit)
                     .arg(limit)
                     .arg(60)
@@ -1437,65 +1439,67 @@ impl RateLimitStore for RedisStore {
 
             if let Some(limit) = account.amount_per_minute_limit {
                 let limit = limit - 1;
+                let throughput_limit = format!("limit:throughput:{}", account.id);
                 pipe.cmd("CL.THROTTLE")
-                    .arg(format!("limit:throughput:{}", account.id))
+                    .arg(throughput_limit)
                     // TODO allow separate configuration for burst limit
                     .arg(limit)
                     .arg(limit)
                     .arg(60)
                     .arg(prepare_amount);
             }
-            Box::new(
-                pipe.query_async(self.connection.clone())
-                    .map_err(|err| {
-                        error!("Error applying rate limits: {:?}", err);
-                        RateLimitError::StoreError
-                    })
-                    .and_then(move |(_, results): (_, Vec<Vec<i64>>)| {
-                        if packet_limit && amount_limit {
-                            if results[0][0] == 1 {
-                                Err(RateLimitError::PacketLimitExceeded)
-                            } else if results[1][0] == 1 {
-                                Err(RateLimitError::ThroughputLimitExceeded)
-                            } else {
-                                Ok(())
-                            }
-                        } else if packet_limit && results[0][0] == 1 {
-                            Err(RateLimitError::PacketLimitExceeded)
-                        } else if amount_limit && results[0][0] == 1 {
-                            Err(RateLimitError::ThroughputLimitExceeded)
-                        } else {
-                            Ok(())
-                        }
-                    }),
-            )
+
+            let mut connection = self.connection.clone();
+            let results: Vec<Vec<i64>> = pipe
+                .query_async(&mut connection)
+                .map_err(|err| {
+                    error!("Error applying rate limits: {:?}", err);
+                    RateLimitError::StoreError
+                })
+                .await?;
+
+            if packet_limit && amount_limit {
+                if results[0][0] == 1 {
+                    Err(RateLimitError::PacketLimitExceeded)
+                } else if results[1][0] == 1 {
+                    Err(RateLimitError::ThroughputLimitExceeded)
+                } else {
+                    Ok(())
+                }
+            } else if packet_limit && results[0][0] == 1 {
+                Err(RateLimitError::PacketLimitExceeded)
+            } else if amount_limit && results[0][0] == 1 {
+                Err(RateLimitError::ThroughputLimitExceeded)
+            } else {
+                Ok(())
+            }
         } else {
-            Box::new(ok(()))
+            Ok(())
         }
     }
 
-    fn refund_throughput_limit(
+    async fn refund_throughput_limit(
         &self,
         account: Account,
         prepare_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         if let Some(limit) = account.amount_per_minute_limit {
+            let mut connection = self.connection.clone();
             let limit = limit - 1;
-            Box::new(
-                cmd("CL.THROTTLE")
-                    .arg(format!("limit:throughput:{}", account.id))
-                    .arg(limit)
-                    .arg(limit)
-                    .arg(60)
-                    // TODO make sure this doesn't overflow
-                    .arg(0i64 - (prepare_amount as i64))
-                    .query_async(self.connection.clone())
-                    .map_err(|err| error!("Error refunding throughput limit: {:?}", err))
-                    .and_then(|(_, _): (_, Value)| Ok(())),
-            )
-        } else {
-            Box::new(ok(()))
+            let throughput_limit = format!("limit:throughput:{}", account.id);
+            cmd("CL.THROTTLE")
+                .arg(throughput_limit)
+                .arg(limit)
+                .arg(limit)
+                .arg(60)
+                // TODO make sure this doesn't overflow
+                .arg(0i64 - (prepare_amount as i64))
+                .query_async(&mut connection)
+                .map_err(|err| error!("Error refunding throughput limit: {:?}", err))
+                .await?;
         }
+
+        Ok(())
     }
 }
 
