@@ -170,8 +170,10 @@ pub struct EchoRequestBuilder<'a> {
 #[cfg(test)]
 impl<'a> EchoRequestBuilder<'a> {
     pub fn build(&self) -> Prepare {
+        use bytes04::BufMut as BufMut04;
         let source_address_len = oer::predict_var_octet_string(self.source_address.len());
-        let mut data_buffer = BytesMut::with_capacity(ECHO_PREFIX_LEN + 1 + source_address_len);
+        let mut data_buffer =
+            bytes04::BytesMut::with_capacity(ECHO_PREFIX_LEN + 1 + source_address_len);
         data_buffer.put(ECHO_PREFIX.as_bytes());
         data_buffer.put_u8(EchoPacketType::Request as u8);
         data_buffer.put_var_octet_string(self.source_address.as_ref() as &[u8]);

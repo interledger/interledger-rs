@@ -20,10 +20,11 @@ lazy_static = { version = "1.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 reqwest = { version = "0.10.0", default-features = false, features = ["default-tls"] }
 ring = { version = "0.16.9", default-features = false }
-secrecy = { version = "0.5.1", default-features = false, features = ["alloc", "serde"] }
+secrecy = { version = "0.6", default-features = false, features = ["alloc", "serde"] }
 serde = { version = "1.0.101", default-features = false, features = ["derive"]}
 tokio = { version = "0.2.6", default-features = false, features = ["macros", "time"] }
 async-trait = "0.1.22"
 
 [dev-dependencies]
 uuid = { version = "0.8.1", default-features = false}
+bytes04 = { package = "bytes", version = "0.4", default-features = false }
