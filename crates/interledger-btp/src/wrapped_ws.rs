@@ -2,8 +2,6 @@ use futures::stream::Stream;
 use futures::Sink;
 use log::warn;
 use pin_project::pin_project;
-use std::error::Error;
-use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use warp::ws::Message;
@@ -13,49 +11,41 @@ use warp::ws::Message;
 /// for this struct, normalizing it to use Tungstenite's messages and a wrapped error type
 #[pin_project]
 #[derive(Clone)]
-pub struct WsWrap<W> {
+pub(crate) struct WsWrap<W> {
     #[pin]
-    connection: W,
+    pub(crate) connection: W,
 }
 
 impl<W> Stream for WsWrap<W>
 where
-    W: Stream<Item = Result<Message, warp::Error>>,
+    W: Stream<Item = Message>,
 {
-    type Item = Result<tungstenite::Message, WsError>;
+    type Item = tungstenite::Message;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let this = self.project();
         match this.connection.poll_next(cx) {
             Poll::Pending => Poll::Pending,
-            Poll::Ready(val) => {
-                match val {
-                    Some(v) => {
-                        let v = match v {
-                            // We could do a map_ok / map_err here but we wouldn't
-                            // be able to convert the Sink to the desired data type
-                            Ok(msg) => Ok(convert_msg(msg)),
-                            Err(err) => Err(WsError::from(err)),
-                        };
-                        Poll::Ready(Some(v))
-                    }
-                    None => Poll::Ready(None),
+            Poll::Ready(val) => match val {
+                Some(v) => {
+                    let v = convert_msg(v);
+                    Poll::Ready(Some(v))
                 }
-            }
+                None => Poll::Ready(None),
+            },
         }
     }
 }
 
-impl<W, E> Sink<tungstenite::Message> for WsWrap<W>
+impl<W> Sink<tungstenite::Message> for WsWrap<W>
 where
-    W: Sink<Message, Error = E>,
-    E: Into<WsError>,
+    W: Sink<Message>,
 {
-    type Error = WsError;
+    type Error = W::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
-        this.connection.poll_ready(cx).map_err(|e| e.into())
+        this.connection.poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: tungstenite::Message) -> Result<(), Self::Error> {
@@ -69,21 +59,19 @@ where
             // connection alive
             _ => return Ok(()),
         };
-        this.connection.start_send(item).map_err(|e| e.into())
+        this.connection.start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
-        this.connection.poll_flush(cx).map_err(|e| e.into())
+        this.connection.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = self.project();
-        this.connection.poll_close(cx).map_err(|e| e.into())
+        this.connection.poll_close(cx)
     }
 }
-
-// Implement From<tungstenite::WebSocket> and From<warp::ws::WebSocket> ?
 
 fn convert_msg(message: Message) -> tungstenite::Message {
     if message.is_ping() {
@@ -100,34 +88,5 @@ fn convert_msg(message: Message) -> tungstenite::Message {
             message
         );
         tungstenite::Message::Close(None)
-    }
-}
-
-#[derive(Debug)]
-pub enum WsError {
-    Tungstenite(tungstenite::Error),
-    Warp(warp::Error),
-}
-
-impl fmt::Display for WsError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            WsError::Tungstenite(err) => err.fmt(f),
-            WsError::Warp(err) => err.fmt(f),
-        }
-    }
-}
-
-impl Error for WsError {}
-
-impl From<tungstenite::Error> for WsError {
-    fn from(err: tungstenite::Error) -> Self {
-        WsError::Tungstenite(err)
-    }
-}
-
-impl From<warp::Error> for WsError {
-    fn from(err: warp::Error) -> Self {
-        WsError::Warp(err)
     }
 }
