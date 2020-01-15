@@ -19,12 +19,9 @@ use reconnect::RedisReconnect;
 
 use super::account::{Account, AccountWithEncryptedTokens};
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
+use async_trait::async_trait;
 use bytes::Bytes;
-use futures::{
-    future::{err, ok, result, Either},
-    sync::mpsc::UnboundedSender,
-    Future, Stream,
-};
+use futures::channel::mpsc::UnboundedSender;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
@@ -48,7 +45,7 @@ use num_bigint::BigUint;
 use parking_lot::RwLock;
 use redis_crate::{
     self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
-    PipelineCommands, PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
+    PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
 };
 use secrecy::{ExposeSecret, Secret, SecretBytes};
 use serde::{Deserialize, Serialize};
@@ -62,10 +59,8 @@ use std::{
     str,
     str::FromStr,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio_executor::spawn;
-use tokio_timer::Interval;
 use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
@@ -128,6 +123,8 @@ pub struct RedisStoreBuilder {
     node_ilp_address: Address,
 }
 
+use redis_crate::AsyncCommands;
+
 impl RedisStoreBuilder {
     pub fn new(redis_url: ConnectionInfo, secret: [u8; 32]) -> Self {
         RedisStoreBuilder {
@@ -148,126 +145,122 @@ impl RedisStoreBuilder {
         self
     }
 
-    pub fn connect(&mut self) -> impl Future<Item = RedisStore, Error = ()> {
+    pub async fn connect(&mut self) -> Result<RedisStore, ()> {
         let redis_info = self.redis_url.clone();
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
         self.secret.zeroize(); // clear the secret after it has been used for key generation
         let poll_interval = self.poll_interval;
         let ilp_address = self.node_ilp_address.clone();
 
-        RedisReconnect::connect(redis_info.clone())
+        let client = Client::open(redis_info.clone())
+            .map_err(|err| error!("Error creating subscription Redis client: {:?}", err))?;
+        debug!("Connected subscription client to redis: {:?}", client);
+        let mut connection = RedisReconnect::connect(redis_info.clone())
             .map_err(|_| ())
-            .join(
-                result(Client::open(redis_info.clone()))
-                    .map_err(|err| error!("Error creating subscription Redis client: {:?}", err))
-                    .and_then(|client| {
-                        debug!("Connected subscription client to redis: {:?}", client);
-                        client.get_connection().map_err(|err| {
-                            error!("Error connecting subscription client to Redis: {:?}", err)
-                        })
-                    }),
-            )
-            .and_then(move |(connection, mut sub_connection)| {
-                // Before initializing the store, check if we have an address
-                // that was configured due to adding a parent. If no parent was
-                // found, use the builder's provided address (local.host) or the
-                // one we decided to override it with
-                redis_crate::cmd("GET")
-                    .arg(PARENT_ILP_KEY)
-                    .query_async(connection.clone())
-                    .map_err(|err| {
-                        error!(
-                            "Error checking whether we have a parent configured: {:?}",
-                            err
-                        )
-                    })
-                    .and_then(move |(_, address): (RedisReconnect, Option<String>)| {
-                        Ok(if let Some(address) = address {
-                            Address::from_str(&address).unwrap()
-                        } else {
-                            ilp_address
-                        })
-                    })
-                    .and_then(move |node_ilp_address| {
-                        let store = RedisStore {
-                            ilp_address: Arc::new(RwLock::new(node_ilp_address)),
-                            connection,
-                            subscriptions: Arc::new(RwLock::new(HashMap::new())),
-                            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
-                            routes: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
-                            encryption_key: Arc::new(encryption_key),
-                            decryption_key: Arc::new(decryption_key),
-                        };
-
-                        // Poll for routing table updates
-                        // Note: if this behavior changes, make sure to update the Drop implementation
-                        let connection_clone = Arc::downgrade(&store.connection.conn);
-                        let redis_info = store.connection.redis_info.clone();
-                        let routing_table = store.routes.clone();
-                        let poll_routes =
-                            Interval::new(Instant::now(), Duration::from_millis(poll_interval))
-                                .map_err(|err| error!("Interval error: {:?}", err))
-                                .for_each(move |_| {
-                                    if let Some(conn) = connection_clone.upgrade() {
-                                        Either::A(update_routes(
-                                            RedisReconnect {
-                                                conn,
-                                                redis_info: redis_info.clone(),
-                                            },
-                                            routing_table.clone(),
-                                        ))
-                                    } else {
-                                        debug!("Not polling routes anymore because connection was closed");
-                                        // TODO make sure the interval stops
-                                        Either::B(err(()))
-                                    }
-                                });
-                        spawn(poll_routes);
-
-                        // Here we spawn a worker thread to listen for incoming messages on Redis pub/sub,
-                        // running a callback for each message received.
-                        // This currently must be a thread rather than a task due to the redis-rs driver
-                        // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
-                        let subscriptions_clone = store.subscriptions.clone();
-                        std::thread::spawn(move || {
-                            let sub_status =
-                                sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
-                                    let channel_name = msg.get_channel_name();
-                                    if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
-                                        if let Ok(account_id) = Uuid::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
-                                            let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
-                                                Ok(s) => s,
-                                                Err(e) => {
-                                                    error!("Failed to get payload from subscription: {}", e);
-                                                    return ControlFlow::Continue;
-                                                }
-                                            };
-                                            trace!("Subscribed message received for account {}: {:?}", account_id, message);
-                                            match subscriptions_clone.read().get(&account_id) {
-                                                Some(sender) => {
-                                                    if let Err(err) = sender.unbounded_send(message) {
-                                                        error!("Failed to send message: {}", err);
-                                                    }
-                                                }
-                                                None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
-                                            }
-                                        } else {
-                                            error!("Invalid Uuid in channel name: {}", channel_name);
-                                        }
-                                    } else {
-                                        warn!("Ignoring unexpected message from Redis subscription for channel: {}", channel_name);
-                                    }
-                                    ControlFlow::Continue
-                                });
-                            match sub_status {
-                                Err(e) => warn!("Could not issue psubscribe to Redis: {}", e),
-                                Ok(_) => debug!("Successfully subscribed to Redis pubsub"),
-                            }
-                        });
-
-                Ok(store)
+            .await?;
+        let mut sub_connection = client
+            .get_connection()
+            .map_err(|err| error!("Error connecting subscription client to Redis: {:?}", err))?;
+        // Before initializing the store, check if we have an address
+        // that was configured due to adding a parent. If no parent was
+        // found, use the builder's provided address (local.host) or the
+        // one we decided to override it with
+        let address: Option<String> = connection
+            .get(PARENT_ILP_KEY)
+            .map_err(|err| {
+                error!(
+                    "Error checking whether we have a parent configured: {:?}",
+                    err
+                )
             })
-        })
+            .await?;
+        let node_ilp_address = if let Some(address) = address {
+            Address::from_str(&address).unwrap()
+        } else {
+            ilp_address
+        };
+
+        let store = RedisStore {
+            ilp_address: Arc::new(RwLock::new(node_ilp_address)),
+            connection,
+            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            exchange_rates: Arc::new(RwLock::new(HashMap::new())),
+            routes: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
+            encryption_key: Arc::new(encryption_key),
+            decryption_key: Arc::new(decryption_key),
+        };
+
+        // Poll for routing table updates
+        // Note: if this behavior changes, make sure to update the Drop implementation
+        let connection_clone = Arc::downgrade(&store.connection.conn);
+        let redis_info = store.connection.redis_info.clone();
+        let routing_table = store.routes.clone();
+
+        let poll_routes = async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(poll_interval));
+            // Irrefutable while pattern, can we do something here?
+            loop {
+                interval.tick().await;
+                if let Some(conn) = connection_clone.upgrade() {
+                    let _ = update_routes(
+                        RedisReconnect {
+                            conn,
+                            redis_info: redis_info.clone(),
+                        },
+                        routing_table.clone(),
+                    )
+                    .await;
+                } else {
+                    debug!("Not polling routes anymore because connection was closed");
+                    break;
+                }
+            }
+            Ok::<(), ()>(())
+        };
+        tokio::spawn(poll_routes);
+
+        // Here we spawn a worker thread to listen for incoming messages on Redis pub/sub,
+        // running a callback for each message received.
+        // This currently must be a thread rather than a task due to the redis-rs driver
+        // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
+        let subscriptions_clone = store.subscriptions.clone();
+        std::thread::spawn(move || {
+            let sub_status =
+                sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
+                    let channel_name = msg.get_channel_name();
+                    if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
+                        if let Ok(account_id) = Uuid::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
+                            let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    error!("Failed to get payload from subscription: {}", e);
+                                    return ControlFlow::Continue;
+                                }
+                            };
+                            trace!("Subscribed message received for account {}: {:?}", account_id, message);
+                            match subscriptions_clone.read().get(&account_id) {
+                                Some(sender) => {
+                                    if let Err(err) = sender.unbounded_send(message) {
+                                        error!("Failed to send message: {}", err);
+                                    }
+                                }
+                                None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
+                            }
+                        } else {
+                            error!("Invalid Uuid in channel name: {}", channel_name);
+                        }
+                    } else {
+                        warn!("Ignoring unexpected message from Redis subscription for channel: {}", channel_name);
+                    }
+                    ControlFlow::Continue
+                });
+            match sub_status {
+                Err(e) => warn!("Could not issue psubscribe to Redis: {}", e),
+                Ok(_) => debug!("Successfully subscribed to Redis pubsub"),
+            }
+        });
+
+        Ok(store)
     }
 }
 
