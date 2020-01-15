@@ -20,7 +20,8 @@ pub use server::{
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use futures::{future::ok, sync::mpsc::UnboundedSender, Future};
+    use async_trait::async_trait;
+    use futures::channel::mpsc::UnboundedSender;
     use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore, AddressStore, Username};
@@ -88,22 +89,17 @@ pub mod test_helpers {
         pub route: (String, TestAccount),
     }
 
+    #[async_trait]
     impl AccountStore for TestStore {
         type Account = TestAccount;
 
-        fn get_accounts(
-            &self,
-            _account_ids: Vec<Uuid>,
-        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
-            Box::new(ok(vec![self.route.1.clone()]))
+        async fn get_accounts(&self, _account_ids: Vec<Uuid>) -> Result<Vec<Self::Account>, ()> {
+            Ok(vec![self.route.1.clone()])
         }
 
         // stub implementation (not used in these tests)
-        fn get_account_id_from_username(
-            &self,
-            _username: &Username,
-        ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
-            Box::new(ok(Uuid::new_v4()))
+        async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+            Ok(Uuid::new_v4())
         }
     }
 
@@ -115,16 +111,14 @@ pub mod test_helpers {
         }
     }
 
+    #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        fn set_ilp_address(
-            &self,
-            _ilp_address: Address,
-        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
             unimplemented!()
         }
 
-        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        async fn clear_ilp_address(&self) -> Result<(), ()> {
             unimplemented!()
         }
 
@@ -140,18 +134,16 @@ mod send_money_to_receiver {
     use super::test_helpers::*;
     use super::*;
     use bytes::Bytes;
-    use futures::Future;
     use interledger_ildcp::IldcpService;
     use interledger_packet::Address;
     use interledger_packet::{ErrorCode, RejectBuilder};
     use interledger_router::Router;
     use interledger_service::outgoing_service_fn;
     use std::str::FromStr;
-    use tokio::runtime::Runtime;
     use uuid::Uuid;
 
-    #[test]
-    fn send_money_test() {
+    #[tokio::test]
+    async fn send_money_test() {
         let server_secret = Bytes::from(&[0; 32][..]);
         let destination_address = Address::from_str("example.receiver").unwrap();
         let account = TestAccount {
@@ -184,7 +176,7 @@ mod send_money_to_receiver {
             connection_generator.generate_address_and_secret(&destination_address);
 
         let destination_address = Address::from_str("example.receiver").unwrap();
-        let run = send_money(
+        let (receipt, _service) = send_money(
             server,
             &test_helpers::TestAccount {
                 id: Uuid::new_v4(),
@@ -196,12 +188,9 @@ mod send_money_to_receiver {
             &shared_secret[..],
             100,
         )
-        .and_then(|(receipt, _service)| {
-            assert_eq!(receipt.delivered_amount, 100);
-            Ok(())
-        })
-        .map_err(|err| panic!(err));
-        let runtime = Runtime::new().unwrap();
-        runtime.block_on_all(run).unwrap();
+        .await
+        .unwrap();
+
+        assert_eq!(receipt.delivered_amount, 100);
     }
 }
