@@ -1,15 +1,12 @@
-#![type_length_limit = "1152909"]
+#![type_length_limit = "6000000"]
 
-mod metrics;
+// mod metrics;
 mod node;
-mod trace;
+// mod trace;
 
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
+// #[cfg(feature = "google-pubsub")]
+// mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
 
 pub use node::*;
-#[allow(deprecated)]
-#[cfg(feature = "redis")]
-pub use redis_store::insert_account_with_redis_store;

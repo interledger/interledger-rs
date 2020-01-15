@@ -1,4 +1,4 @@
-#![type_length_limit = "1152909"]
+#![type_length_limit = "6000000"]
 
 mod metrics;
 mod node;
@@ -24,7 +24,8 @@ use tracing_subscriber::{
     fmt::{time::ChronoUtc, Subscriber},
 };
 
-pub fn main() {
+#[tokio::main]
+async fn main() {
     Subscriber::builder()
         .with_timer(ChronoUtc::rfc3339())
         .with_env_filter(EnvFilter::from_default_env())
@@ -143,7 +144,9 @@ pub fn main() {
     }
     let matches = app.clone().get_matches();
     merge_args(&mut config, &matches);
-    config.try_into::<InterledgerNode>().unwrap().run();
+
+    let node = config.try_into::<InterledgerNode>().unwrap();
+    node.serve().await.unwrap();
 }
 
 // returns (subcommand paths, config path)

@@ -337,7 +337,7 @@ where
     match packet {
         Ok(fulfill) => {
             // TODO: Can we avoid copying here?
-            let data = Bytes::copy_from_slice(fulfill.as_ref());
+            let data = Bytes::copy_from_slice(fulfill.data());
             Ok(ApiResponse::Data(data))
         }
         Err(reject) => {

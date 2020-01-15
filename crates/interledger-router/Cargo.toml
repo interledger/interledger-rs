@@ -8,7 +8,6 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-futures = { version = "0.1.29", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
