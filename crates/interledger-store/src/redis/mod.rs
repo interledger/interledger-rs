@@ -884,45 +884,42 @@ impl BtpStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl HttpStore for RedisStore {
     type Account = Account;
 
     /// Checks if the stored token for the provided account id matches the
     /// provided token, and if so, returns the account associated with that token
-    fn get_account_from_http_auth(
+    async fn get_account_from_http_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
+    ) -> Result<Self::Account, ()> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
         let token = token.to_owned();
-        Box::new(
-            ACCOUNT_FROM_USERNAME
-                .arg(username.as_ref())
-                .invoke_async(self.connection.clone())
-                .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
-                .and_then(
-                    move |(_connection, account): (_, Option<AccountWithEncryptedTokens>)| {
-                        if let Some(account) = account {
-                            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-                            if let Some(t) = account.ilp_over_http_incoming_token.clone() {
-                                let t = t.expose_secret().clone();
-                                if t == Bytes::from(token) {
-                                    Ok(account)
-                                } else {
-                                    Err(())
-                                }
-                            } else {
-                                Err(())
-                            }
-                        } else {
-                            warn!("No account found with given HTTP auth");
-                            Err(())
-                        }
-                    },
-                ),
-        )
+        let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
+            .arg(username.as_ref())
+            .invoke_async(&mut self.connection.clone())
+            .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
+            .await?;
+
+        if let Some(account) = account {
+            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
+            if let Some(t) = account.ilp_over_http_incoming_token.clone() {
+                let t = t.expose_secret().clone();
+                if t == Bytes::from(token) {
+                    Ok(account)
+                } else {
+                    Err(())
+                }
+            } else {
+                Err(())
+            }
+        } else {
+            warn!("No account found with given HTTP auth");
+            Err(())
+        }
     }
 }
 
