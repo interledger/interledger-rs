@@ -1820,48 +1820,44 @@ type RouteVec = Vec<(String, RedisAccountId)>;
 use futures::future::TryFutureExt;
 
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
-fn update_routes(
-    connection: RedisReconnect,
+async fn update_routes(
+    mut connection: RedisReconnect,
     routing_table: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
-) -> impl Future<Item = (), Error = ()> {
+) -> Result<(), ()> {
     let mut pipe = redis_crate::pipe();
     pipe.hgetall(ROUTES_KEY)
         .hgetall(STATIC_ROUTES_KEY)
         .get(DEFAULT_ROUTE_KEY);
-    pipe.query_async(connection)
+    let (routes, static_routes, default_route): (RouteVec, RouteVec, Option<RedisAccountId>) = pipe
+        .query_async(&mut connection)
         .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
-        .and_then(
-            move |(_connection, (routes, static_routes, default_route)): (
-                _,
-                (RouteVec, RouteVec, Option<RedisAccountId>),
-            )| {
-                trace!(
-                    "Loaded routes from redis. Static routes: {:?}, default route: {:?}, other routes: {:?}",
-                    static_routes,
-                    default_route,
-                    routes
-                );
-                // If there is a default route set in the db,
-                // set the entry for "" in the routing table to route to that account
-                let default_route_iter = iter::once(default_route)
-                    .filter_map(|r| r)
-                    .map(|rid| (String::new(), rid.0));
-                let routes = HashMap::from_iter(
-                    routes
-                        .into_iter().map(|(s, rid)| (s, rid.0))
-                        // Include the default route if there is one
-                        .chain(default_route_iter)
-                        // Having the static_routes inserted after ensures that they will overwrite
-                        // any routes with the same prefix from the first set
-                        .chain(static_routes.into_iter().map(|(s, rid)| (s, rid.0)))
-                );
-                // TODO we may not want to print this because the routing table will be very big
-                // if the node has a lot of local accounts
-                trace!("Routing table is: {:?}", routes);
-                *routing_table.write() = Arc::new(routes);
-                Ok(())
-            },
-        )
+        .await?;
+    trace!(
+        "Loaded routes from redis. Static routes: {:?}, default route: {:?}, other routes: {:?}",
+        static_routes,
+        default_route,
+        routes
+    );
+    // If there is a default route set in the db,
+    // set the entry for "" in the routing table to route to that account
+    let default_route_iter = iter::once(default_route)
+        .filter_map(|r| r)
+        .map(|rid| (String::new(), rid.0));
+    let routes = HashMap::from_iter(
+        routes
+            .into_iter()
+            .map(|(s, rid)| (s, rid.0))
+            // Include the default route if there is one
+            .chain(default_route_iter)
+            // Having the static_routes inserted after ensures that they will overwrite
+            // any routes with the same prefix from the first set
+            .chain(static_routes.into_iter().map(|(s, rid)| (s, rid.0))),
+    );
+    // TODO we may not want to print this because the routing table will be very big
+    // if the node has a lot of local accounts
+    trace!("Routing table is: {:?}", routes);
+    *routing_table.write() = Arc::new(routes);
+    Ok(())
 }
 
 // Uuid does not implement ToRedisArgs and FromRedisValue.
@@ -2118,29 +2114,16 @@ fn get_url_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Url>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::future;
     use redis_crate::IntoConnectionInfo;
-    use tokio::runtime::Runtime;
 
-    #[test]
-    fn connect_fails_if_db_unavailable() {
-        let mut runtime = Runtime::new().unwrap();
-        runtime
-            .block_on(future::lazy(
-                || -> Box<dyn Future<Item = (), Error = ()> + Send> {
-                    Box::new(
-                        RedisStoreBuilder::new(
-                            "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
-                            [0; 32],
-                        )
-                        .connect()
-                        .then(|result| {
-                            assert!(result.is_err());
-                            Ok(())
-                        }),
-                    )
-                },
-            ))
-            .unwrap();
+    #[tokio::test]
+    async fn connect_fails_if_db_unavailable() {
+        let result = RedisStoreBuilder::new(
+            "redis://127.0.0.1:0".into_connection_info().unwrap() as ConnectionInfo,
+            [0; 32],
+        )
+        .connect()
+        .await;
+        assert!(result.is_err());
     }
 }
