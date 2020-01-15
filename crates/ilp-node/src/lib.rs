@@ -1,11 +1,11 @@
-#![type_length_limit = "2000000"]
+#![type_length_limit = "6000000"]
 
-mod metrics;
+// mod metrics;
 mod node;
-mod trace;
+// mod trace;
 
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
+// #[cfg(feature = "google-pubsub")]
+// mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
 

@@ -8,9 +8,9 @@ use serde_json::json;
 use std::str::FromStr;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::{debug, error_span};
-use tracing_futures::Instrument;
+// use tracing_futures::Instrument;
 
-const LOG_TARGET: &str = "interledger-tests-three-nodes";
+// const LOG_TARGET: &str = "interledger-tests-three-nodes";
 
 #[tokio::test]
 async fn three_nodes() {
@@ -65,11 +65,7 @@ async fn three_nodes() {
         "username": "charlie_on_b",
         "asset_code": "ABC",
         "asset_scale": 6,
-        // "ilp_over_btp_incoming_token" : "three",
-        // TODO: remove these and replace with BTP once it's solved
-        "ilp_over_http_outgoing_token": "two",
-        "ilp_over_http_incoming_token": "three",
-        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node3_http, "bob_on_c"),
+        "ilp_over_btp_incoming_token" : "three",
         "min_balance": -1_000_000_000,
         "routing_relation": "Child",
     });
@@ -85,15 +81,13 @@ async fn three_nodes() {
         "username": "bob_on_c",
         "asset_code": "ABC",
         "asset_scale": 6,
-        "ilp_over_http_outgoing_token": "three",
         "ilp_over_http_incoming_token" : "two",
-        "ilp_over_http_url": format!("http://localhost:{}/accounts/{}/ilp", node2_http, "charlie_on_b"),
+        "ilp_over_http_outgoing_token": "three",
+        "ilp_over_btp_url": format!("btp+ws://localhost:{}/accounts/{}/ilp/btp", node2_http, "charlie_on_b"),
+        "ilp_over_btp_outgoing_token": "three",
         "min_balance": -1_000_000_000,
         "routing_relation": "Parent",
     });
-    // json! does not take comments into account!
-    // "ilp_over_btp_url": format!("btp+ws://localhost:{}/accounts/{}/ilp/btp", node2_http, "charlie_on_b"),
-    // "ilp_over_btp_outgoing_token": "three",
 
     let node1: InterledgerNode = serde_json::from_value(json!({
         "ilp_address": "example.alice",
@@ -164,7 +158,7 @@ async fn three_nodes() {
         .unwrap();
 
     node3.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node3")).await.unwrap();
-    let acc = create_account_on_node(node3_http, charlie_on_charlie, "admin")
+    create_account_on_node(node3_http, charlie_on_charlie, "admin")
         .await
         .unwrap();
     create_account_on_node(node3_http, bob_on_charlie, "admin")

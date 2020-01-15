@@ -1,7 +1,7 @@
 #![cfg(feature = "redis")]
 
 use crate::node::InterledgerNode;
-use futures::{Future, TryFutureExt};
+use futures::TryFutureExt;
 pub use interledger::{
     api::{AccountDetails, NodeStore},
     packet::Address,
@@ -10,8 +10,7 @@ pub use interledger::{
 };
 pub use redis_crate::{ConnectionInfo, IntoConnectionInfo};
 use ring::hmac;
-use tracing::{debug, error};
-use uuid::Uuid;
+use tracing::error;
 
 static REDIS_SECRET_GENERATION_STRING: &str = "ilp_redis_secret";
 

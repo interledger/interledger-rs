@@ -1,5 +1,5 @@
 // use crate::metrics::{incoming_metrics, outgoing_metrics};
-use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
+// use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
 use bytes::Bytes;
 use futures::{
     future::{err, Either},
@@ -52,8 +52,8 @@ use warp::{
     Filter,
 };
 
-#[cfg(feature = "google-pubsub")]
-use crate::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
+// #[cfg(feature = "google-pubsub")]
+// use crate::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 #[cfg(feature = "redis")]
 use crate::redis_store::*;
 #[cfg(feature = "balance-tracking")]
@@ -228,8 +228,8 @@ pub struct InterledgerNode {
     /// If this configuration is not provided, the node will not collect metrics.
     #[serde(default)]
     pub prometheus: Option<PrometheusConfig>,
-    #[cfg(feature = "google-pubsub")]
-    pub google_pubsub: Option<PubsubConfig>,
+    // #[cfg(feature = "google-pubsub")]
+    // pub google_pubsub: Option<PubsubConfig>,
 }
 
 impl InterledgerNode {
@@ -322,8 +322,8 @@ impl InterledgerNode {
         let exchange_rate_poll_interval = self.exchange_rate.poll_interval;
         let exchange_rate_poll_failure_tolerance = self.exchange_rate.poll_failure_tolerance;
         let exchange_rate_spread = self.exchange_rate.spread;
-        #[cfg(feature = "google-pubsub")]
-        let google_pubsub = self.google_pubsub.clone();
+        // #[cfg(feature = "google-pubsub")]
+        // let google_pubsub = self.google_pubsub.clone();
 
         let btp_accounts = store
             .get_btp_outgoing_accounts()
@@ -398,7 +398,7 @@ impl InterledgerNode {
         );
 
         // Add tracing to track the outgoing request details
-        let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
+        // let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
 
         let mut ccp_builder = CcpRouteManagerBuilder::new(
             ilp_address.clone(),
@@ -425,31 +425,35 @@ impl InterledgerNode {
         // let incoming_service = incoming_service.wrap(incoming_metrics);
 
         // Handle incoming packets sent via BTP
-        btp_server_service.handle_incoming(
-            incoming_service
-                .clone()
-                .wrap(|request, mut next| {
-                    async move {
-                        let btp = debug_span!(target: "interledger-node", "btp");
-                        let _btp_scope = btp.enter();
-                        next.handle_request(request).in_current_span().await
-                    }
-                })
-                .in_current_span(),
-        );
+        btp_server_service
+            .handle_incoming(
+                incoming_service
+                    .clone()
+                    .wrap(|request, mut next| {
+                        async move {
+                            let btp = debug_span!(target: "interledger-node", "btp");
+                            let _btp_scope = btp.enter();
+                            next.handle_request(request).in_current_span().await
+                        }
+                    })
+                    .in_current_span(),
+            )
+            .await;
 
-        btp_client_service.handle_incoming(
-            incoming_service
-                .clone()
-                .wrap(|request, mut next| {
-                    async move {
-                        let btp = debug_span!(target: "interledger-node", "btp");
-                        let _btp_scope = btp.enter();
-                        next.handle_request(request).in_current_span().await
-                    }
-                })
-                .in_current_span(),
-        );
+        btp_client_service
+            .handle_incoming(
+                incoming_service
+                    .clone()
+                    .wrap(|request, mut next| {
+                        async move {
+                            let btp = debug_span!(target: "interledger-node", "btp");
+                            let _btp_scope = btp.enter();
+                            next.handle_request(request).in_current_span().await
+                        }
+                    })
+                    .in_current_span(),
+            )
+            .await;
 
         // Node HTTP API
         let mut api = NodeApi::new(
@@ -467,7 +471,7 @@ impl InterledgerNode {
                 })
                 .in_current_span(),
             outgoing_service.clone(),
-            btp.clone(),
+            btp.clone(), // btp client service!
         );
         if let Some(username) = default_spsp_account {
             api.default_spsp_account(username);
@@ -491,10 +495,10 @@ impl InterledgerNode {
                 store.clone(),
             )
             .as_filter())
-            // .or(btp_service_as_filter(
-            //     btp_server_service_clone,
-            //     store.clone(),
-            // ))
+            .or(btp_service_as_filter(
+                btp_server_service_clone,
+                store.clone(),
+            ))
             .recover(default_rejection_handler)
             .with(warp::log("interledger-api"))
             .boxed();

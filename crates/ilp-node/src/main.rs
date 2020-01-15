@@ -1,4 +1,4 @@
-#![type_length_limit = "2000000"]
+#![type_length_limit = "6000000"]
 
 mod metrics;
 mod node;

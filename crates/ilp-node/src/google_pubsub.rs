@@ -1,3 +1,4 @@
+#[cfg(feature = "google_pubsub")]
 use base64;
 use chrono::Utc;
 use futures::{
