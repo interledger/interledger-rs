@@ -4,17 +4,19 @@ use crate::core::{
     types::{Convert, ConvertDetails, LeftoversStore},
 };
 use bytes::Bytes;
-use futures::{future::result, Future};
+use futures::TryFutureExt;
 use http::StatusCode;
 use num_bigint::BigUint;
 use redis_crate::{
-    self, aio::SharedConnection, cmd, Client, ConnectionInfo, ErrorKind, FromRedisValue,
-    PipelineCommands, RedisError, RedisWrite, ToRedisArgs, Value,
+    self, aio::MultiplexedConnection, AsyncCommands, Client, ConnectionInfo, ErrorKind,
+    FromRedisValue, RedisError, RedisWrite, ToRedisArgs, Value,
 };
-use std::collections::HashMap as SlowHashMap;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use log::{debug, error, trace};
+
+use async_trait::async_trait;
 
 #[cfg(test)]
 mod test_helpers;
@@ -33,16 +35,22 @@ impl EngineRedisStoreBuilder {
         EngineRedisStoreBuilder { redis_url }
     }
 
-    pub fn connect(&self) -> impl Future<Item = EngineRedisStore, Error = ()> {
-        result(Client::open(self.redis_url.clone()))
-            .map_err(|err| error!("Error creating Redis client: {:?}", err))
-            .and_then(|client| {
-                debug!("Connected to redis: {:?}", client);
-                client
-                    .get_shared_async_connection()
-                    .map_err(|err| error!("Error connecting to Redis: {:?}", err))
-            })
-            .and_then(move |connection| Ok(EngineRedisStore { connection }))
+    pub async fn connect(&self) -> Result<EngineRedisStore, ()> {
+        let client = match Client::open(self.redis_url.clone()) {
+            Ok(c) => c,
+            Err(err) => {
+                error!("Error creating Redis client: {:?}", err);
+                return Err(());
+            }
+        };
+
+        let connection = client
+            .get_multiplexed_tokio_connection()
+            .map_err(|err| error!("Error connecting to Redis: {:?}", err))
+            .await?;
+        debug!("Connected to redis: {:?}", client);
+
+        Ok(EngineRedisStore { connection })
     }
 }
 
@@ -52,56 +60,54 @@ impl EngineRedisStoreBuilder {
 /// composed in the stores of other Settlement Engines.
 #[derive(Clone)]
 pub struct EngineRedisStore {
-    pub connection: SharedConnection,
+    pub connection: MultiplexedConnection,
 }
 
+#[async_trait]
 impl IdempotentStore for EngineRedisStore {
-    fn load_idempotent_data(
+    async fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Result<Option<IdempotentData>, ()> {
         let idempotency_key_clone = idempotency_key.clone();
-        Box::new(
-            cmd("HGETALL")
-                .arg(idempotency_key.clone())
-                .query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error loading idempotency key {}: {:?}",
-                        idempotency_key_clone, err
-                    )
-                })
-                .and_then(
-                    move |(_connection, ret): (_, SlowHashMap<String, String>)| {
-                        if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
-                            ret.get("status_code"),
-                            ret.get("data"),
-                            ret.get("input_hash"),
-                        ) {
-                            trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                            let mut input_hash: [u8; 32] = Default::default();
-                            input_hash.copy_from_slice(input_hash_slice.as_ref());
-                            Ok(Some(IdempotentData::new(
-                                StatusCode::from_str(status_code).unwrap(),
-                                Bytes::from(data.clone()),
-                                input_hash,
-                            )))
-                        } else {
-                            Ok(None)
-                        }
-                    },
-                ),
-        )
+        let mut connection = self.connection.clone();
+        let ret: HashMap<String, String> = connection
+            .hgetall(idempotency_key.clone())
+            .map_err(move |err| {
+                error!(
+                    "Error loading idempotency key {}: {:?}",
+                    idempotency_key_clone, err
+                )
+            })
+            .await?;
+
+        if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
+            ret.get("status_code"),
+            ret.get("data"),
+            ret.get("input_hash"),
+        ) {
+            trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
+            let mut input_hash: [u8; 32] = Default::default();
+            input_hash.copy_from_slice(input_hash_slice.as_ref());
+            Ok(Some(IdempotentData::new(
+                StatusCode::from_str(status_code).unwrap(),
+                Bytes::from(data.clone()),
+                input_hash,
+            )))
+        } else {
+            Ok(None)
+        }
     }
 
-    fn save_idempotent_data(
+    async fn save_idempotent_data(
         &self,
         idempotency_key: String,
         input_hash: [u8; 32],
         status_code: StatusCode,
         data: Bytes,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         let mut pipe = redis_crate::pipe();
+        let mut connection = self.connection.clone();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
             .arg(&idempotency_key)
@@ -114,19 +120,16 @@ impl IdempotentStore for EngineRedisStore {
             .ignore()
             .expire(&idempotency_key, 86400)
             .ignore();
-        Box::new(
-            pipe.query_async(self.connection.clone())
-                .map_err(|err| error!("Error caching: {:?}", err))
-                .and_then(move |(_connection, _): (_, Vec<String>)| {
-                    trace!(
-                        "Cached {:?}: {:?}, {:?}",
-                        idempotency_key,
-                        status_code,
-                        data,
-                    );
-                    Ok(())
-                }),
-        )
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error caching: {:?}", err))
+            .await?;
+        trace!(
+            "Cached {:?}: {:?}, {:?}",
+            idempotency_key,
+            status_code,
+            data,
+        );
+        Ok(())
     }
 }
 
@@ -216,151 +219,138 @@ impl FromRedisValue for AmountWithScale {
     }
 }
 
+#[async_trait]
 impl LeftoversStore for EngineRedisStore {
     type AccountId = String;
     type AssetType = BigUint;
 
-    fn get_uncredited_settlement_amount(
+    async fn get_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
-        Box::new(
-            cmd("LRANGE")
-                .arg(uncredited_amount_key(&account_id))
-                .arg(0)
-                .arg(-1)
-                .query_async(self.connection.clone())
-                .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
-                .and_then(move |(_, amount): (_, AmountWithScale)| Ok((amount.num, amount.scale))),
-        )
+    ) -> Result<(Self::AssetType, u8), ()> {
+        let mut connection = self.connection.clone();
+        let amount: AmountWithScale = connection
+            .lrange(uncredited_amount_key(&account_id), 0, -1)
+            .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
+            .await?;
+        Ok((amount.num, amount.scale))
     }
 
-    fn save_uncredited_settlement_amount(
+    async fn save_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         trace!(
             "Saving uncredited_settlement_amount {:?} {:?}",
             account_id,
             uncredited_settlement_amount
         );
-        Box::new(
-            // We store these amounts as lists of strings
-            // because we cannot do BigNumber arithmetic in the store
-            // When loading the amounts, we convert them to the appropriate data
-            // type and sum them up.
-            cmd("RPUSH")
-                .arg(uncredited_amount_key(&account_id))
-                .arg(AmountWithScale {
+        // We store these amounts as lists of strings
+        // because we cannot do BigNumber arithmetic in the store
+        // When loading the amounts, we convert them to the appropriate data
+        // type and sum them up.
+        let mut connection = self.connection.clone();
+        connection
+            .rpush(
+                uncredited_amount_key(&account_id),
+                AmountWithScale {
                     num: uncredited_settlement_amount.0,
                     scale: uncredited_settlement_amount.1,
-                })
-                .query_async(self.connection.clone())
-                .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
+                },
+            )
+            .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
+            .await?;
+
+        Ok(())
     }
 
-    fn load_uncredited_settlement_amount(
+    async fn load_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
         local_scale: u8,
-    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
+    ) -> Result<Self::AssetType, ()> {
         let connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
-        Box::new(
-            self.get_uncredited_settlement_amount(account_id.clone())
-                .and_then(move |amount| {
-                    // scale the amount from the max scale to the local scale, and then
-                    // save any potential leftovers to the store
-                    let (scaled_amount, precision_loss) =
-                        scale_with_precision_loss(amount.0, local_scale, amount.1);
-                    let mut pipe = redis_crate::pipe();
-                    pipe.atomic();
-                    pipe.del(uncredited_amount_key(&account_id)).ignore();
-                    pipe.rpush(
-                        uncredited_amount_key(&account_id),
-                        AmountWithScale {
-                            num: precision_loss,
-                            scale: std::cmp::max(local_scale, amount.1),
-                        },
-                    )
-                    .ignore();
+        let amount = self
+            .get_uncredited_settlement_amount(account_id.clone())
+            .await?;
+        // scale the amount from the max scale to the local scale, and then
+        // save any potential leftovers to the store
+        let (scaled_amount, precision_loss) =
+            scale_with_precision_loss(amount.0, local_scale, amount.1);
 
-                    pipe.query_async(connection.clone())
-                        .map_err(move |err| {
-                            error!("Error saving uncredited_settlement_amount: {:?}", err)
-                        })
-                        .and_then(move |(_conn, _ret): (_, Value)| Ok(scaled_amount))
-                }),
+        let mut pipe = redis_crate::pipe();
+        pipe.atomic();
+        pipe.del(uncredited_amount_key(&account_id)).ignore();
+        pipe.rpush(
+            uncredited_amount_key(&account_id),
+            AmountWithScale {
+                num: precision_loss,
+                scale: std::cmp::max(local_scale, amount.1),
+            },
         )
+        .ignore();
+
+        pipe.query_async(&mut connection.clone())
+            .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
+            .await?;
+
+        Ok(scaled_amount)
     }
 
-    fn clear_uncredited_settlement_amount(
+    async fn clear_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
-        Box::new(
-            cmd("DEL")
-                .arg(uncredited_amount_key(&account_id))
-                .query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!("Error clearing uncredited_settlement_amount: {:?}", err)
-                })
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
+        let mut connection = self.connection.clone();
+        connection
+            .del(uncredited_amount_key(&account_id))
+            .map_err(move |err| error!("Error clearing uncredited_settlement_amount: {:?}", err))
+            .await?;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_helpers::{block_on, test_store, IDEMPOTENCY_KEY};
+    use test_helpers::{test_store, IDEMPOTENCY_KEY};
 
     mod idempotency {
         use super::*;
 
-        #[test]
-        fn saves_and_loads_idempotency_key_data_properly() {
-            block_on(test_store().and_then(|(store, context)| {
-                let input_hash: [u8; 32] = Default::default();
-                store
-                    .save_idempotent_data(
-                        IDEMPOTENCY_KEY.clone(),
-                        input_hash,
-                        StatusCode::OK,
-                        Bytes::from("TEST"),
-                    )
-                    .map_err(|err| eprintln!("Redis error: {:?}", err))
-                    .and_then(move |_| {
-                        store
-                            .load_idempotent_data(IDEMPOTENCY_KEY.clone())
-                            .map_err(|err| eprintln!("Redis error: {:?}", err))
-                            .and_then(move |data1| {
-                                assert_eq!(
-                                    data1.unwrap(),
-                                    IdempotentData::new(
-                                        StatusCode::OK,
-                                        Bytes::from("TEST"),
-                                        input_hash
-                                    )
-                                );
-                                let _ = context;
+        #[tokio::test]
+        async fn saves_and_loads_idempotency_key_data_properly() {
+            // The context must be loaded into scope
+            let (store, _context) = test_store().await.unwrap();
+            let input_hash: [u8; 32] = Default::default();
+            store
+                .save_idempotent_data(
+                    IDEMPOTENCY_KEY.clone(),
+                    input_hash,
+                    StatusCode::OK,
+                    Bytes::from("TEST"),
+                )
+                .await
+                .unwrap();
 
-                                store
-                                    .load_idempotent_data("asdf".to_string())
-                                    .map_err(|err| eprintln!("Redis error: {:?}", err))
-                                    .and_then(move |data2| {
-                                        assert!(data2.is_none());
-                                        let _ = context;
-                                        Ok(())
-                                    })
-                            })
-                    })
-            }))
-            .unwrap()
+            let data1 = store
+                .load_idempotent_data(IDEMPOTENCY_KEY.clone())
+                .await
+                .unwrap();
+            assert_eq!(
+                data1.unwrap(),
+                IdempotentData::new(StatusCode::OK, Bytes::from("TEST"), input_hash)
+            );
+
+            let data2 = store
+                .load_idempotent_data("asdf".to_string())
+                .await
+                .unwrap();
+            assert!(data2.is_none());
         }
     }
 }
