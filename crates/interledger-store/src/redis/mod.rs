@@ -1503,51 +1503,51 @@ impl RateLimitStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl IdempotentStore for RedisStore {
-    fn load_idempotent_data(
+    async fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Box<dyn Future<Item = Option<IdempotentData>, Error = ()> + Send> {
+    ) -> Result<Option<IdempotentData>, ()> {
         let idempotency_key_clone = idempotency_key.clone();
-        Box::new(
-            cmd("HGETALL")
-                .arg(prefixed_idempotency_key(idempotency_key.clone()))
-                .query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error loading idempotency key {}: {:?}",
-                        idempotency_key_clone, err
-                    )
-                })
-                .and_then(move |(_connection, ret): (_, HashMap<String, String>)| {
-                    if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
-                        ret.get("status_code"),
-                        ret.get("data"),
-                        ret.get("input_hash"),
-                    ) {
-                        trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
-                        let mut input_hash: [u8; 32] = Default::default();
-                        input_hash.copy_from_slice(input_hash_slice.as_ref());
-                        Ok(Some(IdempotentData::new(
-                            StatusCode::from_str(status_code).unwrap(),
-                            Bytes::from(data.clone()),
-                            input_hash,
-                        )))
-                    } else {
-                        Ok(None)
-                    }
-                }),
-        )
+        let mut connection = self.connection.clone();
+        let ret: HashMap<String, String> = connection
+            .hgetall(prefixed_idempotency_key(idempotency_key.clone()))
+            .map_err(move |err| {
+                error!(
+                    "Error loading idempotency key {}: {:?}",
+                    idempotency_key_clone, err
+                )
+            })
+            .await?;
+
+        if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
+            ret.get("status_code"),
+            ret.get("data"),
+            ret.get("input_hash"),
+        ) {
+            trace!("Loaded idempotency key {:?} - {:?}", idempotency_key, ret);
+            let mut input_hash: [u8; 32] = Default::default();
+            input_hash.copy_from_slice(input_hash_slice.as_ref());
+            Ok(Some(IdempotentData::new(
+                StatusCode::from_str(status_code).unwrap(),
+                Bytes::from(data.clone()),
+                input_hash,
+            )))
+        } else {
+            Ok(None)
+        }
     }
 
-    fn save_idempotent_data(
+    async fn save_idempotent_data(
         &self,
         idempotency_key: String,
         input_hash: [u8; 32],
         status_code: StatusCode,
         data: Bytes,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         let mut pipe = redis_crate::pipe();
+        let mut connection = self.connection.clone();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
             .arg(&prefixed_idempotency_key(idempotency_key.clone()))
@@ -1560,19 +1560,17 @@ impl IdempotentStore for RedisStore {
             .ignore()
             .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
             .ignore();
-        Box::new(
-            pipe.query_async(self.connection.clone())
-                .map_err(|err| error!("Error caching: {:?}", err))
-                .and_then(move |(_connection, _): (_, Vec<String>)| {
-                    trace!(
-                        "Cached {:?}: {:?}, {:?}",
-                        idempotency_key,
-                        status_code,
-                        data,
-                    );
-                    Ok(())
-                }),
-        )
+        pipe.query_async(&mut connection)
+            .map_err(|err| error!("Error caching: {:?}", err))
+            .await?;
+
+        trace!(
+            "Cached {:?}: {:?}, {:?}",
+            idempotency_key,
+            status_code,
+            data,
+        );
+        Ok(())
     }
 }
 
