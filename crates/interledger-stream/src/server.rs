@@ -1,15 +1,16 @@
 use super::crypto::*;
 use super::packet::*;
+use async_trait::async_trait;
 use base64;
 use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, Utc};
-use futures::{future::result, sync::mpsc::UnboundedSender};
+use futures::channel::mpsc::UnboundedSender;
 use hex;
 use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
     RejectBuilder,
 };
-use interledger_service::{Account, BoxedIlpFuture, OutgoingRequest, OutgoingService, Username};
+use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username};
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
@@ -137,17 +138,16 @@ where
     }
 }
 
+#[async_trait]
 impl<S, O, A> OutgoingService<A> for StreamReceiverService<S, O, A>
 where
     S: StreamNotificationsStore + Send + Sync + 'static + Clone,
-    O: OutgoingService<A>,
-    A: Account,
+    O: OutgoingService<A> + Send + Sync + Clone,
+    A: Account + Send + Sync + Clone,
 {
-    type Future = BoxedIlpFuture;
-
     /// Try fulfilling the request if it is for this STREAM server or pass it to the next
     /// outgoing handler if not.
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
         let to_username = request.to.username().clone();
         let from_username = request.from.username().clone();
         let amount = request.prepare.amount();
@@ -182,14 +182,14 @@ where
                             // the sender will likely see an error like F02: Unavailable (this is
                             // a bit confusing but the packet data should not be modified at all
                             // under normal circumstances).
-                            return Box::new(self.next.send_request(request));
+                            return self.next.send_request(request).await;
                         }
                     }
                 };
-                return Box::new(result(response));
+                return response;
             }
         }
-        Box::new(self.next.send_request(request))
+        self.next.send_request(request).await
     }
 }
 
@@ -367,7 +367,7 @@ mod receiving_money {
     fn fulfills_valid_packet() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
-        let connection_generator = ConnectionGenerator::new(server_secret.clone());
+        let connection_generator = ConnectionGenerator::new(server_secret);
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(&ilp_address);
         let stream_packet = test_stream_packet();
@@ -395,7 +395,7 @@ mod receiving_money {
     fn fulfills_valid_packet_without_connection_tag() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
-        let connection_generator = ConnectionGenerator::new(server_secret.clone());
+        let connection_generator = ConnectionGenerator::new(server_secret);
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(&ilp_address);
         let stream_packet = test_stream_packet();
@@ -423,7 +423,7 @@ mod receiving_money {
     fn rejects_modified_data() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
-        let connection_generator = ConnectionGenerator::new(server_secret.clone());
+        let connection_generator = ConnectionGenerator::new(server_secret);
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(&ilp_address);
         let stream_packet = test_stream_packet();
@@ -452,7 +452,7 @@ mod receiving_money {
     fn rejects_too_little_money() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
-        let connection_generator = ConnectionGenerator::new(server_secret.clone());
+        let connection_generator = ConnectionGenerator::new(server_secret);
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(&ilp_address);
 
@@ -519,15 +519,15 @@ mod receiving_money {
 mod stream_receiver_service {
     use super::*;
     use crate::test_helpers::*;
-    use futures::Future;
     use interledger_packet::PrepareBuilder;
     use interledger_service::outgoing_service_fn;
 
     use std::convert::TryFrom;
     use std::str::FromStr;
     use std::time::UNIX_EPOCH;
-    #[test]
-    fn fulfills_correct_packets() {
+
+    #[tokio::test]
+    async fn fulfills_correct_packets() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
@@ -550,7 +550,7 @@ mod stream_receiver_service {
         let mut service = StreamReceiverService::new(
             server_secret.clone(),
             DummyStore,
-            outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> BoxedIlpFuture {
+            outgoing_service_fn(|_: OutgoingRequest<TestAccount>| -> IlpResult {
                 panic!("shouldn't get here")
             }),
         );
@@ -572,12 +572,12 @@ mod stream_receiver_service {
                 original_amount: prepare.amount(),
                 prepare,
             })
-            .wait();
+            .await;
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn rejects_invalid_packets() {
+    #[tokio::test]
+    async fn rejects_invalid_packets() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
@@ -632,12 +632,12 @@ mod stream_receiver_service {
                 original_amount: prepare.amount(),
                 prepare,
             })
-            .wait();
+            .await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn passes_on_packets_not_for_it() {
+    #[tokio::test]
+    async fn passes_on_packets_not_for_it() {
         let ilp_address = Address::from_str("example.destination").unwrap();
         let server_secret = Bytes::from(&[1; 32][..]);
         let connection_generator = ConnectionGenerator::new(server_secret.clone());
@@ -690,7 +690,7 @@ mod stream_receiver_service {
                 },
                 prepare,
             })
-            .wait();
+            .await;
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().triggered_by().unwrap(),
