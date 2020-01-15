@@ -1,12 +1,11 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use futures::{future::err, Future};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use log::error;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
-use tokio::prelude::FutureExt;
 
 /// # Validator Service
 ///
@@ -51,21 +50,20 @@ where
     }
 }
 
+#[async_trait]
 impl<I, S, A> IncomingService<A> for ValidatorService<I, S, A>
 where
-    I: IncomingService<A>,
-    S: AddressStore,
-    A: Account,
+    I: IncomingService<A> + Send + Sync,
+    S: AddressStore + Send + Sync,
+    A: Account + Send + Sync,
 {
-    type Future = BoxedIlpFuture;
-
     /// On receiving a request:
     /// 1. If the prepare packet in the request is not expired, forward it, otherwise return a reject
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         let expires_at = DateTime::<Utc>::from(request.prepare.expires_at());
         let now = Utc::now();
         if expires_at >= now {
-            Box::new(self.next.handle_request(request))
+            self.next.handle_request(request).await
         } else {
             error!(
                 "Incoming packet expired {}ms ago at {:?} (time now: {:?})",
@@ -73,26 +71,24 @@ where
                 expires_at.to_rfc3339(),
                 expires_at.to_rfc3339(),
             );
-            let result = Box::new(err(RejectBuilder {
+            Err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
                 triggered_by: Some(&self.store.get_ilp_address()),
                 data: &[],
             }
-            .build()));
-            Box::new(result)
+            .build())
         }
     }
 }
 
+#[async_trait]
 impl<O, S, A> OutgoingService<A> for ValidatorService<O, S, A>
 where
-    O: OutgoingService<A>,
-    S: AddressStore,
-    A: Account,
+    O: OutgoingService<A> + Send + Sync,
+    S: AddressStore + Send + Sync,
+    A: Account + Send + Sync,
 {
-    type Future = BoxedIlpFuture;
-
     /// On sending a request:
     /// 1. If the outgoing packet has expired, return a reject with the appropriate ErrorCode
     /// 1. Tries to forward the request
@@ -101,7 +97,7 @@ where
     ///     - If the forwarding is successful, it should receive a fulfill packet. Depending on if the hash of the fulfillment condition inside the fulfill is a preimage of the condition of the prepare:
     ///         - return the fulfill if it matches
     ///         - otherwise reject
-    fn send_request(&mut self, request: OutgoingRequest<A>) -> Self::Future {
+    async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
         let mut condition: [u8; 32] = [0; 32];
         condition[..].copy_from_slice(request.prepare.execution_condition()); // why?
 
@@ -109,60 +105,58 @@ where
         let now = Utc::now();
         let time_left = expires_at - now;
         let ilp_address = self.store.get_ilp_address();
-        let ilp_address_clone = ilp_address.clone();
         if time_left > Duration::zero() {
-            Box::new(
-                self.next
-                    .send_request(request)
-                    .timeout(time_left.to_std().expect("Time left must be positive"))
-                    .map_err(move |err| {
-                        // If the error was caused by the timer, into_inner will return None
-                        if let Some(reject) = err.into_inner() {
-                            reject
-                        } else {
-                            error!(
-                                "Outgoing request timed out after {}ms (expiry was: {})",
-                                time_left.num_milliseconds(),
-                                expires_at,
-                            );
-                            RejectBuilder {
-                                code: ErrorCode::R00_TRANSFER_TIMED_OUT,
-                                message: &[],
-                                triggered_by: Some(&ilp_address_clone),
-                                data: &[],
-                            }
-                            .build()
-                        }
-                    })
-                    .and_then(move |fulfill| {
-                        let generated_condition = digest(&SHA256, fulfill.fulfillment());
-                        if generated_condition.as_ref() == condition {
-                            Ok(fulfill)
-                        } else {
-                            error!("Fulfillment did not match condition. Fulfillment: {}, hash: {}, actual condition: {}", hex::encode(fulfill.fulfillment()), hex::encode(generated_condition), hex::encode(condition));
-                            Err(RejectBuilder {
-                                code: ErrorCode::F09_INVALID_PEER_RESPONSE,
-                                message: b"Fulfillment did not match condition",
-                                triggered_by: Some(&ilp_address),
-                                data: &[],
-                            }
-                            .build())
-                        }
-                    }),
-            )
+            let fulfill = self
+                .next
+                .send_request(request)
+                // TODO: Re-enable timeout!
+                // .timeout(time_left.to_std().expect("Time left must be positive"))
+                // .map_err(move |err| {
+                //     // If the error was caused by the timer, into_inner will return None
+                //     if let Some(reject) = err.into_inner() {
+                //         reject
+                //     } else {
+                //         error!(
+                //             "Outgoing request timed out after {}ms (expiry was: {})",
+                //             time_left.num_milliseconds(),
+                //             expires_at,
+                //         );
+                //         RejectBuilder {
+                //             code: ErrorCode::R00_TRANSFER_TIMED_OUT,
+                //             message: &[],
+                //             triggered_by: Some(&ilp_address_clone),
+                //             data: &[],
+                //         }
+                //         .build()
+                //     }
+                // })
+                .await?;
+            let generated_condition = digest(&SHA256, fulfill.fulfillment());
+            if generated_condition.as_ref() == condition {
+                Ok(fulfill)
+            } else {
+                error!("Fulfillment did not match condition. Fulfillment: {}, hash: {}, actual condition: {}", hex::encode(fulfill.fulfillment()), hex::encode(generated_condition), hex::encode(condition));
+                Err(RejectBuilder {
+                    code: ErrorCode::F09_INVALID_PEER_RESPONSE,
+                    message: b"Fulfillment did not match condition",
+                    triggered_by: Some(&ilp_address),
+                    data: &[],
+                }
+                .build())
+            }
         } else {
             error!(
                 "Outgoing packet expired {}ms ago",
                 (Duration::zero() - time_left).num_milliseconds(),
             );
             // Already expired
-            Box::new(err(RejectBuilder {
+            Err(RejectBuilder {
                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                 message: &[],
                 triggered_by: Some(&ilp_address),
                 data: &[],
             }
-            .build()))
+            .build())
         }
     }
 }
@@ -212,16 +206,14 @@ impl Account for TestAccount {
 struct TestStore;
 
 #[cfg(test)]
+#[async_trait]
 impl AddressStore for TestStore {
     /// Saves the ILP Address in the store's memory and database
-    fn set_ilp_address(
-        &self,
-        _ilp_address: Address,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
         unimplemented!()
     }
 
-    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    async fn clear_ilp_address(&self) -> Result<(), ()> {
         unimplemented!()
     }
 
@@ -241,8 +233,8 @@ mod incoming {
         time::{Duration, SystemTime},
     };
 
-    #[test]
-    fn lets_through_valid_incoming_packet() {
+    #[tokio::test]
+    async fn lets_through_valid_incoming_packet() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::incoming(
@@ -271,14 +263,14 @@ mod incoming {
                 }
                 .build(),
             })
-            .wait();
+            .await;
 
         assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn rejects_expired_incoming_packet() {
+    #[tokio::test]
+    async fn rejects_expired_incoming_packet() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::incoming(
@@ -307,7 +299,7 @@ mod incoming {
                 }
                 .build(),
             })
-            .wait();
+            .await;
 
         assert!(requests.lock().unwrap().is_empty());
         assert!(result.is_err());
@@ -328,30 +320,8 @@ mod outgoing {
         time::{Duration, SystemTime},
     };
 
-    #[derive(Clone)]
-    struct TestStore;
-
-    impl AddressStore for TestStore {
-        /// Saves the ILP Address in the store's memory and database
-        fn set_ilp_address(
-            &self,
-            _ilp_address: Address,
-        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-            unimplemented!()
-        }
-
-        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-            unimplemented!()
-        }
-
-        /// Get's the store's ilp address from memory
-        fn get_ilp_address(&self) -> Address {
-            Address::from_str("example.connector").unwrap()
-        }
-    }
-
-    #[test]
-    fn lets_through_valid_outgoing_response() {
+    #[tokio::test]
+    async fn lets_through_valid_outgoing_response() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::outgoing(
@@ -382,14 +352,14 @@ mod outgoing {
                 }
                 .build(),
             })
-            .wait();
+            .await;
 
         assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn returns_reject_instead_of_invalid_fulfillment() {
+    #[tokio::test]
+    async fn returns_reject_instead_of_invalid_fulfillment() {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_clone = requests.clone();
         let mut validator = ValidatorService::outgoing(
@@ -420,7 +390,7 @@ mod outgoing {
                 }
                 .build(),
             })
-            .wait();
+            .await;
 
         assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(result.is_err());
