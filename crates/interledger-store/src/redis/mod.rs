@@ -1720,111 +1720,104 @@ impl FromRedisValue for AmountWithScale {
     }
 }
 
+#[async_trait]
 impl LeftoversStore for RedisStore {
     type AccountId = Uuid;
     type AssetType = BigUint;
 
-    fn get_uncredited_settlement_amount(
+    async fn get_uncredited_settlement_amount(
         &self,
         account_id: Uuid,
-    ) -> Box<dyn Future<Item = (Self::AssetType, u8), Error = ()> + Send> {
+    ) -> Result<(Self::AssetType, u8), ()> {
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
         // get the amounts and instantly delete them
         pipe.lrange(uncredited_amount_key(account_id.to_string()), 0, -1);
         pipe.del(uncredited_amount_key(account_id.to_string()))
             .ignore();
-        Box::new(
-            pipe.query_async(self.connection.clone())
-                .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
-                .and_then(move |(_, amounts): (_, Vec<AmountWithScale>)| {
-                    // this call will only return 1 element
-                    let amount = amounts[0].clone();
-                    Ok((amount.num, amount.scale))
-                }),
-        )
+
+        let amounts: Vec<AmountWithScale> = pipe
+            .query_async(&mut self.connection.clone())
+            .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
+            .await?;
+
+        // this call will only return 1 element
+        let amount = amounts[0].clone();
+        Ok((amount.num, amount.scale))
     }
 
-    fn save_uncredited_settlement_amount(
+    async fn save_uncredited_settlement_amount(
         &self,
         account_id: Uuid,
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         trace!(
             "Saving uncredited_settlement_amount {:?} {:?}",
             account_id,
             uncredited_settlement_amount
         );
-        Box::new(
-            // We store these amounts as lists of strings
-            // because we cannot do BigNumber arithmetic in the store
-            // When loading the amounts, we convert them to the appropriate data
-            // type and sum them up.
-            cmd("RPUSH")
-                .arg(uncredited_amount_key(account_id))
-                .arg(AmountWithScale {
+        // We store these amounts as lists of strings
+        // because we cannot do BigNumber arithmetic in the store
+        // When loading the amounts, we convert them to the appropriate data
+        // type and sum them up.
+        let mut connection = self.connection.clone();
+        connection
+            .rpush(
+                uncredited_amount_key(account_id),
+                AmountWithScale {
                     num: uncredited_settlement_amount.0,
                     scale: uncredited_settlement_amount.1,
-                })
-                .query_async(self.connection.clone())
-                .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
+                },
+            )
+            .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
+            .await?;
+
+        Ok(())
     }
 
-    fn load_uncredited_settlement_amount(
+    async fn load_uncredited_settlement_amount(
         &self,
         account_id: Uuid,
         local_scale: u8,
-    ) -> Box<dyn Future<Item = Self::AssetType, Error = ()> + Send> {
-        let connection = self.connection.clone();
+    ) -> Result<Self::AssetType, ()> {
+        let mut connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
-        Box::new(
-            self.get_uncredited_settlement_amount(account_id)
-                .and_then(move |amount| {
-                    // scale the amount from the max scale to the local scale, and then
-                    // save any potential leftovers to the store
-                    let (scaled_amount, precision_loss) =
-                        scale_with_precision_loss(amount.0, local_scale, amount.1);
-                    if precision_loss > BigUint::from(0u32) {
-                        Either::A(
-                            cmd("RPUSH")
-                                .arg(uncredited_amount_key(account_id))
-                                .arg(AmountWithScale {
-                                    num: precision_loss,
-                                    scale: std::cmp::max(local_scale, amount.1),
-                                })
-                                .query_async(connection.clone())
-                                .map_err(move |err| {
-                                    error!("Error saving uncredited_settlement_amount: {:?}", err)
-                                })
-                                .and_then(move |(_conn, _ret): (_, Value)| Ok(scaled_amount)),
-                        )
-                    } else {
-                        Either::B(ok(scaled_amount))
-                    }
-                }),
-        )
+        let amount = self.get_uncredited_settlement_amount(account_id).await?;
+        // scale the amount from the max scale to the local scale, and then
+        // save any potential leftovers to the store
+        let (scaled_amount, precision_loss) =
+            scale_with_precision_loss(amount.0, local_scale, amount.1);
+
+        if precision_loss > BigUint::from(0u32) {
+            connection
+                .rpush(
+                    uncredited_amount_key(account_id),
+                    AmountWithScale {
+                        num: precision_loss,
+                        scale: std::cmp::max(local_scale, amount.1),
+                    },
+                )
+                .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
+                .await?;
+        }
+
+        Ok(scaled_amount)
     }
 
-    fn clear_uncredited_settlement_amount(
-        &self,
-        account_id: Uuid,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
-        Box::new(
-            cmd("DEL")
-                .arg(uncredited_amount_key(account_id))
-                .query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!("Error clearing uncredited_settlement_amount: {:?}", err)
-                })
-                .and_then(move |(_conn, _ret): (_, Value)| Ok(())),
-        )
+    async fn clear_uncredited_settlement_amount(&self, account_id: Uuid) -> Result<(), ()> {
+        trace!("Clearing uncredited_settlement_amount {:?}", account_id);
+        let mut connection = self.connection.clone();
+        connection
+            .del(uncredited_amount_key(account_id))
+            .map_err(move |err| error!("Error clearing uncredited_settlement_amount: {:?}", err))
+            .await?;
+        Ok(())
     }
 }
 
 type RouteVec = Vec<(String, RedisAccountId)>;
+
+use futures::future::TryFutureExt;
 
 // TODO replace this with pubsub when async pubsub is added upstream: https://github.com/mitsuhiko/redis-rs/issues/183
 fn update_routes(
