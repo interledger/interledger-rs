@@ -585,61 +585,53 @@ impl RedisStore {
     }
 }
 
+#[async_trait]
 impl AccountStore for RedisStore {
     type Account = Account;
 
     // TODO cache results to avoid hitting Redis for each packet
-    fn get_accounts(
-        &self,
-        account_ids: Vec<Uuid>,
-    ) -> Box<dyn Future<Item = Vec<Account>, Error = ()> + Send> {
+    async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<Account>, ()> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
         let mut script = LOAD_ACCOUNTS.prepare_invoke();
         for id in account_ids.iter() {
             script.arg(id.to_string());
         }
-        Box::new(
-            script
-                .invoke_async(self.connection.clone())
-                .map_err(|err| error!("Error loading accounts: {:?}", err))
-                .and_then(move |(_, accounts): (_, Vec<AccountWithEncryptedTokens>)| {
-                    if accounts.len() == num_accounts {
-                        let accounts = accounts
-                            .into_iter()
-                            .map(|account| {
-                                account.decrypt_tokens(&decryption_key.expose_secret().0)
-                            })
-                            .collect();
-                        Ok(accounts)
-                    } else {
-                        Err(())
-                    }
-                }),
-        )
+
+        // Need to clone the connection here to avoid lifetime errors
+        let connection = self.connection.clone();
+        let accounts: Vec<AccountWithEncryptedTokens> = script
+            .invoke_async(&mut connection.clone())
+            .map_err(|err| error!("Error loading accounts: {:?}", err))
+            .await?;
+
+        // Decrypt the accounts. TODO: This functionality should be
+        // decoupled from redis so that it gets reused by the other backends
+        if accounts.len() == num_accounts {
+            let accounts = accounts
+                .into_iter()
+                .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
+                .collect();
+            Ok(accounts)
+        } else {
+            Err(())
+        }
     }
 
-    fn get_account_id_from_username(
-        &self,
-        username: &Username,
-    ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
+    async fn get_account_id_from_username(&self, username: &Username) -> Result<Uuid, ()> {
         let username = username.clone();
-        Box::new(
-            cmd("HGET")
-                .arg("usernames")
-                .arg(username.as_ref())
-                .query_async(self.connection.clone())
-                .map_err(move |err| error!("Error getting account id: {:?}", err))
-                .and_then(
-                    move |(_connection, id): (_, Option<RedisAccountId>)| match id {
-                        Some(rid) => Ok(rid.0),
-                        None => {
-                            debug!("Username not found: {}", username);
-                            Err(())
-                        }
-                    },
-                ),
-        )
+        let mut connection = self.connection.clone();
+        let id: Option<RedisAccountId> = connection
+            .hget("usernames", username.as_ref())
+            .map_err(move |err| error!("Error getting account id: {:?}", err))
+            .await?;
+        match id {
+            Some(rid) => Ok(rid.0),
+            None => {
+                debug!("Username not found: {}", username);
+                Err(())
+            }
+        }
     }
 }
 
