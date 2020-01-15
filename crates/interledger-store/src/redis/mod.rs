@@ -1196,102 +1196,93 @@ impl NodeStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl AddressStore for RedisStore {
     // Updates the ILP address of the store & iterates over all children and
     // updates their ILP Address to match the new address.
-    fn set_ilp_address(
-        &self,
-        ilp_address: Address,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    async fn set_ilp_address(&self, ilp_address: Address) -> Result<(), ()> {
         debug!("Setting ILP address to: {}", ilp_address);
         let routing_table = self.routes.clone();
-        let connection = self.connection.clone();
+        let mut connection = self.connection.clone();
         let ilp_address_clone = ilp_address.clone();
 
         // Set the ILP address we have in memory
         (*self.ilp_address.write()) = ilp_address.clone();
 
         // Save it to Redis
-        Box::new(
-            cmd("SET")
-                .arg(PARENT_ILP_KEY)
-                .arg(ilp_address.as_bytes())
-                .query_async(self.connection.clone())
-                .map_err(|err| error!("Error setting ILP address {:?}", err))
-                .and_then(move |(_, _): (RedisReconnect, Value)| Ok(()))
-                .join(self.get_all_accounts().and_then(move |accounts| {
-                    // TODO: This can be an expensive operation if this function
-                    // gets called often. This currently only gets called when
-                    // inserting a new parent account in the API. It'd be nice
-                    // if we could generate a child's ILP address on the fly,
-                    // instead of having to store the username appended to the
-                    // node's ilp address. Currently this is not possible, as
-                    // account.ilp_address() cannot access any state that exists
-                    // on the store.
-                    let mut pipe = redis_crate::pipe();
-                    for account in accounts {
-                        // Update the address and routes of all children and non-routing accounts.
-                        if account.routing_relation() != RoutingRelation::Parent
-                            && account.routing_relation() != RoutingRelation::Peer
-                        {
-                            // remove the old route
-                            pipe.hdel(ROUTES_KEY, &account.ilp_address as &str).ignore();
+        connection
+            .set(PARENT_ILP_KEY, ilp_address.as_bytes())
+            .map_err(|err| error!("Error setting ILP address {:?}", err))
+            .await?;
 
-                            // if the username of the account ends with the
-                            // node's address, we're already configured so no
-                            // need to append anything.
-                            let ilp_address_clone2 = ilp_address_clone.clone();
-                            // Note: We are assuming that if the node's address
-                            // ends with the account's username, then this
-                            // account represents the node's non routing
-                            // account. Is this a reasonable assumption to make?
-                            let new_ilp_address =
-                                if ilp_address_clone2.segments().rev().next().unwrap()
-                                    == account.username().to_string()
-                                {
-                                    ilp_address_clone2
-                                } else {
-                                    ilp_address_clone
-                                        .with_suffix(account.username().as_bytes())
-                                        .unwrap()
-                                };
-                            pipe.hset(
-                                accounts_key(account.id()),
-                                "ilp_address",
-                                new_ilp_address.as_bytes(),
-                            )
-                            .ignore();
+        let accounts = self.get_all_accounts().await?;
+        // TODO: This can be an expensive operation if this function
+        // gets called often. This currently only gets called when
+        // inserting a new parent account in the API. It'd be nice
+        // if we could generate a child's ILP address on the fly,
+        // instead of having to store the username appended to the
+        // node's ilp address. Currently this is not possible, as
+        // account.ilp_address() cannot access any state that exists
+        // on the store.
+        let mut pipe = redis_crate::pipe();
+        for account in accounts {
+            // Update the address and routes of all children and non-routing accounts.
+            if account.routing_relation() != RoutingRelation::Parent
+                && account.routing_relation() != RoutingRelation::Peer
+            {
+                // remove the old route
+                pipe.hdel(ROUTES_KEY, &account.ilp_address as &str).ignore();
 
-                            pipe.hset(
-                                ROUTES_KEY,
-                                new_ilp_address.as_bytes(),
-                                RedisAccountId(account.id()),
-                            )
-                            .ignore();
-                        }
-                    }
-                    pipe.query_async(connection.clone())
-                        .map_err(|err| error!("Error updating children: {:?}", err))
-                        .and_then(move |(connection, _): (RedisReconnect, Value)| {
-                            update_routes(connection, routing_table)
-                        })
-                }))
-                .and_then(move |_| Ok(())),
-        )
+                // if the username of the account ends with the
+                // node's address, we're already configured so no
+                // need to append anything.
+                let ilp_address_clone2 = ilp_address_clone.clone();
+                // Note: We are assuming that if the node's address
+                // ends with the account's username, then this
+                // account represents the node's non routing
+                // account. Is this a reasonable assumption to make?
+                let new_ilp_address = if ilp_address_clone2.segments().rev().next().unwrap()
+                    == account.username().to_string()
+                {
+                    ilp_address_clone2
+                } else {
+                    ilp_address_clone
+                        .with_suffix(account.username().as_bytes())
+                        .unwrap()
+                };
+                pipe.hset(
+                    accounts_key(account.id()),
+                    "ilp_address",
+                    new_ilp_address.as_bytes(),
+                )
+                .ignore();
+
+                pipe.hset(
+                    ROUTES_KEY,
+                    new_ilp_address.as_bytes(),
+                    RedisAccountId(account.id()),
+                )
+                .ignore();
+            }
+        }
+
+        pipe.query_async(&mut connection.clone())
+            .map_err(|err| error!("Error updating children: {:?}", err))
+            .await?;
+        update_routes(connection, routing_table).await?;
+        Ok(())
     }
 
-    fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let self_clone = self.clone();
-        Box::new(
-            cmd("DEL")
-                .arg(PARENT_ILP_KEY)
-                .query_async(self.connection.clone())
-                .map_err(|err| error!("Error removing parent address: {:?}", err))
-                .and_then(move |(_, _): (RedisReconnect, Value)| {
-                    *(self_clone.ilp_address.write()) = DEFAULT_ILP_ADDRESS.clone();
-                    Ok(())
-                }),
-        )
+    async fn clear_ilp_address(&self) -> Result<(), ()> {
+        let mut connection = self.connection.clone();
+        connection
+            .del(PARENT_ILP_KEY)
+            .map_err(|err| error!("Error removing parent address: {:?}", err))
+            .await?;
+
+        // overwrite the ilp address with the default value
+        *(self.ilp_address.write()) = DEFAULT_ILP_ADDRESS.clone();
+        Ok(())
     }
 
     fn get_ilp_address(&self) -> Address {
