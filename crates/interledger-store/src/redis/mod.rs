@@ -681,122 +681,115 @@ impl StreamNotificationsStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl BalanceStore for RedisStore {
     /// Returns the balance **from the account holder's perspective**, meaning the sum of
     /// the Payable Balance and Pending Outgoing minus the Receivable Balance and the Pending Incoming.
-    fn get_balance(&self, account: Account) -> Box<dyn Future<Item = i64, Error = ()> + Send> {
-        Box::new(
-            cmd("HMGET")
-                .arg(accounts_key(account.id))
-                .arg(&["balance", "prepaid_amount"])
-                .query_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error getting balance for account: {} {:?}",
-                        account.id, err
-                    )
-                })
-                .and_then(|(_connection, values): (_, Vec<i64>)| {
-                    let balance = values[0];
-                    let prepaid_amount = values[1];
-                    Ok(balance + prepaid_amount)
-                }),
-        )
+    async fn get_balance(&self, account: Account) -> Result<i64, ()> {
+        let mut connection = self.connection.clone();
+        let values: Vec<i64> = connection
+            .hget(accounts_key(account.id), &["balance", "prepaid_amount"])
+            .map_err(move |err| {
+                error!(
+                    "Error getting balance for account: {} {:?}",
+                    account.id, err
+                )
+            })
+            .await?;
+
+        let balance = values[0];
+        let prepaid_amount = values[1];
+        Ok(balance + prepaid_amount)
     }
 
-    fn update_balances_for_prepare(
+    async fn update_balances_for_prepare(
         &self,
         from_account: Account, // TODO: Make this take only the id
         incoming_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        if incoming_amount > 0 {
-            let from_account_id = from_account.id;
-            Box::new(
-                PROCESS_PREPARE
-                    .arg(RedisAccountId(from_account_id))
-                    .arg(incoming_amount)
-                    .invoke_async(self.connection.clone())
-                    .map_err(move |err| {
-                        warn!(
-                            "Error handling prepare from account: {}:  {:?}",
-                            from_account_id, err
-                        )
-                    })
-                    .and_then(move |(_connection, balance): (_, i64)| {
-                        trace!(
-                            "Processed prepare with incoming amount: {}. Account {} has balance (including prepaid amount): {} ",
-                            incoming_amount, from_account_id, balance
-                        );
-                        Ok(())
-                    }),
-            )
-        } else {
-            Box::new(ok(()))
+    ) -> Result<(), ()> {
+        // Don't do anything if the amount was 0
+        if incoming_amount == 0 {
+            return Ok(());
         }
+
+        let from_account_id = from_account.id;
+        let balance: i64 = PROCESS_PREPARE
+            .arg(RedisAccountId(from_account_id))
+            .arg(incoming_amount)
+            .invoke_async(&mut self.connection.clone())
+            .map_err(move |err| {
+                warn!(
+                    "Error handling prepare from account: {}:  {:?}",
+                    from_account_id, err
+                )
+            })
+            .await?;
+
+        trace!(
+            "Processed prepare with incoming amount: {}. Account {} has balance (including prepaid amount): {} ",
+            incoming_amount, from_account_id, balance
+        );
+        Ok(())
     }
 
-    fn update_balances_for_fulfill(
+    async fn update_balances_for_fulfill(
         &self,
         to_account: Account, // TODO: Make this take only the id
         outgoing_amount: u64,
-    ) -> Box<dyn Future<Item = (i64, u64), Error = ()> + Send> {
-        if outgoing_amount > 0 {
-            let to_account_id = to_account.id;
-            Box::new(
-                PROCESS_FULFILL
-                    .arg(RedisAccountId(to_account_id))
-                    .arg(outgoing_amount)
-                    .invoke_async(self.connection.clone())
-                    .map_err(move |err| {
-                        error!(
-                            "Error handling Fulfill received from account: {}: {:?}",
-                            to_account_id, err
-                        )
-                    })
-                    .and_then(move |(_connection, (balance, amount_to_settle)): (_, (i64, u64))| {
-                        trace!("Processed fulfill for account {} for outgoing amount {}. Fulfill call result: {} {}",
-                            to_account_id,
-                            outgoing_amount,
-                            balance,
-                            amount_to_settle,
-                        );
-                        Ok((balance, amount_to_settle))
-                    })
-            )
-        } else {
-            Box::new(ok((0, 0)))
+    ) -> Result<(i64, u64), ()> {
+        if outgoing_amount == 0 {
+            return Ok((0, 0));
         }
+        let to_account_id = to_account.id;
+        let (balance, amount_to_settle): (i64, u64) = PROCESS_FULFILL
+            .arg(RedisAccountId(to_account_id))
+            .arg(outgoing_amount)
+            .invoke_async(&mut self.connection.clone())
+            .map_err(move |err| {
+                error!(
+                    "Error handling Fulfill received from account: {}: {:?}",
+                    to_account_id, err
+                )
+            })
+            .await?;
+
+        trace!(
+            "Processed fulfill for account {} for outgoing amount {}. Fulfill call result: {} {}",
+            to_account_id,
+            outgoing_amount,
+            balance,
+            amount_to_settle,
+        );
+        Ok((balance, amount_to_settle))
     }
 
-    fn update_balances_for_reject(
+    async fn update_balances_for_reject(
         &self,
         from_account: Account, // TODO: Make this take only the id
         incoming_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        if incoming_amount > 0 {
-            let from_account_id = from_account.id;
-            Box::new(
-                PROCESS_REJECT
-                    .arg(RedisAccountId(from_account_id))
-                    .arg(incoming_amount)
-                    .invoke_async(self.connection.clone())
-                    .map_err(move |err| {
-                        warn!(
-                            "Error handling reject for packet from account: {}: {:?}",
-                            from_account_id, err
-                        )
-                    })
-                    .and_then(move |(_connection, balance): (_, i64)| {
-                        trace!(
-                            "Processed reject for incoming amount: {}. Account {} has balance (including prepaid amount): {}",
-                            incoming_amount, from_account_id, balance
-                        );
-                        Ok(())
-                    }),
-            )
-        } else {
-            Box::new(ok(()))
+    ) -> Result<(), ()> {
+        if incoming_amount == 0 {
+            return Ok(());
         }
+
+        let from_account_id = from_account.id;
+        let balance: i64 = PROCESS_REJECT
+            .arg(RedisAccountId(from_account_id))
+            .arg(incoming_amount)
+            .invoke_async(&mut self.connection.clone())
+            .map_err(move |err| {
+                warn!(
+                    "Error handling reject for packet from account: {}: {:?}",
+                    from_account_id, err
+                )
+            })
+            .await?;
+
+        trace!(
+            "Processed reject for incoming amount: {}. Account {} has balance (including prepaid amount): {}",
+            incoming_amount, from_account_id, balance
+        );
+        Ok(())
     }
 }
 
