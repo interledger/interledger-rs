@@ -69,7 +69,6 @@ pub enum Packet {
     Reject(Reject),
 }
 
-
 impl TryFrom<BytesMut> for Packet {
     type Error = ParseError;
 
@@ -620,7 +619,6 @@ impl From<Packet> for bytes05::BytesMut {
     }
 }
 
-
 impl From<Prepare> for bytes05::BytesMut {
     fn from(prepare: Prepare) -> Self {
         // bytes 0.4
@@ -636,7 +634,6 @@ impl From<Prepare> for BytesMut {
     }
 }
 
-
 impl From<Fulfill> for bytes05::BytesMut {
     fn from(fulfill: Fulfill) -> Self {
         // bytes 0.4
@@ -646,7 +643,6 @@ impl From<Fulfill> for bytes05::BytesMut {
     }
 }
 
-
 impl From<Reject> for bytes05::BytesMut {
     fn from(reject: Reject) -> Self {
         // bytes 0.4
@@ -655,7 +651,6 @@ impl From<Reject> for bytes05::BytesMut {
         bytes05::BytesMut::from(b)
     }
 }
-
 
 #[cfg(test)]
 mod test_packet_type {

@@ -284,7 +284,9 @@ where
         self.should_send_source_account = false;
         self.last_fulfill_time = Instant::now();
 
-        if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(fulfill.data())) {
+        if let Ok(packet) =
+            StreamPacket::from_encrypted(&self.shared_secret, BytesMut::from(fulfill.data()))
+        {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
                 // TODO check that the sequence matches our outgoing packet
 
