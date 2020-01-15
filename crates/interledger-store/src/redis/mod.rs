@@ -1574,60 +1574,63 @@ impl IdempotentStore for RedisStore {
     }
 }
 
+#[async_trait]
 impl SettlementStore for RedisStore {
     type Account = Account;
 
-    fn update_balance_for_incoming_settlement(
+    async fn update_balance_for_incoming_settlement(
         &self,
         account_id: Uuid,
         amount: u64,
         idempotency_key: Option<String>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    ) -> Result<(), ()> {
         let idempotency_key = idempotency_key.unwrap();
-        Box::new(
-            PROCESS_INCOMING_SETTLEMENT
+        let balance: i64 = PROCESS_INCOMING_SETTLEMENT
             .arg(RedisAccountId(account_id))
             .arg(amount)
             .arg(idempotency_key)
-            .invoke_async(self.connection.clone())
-            .map_err(move |err| error!("Error processing incoming settlement from account: {} for amount: {}: {:?}", account_id, amount, err))
-            .and_then(move |(_connection, balance): (_, i64)| {
-                trace!("Processed incoming settlement from account: {} for amount: {}. Balance is now: {}", account_id, amount, balance);
-                Ok(())
-            }))
+            .invoke_async(&mut self.connection.clone())
+            .map_err(move |err| {
+                error!(
+                    "Error processing incoming settlement from account: {} for amount: {}: {:?}",
+                    account_id, amount, err
+                )
+            })
+            .await?;
+        trace!(
+            "Processed incoming settlement from account: {} for amount: {}. Balance is now: {}",
+            account_id,
+            amount,
+            balance
+        );
+        Ok(())
     }
 
-    fn refund_settlement(
-        &self,
-        account_id: Uuid,
-        settle_amount: u64,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    async fn refund_settlement(&self, account_id: Uuid, settle_amount: u64) -> Result<(), ()> {
         trace!(
             "Refunding settlement for account: {} of amount: {}",
             account_id,
             settle_amount
         );
-        Box::new(
-            REFUND_SETTLEMENT
-                .arg(RedisAccountId(account_id))
-                .arg(settle_amount)
-                .invoke_async(self.connection.clone())
-                .map_err(move |err| {
-                    error!(
-                        "Error refunding settlement for account: {} of amount: {}: {:?}",
-                        account_id, settle_amount, err
-                    )
-                })
-                .and_then(move |(_connection, balance): (_, i64)| {
-                    trace!(
-                        "Refunded settlement for account: {} of amount: {}. Balance is now: {}",
-                        account_id,
-                        settle_amount,
-                        balance
-                    );
-                    Ok(())
-                }),
-        )
+        let balance: i64 = REFUND_SETTLEMENT
+            .arg(RedisAccountId(account_id))
+            .arg(settle_amount)
+            .invoke_async(&mut self.connection.clone())
+            .map_err(move |err| {
+                error!(
+                    "Error refunding settlement for account: {} of amount: {}: {:?}",
+                    account_id, settle_amount, err
+                )
+            })
+            .await?;
+
+        trace!(
+            "Refunded settlement for account: {} of amount: {}. Balance is now: {}",
+            account_id,
+            settle_amount,
+            balance
+        );
+        Ok(())
     }
 }
 
