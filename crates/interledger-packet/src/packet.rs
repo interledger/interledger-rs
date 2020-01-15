@@ -69,6 +69,7 @@ pub enum Packet {
     Reject(Reject),
 }
 
+
 impl TryFrom<BytesMut> for Packet {
     type Error = ParseError;
 
@@ -231,12 +232,6 @@ impl AsRef<[u8]> for Prepare {
     }
 }
 
-impl From<Prepare> for BytesMut {
-    fn from(prepare: Prepare) -> Self {
-        prepare.buffer
-    }
-}
-
 impl fmt::Debug for Prepare {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
@@ -356,15 +351,6 @@ impl AsRef<[u8]> for Fulfill {
 impl From<Fulfill> for BytesMut {
     fn from(fulfill: Fulfill) -> Self {
         fulfill.buffer
-    }
-}
-
-impl From<Fulfill> for bytes05::BytesMut {
-    fn from(fulfill: Fulfill) -> Self {
-        // bytes 0.4
-        let b = fulfill.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
     }
 }
 
@@ -490,15 +476,6 @@ impl From<Reject> for BytesMut {
     }
 }
 
-impl From<Reject> for bytes05::BytesMut {
-    fn from(reject: Reject) -> Self {
-        // bytes 0.4
-        let b = reject.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
 impl fmt::Debug for Reject {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
@@ -609,6 +586,76 @@ impl MaxPacketAmountDetails {
         self.max_amount
     }
 }
+
+// Bytes05 compatibilty methods
+impl TryFrom<bytes05::BytesMut> for Prepare {
+    type Error = ParseError;
+
+    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
+        // TODO: Is this the best we can do?
+        let b = buffer.to_vec();
+        let buffer = BytesMut::from(b);
+        Prepare::try_from(buffer)
+    }
+}
+
+impl TryFrom<bytes05::BytesMut> for Packet {
+    type Error = ParseError;
+
+    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
+        // TODO: Is this the best we can do?
+        let b = buffer.to_vec();
+        let buffer = BytesMut::from(b);
+        Packet::try_from(buffer)
+    }
+}
+
+impl From<Packet> for bytes05::BytesMut {
+    fn from(packet: Packet) -> Self {
+        match packet {
+            Packet::Prepare(prepare) => prepare.into(),
+            Packet::Fulfill(fulfill) => fulfill.into(),
+            Packet::Reject(reject) => reject.into(),
+        }
+    }
+}
+
+
+impl From<Prepare> for bytes05::BytesMut {
+    fn from(prepare: Prepare) -> Self {
+        // bytes 0.4
+        let b = prepare.buffer.as_ref();
+        // convert to Bytes05
+        bytes05::BytesMut::from(b)
+    }
+}
+
+impl From<Prepare> for BytesMut {
+    fn from(prepare: Prepare) -> Self {
+        prepare.buffer
+    }
+}
+
+
+impl From<Fulfill> for bytes05::BytesMut {
+    fn from(fulfill: Fulfill) -> Self {
+        // bytes 0.4
+        let b = fulfill.buffer.as_ref();
+        // convert to Bytes05
+        bytes05::BytesMut::from(b)
+    }
+}
+
+
+impl From<Reject> for bytes05::BytesMut {
+    fn from(reject: Reject) -> Self {
+        // bytes 0.4
+        let b = reject.buffer.as_ref();
+        // convert to Bytes05
+        bytes05::BytesMut::from(b)
+    }
+}
+
 
 #[cfg(test)]
 mod test_packet_type {
