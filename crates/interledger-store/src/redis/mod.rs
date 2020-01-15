@@ -20,7 +20,7 @@ use reconnect::RedisReconnect;
 use super::account::{Account, AccountWithEncryptedTokens};
 use super::crypto::{encrypt_token, generate_keys, DecryptionKey, EncryptionKey};
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures::channel::mpsc::UnboundedSender;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
@@ -47,7 +47,7 @@ use redis_crate::{
     self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
     PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
 };
-use secrecy::{ExposeSecret, Secret, SecretBytes};
+use secrecy::{ExposeSecret, Secret, SecretBytesMut};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
@@ -993,24 +993,28 @@ impl NodeStore for RedisStore {
                     &encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
+                .freeze()
             }),
             ilp_over_http_incoming_token: settings.ilp_over_http_incoming_token.map(|token| {
                 encrypt_token(
                     &encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
+                .freeze()
             }),
             ilp_over_btp_outgoing_token: settings.ilp_over_btp_outgoing_token.map(|token| {
                 encrypt_token(
                     &encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
+                .freeze()
             }),
             ilp_over_http_outgoing_token: settings.ilp_over_http_outgoing_token.map(|token| {
                 encrypt_token(
                     &encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
+                .freeze()
             }),
         };
 
@@ -2032,23 +2036,23 @@ impl FromRedisValue for AccountWithEncryptedTokens {
                     "ilp_over_http_incoming_token",
                     &hash,
                 )?
-                .map(SecretBytes::from),
+                .map(SecretBytesMut::from),
                 ilp_over_http_outgoing_token: get_bytes_option(
                     "ilp_over_http_outgoing_token",
                     &hash,
                 )?
-                .map(SecretBytes::from),
+                .map(SecretBytesMut::from),
                 ilp_over_btp_url: get_url_option("ilp_over_btp_url", &hash)?,
                 ilp_over_btp_incoming_token: get_bytes_option(
                     "ilp_over_btp_incoming_token",
                     &hash,
                 )?
-                .map(SecretBytes::from),
+                .map(SecretBytesMut::from),
                 ilp_over_btp_outgoing_token: get_bytes_option(
                     "ilp_over_btp_outgoing_token",
                     &hash,
                 )?
-                .map(SecretBytes::from),
+                .map(SecretBytesMut::from),
                 max_packet_amount: get_value("max_packet_amount", &hash)?,
                 min_balance: get_value_option("min_balance", &hash)?,
                 settle_threshold: get_value_option("settle_threshold", &hash)?,
@@ -2089,10 +2093,13 @@ where
     }
 }
 
-fn get_bytes_option(key: &str, map: &HashMap<String, Value>) -> Result<Option<Bytes>, RedisError> {
+fn get_bytes_option(
+    key: &str,
+    map: &HashMap<String, Value>,
+) -> Result<Option<BytesMut>, RedisError> {
     if let Some(ref value) = map.get(key) {
         let vec: Vec<u8> = from_redis_value(value)?;
-        Ok(Some(Bytes::from(vec)))
+        Ok(Some(BytesMut::from(vec.as_slice())))
     } else {
         Ok(None)
     }

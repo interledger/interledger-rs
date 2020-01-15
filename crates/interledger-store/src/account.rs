@@ -11,7 +11,7 @@ use interledger_service_util::{
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use log::error;
 use ring::aead;
-use secrecy::{ExposeSecret, SecretBytes, SecretString};
+use secrecy::{ExposeSecret, SecretBytesMut, SecretString};
 use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use std::str::{self, FromStr};
@@ -31,14 +31,14 @@ pub struct Account {
     pub(crate) min_balance: Option<i64>,
     pub(crate) ilp_over_http_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_http_incoming_token: Option<SecretBytes>,
+    pub(crate) ilp_over_http_incoming_token: Option<SecretBytesMut>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_http_outgoing_token: Option<SecretBytes>,
+    pub(crate) ilp_over_http_outgoing_token: Option<SecretBytesMut>,
     pub(crate) ilp_over_btp_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_btp_incoming_token: Option<SecretBytes>,
+    pub(crate) ilp_over_btp_incoming_token: Option<SecretBytesMut>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
-    pub(crate) ilp_over_btp_outgoing_token: Option<SecretBytes>,
+    pub(crate) ilp_over_btp_outgoing_token: Option<SecretBytesMut>,
     pub(crate) settle_threshold: Option<i64>,
     pub(crate) settle_to: Option<i64>,
     pub(crate) routing_relation: RoutingRelation,
@@ -56,7 +56,7 @@ where
 }
 
 fn optional_secret_bytes_to_utf8<S>(
-    _bytes: &Option<SecretBytes>,
+    _bytes: &Option<SecretBytesMut>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -118,17 +118,17 @@ impl Account {
             ilp_over_http_url,
             ilp_over_http_incoming_token: details
                 .ilp_over_http_incoming_token
-                .map(|token| SecretBytes::new(token.expose_secret().to_string())),
+                .map(|token| SecretBytesMut::new(token.expose_secret().as_str())),
             ilp_over_http_outgoing_token: details
                 .ilp_over_http_outgoing_token
-                .map(|token| SecretBytes::new(token.expose_secret().to_string())),
+                .map(|token| SecretBytesMut::new(token.expose_secret().as_str())),
             ilp_over_btp_url,
             ilp_over_btp_incoming_token: details
                 .ilp_over_btp_incoming_token
-                .map(|token| SecretBytes::new(token.expose_secret().to_string())),
+                .map(|token| SecretBytesMut::new(token.expose_secret().as_str())),
             ilp_over_btp_outgoing_token: details
                 .ilp_over_btp_outgoing_token
-                .map(|token| SecretBytes::new(token.expose_secret().to_string())),
+                .map(|token| SecretBytesMut::new(token.expose_secret().as_str())),
             settle_to: details.settle_to,
             settle_threshold: details.settle_threshold,
             routing_relation,
@@ -144,25 +144,25 @@ impl Account {
         encryption_key: &aead::LessSafeKey,
     ) -> AccountWithEncryptedTokens {
         if let Some(ref token) = self.ilp_over_btp_outgoing_token {
-            self.ilp_over_btp_outgoing_token = Some(SecretBytes::from(encrypt_token(
+            self.ilp_over_btp_outgoing_token = Some(SecretBytesMut::from(encrypt_token(
                 encryption_key,
                 &token.expose_secret(),
             )));
         }
         if let Some(ref token) = self.ilp_over_http_outgoing_token {
-            self.ilp_over_http_outgoing_token = Some(SecretBytes::from(encrypt_token(
+            self.ilp_over_http_outgoing_token = Some(SecretBytesMut::from(encrypt_token(
                 encryption_key,
                 &token.expose_secret(),
             )));
         }
         if let Some(ref token) = self.ilp_over_btp_incoming_token {
-            self.ilp_over_btp_incoming_token = Some(SecretBytes::from(encrypt_token(
+            self.ilp_over_btp_incoming_token = Some(SecretBytesMut::from(encrypt_token(
                 encryption_key,
                 &token.expose_secret(),
             )));
         }
         if let Some(ref token) = self.ilp_over_http_incoming_token {
-            self.ilp_over_http_incoming_token = Some(SecretBytes::from(encrypt_token(
+            self.ilp_over_http_incoming_token = Some(SecretBytesMut::from(encrypt_token(
                 encryption_key,
                 &token.expose_secret(),
             )));
