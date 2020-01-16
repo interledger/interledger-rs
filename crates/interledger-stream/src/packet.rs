@@ -848,7 +848,7 @@ mod serialization {
 
     #[test]
     fn it_saturates_max_money_frame_receive_max() {
-        let mut buffer = bytes04::BytesMut::new();
+        let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
         buffer.put_var_octet_string(vec![
             // receive_max
@@ -861,7 +861,7 @@ mod serialization {
 
     #[test]
     fn it_saturates_money_blocked_frame_send_max() {
-        let mut buffer = bytes04::BytesMut::new();
+        let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
         buffer.put_var_octet_string(vec![
             // send_max

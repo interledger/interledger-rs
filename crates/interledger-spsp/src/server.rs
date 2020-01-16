@@ -20,7 +20,8 @@ pub struct SpspResponder {
 
 impl SpspResponder {
     pub fn new(ilp_address: Address, server_secret: Bytes) -> Self {
-        let connection_generator = ConnectionGenerator::new(server_secret);
+        let server_secret_compat = bytes04::Bytes::from(server_secret.as_ref());
+        let connection_generator = ConnectionGenerator::new(server_secret_compat);
         SpspResponder {
             ilp_address,
             connection_generator,

@@ -59,7 +59,7 @@ where
     A: Account,
 {
     // todo: can we avoid copying here?
-    let shared_secret = Bytes::copy_from_slice(shared_secret);
+    let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
     // TODO can/should we avoid cloning the account?
     let account_details = get_ildcp_info(&mut service.clone(), from_account.clone())
