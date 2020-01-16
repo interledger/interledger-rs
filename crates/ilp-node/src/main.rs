@@ -147,6 +147,10 @@ async fn main() {
 
     let node = config.try_into::<InterledgerNode>().unwrap();
     node.serve().await.unwrap();
+
+    // Add a future which is always pending. This will ensure main does not exist
+    // TODO: Is there a better way of doing this?
+    futures::future::pending().await
 }
 
 // returns (subcommand paths, config path)
