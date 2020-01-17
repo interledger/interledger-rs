@@ -48,8 +48,7 @@ num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 uuid = { version = "0.8.1", default-features = false, features = ["serde"] }
 
 # redis feature
-# redis_crate = { package = "redis", version = "0.13.0", default-features = false, features = ["executor"], optional = true }
-redis_crate = { package = "redis", git = "https://github.com/mitsuhiko/redis-rs", branch = "master", default-features = false, features = ["tokio-rt-core"], optional = true }
+redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
 runtime = "0.0.0"
 async-trait = "0.1.22"
 
