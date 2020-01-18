@@ -33,9 +33,7 @@ jobs:
           # do not run for more than 10 minutes under any circumstances
           # (We have had issues with bugs causing the tests to "run"
           # for 5 hours, wasting a ton of compute credits)
-          # note: We do not test with "all-features" because we want to avoid metrics tests
-          # exponentional blowup in type complexity
-          command: timeout 10m cargo test --all --features "backends_common" # --all-features
+          command: timeout 10m cargo test --all --all-features
           environment:
             - RUST_LOG: "interledger=trace"
             - RUST_BACKTRACE: "full"
