@@ -4,15 +4,10 @@ use ilp_node::InterledgerNode;
 use interledger::packet::Address;
 use serde_json::json;
 use std::str::FromStr;
-// use tracing::{debug, error_span};
-// use tracing_futures::Instrument;
-
-// const LOG_TARGET: &str = "interledger-tests-three-nodes";
 
 #[tokio::test]
 async fn three_nodes() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 3
-    // install_tracing_subscriber();
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance
@@ -129,7 +124,7 @@ async fn three_nodes() {
     }))
     .expect("Error creating node3.");
 
-    node1.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node1")).await.unwrap();
+    node1.serve().await.unwrap();
     create_account_on_node(node1_http, alice_on_alice, "admin")
         .await
         .unwrap();
@@ -137,7 +132,7 @@ async fn three_nodes() {
         .await
         .unwrap();
 
-    node2.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node2")).await.unwrap();
+    node2.serve().await.unwrap();
     create_account_on_node(node2_http, alice_on_bob, "admin")
         .await
         .unwrap();
@@ -154,7 +149,7 @@ async fn three_nodes() {
         .await
         .unwrap();
 
-    node3.serve().await.unwrap(); // .instrument(error_span!(target: "interledger", "node3")).await.unwrap();
+    node3.serve().await.unwrap();
     create_account_on_node(node3_http, charlie_on_charlie, "admin")
         .await
         .unwrap();

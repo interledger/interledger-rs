@@ -7,7 +7,6 @@ use serde_json::{self, json, Value};
 use std::env;
 use std::time::Duration;
 use tracing::error;
-use tracing_subscriber;
 
 #[tokio::test]
 async fn coincap() {
@@ -57,7 +56,6 @@ async fn coincap() {
 // TODO can we disable this with conditional compilation?
 #[tokio::test]
 async fn cryptocompare() {
-    tracing_subscriber::fmt::try_init().unwrap_or(());
     let context = TestContext::new();
 
     let api_key = env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY");

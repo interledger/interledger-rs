@@ -1,5 +1,27 @@
-// use crate::metrics::{incoming_metrics, outgoing_metrics};
-// use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
+#[cfg(feature = "google-pubsub")]
+use crate::instrumentation::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
+
+#[cfg(feature = "monitoring")]
+use tracing_futures::Instrument;
+
+#[cfg(feature = "monitoring")]
+use tracing::debug_span;
+
+#[cfg(feature = "monitoring")]
+use crate::instrumentation::{
+    metrics::{incoming_metrics, outgoing_metrics},
+    prometheus::{serve_prometheus, PrometheusConfig},
+    trace::{trace_forwarding, trace_incoming, trace_outgoing},
+};
+
+#[cfg(feature = "monitoring")]
+use interledger::service::IncomingService;
+#[cfg(any(feature = "monitoring", feature = "google-pubsub"))]
+use interledger::service::OutgoingService;
+
+#[cfg(feature = "monitoring")]
+use futures::FutureExt;
+
 use bytes::Bytes;
 use futures::TryFutureExt;
 use hex::FromHex;
@@ -13,8 +35,7 @@ use interledger::{
     packet::{ErrorCode, RejectBuilder},
     router::{Router, RouterStore},
     service::{
-        outgoing_service_fn, Account as AccountTrait, AccountStore, IncomingService,
-        OutgoingRequest, Username,
+        outgoing_service_fn, Account as AccountTrait, AccountStore, OutgoingRequest, Username,
     },
     service_util::{
         BalanceStore, EchoService, ExchangeRateFetcher, ExchangeRateService, ExchangeRateStore,
@@ -32,25 +53,15 @@ use interledger::{
     stream::{StreamNotificationsStore, StreamReceiverService},
 };
 use lazy_static::lazy_static;
-// use metrics_core::{Builder, Drain, Observe};
-// use metrics_runtime;
 use num_bigint::BigUint;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-// use std::sync::Arc;
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::spawn;
-use tracing::{debug, debug_span, error, info};
-use tracing_futures::Instrument;
+use tracing::{debug, error, info};
 use url::Url;
 use uuid::Uuid;
-use warp::{
-    self,
-    // http::{Response, StatusCode},
-    Filter,
-};
+use warp::{self, Filter};
 
-// #[cfg(feature = "google-pubsub")]
-// use crate::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 #[cfg(feature = "redis")]
 use crate::redis_store::*;
 #[cfg(feature = "balance-tracking")]
@@ -115,32 +126,6 @@ where
             .map_err(|err| DeserializeError::custom(format!("Invalid username: {:?}", err)))
     } else {
         Ok(None)
-    }
-}
-
-/// Configuration for [Prometheus](https://prometheus.io) metrics collection.
-#[derive(Deserialize, Clone)]
-pub struct PrometheusConfig {
-    /// IP address and port to host the Prometheus endpoint on.
-    pub bind_address: SocketAddr,
-    /// Amount of time, in milliseconds, that the node will collect data points for the
-    /// Prometheus histograms. Defaults to 300000ms (5 minutes).
-    #[serde(default = "PrometheusConfig::default_histogram_window")]
-    pub histogram_window: u64,
-    /// Granularity, in milliseconds, that the node will use to roll off old data.
-    /// For example, a value of 1000ms (1 second) would mean that the node forgets the oldest
-    /// 1 second of histogram data points every second. Defaults to 10000ms (10 seconds).
-    #[serde(default = "PrometheusConfig::default_histogram_granularity")]
-    pub histogram_granularity: u64,
-}
-
-impl PrometheusConfig {
-    fn default_histogram_window() -> u64 {
-        300_000
-    }
-
-    fn default_histogram_granularity() -> u64 {
-        10_000
     }
 }
 
@@ -223,10 +208,12 @@ pub struct InterledgerNode {
     pub exchange_rate: ExchangeRateConfig,
     /// Configuration for [Prometheus](https://prometheus.io) metrics collection.
     /// If this configuration is not provided, the node will not collect metrics.
+    /// Needs the feature flag "monitoring" to be enabled
+    #[cfg(feature = "monitoring")]
     #[serde(default)]
     pub prometheus: Option<PrometheusConfig>,
-    // #[cfg(feature = "google-pubsub")]
-    // pub google_pubsub: Option<PubsubConfig>,
+    #[cfg(feature = "google-pubsub")]
+    pub google_pubsub: Option<PubsubConfig>,
 }
 
 impl InterledgerNode {
@@ -237,17 +224,22 @@ impl InterledgerNode {
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub async fn serve(self) -> Result<(), ()> {
-        // if self.prometheus.is_some() {
-        //     let res =
-        //         futures::future::join(self.clone().serve_prometheus(), self.serve_node()).await;
-        //     if res.0.is_ok() || res.1.is_ok() {
-        //         Ok(())
-        //     } else {
-        //         Err(())
-        //     }
-        // } else {
-        self.serve_node().await
-        // }
+        #[cfg(feature = "monitoring")]
+        let f =
+            futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(|r| {
+                async move {
+                    if r.0.is_ok() || r.1.is_ok() {
+                        Ok(())
+                    } else {
+                        Err(())
+                    }
+                }
+            });
+
+        #[cfg(not(feature = "monitoring"))]
+        let f = self.serve_node();
+
+        f.await
     }
 
     async fn serve_node(self) -> Result<(), ()> {
@@ -319,8 +311,8 @@ impl InterledgerNode {
         let exchange_rate_poll_interval = self.exchange_rate.poll_interval;
         let exchange_rate_poll_failure_tolerance = self.exchange_rate.poll_failure_tolerance;
         let exchange_rate_spread = self.exchange_rate.spread;
-        // #[cfg(feature = "google-pubsub")]
-        // let google_pubsub = self.google_pubsub.clone();
+        #[cfg(feature = "google-pubsub")]
+        let google_pubsub = self.google_pubsub.clone();
 
         let btp_accounts = store
             .get_btp_outgoing_accounts()
@@ -370,7 +362,8 @@ impl InterledgerNode {
         let outgoing_service = btp_server_service.clone();
         let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
 
-        // let outgoing_service = outgoing_service.wrap(outgoing_metrics);
+        #[cfg(feature = "monitoring")]
+        let outgoing_service = outgoing_service.wrap(outgoing_metrics);
 
         // Note: the expiry shortener must come after the Validator so that the expiry duration
         // is shortened before we check whether there is enough time left
@@ -383,19 +376,24 @@ impl InterledgerNode {
         let outgoing_service =
             ExchangeRateService::new(exchange_rate_spread, store.clone(), outgoing_service);
 
-        // TODO: Why does this cause problems?
-        // #[cfg(feature = "google-pubsub")]
-        // let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
+        #[cfg(feature = "google-pubsub")]
+        let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
+
+        // Add tracing to add the outgoing request details to the incoming span
+        #[cfg(feature = "monitoring")]
+        let outgoing_service_fwd = outgoing_service
+            .clone()
+            .wrap(trace_forwarding)
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let outgoing_service_fwd = outgoing_service.clone();
 
         // Set up the Router and Routing Manager
-        let incoming_service = Router::new(
-            store.clone(),
-            // Add tracing to add the outgoing request details to the incoming span
-            outgoing_service.clone(), // .wrap(trace_forwarding),
-        );
+        let incoming_service = Router::new(store.clone(), outgoing_service_fwd);
 
         // Add tracing to track the outgoing request details
-        // let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
+        #[cfg(feature = "monitoring")]
+        let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
 
         let mut ccp_builder = CcpRouteManagerBuilder::new(
             ilp_address.clone(),
@@ -417,56 +415,55 @@ impl InterledgerNode {
         let incoming_service = RateLimitService::new(store.clone(), incoming_service);
 
         // Add tracing to track the incoming request details
-        // TODO: Re-enable metrics
-        // let incoming_service = incoming_service.wrap(trace_incoming).in_current_span();
-        // let incoming_service = incoming_service.wrap(incoming_metrics);
+        #[cfg(feature = "monitoring")]
+        let incoming_service = incoming_service
+            .wrap(trace_incoming)
+            .in_current_span()
+            .wrap(incoming_metrics);
 
         // Handle incoming packets sent via BTP
+        #[cfg(feature = "monitoring")]
+        let incoming_service_btp = incoming_service
+            .clone()
+            .wrap(|request, mut next| {
+                async move {
+                    let btp = debug_span!(target: "interledger-node", "btp");
+                    let _btp_scope = btp.enter();
+                    next.handle_request(request).in_current_span().await
+                }
+            })
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let incoming_service_btp = incoming_service.clone();
+
         btp_server_service
-            .handle_incoming(
-                incoming_service
-                    .clone()
-                    .wrap(|request, mut next| {
-                        async move {
-                            let btp = debug_span!(target: "interledger-node", "btp");
-                            let _btp_scope = btp.enter();
-                            next.handle_request(request).in_current_span().await
-                        }
-                    })
-                    .in_current_span(),
-            )
+            .handle_incoming(incoming_service_btp.clone())
             .await;
 
         btp_client_service
-            .handle_incoming(
-                incoming_service
-                    .clone()
-                    .wrap(|request, mut next| {
-                        async move {
-                            let btp = debug_span!(target: "interledger-node", "btp");
-                            let _btp_scope = btp.enter();
-                            next.handle_request(request).in_current_span().await
-                        }
-                    })
-                    .in_current_span(),
-            )
+            .handle_incoming(incoming_service_btp)
             .await;
+
+        #[cfg(feature = "monitoring")]
+        let incoming_service_api = incoming_service
+            .clone()
+            .wrap(|request, mut next| {
+                async move {
+                    let api = debug_span!(target: "interledger-node", "api");
+                    let _api_scope = api.enter();
+                    next.handle_request(request).in_current_span().await
+                }
+            })
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let incoming_service_api = incoming_service.clone();
 
         // Node HTTP API
         let mut api = NodeApi::new(
             bytes05::Bytes::copy_from_slice(secret_seed.as_ref()),
             admin_auth_token,
             store.clone(),
-            incoming_service
-                .clone()
-                .wrap(|request, mut next| {
-                    async move {
-                        let api = debug_span!(target: "interledger-node", "api");
-                        let _api_scope = api.enter();
-                        next.handle_request(request).in_current_span().await
-                    }
-                })
-                .in_current_span(),
+            incoming_service_api.clone(),
             outgoing_service.clone(),
             btp.clone(), // btp client service!
         );
@@ -475,23 +472,24 @@ impl InterledgerNode {
         }
         api.node_version(env!("CARGO_PKG_VERSION").to_string());
 
+        #[cfg(feature = "monitoring")]
+        let incoming_service_http = incoming_service
+            .clone()
+            .wrap(|request, mut next| {
+                async move {
+                    let http = debug_span!(target: "interledger-node", "http");
+                    let _http_scope = http.enter();
+                    next.handle_request(request).in_current_span().await
+                }
+            })
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let incoming_service_http = incoming_service.clone();
+
         // add an API of ILP over HTTP and add rejection handler
         let api = api
             .into_warp_filter()
-            .or(IlpOverHttpServer::new(
-                incoming_service
-                    .clone()
-                    .wrap(|request, mut next| {
-                        async move {
-                            let http = debug_span!(target: "interledger-node", "http");
-                            let _http_scope = http.enter();
-                            next.handle_request(request).in_current_span().await
-                        }
-                    })
-                    .in_current_span(),
-                store.clone(),
-            )
-            .as_filter())
+            .or(IlpOverHttpServer::new(incoming_service_http, store.clone()).as_filter())
             .or(btp_service_as_filter(
                 btp_server_service_clone,
                 store.clone(),
@@ -524,55 +522,4 @@ impl InterledgerNode {
 
         Ok(())
     }
-
-    // /// Starts a Prometheus metrics server that will listen on the configured address.
-    // ///
-    // /// # Errors
-    // /// This will fail if another Prometheus server is already running in this
-    // /// process or on the configured port.
-    // #[allow(clippy::cognitive_complexity)]
-    // async fn serve_prometheus(&self) -> Result<(), ()> {
-    //     if let Some(ref prometheus) = self.prometheus {
-    //         // Set up the metrics collector
-    //         let receiver = metrics_runtime::Builder::default()
-    //             .histogram(
-    //                 Duration::from_millis(prometheus.histogram_window),
-    //                 Duration::from_millis(prometheus.histogram_granularity),
-    //             )
-    //             .build()
-    //             .expect("Failed to create metrics Receiver");
-    //         let controller = receiver.controller();
-    //         // Try installing the global recorder
-    //         match metrics::set_boxed_recorder(Box::new(receiver)) {
-    //             Ok(_) => {
-    //                 let observer =
-    //                     Arc::new(metrics_runtime::observers::PrometheusBuilder::default());
-
-    //                 let filter = warp::get().and(warp::path::end()).map(move || {
-    //                     let mut observer = observer.build();
-    //                     controller.observe(&mut observer);
-    //                     let prometheus_response = observer.drain();
-    //                     Response::builder()
-    //                         .status(StatusCode::OK)
-    //                         .header("Content-Type", "text/plain; version=0.0.4")
-    //                         .body(prometheus_response)
-    //                 });
-
-    //                 info!(target: "interledger-node",
-    //                     "Prometheus metrics server listening on: {}",
-    //                     prometheus.bind_address
-    //                 );
-
-    //                 Ok(warp::serve(filter).bind(prometheus.bind_address).await)
-    //             }
-    //             Err(e) => {
-    //                 error!(target: "interledger-node", "Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
-    //                 Err(())
-    //             }
-    //         }
-    //     } else {
-    //         error!(target: "interledger-node", "No prometheus configuration provided");
-    //         Err(())
-    //     }
-    // }
 }

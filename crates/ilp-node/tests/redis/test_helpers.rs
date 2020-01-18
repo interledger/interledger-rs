@@ -11,14 +11,6 @@ use std::str;
 // use tracing_subscriber;
 use uuid::Uuid;
 
-// pub fn install_tracing_subscriber() {
-//     tracing_subscriber::fmt::Subscriber::builder()
-//         .with_timer(tracing_subscriber::fmt::time::ChronoUtc::rfc3339())
-//         .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
-//         .try_init()
-//         .unwrap_or(());
-// }
-
 #[allow(unused)]
 pub fn random_secret() -> String {
     let mut bytes: [u8; 32] = [0; 32];

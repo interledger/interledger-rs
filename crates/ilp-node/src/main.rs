@@ -1,11 +1,9 @@
-#![type_length_limit = "6000000"]
+// #![type_length_limit = "1500000"] // this is enough for cargo build --bin ilp-node
+#![type_length_limit = "13500000"] // this is enough for cargo build --bin ilp-node --feature monitoring
 
-mod metrics;
-mod node;
-mod trace;
+mod instrumentation;
+pub mod node;
 
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
 
@@ -19,6 +17,8 @@ use std::{
     io::Read,
     vec::Vec,
 };
+
+#[cfg(feature = "monitoring")]
 use tracing_subscriber::{
     filter::EnvFilter,
     fmt::{time::ChronoUtc, Subscriber},
@@ -26,6 +26,7 @@ use tracing_subscriber::{
 
 #[tokio::main]
 async fn main() {
+    #[cfg(feature = "monitoring")]
     Subscriber::builder()
         .with_timer(ChronoUtc::rfc3339())
         .with_env_filter(EnvFilter::from_default_env())

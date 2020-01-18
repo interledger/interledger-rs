@@ -1,11 +1,9 @@
-#![type_length_limit = "6000000"]
+// #![type_length_limit = "25000000"]
+#![type_length_limit = "1500000"] // needed to cargo build --bin ilp-node --feature "monitoring"
 
-// mod metrics;
+mod instrumentation;
 mod node;
-// mod trace;
 
-// #[cfg(feature = "google-pubsub")]
-// mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
 
