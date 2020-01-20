@@ -8,7 +8,6 @@ use log::{debug, error, trace};
 use rand::random;
 use tokio_tungstenite::connect_async;
 use tungstenite::Message;
-use url::{ParseError, Url};
 
 /// Create a BtpOutgoingService wrapping BTP connections to the accounts specified.
 /// Calling `handle_incoming` with an `IncomingService` will turn the returned
