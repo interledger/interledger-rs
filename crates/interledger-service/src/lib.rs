@@ -44,7 +44,8 @@ mod trace;
 pub type IlpResult = Result<Fulfill, Reject>;
 
 /// The base trait that Account types from other Services extend.
-/// This trait only assumes that the account has an ID that can be compared with others.
+/// This trait assumes that the account has an ID that can be compared with others.
+/// An account is also characterized by its username, ILP Address, and asset details (the code and the scale)
 ///
 /// Each service can extend the Account type to include additional details they require.
 /// Store implementations will implement these Account traits for a concrete type that

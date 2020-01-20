@@ -17,14 +17,7 @@ use warp::{
 // const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_MESSAGE_SIZE: usize = 40000;
 
-/// Returns a BtpOutgoingService and a warp Filter.
-///
-/// The BtpOutgoingService wraps all BTP/WebSocket connections that come
-/// in on the given address. Calling `handle_incoming` with an `IncomingService` will
-/// turn the returned BtpOutgoingService into a bidirectional handler.
-/// The separation is designed to enable the returned BtpOutgoingService to be passed
-/// to another service like the Router, and _then_ for the Router to be passed as the
-/// IncomingService to the BTP server.
+/// Returns a Warp Filter instantiated for the provided BtpOutgoingService service.
 ///
 /// The warp filter handles the websocket upgrades and adds incoming connections
 /// to the BTP service so that it will handle each of the messages.

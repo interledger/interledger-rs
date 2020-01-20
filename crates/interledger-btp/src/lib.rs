@@ -18,12 +18,16 @@ mod server;
 mod service;
 mod wrapped_ws;
 
-pub use self::client::{connect_client, connect_to_service_account, parse_btp_url};
+pub use self::client::{connect_client, connect_to_service_account};
 pub use self::server::btp_service_as_filter; // This is consumed only by the node.
 pub use self::service::{BtpOutgoingService, BtpService};
 
+/// Account type extending the base Account trait with BTP related information
 pub trait BtpAccount: Account {
+    /// Returns the BTP Websockets URL corresponding to this account
     fn get_ilp_over_btp_url(&self) -> Option<&Url>;
+    /// Returns the BTP authentication token which is used when initiating a BTP connection
+    /// with a peer
     fn get_ilp_over_btp_outgoing_token(&self) -> Option<&[u8]>;
 }
 

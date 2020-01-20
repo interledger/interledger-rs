@@ -10,15 +10,6 @@ use tokio_tungstenite::connect_async;
 use tungstenite::Message;
 use url::{ParseError, Url};
 
-pub fn parse_btp_url(uri: &str) -> Result<Url, ParseError> {
-    let uri = if uri.starts_with("btp+") {
-        uri.split_at(4).1
-    } else {
-        uri
-    };
-    Url::parse(uri)
-}
-
 /// Create a BtpOutgoingService wrapping BTP connections to the accounts specified.
 /// Calling `handle_incoming` with an `IncomingService` will turn the returned
 /// BtpOutgoingService into a bidirectional handler.
@@ -46,6 +37,11 @@ where
     Ok(service)
 }
 
+/// Initiates a BTP connection with the specified account and saves it to the list of connections 
+/// maintained by the provided service. This is done in the following steps:
+/// 1. Initialize a WebSocket connection at the BTP account's URL
+/// 2. Send a BTP authorization packet to the peer
+/// 3. If successful, consider the BTP connection established and add it to the service
 pub async fn connect_to_service_account<O, A>(
     account: A,
     error_on_unavailable: bool,

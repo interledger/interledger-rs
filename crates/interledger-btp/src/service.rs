@@ -31,8 +31,15 @@ lazy_static! {
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
-/// A container for BTP/WebSocket connections that implements OutgoingService
-/// for sending outgoing ILP Prepare packets over one of the connected BTP connections.
+
+/// The BtpOutgoingService wraps all BTP/WebSocket connections that come
+/// in on the given address. It implements OutgoingService for sending 
+/// outgoing ILP Prepare packets over one of the connected BTP connections.
+/// Calling `handle_incoming` with an `IncomingService` will turn the returned 
+/// BtpOutgoingService into a bidirectional handler.
+/// The separation is designed to enable the returned BtpOutgoingService to be passed
+/// to another service like the Router, and _then_ for the Router to be passed as the
+/// IncomingService to the BTP server.
 #[derive(Clone)]
 pub struct BtpOutgoingService<O, A: Account> {
     ilp_address: Address,
@@ -47,14 +54,14 @@ pub struct BtpOutgoingService<O, A: Account> {
     stream_valve: Arc<Valve>,
 }
 
-// Handle the packets based on whether they are an incoming request or a response to something we sent.
-//  a. If it's a prepare packet, it gets buffered in the incoming_sender channel which will get consumed
-//     once an incoming handler is added
-//  b. If it's a Fulfill/Reject packet, it gets added to the pending_outgoing hashmap which gets consumed
-//     by the outgoing service implementation immediately
-// incoming_sender.unbounded_send basically sends data to the self.incoming_receiver
-// to be consumed when we setup the incoming handler
-// Set up a listener to handle incoming packets from the WebSocket connection
+/// Handle the packets based on whether they are an incoming request or a response to something we sent.
+///  a. If it's a prepare packet, it gets buffered in the incoming_sender channel which will get consumed
+///     once an incoming handler is added
+///  b. If it's a Fulfill/Reject packet, it gets added to the pending_outgoing hashmap which gets consumed
+///     by the outgoing service implementation immediately
+/// incoming_sender.unbounded_send basically sends data to the self.incoming_receiver
+/// to be consumed when we setup the incoming handler
+/// Set up a listener to handle incoming packets from the WebSocket connection
 async fn handle_message<A: BtpAccount>(
     message: Message,
     tx_clone: UnboundedSender<Message>,
