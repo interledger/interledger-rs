@@ -85,12 +85,18 @@ impl ConnectionGenerator {
     }
 }
 
+/// A payment notification data type to be used by Pubsub API consumers
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PaymentNotification {
+    /// The username of the receiver of the payment notification
     pub to_username: Username,
+    /// The username of the sender of the payment notification
     pub from_username: Username,
+    /// The ILP Address of the receiver of the payment notification
     pub destination: Address,
+    /// The amount received
     pub amount: u64,
+    /// The time this payment notification was fired
     pub timestamp: String,
 }
 
@@ -98,12 +104,15 @@ pub struct PaymentNotification {
 pub trait StreamNotificationsStore {
     type Account: Account;
 
+    /// *Synchronously* saves the sending side of the provided account id's websocket channel to the store's memory
     fn add_payment_notification_subscription(
         &self,
         account_id: Uuid,
         sender: UnboundedSender<PaymentNotification>,
     );
 
+    /// Instructs the store to publish the provided payment notification object
+    /// via its Pubsub interface
     fn publish_payment_notification(&self, _payment: PaymentNotification);
 }
 

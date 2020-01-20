@@ -4,11 +4,17 @@
 //!
 //! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
 
+/// Stream client 
 mod client;
+/// Congestion controller consumed by the [stream client](./client/fn.send_money.html)
 mod congestion;
+/// Cryptographic utilities for generating fulfillments and encrypting/decrypting STREAM packets
 mod crypto;
+/// Stream errors
 mod error;
+/// Stream Packet implementation, [as specified in the RFC](https://interledger.org/rfcs/0029-stream/#5-packet-and-frame-specification)
 mod packet;
+/// A stream server implementing an [Outgoing Service](../interledger_service/trait.OutgoingService.html) for receiving STREAM payments from peers
 mod server;
 
 pub use client::{send_money, StreamDelivery};

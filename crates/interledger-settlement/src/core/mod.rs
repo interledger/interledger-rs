@@ -2,10 +2,13 @@
 /// Only exported if the `backends_common` feature flag is enabled
 #[cfg(feature = "backends_common")]
 pub mod backends_common;
+
 /// The REST API for the settlement engines
 pub mod engines_api;
+
 /// Expose useful utilities for implementing idempotent functionalities
 pub mod idempotency;
+
 /// Expose useful traits
 pub mod types;
 
@@ -14,6 +17,25 @@ use num_traits::Zero;
 use ring::digest::{digest, SHA256};
 use types::{Convert, ConvertDetails};
 
+/// Converts a number from a precision to another while taking precision loss into account
+/// 
+/// # Examples
+/// ```rust
+///assert_eq!(
+///    scale_with_precision_loss(BigUint::from(905u32), 9, 11),
+///    (BigUint::from(9u32), BigUint::from(5u32))
+///);
+///
+///assert_eq!(
+///    scale_with_precision_loss(BigUint::from(8053u32), 9, 12),
+///    (BigUint::from(8u32), BigUint::from(53u32))
+///);
+///
+///assert_eq!(
+///    scale_with_precision_loss(BigUint::from(1u32), 9, 6),
+///    (BigUint::from(1000u32), BigUint::from(0u32))
+///);
+/// ```
 pub fn scale_with_precision_loss(
     amount: BigUint,
     local_scale: u8,
