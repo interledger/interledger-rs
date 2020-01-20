@@ -31,11 +31,10 @@ lazy_static! {
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
-
 /// The BtpOutgoingService wraps all BTP/WebSocket connections that come
-/// in on the given address. It implements OutgoingService for sending 
+/// in on the given address. It implements OutgoingService for sending
 /// outgoing ILP Prepare packets over one of the connected BTP connections.
-/// Calling `handle_incoming` with an `IncomingService` will turn the returned 
+/// Calling `handle_incoming` with an `IncomingService` will turn the returned
 /// BtpOutgoingService into a bidirectional handler.
 /// The separation is designed to enable the returned BtpOutgoingService to be passed
 /// to another service like the Router, and _then_ for the Router to be passed as the

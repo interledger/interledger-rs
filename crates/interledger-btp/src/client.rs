@@ -37,7 +37,7 @@ where
     Ok(service)
 }
 
-/// Initiates a BTP connection with the specified account and saves it to the list of connections 
+/// Initiates a BTP connection with the specified account and saves it to the list of connections
 /// maintained by the provided service. This is done in the following steps:
 /// 1. Initialize a WebSocket connection at the BTP account's URL
 /// 2. Send a BTP authorization packet to the peer
