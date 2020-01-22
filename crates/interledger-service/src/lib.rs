@@ -41,6 +41,7 @@ pub use username::Username;
 #[cfg(feature = "trace")]
 mod trace;
 
+/// Result wrapper over [Fulfill](../interledger_packet/struct.Fulfill.html) and [Reject](../interledger_packet/struct.Reject.html)
 pub type IlpResult = Result<Fulfill, Reject>;
 
 /// The base trait that Account types from other Services extend.

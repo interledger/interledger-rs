@@ -29,6 +29,7 @@ async fn get_shared_connection(redis_info: Arc<ConnectionInfo>) -> Result<Multip
 }
 
 impl RedisReconnect {
+    /// Connects to the provided redis connection
     pub async fn connect(redis_info: ConnectionInfo) -> Result<RedisReconnect> {
         let redis_info = Arc::new(redis_info);
         let conn = get_shared_connection(redis_info.clone()).await?;
@@ -38,6 +39,7 @@ impl RedisReconnect {
         })
     }
 
+    /// Reconnects to redis
     pub async fn reconnect(self) -> Result<Self> {
         let shared_connection = get_shared_connection(self.redis_info.clone()).await?;
         (*self.conn.write()) = shared_connection;

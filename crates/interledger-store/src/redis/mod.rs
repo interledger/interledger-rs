@@ -43,6 +43,7 @@ use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
 use num_bigint::BigUint;
 use parking_lot::RwLock;
+use redis_crate::AsyncCommands;
 use redis_crate::{
     self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
     PubSubCommands, RedisError, RedisWrite, Script, ToRedisArgs, Value,
@@ -75,14 +76,17 @@ static DEFAULT_ROUTE_KEY: &str = "routes:default";
 static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement_engines";
 
+/// Domain separator for leftover amounts
 fn uncredited_amount_key(account_id: impl ToString) -> String {
     format!("uncredited-amount:{}", account_id.to_string())
 }
 
+/// Domain separator for idempotency keys
 fn prefixed_idempotency_key(idempotency_key: String) -> String {
     format!("idempotency-key:{}", idempotency_key)
 }
 
+/// Domain separator for accounts
 fn accounts_key(account_id: Uuid) -> String {
     format!("accounts:{}", account_id)
 }
@@ -93,39 +97,46 @@ fn accounts_key(account_id: Uuid) -> String {
 // process is accessing Redis at the same time.
 // For more information on scripting in Redis, see https://redis.io/commands/eval
 lazy_static! {
+    /// The node's default ILP Address
     static ref DEFAULT_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
 
     /// This lua script fetches an account associated with a username. The client
     /// MUST ensure that the returned account is authenticated.
     static ref ACCOUNT_FROM_USERNAME: Script = Script::new(include_str!("lua/account_from_username.lua"));
 
-    /// Load a list of accounts
+    /// Lua script which loads a list of accounts
     /// If an account does not have a settlement_engine_url set
     /// but there is one configured for that account's currency,
     /// it will use the globally configured url
     static ref LOAD_ACCOUNTS: Script = Script::new(include_str!("lua/load_accounts.lua"));
 
+    /// Lua script which reduces the provided account's balance before sending a Prepare packet
     static ref PROCESS_PREPARE: Script = Script::new(include_str!("lua/process_prepare.lua"));
 
+    /// Lua script which increases the provided account's balance after receiving a Fulfill packet
     static ref PROCESS_FULFILL: Script = Script::new(include_str!("lua/process_fulfill.lua"));
 
+    /// Lua script which increases the provided account's balance after receiving a Reject packet
     static ref PROCESS_REJECT: Script = Script::new(include_str!("lua/process_reject.lua"));
 
+    /// Lua script which increases the provided account's balance after a settlement attempt failed
     static ref REFUND_SETTLEMENT: Script = Script::new(include_str!("lua/refund_settlement.lua"));
 
+    /// Lua script which increases the provided account's balance after an incoming settlement succeeded
     static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new(include_str!("lua/process_incoming_settlement.lua"));
 }
 
+/// Builder for the re
 pub struct RedisStoreBuilder {
     redis_url: ConnectionInfo,
     secret: [u8; 32],
     poll_interval: u64,
+    /// Connector's ILP Address. Used to insert `Child` accounts as
     node_ilp_address: Address,
 }
 
-use redis_crate::AsyncCommands;
-
 impl RedisStoreBuilder {
+    /// Simple Constructor
     pub fn new(redis_url: ConnectionInfo, secret: [u8; 32]) -> Self {
         RedisStoreBuilder {
             redis_url,
@@ -135,16 +146,26 @@ impl RedisStoreBuilder {
         }
     }
 
+    /// Sets the ILP Address corresponding to the node
     pub fn node_ilp_address(&mut self, node_ilp_address: Address) -> &mut Self {
         self.node_ilp_address = node_ilp_address;
         self
     }
 
+    /// Sets the poll interval at which the store will update its routes
     pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
         self.poll_interval = poll_interval;
         self
     }
 
+    /// Connects to the Redis Store
+    ///
+    /// Specifically
+    /// 1. Generates encryption and decryption keys
+    /// 1. Connects to the redis store (ensuring that it reconnects in case of drop)
+    /// 1. Gets the Node address assigned to us by our parent (if it exists)
+    /// 1. Starts polling for routing table updates
+    /// 1. Spawns a thread to log incoming payments over Websockets
     pub async fn connect(&mut self) -> Result<RedisStore, ()> {
         let redis_info = self.redis_url.clone();
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
@@ -272,8 +293,11 @@ impl RedisStoreBuilder {
 /// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
+    //// The Store's ILP Address
     ilp_address: Arc<RwLock<Address>>,
+    /// A connection which reconnects if dropped by accident
     connection: RedisReconnect,
+    /// Websocket sender which publishes incoming payment updates
     subscriptions: Arc<RwLock<HashMap<Uuid, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     /// The store keeps the routing table in memory so that it can be returned
@@ -283,11 +307,14 @@ pub struct RedisStore {
     /// The inner `Arc<HashMap>` is used so that the `routing_table` method can
     /// return a reference to the routing table without cloning the underlying data.
     routes: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
+    /// Encryption Key so that the no cleartext data are stored
     encryption_key: Arc<Secret<EncryptionKey>>,
+    /// Decryption Key to provide cleartext data to users
     decryption_key: Arc<Secret<DecryptionKey>>,
 }
 
 impl RedisStore {
+    /// Gets all the account ids from Redis
     async fn get_all_accounts_ids(&self) -> Result<Vec<Uuid>, ()> {
         let mut connection = self.connection.clone();
         let account_ids: Vec<RedisAccountId> = connection
@@ -297,6 +324,8 @@ impl RedisStore {
         Ok(account_ids.iter().map(|rid| rid.0).collect())
     }
 
+    /// Inserts the account corresponding to the provided `AccountWithEncryptedtokens`
+    /// in Redis. Returns the provided account (tokens remain encrypted)
     async fn redis_insert_account(
         &mut self,
         encrypted: AccountWithEncryptedTokens,
@@ -394,6 +423,8 @@ impl RedisStore {
         Ok(ret)
     }
 
+    /// Overwrites the account corresponding to the provided `AccountWithEncryptedtokens`
+    /// in Redis. Returns the provided account (tokens remain encrypted)
     async fn redis_update_account(
         &self,
         encrypted: AccountWithEncryptedTokens,
@@ -466,6 +497,8 @@ impl RedisStore {
         Ok(encrypted)
     }
 
+    /// Modifies the account corresponding to the provided `id` with the provided `settings`
+    /// in Redis. Returns the modified account (tokens remain encrypted)
     async fn redis_modify_account(
         &self,
         id: Uuid,
@@ -533,6 +566,7 @@ impl RedisStore {
         self_clone.redis_get_account(id).await
     }
 
+    /// Gets the account (tokens remain encrypted) corresponding to the provided `id` from Redis.
     async fn redis_get_account(&mut self, id: Uuid) -> Result<AccountWithEncryptedTokens, ()> {
         let mut accounts: Vec<AccountWithEncryptedTokens> = LOAD_ACCOUNTS
             .arg(id.to_string())
@@ -542,6 +576,8 @@ impl RedisStore {
         accounts.pop().ok_or(())
     }
 
+    /// Deletes the account corresponding to the provided `id` from Redis.
+    /// Returns the deleted account (tokens remain encrypted)
     async fn redis_delete_account(&mut self, id: Uuid) -> Result<AccountWithEncryptedTokens, ()> {
         let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
@@ -1638,6 +1674,9 @@ impl SettlementStore for RedisStore {
     }
 }
 
+// TODO: AmountWithScale is re-implemented on Interledger-Settlement. It'd be nice
+// if we could deduplicate this by extracting it to a separate crate which would make
+// logical sense
 #[derive(Debug, Clone)]
 struct AmountWithScale {
     num: BigUint,

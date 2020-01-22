@@ -10,14 +10,14 @@ mod echo_service;
 mod exchange_rate_providers;
 /// Service responsible for setting and fetching dollar denominated exchange rates
 mod exchange_rates_service;
-/// Service responsible for shortening the expiry time of packets, 
+/// Service responsible for shortening the expiry time of packets,
 /// to take into account for network latency
 mod expiry_shortener_service;
 /// Service responsible for capping the amount an account can send in a packet
 mod max_packet_amount_service;
 /// Service responsible for capping the amount of packets and amount in packets an account can send
 mod rate_limit_service;
-/// Service responsible for checking that packets are not expired and that prepare packets' fulfillment conditions 
+/// Service responsible for checking that packets are not expired and that prepare packets' fulfillment conditions
 /// match the fulfillment inside the incoming fulfills
 mod validator_service;
 

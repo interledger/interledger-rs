@@ -8,7 +8,7 @@ pub const DEFAULT_MAX_EXPIRY_DURATION: u32 = 30000;
 
 /// An account with a round trip time, used by the [`ExpiryShortenerService`](./struct.ExpiryShortenerService.html)
 /// to shorten a packet's expiration time to account for latency
-pub trait RoundTripTimeAccount: Account  {
+pub trait RoundTripTimeAccount: Account {
     /// The account's round trip time
     fn round_trip_time(&self) -> u32 {
         DEFAULT_ROUND_TRIP_TIME

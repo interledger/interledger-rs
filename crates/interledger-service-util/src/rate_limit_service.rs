@@ -44,7 +44,7 @@ pub trait RateLimitStore {
 
     /// Refunds the throughput limit which was charged to an account
     /// Called if the node receives a reject packet after trying to forward
-    /// a packet to a peer, meaning that effectively reject packets do not 
+    /// a packet to a peer, meaning that effectively reject packets do not
     /// count towards a node's throughput limits
     async fn refund_throughput_limit(
         &self,

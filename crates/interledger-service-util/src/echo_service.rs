@@ -12,7 +12,6 @@ use std::marker::PhantomData;
 use std::str;
 use std::time::SystemTime;
 
-
 /// The prefix that echo packets should have in its data section
 const ECHO_PREFIX: &str = "ECHOECHOECHOECHO";
 /// The length of the `ECHO_PREFIX`
