@@ -26,14 +26,14 @@ jobs:
           command: printf "[profile.dev]\ncodegen-units = 1\n" >> Cargo.toml
       - run:
           name: Build
-          command: cargo build --all-features --all-targets
+          command: cargo build # --all-features --all-targets
       - run:
           name: Test
           # Note the timeout is included to make sure that they
           # do not run for more than 10 minutes under any circumstances
           # (We have had issues with bugs causing the tests to "run"
           # for 5 hours, wasting a ton of compute credits)
-          command: timeout 10m cargo test --all --all-features
+          command: timeout 10m cargo test # --all --all-features
           environment:
             - RUST_LOG: "interledger=trace"
             - RUST_BACKTRACE: "full"
