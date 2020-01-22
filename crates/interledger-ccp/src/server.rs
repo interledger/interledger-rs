@@ -594,10 +594,6 @@ where
         // Update the local and forwarding tables
         if !better_routes.is_empty() || !withdrawn_routes.is_empty() {
             let update_routes = {
-                // These 3 make the future not `Send`. How can we fix this? Error says that
-                // local_table (and the other variables) are dropped while the await is still on.
-                // We could clone, but then we won't overwrite the object's values.
-                // Can this be fixed?
                 let mut local_table = local_table.write();
                 let mut forwarding_table = forwarding_table.write();
                 let mut forwarding_table_updates = forwarding_table_updates.write();

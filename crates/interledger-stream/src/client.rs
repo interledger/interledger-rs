@@ -33,7 +33,7 @@ pub struct StreamDelivery {
     // StreamDelivery variables which we know ahead of time
     /// The amount sent by the sender
     pub sent_amount: u64,
-    /// The sender's asset scale 
+    /// The sender's asset scale
     pub sent_asset_scale: u8,
     /// The sender's asset code
     pub sent_asset_code: String,
@@ -41,7 +41,7 @@ pub struct StreamDelivery {
     pub delivered_amount: u64,
     // StreamDelivery variables which may get updated if the receiver sends us a
     // ConnectionAssetDetails frame.
-    /// The asset scale delivered to the receiver 
+    /// The asset scale delivered to the receiver
     /// (this may change depending on the granularity of accounts across nodes)
     pub delivered_asset_scale: Option<u8>,
     /// The asset code delivered to the receiver (this may happen in cross-currency payments)
@@ -154,7 +154,7 @@ where
 enum SendMoneyFutureState {
     /// Initial state of the future
     SendMoney = 0,
-    /// Once the stream has been finished, it transitions to this state and tries to send a 
+    /// Once the stream has been finished, it transitions to this state and tries to send a
     /// ConnectionCloseFrame
     Closing,
     /// The connection is now closed and the send_money function can return
@@ -199,7 +199,7 @@ where
     A: Account,
 {
     #[inline]
-    /// Fires off STREAM inside Prepare packets until the congestion controller tells us to stop 
+    /// Fires off STREAM inside Prepare packets until the congestion controller tells us to stop
     /// or we've sent the total amount or maximum time since last fulfill has elapsed
     async fn try_send_money(&mut self) -> Result<(), Error> {
         let amount = min(
@@ -310,10 +310,10 @@ where
         Ok(())
     }
 
-    /// Parses the provided Fulfill packet. 
+    /// Parses the provided Fulfill packet.
     /// 1. Logs the fulfill in the congestion controller
     /// 1. Updates the last fulfill time of the send money future
-    /// 1. It tries to aprse a Stream Packet inside the fulfill packet's data field 
+    /// 1. It tries to aprse a Stream Packet inside the fulfill packet's data field
     ///    If successful, it icnrements the delivered amount by the Stream packet's prepare amount
     fn handle_fulfill(&mut self, sequence: u64, amount: u64, fulfill: Fulfill) {
         // TODO should we check the fulfillment and expiry or can we assume the plugin does that?
@@ -356,13 +356,13 @@ where
         );
     }
 
-    /// Parses the provided Reject packet. 
+    /// Parses the provided Reject packet.
     /// 1. Increases the source-amount which was deducted at the start of the [send_money](./fn.send_money.html) loop
     /// 1. Logs the reject in the congestion controller
     /// 1. Increments the rejected packets counter
     /// 1. If the receipt's `delivered_asset` fields are not populated, it tries to parse
-    ///    a Stream Packet inside the reject packet's data field to check if 
-    ///    there is a [`ConnectionAssetDetailsFrame`](./../packet/struct.ConnectionAssetDetailsFrame.html) frame. 
+    ///    a Stream Packet inside the reject packet's data field to check if
+    ///    there is a [`ConnectionAssetDetailsFrame`](./../packet/struct.ConnectionAssetDetailsFrame.html) frame.
     ///    If one is found, then it updates the receipt's `delivered_asset_scale` and `delivered_asset_code`
     ///    to them.
     fn handle_reject(&mut self, sequence: u64, amount: u64, reject: Reject) {

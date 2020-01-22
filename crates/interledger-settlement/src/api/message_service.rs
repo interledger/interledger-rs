@@ -10,9 +10,15 @@ use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 
+/// Service which implements [`IncomingService`](../../interledger_service/trait.IncomingService.html).
+/// Responsible for catching incoming requests which are sent to `peer.settle` and forward them to
+/// the node's settlement engine via HTTP
 #[derive(Clone)]
 pub struct SettlementMessageService<I, A> {
+    /// The next incoming service which requests that don't get caught get sent to
     next: I,
+    /// HTTP client used to notify the engine corresponding to the account about
+    /// an incoming message from a peer's engine
     http_client: Client,
     account_type: PhantomData<A>,
 }

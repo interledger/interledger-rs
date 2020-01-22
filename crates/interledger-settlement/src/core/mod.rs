@@ -3,7 +3,8 @@
 #[cfg(feature = "backends_common")]
 pub mod backends_common;
 
-/// The REST API for the settlement engines
+/// Web service which exposes settlement related endpoints as described in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/),
+/// All endpoints are idempotent.
 pub mod engines_api;
 
 /// Expose useful utilities for implementing idempotent functionalities
@@ -18,23 +19,23 @@ use ring::digest::{digest, SHA256};
 use types::{Convert, ConvertDetails};
 
 /// Converts a number from a precision to another while taking precision loss into account
-/// 
+///
 /// # Examples
 /// ```rust
-///assert_eq!(
-///    scale_with_precision_loss(BigUint::from(905u32), 9, 11),
-///    (BigUint::from(9u32), BigUint::from(5u32))
-///);
+/// assert_eq!(
+///     scale_with_precision_loss(BigUint::from(905u32), 9, 11),
+///     (BigUint::from(9u32), BigUint::from(5u32))
+/// );
 ///
-///assert_eq!(
-///    scale_with_precision_loss(BigUint::from(8053u32), 9, 12),
-///    (BigUint::from(8u32), BigUint::from(53u32))
-///);
+/// assert_eq!(
+///     scale_with_precision_loss(BigUint::from(8053u32), 9, 12),
+///     (BigUint::from(8u32), BigUint::from(53u32))
+/// );
 ///
-///assert_eq!(
-///    scale_with_precision_loss(BigUint::from(1u32), 9, 6),
-///    (BigUint::from(1000u32), BigUint::from(0u32))
-///);
+/// assert_eq!(
+///     scale_with_precision_loss(BigUint::from(1u32), 9, 6),
+///     (BigUint::from(1000u32), BigUint::from(0u32))
+/// );
 /// ```
 pub fn scale_with_precision_loss(
     amount: BigUint,
@@ -71,9 +72,7 @@ pub fn scale_with_precision_loss(
     }
 }
 
-// Helper function that returns any idempotent data that corresponds to a
-// provided idempotency key. It fails if the hash of the input that
-// generated the idempotent data does not match the hash of the provided input.
+/// Returns the 32-bytes SHA256 hash of the provided preimage
 pub fn get_hash_of(preimage: &[u8]) -> [u8; 32] {
     let mut hash = [0; 32];
     hash.copy_from_slice(digest(&SHA256, preimage).as_ref());

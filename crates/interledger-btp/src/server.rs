@@ -3,7 +3,7 @@ use super::{service::BtpOutgoingService, wrapped_ws::WsWrap};
 use futures::{FutureExt, Sink, Stream};
 use futures::{SinkExt, StreamExt, TryFutureExt};
 use interledger_service::*;
-use log::{debug, warn};
+use log::{debug, error, warn};
 use secrecy::{ExposeSecret, SecretString};
 // use std::time::Duration;
 use warp::{
@@ -119,7 +119,10 @@ where
         .to_bytes(),
     );
 
-    let _ = connection.send(auth_response).await;
+    connection
+        .send(auth_response)
+        .map_err(|_| error!("warp::Error sending auth response"))
+        .await?;
 
     Ok((account, connection))
 }

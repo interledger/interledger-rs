@@ -23,11 +23,14 @@ use std::{
 use uuid::Uuid;
 use warp::{self, reject::Rejection, Filter};
 
+/// Prepare packet's execution condition as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/#exchanging-messages)
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
     102, 104, 122, 173, 248, 98, 189, 119, 108, 143, 193, 139, 142, 159, 142, 32, 8, 151, 20, 133,
     110, 226, 51, 179, 144, 42, 89, 29, 13, 95, 41, 37,
 ];
 
+/// Makes an idempotent call to [`do_receive_settlement`](./fn.do_receive_settlement.html)
+/// Returns Status Code 201
 async fn receive_settlement<S, A>(
     account_id: String,
     idempotency_key: Option<String>,
@@ -65,6 +68,8 @@ where
         .unwrap())
 }
 
+/// Makes an idempotent call to [`do_send_outgoing_message`](./fn.do_send_outgoing_message.html)
+/// Returns Status Code 201
 async fn send_message<S, A, O>(
     account_id: String,
     idempotency_key: Option<String>,
@@ -103,6 +108,11 @@ where
         .unwrap())
 }
 
+/// Returns a Node Settlement filter which exposes a Warp-compatible
+/// idempotent API which
+/// 1. receives messages about incoming settlements from the engine
+/// 1. sends messages from the connector's engine to the peer's
+///    message service which are sent to the peer's engine
 pub fn create_settlements_filter<S, O, A>(
     store: S,
     outgoing_handler: O,
@@ -153,6 +163,10 @@ where
         .boxed()
 }
 
+/// Receives a settlement message from the connector's engine, proceeds to scale it to the
+/// asset scale which corresponds to the account, and finally increases the account's balance
+/// by the processed amount. This implements the main functionality by which an account's credit
+/// is repaid, allowing them to send out more payments
 async fn do_receive_settlement<S, A>(
     store: S,
     account_id: String,
@@ -270,6 +284,10 @@ where
     Ok(ApiResponse::Default)
 }
 
+/// Sends a messages via the provided `outgoing_handler` with the `peer.settle`
+/// ILP Address as ultimate destination. This messages should get caught by the
+/// peer's message service, get forwarded to their engine, and then the response
+/// should be communicated back via a Fulfill or Reject packet
 async fn do_send_outgoing_message<S, O, A>(
     store: S,
     outgoing_handler: O,

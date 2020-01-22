@@ -4,7 +4,7 @@
 //!
 //! STREAM is responsible for splitting larger payments and messages into smaller chunks of money and data, and sending them over ILP.
 
-/// Stream client 
+/// Stream client
 mod client;
 /// Congestion controller consumed by the [stream client](./client/fn.send_money.html)
 mod congestion;
