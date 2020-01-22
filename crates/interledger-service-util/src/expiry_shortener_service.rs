@@ -6,7 +6,10 @@ use log::trace;
 pub const DEFAULT_ROUND_TRIP_TIME: u32 = 500;
 pub const DEFAULT_MAX_EXPIRY_DURATION: u32 = 30000;
 
-pub trait RoundTripTimeAccount: Account {
+/// An account with a round trip time, used by the [`ExpiryShortenerService`](./struct.ExpiryShortenerService.html)
+/// to shorten a packet's expiration time to account for latency
+pub trait RoundTripTimeAccount: Account  {
+    /// The account's round trip time
     fn round_trip_time(&self) -> u32 {
         DEFAULT_ROUND_TRIP_TIME
     }
@@ -34,6 +37,8 @@ impl<O> ExpiryShortenerService<O> {
         }
     }
 
+    // TODO: This isn't used anywhere, should we remove it?
+    /// Sets the service's max expiry duration
     pub fn max_expiry_duration(&mut self, milliseconds: u32) -> &mut Self {
         self.max_expiry_duration = milliseconds;
         self

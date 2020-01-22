@@ -12,7 +12,6 @@ use std::marker::PhantomData;
 /// Incoming or Outgoing Service responsible for rejecting timed out
 /// requests and checking that fulfillments received match the `execution_condition` from the original `Prepare` packets.
 /// Forwards everything else.
-///
 #[derive(Clone)]
 pub struct ValidatorService<IO, S, A> {
     store: S,
@@ -26,6 +25,8 @@ where
     S: AddressStore,
     A: Account,
 {
+    /// Create an incoming validator service
+    /// Forwards incoming requests if not expired, else rejects
     pub fn incoming(store: S, next: I) -> Self {
         ValidatorService {
             store,
@@ -41,6 +42,9 @@ where
     S: AddressStore,
     A: Account,
 {
+    /// Create an outgoing validator service
+    /// If outgoing request is not expired, it checks that the provided fulfillment is a valid preimage to the
+    /// prepare packet's fulfillment condition, and if so it forwards it, else rejects
     pub fn outgoing(store: S, next: O) -> Self {
         ValidatorService {
             store,

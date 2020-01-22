@@ -4,33 +4,48 @@ use interledger_service::{Account, AddressStore, IlpResult, IncomingRequest, Inc
 use log::{error, warn};
 use std::marker::PhantomData;
 
+/// Extention trait for [`Account`](../interledger_service/trait.Account.html) with rate limiting related information
 pub trait RateLimitAccount: Account {
+    /// The maximum packets per minute allowed for this account
     fn packets_per_minute_limit(&self) -> Option<u32> {
         None
     }
 
+    /// The maximum units per minute allowed for this account
     fn amount_per_minute_limit(&self) -> Option<u64> {
         None
     }
 }
 
+/// Rate limiting related errors
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RateLimitError {
+    /// Account exceeded their packet limit
     PacketLimitExceeded,
+    /// Account exceeded their amount limit
     ThroughputLimitExceeded,
+    /// There was an internal error when trying to connect to the store
     StoreError,
 }
 
+/// Store trait which manages the rate limit related information of accounts
 #[async_trait]
 pub trait RateLimitStore {
+    /// The provided account must implement [`RateLimitAccount`](./trait.RateLimitAccount.html)
     type Account: RateLimitAccount;
 
+    /// Apply rate limits based on the packets per minute and amount of per minute
+    /// limits set on the provided account
     async fn apply_rate_limits(
         &self,
         account: Self::Account,
         prepare_amount: u64,
     ) -> Result<(), RateLimitError>;
 
+    /// Refunds the throughput limit which was charged to an account
+    /// Called if the node receives a reject packet after trying to forward
+    /// a packet to a peer, meaning that effectively reject packets do not 
+    /// count towards a node's throughput limits
     async fn refund_throughput_limit(
         &self,
         account: Self::Account,
@@ -99,7 +114,23 @@ where
             .apply_rate_limits(request.from.clone(), request.prepare.amount())
             .await
         {
-            Ok(_) => next.handle_request(request).await,
+            Ok(_) => {
+                let packet = next.handle_request(request).await;
+                // If we did not get a fulfill, we should refund the sender
+                if packet.is_err() && has_throughput_limit {
+                    let refunded = store
+                        .refund_throughput_limit(account_clone, prepare_amount)
+                        .await;
+                    // if refunding failed, that's too bad, we will just return the reject
+                    // from the peer
+                    if let Err(err) = refunded {
+                        error!("Error refunding throughput limit: {:?}", err);
+                    }
+                }
+
+                // return the packet
+                packet
+            }
             Err(err) => {
                 let code = match err {
                     RateLimitError::PacketLimitExceeded => {
@@ -125,14 +156,6 @@ where
                 }
                 .build();
 
-                if has_throughput_limit {
-                    if let Err(err) = store
-                        .refund_throughput_limit(account_clone, prepare_amount)
-                        .await
-                    {
-                        error!("Error refunding throughput limit: {:?}", err);
-                    }
-                }
                 Err(reject)
             }
         }

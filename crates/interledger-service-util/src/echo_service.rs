@@ -12,10 +12,6 @@ use std::marker::PhantomData;
 use std::str;
 use std::time::SystemTime;
 
-/// A service that responds to the Echo Protocol.
-/// Currently, this service only supports bidirectional mode (unidirectional mode is not supported yet).
-/// The service doesn't shorten expiry as it expects the expiry to be shortened by another service
-/// like `ExpiryShortenerService`.
 
 /// The prefix that echo packets should have in its data section
 const ECHO_PREFIX: &str = "ECHOECHOECHOECHO";
@@ -27,6 +23,10 @@ enum EchoPacketType {
     Response = 1,
 }
 
+/// A service that implements the Echo Protocol.
+/// Currently, this service only supports bidirectional mode (unidirectional mode is not supported yet).
+/// The service doesn't shorten expiry as it expects the expiry to be shortened by another service
+/// like `ExpiryShortenerService`.
 #[derive(Clone)]
 pub struct EchoService<I, S, A> {
     store: S,
@@ -40,6 +40,7 @@ where
     I: IncomingService<A>,
     A: Account,
 {
+    /// Simple Constructor
     pub fn new(store: S, next: I) -> Self {
         EchoService {
             store,

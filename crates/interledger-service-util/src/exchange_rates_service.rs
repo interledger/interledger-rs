@@ -20,11 +20,14 @@ use std::{
 
 // TODO should this whole file be moved to its own crate?
 
+/// Store trait responsible for managing the exchange rates of multiple currencies
 pub trait ExchangeRateStore: Clone {
     // TODO we may want to make this async if/when we use pubsub to broadcast
     // rate changes to different instances of a horizontally-scalable node
+    /// Sets the exchange rate by providing an AssetCode->USD price mapping
     fn set_exchange_rates(&self, rates: HashMap<String, f64>) -> Result<(), ()>;
 
+    /// Gets the exchange rates for the provided asset codes
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
 
     // TODO should this be on the API instead? That's where it's actually used
@@ -33,6 +36,7 @@ pub trait ExchangeRateStore: Clone {
     // (so that we don't accidentally lock up the RwLock on the store's exchange_rates)
     // but in the normal case of getting the rate between two assets, we don't want to
     // copy all the rate data
+    /// Gets the exchange rates for all stored asset codes
     fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()>;
 }
 
@@ -236,6 +240,7 @@ impl<S> ExchangeRateFetcher<S>
 where
     S: ExchangeRateStore + Send + Sync + 'static,
 {
+    /// Simple constructor
     pub fn new(
         provider: ExchangeRateProvider,
         failed_polls_before_invalidation: u32,
@@ -250,7 +255,7 @@ where
         }
     }
 
-    // TODO: This compiles on nightly but fails on 1.39?
+    /// Spawns a future which calls [`self.update_rates()`](./struct.ExchangeRateFetcher.html#method.update_rates) every `interval`
     pub fn spawn_interval(self, interval: Duration) {
         debug!(
             "Starting interval to poll exchange rate provider: {:?} for rates",
@@ -267,6 +272,7 @@ where
         tokio::spawn(interval);
     }
 
+    /// Calls the proper exchange rate provider
     async fn fetch_rates(&self) -> Result<HashMap<String, f64>, ()> {
         match self.provider {
             ExchangeRateProvider::CryptoCompare(ref api_key) => {
@@ -276,6 +282,7 @@ where
         }
     }
 
+    /// Gets the exchange rates and proceeds to update the store with the newly polled values
     async fn update_rates(&self) -> Result<(), ()> {
         let consecutive_failed_polls = self.consecutive_failed_polls.clone();
         let consecutive_failed_polls_zeroer = consecutive_failed_polls.clone();

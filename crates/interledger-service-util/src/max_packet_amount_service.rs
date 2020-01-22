@@ -3,6 +3,8 @@ use interledger_packet::{ErrorCode, MaxPacketAmountDetails, RejectBuilder};
 use interledger_service::*;
 use log::debug;
 
+/// Extention trait for [`Account`](../interledger_service/trait.Account.html) with the max packet amount
+/// allowed for this account
 pub trait MaxPacketAmountAccount: Account {
     fn max_packet_amount(&self) -> u64;
 }
@@ -22,6 +24,7 @@ pub struct MaxPacketAmountService<I, S> {
 }
 
 impl<I, S> MaxPacketAmountService<I, S> {
+    /// Simple constructor
     pub fn new(store: S, next: I) -> Self {
         MaxPacketAmountService { store, next }
     }

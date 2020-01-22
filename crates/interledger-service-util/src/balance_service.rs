@@ -9,18 +9,22 @@ use interledger_settlement::{
 use log::{debug, error};
 use std::marker::PhantomData;
 
+// TODO: Remove AccountStore dependency, use `AccountId: ToString` as associated type
+/// Trait responsible for managing an account's balance in the store
+/// as ILP Packets get routed
 #[async_trait]
 pub trait BalanceStore: AccountStore {
     /// Fetch the current balance for the given account.
     async fn get_balance(&self, account: Self::Account) -> Result<i64, ()>;
 
+    /// Decreases the sending account's balance before forwarding out a prepare packet
     async fn update_balances_for_prepare(
         &self,
         from_account: Self::Account,
         incoming_amount: u64,
     ) -> Result<(), ()>;
 
-    /// Increases the account's balance, and returns the updated balance
+    /// Increases the receiving account's balance, and returns the updated balance
     /// along with the amount which should be settled
     async fn update_balances_for_fulfill(
         &self,
