@@ -103,7 +103,7 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     /// Sets a single static route
     async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()>;
 
-    /// Sets the default route ("") to be the provided account id 
+    /// Sets the default route ("") to be the provided account id
     /// (acts as a catch-all route if all other routes don't match)
     async fn set_default_route(&self, account_id: Uuid) -> Result<(), ()>;
 
@@ -175,7 +175,7 @@ pub struct EncryptedAccountSettings {
 /// The Account type for the RedisStore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountDetails {
-    /// The account's Interledger Protocol address. 
+    /// The account's Interledger Protocol address.
     /// If none is provided, the node should generate one
     pub ilp_address: Option<Address>,
     /// The account's username
