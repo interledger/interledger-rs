@@ -21,7 +21,9 @@ use types::{Convert, ConvertDetails};
 /// Converts a number from a precision to another while taking precision loss into account
 ///
 /// # Examples
-/// ```rust,ignore
+/// ```rust
+/// # use num_bigint::BigUint;
+/// # use interledger_settlement::core::scale_with_precision_loss;
 /// assert_eq!(
 ///     scale_with_precision_loss(BigUint::from(905u32), 9, 11),
 ///     (BigUint::from(9u32), BigUint::from(5u32))
