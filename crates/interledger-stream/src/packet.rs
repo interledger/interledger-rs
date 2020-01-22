@@ -755,7 +755,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
 /// MUST NOT ever overlap with one another. For example, the following combination
 /// of frames is forbidden because bytes 15-19 were provided twice:
 ///
-/// ```
+/// ```ignore
 /// StreamData { StreamID: 1, Offset: 10, Data: "1234567890" }
 /// StreamData { StreamID: 1, Offset: 15, Data: "67890" }
 /// ```
