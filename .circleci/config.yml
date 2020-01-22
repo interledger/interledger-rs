@@ -44,7 +44,11 @@ jobs:
             cargo clippy --all-targets --all-features -- -D warnings
       - run:
           name: Audit Dependencies
-          command: cargo audit
+          # Disable: 
+          # 1. lazy_static advisory: https://github.com/interledger-rs/interledger-rs/issues/588 
+          # 2. http/hyper advisory: outdated http due to yup-oauth2 3.1.1, tungstenite 0.9.2
+          command: cargo audit --ignore RUSTSEC-2019-0033 --ignore RUSTSEC-2019-0034 --ignore RUSTSEC-2019-0031
+
   test-md:
     docker:
       - image: circleci/rust
