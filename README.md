@@ -8,8 +8,16 @@
 [![crates.io](https://img.shields.io/crates/v/interledger.svg)](https://crates.io/crates/interledger)
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 [![CircleCI](https://circleci.com/gh/interledger-rs/interledger-rs.svg?style=shield)](https://circleci.com/gh/interledger-rs/interledger-rs)
-![Rust Version](https://img.shields.io/badge/rust-stable-Success)
+![rustc](https://img.shields.io/badge/rustc-1.39+-red.svg)
+![Rust](https://img.shields.io/badge/rust-stable-Success)
 [![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/node/)
+
+## Requirements
+
+All crates require Rust 2018 edition and are tested on the following channels:
+
+- `1.39.0` (minimum supported)
+- `stable`
 
 ## Connecting to the Testnet
 
