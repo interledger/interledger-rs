@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-  # "./crates/ilp-cli",
+  "./crates/ilp-cli",
   # "./crates/ilp-node",
   # "./crates/interledger",
   "./crates/interledger-api",
