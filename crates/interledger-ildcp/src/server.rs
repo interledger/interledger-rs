@@ -1,6 +1,6 @@
 use super::packet::*;
 use super::Account;
-use futures::future::ok;
+use async_trait::async_trait;
 use interledger_packet::*;
 use interledger_service::*;
 use log::debug;
@@ -27,14 +27,13 @@ where
     }
 }
 
+#[async_trait]
 impl<I, A> IncomingService<A> for IldcpService<I, A>
 where
-    I: IncomingService<A>,
+    I: IncomingService<A> + Send,
     A: Account,
 {
-    type Future = BoxedIlpFuture;
-
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         if is_ildcp_request(&request.prepare) {
             let from = request.from.ilp_address();
             let builder = IldcpResponseBuilder {
@@ -44,10 +43,9 @@ where
             };
             debug!("Responding to query for ildcp info by account: {:?}", from);
             let response = builder.build();
-            let fulfill = Fulfill::from(response);
-            Box::new(ok(fulfill))
+            Ok(Fulfill::from(response))
         } else {
-            Box::new(self.next.handle_request(request))
+            self.next.handle_request(request).await
         }
     }
 }
