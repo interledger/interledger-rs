@@ -34,7 +34,7 @@ where
     let input_hash = get_hash_of(account_id.id.as_ref());
     let (status_code, message) = make_idempotent_call(
         store,
-        || engine.create_account(account_id.id),
+        engine.create_account(account_id.id),
         input_hash,
         idempotency_key,
         StatusCode::CREATED,
@@ -64,7 +64,7 @@ where
     let input_hash = get_hash_of(account_id.as_ref());
     let (status_code, message) = make_idempotent_call(
         store,
-        || engine.delete_account(account_id),
+        engine.delete_account(account_id),
         input_hash,
         idempotency_key,
         StatusCode::NO_CONTENT,
@@ -96,7 +96,7 @@ where
     let input_hash = get_hash_of(input.as_ref());
     let (status_code, message) = make_idempotent_call(
         store,
-        || engine.send_money(id, quantity),
+        engine.send_money(id, quantity),
         input_hash,
         idempotency_key,
         StatusCode::CREATED,
@@ -128,7 +128,7 @@ where
     let input_hash = get_hash_of(input.as_ref());
     let (status_code, message) = make_idempotent_call(
         store,
-        || engine.receive_message(id, message.to_vec()),
+        engine.receive_message(id, message.to_vec()),
         input_hash,
         idempotency_key,
         StatusCode::CREATED,
