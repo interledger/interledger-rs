@@ -170,7 +170,7 @@ where
         .and(with_store.clone())
         .and_then(create_engine_account);
 
-    // // DELETE /accounts/:id (optional idempotency-key header)
+    // DELETE /accounts/:id (optional idempotency-key header)
     let del_account = warp::delete()
         .and(account_id)
         .and(warp::path::end())
@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(ret.status(), StatusCode::CREATED);
         assert_eq!(ret.body(), "EXECUTED");
 
-        // // fails with different id and same data
+        // fails with different id and same data
         let ret = settlement_call("42".to_owned(), 100, 6).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(ret.status().as_u16(), StatusCode::CREATED);
         assert_eq!(ret.body(), "RECEIVED");
 
-        // // fails with different id and same data
+        // fails with different id and same data
         let ret = messages_call("42", vec![0]).await;
         check_error_status_and_message(ret, 409, "Provided idempotency key is tied to other input");
 
