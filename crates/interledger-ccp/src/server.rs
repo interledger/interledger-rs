@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::packet::PEER_PROTOCOL_CONDITION;
 use crate::{
     packet::{
         Mode, Route, RouteControlRequest, RouteUpdateRequest, CCP_CONTROL_DESTINATION,
@@ -8,22 +6,17 @@ use crate::{
     routing_table::RoutingTable,
     CcpRoutingAccount, RouteManagerStore, RoutingRelation,
 };
-use futures::{
-    future::{err, join_all, ok, Either},
-    Future, Stream,
-};
-#[cfg(test)]
-use interledger_packet::PrepareBuilder;
-use interledger_packet::{Address, ErrorCode, Fulfill, Reject, RejectBuilder};
+use async_trait::async_trait;
+use futures::future::join_all;
+use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
-    Account, AddressStore, BoxedIlpFuture, IncomingRequest, IncomingService, OutgoingRequest,
+    Account, AddressStore, IlpResult, IncomingRequest, IncomingService, OutgoingRequest,
     OutgoingService,
 };
-#[cfg(test)]
-use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
+use std::cmp::Ordering as StdOrdering;
 use std::collections::HashMap;
 use std::{
     cmp::min,
@@ -33,13 +26,16 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio_timer::Interval;
 use uuid::Uuid;
 
-#[cfg(not(test))]
-use tokio_executor::spawn;
+#[cfg(test)]
+use crate::packet::PEER_PROTOCOL_CONDITION;
+#[cfg(test)]
+use futures::TryFutureExt;
+#[cfg(test)]
+use lazy_static::lazy_static;
 
 // TODO should the route expiry be longer? we use 30 seconds now
 // because the expiry shortener will lower the expiry to 30 seconds
@@ -116,7 +112,13 @@ where
 
         #[cfg(not(test))]
         {
-            spawn(service.start_broadcast_interval(self.broadcast_interval));
+            let broadcast_interval = self.broadcast_interval;
+            let service_clone = service.clone();
+            tokio::spawn(async move {
+                service_clone
+                    .start_broadcast_interval(broadcast_interval)
+                    .await
+            });
         }
 
         service
@@ -180,20 +182,17 @@ where
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     /// Returns a future that will trigger this service to update its routes and broadcast
-    /// updates to peers on the given interval.
-    pub fn start_broadcast_interval(&self, interval: u64) -> impl Future<Item = (), Error = ()> {
-        let clone = self.clone();
-        self.request_all_routes().and_then(move |_| {
-            Interval::new(Instant::now(), Duration::from_millis(interval))
-                .map_err(|err| error!("Interval error, no longer sending route updates: {:?}", err))
-                .for_each(move |_| {
-                    // ensure we have the latest ILP Address from the store
-                    clone.update_ilp_address();
-                    // Returning an error would end the broadcast loop
-                    // so we want to return Ok even if there was an error
-                    clone.broadcast_routes().then(|_| Ok(()))
-                })
-        })
+    /// updates to peers on the given interval. `interval` is in milliseconds
+    pub async fn start_broadcast_interval(&self, interval: u64) -> Result<(), ()> {
+        self.request_all_routes().await?;
+        let mut interval = tokio::time::interval(Duration::from_millis(interval));
+        loop {
+            interval.tick().await;
+            // ensure we have the latest ILP Address from the store
+            self.update_ilp_address();
+            // Do not consume the result if an error since we want to keep the loop going
+            let _ = self.broadcast_routes().await;
+        }
     }
 
     fn update_ilp_address(&self) {
@@ -210,52 +209,47 @@ where
         }
     }
 
-    pub fn broadcast_routes(&self) -> impl Future<Item = (), Error = ()> {
-        let clone = self.clone();
-        self.update_best_routes(None)
-            .and_then(move |_| clone.send_route_updates())
+    pub async fn broadcast_routes(&self) -> Result<(), ()> {
+        self.update_best_routes(None).await?;
+        self.send_route_updates().await
     }
 
     /// Request routes from all the peers we are willing to receive routes from.
     /// This is mostly intended for when the CCP server starts up and doesn't have any routes from peers.
-    fn request_all_routes(&self) -> impl Future<Item = (), Error = ()> {
-        let clone = self.clone();
-        self.store
-            .get_accounts_to_receive_routes_from()
-            .then(|result| {
-                let accounts = result.unwrap_or_else(|_| Vec::new());
-                join_all(accounts.into_iter().map(move |account| {
-                    clone.send_route_control_request(account, DUMMY_ROUTING_TABLE_ID, 0)
-                }))
-            })
-            .then(|_| Ok(()))
+    async fn request_all_routes(&self) -> Result<(), ()> {
+        let result = self.store.get_accounts_to_receive_routes_from().await;
+        let accounts = result.unwrap_or_else(|_| Vec::new());
+        join_all(
+            accounts
+                .into_iter()
+                .map(|account| self.send_route_control_request(account, DUMMY_ROUTING_TABLE_ID, 0)),
+        )
+        .await;
+        Ok(())
     }
 
     /// Handle a CCP Route Control Request. If this is from an account that we broadcast routes to,
     /// we'll send an outgoing Route Update Request to them.
-    fn handle_route_control_request(
-        &self,
-        request: IncomingRequest<A>,
-    ) -> impl Future<Item = Fulfill, Error = Reject> {
+    async fn handle_route_control_request(&self, request: IncomingRequest<A>) -> IlpResult {
         if !request.from.should_send_routes() {
-            return Either::A(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"We are not configured to send routes to you, sorry",
                 triggered_by: Some(&self.ilp_address.read()),
                 data: &[],
             }
-            .build()));
+            .build());
         }
 
         let control = RouteControlRequest::try_from(&request.prepare);
         if control.is_err() {
-            return Either::A(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route control request",
                 triggered_by: Some(&self.ilp_address.read()),
                 data: &[],
             }
-            .build()));
+            .build());
         }
         let control = control.unwrap();
         debug!(
@@ -295,40 +289,38 @@ where
             #[cfg(test)]
             {
                 let ilp_address = self.ilp_address.read().clone();
-                return Either::B(Either::A(
-                    self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
-                        .map_err(move |_| {
-                            RejectBuilder {
-                                code: ErrorCode::T01_PEER_UNREACHABLE,
-                                message: b"Error sending route update request",
-                                data: &[],
-                                triggered_by: Some(&ilp_address),
-                            }
-                            .build()
-                        })
-                        .and_then(|_| Ok(CCP_RESPONSE.clone())),
-                ));
+                return self
+                    .send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
+                    .map_err(move |_| {
+                        RejectBuilder {
+                            code: ErrorCode::T01_PEER_UNREACHABLE,
+                            message: b"Error sending route update request",
+                            data: &[],
+                            triggered_by: Some(&ilp_address),
+                        }
+                        .build()
+                    })
+                    .map_ok(|_| Ok(CCP_RESPONSE.clone()))
+                    .await?;
             }
 
             #[cfg(not(test))]
             {
-                spawn(self.send_route_update(
-                    request.from.clone(),
-                    from_epoch_index,
-                    to_epoch_index,
-                ));
+                tokio::spawn({
+                    let self_clone = self.clone();
+                    async move {
+                        self_clone
+                            .send_route_update(
+                                request.from.clone(),
+                                from_epoch_index,
+                                to_epoch_index,
+                            )
+                            .await
+                    }
+                });
             }
         }
-
-        #[cfg(not(test))]
-        {
-            Either::B(ok(CCP_RESPONSE.clone()))
-        }
-
-        #[cfg(test)]
-        {
-            Either::B(Either::B(ok(CCP_RESPONSE.clone())))
-        }
+        Ok(CCP_RESPONSE.clone())
     }
 
     /// Remove invalid routes before processing the Route Update Request
@@ -367,27 +359,27 @@ where
     /// If updates are applied to the Incoming Routing Table for this peer, we will
     /// then check whether those routes are better than the current best ones we have in the
     /// Local Routing Table.
-    fn handle_route_update_request(&self, request: IncomingRequest<A>) -> BoxedIlpFuture {
+    async fn handle_route_update_request(&self, request: IncomingRequest<A>) -> IlpResult {
         // Ignore the request if we don't accept routes from them
         if !request.from.should_receive_routes() {
-            return Box::new(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Your route broadcasts are not accepted here",
                 triggered_by: Some(&self.ilp_address.read()),
                 data: &[],
             }
-            .build()));
+            .build());
         }
 
         let update = RouteUpdateRequest::try_from(&request.prepare);
         if update.is_err() {
-            return Box::new(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::F00_BAD_REQUEST,
                 message: b"Invalid route update request",
                 triggered_by: Some(&self.ilp_address.read()),
                 data: &[],
             }
-            .build()));
+            .build());
         }
         let update = update.unwrap();
         debug!(
@@ -399,62 +391,60 @@ where
         // Filter out routes that don't make sense or that we won't accept
         let update = self.filter_routes(update);
 
-        let mut incoming_tables = self.incoming_tables.write();
-        if !&incoming_tables.contains_key(&request.from.id()) {
-            incoming_tables.insert(
-                request.from.id(),
-                RoutingTable::new(update.routing_table_id),
-            );
-        }
+        // Ensure the mutex gets dropped before teh async block
+        let result = {
+            let mut incoming_tables = self.incoming_tables.write();
+            if !&incoming_tables.contains_key(&request.from.id()) {
+                incoming_tables.insert(
+                    request.from.id(),
+                    RoutingTable::new(update.routing_table_id),
+                );
+            }
+            incoming_tables
+                .get_mut(&request.from.id())
+                .expect("Should have inserted a routing table for this account")
+                .handle_update_request(request.from.clone(), update)
+        };
 
         // Update the routing table we maintain for the account we got this from.
         // Figure out whether we need to update our routes for any of the prefixes
         // that were included in this route update.
-        match (*incoming_tables)
-            .get_mut(&request.from.id())
-            .expect("Should have inserted a routing table for this account")
-            .handle_update_request(request.from.clone(), update)
-        {
+        match result {
             Ok(prefixes_updated) => {
                 if prefixes_updated.is_empty() {
                     trace!("Route update request did not contain any prefixes we need to update our routes for");
-                    return Box::new(ok(CCP_RESPONSE.clone()));
+                    return Ok(CCP_RESPONSE.clone());
                 }
 
                 debug!(
                     "Recalculating best routes for prefixes: {}",
                     prefixes_updated.join(", ")
                 );
-                let future = self.update_best_routes(Some(
-                    prefixes_updated
-                        .into_iter()
-                        .map(|s| s.to_string())
-                        .collect(),
-                ));
 
                 #[cfg(not(test))]
                 {
-                    spawn(future);
-                    Box::new(ok(CCP_RESPONSE.clone()))
+                    tokio::spawn({
+                        let self_clone = self.clone();
+                        async move { self_clone.update_best_routes(Some(prefixes_updated)).await }
+                    });
                 }
 
                 #[cfg(test)]
                 {
                     let ilp_address = self.ilp_address.clone();
-                    Box::new(
-                        future
-                            .map_err(move |_| {
-                                RejectBuilder {
-                                    code: ErrorCode::T00_INTERNAL_ERROR,
-                                    message: b"Error processing route update",
-                                    data: &[],
-                                    triggered_by: Some(&ilp_address.read()),
-                                }
-                                .build()
-                            })
-                            .and_then(|_| Ok(CCP_RESPONSE.clone())),
-                    )
+                    self.update_best_routes(Some(prefixes_updated))
+                        .map_err(move |_| {
+                            RejectBuilder {
+                                code: ErrorCode::T00_INTERNAL_ERROR,
+                                message: b"Error processing route update",
+                                data: &[],
+                                triggered_by: Some(&ilp_address.read()),
+                            }
+                            .build()
+                        })
+                        .await?;
                 }
+                Ok(CCP_RESPONSE.clone())
             }
             Err(message) => {
                 warn!("Error handling incoming Route Update request, sending a Route Control request to get updated routing table info from peer. Error was: {}", &message);
@@ -465,31 +455,41 @@ where
                     triggered_by: Some(&self.ilp_address.read()),
                 }
                 .build();
-                let table = &incoming_tables[&request.from.id()];
-                let future = self.send_route_control_request(
-                    request.from.clone(),
-                    table.id(),
-                    table.epoch(),
-                );
+
+                let table = &self.incoming_tables.read().clone()[&request.from.id()];
+
                 #[cfg(not(test))]
-                {
-                    spawn(future);
-                    Box::new(err(reject))
-                }
+                tokio::spawn({
+                    let table = table.clone();
+                    let self_clone = self.clone();
+                    async move {
+                        let _ = self_clone
+                            .send_route_control_request(
+                                request.from.clone(),
+                                table.id(),
+                                table.epoch(),
+                            )
+                            .await;
+                    }
+                });
+
                 #[cfg(test)]
-                Box::new(future.then(move |_| Err(reject)))
+                let _ = self
+                    .send_route_control_request(request.from.clone(), table.id(), table.epoch())
+                    .await;
+                Err(reject)
             }
         }
     }
 
     /// Request a Route Update from the specified peer. This is sent when we get
     /// a Route Update Request from them with a gap in the epochs since the last one we saw.
-    fn send_route_control_request(
+    async fn send_route_control_request(
         &self,
         account: A,
         last_known_routing_table_id: [u8; 16],
         last_known_epoch: u32,
-    ) -> impl Future<Item = (), Error = ()> {
+    ) -> Result<(), ()> {
         let account_id = account.id();
         let control = RouteControlRequest {
             mode: Mode::Sync,
@@ -503,7 +503,8 @@ where
             hex::encode(&last_known_routing_table_id[..]),
             last_known_epoch);
         let prepare = control.to_prepare();
-        self.clone()
+        let result = self
+            .clone()
             .outgoing
             .send_request(OutgoingRequest {
                 // TODO If we start charging or paying for CCP broadcasts we'll need to
@@ -514,15 +515,15 @@ where
                 original_amount: prepare.amount(),
                 prepare,
             })
-            .then(move |result| {
-                if let Err(err) = result {
-                    warn!(
-                        "Error sending Route Control Request to account {}: {:?}",
-                        account_id, err
-                    )
-                }
-                Ok(())
-            })
+            .await;
+
+        if let Err(err) = result {
+            warn!(
+                "Error sending Route Control Request to account {}: {:?}",
+                account_id, err
+            )
+        }
+        Ok(())
     }
 
     /// Check whether the Local Routing Table currently has the best routes for the
@@ -530,10 +531,7 @@ where
     /// with some new or modified routes that might be better than our existing ones.
     ///
     /// If prefixes is None, this will check the best routes for all local and configured prefixes.
-    fn update_best_routes(
-        &self,
-        prefixes: Option<Vec<String>>,
-    ) -> impl Future<Item = (), Error = ()> + 'static {
+    async fn update_best_routes(&self, prefixes: Option<Vec<String>>) -> Result<(), ()> {
         let local_table = self.local_table.clone();
         let forwarding_table = self.forwarding_table.clone();
         let forwarding_table_updates = self.forwarding_table_updates.clone();
@@ -541,140 +539,138 @@ where
         let ilp_address = self.ilp_address.read().clone();
         let mut store = self.store.clone();
 
-        self.store.get_local_and_configured_routes().and_then(
-            move |(ref local_routes, ref configured_routes)| {
-                let (better_routes, withdrawn_routes) = {
-                    // Note we only use a read lock here and later get a write lock if we need to update the table
-                    let local_table = local_table.read();
-                    let incoming_tables = incoming_tables.read();
+        let (local_routes, configured_routes) =
+            self.store.get_local_and_configured_routes().await?;
 
-                    // Either check the given prefixes or check all of our local and configured routes
-                    let prefixes_to_check: Box<dyn Iterator<Item = &str>> =
-                        if let Some(ref prefixes) = prefixes {
-                            Box::new(prefixes.iter().map(|prefix| prefix.as_str()))
-                        } else {
-                            let routes = configured_routes.iter().chain(local_routes.iter());
-                            Box::new(routes.map(|(prefix, _account)| prefix.as_str()))
-                        };
+        // TODO: Should we extract this to a function and #[inline] it?
+        let (better_routes, withdrawn_routes) = {
+            // Note we only use a read lock here and later get a write lock if we need to update the table
+            let local_table = local_table.read();
+            let incoming_tables = incoming_tables.read();
 
-                    // Check all the prefixes to see which ones we have different routes for
-                    // and which ones we don't have routes for anymore
-                    let mut better_routes: Vec<(&str, A, Route)> =
-                        Vec::with_capacity(prefixes_to_check.size_hint().0);
-                    let mut withdrawn_routes: Vec<&str> = Vec::new();
-                    for prefix in prefixes_to_check {
-                        // See which prefixes there is now a better route for
-                        if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
-                            local_routes,
-                            configured_routes,
-                            &incoming_tables,
-                            prefix,
-                        ) {
-                            if let Some((ref next_account, ref _route)) =
-                                local_table.get_route(prefix)
-                            {
-                                if next_account.id() == best_next_account.id() {
-                                    continue;
-                                } else {
-                                    better_routes.push((
-                                        prefix,
-                                        best_next_account.clone(),
-                                        best_route.clone(),
-                                    ));
-                                }
-                            } else {
-                                better_routes.push((prefix, best_next_account, best_route));
-                            }
-                        } else {
-                            // No longer have a route to this prefix
-                            withdrawn_routes.push(prefix);
-                        }
-                    }
-                    (better_routes, withdrawn_routes)
+            // Either check the given prefixes or check all of our local and configured routes
+            let prefixes_to_check: Box<dyn Iterator<Item = &str>> =
+                if let Some(ref prefixes) = prefixes {
+                    Box::new(prefixes.iter().map(|prefix| prefix.as_str()))
+                } else {
+                    let routes = configured_routes.iter().chain(local_routes.iter());
+                    Box::new(routes.map(|(prefix, _account)| prefix.as_str()))
                 };
 
-                // Update the local and forwarding tables
-                if !better_routes.is_empty() || !withdrawn_routes.is_empty() {
-                    let mut local_table = local_table.write();
-                    let mut forwarding_table = forwarding_table.write();
-                    let mut forwarding_table_updates = forwarding_table_updates.write();
+            // Check all the prefixes to see which ones we have different routes for
+            // and which ones we don't have routes for anymore
+            let mut better_routes: Vec<(&str, A, Route)> =
+                Vec::with_capacity(prefixes_to_check.size_hint().0);
+            let mut withdrawn_routes: Vec<&str> = Vec::new();
+            for prefix in prefixes_to_check {
+                // See which prefixes there is now a better route for
+                if let Some((best_next_account, best_route)) = get_best_route_for_prefix(
+                    &local_routes,
+                    &configured_routes,
+                    &incoming_tables,
+                    prefix,
+                ) {
+                    if let Some((ref next_account, ref _route)) = local_table.get_route(prefix) {
+                        if next_account.id() == best_next_account.id() {
+                            continue;
+                        } else {
+                            better_routes.push((
+                                prefix,
+                                best_next_account.clone(),
+                                best_route.clone(),
+                            ));
+                        }
+                    } else {
+                        better_routes.push((prefix, best_next_account, best_route));
+                    }
+                } else {
+                    // No longer have a route to this prefix
+                    withdrawn_routes.push(prefix);
+                }
+            }
+            (better_routes, withdrawn_routes)
+        };
 
-                    let mut new_routes: Vec<Route> = Vec::with_capacity(better_routes.len());
+        // Update the local and forwarding tables
+        if !better_routes.is_empty() || !withdrawn_routes.is_empty() {
+            let update_routes = {
+                let mut local_table = local_table.write();
+                let mut forwarding_table = forwarding_table.write();
+                let mut forwarding_table_updates = forwarding_table_updates.write();
 
-                    for (prefix, account, mut route) in better_routes {
-                        debug!(
-                            "Setting new route for prefix: {} -> Account: {} (id: {})",
-                            prefix,
-                            account.username(),
-                            account.id(),
-                        );
-                        local_table.set_route(prefix.to_string(), account.clone(), route.clone());
+                let mut new_routes: Vec<Route> = Vec::with_capacity(better_routes.len());
 
-                        // Update the forwarding table
+                for (prefix, account, mut route) in better_routes {
+                    debug!(
+                        "Setting new route for prefix: {} -> Account: {} (id: {})",
+                        prefix,
+                        account.username(),
+                        account.id(),
+                    );
+                    local_table.set_route(prefix.to_string(), account.clone(), route.clone());
 
-                        // Don't advertise routes that don't start with the global prefix
-                        // or that advertise the whole global prefix
-                        let address_scheme = ilp_address.scheme();
-                        let correct_address_scheme = route.prefix.starts_with(address_scheme)
-                            && route.prefix != address_scheme;
-                        // We do want to advertise our address
-                        let is_our_address = route.prefix == &ilp_address as &str;
-                        // Don't advertise local routes because advertising only our address
-                        // will be enough to ensure the packet gets to us and we can route it
-                        // to the correct account on our node
-                        let is_local_route =
-                            route.prefix.starts_with(&ilp_address as &str) && route.path.is_empty();
-                        let not_local_route = is_our_address || !is_local_route;
-                        // Don't include routes we're also withdrawing
-                        let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
+                    // Update the forwarding table
 
-                        if correct_address_scheme && not_local_route && not_withdrawn_route {
-                            let old_route = forwarding_table.get_route(prefix);
-                            if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
-                                route.path.insert(0, ilp_address.to_string());
-                                // Each hop hashes the auth before forwarding
-                                route.auth = hash(&route.auth);
-                                forwarding_table.set_route(
-                                    prefix.to_string(),
-                                    account.clone(),
-                                    route.clone(),
-                                );
-                                new_routes.push(route);
-                            }
+                    // Don't advertise routes that don't start with the global prefix
+                    // or that advertise the whole global prefix
+                    let address_scheme = ilp_address.scheme();
+                    let correct_address_scheme =
+                        route.prefix.starts_with(address_scheme) && route.prefix != address_scheme;
+                    // We do want to advertise our address
+                    let is_our_address = route.prefix == &ilp_address as &str;
+                    // Don't advertise local routes because advertising only our address
+                    // will be enough to ensure the packet gets to us and we can route it
+                    // to the correct account on our node
+                    let is_local_route =
+                        route.prefix.starts_with(&ilp_address as &str) && route.path.is_empty();
+                    let not_local_route = is_our_address || !is_local_route;
+                    // Don't include routes we're also withdrawing
+                    let not_withdrawn_route = !withdrawn_routes.contains(&prefix);
+
+                    if correct_address_scheme && not_local_route && not_withdrawn_route {
+                        let old_route = forwarding_table.get_route(prefix);
+                        if old_route.is_none() || old_route.unwrap().0.id() != account.id() {
+                            route.path.insert(0, ilp_address.to_string());
+                            // Each hop hashes the auth before forwarding
+                            route.auth = hash(&route.auth);
+                            forwarding_table.set_route(
+                                prefix.to_string(),
+                                account.clone(),
+                                route.clone(),
+                            );
+                            new_routes.push(route);
                         }
                     }
-
-                    for prefix in withdrawn_routes.iter() {
-                        debug!("Removed route for prefix: {}", prefix);
-                        local_table.delete_route(prefix);
-                        forwarding_table.delete_route(prefix);
-                    }
-
-                    let epoch = forwarding_table.increment_epoch();
-                    forwarding_table_updates.push((
-                        new_routes,
-                        withdrawn_routes.iter().map(|s| s.to_string()).collect(),
-                    ));
-                    debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
-
-                    Either::A(
-                        store.set_routes(
-                            local_table
-                                .get_simplified_table()
-                                .into_iter()
-                                .map(|(prefix, account)| (prefix.to_string(), account)),
-                        ),
-                    )
-                } else {
-                    // The routing table hasn't changed
-                    Either::B(ok(()))
                 }
-            },
-        )
+
+                for prefix in withdrawn_routes.iter() {
+                    debug!("Removed route for prefix: {}", prefix);
+                    local_table.delete_route(prefix);
+                    forwarding_table.delete_route(prefix);
+                }
+
+                let epoch = forwarding_table.increment_epoch();
+                forwarding_table_updates.push((
+                    new_routes,
+                    withdrawn_routes
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                ));
+                debug_assert_eq!(epoch as usize + 1, forwarding_table_updates.len());
+
+                store.set_routes(local_table.get_simplified_table())
+            };
+
+            update_routes.await
+        } else {
+            // The routing table hasn't changed
+            Ok(())
+        }
     }
 
     /// Send RouteUpdateRequests to all peers that we send routing messages to
-    fn send_route_updates(&self) -> impl Future<Item = (), Error = ()> {
+    async fn send_route_updates(&self) -> Result<(), ()> {
         let self_clone = self.clone();
         let unavailable_accounts = self.unavailable_accounts.clone();
         // Check which accounts we should skip this iteration
@@ -690,95 +686,109 @@ where
             }
             skip
         };
+
         trace!("Skipping accounts: {:?}", accounts_to_skip);
-        self.store
+        let mut accounts = self
+            .store
             .get_accounts_to_send_routes_to(accounts_to_skip)
-            .and_then(move |mut accounts| {
-                let mut outgoing = self_clone.outgoing.clone();
-                let to_epoch_index = self_clone.forwarding_table.read().epoch();
-                let from_epoch_index = self_clone.last_epoch_updates_sent_for.swap(to_epoch_index, Ordering::SeqCst);
+            .await?;
 
-                let route_update_request =
-                    self_clone.create_route_update(from_epoch_index, to_epoch_index);
+        let to_epoch_index = self_clone.forwarding_table.read().epoch();
+        let from_epoch_index = self_clone
+            .last_epoch_updates_sent_for
+            .swap(to_epoch_index, Ordering::SeqCst);
 
-                let prepare = route_update_request.to_prepare();
-                accounts.sort_unstable_by_key(|a| a.id().to_string());
-                accounts.dedup_by_key(|a| a.id());
+        let route_update_request = self_clone.create_route_update(from_epoch_index, to_epoch_index);
 
-                let broadcasting = !accounts.is_empty();
-                if broadcasting {
-                    trace!(
-                        "Sending route update for epochs {} - {} to accounts: {:?} {}",
-                        from_epoch_index,
-                        to_epoch_index,
-                        route_update_request,
-                        {
-                            let account_list: Vec<String> = accounts
-                                .iter()
-                                .map(|a| {
-                                    format!(
-                                        "{} (id: {}, ilp_address: {})",
-                                        a.username(),
-                                        a.id(),
-                                        a.ilp_address()
-                                    )
-                                })
-                                .collect();
-                            account_list.join(", ")
-                        }
-                    );
-                    Either::A(
-                        join_all(accounts.into_iter().map(move |account| {
-                            outgoing
-                                .send_request(OutgoingRequest {
-                                    from: account.clone(),
-                                    to: account.clone(),
-                                    original_amount: prepare.amount(),
-                                    prepare: prepare.clone(),
-                                })
-                                .then(move |res| Ok((account, res)))
-                        }))
-                        .and_then(move |results: Vec<(A, Result<Fulfill, Reject>)>| {
-                            // Handle the results of the route broadcast attempts
-                            trace!("Updating unavailable accounts");
-                            let mut unavailable_accounts = unavailable_accounts.lock();
-                            for (account, result) in results.into_iter() {
-                                match (account.routing_relation(), result) {
-                                    (RoutingRelation::Child, Err(err)) => {
-                                        if let Some(backoff) = unavailable_accounts.get_mut(&account.id()) {
-                                            // Increase the number of intervals we'll skip
-                                            // (but don't overflow the value it's stored in)
-                                            backoff.max = backoff.max.saturating_add(1);
-                                            backoff.skip_intervals = backoff.max;
-                                        } else {
-                                            // Skip sending to this account next time
-                                            unavailable_accounts.insert(account.id(), BackoffParams {
-                                                max: 1,
-                                                skip_intervals: 1,
-                                            });
-                                        }
-                                        trace!("Error sending route update to {:?} account {} (id: {}), increased backoff to {}: {:?}",
-                                            account.routing_relation(), account.username(), account.id(), unavailable_accounts[&account.id()].max, err);
-                                    },
-                                    (_, Err(err)) => {
-                                        warn!("Error sending route update to {:?} account {} (id: {}): {:?}",
-                                            account.routing_relation(), account.username(), account.id(), err);
-                                    },
-                                    (_, Ok(_)) => {
-                                        if unavailable_accounts.remove(&account.id()).is_some() {
-                                            debug!("Account {} (id: {}) is no longer unavailable, resuming route broadcasts", account.username(), account.id());
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(())
-                        }),
-                    )
-                } else {
-                    trace!("No accounts to broadcast routes to");
-                    Either::B(ok(()))
+        let prepare = route_update_request.to_prepare();
+        accounts.sort_unstable_by_key(|a| a.id().to_string());
+        accounts.dedup_by_key(|a| a.id());
+
+        let broadcasting = !accounts.is_empty();
+        if broadcasting {
+            trace!(
+                "Sending route update for epochs {} - {} to accounts: {:?} {}",
+                from_epoch_index,
+                to_epoch_index,
+                route_update_request,
+                {
+                    let account_list: Vec<String> = accounts
+                        .iter()
+                        .map(|a| {
+                            format!(
+                                "{} (id: {}, ilp_address: {})",
+                                a.username(),
+                                a.id(),
+                                a.ilp_address()
+                            )
+                        })
+                        .collect();
+                    account_list.join(", ")
                 }
-            })
+            );
+
+            // TODO: How can this be converted to a join_all expression?
+            // futures 0.1 version worked by doing `join_all(accounts.into_iter().map(...)).and_then(...)`
+            // It is odd that the same but with `.await` instead does not work.
+            let mut outgoing = self_clone.outgoing.clone();
+            let mut results = Vec::new();
+            for account in accounts.into_iter() {
+                let res = outgoing
+                    .send_request(OutgoingRequest {
+                        from: account.clone(),
+                        to: account.clone(),
+                        original_amount: prepare.amount(),
+                        prepare: prepare.clone(),
+                    })
+                    .await;
+                results.push((account, res));
+            }
+
+            // Handle the results of the route broadcast attempts
+            trace!("Updating unavailable accounts");
+            let mut unavailable_accounts = unavailable_accounts.lock();
+            for (account, result) in results.into_iter() {
+                match (account.routing_relation(), result) {
+                    (RoutingRelation::Child, Err(err)) => {
+                        if let Some(backoff) = unavailable_accounts.get_mut(&account.id()) {
+                            // Increase the number of intervals we'll skip
+                            // (but don't overflow the value it's stored in)
+                            backoff.max = backoff.max.saturating_add(1);
+                            backoff.skip_intervals = backoff.max;
+                        } else {
+                            // Skip sending to this account next time
+                            unavailable_accounts.insert(
+                                account.id(),
+                                BackoffParams {
+                                    max: 1,
+                                    skip_intervals: 1,
+                                },
+                            );
+                        }
+                        trace!("Error sending route update to {:?} account {} (id: {}), increased backoff to {}: {:?}",
+                            account.routing_relation(), account.username(), account.id(), unavailable_accounts[&account.id()].max, err);
+                    }
+                    (_, Err(err)) => {
+                        warn!(
+                            "Error sending route update to {:?} account {} (id: {}): {:?}",
+                            account.routing_relation(),
+                            account.username(),
+                            account.id(),
+                            err
+                        );
+                    }
+                    (_, Ok(_)) => {
+                        if unavailable_accounts.remove(&account.id()).is_some() {
+                            debug!("Account {} (id: {}) is no longer unavailable, resuming route broadcasts", account.username(), account.id());
+                        }
+                    }
+                }
+            }
+            Ok(())
+        } else {
+            trace!("No accounts to broadcast routes to");
+            Ok(())
+        }
     }
 
     /// Create a RouteUpdateRequest representing the given range of Forwarding Routing Table epochs.
@@ -852,8 +862,8 @@ where
             from_epoch_index,
             to_epoch_index,
             current_epoch_index,
-            new_routes: new_routes.clone(),
-            withdrawn_routes: withdrawn_routes.clone(),
+            new_routes,
+            withdrawn_routes,
             speaker: self.ilp_address.read().clone(),
             hold_down_time: DEFAULT_ROUTE_EXPIRY_TIME,
         }
@@ -861,12 +871,12 @@ where
 
     /// Send a Route Update Request to a specific account for the given epoch range.
     /// This is used when the peer has fallen behind and has requested a specific range of updates.
-    fn send_route_update(
+    async fn send_route_update(
         &self,
         account: A,
         from_epoch_index: u32,
         to_epoch_index: u32,
-    ) -> impl Future<Item = (), Error = ()> {
+    ) -> Result<(), ()> {
         let prepare = self
             .create_route_update(from_epoch_index, to_epoch_index)
             .to_prepare();
@@ -875,7 +885,8 @@ where
             "Sending individual route update to account: {} for epochs from: {} to: {}",
             account_id, from_epoch_index, to_epoch_index
         );
-        self.outgoing
+        let result = self
+            .outgoing
             .clone()
             .send_request(OutgoingRequest {
                 from: account.clone(),
@@ -883,16 +894,15 @@ where
                 original_amount: prepare.amount(),
                 prepare,
             })
-            .and_then(|_| Ok(()))
-            .then(move |result| {
-                if let Err(err) = result {
-                    error!(
-                        "Error sending route update to account {}: {:?}",
-                        account_id, err
-                    )
-                }
-                Ok(())
-            })
+            .await;
+
+        if let Err(err) = result {
+            error!(
+                "Error sending route update to account {}: {:?}",
+                account_id, err
+            )
+        }
+        Ok(())
     }
 }
 
@@ -943,24 +953,27 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
             (account, route),
             |(best_account, best_route), (account, route)| {
                 // Prioritize child > peer > parent
-                if best_account.routing_relation() > account.routing_relation() {
-                    return (best_account, best_route);
-                } else if best_account.routing_relation() < account.routing_relation() {
-                    return (account, route);
-                }
-
-                // Prioritize shortest path
-                if best_route.path.len() < route.path.len() {
-                    return (best_account, best_route);
-                } else if best_route.path.len() > route.path.len() {
-                    return (account, route);
-                }
-
-                // Finally base it on account ID
-                if best_account.id().to_string() < account.id().to_string() {
-                    (best_account, best_route)
-                } else {
-                    (account, route)
+                match best_account
+                    .routing_relation()
+                    .cmp(&account.routing_relation())
+                {
+                    StdOrdering::Greater => (best_account, best_route),
+                    StdOrdering::Less => (account, route),
+                    _ => {
+                        // Prioritize shortest path
+                        match best_route.path.len().cmp(&route.path.len()) {
+                            StdOrdering::Less => (best_account, best_route),
+                            StdOrdering::Greater => (account, route),
+                            _ => {
+                                // Finally base it on account ID
+                                if best_account.id().to_string() < account.id().to_string() {
+                                    (best_account, best_route)
+                                } else {
+                                    (account, route)
+                                }
+                            }
+                        }
+                    }
                 }
             },
         );
@@ -970,6 +983,7 @@ fn get_best_route_for_prefix<A: CcpRoutingAccount>(
     }
 }
 
+#[async_trait]
 impl<I, O, S, A> IncomingService<A> for CcpRouteManager<I, O, S, A>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
@@ -977,18 +991,16 @@ where
     S: AddressStore + RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
-    type Future = BoxedIlpFuture;
-
     /// Handle the IncomingRequest if it is a CCP protocol message or
     /// pass it on to the next handler if not
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         let destination = request.prepare.destination();
         if destination == *CCP_CONTROL_DESTINATION {
-            Box::new(self.handle_route_control_request(request))
+            self.handle_route_control_request(request).await
         } else if destination == *CCP_UPDATE_DESTINATION {
-            Box::new(self.handle_route_update_request(request))
+            self.handle_route_update_request(request).await
         } else {
-            Box::new(self.next_incoming.handle_request(request))
+            self.next_incoming.handle_request(request).await
         }
     }
 }
