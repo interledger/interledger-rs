@@ -19,6 +19,8 @@ pub struct CreateAccount {
     id: String,
 }
 
+/// Makes an idempotent call to [`engine.create_account`](../types/trait.SettlementEngine.html#tymethod.create_account)
+/// Returns `Status Code 201`
 async fn create_engine_account<E, S>(
     idempotency_key: Option<String>,
     account_id: CreateAccount,
@@ -47,6 +49,8 @@ where
         .unwrap())
 }
 
+/// Makes an idempotent call to [`engine.delete_account`](../types/trait.SettlementEngine.html#tymethod.delete_account)
+/// Returns Status Code `204`.
 async fn delete_engine_account<E, S>(
     account_id: String,
     idempotency_key: Option<String>,
@@ -75,6 +79,8 @@ where
         .unwrap())
 }
 
+/// Makes an idempotent call to [`engine.send_money`](../types/trait.SettlementEngine.html#tymethod.send_money)
+/// Returns Status Code `201`
 async fn engine_send_money<E, S>(
     id: String,
     idempotency_key: Option<String>,
@@ -105,6 +111,8 @@ where
         .unwrap())
 }
 
+/// Makes an idempotent call to [`engine.receive_message`](../types/trait.SettlementEngine.html#tymethod.receive_message)
+/// Returns Status Code `201`
 async fn engine_receive_message<E, S>(
     id: String,
     idempotency_key: Option<String>,

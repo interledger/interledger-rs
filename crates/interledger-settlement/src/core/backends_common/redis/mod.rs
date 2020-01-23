@@ -21,20 +21,26 @@ use async_trait::async_trait;
 #[cfg(test)]
 mod test_helpers;
 
+/// Domain separator for leftover amounts
 static UNCREDITED_AMOUNT_KEY: &str = "uncredited_engine_settlement_amount";
+
+/// Helper function to get a redis key
 fn uncredited_amount_key(account_id: &str) -> String {
     format!("{}:{}", UNCREDITED_AMOUNT_KEY, account_id)
 }
 
+/// Builder object to create a Redis connection for the engine
 pub struct EngineRedisStoreBuilder {
     redis_url: ConnectionInfo,
 }
 
 impl EngineRedisStoreBuilder {
+    /// Simple constructor
     pub fn new(redis_url: ConnectionInfo) -> Self {
         EngineRedisStoreBuilder { redis_url }
     }
 
+    /// Connects to the provided redis_url and returns a Redis connection for the Settlement Engine
     pub async fn connect(&self) -> Result<EngineRedisStore, ()> {
         let client = match Client::open(self.redis_url.clone()) {
             Ok(c) => c,
@@ -133,6 +139,7 @@ impl IdempotentStore for EngineRedisStore {
     }
 }
 
+/// Helper datatype for storing and loading quantities of a number with different scales
 #[derive(Debug, Clone)]
 struct AmountWithScale {
     num: BigUint,
@@ -152,11 +159,11 @@ impl ToRedisArgs for AmountWithScale {
 }
 
 impl AmountWithScale {
+    /// Iterates over all values because in this case it's making
+    /// an lrange call. This returns all the tuple elements in 1 array, and
+    /// it cannot differentiate between 1 AmountWithScale value or multiple
+    /// ones. This looks like a limitation of redis.rs
     fn parse_multi_values(items: &[Value]) -> Option<Self> {
-        // We have to iterate over all values because in this case we're making
-        // an lrange call. This returns all the tuple elements in 1 array, and
-        // it cannot differentiate between 1 AmountWithScale value or multiple
-        // ones. This looks like a limitation of redis.rs
         let len = items.len();
         let mut iter = items.iter();
 

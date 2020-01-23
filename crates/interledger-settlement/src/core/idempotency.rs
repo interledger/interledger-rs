@@ -7,14 +7,19 @@ use http::StatusCode;
 use interledger_http::error::*;
 use log::error;
 
+/// Data stored for the idempotency features
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdempotentData {
+    /// The HTTP Status Code of the API's response
     pub status: StatusCode,
+    /// The body of the API's response
     pub body: Bytes,
+    /// The hash of the serialized input parameters which generated the API's response
     pub input_hash: [u8; 32],
 }
 
 impl IdempotentData {
+    /// Simple constructor
     pub fn new(status: StatusCode, body: Bytes, input_hash: [u8; 32]) -> Self {
         Self {
             status,
@@ -24,6 +29,7 @@ impl IdempotentData {
     }
 }
 
+/// Store trait which should be implemented for idempotency related features
 #[async_trait]
 pub trait IdempotentStore {
     /// Returns the API response that was saved when the idempotency key was used
@@ -34,7 +40,8 @@ pub trait IdempotentStore {
     ) -> Result<Option<IdempotentData>, ()>;
 
     /// Saves the data that was passed along with the api request for later
-    /// The store MUST also save a hash of the input, so that it errors out on requests
+    /// The store also saves the hash of the input, so that it errors out on requests
+    /// with conflicting input hashes for the same idempotency key
     async fn save_idempotent_data(
         &self,
         idempotency_key: String,
@@ -44,9 +51,9 @@ pub trait IdempotentStore {
     ) -> Result<(), ()>;
 }
 
-// Helper function that returns any idempotent data that corresponds to a
-// provided idempotency key. It fails if the hash of the input that
-// generated the idempotent data does not match the hash of the provided input.
+/// Helper function that returns any idempotent data that corresponds to a
+/// provided idempotency key. It fails if the hash of the input that
+/// generated the idempotent data does not match the hash of the provided input.
 async fn check_idempotency<S>(
     store: S,
     idempotency_key: String,
@@ -136,11 +143,12 @@ where
                     }
                 };
 
-                // NOTE: This is bytes 0.4.12. API Response is defined over it.
                 let data = match ret {
                     ApiResponse::Default => default_return_value,
                     ApiResponse::Data(d) => d,
                 };
+                // TODO refactor for readability, can unify the 2 idempotency calls, the error and the data
+                // are both Bytes
                 store
                     .save_idempotent_data(
                         idempotency_key,
