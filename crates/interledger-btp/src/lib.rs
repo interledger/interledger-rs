@@ -16,6 +16,7 @@ mod oer;
 mod packet;
 mod server;
 mod service;
+mod wrapped_ws;
 
 pub use self::client::{connect_client, connect_to_service_account};
 pub use self::server::btp_service_as_filter; // This is consumed only by the node.
