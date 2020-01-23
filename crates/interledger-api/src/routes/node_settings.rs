@@ -286,10 +286,10 @@ mod tests {
     use crate::routes::test_helpers::{api_call, test_node_settings_api};
     use serde_json::{json, Value};
 
-    #[test]
-    fn gets_status() {
+    #[tokio::test]
+    async fn gets_status() {
         let api = test_node_settings_api();
-        let resp = api_call(&api, "GET", "/", "", None);
+        let resp = api_call(&api, "GET", "/", "", None).await;
         assert_eq!(resp.status().as_u16(), 200);
         assert_eq!(
             resp.body(),
@@ -297,10 +297,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn gets_rates() {
+    #[tokio::test]
+    async fn gets_rates() {
         let api = test_node_settings_api();
-        let resp = api_call(&api, "GET", "/rates", "", None);
+        let resp = api_call(&api, "GET", "/rates", "", None).await;
         assert_eq!(resp.status().as_u16(), 200);
         assert_eq!(
             serde_json::from_slice::<Value>(resp.body()).unwrap(),
@@ -308,56 +308,60 @@ mod tests {
         );
     }
 
-    #[test]
-    fn gets_routes() {
+    #[tokio::test]
+    async fn gets_routes() {
         let api = test_node_settings_api();
-        let resp = api_call(&api, "GET", "/routes", "", None);
+        let resp = api_call(&api, "GET", "/routes", "", None).await;
         assert_eq!(resp.status().as_u16(), 200);
     }
 
-    #[test]
-    fn only_admin_can_put_rates() {
+    #[tokio::test]
+    async fn only_admin_can_put_rates() {
         let api = test_node_settings_api();
         let rates = json!({"ABC": 1.0});
-        let resp = api_call(&api, "PUT", "/rates", "admin", Some(rates.clone()));
+        let resp = api_call(&api, "PUT", "/rates", "admin", Some(rates.clone())).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "PUT", "/rates", "wrong", Some(rates));
+        let resp = api_call(&api, "PUT", "/rates", "wrong", Some(rates)).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_can_put_static_routes() {
+    #[tokio::test]
+    async fn only_admin_can_put_static_routes() {
         let api = test_node_settings_api();
         let routes = json!({"g.node1": "alice", "example.eu": "bob"});
-        let resp = api_call(&api, "PUT", "/routes/static", "admin", Some(routes.clone()));
+        let resp = api_call(&api, "PUT", "/routes/static", "admin", Some(routes.clone())).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "PUT", "/routes/static", "wrong", Some(routes));
+        let resp = api_call(&api, "PUT", "/routes/static", "wrong", Some(routes)).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_can_put_single_static_route() {
+    #[tokio::test]
+    async fn only_admin_can_put_single_static_route() {
         let api = test_node_settings_api();
-        let api_put = move |auth: &str| {
-            warp::test::request()
-                .method("PUT")
-                .path("/routes/static/g.node1")
-                .body("alice")
-                .header("Authorization", format!("Bearer {}", auth.to_string()))
-                .reply(&api)
+        let api_put = |auth: String| {
+            let auth = format!("Bearer {}", auth);
+            async {
+                warp::test::request()
+                    .method("PUT")
+                    .path("/routes/static/g.node1")
+                    .body("alice")
+                    .header("Authorization", auth)
+                    .reply(&api)
+                    .await
+            }
         };
 
-        let resp = api_put("admin");
+        let resp = api_put("admin".to_owned()).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_put("wrong");
+        let resp = api_put("wrong".to_owned()).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_can_put_engines() {
+    #[tokio::test]
+    async fn only_admin_can_put_engines() {
         let api = test_node_settings_api();
         let engines = json!({"ABC": "http://localhost:3000", "XYZ": "http://localhost:3001"});
         let resp = api_call(
@@ -366,10 +370,11 @@ mod tests {
             "/settlement/engines",
             "admin",
             Some(engines.clone()),
-        );
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "PUT", "/settlement/engines", "wrong", Some(engines));
+        let resp = api_call(&api, "PUT", "/settlement/engines", "wrong", Some(engines)).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 }
