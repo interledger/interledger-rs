@@ -12,17 +12,24 @@ use warp::{Filter, Rejection};
 
 /// Max message size that is allowed to transfer from a request or a message.
 pub const MAX_PACKET_SIZE: u64 = 40000;
+/// The offset after which the bearer token should be in an ILP over HTTP request
+/// e.g. in `token = "Bearer: MyAuthToken"`, `MyAuthToken` can be taken via token[BEARER_TOKEN_START..]
 pub const BEARER_TOKEN_START: usize = 7;
 
 /// A warp filter that parses incoming ILP-Over-HTTP requests, validates the authorization,
 /// and passes the request to an IncomingService handler.
 #[derive(Clone)]
 pub struct HttpServer<I, S> {
+    /// The next [incoming service](../interledger_service/trait.IncomingService.html)
     incoming: I,
+    /// A store which implements [`HttpStore`](trait.HttpStore.html)
     store: S,
 }
 
 #[inline]
+/// Returns the account which matches the provided username/password combination
+/// from the store, or returns an error if the account was not found or if the
+/// credentials were incorrect
 async fn get_account<S>(
     store: S,
     path_username: &Username,
@@ -43,6 +50,16 @@ where
 }
 
 #[inline]
+/// Implements ILP over HTTP. If account authentication is valid
+/// and the provided packet can be parsed as a
+/// [Prepare](../../interledger_packet/struct.Prepare.html) packet,
+/// then it is forwarded to the next incoming service which will return
+/// an Ok result if the response is a [Fulfill](../../interledger_packet/struct.Fulfill.html).
+///
+/// # Errors
+/// 1. Unauthorized account if invalid credentials are provided
+/// 1. The provided `body` could not be parsed as a Prepare packet
+/// 1. A Reject packet was returned by the next incoming service
 async fn ilp_over_http<S, I>(
     path_username: Username,
     password: SecretString,
@@ -96,6 +113,8 @@ where
         HttpServer { incoming, store }
     }
 
+    /// Returns a Warp filter which exposes per-account endpoints for [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/).
+    /// The endpoint is /accounts/:username/ilp.
     pub fn as_filter(
         &self,
     ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {

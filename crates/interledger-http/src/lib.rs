@@ -11,17 +11,21 @@ use serde::de::DeserializeOwned;
 use url::Url;
 use warp::{self, Filter, Rejection};
 
+/// [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) Outgoing Service
 mod client;
-mod server;
-
-// So that settlement engines can use errors
+/// [RFC7807](https://tools.ietf.org/html/rfc7807) compliant errors
 pub mod error;
+/// [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) API (implemented with [Warp](https://docs.rs/warp/0.2.0/warp/))
+mod server;
 
 pub use self::client::HttpClientService;
 pub use self::server::HttpServer;
 
+/// Extention trait for [Account](../interledger_service/trait.Account.html) with [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) related information
 pub trait HttpAccount: Account {
+    /// Returns the HTTP URL corresponding to this account
     fn get_http_url(&self) -> Option<&Url>;
+    /// Returns the HTTP token which is sent as an HTTP header on each ILP over HTTP request
     fn get_http_auth_token(&self) -> Option<SecretString>;
 }
 
@@ -42,6 +46,9 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
 
 // TODO: Do we really need this custom deserialization function?
 // You'd expect that Serde would be able to handle this.
+/// Helper function to deserialize JSON inside Warp
+/// The content-type MUST be application/json and if a charset
+/// is specified, it MUST be UTF-8
 pub fn deserialize_json<T: DeserializeOwned + Send>(
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
     warp::header::<String>("content-type")

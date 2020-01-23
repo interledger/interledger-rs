@@ -12,10 +12,20 @@ use reqwest::{
 use secrecy::{ExposeSecret, SecretString};
 use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
 
+/// The HttpClientService implements [OutgoingService](../../interledger_service/trait.OutgoingService)
+/// for sending ILP Prepare packets over to the HTTP URL associated with the provided account
+/// If no [ILP-over-HTTP](https://interledger.org/rfcs/0035-ilp-over-http) URL is specified for
+/// the account in the request, then it is forwarded to the next service.
 #[derive(Clone)]
 pub struct HttpClientService<S, O, A> {
+    /// An HTTP client configured with a 30 second timeout by default. It is used to send the
+    /// ILP over HTTP messages to the peer
     client: Client,
+    /// The store used by the client to get the node's ILP Address,
+    /// used to populate the `triggered_by` field in Reject packets
     store: Arc<S>,
+    /// The next outgoing service to which non ILP-over-HTTP requests should
+    /// be forwarded to
     next: O,
     account_type: PhantomData<A>,
 }
@@ -26,6 +36,7 @@ where
     O: OutgoingService<A> + Clone,
     A: HttpAccount,
 {
+    /// Constructs the HttpClientService
     pub fn new(store: S, next: O) -> Self {
         let mut headers = HeaderMap::with_capacity(2);
         headers.insert(
@@ -103,6 +114,13 @@ where
     }
 }
 
+/// Parses an ILP over HTTP response.
+///
+/// # Errors
+/// 1. If the response's status code is an error
+/// 1. If the response's body cannot be parsed as bytes
+/// 1. If the response's body is not a valid Packet (Fulfill or Reject)
+/// 1. If the packet is a Reject packet
 async fn parse_packet_from_response(response: HttpResponse, ilp_address: Address) -> IlpResult {
     let response = response.error_for_status().map_err(|err| {
         error!("HTTP error sending ILP over HTTP packet: {:?}", err);
