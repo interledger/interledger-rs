@@ -634,95 +634,78 @@ where
 #[cfg(test)]
 mod tests {
     use crate::routes::test_helpers::*;
+    // TODO: Add test for GET /accounts/:username/spsp and /.well_known
 
-    #[test]
-    fn only_admin_can_create_account() {
+    #[tokio::test]
+    async fn only_admin_can_create_account() {
         let api = test_accounts_api();
-        let resp = api_call(&api, "POST", "/accounts", "admin", DETAILS.clone());
+        let resp = api_call(&api, "POST", "/accounts", "admin", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "POST", "/accounts", "wrong", DETAILS.clone());
+        let resp = api_call(&api, "POST", "/accounts", "wrong", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_can_delete_account() {
+    #[tokio::test]
+    async fn only_admin_can_delete_account() {
         let api = test_accounts_api();
-        let resp = api_call(&api, "DELETE", "/accounts/alice", "admin", DETAILS.clone());
+        let resp = api_call(&api, "DELETE", "/accounts/alice", "admin", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "DELETE", "/accounts/alice", "wrong", DETAILS.clone());
+        let resp = api_call(&api, "DELETE", "/accounts/alice", "wrong", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_can_modify_whole_account() {
+    #[tokio::test]
+    async fn only_admin_can_modify_whole_account() {
         let api = test_accounts_api();
-        let resp = api_call(&api, "PUT", "/accounts/alice", "admin", DETAILS.clone());
+        let resp = api_call(&api, "PUT", "/accounts/alice", "admin", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "PUT", "/accounts/alice", "wrong", DETAILS.clone());
+        let resp = api_call(&api, "PUT", "/accounts/alice", "wrong", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_can_get_all_accounts() {
+    #[tokio::test]
+    async fn only_admin_can_get_all_accounts() {
         let api = test_accounts_api();
-        let resp = api_call(&api, "GET", "/accounts", "admin", DETAILS.clone());
+        let resp = api_call(&api, "GET", "/accounts", "admin", None).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "GET", "/accounts", "wrong", DETAILS.clone());
+        let resp = api_call(&api, "GET", "/accounts", "wrong", None).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_or_user_can_get_account() {
+    #[tokio::test]
+    async fn only_admin_or_user_can_get_account() {
         let api = test_accounts_api();
-        let resp = api_call(&api, "GET", "/accounts/alice", "admin", DETAILS.clone());
+        let resp = api_call(&api, "GET", "/accounts/alice", "admin", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 200);
 
         // TODO: Make this not require the username in the token
-        let resp = api_call(&api, "GET", "/accounts/alice", "password", DETAILS.clone());
+        let resp = api_call(&api, "GET", "/accounts/alice", "password", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(&api, "GET", "/accounts/alice", "wrong", DETAILS.clone());
+        let resp = api_call(&api, "GET", "/accounts/alice", "wrong", DETAILS.clone()).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_or_user_can_get_accounts_balance() {
+    #[tokio::test]
+    async fn only_admin_or_user_can_get_accounts_balance() {
         let api = test_accounts_api();
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice/balance",
-            "admin",
-            DETAILS.clone(),
-        );
+        let resp = api_call(&api, "GET", "/accounts/alice/balance", "admin", None).await;
         assert_eq!(resp.status().as_u16(), 200);
 
         // TODO: Make this not require the username in the token
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice/balance",
-            "password",
-            DETAILS.clone(),
-        );
+        let resp = api_call(&api, "GET", "/accounts/alice/balance", "password", None).await;
         assert_eq!(resp.status().as_u16(), 200);
 
-        let resp = api_call(
-            &api,
-            "GET",
-            "/accounts/alice/balance",
-            "wrong",
-            DETAILS.clone(),
-        );
+        let resp = api_call(&api, "GET", "/accounts/alice/balance", "wrong", None).await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 
-    #[test]
-    fn only_admin_or_user_can_modify_accounts_settings() {
+    #[tokio::test]
+    async fn only_admin_or_user_can_modify_accounts_settings() {
         let api = test_accounts_api();
         let resp = api_call(
             &api,
@@ -730,7 +713,8 @@ mod tests {
             "/accounts/alice/settings",
             "admin",
             DETAILS.clone(),
-        );
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 200);
 
         // TODO: Make this not require the username in the token
@@ -740,7 +724,8 @@ mod tests {
             "/accounts/alice/settings",
             "password",
             DETAILS.clone(),
-        );
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 200);
 
         let resp = api_call(
@@ -749,7 +734,50 @@ mod tests {
             "/accounts/alice/settings",
             "wrong",
             DETAILS.clone(),
-        );
+        )
+        .await;
+        assert_eq!(resp.status().as_u16(), 401);
+    }
+
+    #[tokio::test]
+    async fn only_admin_or_user_can_send_payment() {
+        let payment: Option<serde_json::Value> = Some(serde_json::json!({
+            "receiver": "some_receiver",
+            "source_amount" : 10,
+        }));
+        let api = test_accounts_api();
+        let resp = api_call(
+            &api,
+            "POST",
+            "/accounts/alice/payments",
+            "password",
+            payment.clone(),
+        )
+        .await;
+        // This should return an internal server error since we're making an invalid payment request
+        // We could have set up a mockito mock to set that pay is called correctly but we merely want
+        // to check that authorization and paths work as expected
+        assert_eq!(resp.status().as_u16(), 500);
+
+        // Note that the operator has indirect access to the user's token since they control the store
+        let resp = api_call(
+            &api,
+            "POST",
+            "/accounts/alice/payments",
+            "admin",
+            payment.clone(),
+        )
+        .await;
+        assert_eq!(resp.status().as_u16(), 401);
+
+        let resp = api_call(
+            &api,
+            "POST",
+            "/accounts/alice/payments",
+            "wrong",
+            payment.clone(),
+        )
+        .await;
         assert_eq!(resp.status().as_u16(), 401);
     }
 }
