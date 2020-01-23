@@ -12,14 +12,14 @@ use std::str::FromStr;
 use url::Url;
 use uuid::Uuid;
 
-// Account without an engine error
+/// No Engine Configured for Account error type (404 Not Found)
 pub const NO_ENGINE_CONFIGURED_ERROR_TYPE: ApiErrorType = ApiErrorType {
     r#type: &ProblemType::Default,
     title: "No settlement engine configured",
     status: StatusCode::NOT_FOUND,
 };
 
-// Number conversion errors
+/// Number Conversion error type (404 Not Found)
 pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
     r#type: &ProblemType::Default,
     title: "Conversion error",
@@ -27,16 +27,25 @@ pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
 };
 
 lazy_static! {
+    /// The Settlement ILP Address as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/)
     pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
 }
 
+/// The Quantity object as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/)
+/// An amount denominated in some unit of a single, fungible asset.
+/// (Since each account is denominated in a single asset, the type of asset is implied.)
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Quantity {
+    /// Amount of the unit, which is a non-negative integer.
+    /// This amount is encoded as a string to ensure no precision
+    /// is lost on platforms that don't natively support arbitrary precision integers.
     pub amount: String,
+    /// Asset scale of the unit
     pub scale: u8,
 }
 
 impl Quantity {
+    /// Creates a new Quantity object
     pub fn new(amount: impl ToString, scale: u8) -> Self {
         Quantity {
             amount: amount.to_string(),
@@ -45,24 +54,41 @@ impl Quantity {
     }
 }
 
+/// Helper enum allowing API responses to not specify any data and let the consumer
+/// of the call decide what to do with the success value
+// TODO: could this maybe be omitted and replaced with Option<Bytes> in Responses?
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum ApiResponse {
+    /// The API call succeeded without any returned data.
     Default,
+    /// The API call returned some data which should be consumed.
     Data(Bytes),
 }
 
+/// Type alias for Result over [`ApiResponse`](./enum.ApiResponse.html),
+/// and [`ApiError`](../../../interledger_http/error/struct.ApiError.html)
 pub type ApiResult = Result<ApiResponse, ApiError>;
 
 /// Trait consumed by the Settlement Engine HTTP API. Every settlement engine
 /// MUST implement this trait, so that it can be then be exposed over the API.
 #[async_trait]
 pub trait SettlementEngine {
+    /// Informs the settlement engine that a new account was created
+    /// within the accounting system using the given account identifier.
+    /// The settlement engine MAY perform tasks as a prerequisite to settle with the account.
+    /// For example, a settlement engine implementation might send messages to
+    /// the peer to exchange ledger identifiers or to negotiate settlement-related fees.
     async fn create_account(&self, account_id: String) -> ApiResult;
 
+    /// Instructs the settlement engine that an account was deleted.
     async fn delete_account(&self, account_id: String) -> ApiResult;
 
+    /// Asynchronously send an outgoing settlement. The accounting system sends this request and accounts for outgoing settlements.
     async fn send_money(&self, account_id: String, money: Quantity) -> ApiResult;
 
+    /// Process and respond to an incoming message from the peer's settlement engine.
+    /// The connector sends this request when it receives an incoming settlement message
+    /// from the peer, and returns the response message back to the peer.
     async fn receive_message(&self, account_id: String, message: Vec<u8>) -> ApiResult;
 }
 
@@ -70,21 +96,31 @@ pub trait SettlementEngine {
 // end up deciding to add some more values, e.g. some settlement engine uid or similar.
 // All instances of this struct should be replaced with Url instances once/if we
 // agree that there is no more info required to refer to an engine.
+/// The details associated with a settlement engine
 pub struct SettlementEngineDetails {
     /// Base URL of the settlement engine
     pub url: Url,
 }
 
+/// Extention trait for [Account](../interledger_service/trait.Account.html) with [settlement](https://interledger.org/rfcs/0038-settlement-engines/) related information
 pub trait SettlementAccount: Account {
+    /// The [SettlementEngineDetails](./struct.SettlementEngineDetails.html) (if any) associated with that account
     fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
         None
     }
 }
 
 #[async_trait]
+/// Trait used by the connector to adjust account balances on settlement events
 pub trait SettlementStore {
     type Account: Account;
 
+    /// Increases the account's balance/prepaid amount by the provided amount
+    ///
+    /// This is optionally idempotent. If the same idempotency_key is provided
+    /// then no database operation must happen. If there is an idempotency
+    /// conflict (same idempotency key, different inputs to function) then
+    /// it should return an error
     async fn update_balance_for_incoming_settlement(
         &self,
         account_id: Uuid,
@@ -92,15 +128,26 @@ pub trait SettlementStore {
         idempotency_key: Option<String>,
     ) -> Result<(), ()>;
 
+    /// Increases the account's balance by the provided amount.
+    /// Only call this if a settlement request has failed
     async fn refund_settlement(&self, account_id: Uuid, settle_amount: u64) -> Result<(), ()>;
 }
 
+/// Trait used by the connector and engine to track amounts which should have been
+/// settled but were not due to precision loss
 #[async_trait]
 pub trait LeftoversStore {
     type AccountId: ToString;
+    /// The data type that the store uses for tracking numbers.
     type AssetType: ToString;
 
     /// Saves the leftover data
+    ///
+    /// @dev:
+    /// If your store needs to support Big Integers but cannot, consider setting AssetType to String,
+    /// and then proceed to save a list of uncredited amounts as strings which would get loaded and summed
+    /// by the load_uncredited_settlement_amount and get_uncredited_settlement_amount
+    /// functions
     async fn save_uncredited_settlement_amount(
         &self,
         // The account id that for which there was a precision loss
@@ -110,8 +157,12 @@ pub trait LeftoversStore {
     ) -> Result<(), ()>;
 
     /// Returns the leftover data scaled to `local_scale` from the saved scale.
-    /// If any precision loss occurs during the scaling, it should be saved as
+    /// If any precision loss occurs during the scaling, it is be saved as
     /// the new leftover value.
+    ///
+    /// @dev:
+    /// If the store needs to support Big Integers but cannot, consider setting AssetType to String,
+    /// save a list of uncredited settlement amounts, and load them and sum them in this function
     async fn load_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
@@ -124,24 +175,25 @@ pub trait LeftoversStore {
         account_id: Self::AccountId,
     ) -> Result<(), ()>;
 
-    // Gets the current amount of leftovers in the store
+    /// Gets the current amount of leftovers in the store
     async fn get_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
     ) -> Result<(Self::AssetType, u8), ()>;
 }
 
+/// Helper struct for converting a quantity's amount from one asset scale to another
 #[derive(Debug)]
 pub struct ConvertDetails {
     pub from: u8,
     pub to: u8,
 }
 
-/// Traits for u64 and f64 asset code conversions for amounts and rates
+/// Helper trait for u64 and f64 asset code conversions for amounts and rates
 pub trait Convert {
     type Item: Sized;
 
-    // Returns the scaled result, or an error if there was an overflow
+    /// Returns the scaled result, or an error if there was an overflow
     fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()>;
 }
 

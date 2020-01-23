@@ -6,18 +6,27 @@ use reqwest::Client;
 use serde_json::json;
 use uuid::Uuid;
 
+/// Helper struct to execute settlements
 #[derive(Clone)]
 pub struct SettlementClient {
+    /// Asynchronous reqwest client
     http_client: Client,
 }
 
 impl SettlementClient {
+    /// Simple constructor
     pub fn new() -> Self {
         SettlementClient {
             http_client: Client::new(),
         }
     }
 
+    /// Sends a settlement request to the node's settlement engine for the provided account and amount
+    ///
+    /// # Errors
+    /// 1. Account has no engine configured
+    /// 1. HTTP request to engine failed from node side
+    /// 1. HTTP response from engine was an error
     pub async fn send_settlement<A: SettlementAccount + Account>(
         &self,
         account: A,
