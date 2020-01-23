@@ -1,8 +1,10 @@
-use futures::future::err;
+use async_trait::async_trait;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, RejectBuilder};
 use interledger_service::*;
 use log::debug;
 
+/// Extention trait for [`Account`](../interledger_service/trait.Account.html) with the max packet amount
+/// allowed for this account
 pub trait MaxPacketAmountAccount: Account {
     fn max_packet_amount(&self) -> u64;
 }
@@ -22,26 +24,26 @@ pub struct MaxPacketAmountService<I, S> {
 }
 
 impl<I, S> MaxPacketAmountService<I, S> {
+    /// Simple constructor
     pub fn new(store: S, next: I) -> Self {
         MaxPacketAmountService { store, next }
     }
 }
 
+#[async_trait]
 impl<I, S, A> IncomingService<A> for MaxPacketAmountService<I, S>
 where
-    I: IncomingService<A>,
-    S: AddressStore,
-    A: MaxPacketAmountAccount,
+    I: IncomingService<A> + Send + Sync + 'static,
+    S: AddressStore + Send + Sync + 'static,
+    A: MaxPacketAmountAccount + Send + Sync + 'static,
 {
-    type Future = BoxedIlpFuture;
-
     /// On receive request:
     /// 1. if request.prepare.amount <= request.from.max_packet_amount forward the request, else error
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         let ilp_address = self.store.get_ilp_address();
         let max_packet_amount = request.from.max_packet_amount();
         if request.prepare.amount() <= max_packet_amount {
-            Box::new(self.next.handle_request(request))
+            self.next.handle_request(request).await
         } else {
             debug!(
                 "Prepare amount:{} exceeds max_packet_amount: {}",
@@ -50,13 +52,13 @@ where
             );
             let details =
                 MaxPacketAmountDetails::new(request.prepare.amount(), max_packet_amount).to_bytes();
-            Box::new(err(RejectBuilder {
+            Err(RejectBuilder {
                 code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                 message: &[],
                 triggered_by: Some(&ilp_address),
                 data: &details[..],
             }
-            .build()))
+            .build())
         }
     }
 }
