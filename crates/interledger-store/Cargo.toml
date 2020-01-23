@@ -21,7 +21,7 @@ path = "tests/redis/redis_tests.rs"
 required-features = ["redis"]
 
 [dependencies]
-bytes = { version = "0.4.12", default-features = false }
+bytes = { version = "0.5", default-features = false }
 futures = { version = "0.3", default-features = false }
 interledger-api = { path = "../interledger-api", version = "^0.3.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
@@ -42,14 +42,13 @@ serde_json = { version = "1.0.41", default-features = false }
 tokio = { version = "0.2.6", default-features = false, features = ["macros", "rt-core"] }
 url = { version = "2.1.0", default-features = false, features = ["serde"] }
 http = { version = "0.2", default-features = false }
-secrecy = { version = "0.5.1", default-features = false, features = ["serde", "bytes"] }
-zeroize = { version = "1.0.0", default-features = false, features = ["bytes"] }
+secrecy = { version = "0.6", features = ["serde", "bytes"] }
+zeroize = { version = "1.0.0", default-features = false }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 uuid = { version = "0.8.1", default-features = false, features = ["serde"] }
 
 # redis feature
-# redis_crate = { package = "redis", version = "0.13.0", default-features = false, features = ["executor"], optional = true }
-redis_crate = { package = "redis", git = "https://github.com/mitsuhiko/redis-rs", branch = "master", default-features = false, features = ["tokio-rt-core"], optional = true }
+redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
 runtime = "0.0.0"
 async-trait = "0.1.22"
 
