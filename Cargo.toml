@@ -12,7 +12,7 @@ members = [
   "./crates/interledger-packet",
   "./crates/interledger-router",
   "./crates/interledger-service",
-  # "./crates/interledger-service-util",
+  "./crates/interledger-service-util",
   "./crates/interledger-settlement",
   "./crates/interledger-spsp",
   # "./crates/interledger-store",
