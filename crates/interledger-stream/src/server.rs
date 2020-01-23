@@ -59,7 +59,7 @@ impl ConnectionGenerator {
         // is valid and adding base64-url characters will always be valid
         let destination_account = base_address.with_suffix(&token.as_ref()).unwrap();
 
-        debug!("Generated address: {}", destination_account,);
+        debug!("Generated address: {}", destination_account);
         (destination_account, shared_secret)
     }
 
@@ -85,12 +85,18 @@ impl ConnectionGenerator {
     }
 }
 
+/// A payment notification data type to be used by Pubsub API consumers
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PaymentNotification {
+    /// The username of the receiver of the payment notification
     pub to_username: Username,
+    /// The username of the sender of the payment notification
     pub from_username: Username,
+    /// The ILP Address of the receiver of the payment notification
     pub destination: Address,
+    /// The amount received
     pub amount: u64,
+    /// The time this payment notification was fired
     pub timestamp: String,
 }
 
@@ -98,12 +104,15 @@ pub struct PaymentNotification {
 pub trait StreamNotificationsStore {
     type Account: Account;
 
+    /// *Synchronously* saves the sending side of the provided account id's websocket channel to the store's memory
     fn add_payment_notification_subscription(
         &self,
         account_id: Uuid,
         sender: UnboundedSender<PaymentNotification>,
     );
 
+    /// Instructs the store to publish the provided payment notification object
+    /// via its Pubsub interface
     fn publish_payment_notification(&self, _payment: PaymentNotification);
 }
 
@@ -491,7 +500,7 @@ mod receiving_money {
     fn fulfills_packets_sent_to_javascript_receiver() {
         // This was created by the JS ilp-protocol-stream library
         let ilp_address = Address::from_str("test.peerB").unwrap();
-        let prepare = Prepare::try_from(bytes::BytesMut::from(hex::decode("0c819900000000000001f43230313931303238323134313533383338f31a96346c613011947f39a0f1f4e573c2fc3e7e53797672b01d2898e90c9a0723746573742e70656572422e4e6a584430754a504275477a353653426d4933755836682d3b6cc484c0d4e9282275d4b37c6ae18f35b497ddbfcbce6d9305b9451b4395c3158aa75e05bf27582a237109ec6ca0129d840da7abd96826c8147d0d").unwrap())).unwrap();
+        let prepare = Prepare::try_from(bytes::BytesMut::from(&hex::decode("0c819900000000000001f43230313931303238323134313533383338f31a96346c613011947f39a0f1f4e573c2fc3e7e53797672b01d2898e90c9a0723746573742e70656572422e4e6a584430754a504275477a353653426d4933755836682d3b6cc484c0d4e9282275d4b37c6ae18f35b497ddbfcbce6d9305b9451b4395c3158aa75e05bf27582a237109ec6ca0129d840da7abd96826c8147d0d").unwrap()[..])).unwrap();
         let condition = prepare.execution_condition().to_vec();
         let server_secret = Bytes::from(vec![0u8; 32]);
         let connection_generator = ConnectionGenerator::new(server_secret);

@@ -10,16 +10,23 @@ use lazy_static::lazy_static;
 use log::warn;
 use std::{convert::TryFrom, fmt, str, u64};
 
+/// The Stream Protocol's version
 const STREAM_VERSION: u8 = 1;
 
+/// Builder for [Stream Packets](https://interledger.org/rfcs/0029-stream/#52-stream-packet)
 pub struct StreamPacketBuilder<'a> {
+    /// The stream packet's sequence number
     pub sequence: u64,
+    /// The [ILP Packet Type](../interledger_packet/enum.PacketType.html)
     pub ilp_packet_type: IlpPacketType,
+    /// The amount inside the stream packet
     pub prepare_amount: u64,
+    /// The stream frames
     pub frames: &'a [Frame<'a>],
 }
 
 impl<'a> StreamPacketBuilder<'a> {
+    /// Serializes the builder into a Stream Packet
     pub fn build(&self) -> StreamPacket {
         // TODO predict length first
         let mut buffer_unencrypted = Vec::new();
@@ -96,7 +103,7 @@ impl<'a> StreamPacketBuilder<'a> {
         }
 
         StreamPacket {
-            buffer_unencrypted: BytesMut::from(buffer_unencrypted),
+            buffer_unencrypted: BytesMut::from(&buffer_unencrypted[..]),
             sequence: self.sequence,
             ilp_packet_type: self.ilp_packet_type,
             prepare_amount: self.prepare_amount,
@@ -105,16 +112,28 @@ impl<'a> StreamPacketBuilder<'a> {
     }
 }
 
+/// A Stream Packet as specified in its [ASN.1 definition](https://interledger.org/rfcs/asn1/Stream.asn)
 #[derive(PartialEq, Clone)]
 pub struct StreamPacket {
+    /// The cleartext serialized packet
     pub(crate) buffer_unencrypted: BytesMut,
+    /// The packet's sequence number
     sequence: u64,
+    /// The [ILP Packet Type](../interledger_packet/enum.PacketType.html)
     ilp_packet_type: IlpPacketType,
+    /// The amount inside the stream packet
     prepare_amount: u64,
+    /// The offset after which frames can be found inside the `buffer_unencrypted` field
     frames_offset: usize,
 }
 
 impl StreamPacket {
+    /// Constructs a [Stream Packet](./struct.StreamPacket.html) from an encrypted buffer
+    /// and a shared secret
+    ///
+    /// # Errors
+    /// 1. If the decryption fails
+    /// 1. If the decrypted bytes cannot be parsed to a unencrypted [Stream Packet](./struct.StreamPacket.html)
     pub fn from_encrypted(shared_secret: &[u8], ciphertext: BytesMut) -> Result<Self, ParseError> {
         // TODO handle decryption failure
         let decrypted = decrypt(shared_secret, ciphertext)
@@ -122,6 +141,10 @@ impl StreamPacket {
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
+    /// Constructs a [Stream Packet](./struct.StreamPacket.html) from an buffer
+    ///
+    /// # Errors
+    /// 1. If the decrypted bytes cannot be parsed to a unencrypted [Stream Packet](./struct.StreamPacket.html)
     fn from_bytes_unencrypted(buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
@@ -161,22 +184,28 @@ impl StreamPacket {
         }
     }
 
+    /// Consumes the packet and a shared secret and returns a serialized encrypted
+    /// Stream packet
     pub fn into_encrypted(self, shared_secret: &[u8]) -> BytesMut {
         encrypt(shared_secret, self.buffer_unencrypted)
     }
 
+    /// The packet's sequence number
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
 
+    /// The packet's [type](../interledger_packet/enum.PacketType.html)
     pub fn ilp_packet_type(&self) -> IlpPacketType {
         self.ilp_packet_type
     }
 
+    /// The packet's prepare amount
     pub fn prepare_amount(&self) -> u64 {
         self.prepare_amount
     }
 
+    /// Returns a [FrameIterator](./struct.FrameIterator.html) over the packet's [frames](./enum.Frame.html)
     pub fn frames(&self) -> FrameIterator {
         FrameIterator {
             buffer: &self.buffer_unencrypted[self.frames_offset..],
@@ -197,11 +226,14 @@ impl fmt::Debug for StreamPacket {
     }
 }
 
+/// Iterator over a serialized Frame to support zero-copy deserialization
 pub struct FrameIterator<'a> {
     buffer: &'a [u8],
 }
 
 impl<'a> FrameIterator<'a> {
+    /// Reads a u8 from the iterator's buffer, and depending on the type it returns
+    /// a [`Frame`](./enum.Frame.html)
     fn try_read_next_frame(&mut self) -> Result<Frame<'a>, ParseError> {
         let frame_type = self.buffer.read_u8()?;
         let contents: &'a [u8] = self.buffer.read_var_octet_string()?;
@@ -291,6 +323,7 @@ impl<'a> fmt::Debug for FrameIterator<'a> {
     }
 }
 
+/// Enum around the different Stream Frame types
 #[derive(PartialEq, Clone)]
 pub enum Frame<'a> {
     ConnectionClose(ConnectionCloseFrame<'a>),
@@ -332,6 +365,7 @@ impl<'a> fmt::Debug for Frame<'a> {
     }
 }
 
+/// The Stream Frame types [as defined in the RFC](https://interledger.org/rfcs/0029-stream/#53-frames)
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 pub enum FrameType {
@@ -351,6 +385,7 @@ pub enum FrameType {
     StreamDataBlocked = 0x16,
     Unknown,
 }
+
 impl From<u8> for FrameType {
     fn from(num: u8) -> Self {
         match num {
@@ -373,6 +408,7 @@ impl From<u8> for FrameType {
     }
 }
 
+/// The STREAM Error Codes [as defined in the RFC](https://interledger.org/rfcs/0029-stream/#54-error-codes)
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 pub enum ErrorCode {
@@ -404,15 +440,20 @@ impl From<u8> for ErrorCode {
     }
 }
 
+/// Helper trait for having a common interface to read/write on Frames
 pub trait SerializableFrame<'a>: Sized {
     fn put_contents(&self, buf: &mut impl MutBufOerExt) -> ();
 
     fn read_contents(reader: &'a [u8]) -> Result<Self, ParseError>;
 }
 
+/// Frame after which a connection must be closed.
+/// If implementations allow half-open connections, an endpoint may continue sending packets after receiving a ConnectionClose frame.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionCloseFrame<'a> {
+    /// Machine-readable [Error Code](./enum.ErrorCode.html) indicating why the connection was closed.
     pub code: ErrorCode,
+    /// Human-readable string intended to give more information helpful for debugging purposes.
     pub message: &'a str,
 }
 
@@ -431,8 +472,10 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     }
 }
 
+/// Frame which contains the sender of the Stream payment
 #[derive(PartialEq, Clone)]
 pub struct ConnectionNewAddressFrame {
+    /// New ILP address of the endpoint that sent the frame.
     pub source_account: Address,
 }
 
@@ -460,9 +503,13 @@ impl<'a> fmt::Debug for ConnectionNewAddressFrame {
     }
 }
 
+/// The assets being transported in this Stream payment
+/// Asset details exposed by this frame MUST NOT change during the lifetime of a Connection.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionAssetDetailsFrame<'a> {
+    /// Asset code of endpoint that sent the frame.
     pub source_asset_code: &'a str,
+    /// Asset scale of endpoint that sent the frame.
     pub source_asset_scale: u8,
 }
 
@@ -483,8 +530,10 @@ impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
     }
 }
 
+/// Endpoints MUST NOT exceed the total number of bytes the other endpoint is willing to accept.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionMaxDataFrame {
+    /// The total number of bytes the endpoint is willing to receive on this connection.
     pub max_offset: u64,
 }
 
@@ -500,8 +549,10 @@ impl<'a> SerializableFrame<'a> for ConnectionMaxDataFrame {
     }
 }
 
+/// Frame specifying the amount of data which is going to be sent
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionDataBlockedFrame {
+    /// The total number of bytes the endpoint wants to send.
     pub max_offset: u64,
 }
 
@@ -517,8 +568,10 @@ impl<'a> SerializableFrame<'a> for ConnectionDataBlockedFrame {
     }
 }
 
+/// Frame specifying the maximum stream ID the endpoint is willing to accept.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionMaxStreamIdFrame {
+    /// The maximum stream ID the endpoint is willing to accept.
     pub max_stream_id: u64,
 }
 
@@ -534,8 +587,10 @@ impl<'a> SerializableFrame<'a> for ConnectionMaxStreamIdFrame {
     }
 }
 
+/// Frame specifying the maximum stream ID the endpoint wishes to open.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionStreamIdBlockedFrame {
+    /// The maximum stream ID the endpoint wishes to open.
     pub max_stream_id: u64,
 }
 
@@ -551,10 +606,16 @@ impl<'a> SerializableFrame<'a> for ConnectionStreamIdBlockedFrame {
     }
 }
 
+/// Endpoints MUST close the stream after receiving this stream immediately.
+/// If implementations allow half-open streams, an endpoint MAY continue sending
+/// money or data for this stream after receiving a StreamClose frame.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamCloseFrame<'a> {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// Machine-readable [Error Code](./enum.ErrorCode.html) indicating why the connection was closed.
     pub code: ErrorCode,
+    /// Human-readable string intended to give more information helpful for debugging purposes.
     pub message: &'a str,
 }
 
@@ -579,9 +640,25 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
     }
 }
 
+/// Frame specifying the amount of money that should go to each stream
+///
+/// The amount of money that should go to each stream is calculated by
+/// dividing the number of shares for the given stream by the total number
+/// of shares in all of the StreamMoney frames in the packet.
+///
+/// For example, if an ILP Prepare packet has an amount of 100 and three
+/// StreamMoney frames with 5, 15, and 30 shares for streams 2, 4, and 6,
+/// respectively, that would indicate that stream 2 should get 10 units,
+/// stream 4 gets 30 units, and stream 6 gets 60 units.
+/// If the Prepare amount is not divisible by the total number of shares,
+/// stream amounts are rounded down.
+///
+/// The remainder is be allocated to the lowest-numbered open stream that has not reached its maximum receive amount.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMoneyFrame {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// Proportion of the ILP Prepare amount destined for the stream specified.
     pub shares: u64,
 }
 
@@ -599,10 +676,21 @@ impl<'a> SerializableFrame<'a> for StreamMoneyFrame {
     }
 }
 
+/// Specifies the max amount of money the endpoint wants to send
+///
+/// The amounts in this frame are denominated in the units of the
+/// endpoint sending the frame, so the other endpoint must use their
+/// calculated exchange rate to determine how much more they can send
+/// for this stream.
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMaxMoneyFrame {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// Total amount, denominated in the units of the endpoint
+    /// sending this frame, that the endpoint is willing to receive on this stream.
     pub receive_max: u64,
+    /// Total amount, denominated in the units of the endpoint
+    /// sending this frame, that the endpoint has received thus far.
     pub total_received: u64,
 }
 
@@ -626,10 +714,16 @@ impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
     }
 }
 
+/// Frame specifying the maximum amount of money the sending endpoint will send
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMoneyBlockedFrame {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// Total amount, denominated in the units of the endpoint
+    /// sending this frame, that the endpoint wants to send.
     pub send_max: u64,
+    /// Total amount, denominated in the units of the endpoint
+    /// sending this frame, that the endpoint has sent already.
     pub total_sent: u64,
 }
 
@@ -653,10 +747,29 @@ impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
     }
 }
 
+/// Packets may be received out of order so the Offset is used to
+/// indicate the correct position of the byte segment in the overall stream.
+/// The first StreamData frame sent for a given stream MUST start with an Offset of zero.
+
+/// Fragments of data provided by a stream's StreamData frames
+/// MUST NOT ever overlap with one another. For example, the following combination
+/// of frames is forbidden because bytes 15-19 were provided twice:
+///
+/// ```ignore
+/// StreamData { StreamID: 1, Offset: 10, Data: "1234567890" }
+/// StreamData { StreamID: 1, Offset: 15, Data: "67890" }
+/// ```
+///
+/// In other words, if a sender resends data (e.g. because a packet was lost),
+/// it MUST resend the exact frames — offset and data.
+/// This rule exists to simplify data reassembly for the receiver
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamDataFrame<'a> {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// Position of this data in the byte stream.
     pub offset: u64,
+    /// Application data
     pub data: &'a [u8],
 }
 
@@ -680,9 +793,12 @@ impl<'a> SerializableFrame<'a> for StreamDataFrame<'a> {
     }
 }
 
+/// The maximum amount of data the endpoint is willing to receive on this stream
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamMaxDataFrame {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// The total number of bytes the endpoint is willing to receive on this stream.
     pub max_offset: u64,
 }
 
@@ -703,9 +819,12 @@ impl<'a> SerializableFrame<'a> for StreamMaxDataFrame {
     }
 }
 
+/// The maximum amount of data the endpoint is willing to send on this stream
 #[derive(Debug, PartialEq, Clone)]
 pub struct StreamDataBlockedFrame {
+    /// Identifier of the stream this frame refers to.
     pub stream_id: u64,
+    /// The total number of bytes the endpoint wants to send on this stream.
     pub max_offset: u64,
 }
 
@@ -801,14 +920,16 @@ mod serialization {
             ]
         }
         .build();
-        static ref SERIALIZED: BytesMut = BytesMut::from(vec![
-            1, 12, 1, 1, 1, 99, 1, 14, 1, 5, 1, 3, 111, 111, 112, 2, 13, 12, 101, 120, 97, 109,
-            112, 108, 101, 46, 98, 108, 97, 104, 3, 3, 2, 3, 232, 4, 3, 2, 7, 208, 5, 3, 2, 11,
-            184, 6, 3, 2, 15, 160, 7, 5, 3, 88, 89, 90, 9, 16, 8, 1, 76, 2, 4, 98, 108, 97, 104,
-            17, 4, 1, 88, 1, 99, 18, 8, 1, 11, 2, 3, 219, 2, 1, 244, 19, 8, 1, 66, 2, 78, 32, 2,
-            23, 112, 20, 11, 1, 34, 2, 35, 40, 5, 104, 101, 108, 108, 111, 21, 5, 1, 35, 2, 34, 62,
-            22, 6, 2, 3, 120, 2, 173, 156
-        ]);
+        static ref SERIALIZED: BytesMut = BytesMut::from(
+            &vec![
+                1, 12, 1, 1, 1, 99, 1, 14, 1, 5, 1, 3, 111, 111, 112, 2, 13, 12, 101, 120, 97, 109,
+                112, 108, 101, 46, 98, 108, 97, 104, 3, 3, 2, 3, 232, 4, 3, 2, 7, 208, 5, 3, 2, 11,
+                184, 6, 3, 2, 15, 160, 7, 5, 3, 88, 89, 90, 9, 16, 8, 1, 76, 2, 4, 98, 108, 97,
+                104, 17, 4, 1, 88, 1, 99, 18, 8, 1, 11, 2, 3, 219, 2, 1, 244, 19, 8, 1, 66, 2, 78,
+                32, 2, 23, 112, 20, 11, 1, 34, 2, 35, 40, 5, 104, 101, 108, 108, 111, 21, 5, 1, 35,
+                2, 34, 62, 22, 6, 2, 3, 120, 2, 173, 156
+            ][..]
+        );
     }
 
     #[test]
