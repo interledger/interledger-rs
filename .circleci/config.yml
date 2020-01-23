@@ -57,34 +57,37 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Dependencies
-          command: |
-            # install system dependeicies
-            sudo apt-get update
-            sudo apt-get install -y redis-server redis-tools lsof libssl-dev
+          name: Disabled
+          command: echo "temporarily disabled"
+      # - run:
+      #     name: Install Dependencies
+      #     command: |
+      #       # install system dependeicies
+      #       sudo apt-get update
+      #       sudo apt-get install -y redis-server redis-tools lsof libssl-dev
 
-            # install nvm
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
-            export NVM_DIR="/home/circleci/.nvm"
-            source $NVM_DIR/nvm.sh
-            nvm install "v11.15.0"
+      #       # install nvm
+      #       curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+      #       export NVM_DIR="/home/circleci/.nvm"
+      #       source $NVM_DIR/nvm.sh
+      #       nvm install "v11.15.0"
 
-            # install yarn & components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
-            curl -o- -L https://yarnpkg.com/install.sh | bash
-            export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
-            yarn global add ganache-cli ilp-settlement-xrp conventional-changelog-cli
+      #       # install yarn & components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
+      #       curl -o- -L https://yarnpkg.com/install.sh | bash
+      #       export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
+      #       yarn global add ganache-cli ilp-settlement-xrp conventional-changelog-cli
 
-            # env
-            echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
-            echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
-            echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
-      - run:
-          name: Run run-md Test
-          command: |
-            scripts/run-md-test.sh '^.*$' 1
-      - store_artifacts:
-          path: /tmp/run-md-test
-          destination: run-md-test
+      #       # env
+      #       echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
+      #       echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
+      #       echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
+      # - run:
+      #     name: Run run-md Test
+      #     command: |
+      #       scripts/run-md-test.sh '^.*$' 1
+      # - store_artifacts:
+      #     path: /tmp/run-md-test
+      #     destination: run-md-test
   update-docker-images:
     docker:
       - image: circleci/rust
