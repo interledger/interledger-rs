@@ -6,7 +6,7 @@
 //! Because this protocol uses WebSockets, only one party needs to have a publicly-accessible HTTPS
 //! endpoint but both sides can send and receive ILP packets.
 
-use futures::Future;
+use async_trait::async_trait;
 use interledger_service::{Account, Username};
 use url::Url;
 
@@ -17,30 +17,33 @@ mod packet;
 mod server;
 mod service;
 
-pub use self::client::{connect_client, connect_to_service_account, parse_btp_url};
-pub use self::server::btp_service_as_filter;
+pub use self::client::{connect_client, connect_to_service_account};
+pub use self::server::btp_service_as_filter; // This is consumed only by the node.
 pub use self::service::{BtpOutgoingService, BtpService};
 
+/// Extention trait for [Account](../interledger_service/trait.Account.html) with [ILP over BTP](https://interledger.org/rfcs/0023-bilateral-transfer-protocol/) related information
 pub trait BtpAccount: Account {
+    /// Returns the BTP Websockets URL corresponding to this account
     fn get_ilp_over_btp_url(&self) -> Option<&Url>;
+    /// Returns the BTP authentication token which is used when initiating a BTP connection
+    /// with a peer
     fn get_ilp_over_btp_outgoing_token(&self) -> Option<&[u8]>;
 }
 
 /// The interface for Store implementations that can be used with the BTP Server.
+#[async_trait]
 pub trait BtpStore {
     type Account: BtpAccount;
 
     /// Load Account details based on the auth token received via BTP.
-    fn get_account_from_btp_auth(
+    async fn get_account_from_btp_auth(
         &self,
         username: &Username,
         token: &str,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Result<Self::Account, ()>;
 
     /// Load accounts that have a ilp_over_btp_url configured
-    fn get_btp_outgoing_accounts(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, ()>;
 }
 
 #[cfg(test)]
