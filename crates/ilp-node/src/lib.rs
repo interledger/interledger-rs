@@ -1,15 +1,11 @@
-#![type_length_limit = "1152909"]
+// #![type_length_limit = "25000000"]
+// #![type_length_limit = "1500000"] // needed to cargo build --bin ilp-node --feature "monitoring"
+#![type_length_limit = "80000000"] // needed to cargo build --all-features --all-targets
 
-mod metrics;
+mod instrumentation;
 mod node;
-mod trace;
 
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
 
 pub use node::*;
-#[allow(deprecated)]
-#[cfg(feature = "redis")]
-pub use redis_store::insert_account_with_redis_store;
