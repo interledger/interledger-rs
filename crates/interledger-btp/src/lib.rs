@@ -50,7 +50,6 @@ pub trait BtpStore {
 #[cfg(test)]
 mod client_server {
     use super::*;
-    use futures::future::{err, lazy, ok, result};
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
     use net2::TcpBuilder;
@@ -60,7 +59,6 @@ mod client_server {
         sync::Arc,
         time::{Duration, SystemTime},
     };
-    use tokio::runtime::Runtime;
     use uuid::Uuid;
 
     use lazy_static::lazy_static;
@@ -130,13 +128,11 @@ mod client_server {
         accounts: Arc<Vec<TestAccount>>,
     }
 
+    #[async_trait]
     impl AccountStore for TestStore {
         type Account = TestAccount;
 
-        fn get_accounts(
-            &self,
-            account_ids: Vec<Uuid>,
-        ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send> {
+        async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<Self::Account>, ()> {
             let accounts: Vec<TestAccount> = self
                 .accounts
                 .iter()
@@ -149,156 +145,150 @@ mod client_server {
                 })
                 .collect();
             if accounts.len() == account_ids.len() {
-                Box::new(ok(accounts))
+                Ok(accounts)
             } else {
-                Box::new(err(()))
+                Err(())
             }
         }
 
         // stub implementation (not used in these tests)
-        fn get_account_id_from_username(
-            &self,
-            _username: &Username,
-        ) -> Box<dyn Future<Item = Uuid, Error = ()> + Send> {
-            Box::new(ok(Uuid::new_v4()))
+        async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+            Ok(Uuid::new_v4())
         }
     }
 
+    #[async_trait]
     impl BtpStore for TestStore {
         type Account = TestAccount;
 
-        fn get_account_from_btp_auth(
+        async fn get_account_from_btp_auth(
             &self,
             username: &Username,
             token: &str,
-        ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send> {
-            Box::new(result(
-                self.accounts
-                    .iter()
-                    .find(|account| {
-                        if let Some(account_token) = &account.ilp_over_btp_incoming_token {
-                            account_token == token && account.username() == username
-                        } else {
-                            false
-                        }
-                    })
-                    .cloned()
-                    .ok_or(()),
-            ))
+        ) -> Result<Self::Account, ()> {
+            self.accounts
+                .iter()
+                .find(|account| {
+                    if let Some(account_token) = &account.ilp_over_btp_incoming_token {
+                        account_token == token && account.username() == username
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .ok_or(())
         }
 
-        fn get_btp_outgoing_accounts(
-            &self,
-        ) -> Box<dyn Future<Item = Vec<TestAccount>, Error = ()> + Send> {
-            Box::new(ok(self
+        async fn get_btp_outgoing_accounts(&self) -> Result<Vec<TestAccount>, ()> {
+            Ok(self
                 .accounts
                 .iter()
                 .filter(|account| account.ilp_over_btp_url.is_some())
                 .cloned()
-                .collect()))
+                .collect())
         }
     }
 
     // TODO should this be an integration test, since it binds to a port?
-    #[test]
-    fn client_server_test() {
-        let mut runtime = Runtime::new().unwrap();
-        runtime
-            .block_on(lazy(|| {
-                let bind_addr = get_open_port();
+    #[tokio::test]
+    async fn client_server_test() {
+        let bind_addr = get_open_port();
 
-                let server_store = TestStore {
-                    accounts: Arc::new(vec![TestAccount {
-                        id: Uuid::new_v4(),
-                        ilp_over_btp_incoming_token: Some("test_auth_token".to_string()),
-                        ilp_over_btp_outgoing_token: None,
-                        ilp_over_btp_url: None,
-                    }]),
-                };
-                let server_address = Address::from_str("example.server").unwrap();
-                let btp_service = BtpOutgoingService::new(
-                    server_address.clone(),
-                    outgoing_service_fn(move |_| {
-                        Err(RejectBuilder {
-                            code: ErrorCode::F02_UNREACHABLE,
-                            message: b"No other outgoing handler",
-                            triggered_by: Some(&server_address),
-                            data: &[],
-                        }
-                        .build())
-                    }),
-                );
-                let filter = btp_service_as_filter(btp_service.clone(), server_store);
-                btp_service.handle_incoming(incoming_service_fn(|_| {
-                    Ok(FulfillBuilder {
-                        fulfillment: &[0; 32],
-                        data: b"test data",
-                    }
-                    .build())
-                }));
-
-                let account = TestAccount {
-                    id: Uuid::new_v4(),
-                    ilp_over_btp_url: Some(
-                        Url::parse(&format!("btp+ws://{}/accounts/alice/ilp/btp", bind_addr))
-                            .unwrap(),
-                    ),
-                    ilp_over_btp_outgoing_token: Some("test_auth_token".to_string()),
-                    ilp_over_btp_incoming_token: None,
-                };
-                let accounts = vec![account.clone()];
-                let addr = Address::from_str("example.address").unwrap();
-                let addr_clone = addr.clone();
-                let client = connect_client(
-                    addr.clone(),
-                    accounts,
-                    true,
-                    outgoing_service_fn(move |_| {
-                        Err(RejectBuilder {
-                            code: ErrorCode::F02_UNREACHABLE,
-                            message: &[],
-                            data: &[],
-                            triggered_by: Some(&addr_clone),
-                        }
-                        .build())
-                    }),
-                )
-                .and_then(move |btp_service| {
-                    let mut btp_service =
-                        btp_service.handle_incoming(incoming_service_fn(move |_| {
-                            Err(RejectBuilder {
-                                code: ErrorCode::F02_UNREACHABLE,
-                                message: &[],
-                                data: &[],
-                                triggered_by: Some(&addr),
-                            }
-                            .build())
-                        }));
-                    let btp_service_clone = btp_service.clone();
-                    btp_service
-                        .send_request(OutgoingRequest {
-                            from: account.clone(),
-                            to: account.clone(),
-                            original_amount: 100,
-                            prepare: PrepareBuilder {
-                                destination: Address::from_str("example.destination").unwrap(),
-                                amount: 100,
-                                execution_condition: &[0; 32],
-                                expires_at: SystemTime::now() + Duration::from_secs(30),
-                                data: b"test data",
-                            }
-                            .build(),
-                        })
-                        .map_err(|reject| println!("Packet was rejected: {:?}", reject))
-                        .and_then(move |_| {
-                            btp_service_clone.close();
-                            Ok(())
-                        })
-                });
-                let server = warp::serve(filter);
-                tokio::spawn(server.bind(bind_addr));
-                client
+        let server_store = TestStore {
+            accounts: Arc::new(vec![TestAccount {
+                id: Uuid::new_v4(),
+                ilp_over_btp_incoming_token: Some("test_auth_token".to_string()),
+                ilp_over_btp_outgoing_token: None,
+                ilp_over_btp_url: None,
+            }]),
+        };
+        let server_address = Address::from_str("example.server").unwrap();
+        let btp_service = BtpOutgoingService::new(
+            server_address.clone(),
+            outgoing_service_fn(move |_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: b"No other outgoing handler",
+                    triggered_by: Some(&server_address),
+                    data: &[],
+                }
+                .build())
+            }),
+        );
+        btp_service
+            .clone()
+            .handle_incoming(incoming_service_fn(|_| {
+                Ok(FulfillBuilder {
+                    fulfillment: &[0; 32],
+                    data: b"test data",
+                }
+                .build())
             }))
-            .unwrap();
+            .await;
+        let filter = btp_service_as_filter(btp_service.clone(), server_store);
+        let server = warp::serve(filter);
+        // Spawn the server and listen for incoming connections
+        tokio::spawn(server.bind(bind_addr));
+
+        // Try to connect
+        let account = TestAccount {
+            id: Uuid::new_v4(),
+            ilp_over_btp_url: Some(
+                Url::parse(&format!("btp+ws://{}/accounts/alice/ilp/btp", bind_addr)).unwrap(),
+            ),
+            ilp_over_btp_outgoing_token: Some("test_auth_token".to_string()),
+            ilp_over_btp_incoming_token: None,
+        };
+        let accounts = vec![account.clone()];
+        let addr = Address::from_str("example.address").unwrap();
+        let addr_clone = addr.clone();
+
+        let btp_client = connect_client(
+            addr.clone(),
+            accounts,
+            true,
+            outgoing_service_fn(move |_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &[],
+                    data: &[],
+                    triggered_by: Some(&addr_clone),
+                }
+                .build())
+            }),
+        )
+        .await
+        .unwrap();
+
+        let mut btp_client = btp_client
+            .handle_incoming(incoming_service_fn(move |_| {
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &[],
+                    data: &[],
+                    triggered_by: Some(&addr),
+                }
+                .build())
+            }))
+            .await;
+
+        let res = btp_client
+            .send_request(OutgoingRequest {
+                from: account.clone(),
+                to: account.clone(),
+                original_amount: 100,
+                prepare: PrepareBuilder {
+                    destination: Address::from_str("example.destination").unwrap(),
+                    amount: 100,
+                    execution_condition: &[0; 32],
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
+                    data: b"test data",
+                }
+                .build(),
+            })
+            .await;
+        dbg!(&res);
+        assert!(res.is_ok());
+        btp_service.close();
     }
 }

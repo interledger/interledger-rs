@@ -44,7 +44,6 @@ pub struct BtpOutgoingService<O, A: Account> {
     ilp_address: Address,
     /// Outgoing messages for the receiver of the websocket indexed by account uid
     connections: Arc<RwLock<HashMap<Uuid, UnboundedSender<Message>>>>,
-    // Pending results which are
     pending_outgoing: Arc<Mutex<HashMap<u32, IlpResultChannel>>>,
     pending_incoming: Arc<Mutex<Option<IncomingRequestBuffer<A>>>>,
     incoming_sender: UnboundedSender<(A, u32, Prepare)>,
@@ -54,7 +53,7 @@ pub struct BtpOutgoingService<O, A: Account> {
 }
 
 /// Handle the packets based on whether they are an incoming request or a response to something we sent.
-///  a. If it's a prepare packet, it gets buffered in the incoming_sender channel which will get consumed
+///  a. If it's a Prepare packet, it gets buffered in the incoming_sender channel which will get consumed
 ///     once an incoming handler is added
 ///  b. If it's a Fulfill/Reject packet, it gets added to the pending_outgoing hashmap which gets consumed
 ///     by the outgoing service implementation immediately
