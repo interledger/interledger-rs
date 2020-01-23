@@ -9,7 +9,7 @@
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 [![CircleCI](https://circleci.com/gh/interledger-rs/interledger-rs.svg?style=shield)](https://circleci.com/gh/interledger-rs/interledger-rs)
 ![Rust Version](https://img.shields.io/badge/rust-stable-Success)
-[![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/node/)
+[![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/ilp-node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/ilp-node/)
 
 ## Connecting to the Testnet
 
@@ -34,7 +34,7 @@ To run the Interledger.rs components by themselves (rather than the `testnet-bun
 #### Install
 
 ```bash #
-docker pull interledgerrs/node
+docker pull interledgerrs/ilp-node
 docker pull interledgerrs/ilp-cli
 docker pull interledgerrs/ilp-settlement-ethereum
 ```
@@ -43,7 +43,7 @@ docker pull interledgerrs/ilp-settlement-ethereum
 
 ```bash #
 # This runs the sender / receiver / router bundle
-docker run -it interledgerrs/node
+docker run -it interledgerrs/ilp-node
 
 # This is a simple CLI for interacting with the node's HTTP API
 docker run -it --rm interledgerrs/ilp-cli
