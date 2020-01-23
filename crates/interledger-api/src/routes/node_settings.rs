@@ -1,7 +1,7 @@
 use crate::{http_retry::Client, ExchangeRates, NodeStore};
 use bytes::Bytes;
 use futures::TryFutureExt;
-use interledger_http::{error::*, HttpAccount, HttpStore};
+use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, Username};
@@ -78,7 +78,7 @@ where
         .and(warp::path("rates"))
         .and(warp::path::end())
         .and(admin_only.clone())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(|rates: ExchangeRates, store: S| {
             async move {
@@ -146,7 +146,7 @@ where
         .and(warp::path("static"))
         .and(warp::path::end())
         .and(admin_only.clone())
-        .and(warp::body::json())
+        .and(deserialize_json())
         .and(with_store.clone())
         .and_then(move |routes: HashMap<String, String>, store: S| {
             async move {

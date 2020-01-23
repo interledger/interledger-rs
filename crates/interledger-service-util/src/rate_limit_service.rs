@@ -4,7 +4,7 @@ use interledger_service::{Account, AddressStore, IlpResult, IncomingRequest, Inc
 use log::{error, warn};
 use std::marker::PhantomData;
 
-/// Extention trait for [`Account`](../interledger_service/trait.Account.html) with rate limiting related information
+/// Extension trait for [`Account`](../interledger_service/trait.Account.html) with rate limiting related information
 pub trait RateLimitAccount: Account {
     /// The maximum packets per minute allowed for this account
     fn packets_per_minute_limit(&self) -> Option<u32> {

@@ -84,7 +84,10 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     /// Overwrites the account corresponding to the provided id with the provided details
     async fn update_account(&self, id: Uuid, account: AccountDetails) -> Result<Self::Account, ()>;
 
-    /// Modifies the account corresponding to the provided id with the provided settings
+    /// Modifies the account corresponding to the provided id with the provided settings.
+    /// `modify_account_settings` allows **users** to update their account settings with a set of
+    /// limited fields of account details. However `update_account` allows **admins** to fully
+    /// update account settings.
     async fn modify_account_settings(
         &self,
         id: Uuid,
@@ -135,7 +138,9 @@ pub struct AccountSettings {
     pub ilp_over_btp_incoming_token: Option<SecretString>,
     /// The account's outgoing ILP over HTTP token
     pub ilp_over_http_outgoing_token: Option<SecretString>,
-    /// The account's API and incoming ILP over HTTP token.
+    /// The account's outgoing ILP over BTP token.
+    /// This must match the ILP over BTP incoming token on the peer's node if exchanging
+    /// packets with that peer.
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     /// The account's ILP over HTTP URL (this is where packets are sent over HTTP from your node)
     pub ilp_over_http_url: Option<String>,
@@ -200,10 +205,14 @@ pub struct AccountDetails {
     // Should we add 1 more token, for more granular permissioning?
     pub ilp_over_http_incoming_token: Option<SecretString>,
     /// The account's outgoing ILP over HTTP token
-    /// This must match the ILP over HTTP incoming token on the peer's node if receiving
-    /// packets from that peer
+    /// This must match the ILP over HTTP incoming token on the peer's node if sending
+    /// packets to that peer
     pub ilp_over_http_outgoing_token: Option<SecretString>,
+    /// The account's ILP over BTP URL (this is where packets are sent over WebSockets from your node)
     pub ilp_over_btp_url: Option<String>,
+    /// The account's outgoing ILP over BTP token.
+    /// This must match the ILP over BTP incoming token on the peer's node if exchanging
+    /// packets with that peer.
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     /// The account's incoming ILP over BTP token.
     pub ilp_over_btp_incoming_token: Option<SecretString>,
@@ -291,7 +300,9 @@ where
         }
     }
 
-    /// Sets the default SPSP account. This also enables the /.well_known/pay endpoint
+    /// Sets the default SPSP account. When SPSP payments are sent to the root domain,
+    /// the payment pointer is resolved to <domain>/.well-known/pay. This value determines
+    /// which account those payments will be sent to.
     pub fn default_spsp_account(&mut self, username: Username) -> &mut Self {
         self.default_spsp_account = Some(username);
         self
