@@ -7,6 +7,7 @@ use log::{debug, error, trace};
 use reqwest::Client;
 use std::convert::TryFrom;
 
+/// Get an ILP Address and shared secret by the receiver of this payment for this connection
 pub async fn query(server: &str) -> Result<SpspResponse, Error> {
     let server = payment_pointer_to_url(server);
     trace!("Querying receiver: {}", server);

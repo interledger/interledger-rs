@@ -19,14 +19,19 @@ pub struct SpspResponder {
 }
 
 impl SpspResponder {
+    /// Constructs a new SPSP Responder by receiving an ILP Address and a server **secret**
     pub fn new(ilp_address: Address, server_secret: Bytes) -> Self {
-        let connection_generator = ConnectionGenerator::new(server_secret);
+        let server_secret_compat = bytes04::Bytes::from(server_secret.as_ref());
+        let connection_generator = ConnectionGenerator::new(server_secret_compat);
         SpspResponder {
             ilp_address,
             connection_generator,
         }
     }
 
+    /// Returns an HTTP Response containing the destination account
+    /// and shared secret for this connection
+    /// These fields are generated via [Stream's `ConnectionGenerator`](../interledger_stream/struct.ConnectionGenerator.html#method.generate_address_and_secret)
     pub fn generate_http_response(&self) -> Response<Body> {
         let (destination_account, shared_secret) = self
             .connection_generator
