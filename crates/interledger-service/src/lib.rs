@@ -129,8 +129,6 @@ where
 /// Core service trait for handling IncomingRequests that asynchronously returns an ILP Fulfill or Reject packet.
 #[async_trait]
 pub trait IncomingService<A: Account> {
-    // type Future: Unpin + Future<Output = IlpResult> + Send + 'static;
-
     /// Receives an Incoming request, and modifies it in place and passes it
     /// to the next service. Alternatively, if the packet was intended for the service,
     /// it returns an ILP Fulfill or Reject packet.
