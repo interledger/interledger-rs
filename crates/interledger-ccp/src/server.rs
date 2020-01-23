@@ -1042,7 +1042,7 @@ mod ranking_routes {
             let mut child = TestAccount::new(Uuid::from_slice(&[6; 16]).unwrap(), "example.child");
             child.relation = RoutingRelation::Child;
             child_table.add_route(
-                child.clone(),
+                child,
                 Route {
                     prefix: "example.d".to_string(),
                     path: vec!["example.one".to_string()],
@@ -1071,7 +1071,7 @@ mod ranking_routes {
                 },
             );
             peer_table_1.add_route(
-                peer_1.clone(),
+                peer_1,
                 Route {
                     // This route should be overridden by the configured "example.a" route
                     prefix: "example.a.sub-prefix".to_string(),
@@ -1083,7 +1083,7 @@ mod ranking_routes {
             let mut peer_table_2 = RoutingTable::default();
             let peer_2 = TestAccount::new(Uuid::from_slice(&[8; 16]).unwrap(), "example.peer2");
             peer_table_2.add_route(
-                peer_2.clone(),
+                peer_2,
                 Route {
                     prefix: "example.e".to_string(),
                     path: vec!["example.one".to_string(), "example.two".to_string()],
@@ -1153,28 +1153,29 @@ mod handle_route_control_request {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
+    use interledger_packet::PrepareBuilder;
     use std::time::{Duration, SystemTime};
 
-    #[test]
-    fn handles_valid_request() {
+    #[tokio::test]
+    async fn handles_valid_request() {
         test_service_with_routes()
             .0
             .handle_request(IncomingRequest {
                 prepare: CONTROL_REQUEST.to_prepare(),
                 from: ROUTING_ACCOUNT.clone(),
             })
-            .wait()
+            .await
             .unwrap();
     }
 
-    #[test]
-    fn rejects_from_non_sending_account() {
+    #[tokio::test]
+    async fn rejects_from_non_sending_account() {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: CONTROL_REQUEST.to_prepare(),
                 from: NON_ROUTING_ACCOUNT.clone(),
             })
-            .wait();
+            .await;
         assert!(result.is_err());
         assert_eq!(
             str::from_utf8(result.unwrap_err().message()).unwrap(),
@@ -1182,8 +1183,8 @@ mod handle_route_control_request {
         );
     }
 
-    #[test]
-    fn rejects_invalid_packet() {
+    #[tokio::test]
+    async fn rejects_invalid_packet() {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
@@ -1196,7 +1197,7 @@ mod handle_route_control_request {
                 .build(),
                 from: ROUTING_ACCOUNT.clone(),
             })
-            .wait();
+            .await;
         assert!(result.is_err());
         assert_eq!(
             str::from_utf8(result.unwrap_err().message()).unwrap(),
@@ -1204,11 +1205,11 @@ mod handle_route_control_request {
         );
     }
 
-    #[test]
-    fn sends_update_in_response() {
+    #[tokio::test]
+    async fn sends_update_in_response() {
         let (mut service, outgoing_requests) = test_service_with_routes();
         (*service.forwarding_table.write()).set_id([0; 16]);
-        service.update_best_routes(None).wait().unwrap();
+        service.update_best_routes(None).await.unwrap();
         service
             .handle_request(IncomingRequest {
                 from: ROUTING_ACCOUNT.clone(),
@@ -1220,7 +1221,7 @@ mod handle_route_control_request {
                 }
                 .to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         let request: &OutgoingRequest<TestAccount> = &outgoing_requests.lock()[0];
         assert_eq!(request.to.id(), ROUTING_ACCOUNT.id());
@@ -1232,10 +1233,10 @@ mod handle_route_control_request {
         assert_eq!(update.new_routes.len(), 3);
     }
 
-    #[test]
-    fn sends_whole_table_if_id_is_different() {
+    #[tokio::test]
+    async fn sends_whole_table_if_id_is_different() {
         let (mut service, outgoing_requests) = test_service_with_routes();
-        service.update_best_routes(None).wait().unwrap();
+        service.update_best_routes(None).await.unwrap();
         service
             .handle_request(IncomingRequest {
                 from: ROUTING_ACCOUNT.clone(),
@@ -1247,7 +1248,7 @@ mod handle_route_control_request {
                 }
                 .to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         let routing_table_id = service.forwarding_table.read().id();
         let request: &OutgoingRequest<TestAccount> = &outgoing_requests.lock()[0];
@@ -1266,13 +1267,14 @@ mod handle_route_update_request {
     use super::*;
     use crate::fixtures::*;
     use crate::test_helpers::*;
+    use interledger_packet::PrepareBuilder;
     use std::{
         iter::FromIterator,
         time::{Duration, SystemTime},
     };
 
-    #[test]
-    fn handles_valid_request() {
+    #[tokio::test]
+    async fn handles_valid_request() {
         let mut service = test_service();
         let mut update = UPDATE_REQUEST_SIMPLE.clone();
         update.to_epoch_index = 1;
@@ -1283,18 +1285,18 @@ mod handle_route_update_request {
                 prepare: update.to_prepare(),
                 from: ROUTING_ACCOUNT.clone(),
             })
-            .wait()
+            .await
             .unwrap();
     }
 
-    #[test]
-    fn rejects_from_child_account() {
+    #[tokio::test]
+    async fn rejects_from_child_account() {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: UPDATE_REQUEST_SIMPLE.to_prepare(),
                 from: CHILD_ACCOUNT.clone(),
             })
-            .wait();
+            .await;
         assert!(result.is_err());
         assert_eq!(
             str::from_utf8(result.unwrap_err().message()).unwrap(),
@@ -1302,14 +1304,14 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn rejects_from_non_routing_account() {
+    #[tokio::test]
+    async fn rejects_from_non_routing_account() {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: UPDATE_REQUEST_SIMPLE.to_prepare(),
                 from: NON_ROUTING_ACCOUNT.clone(),
             })
-            .wait();
+            .await;
         assert!(result.is_err());
         assert_eq!(
             str::from_utf8(result.unwrap_err().message()).unwrap(),
@@ -1317,8 +1319,8 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn rejects_invalid_packet() {
+    #[tokio::test]
+    async fn rejects_invalid_packet() {
         let result = test_service()
             .handle_request(IncomingRequest {
                 prepare: PrepareBuilder {
@@ -1331,7 +1333,7 @@ mod handle_route_update_request {
                 .build(),
                 from: ROUTING_ACCOUNT.clone(),
             })
-            .wait();
+            .await;
         assert!(result.is_err());
         assert_eq!(
             str::from_utf8(result.unwrap_err().message()).unwrap(),
@@ -1339,8 +1341,8 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn adds_table_on_first_request() {
+    #[tokio::test]
+    async fn adds_table_on_first_request() {
         let mut service = test_service();
         let mut update = UPDATE_REQUEST_SIMPLE.clone();
         update.to_epoch_index = 1;
@@ -1351,13 +1353,13 @@ mod handle_route_update_request {
                 prepare: update.to_prepare(),
                 from: ROUTING_ACCOUNT.clone(),
             })
-            .wait()
+            .await
             .unwrap();
         assert_eq!(service.incoming_tables.read().len(), 1);
     }
 
-    #[test]
-    fn filters_routes_with_other_address_scheme() {
+    #[tokio::test]
+    async fn filters_routes_with_other_address_scheme() {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
@@ -1377,8 +1379,8 @@ mod handle_route_update_request {
         assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
-    #[test]
-    fn filters_routes_for_address_scheme() {
+    #[tokio::test]
+    async fn filters_routes_for_address_scheme() {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
@@ -1398,8 +1400,8 @@ mod handle_route_update_request {
         assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
-    #[test]
-    fn filters_routing_loops() {
+    #[tokio::test]
+    async fn filters_routing_loops() {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
@@ -1423,8 +1425,8 @@ mod handle_route_update_request {
         assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
-    #[test]
-    fn filters_own_prefix_routes() {
+    #[tokio::test]
+    async fn filters_own_prefix_routes() {
         let service = test_service();
         let mut request = UPDATE_REQUEST_SIMPLE.clone();
         request.new_routes.push(Route {
@@ -1444,8 +1446,8 @@ mod handle_route_update_request {
         assert_eq!(request.new_routes[0].prefix, "example.valid".to_string());
     }
 
-    #[test]
-    fn updates_local_routing_table() {
+    #[tokio::test]
+    async fn updates_local_routing_table() {
         let mut service = test_service();
         let mut request = UPDATE_REQUEST_COMPLEX.clone();
         request.to_epoch_index = 1;
@@ -1455,7 +1457,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         assert_eq!(
             (*service.local_table.read())
@@ -1475,8 +1477,8 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn writes_local_routing_table_to_store() {
+    #[tokio::test]
+    async fn writes_local_routing_table_to_store() {
         let mut service = test_service();
         let mut request = UPDATE_REQUEST_COMPLEX.clone();
         request.to_epoch_index = 1;
@@ -1486,7 +1488,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         assert_eq!(
             service
@@ -1510,8 +1512,8 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn doesnt_overwrite_configured_or_local_routes() {
+    #[tokio::test]
+    async fn doesnt_overwrite_configured_or_local_routes() {
         let mut service = test_service();
         let id1 = Uuid::from_slice(&[1; 16]).unwrap();
         let id2 = Uuid::from_slice(&[2; 16]).unwrap();
@@ -1535,7 +1537,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         assert_eq!(
             (*service.local_table.read())
@@ -1555,8 +1557,8 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn removes_withdrawn_routes() {
+    #[tokio::test]
+    async fn removes_withdrawn_routes() {
         let mut service = test_service();
         let mut request = UPDATE_REQUEST_COMPLEX.clone();
         request.to_epoch_index = 1;
@@ -1566,7 +1568,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         service
             .handle_request(IncomingRequest {
@@ -1583,7 +1585,7 @@ mod handle_route_update_request {
                 }
                 .to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
 
         assert_eq!(
@@ -1599,8 +1601,8 @@ mod handle_route_update_request {
             .is_none());
     }
 
-    #[test]
-    fn sends_control_request_if_routing_table_id_changed() {
+    #[tokio::test]
+    async fn sends_control_request_if_routing_table_id_changed() {
         let (mut service, outgoing_requests) = test_service_with_routes();
         // First request is valid
         let mut request1 = UPDATE_REQUEST_COMPLEX.clone();
@@ -1611,7 +1613,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request1.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
 
         // Second has a gap in epochs
@@ -1624,7 +1626,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request2.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap_err();
         assert_eq!(err.code(), ErrorCode::F00_BAD_REQUEST);
 
@@ -1637,8 +1639,8 @@ mod handle_route_update_request {
         );
     }
 
-    #[test]
-    fn sends_control_request_if_missing_epochs() {
+    #[tokio::test]
+    async fn sends_control_request_if_missing_epochs() {
         let (mut service, outgoing_requests) = test_service_with_routes();
 
         // First request is valid
@@ -1650,7 +1652,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
 
         // Second has a gap in epochs
@@ -1662,7 +1664,7 @@ mod handle_route_update_request {
                 from: ROUTING_ACCOUNT.clone(),
                 prepare: request.to_prepare(),
             })
-            .wait()
+            .await
             .unwrap_err();
         assert_eq!(err.code(), ErrorCode::F00_BAD_REQUEST);
 
@@ -1677,8 +1679,8 @@ mod create_route_update {
     use super::*;
     use crate::test_helpers::*;
 
-    #[test]
-    fn heartbeat_message_for_empty_table() {
+    #[tokio::test]
+    async fn heartbeat_message_for_empty_table() {
         let service = test_service();
         let update = service.create_route_update(0, 0);
         assert_eq!(update.from_epoch_index, 0);
@@ -1690,8 +1692,8 @@ mod create_route_update {
         assert!(update.withdrawn_routes.is_empty());
     }
 
-    #[test]
-    fn includes_the_given_range_of_epochs() {
+    #[tokio::test]
+    async fn includes_the_given_range_of_epochs() {
         let service = test_service();
         (*service.forwarding_table.write()).set_epoch(4);
         *service.forwarding_table_updates.write() = vec![
@@ -1758,10 +1760,10 @@ mod send_route_updates {
     use interledger_service::*;
     use std::{collections::HashSet, iter::FromIterator, str::FromStr};
 
-    #[test]
-    fn broadcasts_to_all_accounts_we_send_updates_to() {
+    #[tokio::test]
+    async fn broadcasts_to_all_accounts_we_send_updates_to() {
         let (service, outgoing_requests) = test_service_with_routes();
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
         let accounts: HashSet<Uuid> = outgoing_requests
             .lock()
             .iter()
@@ -1777,14 +1779,14 @@ mod send_route_updates {
         assert_eq!(accounts, expected);
     }
 
-    #[test]
-    fn broadcasts_configured_and_local_routes() {
+    #[tokio::test]
+    async fn broadcasts_configured_and_local_routes() {
         let (service, outgoing_requests) = test_service_with_routes();
 
         // This is normally spawned as a task when the service is created
-        service.update_best_routes(None).wait().unwrap();
+        service.update_best_routes(None).await.unwrap();
 
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
         let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
         assert_eq!(update.new_routes.len(), 3);
         let prefixes: Vec<&str> = update
@@ -1796,12 +1798,12 @@ mod send_route_updates {
         assert!(prefixes.contains(&"example.configured.1"));
     }
 
-    #[test]
-    fn broadcasts_received_routes() {
+    #[tokio::test]
+    async fn broadcasts_received_routes() {
         let (service, outgoing_requests) = test_service_with_routes();
 
         // This is normally spawned as a task when the service is created
-        service.update_best_routes(None).wait().unwrap();
+        service.update_best_routes(None).await.unwrap();
 
         service
             .handle_route_update_request(IncomingRequest {
@@ -1823,10 +1825,10 @@ mod send_route_updates {
                 }
                 .to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
 
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
         let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
         assert_eq!(update.new_routes.len(), 4);
         let prefixes: Vec<&str> = update
@@ -1839,13 +1841,13 @@ mod send_route_updates {
         assert!(prefixes.contains(&"example.remote"));
     }
 
-    #[test]
-    fn broadcasts_withdrawn_routes() {
+    #[tokio::test]
+    async fn broadcasts_withdrawn_routes() {
         let id10 = Uuid::from_slice(&[10; 16]).unwrap();
         let (service, outgoing_requests) = test_service_with_routes();
 
         // This is normally spawned as a task when the service is created
-        service.update_best_routes(None).wait().unwrap();
+        service.update_best_routes(None).await.unwrap();
 
         service
             .handle_route_update_request(IncomingRequest {
@@ -1867,7 +1869,7 @@ mod send_route_updates {
                 }
                 .to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
         service
             .handle_route_update_request(IncomingRequest {
@@ -1884,10 +1886,10 @@ mod send_route_updates {
                 }
                 .to_prepare(),
             })
-            .wait()
+            .await
             .unwrap();
 
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
         let update = RouteUpdateRequest::try_from(&outgoing_requests.lock()[0].prepare).unwrap();
         assert_eq!(update.new_routes.len(), 3);
         let prefixes: Vec<&str> = update
@@ -1902,8 +1904,8 @@ mod send_route_updates {
         assert_eq!(update.withdrawn_routes[0], "example.remote");
     }
 
-    #[test]
-    fn backs_off_sending_to_unavailable_child_accounts() {
+    #[tokio::test]
+    async fn backs_off_sending_to_unavailable_child_accounts() {
         let id1 = Uuid::from_slice(&[1; 16]).unwrap();
         let id2 = Uuid::from_slice(&[2; 16]).unwrap();
         let local_routes = HashMap::from_iter(vec![
@@ -1944,18 +1946,18 @@ mod send_route_updates {
             store,
             outgoing,
             incoming_service_fn(|_request| {
-                Box::new(err(RejectBuilder {
+                Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other incoming handler!",
                     data: &[],
                     triggered_by: Some(&EXAMPLE_CONNECTOR),
                 }
-                .build()))
+                .build())
             }),
         )
         .ilp_address(Address::from_str("example.connector").unwrap())
         .to_service();
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
 
         // The first time, the child request is rejected
         assert_eq!(outgoing_requests.lock().len(), 2);
@@ -1969,7 +1971,7 @@ mod send_route_updates {
         }
 
         *outgoing_requests.lock() = Vec::new();
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
 
         // When we send again, we skip the child
         assert_eq!(outgoing_requests.lock().len(), 1);
@@ -1983,7 +1985,7 @@ mod send_route_updates {
         }
 
         *outgoing_requests.lock() = Vec::new();
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
 
         // When we send again, we try the child but it still won't work
         assert_eq!(outgoing_requests.lock().len(), 2);
@@ -1997,8 +1999,8 @@ mod send_route_updates {
         }
     }
 
-    #[test]
-    fn resets_backoff_on_route_control_request() {
+    #[tokio::test]
+    async fn resets_backoff_on_route_control_request() {
         let id1 = Uuid::from_slice(&[1; 16]).unwrap();
         let id2 = Uuid::from_slice(&[2; 16]).unwrap();
         let child_account = TestAccount {
@@ -2040,18 +2042,18 @@ mod send_route_updates {
             store,
             outgoing,
             incoming_service_fn(|_request| {
-                Box::new(err(RejectBuilder {
+                Err(RejectBuilder {
                     code: ErrorCode::F02_UNREACHABLE,
                     message: b"No other incoming handler!",
                     data: &[],
                     triggered_by: Some(&EXAMPLE_CONNECTOR),
                 }
-                .build()))
+                .build())
             }),
         )
         .ilp_address(Address::from_str("example.connector").unwrap())
         .to_service();
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
 
         // The first time, the child request is rejected
         assert_eq!(outgoing_requests.lock().len(), 2);
@@ -2069,7 +2071,7 @@ mod send_route_updates {
                 prepare: CONTROL_REQUEST.to_prepare(),
                 from: child_account,
             })
-            .wait()
+            .await
             .unwrap();
         {
             let lock = service.unavailable_accounts.lock();
@@ -2077,7 +2079,7 @@ mod send_route_updates {
         }
 
         *outgoing_requests.lock() = Vec::new();
-        service.send_route_updates().wait().unwrap();
+        service.send_route_updates().await.unwrap();
 
         // When we send again, we don't skip the child because we got a request from them
         assert_eq!(outgoing_requests.lock().len(), 2);
