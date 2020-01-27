@@ -19,7 +19,9 @@ pub struct StreamPacketBuilder<'a> {
     pub sequence: u64,
     /// The [ILP Packet Type](../interledger_packet/enum.PacketType.html)
     pub ilp_packet_type: IlpPacketType,
-    /// The amount inside the stream packet
+    /// Destination amount of the ILP Prepare, used for enforcing minimum exchange rates and congestion control.
+    /// Within an ILP Prepare, represents the minimum amount the recipient needs to receive in order to fulfill the packet.
+    /// Within an ILP Fulfill or ILP Reject, represents the amount received by the recipient.
     pub prepare_amount: u64,
     /// The stream frames
     pub frames: &'a [Frame<'a>],
@@ -121,7 +123,9 @@ pub struct StreamPacket {
     sequence: u64,
     /// The [ILP Packet Type](../interledger_packet/enum.PacketType.html)
     ilp_packet_type: IlpPacketType,
-    /// The amount inside the stream packet
+    /// Destination amount of the ILP Prepare, used for enforcing minimum exchange rates and congestion control.
+    /// Within an ILP Prepare, represents the minimum amount the recipient needs to receive in order to fulfill the packet.
+    /// Within an ILP Fulfill or ILP Reject, represents the amount received by the recipient.
     prepare_amount: u64,
     /// The offset after which frames can be found inside the `buffer_unencrypted` field
     frames_offset: usize,
@@ -132,8 +136,9 @@ impl StreamPacket {
     /// and a shared secret
     ///
     /// # Errors
+    /// 1. If the version of the Stream Protocol does not match
     /// 1. If the decryption fails
-    /// 1. If the decrypted bytes cannot be parsed to a unencrypted [Stream Packet](./struct.StreamPacket.html)
+    /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
     pub fn from_encrypted(shared_secret: &[u8], ciphertext: BytesMut) -> Result<Self, ParseError> {
         // TODO handle decryption failure
         let decrypted = decrypt(shared_secret, ciphertext)
@@ -141,10 +146,11 @@ impl StreamPacket {
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
-    /// Constructs a [Stream Packet](./struct.StreamPacket.html) from an buffer
+    /// Constructs a [Stream Packet](./struct.StreamPacket.html) from a buffer
     ///
     /// # Errors
-    /// 1. If the decrypted bytes cannot be parsed to a unencrypted [Stream Packet](./struct.StreamPacket.html)
+    /// 1. If the version of the Stream Protocol does not match
+    /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
     fn from_bytes_unencrypted(buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
@@ -200,7 +206,7 @@ impl StreamPacket {
         self.ilp_packet_type
     }
 
-    /// The packet's prepare amount
+    /// Destination amount of the ILP Prepare, used for enforcing minimum exchange rates and congestion control.
     pub fn prepare_amount(&self) -> u64 {
         self.prepare_amount
     }

@@ -133,7 +133,6 @@ fn encrypt_with_nonce(
 /// The nonce and auth tag are extracted from the first 12 and 16 bytes
 /// of the ciphertext.
 pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
-    println!("Got ciphertext with length {:?}", ciphertext.len());
     // ciphertext must include at least a nonce and tag,
     if ciphertext.len() < AUTH_TAG_LENGTH {
         return Err(());

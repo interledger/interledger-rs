@@ -85,18 +85,18 @@ impl ConnectionGenerator {
     }
 }
 
-/// A payment notification data type to be used by Pubsub API consumers
+/// Notification that STREAM fulfilled a packet and received a single Interledger payment, used by Pubsub API consumers
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PaymentNotification {
-    /// The username of the receiver of the payment notification
+    /// The username of the account that received the Interledger payment
     pub to_username: Username,
-    /// The username of the sender of the payment notification
+    /// The username of the account that routed the Interledger payment to this node
     pub from_username: Username,
     /// The ILP Address of the receiver of the payment notification
     pub destination: Address,
     /// The amount received
     pub amount: u64,
-    /// The time this payment notification was fired
+    /// The time this payment notification was fired in RFC3339 format
     pub timestamp: String,
 }
 
