@@ -136,6 +136,12 @@ where
         }
     }
 
+    /// Deletes the websocket associated with the provided `account_id`
+    pub fn close_connection(&self, account_id: &Uuid) {
+        println!("account remvoed {:?}", account_id);
+        self.connections.write().remove(account_id);
+    }
+
     /// Close all of the open WebSocket connections
     // TODO is there some more automatic way of knowing when we should close the connections?
     // The problem is that the WS client can be a server too, so it's not clear when we are done with it
@@ -389,6 +395,10 @@ where
     /// Close all of the open WebSocket connections
     pub fn close(&self) {
         self.outgoing.close();
+    }
+
+    pub fn close_connection(&self, account_id: &Uuid) {
+        self.outgoing.close_connection(account_id);
     }
 }
 

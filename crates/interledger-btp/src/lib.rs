@@ -166,9 +166,10 @@ mod client_server {
     async fn client_server_test() {
         let bind_addr = get_open_port();
 
+        let server_acc_id = Uuid::new_v4();
         let server_store = TestStore {
             accounts: Arc::new(vec![TestAccount {
-                id: Uuid::new_v4(),
+                id: server_acc_id,
                 ilp_over_btp_incoming_token: Some("test_auth_token".to_string()),
                 ilp_over_btp_outgoing_token: None,
                 ilp_over_btp_url: None,
@@ -260,6 +261,30 @@ mod client_server {
             })
             .await;
         assert!(res.is_ok());
+
+        btp_service.close_connection(&server_acc_id);
+        // after removing the connection this will fail
+        let mut btp_client_clone = btp_client.clone();
+        let res = btp_client_clone
+            .send_request(OutgoingRequest {
+                from: account.clone(),
+                to: account.clone(),
+                original_amount: 100,
+                prepare: PrepareBuilder {
+                    destination: Address::from_str("example.destination").unwrap(),
+                    amount: 100,
+                    execution_condition: &[0; 32],
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
+                    data: b"test data",
+                }
+                .build(),
+            });
+        // This hangs unless we close the websocket also from the client side
+        // TODO: Figure out how to make the client side connection close automatically
+        btp_client.close_connection(&account.id());
+        let res = res.await;
+        assert!(res.is_err());
+
         btp_service.close();
     }
 }
