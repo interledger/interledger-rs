@@ -60,6 +60,7 @@ pub struct BtpOutgoingService<O, A: Account> {
 /// incoming_sender.unbounded_send basically sends data to the self.incoming_receiver
 /// to be consumed when we setup the incoming handler
 /// Set up a listener to handle incoming packets from the WebSocket connection
+#[inline]
 async fn handle_message<A: BtpAccount>(
     message: Message,
     tx_clone: UnboundedSender<Message>,
