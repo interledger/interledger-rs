@@ -12,6 +12,7 @@ use interledger_packet::{
 };
 use interledger_service::*;
 use log::{debug, error, warn};
+use pin_project::{pin_project, project};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::Cell,
@@ -24,7 +25,6 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use pin_project::{pin_project, project};
 
 /// Maximum time we should wait since last fulfill before we error out to avoid
 /// getting into an infinite loop of sending packets and effectively DoSing ourselves
@@ -181,7 +181,6 @@ where
     S: IncomingService<A> + Clone + 'static,
     A: Account + 'static,
 {
-
     /// Fire off requests until the congestion controller tells us to stop or we've sent the total amount or maximum time since last fulfill has elapsed
     fn try_send_money(&mut self) -> Result<bool, Error> {
         let mut sent_packets = false;
