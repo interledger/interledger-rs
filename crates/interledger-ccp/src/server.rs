@@ -391,7 +391,7 @@ where
         // Filter out routes that don't make sense or that we won't accept
         let update = self.filter_routes(update);
 
-        // Ensure the mutex gets dropped before teh async block
+        // Ensure the mutex gets dropped before the async block
         let result = {
             let mut incoming_tables = self.incoming_tables.write();
             if !&incoming_tables.contains_key(&request.from.id()) {
