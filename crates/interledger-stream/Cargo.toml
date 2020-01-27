@@ -30,6 +30,7 @@ serde = { version = "1.0.101", default-features = false }
 tokio = { version = "^0.2.6", default-features = false, features = ["rt-core", "macros"] }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
 async-trait = "0.1.22"
+pin-project = "0.4.7"
 
 [dev-dependencies]
 interledger-router = { path = "../interledger-router", version = "^0.4.0", default-features = false }
