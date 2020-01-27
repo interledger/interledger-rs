@@ -366,7 +366,7 @@ mod tests {
         }
 
         // and with a closure (async closure are unstable)
-        let bar = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| {
+        let foo2 = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| {
             async move { next.handle_request(request).await }
         };
 
@@ -376,17 +376,17 @@ mod tests {
         let s: LayeredService<_, TestAccount> = LayeredService::new_incoming(s);
 
         // wrapped in our closure
-        let s = WrappedService::wrap_incoming(s, bar);
-        let s = WrappedService::wrap_incoming(s, bar);
-        let s = WrappedService::wrap_incoming(s, bar);
-        let s = WrappedService::wrap_incoming(s, bar);
-        let s = WrappedService::wrap_incoming(s, bar);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
 
         // wrap it again in the normal service
         let s = LayeredService::new_incoming(s);
 
         // some short syntax
-        let s = s.wrap(bar);
+        let s = s.wrap(foo2);
         let s = s.wrap(foo);
 
         // called with the full syntax
@@ -397,9 +397,9 @@ mod tests {
         let s = WrappedService::wrap_incoming(s, foo);
 
         // more short syntax
-        let s = s.wrap(bar);
-        let s = s.wrap(bar);
-        let _s = s.wrap(bar);
+        let s = s.wrap(foo2);
+        let s = s.wrap(foo2);
+        let _s = s.wrap(foo2);
     }
 
     #[test]
@@ -413,7 +413,7 @@ mod tests {
         }
 
         // and with a closure (async closure are unstable)
-        let bar = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| {
+        let foo2 = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| {
             async move { next.send_request(request).await }
         };
 
@@ -423,17 +423,17 @@ mod tests {
         let s: LayeredService<_, TestAccount> = LayeredService::new_outgoing(s);
 
         // wrapped in our closure
-        let s = WrappedService::wrap_outgoing(s, bar);
-        let s = WrappedService::wrap_outgoing(s, bar);
-        let s = WrappedService::wrap_outgoing(s, bar);
-        let s = WrappedService::wrap_outgoing(s, bar);
-        let s = WrappedService::wrap_outgoing(s, bar);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
 
         // wrap it again in the normal service
         let s = LayeredService::new_outgoing(s);
 
         // some short syntax
-        let s = s.wrap(bar);
+        let s = s.wrap(foo2);
         let s = s.wrap(foo);
 
         // called with the full syntax
@@ -444,9 +444,9 @@ mod tests {
         let s = WrappedService::wrap_outgoing(s, foo);
 
         // more short syntax
-        let s = s.wrap(bar);
-        let s = s.wrap(bar);
-        let _s = s.wrap(bar);
+        let s = s.wrap(foo2);
+        let s = s.wrap(foo2);
+        let _s = s.wrap(foo2);
     }
 
     #[derive(Clone)]
