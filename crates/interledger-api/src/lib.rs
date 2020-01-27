@@ -215,6 +215,8 @@ pub struct AccountDetails {
     /// packets with that peer.
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
     /// The account's incoming ILP over BTP token.
+    /// This must match the ILP over BTP outgoing token on the peer's node if exchanging
+    /// packets with that peer.
     pub ilp_over_btp_incoming_token: Option<SecretString>,
     /// The threshold after which the balance service will trigger a settlement
     #[serde(default, deserialize_with = "optional_number_or_string")]
