@@ -15,7 +15,7 @@ use uuid::Uuid;
 /// level and more information for the DEBUG level.
 pub async fn trace_incoming<A: Account>(
     request: IncomingRequest<A>,
-    mut next: impl IncomingService<A>,
+    mut next: Box<dyn IncomingService<A> + Send>,
 ) -> IlpResult {
     let request_span = error_span!(target: "interledger-node",
         "incoming",
@@ -47,7 +47,7 @@ pub async fn trace_incoming<A: Account>(
 /// level and more information for the DEBUG level.
 pub async fn trace_forwarding<A: Account>(
     request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
+    mut next: Box<dyn OutgoingService<A> + Send>,
 ) -> IlpResult {
     // Here we only include the outgoing details because this will be
     // inside the "incoming" span that includes the other details
@@ -73,7 +73,7 @@ pub async fn trace_forwarding<A: Account>(
 /// level and more information for the DEBUG level.
 pub async fn trace_outgoing<A: Account + CcpRoutingAccount>(
     request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
+    mut next: Box<dyn OutgoingService<A> + Send>,
 ) -> IlpResult {
     let request_span = error_span!(target: "interledger-node",
         "outgoing",

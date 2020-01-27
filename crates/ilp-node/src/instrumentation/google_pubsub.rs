@@ -63,12 +63,10 @@ type BoxedIlpFuture = Box<dyn Future<Output = IlpResult> + Send + 'static>;
 /// of fulfilled packets to Google Cloud PubSub.
 ///
 /// This is an experimental feature that may be removed in the future.
-pub fn create_google_pubsub_wrapper<
-    A: Account + 'static,
-    O: OutgoingService<A> + Clone + Send + 'static,
->(
+pub fn create_google_pubsub_wrapper<A: Account + 'static>(
     config: Option<PubsubConfig>,
-) -> impl Fn(OutgoingRequest<A>, O) -> Pin<BoxedIlpFuture> + Clone {
+) -> impl Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> Pin<BoxedIlpFuture> + Clone
+{
     // If Google credentials were passed in, create an HTTP client and
     // OAuth2 client that will automatically fetch and cache access tokens
     let utilities = if let Some(config) = config {
@@ -92,7 +90,9 @@ pub fn create_google_pubsub_wrapper<
         None
     };
 
-    move |request: OutgoingRequest<A>, mut next: O| -> Pin<BoxedIlpFuture> {
+    move |request: OutgoingRequest<A>,
+          mut next: Box<dyn OutgoingService<A> + Send>|
+          -> Pin<BoxedIlpFuture> {
         let (client, api_endpoint, token_fetcher) = if let Some(utilities) = utilities.clone() {
             utilities
         } else {
