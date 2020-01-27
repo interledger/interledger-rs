@@ -126,7 +126,7 @@ lazy_static! {
     static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new(include_str!("lua/process_incoming_settlement.lua"));
 }
 
-/// Builder for the re
+/// Builder for the Redis Store
 pub struct RedisStoreBuilder {
     redis_url: ConnectionInfo,
     secret: [u8; 32],
@@ -165,7 +165,7 @@ impl RedisStoreBuilder {
     /// 1. Connects to the redis store (ensuring that it reconnects in case of drop)
     /// 1. Gets the Node address assigned to us by our parent (if it exists)
     /// 1. Starts polling for routing table updates
-    /// 1. Spawns a thread to log incoming payments over Websockets
+    /// 1. Spawns a thread to notify incoming payments over WebSockets
     pub async fn connect(&mut self) -> Result<RedisStore, ()> {
         let redis_info = self.redis_url.clone();
         let (encryption_key, decryption_key) = generate_keys(&self.secret[..]);
@@ -293,11 +293,11 @@ impl RedisStoreBuilder {
 /// future versions of it will use PubSub to subscribe to updates.
 #[derive(Clone)]
 pub struct RedisStore {
-    //// The Store's ILP Address
+    /// The Store's ILP Address
     ilp_address: Arc<RwLock<Address>>,
     /// A connection which reconnects if dropped by accident
     connection: RedisReconnect,
-    /// Websocket sender which publishes incoming payment updates
+    /// WebSocket sender which publishes incoming payment updates
     subscriptions: Arc<RwLock<HashMap<Uuid, UnboundedSender<PaymentNotification>>>>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     /// The store keeps the routing table in memory so that it can be returned

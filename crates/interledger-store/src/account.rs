@@ -50,20 +50,20 @@ pub struct Account {
     pub(crate) ilp_over_http_incoming_token: Option<SecretBytesMut>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     /// The account's outgoing ILP over HTTP token
-    /// This must match the ILP over HTTP incoming token on the peer's node if receiving
-    /// packets from that peer
+    /// This must match the ILP over HTTP incoming token on the peer's node if sending
+    /// packets to that peer
     pub(crate) ilp_over_http_outgoing_token: Option<SecretBytesMut>,
     /// The account's ILP over BTP URL (this is where packets are sent over WebSockets from your node)
     pub(crate) ilp_over_btp_url: Option<Url>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     /// The account's incoming ILP over BTP token.
-    /// This must match the ILP over BTP outgoing token on the peer's node if receiving
-    /// packets from that peer
+    /// This must match the ILP over BTP outgoing token on the peer's node if exchanging
+    /// packets with that peer
     pub(crate) ilp_over_btp_incoming_token: Option<SecretBytesMut>,
     #[serde(serialize_with = "optional_secret_bytes_to_utf8")]
     /// The account's outgoing ILP over BTP token.
-    /// This must match the ILP over BTP incoming token on the peer's node if receiving
-    /// packets from that peer
+    /// This must match the ILP over BTP incoming token on the peer's node if exchanging
+    /// packets with that peer
     pub(crate) ilp_over_btp_outgoing_token: Option<SecretBytesMut>,
     /// The threshold after which the balance service will trigger a settlement
     pub(crate) settle_threshold: Option<i64>,
