@@ -1,4 +1,4 @@
-#![type_length_limit= "5000000"]
+#![type_length_limit = "5000000"]
 mod btp;
 mod exchange_rates;
 mod three_nodes;
