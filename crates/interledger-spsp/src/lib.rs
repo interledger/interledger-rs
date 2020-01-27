@@ -38,7 +38,7 @@ pub enum Error {
 /// An SPSP Response returned by the SPSP server
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SpspResponse {
-    /// The destination account for this SPSP connection
+    /// The destination ILP Address for this SPSP connection
     destination_account: Address,
     /// Base-64 encoded shared secret between SPSP client and server
     /// to be consumed for the STREAM connection
