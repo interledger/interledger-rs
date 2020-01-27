@@ -137,14 +137,26 @@ async fn main() {
             merge_std_in(&mut config);
         }
         if let Some(ref config_path) = config_file {
-            merge_config_file(config_path, &mut config);
+            if let Err(err) = merge_config_file(config_path, &mut config) {
+                if config_path == "ilp-node" {
+                    println!("Running ilp-node with `cargo run ilp-node` and `cargo run -p ilp-node` is deprecated. Please either execute the binary directly, or use `cargo run --bin ilp-node`");
+                    return;
+                }
+                println!(
+                    "Could not parse config file `{}`. Error: {:?}",
+                    config_path, err
+                );
+                return;
+            };
         }
         set_app_env(&config, &mut app, &path, path.len());
     }
     let matches = app.clone().get_matches();
     merge_args(&mut config, &matches);
 
-    let node = config.try_into::<InterledgerNode>().unwrap();
+    let node = config
+        .try_into::<InterledgerNode>()
+        .expect("Could not parse provided configuration options into an Interledger Node config");
     node.serve().await.unwrap();
 
     // Add a future which is always pending. This will ensure main does not exist
@@ -171,9 +183,11 @@ fn precheck_arguments(mut app: App) -> Result<(Vec<String>, Option<String>), ()>
     Ok((path, config_path))
 }
 
-fn merge_config_file(config_path: &str, config: &mut Config) {
+fn merge_config_file(config_path: &str, config: &mut Config) -> Result<(), String> {
     let file_config = config::File::with_name(config_path);
-    let file_config = file_config.collect().unwrap();
+    let file_config = file_config
+        .collect()
+        .map_err(|err| format!("Configuration file error {}", err))?;
     // if the key is not defined in the given config already, set it to the config
     // because the original values override the ones from the config file
     for (k, v) in file_config {
@@ -181,6 +195,8 @@ fn merge_config_file(config_path: &str, config: &mut Config) {
             config.set(&k, v).unwrap();
         }
     }
+
+    Ok(())
 }
 
 fn merge_std_in(config: &mut Config) {
