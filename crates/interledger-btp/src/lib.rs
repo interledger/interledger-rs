@@ -287,7 +287,6 @@ mod client_server {
                 .build(),
             })
             .await;
-        dbg!(&res);
         assert!(res.is_ok());
         btp_service.close();
     }

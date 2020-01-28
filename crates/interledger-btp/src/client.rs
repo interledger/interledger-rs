@@ -100,7 +100,6 @@ where
         .to_bytes(),
     );
 
-    // TODO check that the response is a success before proceeding
     // (right now we just assume they'll close the connection if the auth didn't work)
     let result = connection // this just a stream
         .send(auth_packet)

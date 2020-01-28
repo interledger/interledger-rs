@@ -163,13 +163,13 @@ where
 
         // tx -> rx -> write -> our peer
         // Responsible mainly for responding to Pings
-        // TODO: We must somehow figure out how to merge this stream with the incoming one
         let write_to_ws = client_rx.map(Ok).forward(write).then(move |_| {
             async move {
                 debug!(
                     "Finished forwarding to WebSocket stream for account: {}",
                     account_id
                 );
+                // When this is dropped, the read valve will close
                 drop(close_connection);
                 Ok::<(), ()>(())
             }
@@ -190,8 +190,8 @@ where
             )
         };
 
-        // Close connections triggers
-        let read = valve.wrap(read);
+        // Close connections trigger
+        let read = valve.wrap(read); // close when `write_to_ws` calls `drop(connection)`
         let read = self.stream_valve.wrap(read);
         let read_from_ws = read.for_each(handle_message_fn).then(move |_| {
             async move {
@@ -202,22 +202,6 @@ where
                 Ok::<(), ()>(())
             }
         });
-
-        // TODO: How can we drop the trigger when both the read and write spawn'ed futures
-        // have completed?
-        // let connections = self.connections.clone();
-        // let keep_connections_open = self.close_all_connections.clone();
-        // .then(move |_| {
-        //     let _ = keep_connections_open;
-        //     let mut connections = connections.write();
-        //     connections.remove(&account_id);
-        //     debug!(
-        //         "WebSocket connection closed for account {} ({} connections still open)",
-        //         account_id,
-        //         connections.len()
-        //     );
-        //     future::ready(())
-        // });
         tokio::spawn(read_from_ws);
 
         // Send pings every PING_INTERVAL until the connection closes (when `drop(close_connection)` is called)
@@ -277,7 +261,6 @@ where
                     Err(reject) => Packet::Reject(reject),
                 };
 
-                // TODO: Is it OK to remove the results from here?
                 if let Some(connection) = connections_clone.clone().read().get(&account_id) {
                     let message = ilp_packet_to_ws_message(request_id, packet);
                     let _ = connection.unbounded_send(message).map_err(move |err| {
