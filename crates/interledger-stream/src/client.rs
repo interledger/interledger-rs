@@ -73,8 +73,8 @@ pub async fn send_money<S, A>(
     source_amount: u64,
 ) -> Result<(StreamDelivery, S), Error>
 where
-    S: IncomingService<A> + Clone + 'static,
-    A: Account + 'static,
+    S: IncomingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Send + Sync + 'static,
 {
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
@@ -160,7 +160,7 @@ struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
 struct PendingRequest {
     sequence: u64,
     amount: u64,
-    future: Pin<Box<dyn Future<Output = IlpResult>>>,
+    future: Pin<Box<dyn Future<Output = IlpResult> + Send>>,
 }
 
 /// The state of the send money future
@@ -178,8 +178,8 @@ enum SendMoneyFutureState {
 #[project]
 impl<S, A> SendMoneyFuture<S, A>
 where
-    S: IncomingService<A> + Clone + 'static,
-    A: Account + 'static,
+    S: IncomingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Send + Sync + 'static,
 {
     /// Fire off requests until the congestion controller tells us to stop or we've sent the total amount or maximum time since last fulfill has elapsed
     fn try_send_money(&mut self) -> Result<bool, Error> {
@@ -454,8 +454,8 @@ where
 
 impl<S, A> Future for SendMoneyFuture<S, A>
 where
-    S: IncomingService<A> + Clone + 'static,
-    A: Account + 'static,
+    S: IncomingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Send + Sync + 'static,
 {
     type Output = Result<(StreamDelivery, S), Error>;
 
