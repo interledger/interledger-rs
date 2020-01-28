@@ -39,8 +39,8 @@ pub async fn pay<S, A>(
     source_amount: u64,
 ) -> Result<StreamDelivery, Error>
 where
-    S: IncomingService<A> + Clone,
-    A: Account,
+    S: IncomingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Send + Sync + Clone + 'static,
 {
     let spsp = query(receiver).await?;
     let shared_secret = spsp.shared_secret;
