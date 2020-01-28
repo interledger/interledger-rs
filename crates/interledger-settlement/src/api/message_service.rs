@@ -72,9 +72,9 @@ where
                         .send()
                         .compat() // Wrap to a 0.1 future
                 };
-                // TODO: futures-retry is still not on futures 0.3. As a result, we wrap our action in a
-                // 0.1 future, and then wrap the Retry future in a 0.3 future to use async/await.
 
+                // TODO: tokio-retry is still not on futures 0.3. As a result, we wrap our action in a
+                // 0.1 future, and then wrap the Retry future in a 0.3 future to use async/await.
                 let response = Retry::spawn(ExponentialBackoff::from_millis(10).take(10), action)
                     .compat()
                     .map_err(move |error| {
