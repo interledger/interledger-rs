@@ -12,7 +12,6 @@ use interledger_packet::{
 };
 use interledger_service::*;
 use log::{debug, error, warn};
-use pin_project::{pin_project, project};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::Cell,
@@ -73,8 +72,8 @@ pub async fn send_money<S, A>(
     source_amount: u64,
 ) -> Result<(StreamDelivery, S), Error>
 where
-    S: IncomingService<A> + Clone + 'static,
-    A: Account + 'static,
+    S: IncomingService<A> + Clone,
+    A: Account,
 {
     let shared_secret = Bytes::from(shared_secret);
     let from_account = from_account.clone();
@@ -122,7 +121,6 @@ where
     .await
 }
 
-#[pin_project]
 /// Helper data type used to track a streaming payment
 struct SendMoneyFuture<S: IncomingService<A>, A: Account> {
     /// The future's [state](./enum.SendMoneyFutureState.html)
@@ -175,24 +173,23 @@ enum SendMoneyFutureState {
     Closed,
 }
 
-#[project]
 impl<S, A> SendMoneyFuture<S, A>
 where
-    S: IncomingService<A> + Clone + 'static,
-    A: Account + 'static,
+    S: IncomingService<A> + Clone,
+    A: Account,
 {
     /// Fire off requests until the congestion controller tells us to stop or we've sent the total amount or maximum time since last fulfill has elapsed
     fn try_send_money(&mut self) -> Result<bool, Error> {
         let mut sent_packets = false;
         loop {
             let amount = min(
-                *self.source_amount,
+                self.source_amount,
                 self.congestion_controller.get_max_amount(),
             );
             if amount == 0 {
                 break;
             }
-            *self.source_amount -= amount;
+            self.source_amount -= amount;
 
             // Load up the STREAM packet
             let sequence = self.next_sequence();
@@ -200,7 +197,7 @@ where
                 stream_id: 1,
                 shares: 1,
             })];
-            if *self.should_send_source_account {
+            if self.should_send_source_account {
                 frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
                     source_account: self.source_account.clone(),
                 }));
@@ -233,12 +230,10 @@ where
 
             // Send it!
             self.congestion_controller.prepare(amount);
-            if let Some(ref next) = self.next {
-                let mut next = next.clone();
+            let next = self.next.to_owned();
+            if let Some(ref mut next) = next {
                 let from = self.from_account.clone();
-                let request = Box::pin(async move {
-                    next.handle_request(IncomingRequest { from, prepare }).await
-                });
+                let request = next.handle_request(IncomingRequest { from, prepare });
                 self.pending_requests.get_mut().push(PendingRequest {
                     sequence,
                     amount,
@@ -279,21 +274,21 @@ where
 
         // Send it!
         debug!("Closing connection");
-        if let Some(ref next) = self.next {
-            let mut next = next.clone();
-            let from = self.from_account.clone();
-            let request =
-                Box::pin(
-                    async move { next.handle_request(IncomingRequest { from, prepare }).await },
-                );
-            self.pending_requests.get_mut().push(PendingRequest {
-                sequence,
-                amount: 0,
-                future: request,
-            });
-        } else {
-            panic!("Polled after finish");
-        }
+        // if let Some(ref next) = self.next {
+        //     let mut next = next.clone();
+        //     let from = self.from_account.clone();
+        //     let request =
+        //         Box::pin(
+        //             async move { next.handle_request(IncomingRequest { from, prepare }).await },
+        //         );
+        //     // self.pending_requests.get_mut().push(PendingRequest {
+        //     //     sequence,
+        //     //     amount: 0,
+        //     //     future: request,
+        //     // });
+        // } else {
+        //     panic!("Polled after finish");
+        // }
         Ok(())
     }
 
@@ -346,8 +341,8 @@ where
     fn handle_fulfill(&mut self, sequence: u64, amount: u64, fulfill: Fulfill) {
         // TODO should we check the fulfillment and expiry or can we assume the plugin does that?
         self.congestion_controller.fulfill(amount);
-        *self.should_send_source_account = false;
-        *self.last_fulfill_time = Instant::now();
+        self.should_send_source_account = false;
+        self.last_fulfill_time = Instant::now();
 
         if let Ok(packet) = StreamPacket::from_encrypted(&self.shared_secret, fulfill.into_data()) {
             if packet.ilp_packet_type() == IlpPacketType::Fulfill {
@@ -392,9 +387,9 @@ where
     ///    If one is found, then it updates the receipt's `delivered_asset_scale` and `delivered_asset_code`
     ///    to them.
     fn handle_reject(&mut self, sequence: u64, amount: u64, reject: Reject) {
-        *self.source_amount += amount;
+        self.source_amount += amount;
         self.congestion_controller.reject(amount, &reject);
-        *self.rejected_packets += 1;
+        self.rejected_packets += 1;
         debug!(
             "Prepare {} with amount {} was rejected with code: {} ({} left to send)",
             sequence,
@@ -435,7 +430,7 @@ where
                 // TODO handle STREAM errors
             }
             _ => {
-                *self.error = Some(Error::SendMoneyError(format!(
+                self.error = Some(Error::SendMoneyError(format!(
                     "Packet was rejected with error: {} {}",
                     reject.code(),
                     str::from_utf8(reject.message()).unwrap_or_default(),
@@ -446,22 +441,22 @@ where
 
     /// Increments the stream's sequence number and returns the updated value
     fn next_sequence(&mut self) -> u64 {
-        let seq = *self.sequence;
-        *self.sequence += 1;
+        let seq = self.sequence;
+        self.sequence += 1;
         seq
     }
 }
 
 impl<S, A> Future for SendMoneyFuture<S, A>
 where
-    S: IncomingService<A> + Clone + 'static,
-    A: Account + 'static,
+    S: IncomingService<A> + Clone,
+    A: Account,
 {
     type Output = Result<(StreamDelivery, S), Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // TODO maybe don't have loops here and in try_send_money
-        let mut this = self.project();
+        let mut this = unsafe { self.get_unchecked_mut() };
 
         loop {
             ready!(this.poll_pending_requests(cx)?);
@@ -472,14 +467,14 @@ where
                 ))));
             }
 
-            if *this.source_amount == 0 && this.pending_requests.get_mut().is_empty() {
-                if *this.state == SendMoneyFutureState::SendMoney {
-                    *this.state = SendMoneyFutureState::Closing;
+            if this.source_amount == 0 && this.pending_requests.get_mut().is_empty() {
+                if this.state == SendMoneyFutureState::SendMoney {
+                    this.state = SendMoneyFutureState::Closing;
                     this.try_send_connection_close()?;
                 } else {
-                    *this.state = SendMoneyFutureState::Closed;
+                    this.state = SendMoneyFutureState::Closed;
                     debug!(
-                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", this.receipt.delivered_amount, *this.sequence - 1, this.rejected_packets,
+                        "Send money future finished. Delivered: {} ({} packets fulfilled, {} packets rejected)", this.receipt.delivered_amount, this.sequence - 1, this.rejected_packets,
                     );
                     return Poll::Ready(Ok((this.receipt.clone(), this.next.take().unwrap())));
                 }
