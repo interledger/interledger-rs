@@ -1,10 +1,29 @@
-use crate::metrics::{incoming_metrics, outgoing_metrics};
-use crate::trace::{trace_forwarding, trace_incoming, trace_outgoing};
-use bytes::Bytes;
-use futures::{
-    future::{err, Either},
-    Future,
+#[cfg(feature = "google-pubsub")]
+use crate::instrumentation::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
+
+#[cfg(feature = "monitoring")]
+use tracing_futures::Instrument;
+
+#[cfg(feature = "monitoring")]
+use tracing::debug_span;
+
+#[cfg(feature = "monitoring")]
+use crate::instrumentation::{
+    metrics::{incoming_metrics, outgoing_metrics},
+    prometheus::{serve_prometheus, PrometheusConfig},
+    trace::{trace_forwarding, trace_incoming, trace_outgoing},
 };
+
+#[cfg(feature = "monitoring")]
+use interledger::service::IncomingService;
+#[cfg(any(feature = "monitoring", feature = "google-pubsub"))]
+use interledger::service::OutgoingService;
+
+#[cfg(feature = "monitoring")]
+use futures::FutureExt;
+
+use bytes::Bytes;
+use futures::TryFutureExt;
 use hex::FromHex;
 use interledger::{
     api::{NodeApi, NodeStore},
@@ -16,8 +35,7 @@ use interledger::{
     packet::{ErrorCode, RejectBuilder},
     router::{Router, RouterStore},
     service::{
-        outgoing_service_fn, Account as AccountTrait, AccountStore, IncomingService,
-        OutgoingRequest, OutgoingService, Username,
+        outgoing_service_fn, Account as AccountTrait, AccountStore, OutgoingRequest, Username,
     },
     service_util::{
         BalanceStore, EchoService, ExchangeRateFetcher, ExchangeRateService, ExchangeRateStore,
@@ -35,25 +53,15 @@ use interledger::{
     stream::{StreamNotificationsStore, StreamReceiverService},
 };
 use lazy_static::lazy_static;
-use metrics_core::{Builder, Drain, Observe};
-use metrics_runtime;
 use num_bigint::BigUint;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::sync::Arc;
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::spawn;
-use tracing::{debug, debug_span, error, info};
-use tracing_futures::Instrument;
+use tracing::{debug, error, info};
 use url::Url;
 use uuid::Uuid;
-use warp::{
-    self,
-    http::{Response, StatusCode},
-    Filter,
-};
+use warp::{self, Filter};
 
-#[cfg(feature = "google-pubsub")]
-use crate::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 #[cfg(feature = "redis")]
 use crate::redis_store::*;
 #[cfg(feature = "balance-tracking")]
@@ -118,32 +126,6 @@ where
             .map_err(|err| DeserializeError::custom(format!("Invalid username: {:?}", err)))
     } else {
         Ok(None)
-    }
-}
-
-/// Configuration for [Prometheus](https://prometheus.io) metrics collection.
-#[derive(Deserialize, Clone)]
-pub struct PrometheusConfig {
-    /// IP address and port to host the Prometheus endpoint on.
-    pub bind_address: SocketAddr,
-    /// Amount of time, in milliseconds, that the node will collect data points for the
-    /// Prometheus histograms. Defaults to 300000ms (5 minutes).
-    #[serde(default = "PrometheusConfig::default_histogram_window")]
-    pub histogram_window: u64,
-    /// Granularity, in milliseconds, that the node will use to roll off old data.
-    /// For example, a value of 1000ms (1 second) would mean that the node forgets the oldest
-    /// 1 second of histogram data points every second. Defaults to 10000ms (10 seconds).
-    #[serde(default = "PrometheusConfig::default_histogram_granularity")]
-    pub histogram_granularity: u64,
-}
-
-impl PrometheusConfig {
-    fn default_histogram_window() -> u64 {
-        300_000
-    }
-
-    fn default_histogram_granularity() -> u64 {
-        10_000
     }
 }
 
@@ -226,6 +208,8 @@ pub struct InterledgerNode {
     pub exchange_rate: ExchangeRateConfig,
     /// Configuration for [Prometheus](https://prometheus.io) metrics collection.
     /// If this configuration is not provided, the node will not collect metrics.
+    /// Needs the feature flag "monitoring" to be enabled
+    #[cfg(feature = "monitoring")]
     #[serde(default)]
     pub prometheus: Option<PrometheusConfig>,
     #[cfg(feature = "google-pubsub")]
@@ -239,19 +223,26 @@ impl InterledgerNode {
     /// also run the Prometheus metrics server on the given address.
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
-    pub fn serve(self) -> impl Future<Item = (), Error = ()> {
-        if self.prometheus.is_some() {
-            Either::A(
-                self.serve_prometheus()
-                    .join(self.serve_node())
-                    .and_then(|_| Ok(())),
-            )
-        } else {
-            Either::B(self.serve_node())
-        }
+    pub async fn serve(self) -> Result<(), ()> {
+        #[cfg(feature = "monitoring")]
+        let f =
+            futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(|r| {
+                async move {
+                    if r.0.is_ok() || r.1.is_ok() {
+                        Ok(())
+                    } else {
+                        Err(())
+                    }
+                }
+            });
+
+        #[cfg(not(feature = "monitoring"))]
+        let f = self.serve_node();
+
+        f.await
     }
 
-    fn serve_node(self) -> Box<dyn Future<Item = (), Error = ()> + Send + 'static> {
+    async fn serve_node(self) -> Result<(), ()> {
         let ilp_address = if let Some(address) = &self.ilp_address {
             address.clone()
         } else {
@@ -266,26 +257,22 @@ impl InterledgerNode {
                     "The string '{}' could not be parsed as a URL: {}",
                     &self.database_url, e
                 );
-                return Box::new(err(()));
+                return Err(());
             }
         };
 
         match database_url.scheme() {
             #[cfg(feature = "redis")]
-            "redis" | "redis+unix" => Box::new(serve_redis_node(self, ilp_address)),
+            "redis" | "redis+unix" => serve_redis_node(self, ilp_address).await,
             other => {
                 error!("unsupported data source scheme: {}", other);
-                Box::new(err(()))
+                Err(())
             }
         }
     }
 
     #[allow(clippy::cognitive_complexity)]
-    pub(crate) fn chain_services<S>(
-        self,
-        store: S,
-        ilp_address: Address,
-    ) -> impl Future<Item = (), Error = ()>
+    pub(crate) async fn chain_services<S>(self, store: S, ilp_address: Address) -> Result<(), ()>
     where
         S: NodeStore<Account = Account>
             + BtpStore<Account = Account>
@@ -327,257 +314,211 @@ impl InterledgerNode {
         #[cfg(feature = "google-pubsub")]
         let google_pubsub = self.google_pubsub.clone();
 
-        store.clone().get_btp_outgoing_accounts()
-        .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
-        .and_then(move |btp_accounts| {
-            let outgoing_service =
-                outgoing_service_fn(move |request: OutgoingRequest<Account>| {
-                    // Don't log anything for failed route updates sent to child accounts
-                    // because there's a good chance they'll be offline
-                    if request.prepare.destination().scheme() != "peer"
-                        || request.to.routing_relation() != RoutingRelation::Child {
-                        error!(target: "interledger-node", "No route found for outgoing request");
-                    }
-                    Err(RejectBuilder {
-                        code: ErrorCode::F02_UNREACHABLE,
-                        message: &format!(
-                            // TODO we might not want to expose the internal account ID in the error
-                            "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
-                            request.to.id(),
-                            request.prepare.destination(),
-                        )
-                        .as_bytes(),
-                        triggered_by: Some(&ilp_address_clone),
-                        data: &[],
-                    }
-                    .build())
-                });
+        let btp_accounts = store
+            .get_btp_outgoing_accounts()
+            .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
+            .await?;
 
-            // Connect to all of the accounts that have outgoing ilp_over_btp_urls configured
-            // but don't fail if we are unable to connect
-            // TODO try reconnecting to those accounts later
-            connect_client(ilp_address_clone2.clone(), btp_accounts, false, outgoing_service)
-            .and_then(
-                move |btp_client_service| {
-                    let btp_server_service = BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());
-                    let btp_server_service_clone = btp_server_service.clone();
-                    let btp = btp_client_service.clone();
-
-                    // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
-                    // service to others like the router and then call handle_incoming on it to set up the incoming handler
-                    let outgoing_service = btp_server_service.clone();
-                    let outgoing_service = HttpClientService::new(
-                        store.clone(),
-                        outgoing_service,
-                    );
-
-                    let outgoing_service = outgoing_service.wrap(outgoing_metrics);
-
-                    // Note: the expiry shortener must come after the Validator so that the expiry duration
-                    // is shortened before we check whether there is enough time left
-                    let outgoing_service = ValidatorService::outgoing(
-                        store.clone(),
-                        outgoing_service
-                    );
-                    let outgoing_service =
-                        ExpiryShortenerService::new(outgoing_service);
-                    let outgoing_service = StreamReceiverService::new(
-                        secret_seed.clone(),
-                        store.clone(),
-                        outgoing_service,
-                    );
-                    #[cfg(feature = "balance-tracking")]
-                    let outgoing_service = BalanceService::new(
-                        store.clone(),
-                        outgoing_service,
-                    );
-                    let outgoing_service = ExchangeRateService::new(
-                        exchange_rate_spread,
-                        store.clone(),
-                        outgoing_service,
-                    );
-
-                    #[cfg(feature = "google-pubsub")]
-                    let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
-
-                    // Set up the Router and Routing Manager
-                    let incoming_service = Router::new(
-                        store.clone(),
-                        // Add tracing to add the outgoing request details to the incoming span
-                        outgoing_service.clone().wrap(trace_forwarding),
-                    );
-
-                    // Add tracing to track the outgoing request details
-                    let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
-
-                    let mut ccp_builder = CcpRouteManagerBuilder::new(
-                        ilp_address.clone(),
-                        store.clone(),
-                        outgoing_service.clone(),
-                        incoming_service,
-                    );
-                    ccp_builder.ilp_address(ilp_address.clone());
-                    if let Some(ms) = route_broadcast_interval {
-                        ccp_builder.broadcast_interval(ms);
-                    }
-                    let incoming_service = ccp_builder.to_service();
-                    let incoming_service = EchoService::new(store.clone(), incoming_service);
-                    let incoming_service = SettlementMessageService::new(incoming_service);
-                    let incoming_service = IldcpService::new(incoming_service);
-                    let incoming_service =
-                        MaxPacketAmountService::new(
-                            store.clone(),
-                            incoming_service
-                    );
-                    let incoming_service =
-                        ValidatorService::incoming(store.clone(), incoming_service);
-                    let incoming_service = RateLimitService::new(
-                        store.clone(),
-                        incoming_service,
-                    );
-
-                    // Add tracing to track the incoming request details
-                    let incoming_service = incoming_service.wrap(trace_incoming).in_current_span();
-
-                    let incoming_service = incoming_service.wrap(incoming_metrics);
-
-                    // Handle incoming packets sent via BTP
-                    btp_server_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
-                        let btp = debug_span!(target: "interledger-node", "btp");
-                        let _btp_scope = btp.enter();
-                        next.handle_request(request).in_current_span()
-                    }).in_current_span());
-                    btp_client_service.handle_incoming(incoming_service.clone().wrap(|request, mut next| {
-                        let btp = debug_span!(target: "interledger-node", "btp");
-                        let _btp_scope = btp.enter();
-                        next.handle_request(request).in_current_span()
-                    }).in_current_span());
-
-                    // Node HTTP API
-                    let mut api = NodeApi::new(
-                        secret_seed,
-                        admin_auth_token,
-                        store.clone(),
-                        incoming_service.clone().wrap(|request, mut next| {
-                            let api = debug_span!(target: "interledger-node", "api");
-                            let _api_scope = api.enter();
-                            next.handle_request(request).in_current_span()
-                        }).in_current_span(),
-                        outgoing_service.clone(),
-                        btp.clone(),
-                    );
-                    if let Some(username) = default_spsp_account {
-                        api.default_spsp_account(username);
-                    }
-                    api.node_version(env!("CARGO_PKG_VERSION").to_string());
-                    // add an API of ILP over HTTP and add rejection handler
-                    let api = api.into_warp_filter()
-                        .or(IlpOverHttpServer::new(incoming_service.clone().wrap(|request, mut next| {
-                            let http = debug_span!(target: "interledger-node", "http");
-                            let _http_scope = http.enter();
-                            next.handle_request(request).in_current_span()
-                        }).in_current_span(), store.clone()).as_filter())
-                        .or(btp_service_as_filter(btp_server_service_clone, store.clone()))
-                        .recover(default_rejection_handler)
-                        .with(warp::log("interledger-api")).boxed();
-
-                    info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
-                    spawn(warp::serve(api).bind(http_bind_address));
-
-                    // Settlement API
-                    let settlement_api = create_settlements_filter(
-                        store.clone(),
-                        outgoing_service.clone(),
-                    );
-                    info!(target: "interledger-node", "Settlement API listening on: {}", settlement_api_bind_address);
-                    spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
-
-                    // Exchange Rate Polling
-                    if let Some(provider) = exchange_rate_provider {
-                        let exchange_rate_fetcher = ExchangeRateFetcher::new(provider, exchange_rate_poll_failure_tolerance, store.clone());
-                        exchange_rate_fetcher.spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
-                    } else {
-                        debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
-                    }
-
-                    Ok(())
-                },
-            )
-        })
-        .in_current_span()
-    }
-
-    /// Starts a Prometheus metrics server that will listen on the configured address.
-    ///
-    /// # Errors
-    /// This will fail if another Prometheus server is already running in this
-    /// process or on the configured port.
-    #[allow(clippy::cognitive_complexity)]
-    fn serve_prometheus(&self) -> impl Future<Item = (), Error = ()> {
-        Box::new(if let Some(ref prometheus) = self.prometheus {
-            // Set up the metrics collector
-            let receiver = metrics_runtime::Builder::default()
-                .histogram(
-                    Duration::from_millis(prometheus.histogram_window),
-                    Duration::from_millis(prometheus.histogram_granularity),
-                )
-                .build()
-                .expect("Failed to create metrics Receiver");
-            let controller = receiver.controller();
-            // Try installing the global recorder
-            match metrics::set_boxed_recorder(Box::new(receiver)) {
-                Ok(_) => {
-                    let observer =
-                        Arc::new(metrics_runtime::observers::PrometheusBuilder::default());
-
-                    let filter = warp::get2().and(warp::path::end()).map(move || {
-                        let mut observer = observer.build();
-                        controller.observe(&mut observer);
-                        let prometheus_response = observer.drain();
-                        Response::builder()
-                            .status(StatusCode::OK)
-                            .header("Content-Type", "text/plain; version=0.0.4")
-                            .body(prometheus_response)
-                    });
-
-                    info!(target: "interledger-node",
-                        "Prometheus metrics server listening on: {}",
-                        prometheus.bind_address
-                    );
-                    Either::A(
-                        warp::serve(filter)
-                            .bind(prometheus.bind_address)
-                            .map_err(|_| {
-                                error!(target: "interledger-node", "Error binding Prometheus server to the configured address")
-                            }),
-                    )
-                }
-                Err(e) => {
-                    error!(target: "interledger-node", "Error installing global metrics recorder (this is likely caused by trying to run two nodes with Prometheus metrics in the same process): {:?}", e);
-                    Either::B(err(()))
-                }
+        let outgoing_service = outgoing_service_fn(move |request: OutgoingRequest<Account>| {
+            // Don't log anything for failed route updates sent to child accounts
+            // because there's a good chance they'll be offline
+            if request.prepare.destination().scheme() != "peer"
+                || request.to.routing_relation() != RoutingRelation::Child
+            {
+                error!(target: "interledger-node", "No route found for outgoing request");
             }
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: &format!(
+                    // TODO we might not want to expose the internal account ID in the error
+                    "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
+                    request.to.id(),
+                    request.prepare.destination(),
+                )
+                .as_bytes(),
+                triggered_by: Some(&ilp_address_clone),
+                data: &[],
+            }
+            .build())
+        });
+
+        // Connect to all of the accounts that have outgoing ilp_over_btp_urls configured
+        // but don't fail if we are unable to connect
+        // TODO try reconnecting to those accounts later
+        let btp_client_service = connect_client(
+            ilp_address_clone2.clone(),
+            btp_accounts,
+            false,
+            outgoing_service,
+        )
+        .await?;
+        let btp_server_service =
+            BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());
+        let btp_server_service_clone = btp_server_service.clone();
+        let btp = btp_client_service.clone();
+
+        // The BTP service is both an Incoming and Outgoing one so we pass it first as the Outgoing
+        // service to others like the router and then call handle_incoming on it to set up the incoming handler
+        let outgoing_service = btp_server_service.clone();
+        let outgoing_service = HttpClientService::new(store.clone(), outgoing_service);
+
+        #[cfg(feature = "monitoring")]
+        let outgoing_service = outgoing_service.wrap(outgoing_metrics);
+
+        // Note: the expiry shortener must come after the Validator so that the expiry duration
+        // is shortened before we check whether there is enough time left
+        let outgoing_service = ValidatorService::outgoing(store.clone(), outgoing_service);
+        let outgoing_service = ExpiryShortenerService::new(outgoing_service);
+        let outgoing_service =
+            StreamReceiverService::new(secret_seed.clone(), store.clone(), outgoing_service);
+        #[cfg(feature = "balance-tracking")]
+        let outgoing_service = BalanceService::new(store.clone(), outgoing_service);
+        let outgoing_service =
+            ExchangeRateService::new(exchange_rate_spread, store.clone(), outgoing_service);
+
+        #[cfg(feature = "google-pubsub")]
+        let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
+
+        // Add tracing to add the outgoing request details to the incoming span
+        #[cfg(feature = "monitoring")]
+        let outgoing_service_fwd = outgoing_service
+            .clone()
+            .wrap(trace_forwarding)
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let outgoing_service_fwd = outgoing_service.clone();
+
+        // Set up the Router and Routing Manager
+        let incoming_service = Router::new(store.clone(), outgoing_service_fwd);
+
+        // Add tracing to track the outgoing request details
+        #[cfg(feature = "monitoring")]
+        let outgoing_service = outgoing_service.wrap(trace_outgoing).in_current_span();
+
+        let mut ccp_builder = CcpRouteManagerBuilder::new(
+            ilp_address.clone(),
+            store.clone(),
+            outgoing_service.clone(),
+            incoming_service,
+        );
+        ccp_builder.ilp_address(ilp_address.clone());
+        if let Some(ms) = route_broadcast_interval {
+            ccp_builder.broadcast_interval(ms);
+        }
+
+        let incoming_service = ccp_builder.to_service();
+        let incoming_service = EchoService::new(store.clone(), incoming_service);
+        let incoming_service = SettlementMessageService::new(incoming_service);
+        let incoming_service = IldcpService::new(incoming_service);
+        let incoming_service = MaxPacketAmountService::new(store.clone(), incoming_service);
+        let incoming_service = ValidatorService::incoming(store.clone(), incoming_service);
+        let incoming_service = RateLimitService::new(store.clone(), incoming_service);
+
+        // Add tracing to track the incoming request details
+        #[cfg(feature = "monitoring")]
+        let incoming_service = incoming_service
+            .wrap(trace_incoming)
+            .in_current_span()
+            .wrap(incoming_metrics);
+
+        // Handle incoming packets sent via BTP
+        #[cfg(feature = "monitoring")]
+        let incoming_service_btp = incoming_service
+            .clone()
+            .wrap(|request, mut next| {
+                async move {
+                    let btp = debug_span!(target: "interledger-node", "btp");
+                    let _btp_scope = btp.enter();
+                    next.handle_request(request).in_current_span().await
+                }
+            })
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let incoming_service_btp = incoming_service.clone();
+
+        btp_server_service
+            .handle_incoming(incoming_service_btp.clone())
+            .await;
+
+        btp_client_service
+            .handle_incoming(incoming_service_btp)
+            .await;
+
+        #[cfg(feature = "monitoring")]
+        let incoming_service_api = incoming_service
+            .clone()
+            .wrap(|request, mut next| {
+                async move {
+                    let api = debug_span!(target: "interledger-node", "api");
+                    let _api_scope = api.enter();
+                    next.handle_request(request).in_current_span().await
+                }
+            })
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let incoming_service_api = incoming_service.clone();
+
+        // Node HTTP API
+        let mut api = NodeApi::new(
+            bytes05::Bytes::copy_from_slice(secret_seed.as_ref()),
+            admin_auth_token,
+            store.clone(),
+            incoming_service_api.clone(),
+            outgoing_service.clone(),
+            btp.clone(), // btp client service!
+        );
+        if let Some(username) = default_spsp_account {
+            api.default_spsp_account(username);
+        }
+        api.node_version(env!("CARGO_PKG_VERSION").to_string());
+
+        #[cfg(feature = "monitoring")]
+        let incoming_service_http = incoming_service
+            .clone()
+            .wrap(|request, mut next| {
+                async move {
+                    let http = debug_span!(target: "interledger-node", "http");
+                    let _http_scope = http.enter();
+                    next.handle_request(request).in_current_span().await
+                }
+            })
+            .in_current_span();
+        #[cfg(not(feature = "monitoring"))]
+        let incoming_service_http = incoming_service.clone();
+
+        // add an API of ILP over HTTP and add rejection handler
+        let api = api
+            .into_warp_filter()
+            .or(IlpOverHttpServer::new(incoming_service_http, store.clone()).as_filter())
+            .or(btp_service_as_filter(
+                btp_server_service_clone,
+                store.clone(),
+            ))
+            .recover(default_rejection_handler)
+            .with(warp::log("interledger-api"))
+            .boxed();
+
+        info!(target: "interledger-node", "Interledger.rs node HTTP API listening on: {}", http_bind_address);
+        spawn(warp::serve(api).bind(http_bind_address));
+
+        // Settlement API
+        let settlement_api = create_settlements_filter(store.clone(), outgoing_service.clone());
+        info!(target: "interledger-node", "Settlement API listening on: {}", settlement_api_bind_address);
+        spawn(warp::serve(settlement_api).bind(settlement_api_bind_address));
+
+        // Exchange Rate Polling
+        if let Some(provider) = exchange_rate_provider {
+            let exchange_rate_fetcher = ExchangeRateFetcher::new(
+                provider,
+                exchange_rate_poll_failure_tolerance,
+                store.clone(),
+            );
+            exchange_rate_fetcher
+                .spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
         } else {
-            error!(target: "interledger-node", "No prometheus configuration provided");
-            Either::B(err(()))
-        })
+            debug!(target: "interledger-node", "Not using exchange rate provider. Rates must be set via the HTTP API");
+        }
+
+        Ok(())
     }
-
-    /// Run the node on the default Tokio runtime
-    pub fn run(self) {
-        tokio_run(self.serve());
-    }
-}
-
-#[doc(hidden)]
-pub fn tokio_run(fut: impl Future<Item = (), Error = ()> + Send + 'static) {
-    let mut runtime = tokio::runtime::Builder::new()
-        // Don't swallow panics
-        .panic_handler(|err| std::panic::resume_unwind(err))
-        .name_prefix("interledger-rs-worker-")
-        .build()
-        .expect("failed to start new runtime");
-
-    runtime.spawn(fut);
-    runtime.shutdown_on_idle().wait().unwrap();
 }

@@ -1,5 +1,7 @@
+use async_trait::async_trait;
 use bytes::Bytes;
-use futures::Future;
+use interledger_btp::{BtpAccount, BtpOutgoingService};
+use interledger_ccp::CcpRoutingAccount;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
@@ -7,17 +9,15 @@ use interledger_service::{Account, AddressStore, IncomingService, OutgoingServic
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
+use secrecy::SecretString;
 use serde::{de, Deserialize, Serialize};
 use std::{boxed::*, collections::HashMap, fmt::Display, net::SocketAddr, str::FromStr};
+use url::Url;
 use uuid::Uuid;
 use warp::{self, Filter};
-mod routes;
-use interledger_btp::{BtpAccount, BtpOutgoingService};
-use interledger_ccp::CcpRoutingAccount;
-use secrecy::SecretString;
-use url::Url;
 
 pub(crate) mod http_retry;
+mod routes;
 
 // This enum and the following functions are used to allow clients to send either
 // numbers or strings and have them be properly deserialized into the appropriate
@@ -71,52 +71,57 @@ where
 // One argument against doing that is that the NodeStore allows admin-only
 // modifications to the values, whereas many of the other traits mostly
 // read from the configured values.
+#[async_trait]
 pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     type Account: Account;
 
-    fn insert_account(
-        &self,
-        account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    /// Inserts an account to the store. Generates a UUID and returns the full Account object.
+    async fn insert_account(&self, account: AccountDetails) -> Result<Self::Account, ()>;
 
-    fn delete_account(&self, id: Uuid) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    /// Deletes the account corresponding to the provided id and returns it
+    async fn delete_account(&self, id: Uuid) -> Result<Self::Account, ()>;
 
-    fn update_account(
-        &self,
-        id: Uuid,
-        account: AccountDetails,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    /// Overwrites the account corresponding to the provided id with the provided details
+    async fn update_account(&self, id: Uuid, account: AccountDetails) -> Result<Self::Account, ()>;
 
-    fn modify_account_settings(
+    /// Modifies the account corresponding to the provided id with the provided settings.
+    /// `modify_account_settings` allows **users** to update their account settings with a set of
+    /// limited fields of account details. However `update_account` allows **admins** to fully
+    /// update account settings.
+    async fn modify_account_settings(
         &self,
         id: Uuid,
         settings: AccountSettings,
-    ) -> Box<dyn Future<Item = Self::Account, Error = ()> + Send>;
+    ) -> Result<Self::Account, ()>;
 
     // TODO limit the number of results and page through them
-    fn get_all_accounts(&self) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    /// Gets all stored accounts
+    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, ()>;
 
-    fn set_static_routes<R>(&self, routes: R) -> Box<dyn Future<Item = (), Error = ()> + Send>
+    /// Sets the static routes for routing
+    async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
     where
-        R: IntoIterator<Item = (String, Uuid)>;
+        // The 'async_trait lifetime is used after recommendation here:
+        // https://github.com/dtolnay/async-trait/issues/8#issuecomment-514812245
+        R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait;
 
-    fn set_static_route(
+    /// Sets a single static route
+    async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()>;
+
+    /// Sets the default route ("") to be the provided account id
+    /// (acts as a catch-all route if all other routes don't match)
+    async fn set_default_route(&self, account_id: Uuid) -> Result<(), ()>;
+
+    /// Sets the default settlement engines to be used for the provided asset codes
+    async fn set_settlement_engines(
         &self,
-        prefix: String,
-        account_id: Uuid,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+        // The 'async_trait lifetime is used after recommendation here:
+        // https://github.com/dtolnay/async-trait/issues/8#issuecomment-514812245
+        asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
+    ) -> Result<(), ()>;
 
-    fn set_default_route(&self, account_id: Uuid) -> Box<dyn Future<Item = (), Error = ()> + Send>;
-
-    fn set_settlement_engines(
-        &self,
-        asset_to_url_map: impl IntoIterator<Item = (String, Url)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
-
-    fn get_asset_settlement_engine(
-        &self,
-        asset_code: &str,
-    ) -> Box<dyn Future<Item = Option<Url>, Error = ()> + Send>;
+    /// Gets the default settlement engine for the provided asset code
+    async fn get_asset_settlement_engine(&self, asset_code: &str) -> Result<Option<Url>, ()>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,17 +136,27 @@ pub struct ExchangeRates(
 /// their HTTP/BTP endpoints, since they may change their network configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AccountSettings {
+    /// The account's incoming ILP over HTTP token.
     pub ilp_over_http_incoming_token: Option<SecretString>,
+    /// The account's incoming ILP over BTP token.
     pub ilp_over_btp_incoming_token: Option<SecretString>,
+    /// The account's outgoing ILP over HTTP token
     pub ilp_over_http_outgoing_token: Option<SecretString>,
+    /// The account's outgoing ILP over BTP token.
+    /// This must match the ILP over BTP incoming token on the peer's node if exchanging
+    /// packets with that peer.
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
+    /// The account's ILP over HTTP URL (this is where packets are sent over HTTP from your node)
     pub ilp_over_http_url: Option<String>,
+    /// The account's ILP over BTP URL (this is where packets are sent over WebSockets from your node)
     pub ilp_over_btp_url: Option<String>,
+    /// The threshold after which the balance service will trigger a settlement
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_threshold: Option<i64>,
-    // Note that this is intentionally an unsigned integer because users should
-    // not be able to set the settle_to value to be negative (meaning the node
-    // would pre-fund with the user)
+    /// The amount which the balance service will attempt to settle down to.
+    /// Note that this is intentionally an unsigned integer because users should
+    /// not be able to set the settle_to value to be negative (meaning the node
+    /// would pre-fund with the user)
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_to: Option<u64>,
 }
@@ -159,45 +174,82 @@ pub struct EncryptedAccountSettings {
     pub ilp_over_http_url: Option<String>,
     pub ilp_over_btp_url: Option<String>,
     #[serde(default, deserialize_with = "optional_number_or_string")]
+    /// The threshold after which the balance service will trigger a settlement
     pub settle_threshold: Option<i64>,
     #[serde(default, deserialize_with = "optional_number_or_string")]
+    /// The amount which the balance service will attempt to settle down to
     pub settle_to: Option<u64>,
 }
 
 /// The Account type for the RedisStore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountDetails {
+    /// The account's Interledger Protocol address.
+    /// If none is provided, the node should generate one
     pub ilp_address: Option<Address>,
+    /// The account's username
     pub username: Username,
+    /// The account's currency
     pub asset_code: String,
     #[serde(deserialize_with = "number_or_string")]
+    /// The account's asset scale
     pub asset_scale: u8,
     #[serde(default = "u64::max_value", deserialize_with = "number_or_string")]
+    /// The max amount per packet which can be routed for this account
     pub max_packet_amount: u64,
+    /// The minimum balance this account can have (consider this as a credit/trust limit)
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub min_balance: Option<i64>,
+    /// The account's ILP over HTTP URL (this is where packets are sent over HTTP from your node)
     pub ilp_over_http_url: Option<String>,
+    /// The account's API and incoming ILP over HTTP token.
+    /// This must match the ILP over HTTP outgoing token on the peer's node if receiving
+    /// packets from that peer
+    // TODO: The incoming token is used for both ILP over HTTP, and for authorizing actions from the HTTP API.
+    // Should we add 1 more token, for more granular permissioning?
     pub ilp_over_http_incoming_token: Option<SecretString>,
+    /// The account's outgoing ILP over HTTP token
+    /// This must match the ILP over HTTP incoming token on the peer's node if sending
+    /// packets to that peer
     pub ilp_over_http_outgoing_token: Option<SecretString>,
+    /// The account's ILP over BTP URL (this is where packets are sent over WebSockets from your node)
     pub ilp_over_btp_url: Option<String>,
+    /// The account's outgoing ILP over BTP token.
+    /// This must match the ILP over BTP incoming token on the peer's node if exchanging
+    /// packets with that peer.
     pub ilp_over_btp_outgoing_token: Option<SecretString>,
+    /// The account's incoming ILP over BTP token.
+    /// This must match the ILP over BTP outgoing token on the peer's node if exchanging
+    /// packets with that peer.
     pub ilp_over_btp_incoming_token: Option<SecretString>,
+    /// The threshold after which the balance service will trigger a settlement
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_threshold: Option<i64>,
+    /// The amount which the balance service will attempt to settle down to
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub settle_to: Option<i64>,
+    /// The routing relation of the account
     pub routing_relation: Option<String>,
+    /// The round trip time of the account (should be set depending on how
+    /// well the network connectivity of the account and the node is)
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub round_trip_time: Option<u32>,
+    /// The maximum amount the account can send per minute
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub amount_per_minute_limit: Option<u64>,
+    /// The limit of packets the account can send per minute
     #[serde(default, deserialize_with = "optional_number_or_string")]
     pub packets_per_minute_limit: Option<u32>,
+    /// The account's settlement engine URL. If a global engine url is configured
+    /// for the account's asset code,  that will be used instead (even if the account is
+    /// configured with a specific one)
     pub settlement_engine_url: Option<String>,
 }
 
 pub struct NodeApi<S, I, O, B, A: Account> {
     store: S,
+    /// The admin's API token, used to make admin-only changes
+    // TODO: Make this a SecretString
     admin_api_token: String,
     default_spsp_account: Option<Username>,
     incoming_handler: I,
@@ -207,6 +259,7 @@ pub struct NodeApi<S, I, O, B, A: Account> {
     // The BTP service is included here so that we can add a new client
     // connection when an account is added with BTP details
     btp: BtpOutgoingService<B, A>,
+    /// Server secret used to instantiate SPSP/Stream connections
     server_secret: Bytes,
     node_version: Option<String>,
 }
@@ -253,16 +306,21 @@ where
         }
     }
 
+    /// Sets the default SPSP account. When SPSP payments are sent to the root domain,
+    /// the payment pointer is resolved to <domain>/.well-known/pay. This value determines
+    /// which account those payments will be sent to.
     pub fn default_spsp_account(&mut self, username: Username) -> &mut Self {
         self.default_spsp_account = Some(username);
         self
     }
 
+    /// Sets the node version
     pub fn node_version(&mut self, version: String) -> &mut Self {
         self.node_version = Some(version);
         self
     }
 
+    /// Returns a Warp Filter which exposes the accounts and admin APIs
     pub fn into_warp_filter(self) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
         routes::accounts_api(
             self.server_secret,
@@ -281,8 +339,9 @@ where
         .boxed()
     }
 
-    pub fn bind(self, addr: SocketAddr) -> impl Future<Item = (), Error = ()> {
-        warp::serve(self.into_warp_filter()).bind(addr)
+    /// Serves the API at the provided address
+    pub async fn bind(self, addr: SocketAddr) {
+        warp::serve(self.into_warp_filter()).bind(addr).await
     }
 }
 
