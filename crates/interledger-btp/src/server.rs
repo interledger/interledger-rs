@@ -5,7 +5,7 @@ use futures::{SinkExt, StreamExt, TryFutureExt};
 use interledger_service::*;
 use log::{debug, error, warn};
 use secrecy::{ExposeSecret, SecretString};
-// use std::time::Duration;
+use std::time::Duration;
 use warp::{
     self,
     ws::{Message, WebSocket, Ws},
@@ -14,7 +14,7 @@ use warp::{
 
 // Close the incoming websocket connection if the auth details
 // have not been received within this timeout
-// const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
+const WEBSOCKET_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_MESSAGE_SIZE: usize = 40000;
 
 /// Returns a Warp Filter instantiated for the provided BtpOutgoingService service.
@@ -67,25 +67,31 @@ where
 {
     // We ignore all the errors
     let socket = socket.filter_map(|v| async move { v.ok() });
-    match validate_auth(store, username, socket)
-        // .timeout(WEBSOCKET_TIMEOUT) // No method found?
-        .await
-    {
-        Ok((account, connection)) => {
-            // We need to wrap our Warp connection in order to cast the Sink type
-            // to tungstenite::Message. This probably can be implemented with SinkExt::with
-            // but couldn't figure out how.
-            service.add_connection(account.clone(), WsWrap { connection });
-            debug!(
-                "Added connection for account {}: (id: {})",
-                account.username(),
-                account.id()
-            );
-        }
-        Err(_) => {
-            warn!("Closing Websocket connection because of an error");
-        }
-    };
+    let (account, connection) =
+        match tokio::time::timeout(WEBSOCKET_TIMEOUT, validate_auth(store, username, socket)).await
+        {
+            Ok(res) => match res {
+                Ok(res) => res,
+                Err(_) => {
+                    warn!("Closing Websocket connection because of invalid credentials");
+                    return Ok(());
+                }
+            },
+            Err(_) => {
+                warn!("Closing Websocket connection because of an error");
+                return Ok(());
+            }
+        };
+
+    // We need to wrap our Warp connection in order to cast the Sink type
+    // to tungstenite::Message. This probably can be implemented with SinkExt::with
+    // but couldn't figure out how.
+    service.add_connection(account.clone(), WsWrap { connection });
+    debug!(
+        "Added connection for account {}: (id: {})",
+        account.username(),
+        account.id()
+    );
 
     Ok(())
 }
