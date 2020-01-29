@@ -1,66 +1,66 @@
 use super::{Error, SpspResponse};
-use futures::{future::result, Future};
+use futures::TryFutureExt;
 use interledger_packet::Address;
 use interledger_service::{Account, IncomingService};
 use interledger_stream::{send_money, StreamDelivery};
 use log::{debug, error, trace};
-use reqwest::r#async::Client;
+use reqwest::Client;
 use std::convert::TryFrom;
 
-pub fn query(server: &str) -> impl Future<Item = SpspResponse, Error = Error> {
+/// Get an ILP Address and shared secret by the receiver of this payment for this connection
+pub async fn query(server: &str) -> Result<SpspResponse, Error> {
     let server = payment_pointer_to_url(server);
     trace!("Querying receiver: {}", server);
 
     let client = Client::new();
-    client
+    let res = client
         .get(&server)
         .header("Accept", "application/spsp4+json")
         .send()
         .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))
-        .and_then(|res| {
-            res.error_for_status()
-                .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))
-        })
-        .and_then(|mut res| {
-            res.json::<SpspResponse>()
-                .map_err(|err| Error::InvalidSpspServerResponseError(format!("{:?}", err)))
-        })
+        .await?;
+
+    let res = res
+        .error_for_status()
+        .map_err(|err| Error::HttpError(format!("Error querying SPSP receiver: {:?}", err)))?;
+
+    res.json::<SpspResponse>()
+        .map_err(|err| Error::InvalidSpspServerResponseError(format!("{:?}", err)))
+        .await
 }
 
 /// Query the details of the given Payment Pointer and send a payment using the STREAM protocol.
 ///
 /// This returns the amount delivered, as reported by the receiver and in the receiver's asset's units.
-pub fn pay<S, A>(
+pub async fn pay<S, A>(
     service: S,
     from_account: A,
     receiver: &str,
     source_amount: u64,
-) -> impl Future<Item = StreamDelivery, Error = Error>
+) -> Result<StreamDelivery, Error>
 where
-    S: IncomingService<A> + Clone,
-    A: Account,
+    S: IncomingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Send + Sync + Clone + 'static,
 {
-    query(receiver).and_then(move |spsp| {
-        let shared_secret = spsp.shared_secret;
-        let dest = spsp.destination_account;
-        result(Address::try_from(dest).map_err(move |err| {
-            error!("Error parsing address");
-            Error::InvalidSpspServerResponseError(err.to_string())
-        }))
-        .and_then(move |addr| {
-            debug!("Sending SPSP payment to address: {}", addr);
+    let spsp = query(receiver).await?;
+    let shared_secret = spsp.shared_secret;
+    let dest = spsp.destination_account;
+    let addr = Address::try_from(dest).map_err(move |err| {
+        error!("Error parsing address");
+        Error::InvalidSpspServerResponseError(err.to_string())
+    })?;
+    debug!("Sending SPSP payment to address: {}", addr);
 
-            send_money(service, &from_account, addr, &shared_secret, source_amount)
-                .map(move |(receipt, _plugin)| {
-                    debug!("Sent SPSP payment. StreamDelivery: {:?}", receipt);
-                    receipt
-                })
-                .map_err(move |err| {
-                    error!("Error sending payment: {:?}", err);
-                    Error::SendMoneyError(source_amount)
-                })
-        })
-    })
+    let (receipt, _plugin) =
+        send_money(service, &from_account, addr, &shared_secret, source_amount)
+            .map_err(move |err| {
+                error!("Error sending payment: {:?}", err);
+                Error::SendMoneyError(source_amount)
+            })
+            .await?;
+
+    debug!("Sent SPSP payment. StreamDelivery: {:?}", receipt);
+    Ok(receipt)
 }
 
 fn payment_pointer_to_url(payment_pointer: &str) -> String {

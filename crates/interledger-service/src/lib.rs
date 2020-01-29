@@ -140,8 +140,8 @@ pub trait IncomingService<A: Account> {
     /// and/or handle the result of calling the inner service.
     fn wrap<F, R>(self, f: F) -> WrappedService<F, Self, A>
     where
-        F: Fn(IncomingRequest<A>, Self) -> R,
-        R: Future<Output = IlpResult> + Send + 'static,
+        F: Send + Sync + Fn(IncomingRequest<A>, Box<dyn IncomingService<A> + Send>) -> R,
+        R: Future<Output = IlpResult>,
         Self: Clone + Sized,
     {
         WrappedService::wrap_incoming(self, f)
@@ -162,8 +162,8 @@ pub trait OutgoingService<A: Account> {
     /// and/or handle the result of calling the inner service.
     fn wrap<F, R>(self, f: F) -> WrappedService<F, Self, A>
     where
-        F: Fn(OutgoingRequest<A>, Self) -> R,
-        R: Future<Output = IlpResult> + Send + 'static,
+        F: Send + Sync + Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> R,
+        R: Future<Output = IlpResult>,
         Self: Clone + Sized,
     {
         WrappedService::wrap_outgoing(self, f)
@@ -259,10 +259,10 @@ pub struct WrappedService<F, I, A> {
 
 impl<F, IO, A, R> WrappedService<F, IO, A>
 where
-    F: Fn(IncomingRequest<A>, IO) -> R,
+    F: Send + Sync + Fn(IncomingRequest<A>, Box<dyn IncomingService<A> + Send>) -> R,
+    R: Future<Output = IlpResult>,
     IO: IncomingService<A> + Clone,
     A: Account,
-    R: Future<Output = IlpResult> + Send + 'static,
 {
     /// Wrap the given service such that the provided function will
     /// be called to handle each request. That function can
@@ -280,22 +280,22 @@ where
 #[async_trait]
 impl<F, IO, A, R> IncomingService<A> for WrappedService<F, IO, A>
 where
-    F: Fn(IncomingRequest<A>, IO) -> R + Send + Sync,
-    IO: IncomingService<A> + Send + Sync + Clone,
-    A: Account,
+    F: Send + Sync + Fn(IncomingRequest<A>, Box<dyn IncomingService<A> + Send>) -> R,
     R: Future<Output = IlpResult> + Send + 'static,
+    IO: IncomingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Sync,
 {
     async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
-        (self.f)(request, (*self.inner).clone()).await
+        (self.f)(request, Box::new((*self.inner).clone())).await
     }
 }
 
 impl<F, IO, A, R> WrappedService<F, IO, A>
 where
-    F: Fn(OutgoingRequest<A>, IO) -> R,
+    F: Send + Sync + Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> R,
+    R: Future<Output = IlpResult>,
     IO: OutgoingService<A> + Clone,
     A: Account,
-    R: Future<Output = IlpResult> + Send + 'static,
 {
     /// Wrap the given service such that the provided function will
     /// be called to handle each request. That function can
@@ -313,13 +313,13 @@ where
 #[async_trait]
 impl<F, IO, A, R> OutgoingService<A> for WrappedService<F, IO, A>
 where
-    F: Fn(OutgoingRequest<A>, IO) -> R + Send + Sync,
-    IO: OutgoingService<A> + Clone + Send + Sync,
-    A: Account,
+    F: Send + Sync + Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> R,
     R: Future<Output = IlpResult> + Send + 'static,
+    IO: OutgoingService<A> + Send + Sync + Clone + 'static,
+    A: Account,
 {
     async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
-        (self.f)(request, (*self.inner).clone()).await
+        (self.f)(request, Box::new((*self.inner).clone())).await
     }
 }
 
@@ -344,4 +344,210 @@ pub trait AddressStore: Clone {
     /// Gets the node's ILP Address *synchronously*
     /// (the value is stored in memory because it is read often by all services)
     fn get_ilp_address(&self) -> Address;
+}
+
+// Even though we wrap the types _a lot_ of times in multiple configurations
+// the tests still build nearly instantly. The trick is to make the wrapping function
+// take a trait object instead of the concrete type
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lazy_static::lazy_static;
+    use std::str::FromStr;
+
+    #[test]
+    fn incoming_service_no_exponential_blowup_when_wrapping() {
+        // a normal async function
+        async fn foo<A: Account>(
+            request: IncomingRequest<A>,
+            mut next: Box<dyn IncomingService<A> + Send>,
+        ) -> IlpResult {
+            next.handle_request(request).await
+        }
+
+        // and with a closure (async closure are unstable)
+        let foo2 = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| {
+            async move { next.handle_request(request).await }
+        };
+
+        // base layer
+        let s = BaseService;
+        // our first layer
+        let s: LayeredService<_, TestAccount> = LayeredService::new_incoming(s);
+
+        // wrapped in our closure
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+        let s = WrappedService::wrap_incoming(s, foo2);
+
+        // wrap it again in the normal service
+        let s = LayeredService::new_incoming(s);
+
+        // some short syntax
+        let s = s.wrap(foo2);
+        let s = s.wrap(foo);
+
+        // called with the full syntax
+        let s = WrappedService::wrap_incoming(s, foo);
+        let s = WrappedService::wrap_incoming(s, foo);
+        let s = WrappedService::wrap_incoming(s, foo);
+        let s = WrappedService::wrap_incoming(s, foo);
+        let s = WrappedService::wrap_incoming(s, foo);
+
+        // more short syntax
+        let s = s.wrap(foo2);
+        let s = s.wrap(foo2);
+        let _s = s.wrap(foo2);
+    }
+
+    #[test]
+    fn outgoing_service_no_exponential_blowup_when_wrapping() {
+        // a normal async function
+        async fn foo<A: Account>(
+            request: OutgoingRequest<A>,
+            mut next: Box<dyn OutgoingService<A> + Send>,
+        ) -> IlpResult {
+            next.send_request(request).await
+        }
+
+        // and with a closure (async closure are unstable)
+        let foo2 = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| {
+            async move { next.send_request(request).await }
+        };
+
+        // base layer
+        let s = BaseService;
+        // our first layer
+        let s: LayeredService<_, TestAccount> = LayeredService::new_outgoing(s);
+
+        // wrapped in our closure
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+        let s = WrappedService::wrap_outgoing(s, foo2);
+
+        // wrap it again in the normal service
+        let s = LayeredService::new_outgoing(s);
+
+        // some short syntax
+        let s = s.wrap(foo2);
+        let s = s.wrap(foo);
+
+        // called with the full syntax
+        let s = WrappedService::wrap_outgoing(s, foo);
+        let s = WrappedService::wrap_outgoing(s, foo);
+        let s = WrappedService::wrap_outgoing(s, foo);
+        let s = WrappedService::wrap_outgoing(s, foo);
+        let s = WrappedService::wrap_outgoing(s, foo);
+
+        // more short syntax
+        let s = s.wrap(foo2);
+        let s = s.wrap(foo2);
+        let _s = s.wrap(foo2);
+    }
+
+    #[derive(Clone)]
+    struct BaseService;
+
+    #[derive(Clone)]
+    struct LayeredService<I, A> {
+        next: I,
+        account_type: PhantomData<A>,
+    }
+
+    impl<I, A> LayeredService<I, A>
+    where
+        I: IncomingService<A> + Send + Sync + 'static,
+        A: Account,
+    {
+        fn new_incoming(next: I) -> Self {
+            Self {
+                next,
+                account_type: PhantomData,
+            }
+        }
+    }
+
+    impl<I, A> LayeredService<I, A>
+    where
+        I: OutgoingService<A> + Send + Sync + 'static,
+        A: Account,
+    {
+        fn new_outgoing(next: I) -> Self {
+            Self {
+                next,
+                account_type: PhantomData,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl<A: Account + 'static> OutgoingService<A> for BaseService {
+        async fn send_request(&mut self, _request: OutgoingRequest<A>) -> IlpResult {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl<A: Account + 'static> IncomingService<A> for BaseService {
+        async fn handle_request(&mut self, _request: IncomingRequest<A>) -> IlpResult {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl<I, A> OutgoingService<A> for LayeredService<I, A>
+    where
+        I: OutgoingService<A> + Send + Sync + 'static,
+        A: Account + Send + Sync + 'static,
+    {
+        async fn send_request(&mut self, _request: OutgoingRequest<A>) -> IlpResult {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl<I, A> IncomingService<A> for LayeredService<I, A>
+    where
+        I: IncomingService<A> + Send + Sync + 'static,
+        A: Account + Send + Sync + 'static,
+    {
+        async fn handle_request(&mut self, _request: IncomingRequest<A>) -> IlpResult {
+            unimplemented!()
+        }
+    }
+
+    // Account test helpers
+    #[derive(Clone, Debug)]
+    pub struct TestAccount;
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
+    }
+
+    impl Account for TestAccount {
+        fn id(&self) -> Uuid {
+            unimplemented!()
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
+        }
+
+        fn asset_scale(&self) -> u8 {
+            9
+        }
+
+        fn asset_code(&self) -> &str {
+            "XYZ"
+        }
+
+        fn ilp_address(&self) -> &Address {
+            &EXAMPLE_ADDRESS
+        }
+    }
 }

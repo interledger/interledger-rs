@@ -1,5 +1,6 @@
 use failure::Fail;
 
+/// Stream Errors
 #[derive(Fail, Debug)]
 pub enum Error {
     #[fail(display = "Error connecting: {}", _0)]

@@ -17,11 +17,19 @@ use std::io;
 /// control algorithms.
 pub struct CongestionController {
     state: CongestionState,
+    /// Amount which is added to `max_in_flight` per fulfill
     increase_amount: u64,
+    /// Divide `max_in_flight` by this factor per reject with code for insufficient liquidity
+    /// or if there is no `max_packet_amount` specified
     decrease_factor: f64,
+    /// The maximum amount we are allowed to add in a packet. This gets automatically set if
+    /// we receive a reject packet with a `F08_AMOUNT_TOO_LARGE` error
     max_packet_amount: Option<u64>,
+    /// The current amount in flight
     amount_in_flight: u64,
+    /// The maximum allowed amount to be in flight
     max_in_flight: u64,
+    /// Writer object to write our metrics to a csv
     #[cfg(feature = "metrics_csv")]
     csv_writer: csv::Writer<io::Stdout>,
 }
@@ -33,6 +41,7 @@ enum CongestionState {
 }
 
 impl CongestionController {
+    /// Constructs a new congestion controller
     pub fn new(start_amount: u64, increase_amount: u64, decrease_factor: f64) -> Self {
         #[cfg(feature = "metrics_csv")]
         let mut csv_writer = csv::Writer::from_writer(io::stdout());
@@ -53,6 +62,7 @@ impl CongestionController {
         }
     }
 
+    /// The maximum amount which can be sent is the maximum amount in flight minus the current amount in flight
     pub fn get_max_amount(&mut self) -> u64 {
         if self.amount_in_flight > self.max_in_flight {
             return 0;
@@ -66,6 +76,7 @@ impl CongestionController {
         }
     }
 
+    /// Increments the amount in flight by the provided amount
     pub fn prepare(&mut self, amount: u64) {
         if amount > 0 {
             self.amount_in_flight += amount;
@@ -76,6 +87,8 @@ impl CongestionController {
         }
     }
 
+    /// Decrements the amount in flight by the provided amount
+    /// Increases the allowed max in flight amount cap
     pub fn fulfill(&mut self, prepare_amount: u64) {
         self.amount_in_flight -= prepare_amount;
 
@@ -111,6 +124,8 @@ impl CongestionController {
         self.log_stats(prepare_amount);
     }
 
+    /// Decrements the amount in flight by the provided amount
+    /// Decreases the allowed max in flight amount cap
     pub fn reject(&mut self, prepare_amount: u64, reject: &Reject) {
         self.amount_in_flight -= prepare_amount;
 
