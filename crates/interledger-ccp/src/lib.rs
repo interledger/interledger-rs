@@ -9,7 +9,7 @@
 //! updates are used by the `Router` to forward incoming packets to the best next hop
 //! we know about.
 
-use futures::Future;
+use async_trait::async_trait;
 use interledger_service::Account;
 use std::collections::HashMap;
 use std::{fmt, str::FromStr};
@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 /// Data structure used to describe the routing relation of an account with its peers.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize, Ord, Eq)]
 pub enum RoutingRelation {
     /// An account from which we do not receive routes from, neither broadcast
     /// routes to
@@ -98,25 +98,30 @@ pub trait CcpRoutingAccount: Account {
 type Routes<T> = HashMap<String, T>;
 type LocalAndConfiguredRoutes<T> = (Routes<T>, Routes<T>);
 
+/// Store trait for managing the routes broadcast and set over Connector to Connector protocol
+#[async_trait]
 pub trait RouteManagerStore: Clone {
     type Account: CcpRoutingAccount;
 
     // TODO should we have a way to only get the details for specific routes?
-    fn get_local_and_configured_routes(
+    /// Gets the local and manually configured routes
+    async fn get_local_and_configured_routes(
         &self,
-    ) -> Box<dyn Future<Item = LocalAndConfiguredRoutes<Self::Account>, Error = ()> + Send>;
+    ) -> Result<LocalAndConfiguredRoutes<Self::Account>, ()>;
 
-    fn get_accounts_to_send_routes_to(
+    /// Gets all accounts which the node should send routes to (Peer and Child accounts)
+    /// The caller can also pass a vector of account ids to be ignored
+    async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    ) -> Result<Vec<Self::Account>, ()>;
 
-    fn get_accounts_to_receive_routes_from(
-        &self,
-    ) -> Box<dyn Future<Item = Vec<Self::Account>, Error = ()> + Send>;
+    /// Gets all accounts which the node should receive routes to (Peer and Parent accounts)
+    async fn get_accounts_to_receive_routes_from(&self) -> Result<Vec<Self::Account>, ()>;
 
-    fn set_routes(
+    /// Sets the new routes to the store (prefix -> account)
+    async fn set_routes(
         &mut self,
-        routes: impl IntoIterator<Item = (String, Self::Account)>,
-    ) -> Box<dyn Future<Item = (), Error = ()> + Send>;
+        routes: impl IntoIterator<Item = (String, Self::Account)> + Send + 'async_trait,
+    ) -> Result<(), ()>;
 }

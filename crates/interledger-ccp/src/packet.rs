@@ -38,6 +38,9 @@ lazy_static! {
         Address::from_str("peer.route.update").unwrap();
 }
 
+/// CCP Packet mode used in Route Control Requests of the CCP protocol.
+/// Idle: Account does not wish to receive more routes
+/// Sync: Account wishes to receive routes
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Mode {
@@ -60,6 +63,9 @@ impl TryFrom<u8> for Mode {
     }
 }
 
+/// A request that ask the receiver node to transition to Idle or Sync mode.
+/// If the mode is Idle, the receiver of the request will stop broadcasting routes to the sender.
+/// If the mode is Sync, the receiver will start broadcasting routes to that account.
 #[derive(Clone, PartialEq)]
 pub struct RouteControlRequest {
     pub mode: Mode,
@@ -153,8 +159,14 @@ impl RouteControlRequest {
     }
 }
 
+impl From<RouteControlRequest> for Prepare {
+    fn from(request: RouteControlRequest) -> Self {
+        request.to_prepare()
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
-pub struct RouteProp {
+pub(crate) struct RouteProp {
     pub(crate) is_optional: bool,
     pub(crate) is_transitive: bool,
     pub(crate) is_partial: bool,
@@ -215,7 +227,7 @@ impl RouteProp {
 }
 
 #[derive(Clone, PartialEq)]
-pub struct Route {
+pub(crate) struct Route {
     // TODO switch this to use the Address type so we don't need separate parsing logic when implementing Debug
     pub(crate) prefix: String,
     pub(crate) path: Vec<String>,
@@ -398,6 +410,12 @@ impl RouteUpdateRequest {
             data: &data[..],
         }
         .build()
+    }
+}
+
+impl From<RouteUpdateRequest> for Prepare {
+    fn from(request: RouteUpdateRequest) -> Self {
+        request.to_prepare()
     }
 }
 

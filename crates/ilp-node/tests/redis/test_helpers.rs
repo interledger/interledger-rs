@@ -1,4 +1,4 @@
-use futures::{stream::Stream, Future};
+use futures::TryFutureExt;
 use hex;
 use interledger::stream::StreamDelivery;
 use interledger::{packet::Address, service::Account as AccountTrait, store::account::Account};
@@ -8,16 +8,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str;
-use tracing_subscriber;
+// use tracing_subscriber;
 use uuid::Uuid;
-
-pub fn install_tracing_subscriber() {
-    tracing_subscriber::fmt::Subscriber::builder()
-        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::rfc3339())
-        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
-        .try_init()
-        .unwrap_or(());
-}
 
 #[allow(unused)]
 pub fn random_secret() -> String {
@@ -33,56 +25,58 @@ pub struct BalanceData {
 }
 
 #[allow(unused)]
-pub fn create_account_on_node<T: Serialize>(
+pub async fn create_account_on_node<T: Serialize>(
     api_port: u16,
     data: T,
     auth: &str,
-) -> impl Future<Item = String, Error = ()> {
-    let client = reqwest::r#async::Client::new();
-    client
+) -> Result<Account, ()> {
+    let client = reqwest::Client::new();
+    let res = client
         .post(&format!("http://localhost:{}/accounts", api_port))
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", auth))
         .json(&data)
         .send()
-        .and_then(move |res| res.error_for_status())
-        .and_then(move |res| res.into_body().concat2())
-        .map_err(|err| {
-            eprintln!("Error creating account on node: {:?}", err);
-        })
-        .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
+        .map_err(|_| ())
+        .await?;
+
+    let res = res.error_for_status().map_err(|_| ())?;
+
+    Ok(res.json::<Account>().map_err(|_| ()).await.unwrap())
 }
 
 #[allow(unused)]
-pub fn create_account_on_engine<T: Serialize>(
+pub async fn create_account_on_engine<T: Serialize>(
     engine_port: u16,
     account_id: T,
-) -> impl Future<Item = String, Error = ()> {
-    let client = reqwest::r#async::Client::new();
-    client
+) -> Result<String, ()> {
+    let client = reqwest::Client::new();
+    let res = client
         .post(&format!("http://localhost:{}/accounts", engine_port))
         .header("Content-Type", "application/json")
         .json(&json!({ "id": account_id }))
         .send()
-        .and_then(move |res| res.error_for_status())
-        .and_then(move |res| res.into_body().concat2())
-        .map_err(|err| {
-            eprintln!("Error creating account: {:?}", err);
-        })
-        .and_then(move |chunk| Ok(str::from_utf8(&chunk).unwrap().to_string()))
+        .map_err(|_| ())
+        .await?;
+
+    let res = res.error_for_status().map_err(|_| ())?;
+
+    let data: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
+
+    Ok(str::from_utf8(&data).unwrap().to_string())
 }
 
 #[allow(unused)]
-pub fn send_money_to_username<T: Display + Debug>(
+pub async fn send_money_to_username<T: Display + Debug>(
     from_port: u16,
     to_port: u16,
     amount: u64,
     to_username: T,
     from_username: &str,
     from_auth: &str,
-) -> impl Future<Item = StreamDelivery, Error = ()> {
-    let client = reqwest::r#async::Client::new();
-    client
+) -> Result<StreamDelivery, ()> {
+    let client = reqwest::Client::new();
+    let res = client
         .post(&format!(
             "http://localhost:{}/accounts/{}/payments",
             from_port, from_username
@@ -93,36 +87,27 @@ pub fn send_money_to_username<T: Display + Debug>(
             "source_amount": amount,
         }))
         .send()
-        .and_then(|res| res.error_for_status())
-        .and_then(|res| res.into_body().concat2())
-        .map_err(|err| {
-            eprintln!("Error sending SPSP payment: {:?}", err);
-        })
-        .and_then(move |body| {
-            let ret: StreamDelivery = serde_json::from_slice(&body).unwrap();
-            Ok(ret)
-        })
+        .map_err(|_| ())
+        .await?;
+
+    let res = res.error_for_status().map_err(|_| ())?;
+    Ok(res.json::<StreamDelivery>().await.unwrap())
 }
 
 #[allow(unused)]
-pub fn get_all_accounts(
-    node_port: u16,
-    admin_token: &str,
-) -> impl Future<Item = Vec<Account>, Error = ()> {
-    let client = reqwest::r#async::Client::new();
-    client
+pub async fn get_all_accounts(node_port: u16, admin_token: &str) -> Result<Vec<Account>, ()> {
+    let client = reqwest::Client::new();
+    let res = client
         .get(&format!("http://localhost:{}/accounts", node_port))
         .header("Authorization", format!("Bearer {}", admin_token))
         .send()
-        .and_then(|res| res.error_for_status())
-        .and_then(|res| res.into_body().concat2())
-        .map_err(|err| {
-            eprintln!("Error getting account data: {:?}", err);
-        })
-        .and_then(move |body| {
-            let ret: Vec<Account> = serde_json::from_slice(&body).unwrap();
-            Ok(ret)
-        })
+        .map_err(|_| ())
+        .await?;
+
+    let res = res.error_for_status().map_err(|_| ())?;
+    let body: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
+    let ret: Vec<Account> = serde_json::from_slice(&body).unwrap();
+    Ok(ret)
 }
 
 #[allow(unused)]
@@ -135,26 +120,24 @@ pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, Uuid> {
 }
 
 #[allow(unused)]
-pub fn get_balance<T: Display>(
+pub async fn get_balance<T: Display>(
     account_id: T,
     node_port: u16,
     admin_token: &str,
-) -> impl Future<Item = BalanceData, Error = ()> {
-    let client = reqwest::r#async::Client::new();
-    client
+) -> Result<BalanceData, ()> {
+    let client = reqwest::Client::new();
+    let res = client
         .get(&format!(
             "http://localhost:{}/accounts/{}/balance",
             node_port, account_id
         ))
         .header("Authorization", format!("Bearer {}", admin_token))
         .send()
-        .and_then(|res| res.error_for_status())
-        .and_then(|res| res.into_body().concat2())
-        .map_err(|err| {
-            eprintln!("Error getting account data: {:?}", err);
-        })
-        .and_then(|body| {
-            let ret: BalanceData = serde_json::from_slice(&body).unwrap();
-            Ok(ret)
-        })
+        .map_err(|_| ())
+        .await?;
+
+    let res = res.error_for_status().map_err(|_| ())?;
+    let body: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
+    let ret: BalanceData = serde_json::from_slice(&body).unwrap();
+    Ok(ret)
 }

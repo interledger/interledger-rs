@@ -10,7 +10,7 @@ lazy_static! {
     static ref RANDOM: SystemRandom = SystemRandom::new();
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PrefixMap<T> {
     map: HashMap<String, T>,
 }
@@ -44,7 +44,7 @@ impl<T> PrefixMap<T> {
 /// When an Interledger node reloads, it will generate a new UUID for its routing table.
 /// Each update applied increments the epoch number, so it acts as a version tracker.
 /// This helps peers make sure they are in sync with one another and request updates if not.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RoutingTable<A> {
     id: [u8; 16],
     epoch: u32,
@@ -55,7 +55,7 @@ impl<A> RoutingTable<A>
 where
     A: Clone,
 {
-    pub fn new(id: [u8; 16]) -> Self {
+    pub(crate) fn new(id: [u8; 16]) -> Self {
         RoutingTable {
             id,
             epoch: 0,
@@ -64,63 +64,63 @@ where
     }
 
     #[cfg(test)]
-    pub fn set_id(&mut self, id: [u8; 16]) {
+    pub(crate) fn set_id(&mut self, id: [u8; 16]) {
         self.id = id;
         self.epoch = 0;
     }
 
     #[cfg(test)]
-    pub fn set_epoch(&mut self, epoch: u32) {
+    pub(crate) fn set_epoch(&mut self, epoch: u32) {
         self.epoch = epoch;
     }
 
-    pub fn id(&self) -> [u8; 16] {
+    pub(crate) fn id(&self) -> [u8; 16] {
         self.id
     }
 
-    pub fn epoch(&self) -> u32 {
+    pub(crate) fn epoch(&self) -> u32 {
         self.epoch
     }
 
-    pub fn increment_epoch(&mut self) -> u32 {
+    pub(crate) fn increment_epoch(&mut self) -> u32 {
         let epoch = self.epoch;
         self.epoch += 1;
         epoch
     }
 
     /// Set a particular route, overwriting the one that was there before
-    pub fn set_route(&mut self, prefix: String, account: A, route: Route) {
+    pub(crate) fn set_route(&mut self, prefix: String, account: A, route: Route) {
         self.prefix_map.remove(&prefix);
         self.prefix_map.insert(prefix, (account, route));
     }
 
     /// Remove the route for the given prefix. Returns true if that route existed before
-    pub fn delete_route(&mut self, prefix: &str) -> bool {
+    pub(crate) fn delete_route(&mut self, prefix: &str) -> bool {
         self.prefix_map.remove(prefix)
     }
 
     /// Add the given route. Returns true if that routed did not already exist
-    pub fn add_route(&mut self, account: A, route: Route) -> bool {
+    pub(crate) fn add_route(&mut self, account: A, route: Route) -> bool {
         self.prefix_map
             .insert(route.prefix.clone(), (account, route))
     }
 
     /// Get the best route we have for the given prefix
-    pub fn get_route(&self, prefix: &str) -> Option<&(A, Route)> {
+    pub(crate) fn get_route(&self, prefix: &str) -> Option<&(A, Route)> {
         self.prefix_map.resolve(prefix)
     }
 
-    pub fn get_simplified_table(&self) -> HashMap<&str, A> {
+    pub(crate) fn get_simplified_table(&self) -> HashMap<String, A> {
         HashMap::from_iter(
             self.prefix_map
                 .map
                 .iter()
-                .map(|(address, (account, _route))| (address.as_str(), account.clone())),
+                .map(|(address, (account, _route))| (address.clone(), account.clone())),
         )
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents
-    pub fn handle_update_request(
+    pub(crate) fn handle_update_request(
         &mut self,
         account: A,
         request: RouteUpdateRequest,
