@@ -6,6 +6,7 @@ use interledger_service::*;
 use log::error;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
+use tokio::time::timeout;
 
 /// # Validator Service
 ///
@@ -110,31 +111,34 @@ where
         let time_left = expires_at - now;
         let ilp_address = self.store.get_ilp_address();
         if time_left > Duration::zero() {
-            let fulfill = self
-                .next
-                .send_request(request)
-                // TODO: Re-enable timeout!
-                // .timeout(time_left.to_std().expect("Time left must be positive"))
-                // .map_err(move |err| {
-                //     // If the error was caused by the timer, into_inner will return None
-                //     if let Some(reject) = err.into_inner() {
-                //         reject
-                //     } else {
-                //         error!(
-                //             "Outgoing request timed out after {}ms (expiry was: {})",
-                //             time_left.num_milliseconds(),
-                //             expires_at,
-                //         );
-                //         RejectBuilder {
-                //             code: ErrorCode::R00_TRANSFER_TIMED_OUT,
-                //             message: &[],
-                //             triggered_by: Some(&ilp_address_clone),
-                //             data: &[],
-                //         }
-                //         .build()
-                //     }
-                // })
-                .await?;
+            // Result of the future
+            let result = timeout(
+                time_left.to_std().expect("Time left must be positive"),
+                self.next.send_request(request),
+            )
+            .await;
+
+            let fulfill = match result {
+                // If the future completed in time, it returns an IlpResult,
+                // which gives us the fulfill packet
+                Ok(packet) => packet?,
+                // If the future timed out, then it results in an error
+                Err(_) => {
+                    error!(
+                        "Outgoing request timed out after {}ms (expiry was: {})",
+                        time_left.num_milliseconds(),
+                        expires_at,
+                    );
+                    return Err(RejectBuilder {
+                        code: ErrorCode::R00_TRANSFER_TIMED_OUT,
+                        message: &[],
+                        triggered_by: Some(&ilp_address),
+                        data: &[],
+                    }
+                    .build());
+                }
+            };
+
             let generated_condition = digest(&SHA256, fulfill.fulfillment());
             if generated_condition.as_ref() == condition {
                 Ok(fulfill)
