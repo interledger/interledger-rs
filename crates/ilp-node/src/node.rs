@@ -513,7 +513,6 @@ impl InterledgerNode {
                 exchange_rate_poll_failure_tolerance,
                 store.clone(),
             );
-            // This function does not compile on 1.39 for some reason.
             exchange_rate_fetcher
                 .spawn_interval(Duration::from_millis(exchange_rate_poll_interval));
         } else {
