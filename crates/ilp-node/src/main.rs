@@ -1,7 +1,4 @@
-// #![type_length_limit = "1500000"] // this is enough for cargo build --bin ilp-node
-// #![type_length_limit = "13500000"] // this is enough for cargo build --bin ilp-node --feature monitoring
-#![type_length_limit = "80000000"] // this is enough for cargo build --all-features --all-targets
-
+#![type_length_limit = "5000000"]
 mod instrumentation;
 pub mod node;
 

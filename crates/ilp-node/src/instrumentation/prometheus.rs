@@ -79,7 +79,7 @@ pub async fn serve_prometheus(node: InterledgerNode) -> Result<(), ()> {
                 prometheus.bind_address
             );
 
-            warp::serve(filter).bind(prometheus.bind_address).await;
+            tokio::spawn(warp::serve(filter).bind(prometheus.bind_address));
             Ok(())
         }
         Err(e) => {

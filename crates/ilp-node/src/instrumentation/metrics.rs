@@ -9,7 +9,7 @@ use std::time::Instant;
 
 pub async fn incoming_metrics<A: Account + CcpRoutingAccount>(
     request: IncomingRequest<A>,
-    mut next: impl IncomingService<A>,
+    mut next: Box<dyn IncomingService<A> + Send>,
 ) -> IlpResult {
     let labels = labels!(
         "from_asset_code" => request.from.asset_code().to_string(),
@@ -43,7 +43,7 @@ pub async fn incoming_metrics<A: Account + CcpRoutingAccount>(
 
 pub async fn outgoing_metrics<A: Account + CcpRoutingAccount>(
     request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
+    mut next: Box<dyn OutgoingService<A> + Send>,
 ) -> IlpResult {
     let labels = labels!(
         "from_asset_code" => request.from.asset_code().to_string(),
