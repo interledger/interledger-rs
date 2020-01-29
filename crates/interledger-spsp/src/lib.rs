@@ -10,7 +10,9 @@ use interledger_packet::Address;
 use interledger_stream::Error as StreamError;
 use serde::{Deserialize, Serialize};
 
+/// An SPSP client which can query an SPSP Server's payment pointer and initiate a STREAM payment
 mod client;
+/// An SPSP Server implementing an HTTP Service which generates ILP Addresses and Shared Secrets
 mod server;
 
 pub use client::{pay, query};
@@ -33,14 +35,19 @@ pub enum Error {
     InvalidPaymentPointerError(String),
 }
 
+/// An SPSP Response returned by the SPSP server
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SpspResponse {
+    /// The generated ILP Address for this SPSP connection
     destination_account: Address,
+    /// Base-64 encoded shared secret between SPSP client and server
+    /// to be consumed for the STREAM connection
     #[serde(with = "serde_base64")]
     shared_secret: Vec<u8>,
 }
 
 // From https://github.com/serde-rs/json/issues/360#issuecomment-330095360
+#[doc(hidden)]
 mod serde_base64 {
     use base64;
     use serde::{de, Deserialize, Deserializer, Serializer};

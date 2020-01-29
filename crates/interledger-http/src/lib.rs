@@ -21,7 +21,7 @@ mod server;
 pub use self::client::HttpClientService;
 pub use self::server::HttpServer;
 
-/// Extention trait for [Account](../interledger_service/trait.Account.html) with [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) related information
+/// Extension trait for [Account](../interledger_service/trait.Account.html) with [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) related information
 pub trait HttpAccount: Account {
     /// Returns the HTTP URL corresponding to this account
     fn get_http_url(&self) -> Option<&Url>;

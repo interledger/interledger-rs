@@ -1,15 +1,14 @@
 // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
 #![allow(dead_code)]
 
-use futures::Future;
+use futures::TryFutureExt;
 use redis_crate::{self as redis, ConnectionAddr, ConnectionInfo, RedisError};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process;
 use std::thread::sleep;
-use std::time::{Duration, Instant};
-use tokio::timer::Delay;
+use std::time::Duration;
 
 #[allow(unused)]
 pub fn connection_info_to_string(info: ConnectionInfo) -> String {
@@ -40,8 +39,8 @@ pub fn get_open_port(try_port: Option<u16>) -> u16 {
     panic!("Cannot find open port!");
 }
 
-pub fn delay(ms: u64) -> impl Future<Item = (), Error = ()> {
-    Delay::new(Instant::now() + Duration::from_millis(ms)).map_err(|err| panic!(err))
+pub async fn delay(ms: u64) {
+    tokio::time::delay_for(Duration::from_millis(ms)).await;
 }
 
 #[derive(PartialEq)]
@@ -190,20 +189,21 @@ impl TestContext {
         self.client.get_connection().unwrap()
     }
 
-    pub fn async_connection(
-        &self,
-    ) -> impl Future<Item = redis::aio::Connection, Error = RedisError> {
-        self.client.get_async_connection()
+    pub async fn async_connection(&self) -> Result<redis::aio::Connection, ()> {
+        self.client
+            .get_async_connection()
+            .map_err(|err| panic!(err))
+            .await
     }
 
     pub fn stop_server(&mut self) {
         self.server.stop();
     }
 
-    pub fn shared_async_connection(
+    pub async fn shared_async_connection(
         &self,
-    ) -> impl Future<Item = redis::aio::SharedConnection, Error = RedisError> {
-        self.client.get_shared_async_connection()
+    ) -> Result<redis::aio::MultiplexedConnection, RedisError> {
+        self.client.get_multiplexed_tokio_connection().await
     }
 }
 
