@@ -1,11 +1,7 @@
-#![type_length_limit = "1152909"]
+#![type_length_limit = "5000000"]
+mod instrumentation;
+pub mod node;
 
-mod metrics;
-mod node;
-mod trace;
-
-#[cfg(feature = "google-pubsub")]
-mod google_pubsub;
 #[cfg(feature = "redis")]
 mod redis_store;
 
@@ -19,12 +15,16 @@ use std::{
     io::Read,
     vec::Vec,
 };
+
+#[cfg(feature = "monitoring")]
 use tracing_subscriber::{
     filter::EnvFilter,
     fmt::{time::ChronoUtc, Subscriber},
 };
 
-pub fn main() {
+#[tokio::main]
+async fn main() {
+    #[cfg(feature = "monitoring")]
     Subscriber::builder()
         .with_timer(ChronoUtc::rfc3339())
         .with_env_filter(EnvFilter::from_default_env())
@@ -143,7 +143,13 @@ pub fn main() {
     }
     let matches = app.clone().get_matches();
     merge_args(&mut config, &matches);
-    config.try_into::<InterledgerNode>().unwrap().run();
+
+    let node = config.try_into::<InterledgerNode>().unwrap();
+    node.serve().await.unwrap();
+
+    // Add a future which is always pending. This will ensure main does not exist
+    // TODO: Is there a better way of doing this?
+    futures::future::pending().await
 }
 
 // returns (subcommand paths, config path)
