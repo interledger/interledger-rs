@@ -1,15 +1,18 @@
 use crate::redis_helpers::*;
 use crate::test_helpers::*;
-use futures::{future::join_all, Future};
+use futures::TryFutureExt;
 use ilp_node::InterledgerNode;
-use reqwest::r#async::Client;
+use reqwest::Client;
 use serde_json::{self, json};
-use tokio::runtime::Builder as RuntimeBuilder;
 
-#[test]
-fn prometheus() {
+#[tokio::test]
+async fn prometheus() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 2
-    install_tracing_subscriber();
+    tracing_subscriber::fmt::Subscriber::builder()
+        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::rfc3339())
+        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+        .try_init()
+        .unwrap_or(());
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance
@@ -23,11 +26,6 @@ fn prometheus() {
     let node_b_http = get_open_port(None);
     let node_b_settlement = get_open_port(None);
     let prometheus_port = get_open_port(None);
-
-    let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|err| std::panic::resume_unwind(err))
-        .build()
-        .unwrap();
 
     let alice_on_a = json!({
         "ilp_address": "example.node_a.alice",
@@ -91,102 +89,72 @@ fn prometheus() {
     }))
     .unwrap();
 
-    let alice_fut = join_all(vec![
-        create_account_on_node(node_a_http, alice_on_a, "admin"),
-        create_account_on_node(node_a_http, b_on_a, "admin"),
-    ]);
+    node_a.serve().await.unwrap();
+    node_b.serve().await.unwrap();
 
-    runtime.spawn(node_a.serve());
-
-    let bob_fut = join_all(vec![
-        create_account_on_node(node_b_http, a_on_b, "admin"),
-        create_account_on_node(node_b_http, bob_on_b, "admin"),
-    ]);
-
-    runtime.spawn(node_b.serve());
-
-    runtime
-        .block_on(
-            // Wait for the nodes to spin up
-            delay(500)
-                .map_err(|_| panic!("Something strange happened"))
-                .and_then(move |_| {
-                    bob_fut
-                        .and_then(|_| alice_fut)
-                        .and_then(|_| delay(500).map_err(|_| panic!("delay error")))
-                })
-                .and_then(move |_| {
-                    let send_1_to_2 = send_money_to_username(
-                        node_a_http,
-                        node_b_http,
-                        1000,
-                        "bob_on_b",
-                        "alice_on_a",
-                        "token",
-                    );
-                    let send_2_to_1 = send_money_to_username(
-                        node_b_http,
-                        node_a_http,
-                        2000,
-                        "alice_on_a",
-                        "bob_on_b",
-                        "token",
-                    );
-
-                    let check_metrics = move || {
-                        Client::new()
-                            .get(&format!("http://127.0.0.1:{}", prometheus_port))
-                            .send()
-                            .map_err(|err| eprintln!("Error getting metrics {:?}", err))
-                            .and_then(|mut res| {
-                                res.text().map_err(|err| {
-                                    eprintln!("Response was not a string: {:?}", err)
-                                })
-                            })
-                    };
-
-                    send_1_to_2
-                        .map_err(|err| {
-                            eprintln!("Error sending from node 1 to node 2: {:?}", err);
-                            err
-                        })
-                        .and_then(move |_| {
-                            check_metrics().and_then(move |ret| {
-                                assert!(ret.starts_with("# metrics snapshot"));
-                                assert!(ret.contains("requests_incoming_fulfill"));
-                                assert!(ret.contains("requests_incoming_prepare"));
-                                assert!(ret.contains("requests_incoming_reject"));
-                                assert!(ret.contains("requests_incoming_duration"));
-                                assert!(ret.contains("requests_outgoing_fulfill"));
-                                assert!(ret.contains("requests_outgoing_prepare"));
-                                assert!(ret.contains("requests_outgoing_reject"));
-                                assert!(ret.contains("requests_outgoing_duration"));
-                                // TODO check the specific numbers of packets
-                                Ok(())
-                            })
-                        })
-                        .and_then(move |_| {
-                            send_2_to_1.map_err(|err| {
-                                eprintln!("Error sending from node 2 to node 1: {:?}", err);
-                                err
-                            })
-                        })
-                        .and_then(move |_| {
-                            check_metrics().and_then(move |ret| {
-                                assert!(ret.starts_with("# metrics snapshot"));
-                                assert!(ret.contains("requests_incoming_fulfill"));
-                                assert!(ret.contains("requests_incoming_prepare"));
-                                assert!(ret.contains("requests_incoming_reject"));
-                                assert!(ret.contains("requests_incoming_duration"));
-                                assert!(ret.contains("requests_outgoing_fulfill"));
-                                assert!(ret.contains("requests_outgoing_prepare"));
-                                assert!(ret.contains("requests_outgoing_reject"));
-                                assert!(ret.contains("requests_outgoing_duration"));
-                                // TODO check the specific numbers of packets
-                                Ok(())
-                            })
-                        })
-                }),
-        )
+    create_account_on_node(node_b_http, a_on_b, "admin")
+        .await
         .unwrap();
+    create_account_on_node(node_b_http, bob_on_b, "admin")
+        .await
+        .unwrap();
+    create_account_on_node(node_a_http, alice_on_a, "admin")
+        .await
+        .unwrap();
+    create_account_on_node(node_a_http, b_on_a, "admin")
+        .await
+        .unwrap();
+
+    let check_metrics = move || {
+        Client::new()
+            .get(&format!("http://127.0.0.1:{}", prometheus_port))
+            .send()
+            .map_err(|err| eprintln!("Error getting metrics {:?}", err))
+            .and_then(|res| {
+                res.text()
+                    .map_err(|err| eprintln!("Response was not a string: {:?}", err))
+            })
+    };
+
+    send_money_to_username(
+        node_a_http,
+        node_b_http,
+        1000,
+        "bob_on_b",
+        "alice_on_a",
+        "token",
+    )
+    .await
+    .unwrap();
+    let ret = check_metrics().await.unwrap();
+    assert!(ret.starts_with("# metrics snapshot"));
+    assert!(ret.contains("requests_incoming_fulfill"));
+    assert!(ret.contains("requests_incoming_prepare"));
+    assert!(ret.contains("requests_incoming_reject"));
+    assert!(ret.contains("requests_incoming_duration"));
+    assert!(ret.contains("requests_outgoing_fulfill"));
+    assert!(ret.contains("requests_outgoing_prepare"));
+    assert!(ret.contains("requests_outgoing_reject"));
+    assert!(ret.contains("requests_outgoing_duration"));
+
+    send_money_to_username(
+        node_b_http,
+        node_a_http,
+        2000,
+        "alice_on_a",
+        "bob_on_b",
+        "token",
+    )
+    .await
+    .unwrap();
+    let ret = check_metrics().await.unwrap();
+    assert!(ret.starts_with("# metrics snapshot"));
+    assert!(ret.contains("requests_incoming_fulfill"));
+    assert!(ret.contains("requests_incoming_prepare"));
+    assert!(ret.contains("requests_incoming_reject"));
+    assert!(ret.contains("requests_incoming_duration"));
+    assert!(ret.contains("requests_outgoing_fulfill"));
+    assert!(ret.contains("requests_outgoing_prepare"));
+    assert!(ret.contains("requests_outgoing_reject"));
+    assert!(ret.contains("requests_outgoing_duration"));
 }

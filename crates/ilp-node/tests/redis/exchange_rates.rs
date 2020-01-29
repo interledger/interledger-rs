@@ -1,25 +1,16 @@
 use crate::redis_helpers::*;
 use crate::test_helpers::*;
-use futures::Future;
 use ilp_node::InterledgerNode;
-use reqwest::r#async::Client;
+use reqwest::Client;
 use secrecy::SecretString;
 use serde_json::{self, json, Value};
 use std::env;
-use tokio::runtime::Builder as RuntimeBuilder;
-use tokio_retry::{strategy::FibonacciBackoff, Retry};
+use std::time::Duration;
 use tracing::error;
-use tracing_subscriber;
 
-#[test]
-fn coincap() {
-    install_tracing_subscriber();
+#[tokio::test]
+async fn coincap() {
     let context = TestContext::new();
-
-    let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|err| std::panic::resume_unwind(err))
-        .build()
-        .unwrap();
 
     let http_port = get_open_port(None);
 
@@ -33,57 +24,38 @@ fn coincap() {
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
         "exchange_rate": {
-            "poll_interval": 60000,
+            "poll_interval": 100,
             "provider": "coincap",
         },
     }))
     .unwrap();
-    runtime.spawn(node.serve());
+    node.serve().await.unwrap();
 
-    let get_rates = move || {
-        Client::new()
-            .get(&format!("http://localhost:{}/rates", http_port))
-            .send()
-            .map_err(|_| panic!("Error getting rates"))
-            .and_then(|mut res| res.json().map_err(|_| panic!("Error getting body")))
-            .and_then(|body: Value| {
-                if let Value::Object(obj) = body {
-                    if obj.is_empty() {
-                        error!("Rates are empty");
-                        return Err(());
-                    }
-                    assert_eq!(
-                        format!("{}", obj.get("USD").expect("Should have USD rate")).as_str(),
-                        "1.0"
-                    );
-                    assert!(obj.contains_key("EUR"));
-                    assert!(obj.contains_key("JPY"));
-                    assert!(obj.contains_key("BTC"));
-                    assert!(obj.contains_key("ETH"));
-                    assert!(obj.contains_key("XRP"));
-                } else {
-                    panic!("Not an object");
-                }
+    // Wait a few seconds so our node can poll the API
+    tokio::time::delay_for(Duration::from_millis(1000)).await;
 
-                Ok(())
-            })
-    };
-
-    runtime
-        .block_on(
-            delay(1000)
-                .map_err(|_| panic!("Something strange happened"))
-                .and_then(move |_| {
-                    Retry::spawn(FibonacciBackoff::from_millis(1000).take(5), get_rates)
-                }),
-        )
+    let ret = Client::new()
+        .get(&format!("http://localhost:{}/rates", http_port))
+        .send()
+        .await
         .unwrap();
+    let txt = ret.text().await.unwrap();
+    let obj: Value = serde_json::from_str(&txt).unwrap();
+
+    assert_eq!(
+        format!("{}", obj.get("USD").expect("Should have USD rate")).as_str(),
+        "1.0"
+    );
+    assert!(obj.get("EUR").is_some());
+    assert!(obj.get("JPY").is_some());
+    assert!(obj.get("BTC").is_some());
+    assert!(obj.get("ETH").is_some());
+    assert!(obj.get("XRP").is_some());
 }
 
 // TODO can we disable this with conditional compilation?
-#[test]
-fn cryptocompare() {
-    tracing_subscriber::fmt::try_init().unwrap_or(());
+#[tokio::test]
+async fn cryptocompare() {
     let context = TestContext::new();
 
     let api_key = env::var("ILP_TEST_CRYPTOCOMPARE_API_KEY");
@@ -92,11 +64,6 @@ fn cryptocompare() {
         return;
     }
     let api_key = SecretString::new(api_key.unwrap());
-
-    let mut runtime = RuntimeBuilder::new()
-        .panic_handler(|err| std::panic::resume_unwind(err))
-        .build()
-        .unwrap();
 
     let http_port = get_open_port(Some(3011));
 
@@ -110,7 +77,7 @@ fn cryptocompare() {
         "secret_seed": random_secret(),
         "route_broadcast_interval": 200,
         "exchange_rate": {
-            "poll_interval": 60000,
+            "poll_interval": 100,
             "provider": {
                 "cryptocompare": api_key
             },
@@ -118,42 +85,24 @@ fn cryptocompare() {
         },
     }))
     .unwrap();
-    runtime.spawn(node.serve());
+    node.serve().await.unwrap();
 
-    let get_rates = move || {
-        Client::new()
-            .get(&format!("http://localhost:{}/rates", http_port))
-            .send()
-            .map_err(|_| panic!("Error getting rates"))
-            .and_then(|mut res| res.json().map_err(|_| panic!("Error getting body")))
-            .and_then(|body: Value| {
-                if let Value::Object(obj) = body {
-                    if obj.is_empty() {
-                        error!("Rates are empty");
-                        return Err(());
-                    }
-                    assert_eq!(
-                        format!("{}", obj.get("USD").expect("Should have USD rate")).as_str(),
-                        "1.0"
-                    );
-                    assert!(obj.contains_key("BTC"));
-                    assert!(obj.contains_key("ETH"));
-                    assert!(obj.contains_key("XRP"));
-                } else {
-                    panic!("Not an object");
-                }
+    // Wait a few seconds so our node can poll the API
+    tokio::time::delay_for(Duration::from_millis(1000)).await;
 
-                Ok(())
-            })
-    };
-
-    runtime
-        .block_on(
-            delay(1000)
-                .map_err(|_| panic!("Something strange happened"))
-                .and_then(move |_| {
-                    Retry::spawn(FibonacciBackoff::from_millis(1000).take(5), get_rates)
-                }),
-        )
+    let ret = Client::new()
+        .get(&format!("http://localhost:{}/rates", http_port))
+        .send()
+        .await
         .unwrap();
+    let txt = ret.text().await.unwrap();
+    let obj: Value = serde_json::from_str(&txt).unwrap();
+
+    assert_eq!(
+        format!("{}", obj.get("USD").expect("Should have USD rate")).as_str(),
+        "1.0"
+    );
+    assert!(obj.get("BTC").is_some());
+    assert!(obj.get("ETH").is_some());
+    assert!(obj.get("XRP").is_some());
 }

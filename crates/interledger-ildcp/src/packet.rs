@@ -29,6 +29,9 @@ pub fn is_ildcp_request(prepare: &Prepare) -> bool {
         && prepare.destination() == *ILDCP_DESTINATION
 }
 
+/// ILDCP Requests are sent to peers to receive an ILDCP Response
+/// which contains details about how the peer has configured our account
+/// (this is just a newtype to type-safe serialize to a Prepare packet)
 #[derive(Debug, Default)]
 pub struct IldcpRequest {}
 
@@ -55,11 +58,16 @@ impl From<IldcpRequest> for Prepare {
     }
 }
 
+/// The response to an ILDCP Request.
 #[derive(Clone, PartialEq)]
 pub struct IldcpResponse {
+    /// Serialized buffer of the response
     buffer: Bytes,
+    /// The asset scale corresponding to the requested account
     asset_scale: u8,
+    /// The offset after which the asset code is stored in the buffer
     asset_code_offset: usize,
+    /// The ILP Address we have assigned to the requested account
     ilp_address: Address,
 }
 
