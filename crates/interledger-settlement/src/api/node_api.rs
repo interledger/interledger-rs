@@ -55,7 +55,7 @@ where
     let store_clone = store.clone();
     let (status_code, message) = make_idempotent_call(
         store,
-        || do_receive_settlement(store_clone, account_id, quantity, idempotency_key_clone),
+        do_receive_settlement(store_clone, account_id, quantity, idempotency_key_clone),
         input_hash,
         idempotency_key,
         StatusCode::CREATED,
@@ -95,7 +95,7 @@ where
     let store_clone = store.clone();
     let (status_code, message) = make_idempotent_call(
         store,
-        || do_send_outgoing_message(store_clone, outgoing_handler, account_id, message.to_vec()),
+        do_send_outgoing_message(store_clone, outgoing_handler, account_id, message.to_vec()),
         input_hash,
         idempotency_key,
         StatusCode::CREATED,

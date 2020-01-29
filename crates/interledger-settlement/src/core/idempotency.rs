@@ -87,9 +87,9 @@ where
 
 // make_idempotent_call takes a function instead of direct arguments so that we
 // can reuse it for both the messages and the settlements calls
-pub async fn make_idempotent_call<S, F>(
+pub async fn make_idempotent_call<S>(
     store: S,
-    non_idempotent_function: impl FnOnce() -> F,
+    non_idempotent_function: impl Future<Output = ApiResult>,
     input_hash: [u8; 32],
     idempotency_key: Option<String>,
     // As per the spec, the success status code is independent of the
@@ -99,7 +99,6 @@ pub async fn make_idempotent_call<S, F>(
     default_return_value: Bytes,
 ) -> Result<(StatusCode, Bytes), ApiError>
 where
-    F: Future<Output = ApiResult>,
     S: IdempotentStore + Clone + Send + Sync + 'static,
 {
     if let Some(idempotency_key) = idempotency_key {
@@ -126,7 +125,7 @@ where
             None => {
                 // If there was no previous entry, make the idempotent call and save it
                 // Note: The error is also saved idempotently
-                let ret = match non_idempotent_function().await {
+                let ret = match non_idempotent_function.await {
                     Ok(r) => r,
                     Err(ret) => {
                         let status_code = ret.status;
@@ -166,7 +165,7 @@ where
         }
     } else {
         // otherwise just make the call w/o any idempotency saves
-        let data = match non_idempotent_function().await? {
+        let data = match non_idempotent_function.await? {
             ApiResponse::Default => default_return_value,
             ApiResponse::Data(d) => d,
         };

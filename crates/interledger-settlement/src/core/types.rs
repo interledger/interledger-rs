@@ -102,7 +102,7 @@ pub struct SettlementEngineDetails {
     pub url: Url,
 }
 
-/// Extention trait for [Account](../interledger_service/trait.Account.html) with [settlement](https://interledger.org/rfcs/0038-settlement-engines/) related information
+/// Extension trait for [Account](../interledger_service/trait.Account.html) with [settlement](https://interledger.org/rfcs/0038-settlement-engines/) related information
 pub trait SettlementAccount: Account {
     /// The [SettlementEngineDetails](./struct.SettlementEngineDetails.html) (if any) associated with that account
     fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {

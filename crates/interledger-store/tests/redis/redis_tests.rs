@@ -8,6 +8,7 @@ mod routing_test;
 mod settlement_test;
 
 mod fixtures {
+
     use interledger_api::AccountDetails;
     use interledger_packet::Address;
     use interledger_service::Username;
@@ -88,7 +89,6 @@ mod redis_helpers {
     // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
     #![allow(dead_code)]
 
-    use futures::Future;
     use redis_crate::{self, RedisError};
     use std::env;
     use std::fs;
@@ -96,6 +96,8 @@ mod redis_helpers {
     use std::process;
     use std::thread::sleep;
     use std::time::Duration;
+
+    use futures::future::TryFutureExt;
 
     #[derive(PartialEq)]
     enum ServerType {
@@ -247,22 +249,21 @@ mod redis_helpers {
             self.client.get_connection().unwrap()
         }
 
-        pub fn async_connection(
-            &self,
-        ) -> impl Future<Item = redis_crate::aio::Connection, Error = ()> {
+        pub async fn async_connection(&self) -> Result<redis_crate::aio::Connection, ()> {
             self.client
                 .get_async_connection()
                 .map_err(|err| panic!(err))
+                .await
         }
 
         pub fn stop_server(&mut self) {
             self.server.stop();
         }
 
-        pub fn shared_async_connection(
+        pub async fn shared_async_connection(
             &self,
-        ) -> impl Future<Item = redis_crate::aio::SharedConnection, Error = RedisError> {
-            self.client.get_shared_async_connection()
+        ) -> Result<redis_crate::aio::MultiplexedConnection, RedisError> {
+            self.client.get_multiplexed_tokio_connection().await
         }
     }
 }
@@ -270,8 +271,7 @@ mod redis_helpers {
 mod store_helpers {
     use super::fixtures::*;
     use super::redis_helpers::*;
-    use env_logger;
-    use futures::Future;
+
     use interledger_api::NodeStore;
     use interledger_packet::Address;
     use interledger_service::{Account as AccountTrait, AddressStore};
@@ -282,55 +282,37 @@ mod store_helpers {
     use lazy_static::lazy_static;
     use parking_lot::Mutex;
     use std::str::FromStr;
-    use tokio::runtime::Runtime;
 
     lazy_static! {
         static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
     }
 
-    pub fn test_store() -> impl Future<Item = (RedisStore, TestContext, Vec<Account>), Error = ()> {
+    pub async fn test_store() -> Result<(RedisStore, TestContext, Vec<Account>), ()> {
         let context = TestContext::new();
-        RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
+        let store = RedisStoreBuilder::new(context.get_client_connection_info(), [0; 32])
             .node_ilp_address(Address::from_str("example.node").unwrap())
             .connect()
-            .and_then(|store| {
-                let store_clone = store.clone();
-                let mut accs = Vec::new();
-                store
-                    .clone()
-                    .insert_account(ACCOUNT_DETAILS_0.clone())
-                    .and_then(move |acc| {
-                        accs.push(acc.clone());
-                        // alice is a Parent, so the store's ilp address is updated to
-                        // the value that would be received by the ILDCP request. here,
-                        // we just assume alice appended some data to her address
-                        store
-                            .clone()
-                            .set_ilp_address(acc.ilp_address().with_suffix(b"user1").unwrap())
-                            .and_then(move |_| {
-                                store_clone
-                                    .insert_account(ACCOUNT_DETAILS_1.clone())
-                                    .and_then(move |acc| {
-                                        accs.push(acc.clone());
-                                        Ok((store, context, accs))
-                                    })
-                            })
-                    })
-            })
-    }
+            .await
+            .unwrap();
+        let mut accs = Vec::new();
+        let acc = store
+            .insert_account(ACCOUNT_DETAILS_0.clone())
+            .await
+            .unwrap();
+        accs.push(acc.clone());
+        // alice is a Parent, so the store's ilp address is updated to
+        // the value that would be received by the ILDCP request. here,
+        // we just assume alice appended some data to her address
+        store
+            .set_ilp_address(acc.ilp_address().with_suffix(b"user1").unwrap())
+            .await
+            .unwrap();
 
-    pub fn block_on<F>(f: F) -> Result<F::Item, F::Error>
-    where
-        F: Future + Send + 'static,
-        F::Item: Send,
-        F::Error: Send,
-    {
-        // Only run one test at a time
-        let _ = env_logger::try_init();
-        let lock = TEST_MUTEX.lock();
-        let mut runtime = Runtime::new().unwrap();
-        let result = runtime.block_on(f);
-        drop(lock);
-        result
+        let acc = store
+            .insert_account(ACCOUNT_DETAILS_1.clone())
+            .await
+            .unwrap();
+        accs.push(acc);
+        Ok((store, context, accs))
     }
 }
