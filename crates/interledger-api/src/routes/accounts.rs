@@ -1,6 +1,6 @@
 use crate::{http_retry::Client, number_or_string, AccountDetails, AccountSettings, NodeStore};
 use bytes::Bytes;
-use futures::{future::join_all, TryFutureExt};
+use futures::{future::join_all, Future, FutureExt, StreamExt, TryFutureExt};
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
 use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
@@ -13,7 +13,7 @@ use interledger_service::{
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::SettlementAccount;
 use interledger_spsp::{pay, SpspResponder};
-use interledger_stream::StreamNotificationsStore;
+use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
@@ -345,20 +345,9 @@ where
         .and(warp::path::end())
         .and(warp::ws())
         .and(with_store.clone())
-        .map(|_id: Uuid, ws: warp::ws::Ws, _store: S| {
-            ws.on_upgrade(move |_ws: warp::ws::WebSocket| {
-                async {
-                    // TODO: Implement this.
-                    unimplemented!()
-                    //     let (tx, rx) = futures::channel::mpsc::unbounded::<PaymentNotification>();
-                    //     store.add_payment_notification_subscription(id, tx);
-                    //     rx.map_err(|_| -> warp::Error { unreachable!("unbounded rx never errors") })
-                    //         .map(|notification| {
-                    //             warp::ws::Message::text(serde_json::to_string(&notification).unwrap())
-                    //         })
-                    //         .map(|_| ())
-                    //         .map_err(|err| error!("Error forwarding notifications to websocket: {:?}", err))
-                }
+        .map(|id: Uuid, ws: warp::ws::Ws, store: S| {
+            ws.on_upgrade(move |ws: warp::ws::WebSocket| {
+                notify_user(ws, id, store).map(|result| result.unwrap())
             })
         })
         .boxed();
@@ -474,9 +463,35 @@ where
         .or(get_account)
         .or(get_account_balance)
         .or(put_account_settings)
-        .or(incoming_payment_notifications) // Commented out until tungenstite ws support is added
+        .or(incoming_payment_notifications)
         .or(post_payments)
         .boxed()
+}
+
+fn notify_user(
+    socket: warp::ws::WebSocket,
+    id: Uuid,
+    store: impl StreamNotificationsStore,
+) -> impl Future<Output = Result<(), ()>> {
+    let (tx, rx) = futures::channel::mpsc::unbounded::<PaymentNotification>();
+    // the client is now subscribed
+    store.add_payment_notification_subscription(id, tx);
+
+    // Anytime something is written to tx, it will reach rx
+    // and get converted to a warp::ws::Message
+    let rx = rx.map(|notification: PaymentNotification| {
+        let msg = warp::ws::Message::text(serde_json::to_string(&notification).unwrap());
+        Ok(msg)
+    });
+
+    // Then it gets forwarded to the client
+    rx.forward(socket)
+        .map(|result| {
+            if let Err(e) = result {
+                eprintln!("websocket send error: {}", e);
+            }
+        })
+        .then(futures::future::ok)
 }
 
 async fn get_address_from_parent_and_update_routes<O, A, S>(

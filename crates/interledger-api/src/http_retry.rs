@@ -28,12 +28,13 @@ impl Client {
         }
     }
 
-    pub async fn create_engine_account<T: Display + Copy + Unpin>(
+    pub async fn create_engine_account<T: Display>(
         &self,
         engine_url: Url,
         id: T,
     ) -> Result<StatusCode, reqwest::Error> {
         let mut se_url = engine_url.clone();
+        let id: String = id.to_string();
         se_url
             .path_segments_mut()
             .expect("Invalid settlement engine URL")
@@ -56,7 +57,7 @@ impl Client {
             move || {
                 client
                     .post(se_url.as_ref())
-                    .json(&json!({"id" : id.to_string()}))
+                    .json(&json!({ "id": id }))
                     .send()
                     .map_ok(move |response| response.status())
             },

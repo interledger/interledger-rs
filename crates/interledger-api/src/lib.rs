@@ -101,6 +101,8 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     /// Sets the static routes for routing
     async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
     where
+        // The 'async_trait lifetime is used after recommendation here:
+        // https://github.com/dtolnay/async-trait/issues/8#issuecomment-514812245
         R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait;
 
     /// Sets a single static route
@@ -113,6 +115,8 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
     /// Sets the default settlement engines to be used for the provided asset codes
     async fn set_settlement_engines(
         &self,
+        // The 'async_trait lifetime is used after recommendation here:
+        // https://github.com/dtolnay/async-trait/issues/8#issuecomment-514812245
         asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
     ) -> Result<(), ()>;
 
