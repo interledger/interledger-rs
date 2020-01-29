@@ -1,7 +1,7 @@
 // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
 #![allow(dead_code)]
 
-use futures::Future;
+use futures::TryFutureExt;
 use redis_crate::{self as redis, RedisError};
 use std::{env, fs, path::PathBuf, process, thread::sleep, time::Duration};
 
@@ -155,19 +155,20 @@ impl TestContext {
         self.client.get_connection().unwrap()
     }
 
-    pub fn async_connection(&self) -> impl Future<Item = redis::aio::Connection, Error = ()> {
+    pub async fn async_connection(&self) -> Result<redis::aio::Connection, ()> {
         self.client
             .get_async_connection()
             .map_err(|err| panic!(err))
+            .await
     }
 
     pub fn stop_server(&mut self) {
         self.server.stop();
     }
 
-    pub fn shared_async_connection(
+    pub async fn shared_async_connection(
         &self,
-    ) -> impl Future<Item = redis::aio::SharedConnection, Error = RedisError> {
-        self.client.get_shared_async_connection()
+    ) -> Result<redis::aio::MultiplexedConnection, RedisError> {
+        self.client.get_multiplexed_tokio_connection().await
     }
 }

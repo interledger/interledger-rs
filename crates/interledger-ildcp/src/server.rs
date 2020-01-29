@@ -1,6 +1,6 @@
 use super::packet::*;
 use super::Account;
-use futures::future::ok;
+use async_trait::async_trait;
 use interledger_packet::*;
 use interledger_service::*;
 use log::debug;
@@ -27,14 +27,13 @@ where
     }
 }
 
+#[async_trait]
 impl<I, A> IncomingService<A> for IldcpService<I, A>
 where
-    I: IncomingService<A>,
+    I: IncomingService<A> + Send,
     A: Account,
 {
-    type Future = BoxedIlpFuture;
-
-    fn handle_request(&mut self, request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
         if is_ildcp_request(&request.prepare) {
             let from = request.from.ilp_address();
             let builder = IldcpResponseBuilder {
@@ -44,10 +43,72 @@ where
             };
             debug!("Responding to query for ildcp info by account: {:?}", from);
             let response = builder.build();
-            let fulfill = Fulfill::from(response);
-            Box::new(ok(fulfill))
+            Ok(Fulfill::from(response))
         } else {
-            Box::new(self.next.handle_request(request))
+            self.next.handle_request(request).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::get_ildcp_info;
+    use lazy_static::lazy_static;
+    use std::str::FromStr;
+    use uuid::Uuid;
+
+    lazy_static! {
+        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
+        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
+    }
+
+    #[derive(Clone, Debug, Copy)]
+    struct TestAccount;
+
+    impl Account for TestAccount {
+        fn id(&self) -> Uuid {
+            Uuid::new_v4()
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
+        }
+
+        fn asset_scale(&self) -> u8 {
+            9
+        }
+
+        fn asset_code(&self) -> &str {
+            "XYZ"
+        }
+
+        fn ilp_address(&self) -> &Address {
+            &EXAMPLE_ADDRESS
+        }
+    }
+
+    #[tokio::test]
+    async fn handles_request() {
+        let from = TestAccount;
+        let prepare = IldcpRequest {}.to_prepare();
+        let req = IncomingRequest { from, prepare };
+        let mut service = IldcpService::new(incoming_service_fn(|_| {
+            Err(RejectBuilder {
+                code: ErrorCode::F02_UNREACHABLE,
+                message: b"No other incoming handler!",
+                data: &[],
+                triggered_by: None,
+            }
+            .build())
+        }));
+
+        let result = service.handle_request(req).await.unwrap();
+        assert_eq!(result.data().len(), 19);
+
+        let ildpc_info = get_ildcp_info(&mut service, from).await.unwrap();
+        assert_eq!(ildpc_info.ilp_address(), EXAMPLE_ADDRESS.clone());
+        assert_eq!(ildpc_info.asset_code(), b"XYZ");
+        assert_eq!(ildpc_info.asset_scale(), 9);
     }
 }
