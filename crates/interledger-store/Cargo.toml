@@ -49,7 +49,6 @@ uuid = { version = "0.8.1", default-features = false, features = ["serde"] }
 
 # redis feature
 redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
-runtime = "0.0.0"
 async-trait = "0.1.22"
 
 [dev-dependencies]

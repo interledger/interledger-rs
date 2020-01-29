@@ -1385,9 +1385,8 @@ impl RouteManagerStore for RedisStore {
         &self,
     ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), ()> {
         let mut connection = self.connection.clone();
-        let static_routes: Vec<(String, RedisAccountId)> = cmd("HGETALL")
-            .arg(STATIC_ROUTES_KEY)
-            .query_async(&mut connection)
+        let static_routes: Vec<(String, RedisAccountId)> = connection
+            .hgetall(STATIC_ROUTES_KEY)
             .map_err(|err| error!("Error getting static routes: {:?}", err))
             .await?;
 
