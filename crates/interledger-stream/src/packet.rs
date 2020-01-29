@@ -132,8 +132,9 @@ impl StreamPacket {
     /// and a shared secret
     ///
     /// # Errors
+    /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
     /// 1. If the decryption fails
-    /// 1. If the decrypted bytes cannot be parsed to a unencrypted [Stream Packet](./struct.StreamPacket.html)
+    /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
     pub fn from_encrypted(shared_secret: &[u8], ciphertext: BytesMut) -> Result<Self, ParseError> {
         // TODO handle decryption failure
         let decrypted = decrypt(shared_secret, ciphertext)
@@ -141,10 +142,11 @@ impl StreamPacket {
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
-    /// Constructs a [Stream Packet](./struct.StreamPacket.html) from an buffer
+    /// Constructs a [Stream Packet](./struct.StreamPacket.html) from a buffer
     ///
     /// # Errors
-    /// 1. If the decrypted bytes cannot be parsed to a unencrypted [Stream Packet](./struct.StreamPacket.html)
+    /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
+    /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
     fn from_bytes_unencrypted(buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];

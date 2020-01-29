@@ -127,7 +127,7 @@ where
             )));
         }
 
-        // a. If we've sent everything and there's no pending requests coose the connection
+        // a. If we've sent everything and there's no pending requests close the connection
         if sender.source_amount == 0 {
             // Try closing the connection if it still thinks it's sending
             if sender.state == SendMoneyFutureState::SendMoney {
