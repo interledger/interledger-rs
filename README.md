@@ -8,8 +8,16 @@
 [![crates.io](https://img.shields.io/crates/v/interledger.svg)](https://crates.io/crates/interledger)
 [![Interledger.rs Documentation](https://docs.rs/interledger/badge.svg)](https://docs.rs/interledger)
 [![CircleCI](https://circleci.com/gh/interledger-rs/interledger-rs.svg?style=shield)](https://circleci.com/gh/interledger-rs/interledger-rs)
-![Rust Version](https://img.shields.io/badge/rust-stable-Success)
-[![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/node/)
+![rustc](https://img.shields.io/badge/rustc-1.39+-red.svg)
+![Rust](https://img.shields.io/badge/rust-stable-Success)
+[![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/ilp-node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/ilp-node/)
+
+## Requirements
+
+All crates require Rust 2018 edition and are tested on the following channels:
+
+- `1.39.0` (minimum supported)
+- `stable`
 
 ## Connecting to the Testnet
 
@@ -34,7 +42,7 @@ To run the Interledger.rs components by themselves (rather than the `testnet-bun
 #### Install
 
 ```bash #
-docker pull interledgerrs/node
+docker pull interledgerrs/ilp-node
 docker pull interledgerrs/ilp-cli
 docker pull interledgerrs/ilp-settlement-ethereum
 ```
@@ -43,7 +51,7 @@ docker pull interledgerrs/ilp-settlement-ethereum
 
 ```bash #
 # This runs the sender / receiver / router bundle
-docker run -it interledgerrs/node
+docker run -it interledgerrs/ilp-node
 
 # This is a simple CLI for interacting with the node's HTTP API
 docker run -it --rm interledgerrs/ilp-cli
