@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use byteorder::ReadBytesExt;
 use bytes::{BufMut, BytesMut};
 use core::borrow::Borrow;
-use futures::future::err;
 use interledger_packet::{
     oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
@@ -11,11 +11,6 @@ use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::str;
 use std::time::SystemTime;
-
-/// A service that responds to the Echo Protocol.
-/// Currently, this service only supports bidirectional mode (unidirectional mode is not supported yet).
-/// The service doesn't shorten expiry as it expects the expiry to be shortened by another service
-/// like `ExpiryShortenerService`.
 
 /// The prefix that echo packets should have in its data section
 const ECHO_PREFIX: &str = "ECHOECHOECHOECHO";
@@ -27,6 +22,10 @@ enum EchoPacketType {
     Response = 1,
 }
 
+/// A service that implements the Echo Protocol.
+/// Currently, this service only supports bidirectional mode (unidirectional mode is not supported yet).
+/// The service doesn't shorten expiry as it expects the expiry to be shortened by another service
+/// like `ExpiryShortenerService`.
 #[derive(Clone)]
 pub struct EchoService<I, S, A> {
     store: S,
@@ -40,6 +39,7 @@ where
     I: IncomingService<A>,
     A: Account,
 {
+    /// Simple Constructor
     pub fn new(store: S, next: I) -> Self {
         EchoService {
             store,
@@ -49,20 +49,19 @@ where
     }
 }
 
+#[async_trait]
 impl<I, S, A> IncomingService<A> for EchoService<I, S, A>
 where
-    I: IncomingService<A>,
-    S: AddressStore,
-    A: Account,
+    I: IncomingService<A> + Send,
+    S: AddressStore + Send,
+    A: Account + Send,
 {
-    type Future = BoxedIlpFuture;
-
-    fn handle_request(&mut self, mut request: IncomingRequest<A>) -> Self::Future {
+    async fn handle_request(&mut self, mut request: IncomingRequest<A>) -> IlpResult {
         let ilp_address = self.store.get_ilp_address();
         let should_echo = request.prepare.destination() == ilp_address
             && request.prepare.data().starts_with(ECHO_PREFIX.as_bytes());
         if !should_echo {
-            return Box::new(self.next.handle_request(request));
+            return self.next.handle_request(request).await;
         }
         debug!("Responding to Echo protocol request: {:?}", request);
 
@@ -78,23 +77,23 @@ where
             Ok(value) => value,
             Err(error) => {
                 eprintln!("Could not read packet type: {:?}", error);
-                return Box::new(err(RejectBuilder {
+                return Err(RejectBuilder {
                     code: ErrorCode::F01_INVALID_PACKET,
                     message: b"Could not read echo packet type.",
                     triggered_by: Some(&ilp_address),
                     data: &[],
                 }
-                .build()));
+                .build());
             }
         };
         if echo_packet_type == EchoPacketType::Response as u8 {
             // if the echo packet type is Response, just pass it to the next service
             // so that the initiator could handle this packet
-            return Box::new(self.next.handle_request(request));
+            return self.next.handle_request(request).await;
         }
         if echo_packet_type != EchoPacketType::Request as u8 {
             eprintln!("The packet type is not acceptable: {}", echo_packet_type);
-            return Box::new(err(RejectBuilder {
+            return Err(RejectBuilder {
                 code: ErrorCode::F01_INVALID_PACKET,
                 message: format!(
                     "The echo packet type: {} is not acceptable.",
@@ -104,7 +103,7 @@ where
                 triggered_by: Some(&ilp_address),
                 data: &[],
             }
-            .build()));
+            .build());
         }
 
         // check source address
@@ -116,24 +115,24 @@ where
                         "Could not parse source address from echo packet: {:?}",
                         error
                     );
-                    return Box::new(err(RejectBuilder {
+                    return Err(RejectBuilder {
                         code: ErrorCode::F01_INVALID_PACKET,
                         message: b"Could not parse source address from Echo packet",
                         triggered_by: Some(&ilp_address),
                         data: &[],
                     }
-                    .build()));
+                    .build());
                 }
             },
             Err(error) => {
                 eprintln!("Could not read source address: {:?}", error);
-                return Box::new(err(RejectBuilder {
+                return Err(RejectBuilder {
                     code: ErrorCode::F01_INVALID_PACKET,
                     message: b"Could not read source address.",
                     triggered_by: Some(&ilp_address),
                     data: &[],
                 }
-                .build()));
+                .build());
             }
         };
 
@@ -150,7 +149,7 @@ where
         }
         .build();
 
-        Box::new(self.next.handle_request(request))
+        self.next.handle_request(request).await
     }
 }
 
@@ -171,8 +170,10 @@ pub struct EchoRequestBuilder<'a> {
 #[cfg(test)]
 impl<'a> EchoRequestBuilder<'a> {
     pub fn build(&self) -> Prepare {
+        use bytes04::BufMut as BufMut04;
         let source_address_len = oer::predict_var_octet_string(self.source_address.len());
-        let mut data_buffer = BytesMut::with_capacity(ECHO_PREFIX_LEN + 1 + source_address_len);
+        let mut data_buffer =
+            bytes04::BytesMut::with_capacity(ECHO_PREFIX_LEN + 1 + source_address_len);
         data_buffer.put(ECHO_PREFIX.as_bytes());
         data_buffer.put_u8(EchoPacketType::Request as u8);
         data_buffer.put_var_octet_string(self.source_address.as_ref() as &[u8]);
@@ -214,7 +215,6 @@ impl<'a> EchoResponseBuilder<'a> {
 #[cfg(test)]
 mod echo_tests {
     use super::*;
-    use futures::future::Future;
     use interledger_packet::{FulfillBuilder, PrepareBuilder};
     use interledger_service::incoming_service_fn;
     use lazy_static::lazy_static;
@@ -232,16 +232,14 @@ mod echo_tests {
     #[derive(Clone)]
     struct TestStore(Address);
 
+    #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        fn set_ilp_address(
-            &self,
-            _ilp_address: Address,
-        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
             unimplemented!()
         }
 
-        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        async fn clear_ilp_address(&self) -> Result<(), ()> {
             unimplemented!()
         }
 
@@ -279,8 +277,8 @@ mod echo_tests {
 
     /// If the destination of the packet is not destined to the node's address,
     /// the node should not echo the packet.
-    #[test]
-    fn test_echo_packet_not_destined() {
+    #[tokio::test]
+    async fn test_echo_packet_not_destined() {
         let amount = 1;
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
@@ -319,14 +317,14 @@ mod echo_tests {
         // test
         let result = echo_service
             .handle_request(IncomingRequest { prepare, from })
-            .wait();
+            .await;
         assert!(result.is_ok());
     }
 
     /// Even if the destination of the packet is the node's address,
     /// packets that don't have a correct echo prefix will not be handled as echo packets.
-    #[test]
-    fn test_echo_packet_without_echo_prefix() {
+    #[tokio::test]
+    async fn test_echo_packet_without_echo_prefix() {
         let amount = 1;
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
@@ -365,14 +363,14 @@ mod echo_tests {
         // test
         let result = echo_service
             .handle_request(IncomingRequest { prepare, from })
-            .wait();
+            .await;
         assert!(result.is_ok());
     }
 
     /// If the destination of the packet is the node's address and the echo packet type is
     /// request, the service will echo the packet modifying destination to the `source_address`.
-    #[test]
-    fn test_echo_packet() {
+    #[tokio::test]
+    async fn test_echo_packet() {
         let amount = 1;
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
@@ -411,13 +409,13 @@ mod echo_tests {
         // test
         let result = echo_service
             .handle_request(IncomingRequest { prepare, from })
-            .wait();
+            .await;
         assert!(result.is_ok());
     }
 
     /// If echo packet type is neither `1` nor `2`, the packet is considered to be malformed.
-    #[test]
-    fn test_invalid_echo_packet_type() {
+    #[tokio::test]
+    async fn test_invalid_echo_packet_type() {
         let amount = 1;
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
@@ -452,14 +450,14 @@ mod echo_tests {
         // test
         let result = echo_service
             .handle_request(IncomingRequest { prepare, from })
-            .wait();
+            .await;
         assert!(result.is_err());
     }
 
     /// Even if the destination of the packet is the node's address and the data starts with
     /// echo prefix correctly, `source_address` may be broken. This is the case.
-    #[test]
-    fn test_invalid_source_address() {
+    #[tokio::test]
+    async fn test_invalid_source_address() {
         let amount = 1;
         let expires_at = SystemTime::now() + Duration::from_secs(30);
         let fulfillment = &get_random_fulfillment();
@@ -494,7 +492,7 @@ mod echo_tests {
         // test
         let result = echo_service
             .handle_request(IncomingRequest { prepare, from })
-            .wait();
+            .await;
         assert!(result.is_err());
     }
 

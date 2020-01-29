@@ -23,26 +23,28 @@ pub fn main() {
             eprintln!("ilp-cli error: {}", e);
             exit(1);
         }
-        Ok(mut response) => match response.text() {
-            Err(e) => {
-                eprintln!("ilp-cli error: Failed to parse HTTP response: {}", e);
-                exit(1);
-            }
-            Ok(body) => {
-                if response.status().is_success() {
-                    if !matches.is_present("quiet") {
-                        println!("{}", body);
-                    }
-                } else {
-                    eprintln!(
-                        "ilp-cli error: Unexpected response from server: {}: {}",
-                        response.status(),
-                        body,
-                    );
+        Ok(response) => {
+            let status = response.status();
+            match response.text() {
+                Err(e) => {
+                    eprintln!("ilp-cli error: Failed to parse HTTP response: {}", e);
                     exit(1);
                 }
+                Ok(body) => {
+                    if status.is_success() {
+                        if !matches.is_present("quiet") {
+                            println!("{}", body);
+                        }
+                    } else {
+                        eprintln!(
+                            "ilp-cli error: Unexpected response from server: {}: {}",
+                            status, body,
+                        );
+                        exit(1);
+                    }
+                }
             }
-        },
+        }
     }
 }
 
