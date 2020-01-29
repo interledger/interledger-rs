@@ -1,13 +1,11 @@
 use super::exchange_rate_providers::*;
-use futures::{
-    future::{err, Either},
-    Future, Stream,
-};
-use interledger_packet::{ErrorCode, Fulfill, Reject, RejectBuilder};
+use async_trait::async_trait;
+use futures::TryFutureExt;
+use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::core::types::{Convert, ConvertDetails};
 use log::{debug, error, trace, warn};
-use reqwest::r#async::Client;
+use reqwest::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::{
@@ -17,17 +15,19 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio::{executor::spawn, timer::Interval};
 
 // TODO should this whole file be moved to its own crate?
 
+/// Store trait responsible for managing the exchange rates of multiple currencies
 pub trait ExchangeRateStore: Clone {
     // TODO we may want to make this async if/when we use pubsub to broadcast
     // rate changes to different instances of a horizontally-scalable node
+    /// Sets the exchange rate by providing an AssetCode->USD price mapping
     fn set_exchange_rates(&self, rates: HashMap<String, f64>) -> Result<(), ()>;
 
+    /// Gets the exchange rates for the provided asset codes
     fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
 
     // TODO should this be on the API instead? That's where it's actually used
@@ -36,6 +36,7 @@ pub trait ExchangeRateStore: Clone {
     // (so that we don't accidentally lock up the RwLock on the store's exchange_rates)
     // but in the normal case of getting the rate between two assets, we don't want to
     // copy all the rate data
+    /// Gets the exchange rates for all stored asset codes
     fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()>;
 }
 
@@ -67,25 +68,21 @@ where
     }
 }
 
+#[async_trait]
 impl<S, O, A> OutgoingService<A> for ExchangeRateService<S, O, A>
 where
     // TODO can we make these non-'static?
     S: AddressStore + ExchangeRateStore + Clone + Send + Sync + 'static,
-    O: OutgoingService<A> + Send + Clone + 'static,
-    A: Account + Sync + 'static,
+    O: OutgoingService<A> + Send + Sync + Clone + 'static,
+    A: Account + Send + Sync + 'static,
 {
-    type Future = BoxedIlpFuture;
-
     /// On send request:
     /// 1. If the prepare packet's amount is 0, it just forwards
     /// 1. Retrieves the exchange rate from the store (the store independently is responsible for polling the rates)
     ///     - return reject if the call to the store fails
     /// 1. Calculates the exchange rate AND scales it up/down depending on how many decimals each asset requires
     /// 1. Updates the amount in the prepare packet and forwards it
-    fn send_request(
-        &mut self,
-        mut request: OutgoingRequest<A>,
-    ) -> Box<dyn Future<Item = Fulfill, Error = Reject> + Send> {
+    async fn send_request(&mut self, mut request: OutgoingRequest<A>) -> IlpResult {
         let ilp_address = self.store.get_ilp_address();
         if request.prepare.amount() > 0 {
             let rate: f64 = if request.from.asset_code() == request.to.asset_code() {
@@ -105,7 +102,7 @@ where
                     request.from.asset_code(),
                     request.to.asset_code()
                 );
-                return Box::new(err(RejectBuilder {
+                return Err(RejectBuilder {
                     code: ErrorCode::T00_INTERNAL_ERROR,
                     message: format!(
                         "No exchange rate available from asset: {} to: {}",
@@ -116,7 +113,7 @@ where
                     triggered_by: Some(&ilp_address),
                     data: &[],
                 }
-                .build()));
+                .build());
             };
 
             // Apply spread
@@ -165,13 +162,13 @@ where
                             )
                         };
 
-                        return Box::new(err(RejectBuilder {
+                        return Err(RejectBuilder {
                             code,
                             message: message.as_bytes(),
                             triggered_by: Some(&ilp_address),
                             data: &[],
                         }
-                        .build()));
+                        .build());
                     }
                     request.prepare.set_amount(outgoing_amount as u64);
                     trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}",
@@ -183,7 +180,7 @@ where
                     // returns an error. Happens due to float
                     // multiplication overflow .
                     // (float overflow in Rust produces +inf)
-                    return Box::new(err(RejectBuilder {
+                    return Err(RejectBuilder {
                         code: ErrorCode::F08_AMOUNT_TOO_LARGE,
                         message: format!(
                             "Could not convert exchange rate from {}:{} to: {}:{}. Got incoming amount: {}",
@@ -197,12 +194,12 @@ where
                         triggered_by: Some(&ilp_address),
                         data: &[],
                     }
-                    .build()));
+                    .build());
                 }
             }
         }
 
-        Box::new(self.next.send_request(request))
+        self.next.send_request(request).await
     }
 }
 
@@ -230,6 +227,7 @@ pub enum ExchangeRateProvider {
 }
 
 /// Poll exchange rate providers for the current exchange rates
+#[derive(Clone)]
 pub struct ExchangeRateFetcher<S> {
     provider: ExchangeRateProvider,
     consecutive_failed_polls: Arc<AtomicU32>,
@@ -242,6 +240,7 @@ impl<S> ExchangeRateFetcher<S>
 where
     S: ExchangeRateStore + Send + Sync + 'static,
 {
+    /// Simple constructor
     pub fn new(
         provider: ExchangeRateProvider,
         failed_polls_before_invalidation: u32,
@@ -256,47 +255,42 @@ where
         }
     }
 
-    pub fn fetch_on_interval(self, interval: Duration) -> impl Future<Item = (), Error = ()> {
+    /// Spawns a future which calls [`self.update_rates()`](./struct.ExchangeRateFetcher.html#method.update_rates) every `interval`
+    pub fn spawn_interval(self, interval: Duration) {
         debug!(
             "Starting interval to poll exchange rate provider: {:?} for rates",
             self.provider
         );
-        Interval::new(Instant::now(), interval)
-            .map_err(|err| {
-                error!(
-                    "Interval error, no longer fetching exchange rates: {:?}",
-                    err
-                );
-            })
-            .for_each(move |_| {
-                self.update_rates().then(|_| {
-                    // Ignore errors so that they don't cause the Interval to stop
-                    Ok(())
-                })
-            })
+        let interval = async move {
+            let mut interval = tokio::time::interval(interval);
+            loop {
+                interval.tick().await;
+                // Ignore errors so that they don't cause the Interval to stop
+                let _ = self.update_rates().await;
+            }
+        };
+        tokio::spawn(interval);
     }
 
-    pub fn spawn_interval(self, interval: Duration) {
-        spawn(self.fetch_on_interval(interval));
-    }
-
-    fn fetch_rates(&self) -> impl Future<Item = HashMap<String, f64>, Error = ()> {
+    /// Calls the proper exchange rate provider
+    async fn fetch_rates(&self) -> Result<HashMap<String, f64>, ()> {
         match self.provider {
             ExchangeRateProvider::CryptoCompare(ref api_key) => {
-                Either::A(query_cryptocompare(&self.client, api_key))
+                query_cryptocompare(&self.client, api_key).await
             }
-            ExchangeRateProvider::CoinCap => Either::B(query_coincap(&self.client)),
+            ExchangeRateProvider::CoinCap => query_coincap(&self.client).await,
         }
     }
 
-    fn update_rates(&self) -> impl Future<Item = (), Error = ()> {
+    /// Gets the exchange rates and proceeds to update the store with the newly polled values
+    async fn update_rates(&self) -> Result<(), ()> {
         let consecutive_failed_polls = self.consecutive_failed_polls.clone();
         let consecutive_failed_polls_zeroer = consecutive_failed_polls.clone();
         let failed_polls_before_invalidation = self.failed_polls_before_invalidation;
         let store = self.store.clone();
         let store_clone = self.store.clone();
         let provider = self.provider.clone();
-        self.fetch_rates()
+        let mut rates = self.fetch_rates()
             .map_err(move |_| {
                 // Note that a race between the read on this line and the check on the line after
                 // is quite unlikely as long as the interval between polls is reasonable.
@@ -311,29 +305,27 @@ where
                         panic!("Failed to clear exchange rates cache after exchange rates server became unresponsive");
                     }
                 }
-            })
-            .and_then(move |mut rates| {
-                trace!("Fetched exchange rates: {:?}", rates);
-                let num_rates = rates.len();
-                rates.insert("USD".to_string(), 1.0);
-                if store_clone.set_exchange_rates(rates).is_ok() {
-                    // Reset our invalidation counter
-                    consecutive_failed_polls_zeroer.store(0, Ordering::Relaxed);
-                    debug!("Updated {} exchange rates from {:?}", num_rates, provider);
-                    Ok(())
-                } else {
-                    error!("Error setting exchange rates in store");
-                    Err(())
-                }
-            })
+            }).await?;
+
+        trace!("Fetched exchange rates: {:?}", rates);
+        let num_rates = rates.len();
+        rates.insert("USD".to_string(), 1.0);
+        if store_clone.set_exchange_rates(rates).is_ok() {
+            // Reset our invalidation counter
+            consecutive_failed_polls_zeroer.store(0, Ordering::Relaxed);
+            debug!("Updated {} exchange rates from {:?}", num_rates, provider);
+            Ok(())
+        } else {
+            error!("Error setting exchange rates in store");
+            Err(())
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::{future::ok, Future};
-    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
+    use interledger_packet::{Address, Fulfill, FulfillBuilder, PrepareBuilder, Reject};
     use interledger_service::{outgoing_service_fn, Account};
     use lazy_static::lazy_static;
     use std::collections::HashMap;
@@ -348,21 +340,21 @@ mod tests {
         pub static ref ALICE: Username = Username::from_str("alice").unwrap();
     }
 
-    #[test]
-    fn exchange_rate_ok() {
+    #[tokio::test]
+    async fn exchange_rate_ok() {
         // if `to` is worth $2, and `from` is worth 1, then they receive half
         // the amount of units
-        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, 0.0);
+        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, 0.0).await;
         assert_eq!(ret.1[0].prepare.amount(), 100);
 
-        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0, 0.0);
+        let ret = exchange_rate(1_000_000, 1, 3.0, 1, 2.0, 0.0).await;
         assert_eq!(ret.1[0].prepare.amount(), 1_500_000);
     }
 
-    #[test]
-    fn exchange_conversion_error() {
+    #[tokio::test]
+    async fn exchange_conversion_error() {
         // rejects f64 that does not fit in u64
-        let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0);
+        let ret = exchange_rate(std::u64::MAX, 1, 2.0, 1, 1.0, 0.0).await;
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject
@@ -370,7 +362,7 @@ mod tests {
             .starts_with(b"Could not cast to f64, amount too large"));
 
         // rejects f64 which gets rounded down to 0
-        let ret = exchange_rate(1, 2, 1.0, 1, 1.0, 0.0);
+        let ret = exchange_rate(1, 2, 1.0, 1, 1.0, 0.0).await;
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT);
         assert!(reject
@@ -378,38 +370,38 @@ mod tests {
             .starts_with(b"Could not cast to f64, amount too small"));
 
         // `Convert` errored
-        let ret = exchange_rate(std::u64::MAX, 1, std::f64::MAX, 255, 1.0, 0.0);
+        let ret = exchange_rate(std::u64::MAX, 1, std::f64::MAX, 255, 1.0, 0.0).await;
         let reject = ret.0.unwrap_err();
         assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
         assert!(reject.message().starts_with(b"Could not convert"));
     }
 
-    #[test]
-    fn applies_spread() {
-        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.01);
+    #[tokio::test]
+    async fn applies_spread() {
+        let ret = exchange_rate(100, 1, 1.0, 1, 2.0, 0.01).await;
         assert_eq!(ret.1[0].prepare.amount(), 49);
 
         // Negative spread is unusual but possible
-        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, -0.01);
+        let ret = exchange_rate(200, 1, 1.0, 1, 2.0, -0.01).await;
         assert_eq!(ret.1[0].prepare.amount(), 101);
 
         // Rounds down
-        let ret = exchange_rate(4, 1, 1.0, 1, 2.0, 0.01);
+        let ret = exchange_rate(4, 1, 1.0, 1, 2.0, 0.01).await;
         // this would've been 2, but it becomes 1.99 and gets rounded down to 1
         assert_eq!(ret.1[0].prepare.amount(), 1);
 
         // Spread >= 1 means the node takes everything
-        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 1.0);
+        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 1.0).await;
         assert_eq!(ret.1[0].prepare.amount(), 0);
 
         // Need to catch when spread > 1
-        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 2.0);
+        let ret = exchange_rate(10_000_000_000, 1, 1.0, 1, 2.0, 2.0).await;
         assert_eq!(ret.1[0].prepare.amount(), 0);
     }
 
     // Instantiates an exchange rate service and returns the fulfill/reject
     // packet and the outgoing request after performing an asset conversion
-    fn exchange_rate(
+    async fn exchange_rate(
         amount: u64,
         scale1: u8,
         rate1: f64,
@@ -421,11 +413,11 @@ mod tests {
         let requests_clone = requests.clone();
         let outgoing = outgoing_service_fn(move |request| {
             requests_clone.lock().unwrap().push(request);
-            Box::new(ok(FulfillBuilder {
+            Ok(FulfillBuilder {
                 fulfillment: &[0; 32],
                 data: b"hello!",
             }
-            .build()))
+            .build())
         });
         let mut service = test_service(rate1, rate2, spread, outgoing);
         let result = service
@@ -442,7 +434,7 @@ mod tests {
                 }
                 .build(),
             })
-            .wait();
+            .await;
 
         let reqs = requests.lock().unwrap();
         (result, reqs.clone())
@@ -464,16 +456,14 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        fn set_ilp_address(
-            &self,
-            _ilp_address: Address,
-        ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
             unimplemented!()
         }
 
-        fn clear_ilp_address(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        async fn clear_ilp_address(&self) -> Result<(), ()> {
             unimplemented!()
         }
 

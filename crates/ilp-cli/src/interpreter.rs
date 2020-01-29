@@ -1,6 +1,9 @@
 use clap::ArgMatches;
 use http;
-use reqwest::{self, Client, Response};
+use reqwest::{
+    self,
+    blocking::{Client, Response},
+};
 use std::{borrow::Cow, collections::HashMap};
 use tungstenite::{connect, handshake::client::Request};
 use url::Url;

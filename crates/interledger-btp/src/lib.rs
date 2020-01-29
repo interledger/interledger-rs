@@ -22,7 +22,7 @@ pub use self::client::{connect_client, connect_to_service_account};
 pub use self::server::btp_service_as_filter; // This is consumed only by the node.
 pub use self::service::{BtpOutgoingService, BtpService};
 
-/// Extention trait for [Account](../interledger_service/trait.Account.html) with [ILP over BTP](https://interledger.org/rfcs/0023-bilateral-transfer-protocol/) related information
+/// Extension trait for [Account](../interledger_service/trait.Account.html) with [ILP over BTP](https://interledger.org/rfcs/0023-bilateral-transfer-protocol/) related information
 pub trait BtpAccount: Account {
     /// Returns the BTP Websockets URL corresponding to this account
     fn get_ilp_over_btp_url(&self) -> Option<&Url>;

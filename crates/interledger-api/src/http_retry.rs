@@ -1,9 +1,9 @@
 // Adapted from the futures-retry example: https://gitlab.com/mexus/futures-retry/blob/master/examples/tcp-client-complex.rs
-use futures::future::Future;
+use futures::TryFutureExt;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
 use http::StatusCode;
 use log::trace;
-use reqwest::r#async::Client as HttpClient;
+use reqwest::Client as HttpClient;
 use serde_json::json;
 use std::{default::Default, fmt::Display, time::Duration};
 use url::Url;
@@ -28,12 +28,13 @@ impl Client {
         }
     }
 
-    pub fn create_engine_account<T: Display + Copy>(
+    pub async fn create_engine_account<T: Display>(
         &self,
         engine_url: Url,
         id: T,
-    ) -> impl Future<Item = StatusCode, Error = reqwest::Error> {
+    ) -> Result<StatusCode, reqwest::Error> {
         let mut se_url = engine_url.clone();
+        let id: String = id.to_string();
         se_url
             .path_segments_mut()
             .expect("Invalid settlement engine URL")
@@ -46,26 +47,24 @@ impl Client {
 
         // The actual HTTP request which gets made to the engine
         let client = self.client.clone();
-        let create_settlement_engine_account = move || {
-            client
-                .post(se_url.as_ref())
-                .json(&json!({"id" : id.to_string()}))
-                .send()
-                .and_then(move |response| {
-                    // If the account is not found on the peer's connector, the
-                    // retry logic will not get triggered. When the counterparty
-                    // tries to add the account, they will complete the handshake.
-                    Ok(response.status())
-                })
-        };
 
-        FutureRetry::new(
-            create_settlement_engine_account,
-            IoHandler::new(
-                self.max_retries,
-                format!("[Engine: {}, Account: {}]", engine_url, id),
-            ),
+        // If the account is not found on the peer's connector, the
+        // retry logic will not get triggered. When the counterparty
+        // tries to add the account, they will complete the handshake.
+
+        let msg = format!("[Engine: {}, Account: {}]", engine_url, id);
+        let res = FutureRetry::new(
+            move || {
+                client
+                    .post(se_url.as_ref())
+                    .json(&json!({ "id": id }))
+                    .send()
+                    .map_ok(move |response| response.status())
+            },
+            IoHandler::new(self.max_retries, msg),
         )
+        .await?;
+        Ok(res)
     }
 }
 
@@ -111,12 +110,22 @@ where
             self.max_attempts
         );
 
-        if e.is_client_error() {
-            // do not retry 4xx
-            RetryPolicy::ForwardError(e)
-        } else if e.is_timeout() || e.is_server_error() {
-            // Retry timeouts and 5xx every 5 seconds
+        // TODO: Should we make this policy more sophisticated?
+
+        // Retry timeouts every 5s
+        if e.is_timeout() {
             RetryPolicy::WaitRetry(Duration::from_secs(5))
+        } else if let Some(status) = e.status() {
+            if status.is_client_error() {
+                // do not retry 4xx
+                RetryPolicy::ForwardError(e)
+            } else if status.is_server_error() {
+                // Retry 5xx every 5 seconds
+                RetryPolicy::WaitRetry(Duration::from_secs(5))
+            } else {
+                // Otherwise just retry every second
+                RetryPolicy::WaitRetry(Duration::from_secs(1))
+            }
         } else {
             // Retry other errors slightly more frequently since they may be
             // related to the engine not having started yet
