@@ -7,7 +7,7 @@ mod redis_store;
 
 use clap::{crate_version, App, Arg, ArgMatches};
 use config::{Config, Source};
-use config::{FileFormat, Value};
+use config::{ConfigError, FileFormat, Value};
 use libc::{c_int, isatty};
 use node::InterledgerNode;
 use std::{
@@ -134,18 +134,14 @@ async fn main() {
     let mut config = get_env_config("ilp");
     if let Ok((path, config_file)) = precheck_arguments(app.clone()) {
         if !is_fd_tty(0) {
-            merge_std_in(&mut config);
+            if let Err(error) = merge_std_in(&mut config) {
+                output_config_error(error, None);
+                return;
+            };
         }
         if let Some(ref config_path) = config_file {
-            if let Err(err) = merge_config_file(config_path, &mut config) {
-                if config_path == "ilp-node" {
-                    println!("Running ilp-node with `cargo run ilp-node` and `cargo run -p ilp-node` is deprecated. Please either execute the binary directly, or use `cargo run --bin ilp-node`");
-                    return;
-                }
-                println!(
-                    "Could not parse config file `{}`. Error: {:?}",
-                    config_path, err
-                );
+            if let Err(error) = merge_config_file(config_path, &mut config) {
+                output_config_error(error, Some(config_path));
                 return;
             };
         }
@@ -162,6 +158,21 @@ async fn main() {
     // Add a future which is always pending. This will ensure main does not exist
     // TODO: Is there a better way of doing this?
     futures::future::pending().await
+}
+
+fn output_config_error(error: ConfigError, config_path: Option<&str>) {
+    let is_config_path_ilp_node = match config_path {
+        Some(path) => path == "ilp-node",
+        None => false,
+    };
+
+    match &error {
+        ConfigError::PathParse(_) => println!("Error in parsing config: {:?}", error),
+        _ if is_config_path_ilp_node => println!("Running ilp-node with `cargo run ilp-node` and \
+                    `cargo run -p ilp-node` is deprecated. Please either execute the binary directly, or use \
+                    `cargo run --bin ilp-node`"),
+        _ => println!("Error: {:?}", error),
+    }
 }
 
 // returns (subcommand paths, config path)
@@ -183,23 +194,21 @@ fn precheck_arguments(mut app: App) -> Result<(Vec<String>, Option<String>), ()>
     Ok((path, config_path))
 }
 
-fn merge_config_file(config_path: &str, config: &mut Config) -> Result<(), String> {
+fn merge_config_file(config_path: &str, config: &mut Config) -> Result<(), ConfigError> {
     let file_config = config::File::with_name(config_path);
-    let file_config = file_config
-        .collect()
-        .map_err(|err| format!("Configuration file error {}", err))?;
+    let file_config = file_config.collect()?;
     // if the key is not defined in the given config already, set it to the config
     // because the original values override the ones from the config file
     for (k, v) in file_config {
         if config.get_str(&k).is_err() {
-            config.set(&k, v).unwrap();
+            config.set(&k, v)?;
         }
     }
 
     Ok(())
 }
 
-fn merge_std_in(config: &mut Config) {
+fn merge_std_in(config: &mut Config) -> Result<(), ConfigError> {
     let stdin = std::io::stdin();
     let mut stdin_lock = stdin.lock();
     let mut buf = Vec::new();
@@ -215,12 +224,13 @@ fn merge_std_in(config: &mut Config) {
                 // because the original values override the ones from the stdin
                 for (k, v) in config_hash {
                     if config.get_str(&k).is_err() {
-                        config.set(&k, v).unwrap();
+                        config.set(&k, v)?;
                     }
                 }
             }
         }
     }
+    Ok(())
 }
 
 fn merge_args(config: &mut Config, matches: &ArgMatches) {
