@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::BytesMut;
 use ring::{
     aead, hmac,
     rand::{SecureRandom, SystemRandom},
@@ -8,7 +8,7 @@ const NONCE_LENGTH: usize = 12;
 static ENCRYPTION_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_encryption_key";
 
 use core::sync::atomic;
-use secrecy::{DebugSecret, Secret, SecretBytes};
+use secrecy::{DebugSecret, Secret, SecretBytesMut};
 use std::ptr;
 use zeroize::Zeroize;
 
@@ -117,7 +117,7 @@ pub fn generate_keys(server_secret: &[u8]) -> (Secret<EncryptionKey>, Secret<Dec
     (encryption_key, decryption_key)
 }
 
-pub fn encrypt_token(encryption_key: &aead::LessSafeKey, token: &[u8]) -> Bytes {
+pub fn encrypt_token(encryption_key: &aead::LessSafeKey, token: &[u8]) -> BytesMut {
     let mut token = token.to_vec();
 
     let mut nonce: [u8; NONCE_LENGTH] = [0; NONCE_LENGTH];
@@ -129,7 +129,7 @@ pub fn encrypt_token(encryption_key: &aead::LessSafeKey, token: &[u8]) -> Bytes 
     match encryption_key.seal_in_place_append_tag(nonce, aead::Aad::from(&[]), &mut token) {
         Ok(_) => {
             token.append(&mut nonce_copy.as_ref().to_vec());
-            Bytes::from(token)
+            BytesMut::from(token.as_slice())
         }
         _ => panic!("Unable to encrypt token"),
     }
@@ -138,7 +138,7 @@ pub fn encrypt_token(encryption_key: &aead::LessSafeKey, token: &[u8]) -> Bytes 
 pub fn decrypt_token(
     decryption_key: &aead::LessSafeKey,
     encrypted: &[u8],
-) -> Result<SecretBytes, ()> {
+) -> Result<SecretBytesMut, ()> {
     if encrypted.len() < aead::MAX_TAG_LEN {
         return Err(());
     }
@@ -150,7 +150,7 @@ pub fn decrypt_token(
     let nonce = aead::Nonce::assume_unique_for_key(nonce);
 
     if let Ok(token) = decryption_key.open_in_place(nonce, aead::Aad::empty(), &mut encrypted) {
-        Ok(SecretBytes::new(token.to_vec()))
+        Ok(SecretBytesMut::new(&token[..]))
     } else {
         Err(())
     }

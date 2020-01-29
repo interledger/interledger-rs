@@ -1,8 +1,9 @@
-use futures::Future;
 use interledger::{
     ccp::{CcpRoutingAccount, RoutingRelation},
     packet::{ErrorCode, Fulfill, Reject},
-    service::{Account, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService},
+    service::{
+        Account, IlpResult, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
+    },
 };
 use std::str;
 use tracing::{debug_span, error_span, info, info_span};
@@ -12,10 +13,10 @@ use uuid::Uuid;
 /// Add tracing context for the incoming request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_incoming<A: Account>(
+pub async fn trace_incoming<A: Account>(
     request: IncomingRequest<A>,
-    mut next: impl IncomingService<A>,
-) -> impl Future<Item = Fulfill, Error = Reject> {
+    mut next: Box<dyn IncomingService<A> + Send>,
+) -> IlpResult {
     let request_span = error_span!(target: "interledger-node",
         "incoming",
         request.id = %Uuid::new_v4(),
@@ -37,19 +38,17 @@ pub fn trace_incoming<A: Account>(
     );
     let _details_scope = details_span.enter();
 
-    next.handle_request(request)
-        .then(trace_response)
-        .in_current_span()
+    next.handle_request(request).in_current_span().await
 }
 
 /// Add tracing context when the incoming request is
 /// being forwarded and turned into an outgoing request.
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_forwarding<A: Account>(
+pub async fn trace_forwarding<A: Account>(
     request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
-) -> impl Future<Item = Fulfill, Error = Reject> {
+    mut next: Box<dyn OutgoingService<A> + Send>,
+) -> IlpResult {
     // Here we only include the outgoing details because this will be
     // inside the "incoming" span that includes the other details
     let request_span = error_span!(target: "interledger-node",
@@ -66,16 +65,16 @@ pub fn trace_forwarding<A: Account>(
     );
     let _details_scope = details_span.enter();
 
-    next.send_request(request).in_current_span()
+    next.send_request(request).in_current_span().await
 }
 
 /// Add tracing context for the outgoing request (created by this node).
 /// This adds minimal information for the ERROR log
 /// level and more information for the DEBUG level.
-pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
+pub async fn trace_outgoing<A: Account + CcpRoutingAccount>(
     request: OutgoingRequest<A>,
-    mut next: impl OutgoingService<A>,
-) -> impl Future<Item = Fulfill, Error = Reject> {
+    mut next: Box<dyn OutgoingService<A> + Send>,
+) -> IlpResult {
     let request_span = error_span!(target: "interledger-node",
         "outgoing",
         request.id = %Uuid::new_v4(),
@@ -100,16 +99,14 @@ pub fn trace_outgoing<A: Account + CcpRoutingAccount>(
     // because there's a good chance they'll be offline
     let ignore_rejects = request.prepare.destination().scheme() == "peer"
         && request.to.routing_relation() == RoutingRelation::Child;
-    next.send_request(request)
-        .then(move |result| {
-            if let Err(ref err) = result {
-                if err.code() == ErrorCode::F02_UNREACHABLE && ignore_rejects {
-                    return result;
-                }
-            }
-            trace_response(result)
-        })
-        .in_current_span()
+
+    let result = next.send_request(request).in_current_span().await;
+    if let Err(ref err) = result {
+        if err.code() == ErrorCode::F02_UNREACHABLE && ignore_rejects {
+            return result;
+        }
+    }
+    trace_response(result)
 }
 
 /// Log whether the response was a Fulfill or Reject
