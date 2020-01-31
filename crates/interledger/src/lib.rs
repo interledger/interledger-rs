@@ -76,6 +76,16 @@ pub mod ildcp {
     pub use interledger_ildcp::*;
 }
 
+/// Backend for fetching and caching exchange rates from external APIs
+#[cfg(feature = "rates")]
+pub mod rates {
+    //! # interledger-rates
+    //!
+    //! Utilities for fetching and caching exchange rates from external APIs,
+    //! which supports CoinCap and CryptoCompare rate backends.
+    pub use interledger_rates::*;
+}
+
 /// Router that determines the outgoing Account for a request based on the routing table
 #[cfg(feature = "router")]
 pub mod router {

@@ -5,11 +5,12 @@ use interledger_ccp::CcpRoutingAccount;
 use interledger_errors::NodeStoreError;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
+use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{
     Account, AccountStore, AddressStore, IncomingService, OutgoingService, Username,
 };
-use interledger_service_util::{BalanceStore, ExchangeRateStore};
+use interledger_service_util::BalanceStore;
 use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
 use secrecy::SecretString;

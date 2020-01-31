@@ -1,6 +1,6 @@
 use super::store_helpers::*;
 
-use interledger_service_util::ExchangeRateStore;
+use interledger_rates::ExchangeRateStore;
 
 #[tokio::test]
 async fn set_rates() {

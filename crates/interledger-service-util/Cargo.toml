@@ -10,6 +10,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 [dependencies]
 interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
+interledger-rates = { path = "../interledger-rates", version = "^0.4.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 interledger-settlement = { path = "../interledger-settlement", version = "^0.3.0", default-features = false, features = ["settlement_api"] }
 
