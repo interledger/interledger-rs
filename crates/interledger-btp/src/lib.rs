@@ -149,7 +149,7 @@ mod client_server {
                     }
                 })
                 .cloned()
-                .ok_or(BtpStoreError::Unauthorized(username.to_string()))
+                .ok_or_else(|| BtpStoreError::Unauthorized(username.to_string()))
         }
 
         async fn get_btp_outgoing_accounts(&self) -> Result<Vec<TestAccount>, BtpStoreError> {

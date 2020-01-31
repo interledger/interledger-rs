@@ -29,13 +29,15 @@ use interledger::{
     api::{NodeApi, NodeStore},
     btp::{btp_service_as_filter, connect_client, BtpOutgoingService, BtpStore},
     ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RouteManagerStore, RoutingRelation},
-    http::{error::*, HttpClientService, HttpServer as IlpOverHttpServer, HttpStore},
+    errors::*,
+    http::{HttpClientService, HttpServer as IlpOverHttpServer, HttpStore},
     ildcp::IldcpService,
     packet::Address,
     packet::{ErrorCode, RejectBuilder},
     router::{Router, RouterStore},
     service::{
-        outgoing_service_fn, Account as AccountTrait, AccountStore, OutgoingRequest, Username,
+        outgoing_service_fn, Account as AccountTrait, AccountStore, AddressStore, OutgoingRequest,
+        Username,
     },
     service_util::{
         BalanceStore, EchoService, ExchangeRateFetcher, ExchangeRateService, ExchangeRateStore,
@@ -275,6 +277,7 @@ impl InterledgerNode {
     pub(crate) async fn chain_services<S>(self, store: S, ilp_address: Address) -> Result<(), ()>
     where
         S: NodeStore<Account = Account>
+            + AddressStore
             + BtpStore<Account = Account>
             + HttpStore<Account = Account>
             + StreamNotificationsStore<Account = Account>

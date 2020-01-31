@@ -44,6 +44,7 @@ interledger-ccp = { path = "../interledger-ccp", version = "^0.3.0", optional = 
 interledger-http = { path = "../interledger-http", version = "^0.4.0", optional = true, default-features = false }
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.4.0", optional = true, default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
+interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }
 interledger-router = { path = "../interledger-router", version = "^0.4.0", optional = true, default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 interledger-service-util = { path = "../interledger-service-util", version = "^0.4.0", optional = true, default-features = false }

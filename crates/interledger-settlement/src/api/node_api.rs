@@ -8,6 +8,7 @@ use crate::core::{
     },
 };
 use bytes::Bytes;
+use futures::future::Either;
 use futures::TryFutureExt;
 use hyper::{Response, StatusCode};
 use interledger_errors::*;
@@ -22,7 +23,6 @@ use std::{
 };
 use uuid::Uuid;
 use warp::{self, reject::Rejection, Filter};
-use futures::future::Either;
 
 /// Prepare packet's execution condition as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/#exchanging-messages)
 static PEER_PROTOCOL_CONDITION: [u8; 32] = [
