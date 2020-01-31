@@ -233,7 +233,7 @@ impl RedisStoreBuilder {
                         },
                         routing_table.clone(),
                     )
-                    .map_err(|_| ())
+                    .map_err(|err| error!("{}", err))
                     .await;
                 } else {
                     debug!("Not polling routes anymore because connection was closed");
