@@ -4,6 +4,7 @@ use futures::TryFutureExt;
 use interledger_errors::*;
 use interledger_http::{deserialize_json, HttpAccount};
 use interledger_packet::Address;
+use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AccountStore, AddressStore, Username};
 use interledger_service_util::ExchangeRateStore;

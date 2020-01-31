@@ -11,6 +11,7 @@ members = [
   "./crates/interledger-ildcp",
   "./crates/interledger-packet",
   "./crates/interledger-router",
+  "./crates/interledger-rates",
   "./crates/interledger-service",
   "./crates/interledger-service-util",
   "./crates/interledger-settlement",
