@@ -1,11 +1,12 @@
 use crate::{http_retry::Client, ExchangeRates, NodeStore};
 use bytes::Bytes;
 use futures::TryFutureExt;
-use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
+use interledger_errors::*;
+use interledger_http::{deserialize_json, HttpAccount};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, Username};
-use interledger_service_util::{BalanceStore, ExchangeRateStore};
+use interledger_service::{Account, AccountStore, AddressStore, Username};
+use interledger_service_util::ExchangeRateStore;
 use interledger_settlement::core::types::SettlementAccount;
 use log::{error, trace};
 use secrecy::{ExposeSecret, SecretString};
@@ -35,8 +36,8 @@ pub fn node_settings_api<S, A>(
 ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
 where
     S: NodeStore<Account = A>
-        + HttpStore<Account = A>
-        + BalanceStore<Account = A>
+        + AccountStore<Account = A>
+        + AddressStore
         + ExchangeRateStore
         + RouterStore,
     A: Account + HttpAccount + Send + Sync + SettlementAccount + Serialize + 'static,
@@ -122,10 +123,6 @@ where
                 let routes = store.routing_table().clone();
                 let accounts = store
                     .get_accounts(routes.values().cloned().collect())
-                    .map_err(|_| {
-                        error!("Error getting accounts from store");
-                        Rejection::from(ApiError::internal_server_error())
-                    })
                     .await?;
                 let routes: HashMap<String, String> = HashMap::from_iter(
                     routes
@@ -162,24 +159,12 @@ where
 
                 let mut account_ids: Vec<Uuid> = Vec::new();
                 for username in usernames {
-                    account_ids.push(
-                        store
-                            .get_account_id_from_username(&username)
-                            .map_err(|_| {
-                                error!("Error setting static routes");
-                                Rejection::from(ApiError::internal_server_error())
-                            })
-                            .await?,
-                    );
+                    account_ids.push(store.get_account_id_from_username(&username).await?);
                 }
 
                 let prefixes = routes.keys().map(|s| s.to_string());
                 store
                     .set_static_routes(prefixes.zip(account_ids.into_iter()))
-                    .map_err(|_| {
-                        error!("Error setting static routes");
-                        Rejection::from(ApiError::internal_server_error())
-                    })
                     .await?;
                 Ok::<Json, Rejection>(warp::reply::json(&routes))
             }
@@ -203,20 +188,8 @@ where
                 let username = Username::from_str(username_str)
                     .map_err(|_| Rejection::from(ApiError::bad_request()))?;
                 // Convert the username to an account ID to set it in the store
-                let account_id = store
-                    .get_account_id_from_username(&username)
-                    .map_err(|_| {
-                        error!("No account exists with username: {}", username);
-                        Rejection::from(ApiError::account_not_found())
-                    })
-                    .await?;
-                store
-                    .set_static_route(prefix, account_id)
-                    .map_err(|_| {
-                        error!("Error setting static route");
-                        Rejection::from(ApiError::internal_server_error())
-                    })
-                    .await?;
+                let account_id = store.get_account_id_from_username(&username).await?;
+                store.set_static_route(prefix, account_id).await?;
                 Ok::<String, Rejection>(username.to_string())
             }
         })
@@ -233,11 +206,7 @@ where
         .and_then(move |asset_to_url_map: HashMap<String, Url>, store: S| async move {
             let asset_to_url_map_clone = asset_to_url_map.clone();
             store
-                .set_settlement_engines(asset_to_url_map.clone())
-                .map_err(|_| {
-                    error!("Error setting settlement engines");
-                    Rejection::from(ApiError::internal_server_error())
-                }).await?;
+                .set_settlement_engines(asset_to_url_map.clone()).await?;
             // Create the accounts on the settlement engines for any
             // accounts that are using the default settlement engine URLs
             // (This is done in case we modify the globally configured settlement
@@ -247,8 +216,7 @@ where
             // the accounts are created that doesn't involve loading
             // all of the accounts from the database into memory
             // (even if this isn't called often, it could crash the node at some point)
-            let accounts = store.get_all_accounts()
-                .map_err(|_| Rejection::from(ApiError::internal_server_error())).await?;
+            let accounts = store.get_all_accounts().await?;
 
             let client = Client::default();
             // Try creating the account on the settlement engine if the settlement_engine_url of the
