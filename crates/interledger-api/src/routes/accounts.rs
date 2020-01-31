@@ -324,9 +324,10 @@ where
                         pay_request.source_amount,
                     )
                     .map_err(|err| {
-                        error!("Error sending SPSP payment: {:?}", err);
+                        let msg = format!("Error sending SPSP payment: {}", err);
+                        error!("{}", msg);
                         // TODO give a different error message depending on what type of error it is
-                        Rejection::from(ApiError::internal_server_error())
+                        Rejection::from(ApiError::internal_server_error().detail(msg))
                     })
                     .await?;
 
@@ -390,7 +391,7 @@ where
                         .generate_http_response(),
                     )
                 } else {
-                    Err(Rejection::from(ApiError::not_found()))
+                    Err(Rejection::from(ApiError::not_found().detail("no default spsp account was configured")))
                 }
             }
         })
@@ -547,7 +548,6 @@ where
     // account's asset_code
     let default_settlement_engine = store
         .get_asset_settlement_engine(account.asset_code())
-        .map_err(|_| Rejection::from(ApiError::internal_server_error()))
         .await?;
 
     let settlement_engine_url = account

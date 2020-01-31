@@ -51,7 +51,7 @@ where
                 if authorization.expose_secret() == &admin_auth_header {
                     Ok::<(), Rejection>(())
                 } else {
-                    Err(Rejection::from(ApiError::unauthorized()))
+                    Err(Rejection::from(ApiError::unauthorized().detail("invalid admin auth token provided")))
                 }
             }
         })
@@ -83,12 +83,8 @@ where
         .and(with_store.clone())
         .and_then(|rates: ExchangeRates, store: S| {
             async move {
-                if store.set_exchange_rates(rates.0.clone()).is_ok() {
-                    Ok(warp::reply::json(&rates))
-                } else {
-                    error!("Error setting exchange rates");
-                    Err(Rejection::from(ApiError::internal_server_error()))
-                }
+                let rates = store.set_exchange_rates(rates.0.clone())?;
+                Ok::<_, Rejection>(warp::reply::json(&rates))
             }
         })
         .boxed();
@@ -100,12 +96,8 @@ where
         .and(with_store.clone())
         .and_then(|store: S| {
             async move {
-                if let Ok(rates) = store.get_all_exchange_rates() {
-                    Ok::<Json, Rejection>(warp::reply::json(&rates))
-                } else {
-                    error!("Error getting exchange rates");
-                    Err(Rejection::from(ApiError::internal_server_error()))
-                }
+                let rates = store.get_all_exchange_rates()?;
+                Ok::<_, Rejection>(warp::reply::json(&rates))
             }
         })
         .boxed();
