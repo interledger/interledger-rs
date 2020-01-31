@@ -1,6 +1,7 @@
-use super::{error::*, HttpStore};
+use super::HttpStore;
 use bytes::{Bytes, BytesMut};
 use futures::TryFutureExt;
+use interledger_errors::ApiError;
 use interledger_packet::Prepare;
 use interledger_service::Username;
 use interledger_service::{IncomingRequest, IncomingService};
@@ -46,6 +47,7 @@ where
             &path_username,
             &password.expose_secret()[BEARER_TOKEN_START..],
         )
+        .map_err(|_| ())
         .await
 }
 
@@ -149,6 +151,7 @@ mod tests {
     use async_trait::async_trait;
     use bytes::BytesMut;
     use http::Response;
+    use interledger_errors::{default_rejection_handler, HttpStoreError};
     use interledger_packet::{Address, ErrorCode, PrepareBuilder, RejectBuilder};
     use interledger_service::{incoming_service_fn, Account};
     use lazy_static::lazy_static;
@@ -262,15 +265,16 @@ mod tests {
     #[async_trait]
     impl HttpStore for TestStore {
         type Account = TestAccount;
+
         async fn get_account_from_http_auth(
             &self,
             username: &Username,
             token: &str,
-        ) -> Result<Self::Account, ()> {
+        ) -> Result<Self::Account, HttpStoreError> {
             if username == &*USERNAME && token == AUTH_PASSWORD {
                 Ok(TestAccount)
             } else {
-                Err(())
+                Err(HttpStoreError::Unauthorized(username.to_string()))
             }
         }
     }
