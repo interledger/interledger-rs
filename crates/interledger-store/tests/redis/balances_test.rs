@@ -29,7 +29,7 @@ async fn get_balance() {
         store.get_ilp_address(),
     )
     .unwrap();
-    let balance = store.get_balance(account).await.unwrap();
+    let balance = store.get_balance(account.id()).await.unwrap();
     assert_eq!(balance, 1000);
 }
 
@@ -44,23 +44,20 @@ async fn prepare_then_fulfill_with_settlement() {
     let account1 = accounts[1].clone();
     // reduce account 0's balance by 100
     store
-        .update_balances_for_prepare(account0.clone(), 100)
+        .update_balances_for_prepare(account0.id(), 100)
         .await
         .unwrap();
-    // TODO:Can we make get_balance take a reference to the account?
-    // Even better, we should make it just take the account uid/username!
-    let balance0 = store.get_balance(account0.clone()).await.unwrap();
-    let balance1 = store.get_balance(account1.clone()).await.unwrap();
+    let balance0 = store.get_balance(account0.id()).await.unwrap();
+    let balance1 = store.get_balance(account1.id()).await.unwrap();
     assert_eq!(balance0, -100);
     assert_eq!(balance1, 0);
 
-    // Account 1 hits the settlement limit (?) TODO
     store
-        .update_balances_for_fulfill(account1.clone(), 100)
+        .update_balances_for_fulfill(account1.id(), 100)
         .await
         .unwrap();
-    let balance0 = store.get_balance(account0).await.unwrap();
-    let balance1 = store.get_balance(account1).await.unwrap();
+    let balance0 = store.get_balance(account0.id()).await.unwrap();
+    let balance1 = store.get_balance(account1.id()).await.unwrap();
     assert_eq!(balance0, -100);
     assert_eq!(balance1, -1000);
 }
@@ -84,7 +81,7 @@ async fn process_fulfill_no_settle_to() {
     let accounts = store.get_accounts(vec![id]).await.unwrap();
     let acc = accounts[0].clone();
     let (balance, amount_to_settle) = store
-        .update_balances_for_fulfill(acc.clone(), 100)
+        .update_balances_for_fulfill(acc.id(), 100)
         .await
         .unwrap();
     assert_eq!(balance, 100);
@@ -108,12 +105,7 @@ async fn process_fulfill_settle_to_over_threshold() {
     let (store, _context, _accs) = test_store().await.unwrap();
     let acc = store.insert_account(acc).await.unwrap();
     let id = acc.id();
-    let accounts = store.get_accounts(vec![id]).await.unwrap();
-    let acc = accounts[0].clone();
-    let (balance, amount_to_settle) = store
-        .update_balances_for_fulfill(acc.clone(), 1000)
-        .await
-        .unwrap();
+    let (balance, amount_to_settle) = store.update_balances_for_fulfill(id, 1000).await.unwrap();
     assert_eq!(balance, 1000);
     assert_eq!(amount_to_settle, 0);
 }
@@ -138,7 +130,7 @@ async fn process_fulfill_ok() {
     let accounts = store.get_accounts(vec![id]).await.unwrap();
     let acc = accounts[0].clone();
     let (balance, amount_to_settle) = store
-        .update_balances_for_fulfill(acc.clone(), 101)
+        .update_balances_for_fulfill(acc.id(), 101)
         .await
         .unwrap();
     assert_eq!(balance, 0);
@@ -152,22 +144,20 @@ async fn prepare_then_reject() {
         .get_accounts(vec![accs[0].id(), accs[1].id()])
         .await
         .unwrap();
-    let account0 = accounts[0].clone();
-    let _account1 = accounts[1].clone();
     store
-        .update_balances_for_prepare(accounts[0].clone(), 100)
+        .update_balances_for_prepare(accounts[0].id(), 100)
         .await
         .unwrap();
-    let balance0 = store.get_balance(accounts[0].clone()).await.unwrap();
-    let balance1 = store.get_balance(accounts[1].clone()).await.unwrap();
+    let balance0 = store.get_balance(accounts[0].id()).await.unwrap();
+    let balance1 = store.get_balance(accounts[1].id()).await.unwrap();
     assert_eq!(balance0, -100);
     assert_eq!(balance1, 0);
     store
-        .update_balances_for_reject(account0.clone(), 100)
+        .update_balances_for_reject(accounts[0].id(), 100)
         .await
         .unwrap();
-    let balance0 = store.get_balance(accounts[0].clone()).await.unwrap();
-    let balance1 = store.get_balance(accounts[1].clone()).await.unwrap();
+    let balance0 = store.get_balance(accounts[0].id()).await.unwrap();
+    let balance1 = store.get_balance(accounts[1].id()).await.unwrap();
     assert_eq!(balance0, 0);
     assert_eq!(balance1, 0);
 }
@@ -180,7 +170,7 @@ async fn enforces_minimum_balance() {
         .await
         .unwrap();
     let result = store
-        .update_balances_for_prepare(accounts[0].clone(), 10000)
+        .update_balances_for_prepare(accounts[0].id(), 10000)
         .await;
     assert!(result.is_err());
 }
@@ -203,28 +193,28 @@ async fn netting_fulfilled_balances() {
 
     // decrement account 0 by 100
     store
-        .update_balances_for_prepare(account0.clone(), 100)
+        .update_balances_for_prepare(account0.id(), 100)
         .await
         .unwrap();
     // increment account 1 by 100
     store
-        .update_balances_for_fulfill(account1.clone(), 100)
+        .update_balances_for_fulfill(account1.id(), 100)
         .await
         .unwrap();
 
     // decrement account 1 by 80
     store
-        .update_balances_for_prepare(account1.clone(), 80)
+        .update_balances_for_prepare(account1.id(), 80)
         .await
         .unwrap();
     // increment account 0 by 80
     store
-        .update_balances_for_fulfill(account0.clone(), 80)
+        .update_balances_for_fulfill(account0.id(), 80)
         .await
         .unwrap();
 
-    let balance0 = store.get_balance(accounts[0].clone()).await.unwrap();
-    let balance1 = store.get_balance(accounts[1].clone()).await.unwrap();
+    let balance0 = store.get_balance(accounts[0].id()).await.unwrap();
+    let balance1 = store.get_balance(accounts[1].id()).await.unwrap();
     assert_eq!(balance0, -20);
     assert_eq!(balance1, 20);
 }

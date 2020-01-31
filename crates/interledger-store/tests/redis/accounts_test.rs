@@ -1,6 +1,4 @@
 use super::{fixtures::*, redis_helpers::*, store_helpers::*};
-use futures::future::Either;
-use futures::TryFutureExt;
 use interledger_api::{AccountSettings, NodeStore};
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
@@ -108,27 +106,34 @@ async fn only_one_parent_allowed() {
     let res = store.insert_account(acc.clone()).await;
     // This should fail
     assert!(res.is_err());
-    futures::future::join_all(vec![
-        Either::Left(store.delete_account(accs[0].id()).map_ok(|_| ())),
-        // must also clear the ILP Address to indicate that we no longer
-        // have a parent account configured
-        Either::Right(store.clear_ilp_address()),
-    ])
-    .await;
+    store.delete_account(accs[0].id()).await.unwrap();
+    // must also clear the ILP Address to indicate that we no longer
+    // have a parent account configured
+    store.clear_ilp_address().await.unwrap();
     let res = store.insert_account(acc).await;
     assert!(res.is_ok());
 }
 
 #[tokio::test]
 async fn delete_accounts() {
-    let (store, _context, _) = test_store().await.unwrap();
+    let (store, context, _) = test_store().await.unwrap();
     let accounts = store.get_all_accounts().await.unwrap();
     let id = accounts[0].id();
     store.delete_account(id).await.unwrap();
     let accounts = store.get_all_accounts().await.unwrap();
-    for a in accounts {
+    for a in &accounts {
         assert_ne!(id, a.id());
     }
+
+    // clear all accounts and try again
+    store.delete_account(accounts[0].id()).await.unwrap();
+    let accounts = store.get_all_accounts().await.unwrap();
+    assert_eq!(accounts.len(), 0);
+
+    // we drop the connection so the pipe should break
+    drop(context);
+    let err = store.get_all_accounts().await.unwrap_err();
+    assert_eq!(err.to_string(), "Broken pipe (os error 32)");
 }
 
 #[tokio::test]
@@ -149,7 +154,7 @@ async fn update_accounts() {
     new.asset_code = String::from("TUV");
     let account = store.update_account(id, new).await.unwrap();
     assert_eq!(account.asset_code(), "TUV");
-    let balance = store.get_balance(account).await.unwrap();
+    let balance = store.get_balance(id).await.unwrap();
     assert_eq!(balance, 1000);
 }
 
@@ -214,8 +219,7 @@ async fn modify_account_settings() {
 #[tokio::test]
 async fn starts_with_zero_balance() {
     let (store, _context, accs) = test_store().await.unwrap();
-    let account0 = accs[0].clone();
-    let balance = store.get_balance(account0).await.unwrap();
+    let balance = store.get_balance(accs[0].id()).await.unwrap();
     assert_eq!(balance, 0);
 }
 

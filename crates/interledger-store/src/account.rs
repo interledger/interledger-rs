@@ -110,33 +110,41 @@ impl Account {
         id: Uuid,
         details: AccountDetails,
         node_ilp_address: Address,
-    ) -> Result<Account, ()> {
+    ) -> Result<Account, String> {
         let ilp_address = match details.ilp_address {
             Some(a) => a,
             None => node_ilp_address
                 .with_suffix(details.username.as_bytes())
-                .map_err(|_| {
+                .map_err(|err| {
                     error!(
                         "Could not append username {} to address {}",
                         details.username, node_ilp_address
-                    )
+                    );
+                    err.to_string()
                 })?,
         };
 
         let ilp_over_http_url = if let Some(ref url) = details.ilp_over_http_url {
-            Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
+            Some(Url::parse(url).map_err(|err| {
+                error!("Invalid URL: {:?}", err);
+                err.to_string()
+            })?)
         } else {
             None
         };
 
         let ilp_over_btp_url = if let Some(ref url) = details.ilp_over_btp_url {
-            Some(Url::parse(url).map_err(|err| error!("Invalid URL: {:?}", err))?)
+            Some(Url::parse(url).map_err(|err| {
+                error!("Invalid URL: {:?}", err);
+                err.to_string()
+            })?)
         } else {
             None
         };
 
         let routing_relation = if let Some(ref relation) = details.routing_relation {
-            RoutingRelation::from_str(relation)?
+            RoutingRelation::from_str(relation)
+                .map_err(|_| "Could not parse provided routing relation to string".to_string())?
         } else {
             RoutingRelation::NonRoutingAccount
         };
