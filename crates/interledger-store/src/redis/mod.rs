@@ -349,9 +349,7 @@ impl RedisStore {
                 "An account already exists with the same {}. Cannot insert account: {:?}",
                 account.id, account
             );
-            return Err(NodeStoreError::AccountExists(
-                account.username.to_string(),
-            ));
+            return Err(NodeStoreError::AccountExists(account.username.to_string()));
         }
 
         let mut pipe = redis_crate::pipe();

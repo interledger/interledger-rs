@@ -391,7 +391,9 @@ where
                         .generate_http_response(),
                     )
                 } else {
-                    Err(Rejection::from(ApiError::not_found().detail("no default spsp account was configured")))
+                    Err(Rejection::from(
+                        ApiError::not_found().detail("no default spsp account was configured"),
+                    ))
                 }
             }
         })

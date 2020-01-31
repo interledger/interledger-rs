@@ -51,7 +51,9 @@ where
                 if authorization.expose_secret() == &admin_auth_header {
                     Ok::<(), Rejection>(())
                 } else {
-                    Err(Rejection::from(ApiError::unauthorized().detail("invalid admin auth token provided")))
+                    Err(Rejection::from(
+                        ApiError::unauthorized().detail("invalid admin auth token provided"),
+                    ))
                 }
             }
         })
@@ -83,7 +85,7 @@ where
         .and(with_store.clone())
         .and_then(|rates: ExchangeRates, store: S| {
             async move {
-                let rates = store.set_exchange_rates(rates.0.clone())?;
+                store.set_exchange_rates(rates.0.clone())?;
                 Ok::<_, Rejection>(warp::reply::json(&rates))
             }
         })
