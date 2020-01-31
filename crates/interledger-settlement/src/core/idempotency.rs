@@ -4,7 +4,8 @@ use bytes::Bytes;
 use futures::Future;
 use futures::TryFutureExt;
 use http::StatusCode;
-use interledger_http::error::*;
+use interledger_errors::IdempotentStoreError;
+use interledger_errors::*;
 use log::error;
 
 /// Data stored for the idempotency features
@@ -37,7 +38,7 @@ pub trait IdempotentStore {
     async fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Result<Option<IdempotentData>, ()>;
+    ) -> Result<Option<IdempotentData>, IdempotentStoreError>;
 
     /// Saves the data that was passed along with the api request for later
     /// The store also saves the hash of the input, so that it errors out on requests
@@ -48,7 +49,7 @@ pub trait IdempotentStore {
         input_hash: [u8; 32],
         status_code: StatusCode,
         data: Bytes,
-    ) -> Result<(), ()>;
+    ) -> Result<(), IdempotentStoreError>;
 }
 
 /// Helper function that returns any idempotent data that corresponds to a

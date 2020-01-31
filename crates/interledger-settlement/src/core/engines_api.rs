@@ -10,7 +10,7 @@ use super::{
 use bytes::Bytes;
 use http::StatusCode;
 use hyper::Response;
-use interledger_http::error::default_rejection_handler;
+use interledger_errors::default_rejection_handler;
 use serde::{Deserialize, Serialize};
 use warp::Filter;
 
@@ -219,6 +219,7 @@ mod tests {
     use async_trait::async_trait;
     use bytes::Bytes;
     use http::StatusCode;
+    use interledger_errors::*;
     use parking_lot::RwLock;
     use serde_json::{json, Value};
     use std::collections::HashMap;
@@ -256,7 +257,7 @@ mod tests {
         async fn load_idempotent_data(
             &self,
             idempotency_key: String,
-        ) -> Result<Option<IdempotentData>, ()> {
+        ) -> Result<Option<IdempotentData>, IdempotentStoreError> {
             let cache = self.cache.read();
             if let Some(data) = cache.get(&idempotency_key) {
                 let mut guard = self.cache_hits.write();
@@ -273,7 +274,7 @@ mod tests {
             input_hash: [u8; 32],
             status_code: StatusCode,
             data: Bytes,
-        ) -> Result<(), ()> {
+        ) -> Result<(), IdempotentStoreError> {
             let mut cache = self.cache.write();
             cache.insert(
                 idempotency_key,

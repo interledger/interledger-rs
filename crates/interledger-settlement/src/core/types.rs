@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use http::StatusCode;
-use interledger_http::error::{ApiError, ApiErrorType, ProblemType};
+use interledger_errors::{ApiError, ApiErrorType, ProblemType};
+use interledger_errors::{LeftoversStoreError, SettlementStoreError};
 use interledger_packet::Address;
 use interledger_service::Account;
 use lazy_static::lazy_static;
@@ -126,11 +127,15 @@ pub trait SettlementStore {
         account_id: Uuid,
         amount: u64,
         idempotency_key: Option<String>,
-    ) -> Result<(), ()>;
+    ) -> Result<(), SettlementStoreError>;
 
     /// Increases the account's balance by the provided amount.
     /// Only call this if a settlement request has failed
-    async fn refund_settlement(&self, account_id: Uuid, settle_amount: u64) -> Result<(), ()>;
+    async fn refund_settlement(
+        &self,
+        account_id: Uuid,
+        settle_amount: u64,
+    ) -> Result<(), SettlementStoreError>;
 }
 
 /// Trait used by the connector and engine to track amounts which should have been
@@ -154,7 +159,7 @@ pub trait LeftoversStore {
         account_id: Self::AccountId,
         // The amount for which precision loss occurred, along with their scale
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Result<(), ()>;
+    ) -> Result<(), LeftoversStoreError>;
 
     /// Returns the leftover data scaled to `local_scale` from the saved scale.
     /// If any precision loss occurs during the scaling, it is be saved as
@@ -167,19 +172,19 @@ pub trait LeftoversStore {
         &self,
         account_id: Self::AccountId,
         local_scale: u8,
-    ) -> Result<Self::AssetType, ()>;
+    ) -> Result<Self::AssetType, LeftoversStoreError>;
 
     /// Clears any uncredited settlement amount associated with the account
     async fn clear_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Result<(), ()>;
+    ) -> Result<(), LeftoversStoreError>;
 
     /// Gets the current amount of leftovers in the store
     async fn get_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Result<(Self::AssetType, u8), ()>;
+    ) -> Result<(Self::AssetType, u8), LeftoversStoreError>;
 }
 
 /// Helper struct for converting a quantity's amount from one asset scale to another

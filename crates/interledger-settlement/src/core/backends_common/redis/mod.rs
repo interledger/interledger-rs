@@ -6,6 +6,7 @@ use crate::core::{
 use bytes::Bytes;
 use futures::TryFutureExt;
 use http::StatusCode;
+use interledger_errors::{IdempotentStoreError, LeftoversStoreError};
 use num_bigint::BigUint;
 use redis_crate::{
     self, aio::MultiplexedConnection, AsyncCommands, Client, ConnectionInfo, ErrorKind,
@@ -74,18 +75,9 @@ impl IdempotentStore for EngineRedisStore {
     async fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Result<Option<IdempotentData>, ()> {
-        let idempotency_key_clone = idempotency_key.clone();
+    ) -> Result<Option<IdempotentData>, IdempotentStoreError> {
         let mut connection = self.connection.clone();
-        let ret: HashMap<String, String> = connection
-            .hgetall(idempotency_key.clone())
-            .map_err(move |err| {
-                error!(
-                    "Error loading idempotency key {}: {:?}",
-                    idempotency_key_clone, err
-                )
-            })
-            .await?;
+        let ret: HashMap<String, String> = connection.hgetall(idempotency_key.clone()).await?;
 
         if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
             ret.get("status_code"),
@@ -111,7 +103,7 @@ impl IdempotentStore for EngineRedisStore {
         input_hash: [u8; 32],
         status_code: StatusCode,
         data: Bytes,
-    ) -> Result<(), ()> {
+    ) -> Result<(), IdempotentStoreError> {
         let mut pipe = redis_crate::pipe();
         let mut connection = self.connection.clone();
         pipe.atomic()
@@ -126,9 +118,7 @@ impl IdempotentStore for EngineRedisStore {
             .ignore()
             .expire(&idempotency_key, 86400)
             .ignore();
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error caching: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
         trace!(
             "Cached {:?}: {:?}, {:?}",
             idempotency_key,
@@ -234,11 +224,10 @@ impl LeftoversStore for EngineRedisStore {
     async fn get_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Result<(Self::AssetType, u8), ()> {
+    ) -> Result<(Self::AssetType, u8), LeftoversStoreError> {
         let mut connection = self.connection.clone();
         let amount: AmountWithScale = connection
             .lrange(uncredited_amount_key(&account_id), 0, -1)
-            .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
             .await?;
         Ok((amount.num, amount.scale))
     }
@@ -247,7 +236,7 @@ impl LeftoversStore for EngineRedisStore {
         &self,
         account_id: Self::AccountId,
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Result<(), ()> {
+    ) -> Result<(), LeftoversStoreError> {
         trace!(
             "Saving uncredited_settlement_amount {:?} {:?}",
             account_id,
@@ -266,7 +255,6 @@ impl LeftoversStore for EngineRedisStore {
                     scale: uncredited_settlement_amount.1,
                 },
             )
-            .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
             .await?;
 
         Ok(())
@@ -276,7 +264,7 @@ impl LeftoversStore for EngineRedisStore {
         &self,
         account_id: Self::AccountId,
         local_scale: u8,
-    ) -> Result<Self::AssetType, ()> {
+    ) -> Result<Self::AssetType, LeftoversStoreError> {
         let connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         let amount = self
@@ -299,9 +287,7 @@ impl LeftoversStore for EngineRedisStore {
         )
         .ignore();
 
-        pipe.query_async(&mut connection.clone())
-            .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection.clone()).await?;
 
         Ok(scaled_amount)
     }
@@ -309,13 +295,10 @@ impl LeftoversStore for EngineRedisStore {
     async fn clear_uncredited_settlement_amount(
         &self,
         account_id: Self::AccountId,
-    ) -> Result<(), ()> {
+    ) -> Result<(), LeftoversStoreError> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id,);
         let mut connection = self.connection.clone();
-        connection
-            .del(uncredited_amount_key(&account_id))
-            .map_err(move |err| error!("Error clearing uncredited_settlement_amount: {:?}", err))
-            .await?;
+        connection.del(uncredited_amount_key(&account_id)).await?;
 
         Ok(())
     }
