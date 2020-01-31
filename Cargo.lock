@@ -996,6 +996,7 @@ dependencies = [
  "rand 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "secrecy 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "stream-cancel 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "thiserror 1.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-tungstenite 0.10.0 (git+https://github.com/snapview/tokio-tungstenite)",
  "tungstenite 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",

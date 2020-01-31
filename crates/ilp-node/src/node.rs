@@ -354,6 +354,7 @@ impl InterledgerNode {
             false,
             outgoing_service,
         )
+        .map_err(|err| error!("{}", err))
         .await?;
         let btp_server_service =
             BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());

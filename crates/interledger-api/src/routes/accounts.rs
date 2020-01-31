@@ -441,7 +441,7 @@ async fn get_address_from_parent_and_update_routes<O, A, S>(
     mut service: O,
     parent: A,
     store: S,
-) -> Result<(), ()>
+) -> Result<(), warp::Rejection>
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Clone + Send + Sync + 'static,
@@ -460,14 +460,20 @@ where
             prepare,
             original_amount: 0,
         })
-        .map_err(|err| error!("Error getting ILDCP info: {:?}", err))
+        .map_err(|err| {
+            let msg = format!("Error getting ILDCP info: {:?}", err);
+            error!("{}", msg);
+            ApiError::internal_server_error().detail(msg)
+        })
         .await?;
 
     let info = IldcpResponse::try_from(fulfill.into_data().freeze()).map_err(|err| {
-        error!(
+        let msg = format!(
             "Unable to parse ILDCP response from fulfill packet: {:?}",
             err
         );
+        error!("{}", msg);
+        ApiError::internal_server_error().detail(msg)
     })?;
     debug!("Got ILDCP response from parent: {:?}", info);
     let ilp_address = info.ilp_address();
@@ -484,9 +490,9 @@ where
 
     // Set the parent to be the default route for everything
     // that starts with their global prefix
-    store.set_default_route(parent.id()).map_err(|_| ()).await?;
+    store.set_default_route(parent.id()).await?;
     // Update our store's address
-    store.set_ilp_address(ilp_address).map_err(|_| ()).await?;
+    store.set_ilp_address(ilp_address).await?;
 
     // Get the parent's routes for us
     debug!("Asking for routes from {:?}", parent.clone());
@@ -497,7 +503,11 @@ where
             original_amount: prepare.amount(),
             prepare: prepare.clone(),
         })
-        .map_err(|_| ())
+        .map_err(|err| {
+            let msg = format!("Error getting routes from parent: {:?}", err);
+            error!("{}", msg);
+            ApiError::internal_server_error().detail(msg)
+        })
         .await?;
 
     Ok(())
@@ -529,17 +539,13 @@ where
     // one configured
     if account.get_ilp_over_btp_url().is_some() {
         trace!("Newly inserted account has a BTP URL configured, will try to connect");
-        connect_to_service_account(account.clone(), true, btp)
-            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-            .await?
+        connect_to_service_account(account.clone(), true, btp).await?
     }
 
     // If we added a parent, get the address assigned to us by
     // them and update all of our routes
     if account.routing_relation() == RoutingRelation::Parent {
-        get_address_from_parent_and_update_routes(service, account.clone(), store.clone())
-            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-            .await?;
+        get_address_from_parent_and_update_routes(service, account.clone(), store.clone()).await?;
     }
 
     // Register the account with the settlement engine

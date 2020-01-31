@@ -330,7 +330,7 @@ impl RedisStore {
     async fn redis_insert_account(
         &mut self,
         encrypted: AccountWithEncryptedTokens,
-    ) -> Result<AccountWithEncryptedTokens, AccountStoreError> {
+    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let account = encrypted.account.clone();
         let ret = encrypted.clone();
         let mut connection = self.connection.clone();
@@ -349,7 +349,7 @@ impl RedisStore {
                 "An account already exists with the same {}. Cannot insert account: {:?}",
                 account.id, account
             );
-            return Err(AccountStoreError::AccountExists(
+            return Err(NodeStoreError::AccountExists(
                 account.username.to_string(),
             ));
         }
