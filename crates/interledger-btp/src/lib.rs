@@ -22,6 +22,8 @@ pub use self::client::{connect_client, connect_to_service_account};
 pub use self::server::btp_service_as_filter; // This is consumed only by the node.
 pub use self::service::{BtpOutgoingService, BtpService};
 
+use interledger_errors::BtpStoreError;
+
 /// Extension trait for [Account](../interledger_service/trait.Account.html) with [ILP over BTP](https://interledger.org/rfcs/0023-bilateral-transfer-protocol/) related information
 pub trait BtpAccount: Account {
     /// Returns the BTP Websockets URL corresponding to this account
@@ -41,10 +43,10 @@ pub trait BtpStore {
         &self,
         username: &Username,
         token: &str,
-    ) -> Result<Self::Account, ()>;
+    ) -> Result<Self::Account, BtpStoreError>;
 
     /// Load accounts that have a ilp_over_btp_url configured
-    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, ()>;
+    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, BtpStoreError>;
 }
 
 #[cfg(test)]
@@ -129,35 +131,6 @@ mod client_server {
     }
 
     #[async_trait]
-    impl AccountStore for TestStore {
-        type Account = TestAccount;
-
-        async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<Self::Account>, ()> {
-            let accounts: Vec<TestAccount> = self
-                .accounts
-                .iter()
-                .filter_map(|account| {
-                    if account_ids.contains(&account.id) {
-                        Some(account.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if accounts.len() == account_ids.len() {
-                Ok(accounts)
-            } else {
-                Err(())
-            }
-        }
-
-        // stub implementation (not used in these tests)
-        async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
-            Ok(Uuid::new_v4())
-        }
-    }
-
-    #[async_trait]
     impl BtpStore for TestStore {
         type Account = TestAccount;
 
@@ -165,7 +138,7 @@ mod client_server {
             &self,
             username: &Username,
             token: &str,
-        ) -> Result<Self::Account, ()> {
+        ) -> Result<Self::Account, BtpStoreError> {
             self.accounts
                 .iter()
                 .find(|account| {
@@ -176,10 +149,10 @@ mod client_server {
                     }
                 })
                 .cloned()
-                .ok_or(())
+                .ok_or(BtpStoreError::Unauthorized(username.to_string()))
         }
 
-        async fn get_btp_outgoing_accounts(&self) -> Result<Vec<TestAccount>, ()> {
+        async fn get_btp_outgoing_accounts(&self) -> Result<Vec<TestAccount>, BtpStoreError> {
             Ok(self
                 .accounts
                 .iter()
