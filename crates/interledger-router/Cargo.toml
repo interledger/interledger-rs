@@ -18,3 +18,4 @@ async-trait = "0.1.22"
 [dev-dependencies]
 lazy_static = { version = "1.4.0", default-features = false }
 tokio = { version = "0.2.6", features = ["rt-core", "macros"]}
+interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }

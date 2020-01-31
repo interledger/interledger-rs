@@ -140,6 +140,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use interledger_errors::*;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
     use lazy_static::lazy_static;
@@ -190,12 +191,18 @@ mod tests {
     impl AccountStore for TestStore {
         type Account = TestAccount;
 
-        async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<TestAccount>, ()> {
+        async fn get_accounts(
+            &self,
+            account_ids: Vec<Uuid>,
+        ) -> Result<Vec<TestAccount>, AccountStoreError> {
             Ok(account_ids.into_iter().map(TestAccount).collect())
         }
 
         // stub implementation (not used in these tests)
-        async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+        async fn get_account_id_from_username(
+            &self,
+            _username: &Username,
+        ) -> Result<Uuid, AccountStoreError> {
             Ok(Uuid::new_v4())
         }
     }
@@ -203,11 +210,11 @@ mod tests {
     #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), AddressStoreError> {
             Ok(())
         }
 
-        async fn clear_ilp_address(&self) -> Result<(), ()> {
+        async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
             Ok(())
         }
 
