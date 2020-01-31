@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use futures::TryFutureExt;
+use interledger_errors::BalanceStoreError;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{
@@ -8,35 +9,36 @@ use interledger_settlement::{
 };
 use log::{debug, error};
 use std::marker::PhantomData;
+use uuid::Uuid;
 
 // TODO: Remove AccountStore dependency, use `AccountId: ToString` as associated type
 /// Trait responsible for managing an account's balance in the store
 /// as ILP Packets get routed
 #[async_trait]
-pub trait BalanceStore: AccountStore {
-    /// Fetch the current balance for the given account.
-    async fn get_balance(&self, account: Self::Account) -> Result<i64, ()>;
+pub trait BalanceStore {
+    /// Fetch the current balance for the given account id.
+    async fn get_balance(&self, account_id: Uuid) -> Result<i64, BalanceStoreError>;
 
     /// Decreases the sending account's balance before forwarding out a prepare packet
     async fn update_balances_for_prepare(
         &self,
-        from_account: Self::Account,
+        from_account_id: Uuid,
         incoming_amount: u64,
-    ) -> Result<(), ()>;
+    ) -> Result<(), BalanceStoreError>;
 
     /// Increases the receiving account's balance, and returns the updated balance
     /// along with the amount which should be settled
     async fn update_balances_for_fulfill(
         &self,
-        to_account: Self::Account,
+        to_account_id: Uuid,
         outgoing_amount: u64,
-    ) -> Result<(i64, u64), ()>;
+    ) -> Result<(i64, u64), BalanceStoreError>;
 
     async fn update_balances_for_reject(
         &self,
-        from_account: Self::Account,
+        from_account_id: Uuid,
         incoming_amount: u64,
-    ) -> Result<(), ()>;
+    ) -> Result<(), BalanceStoreError>;
 }
 
 /// # Balance Service
@@ -54,7 +56,7 @@ pub struct BalanceService<S, O, A> {
 
 impl<S, O, A> BalanceService<S, O, A>
 where
-    S: AddressStore + BalanceStore<Account = A> + SettlementStore<Account = A>,
+    S: AddressStore + BalanceStore + SettlementStore<Account = A>,
     O: OutgoingService<A>,
     A: Account + SettlementAccount,
 {
@@ -71,13 +73,7 @@ where
 #[async_trait]
 impl<S, O, A> OutgoingService<A> for BalanceService<S, O, A>
 where
-    S: AddressStore
-        + BalanceStore<Account = A>
-        + SettlementStore<Account = A>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
+    S: AddressStore + BalanceStore + SettlementStore<Account = A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Send + Clone + 'static,
     A: SettlementAccount + Send + Sync + 'static,
 {
@@ -123,7 +119,7 @@ where
         // operate as-if the settlement engine has completed. Finally, if the request to the settlement-engine
         // fails, this amount will be re-added back to balance.
         self.store
-            .update_balances_for_prepare(from.clone(), incoming_amount)
+            .update_balances_for_prepare(from.id(), incoming_amount)
             .map_err(move |_| {
                 debug!("Rejecting packet because it would exceed a balance limit");
                 RejectBuilder {
@@ -148,7 +144,7 @@ where
                 // relay the fulfillment _even if saving to the DB fails._
                 tokio::spawn(async move {
                     let (balance, amount_to_settle) = match store
-                        .update_balances_for_fulfill(to.clone(), outgoing_amount)
+                        .update_balances_for_fulfill(to.id(), outgoing_amount)
                         .await
                     {
                         Ok(r) => r,
@@ -176,7 +172,10 @@ where
                                 .await
                                 .is_err()
                             {
-                                store.refund_settlement(to_id, amount_to_settle).await?;
+                                store
+                                    .refund_settlement(to_id, amount_to_settle)
+                                    .map_err(|_| ())
+                                    .await?;
                             }
                             Ok::<(), ()>(())
                         });
@@ -200,7 +199,7 @@ where
                     let store_clone = self.store.clone();
                     async move {
                         store_clone.update_balances_for_reject(
-                            from_clone.clone(),
+                            from_clone.id(),
                             incoming_amount,
                         ).map_err(move |_| error!("Error rolling back balance change for accounts: {} and {}. Incoming amount was: {}, outgoing amount was: {}", from_clone.id(), to_clone.id(), incoming_amount, outgoing_amount)).await
                     }

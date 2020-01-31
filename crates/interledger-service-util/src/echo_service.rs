@@ -215,6 +215,7 @@ impl<'a> EchoResponseBuilder<'a> {
 #[cfg(test)]
 mod echo_tests {
     use super::*;
+    use interledger_errors::AddressStoreError;
     use interledger_packet::{FulfillBuilder, PrepareBuilder};
     use interledger_service::incoming_service_fn;
     use lazy_static::lazy_static;
@@ -235,11 +236,11 @@ mod echo_tests {
     #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), AddressStoreError> {
             unimplemented!()
         }
 
-        async fn clear_ilp_address(&self) -> Result<(), ()> {
+        async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
             unimplemented!()
         }
 

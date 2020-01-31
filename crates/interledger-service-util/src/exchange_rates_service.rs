@@ -1,6 +1,7 @@
 use super::exchange_rate_providers::*;
 use async_trait::async_trait;
 use futures::TryFutureExt;
+use interledger_errors::ExchangeRateStoreError;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::core::types::{Convert, ConvertDetails};
@@ -25,10 +26,11 @@ pub trait ExchangeRateStore: Clone {
     // TODO we may want to make this async if/when we use pubsub to broadcast
     // rate changes to different instances of a horizontally-scalable node
     /// Sets the exchange rate by providing an AssetCode->USD price mapping
-    fn set_exchange_rates(&self, rates: HashMap<String, f64>) -> Result<(), ()>;
+    fn set_exchange_rates(&self, rates: HashMap<String, f64>)
+        -> Result<(), ExchangeRateStoreError>;
 
     /// Gets the exchange rates for the provided asset codes
-    fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()>;
+    fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ExchangeRateStoreError>;
 
     // TODO should this be on the API instead? That's where it's actually used
     // TODO should we combine this method with get_exchange_rates?
@@ -37,7 +39,7 @@ pub trait ExchangeRateStore: Clone {
     // but in the normal case of getting the rate between two assets, we don't want to
     // copy all the rate data
     /// Gets the exchange rates for all stored asset codes
-    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()>;
+    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ExchangeRateStoreError>;
 }
 
 /// # Exchange Rates Service
@@ -325,6 +327,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use interledger_errors::AddressStoreError;
     use interledger_packet::{Address, Fulfill, FulfillBuilder, PrepareBuilder, Reject};
     use interledger_service::{outgoing_service_fn, Account};
     use lazy_static::lazy_static;
@@ -459,11 +462,11 @@ mod tests {
     #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), AddressStoreError> {
             unimplemented!()
         }
 
-        async fn clear_ilp_address(&self) -> Result<(), ()> {
+        async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
             unimplemented!()
         }
 
@@ -501,7 +504,10 @@ mod tests {
     }
 
     impl ExchangeRateStore for TestStore {
-        fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
+        fn get_exchange_rates(
+            &self,
+            asset_codes: &[&str],
+        ) -> Result<Vec<f64>, ExchangeRateStoreError> {
             let mut ret = Vec::new();
             let key = vec![asset_codes[0].to_owned(), asset_codes[1].to_owned()];
             let v = self.rates.get(&key);
@@ -509,16 +515,22 @@ mod tests {
                 ret.push(v.0);
                 ret.push(v.1);
             } else {
-                return Err(());
+                return Err(ExchangeRateStoreError::PairNotFound {
+                    from: key[0].clone(),
+                    to: key[1].clone(),
+                });
             }
             Ok(ret)
         }
 
-        fn set_exchange_rates(&self, _rates: HashMap<String, f64>) -> Result<(), ()> {
+        fn set_exchange_rates(
+            &self,
+            _rates: HashMap<String, f64>,
+        ) -> Result<(), ExchangeRateStoreError> {
             unimplemented!()
         }
 
-        fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()> {
+        fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ExchangeRateStoreError> {
             unimplemented!()
         }
     }
