@@ -29,10 +29,11 @@ use interledger_ccp::{CcpRoutingAccount, CcpRoutingStore, RoutingRelation};
 use interledger_errors::*;
 use interledger_http::HttpStore;
 use interledger_packet::Address;
+use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AccountStore, AddressStore, Username};
 use interledger_service_util::{
-    BalanceStore, ExchangeRateStore, RateLimitError, RateLimitStore, DEFAULT_ROUND_TRIP_TIME,
+    BalanceStore, RateLimitError, RateLimitStore, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},

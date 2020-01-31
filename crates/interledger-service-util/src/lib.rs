@@ -6,8 +6,6 @@
 mod balance_service;
 /// Service which implements the echo protocol
 mod echo_service;
-/// Utilities for connecting to various exchange rate providers
-mod exchange_rate_providers;
 /// Service responsible for setting and fetching dollar denominated exchange rates
 mod exchange_rates_service;
 /// Service responsible for shortening the expiry time of packets,
@@ -23,9 +21,7 @@ mod validator_service;
 
 pub use self::balance_service::{BalanceService, BalanceStore};
 pub use self::echo_service::EchoService;
-pub use self::exchange_rates_service::{
-    ExchangeRateFetcher, ExchangeRateProvider, ExchangeRateService, ExchangeRateStore,
-};
+pub use self::exchange_rates_service::ExchangeRateService;
 pub use self::expiry_shortener_service::{
     ExpiryShortenerService, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };

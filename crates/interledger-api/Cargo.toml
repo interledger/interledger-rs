@@ -15,6 +15,7 @@ http = { version = "0.2", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
 interledger-http = { path = "../interledger-http", version = "^0.4.0", default-features = false }
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.4.0", default-features = false }
+interledger-rates = { path = "../interledger-rates", version = "^0.4.0", default-features = false }
 interledger-router = { path = "../interledger-router", version = "^0.4.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 interledger-service-util = { path = "../interledger-service-util", version = "^0.4.0", default-features = false }

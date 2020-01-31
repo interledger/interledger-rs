@@ -38,15 +38,15 @@ use interledger::{
     ildcp::IldcpService,
     packet::Address,
     packet::{ErrorCode, RejectBuilder},
+    rates::{ExchangeRateFetcher, ExchangeRateStore},
     router::{Router, RouterStore},
     service::{
         outgoing_service_fn, Account as AccountTrait, AccountStore, AddressStore, OutgoingRequest,
         Username,
     },
     service_util::{
-        BalanceStore, EchoService, ExchangeRateFetcher, ExchangeRateService, ExchangeRateStore,
-        ExpiryShortenerService, MaxPacketAmountService, RateLimitService, RateLimitStore,
-        ValidatorService,
+        BalanceStore, EchoService, ExchangeRateService, ExpiryShortenerService,
+        MaxPacketAmountService, RateLimitService, RateLimitStore, ValidatorService,
     },
     settlement::{
         api::{create_settlements_filter, SettlementMessageService},
@@ -74,7 +74,7 @@ use crate::redis_store::*;
 use interledger::service_util::BalanceService;
 
 #[doc(hidden)]
-pub use interledger::service_util::ExchangeRateProvider;
+pub use interledger::rates::ExchangeRateProvider;
 
 static DEFAULT_ILP_ADDRESS: Lazy<Address> = Lazy::new(|| Address::from_str("local.host").unwrap());
 

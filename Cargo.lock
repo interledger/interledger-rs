@@ -1047,6 +1047,7 @@ dependencies = [
  "interledger-http",
  "interledger-ildcp",
  "interledger-packet",
+ "interledger-rates",
  "interledger-router",
  "interledger-service",
  "interledger-service-util",
@@ -1071,6 +1072,7 @@ dependencies = [
  "interledger-http",
  "interledger-ildcp",
  "interledger-packet",
+ "interledger-rates",
  "interledger-router",
  "interledger-service",
  "interledger-service-util",
@@ -1222,6 +1224,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "interledger-rates"
+version = "0.4.0"
+dependencies = [
+ "async-trait",
+ "futures 0.3.3",
+ "interledger-errors",
+ "log 0.4.8",
+ "once_cell",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "tokio 0.2.11",
+]
+
+[[package]]
 name = "interledger-router"
 version = "0.4.0"
 dependencies = [
@@ -1268,6 +1285,7 @@ dependencies = [
  "hex",
  "interledger-errors",
  "interledger-packet",
+ "interledger-rates",
  "interledger-service",
  "interledger-settlement",
  "log 0.4.8",
@@ -1352,6 +1370,7 @@ dependencies = [
  "interledger-errors",
  "interledger-http",
  "interledger-packet",
+ "interledger-rates",
  "interledger-router",
  "interledger-service",
  "interledger-service-util",

@@ -11,11 +11,12 @@ use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
 use interledger_errors::*;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
+use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, Account, AccountStore, AddressStore, Username,
 };
-use interledger_service_util::{BalanceStore, ExchangeRateStore};
+use interledger_service_util::BalanceStore;
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use once_cell::sync::Lazy;
