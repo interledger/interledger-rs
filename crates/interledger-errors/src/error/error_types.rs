@@ -40,6 +40,13 @@ pub const DEFAULT_METHOD_NOT_ALLOWED_TYPE: ApiErrorType = ApiErrorType {
     status: StatusCode::METHOD_NOT_ALLOWED,
 };
 
+/// 409 Conflict HTTP Status Code (used for conflicts)
+pub const DEFAULT_CONFLICT_TYPE: ApiErrorType = ApiErrorType {
+    r#type: &ProblemType::Default,
+    title: "Provided resource already exists",
+    status: StatusCode::CONFLICT,
+};
+
 /// 409 Conflict HTTP Status Code (used for Idempotency Conflicts)
 pub const DEFAULT_IDEMPOTENT_CONFLICT_TYPE: ApiErrorType = ApiErrorType {
     r#type: &ProblemType::Default,
