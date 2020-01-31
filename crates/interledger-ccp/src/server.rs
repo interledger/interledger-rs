@@ -8,6 +8,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::future::join_all;
+use interledger_errors::RouteManagerStoreError;
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     Account, AddressStore, IlpResult, IncomingRequest, IncomingService, OutgoingRequest,
@@ -183,8 +184,8 @@ where
 {
     /// Returns a future that will trigger this service to update its routes and broadcast
     /// updates to peers on the given interval. `interval` is in milliseconds
-    pub async fn start_broadcast_interval(&self, interval: u64) -> Result<(), ()> {
-        self.request_all_routes().await?;
+    pub async fn start_broadcast_interval(&self, interval: u64) {
+        self.request_all_routes().await;
         let mut interval = tokio::time::interval(Duration::from_millis(interval));
         loop {
             interval.tick().await;
@@ -209,14 +210,14 @@ where
         }
     }
 
-    pub async fn broadcast_routes(&self) -> Result<(), ()> {
+    pub async fn broadcast_routes(&self) -> Result<(), RouteManagerStoreError> {
         self.update_best_routes(None).await?;
         self.send_route_updates().await
     }
 
     /// Request routes from all the peers we are willing to receive routes from.
     /// This is mostly intended for when the CCP server starts up and doesn't have any routes from peers.
-    async fn request_all_routes(&self) -> Result<(), ()> {
+    async fn request_all_routes(&self) {
         let result = self.store.get_accounts_to_receive_routes_from().await;
         let accounts = result.unwrap_or_else(|_| Vec::new());
         join_all(
@@ -225,7 +226,6 @@ where
                 .map(|account| self.send_route_control_request(account, DUMMY_ROUTING_TABLE_ID, 0)),
         )
         .await;
-        Ok(())
     }
 
     /// Handle a CCP Route Control Request. If this is from an account that we broadcast routes to,
@@ -287,22 +287,8 @@ where
             };
 
             #[cfg(test)]
-            {
-                let ilp_address = self.ilp_address.read().clone();
-                return self
-                    .send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
-                    .map_err(move |_| {
-                        RejectBuilder {
-                            code: ErrorCode::T01_PEER_UNREACHABLE,
-                            message: b"Error sending route update request",
-                            data: &[],
-                            triggered_by: Some(&ilp_address),
-                        }
-                        .build()
-                    })
-                    .map_ok(|_| Ok(CCP_RESPONSE.clone()))
-                    .await?;
-            }
+            self.send_route_update(request.from.clone(), from_epoch_index, to_epoch_index)
+                .await;
 
             #[cfg(not(test))]
             {
@@ -463,7 +449,7 @@ where
                     let table = table.clone();
                     let self_clone = self.clone();
                     async move {
-                        let _ = self_clone
+                        self_clone
                             .send_route_control_request(
                                 request.from.clone(),
                                 table.id(),
@@ -474,8 +460,7 @@ where
                 });
 
                 #[cfg(test)]
-                let _ = self
-                    .send_route_control_request(request.from.clone(), table.id(), table.epoch())
+                self.send_route_control_request(request.from.clone(), table.id(), table.epoch())
                     .await;
                 Err(reject)
             }
@@ -489,7 +474,7 @@ where
         account: A,
         last_known_routing_table_id: [u8; 16],
         last_known_epoch: u32,
-    ) -> Result<(), ()> {
+    ) {
         let account_id = account.id();
         let control = RouteControlRequest {
             mode: Mode::Sync,
@@ -523,7 +508,6 @@ where
                 account_id, err
             )
         }
-        Ok(())
     }
 
     /// Check whether the Local Routing Table currently has the best routes for the
@@ -531,7 +515,10 @@ where
     /// with some new or modified routes that might be better than our existing ones.
     ///
     /// If prefixes is None, this will check the best routes for all local and configured prefixes.
-    async fn update_best_routes(&self, prefixes: Option<Vec<String>>) -> Result<(), ()> {
+    async fn update_best_routes(
+        &self,
+        prefixes: Option<Vec<String>>,
+    ) -> Result<(), RouteManagerStoreError> {
         let local_table = self.local_table.clone();
         let forwarding_table = self.forwarding_table.clone();
         let forwarding_table_updates = self.forwarding_table_updates.clone();
@@ -670,7 +657,7 @@ where
     }
 
     /// Send RouteUpdateRequests to all peers that we send routing messages to
-    async fn send_route_updates(&self) -> Result<(), ()> {
+    async fn send_route_updates(&self) -> Result<(), RouteManagerStoreError> {
         let self_clone = self.clone();
         let unavailable_accounts = self.unavailable_accounts.clone();
         // Check which accounts we should skip this iteration
@@ -871,12 +858,7 @@ where
 
     /// Send a Route Update Request to a specific account for the given epoch range.
     /// This is used when the peer has fallen behind and has requested a specific range of updates.
-    async fn send_route_update(
-        &self,
-        account: A,
-        from_epoch_index: u32,
-        to_epoch_index: u32,
-    ) -> Result<(), ()> {
+    async fn send_route_update(&self, account: A, from_epoch_index: u32, to_epoch_index: u32) {
         let prepare = self
             .create_route_update(from_epoch_index, to_epoch_index)
             .to_prepare();
@@ -902,7 +884,6 @@ where
                 account_id, err
             )
         }
-        Ok(())
     }
 }
 
