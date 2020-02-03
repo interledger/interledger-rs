@@ -31,19 +31,28 @@ async fn gets_account_from_http_bearer_token() {
 }
 
 #[tokio::test]
-async fn errors_on_unknown_user_or_wrong_http_token() {
+async fn errors_on_wrong_http_token() {
     let (store, _context, _) = test_store().await.unwrap();
     // wrong password
-    let result = store
+    let err = store
         .get_account_from_http_auth(&Username::from_str("alice").unwrap(), "unknown_token")
-        .await;
-    assert!(result.is_err());
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "account `alice` is not authorized for this action"
+    );
+}
 
+#[tokio::test]
+async fn errors_on_unknown_user() {
+    let (store, _context, _) = test_store().await.unwrap();
     // wrong user
-    let result = store
+    let err = store
         .get_account_from_http_auth(&Username::from_str("asdf").unwrap(), "incoming_auth_token")
-        .await;
-    assert!(result.is_err());
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "account `asdf` was not found");
 }
 
 #[tokio::test]

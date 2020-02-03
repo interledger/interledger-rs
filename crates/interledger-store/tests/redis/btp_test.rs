@@ -22,17 +22,7 @@ async fn gets_account_from_btp_auth() {
         *account.ilp_address(),
         Address::from_str("example.alice.user1.bob").unwrap()
     );
-}
 
-#[tokio::test]
-async fn decrypts_outgoing_tokens_btp() {
-    let (store, _context, _) = test_store().await.unwrap();
-    let account = store
-        .get_account_from_btp_auth(&Username::from_str("bob").unwrap(), "other_btp_token")
-        .await
-        .unwrap();
-
-    // the account is created on Dylan's connector
     assert_eq!(
         account.get_http_auth_token().unwrap().expose_secret(),
         "outgoing_auth_token",
@@ -44,17 +34,26 @@ async fn decrypts_outgoing_tokens_btp() {
 }
 
 #[tokio::test]
-async fn errors_on_unknown_user_or_wrong_btp_token() {
+async fn errors_on_unknown_user() {
     let (store, _context, _) = test_store().await.unwrap();
-    let result = store
+    let err = store
         .get_account_from_btp_auth(&Username::from_str("asdf").unwrap(), "other_btp_token")
-        .await;
-    assert!(result.is_err());
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "account `asdf` was not found");
+}
 
-    let result = store
+#[tokio::test]
+async fn errors_on_wrong_btp_token() {
+    let (store, _context, _) = test_store().await.unwrap();
+    let err = store
         .get_account_from_btp_auth(&Username::from_str("bob").unwrap(), "wrong_token")
-        .await;
-    assert!(result.is_err());
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "account `bob` is not authorized for this action"
+    );
 }
 
 #[tokio::test]

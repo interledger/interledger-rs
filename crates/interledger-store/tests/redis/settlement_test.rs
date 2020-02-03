@@ -4,6 +4,7 @@ use bytes::Bytes;
 use http::StatusCode;
 use interledger_api::NodeStore;
 use interledger_service::{Account, AccountStore};
+use interledger_service_util::BalanceStore;
 use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     types::{LeftoversStore, SettlementAccount, SettlementStore},
@@ -11,6 +12,7 @@ use interledger_settlement::core::{
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use redis_crate::cmd;
+use redis_crate::AsyncCommands;
 use url::Url;
 use uuid::Uuid;
 
@@ -26,8 +28,10 @@ async fn saves_gets_clears_uncredited_settlement_amount_properly() {
     ];
     let acc = Uuid::new_v4();
     for a in amounts {
-        let s = store.clone();
-        s.save_uncredited_settlement_amount(acc, a).await.unwrap();
+        store
+            .save_uncredited_settlement_amount(acc, a)
+            .await
+            .unwrap();
     }
     let ret = store
         .load_uncredited_settlement_amount(acc, 9u8)
@@ -44,26 +48,6 @@ async fn saves_gets_clears_uncredited_settlement_amount_properly() {
     store.clear_uncredited_settlement_amount(acc).await.unwrap();
     let ret = store.get_uncredited_settlement_amount(acc).await.unwrap();
     assert_eq!(ret, (BigUint::from(0u32), 0));
-}
-
-#[tokio::test]
-async fn credits_prepaid_amount() {
-    let (store, context, accs) = test_store().await.unwrap();
-    let id = accs[0].id();
-    let mut conn = context.async_connection().await.unwrap();
-    store
-        .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
-        .await
-        .unwrap();
-    let (balance, prepaid_amount): (i64, i64) = cmd("HMGET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg("prepaid_amount")
-        .query_async(&mut conn)
-        .await
-        .unwrap();
-    assert_eq!(balance, 0);
-    assert_eq!(prepaid_amount, 100);
 }
 
 #[tokio::test]
@@ -97,6 +81,32 @@ async fn saves_and_loads_idempotency_key_data_properly() {
 
 #[tokio::test]
 async fn idempotent_settlement_calls() {
+    let (store, _context, accs) = test_store().await.unwrap();
+    let id = accs[0].id();
+    store
+        .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
+        .await
+        .unwrap();
+    let balance = store.get_balance(id).await.unwrap();
+    assert_eq!(balance, 100);
+
+    store
+        .update_balance_for_incoming_settlement(
+            id,
+            100,
+            Some(IDEMPOTENCY_KEY.clone()), // Reuse key to make idempotent request.
+        )
+        .await
+        .unwrap();
+    let balance = store.get_balance(id).await.unwrap();
+    // Since it's idempotent there
+    // will be no state update.
+    // Otherwise it'd be 200 (100 + 100)
+    assert_eq!(balance, 100);
+}
+
+#[tokio::test]
+async fn credits_prepaid_amount() {
     let (store, context, accs) = test_store().await.unwrap();
     let id = accs[0].id();
     let mut conn = context.async_connection().await.unwrap();
@@ -113,50 +123,26 @@ async fn idempotent_settlement_calls() {
         .unwrap();
     assert_eq!(balance, 0);
     assert_eq!(prepaid_amount, 100);
-
-    store
-        .update_balance_for_incoming_settlement(
-            id,
-            100,
-            Some(IDEMPOTENCY_KEY.clone()), // Reuse key to make idempotent request.
-        )
-        .await
-        .unwrap();
-    let (balance, prepaid_amount): (i64, i64) = cmd("HMGET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg("prepaid_amount")
-        .query_async(&mut conn)
-        .await
-        .unwrap();
-    // Since it's idempotent there
-    // will be no state update.
-    // Otherwise it'd be 200 (100 + 100)
-    assert_eq!(balance, 0);
-    assert_eq!(prepaid_amount, 100);
 }
 
 #[tokio::test]
 async fn credits_balance_owed() {
     let (store, context, accs) = test_store().await.unwrap();
     let id = accs[0].id();
-    let mut conn = context.shared_async_connection().await.unwrap();
-    let _balance: i64 = cmd("HSET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg(-200i64)
-        .query_async(&mut conn)
+    let mut connection = context.shared_async_connection().await.unwrap();
+    let _balance: i64 = connection
+        .hset(format!("accounts:{}", id), "balance", -200i64)
         .await
         .unwrap();
+    // since we have some balance already, it will try to
+    // increase the balance field
     store
         .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
         .await
         .unwrap();
-    let (balance, prepaid_amount): (i64, i64) = cmd("HMGET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg("prepaid_amount")
-        .query_async(&mut conn)
+
+    let (balance, prepaid_amount): (i64, i64) = connection
+        .hget(format!("accounts:{}", id), &["balance", "prepaid_amount"])
         .await
         .unwrap();
     assert_eq!(balance, -100);
@@ -167,23 +153,17 @@ async fn credits_balance_owed() {
 async fn clears_balance_owed() {
     let (store, context, accs) = test_store().await.unwrap();
     let id = accs[0].id();
-    let mut conn = context.shared_async_connection().await.unwrap();
-    let _balance: i64 = cmd("HSET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg(-100i64)
-        .query_async(&mut conn)
+    let mut connection = context.shared_async_connection().await.unwrap();
+    let _balance: i64 = connection
+        .hset(format!("accounts:{}", id), "balance", -100i64)
         .await
         .unwrap();
     store
         .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
         .await
         .unwrap();
-    let (balance, prepaid_amount): (i64, i64) = cmd("HMGET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg("prepaid_amount")
-        .query_async(&mut conn)
+    let (balance, prepaid_amount): (i64, i64) = connection
+        .hget(format!("accounts:{}", id), &["balance", "prepaid_amount"])
         .await
         .unwrap();
     assert_eq!(balance, 0);
@@ -194,23 +174,17 @@ async fn clears_balance_owed() {
 async fn clears_balance_owed_and_puts_remainder_as_prepaid() {
     let (store, context, accs) = test_store().await.unwrap();
     let id = accs[0].id();
-    let mut conn = context.shared_async_connection().await.unwrap();
-    let _balance: i64 = cmd("HSET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg(-40)
-        .query_async(&mut conn)
+    let mut connection = context.shared_async_connection().await.unwrap();
+    let _balance: i64 = connection
+        .hset(format!("accounts:{}", id), "balance", -40i64)
         .await
         .unwrap();
     store
         .update_balance_for_incoming_settlement(id, 100, Some(IDEMPOTENCY_KEY.clone()))
         .await
         .unwrap();
-    let (balance, prepaid_amount): (i64, i64) = cmd("HMGET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg("prepaid_amount")
-        .query_async(&mut conn)
+    let (balance, prepaid_amount): (i64, i64) = connection
+        .hget(format!("accounts:{}", id), &["balance", "prepaid_amount"])
         .await
         .unwrap();
     assert_eq!(balance, 0);
@@ -228,7 +202,6 @@ async fn loads_globally_configured_settlement_engine_url() {
     assert!(accounts[1].settlement_engine_details().is_none());
 
     store
-        .clone()
         .set_settlement_engines(vec![
             (
                 "ABC".to_string(),
