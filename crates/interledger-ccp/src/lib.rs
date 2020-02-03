@@ -10,6 +10,7 @@
 //! we know about.
 
 use async_trait::async_trait;
+use interledger_errors::RouteManagerStoreError;
 use interledger_service::Account;
 use std::collections::HashMap;
 use std::{fmt, str::FromStr};
@@ -107,21 +108,23 @@ pub trait RouteManagerStore: Clone {
     /// Gets the local and manually configured routes
     async fn get_local_and_configured_routes(
         &self,
-    ) -> Result<LocalAndConfiguredRoutes<Self::Account>, ()>;
+    ) -> Result<LocalAndConfiguredRoutes<Self::Account>, RouteManagerStoreError>;
 
     /// Gets all accounts which the node should send routes to (Peer and Child accounts)
     /// The caller can also pass a vector of account ids to be ignored
     async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Result<Vec<Self::Account>, ()>;
+    ) -> Result<Vec<Self::Account>, RouteManagerStoreError>;
 
     /// Gets all accounts which the node should receive routes to (Peer and Parent accounts)
-    async fn get_accounts_to_receive_routes_from(&self) -> Result<Vec<Self::Account>, ()>;
+    async fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Result<Vec<Self::Account>, RouteManagerStoreError>;
 
     /// Sets the new routes to the store (prefix -> account)
     async fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (String, Self::Account)> + Send + 'async_trait,
-    ) -> Result<(), ()>;
+    ) -> Result<(), RouteManagerStoreError>;
 }

@@ -2,10 +2,13 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::CcpRoutingAccount;
+use interledger_errors::NodeStoreError;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::Address;
 use interledger_router::RouterStore;
-use interledger_service::{Account, AddressStore, IncomingService, OutgoingService, Username};
+use interledger_service::{
+    Account, AccountStore, AddressStore, IncomingService, OutgoingService, Username,
+};
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::{SettlementAccount, SettlementStore};
 use interledger_stream::StreamNotificationsStore;
@@ -72,17 +75,24 @@ where
 // modifications to the values, whereas many of the other traits mostly
 // read from the configured values.
 #[async_trait]
-pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
+pub trait NodeStore: Clone + Send + Sync + 'static {
     type Account: Account;
 
     /// Inserts an account to the store. Generates a UUID and returns the full Account object.
-    async fn insert_account(&self, account: AccountDetails) -> Result<Self::Account, ()>;
+    async fn insert_account(
+        &self,
+        account: AccountDetails,
+    ) -> Result<Self::Account, NodeStoreError>;
 
     /// Deletes the account corresponding to the provided id and returns it
-    async fn delete_account(&self, id: Uuid) -> Result<Self::Account, ()>;
+    async fn delete_account(&self, id: Uuid) -> Result<Self::Account, NodeStoreError>;
 
     /// Overwrites the account corresponding to the provided id with the provided details
-    async fn update_account(&self, id: Uuid, account: AccountDetails) -> Result<Self::Account, ()>;
+    async fn update_account(
+        &self,
+        id: Uuid,
+        account: AccountDetails,
+    ) -> Result<Self::Account, NodeStoreError>;
 
     /// Modifies the account corresponding to the provided id with the provided settings.
     /// `modify_account_settings` allows **users** to update their account settings with a set of
@@ -92,25 +102,29 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         &self,
         id: Uuid,
         settings: AccountSettings,
-    ) -> Result<Self::Account, ()>;
+    ) -> Result<Self::Account, NodeStoreError>;
 
     // TODO limit the number of results and page through them
     /// Gets all stored accounts
-    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, ()>;
+    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, NodeStoreError>;
 
     /// Sets the static routes for routing
-    async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
+    async fn set_static_routes<R>(&self, routes: R) -> Result<(), NodeStoreError>
     where
         // The 'async_trait lifetime is used after recommendation here:
         // https://github.com/dtolnay/async-trait/issues/8#issuecomment-514812245
         R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait;
 
     /// Sets a single static route
-    async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()>;
+    async fn set_static_route(
+        &self,
+        prefix: String,
+        account_id: Uuid,
+    ) -> Result<(), NodeStoreError>;
 
     /// Sets the default route ("") to be the provided account id
     /// (acts as a catch-all route if all other routes don't match)
-    async fn set_default_route(&self, account_id: Uuid) -> Result<(), ()>;
+    async fn set_default_route(&self, account_id: Uuid) -> Result<(), NodeStoreError>;
 
     /// Sets the default settlement engines to be used for the provided asset codes
     async fn set_settlement_engines(
@@ -118,10 +132,13 @@ pub trait NodeStore: AddressStore + Clone + Send + Sync + 'static {
         // The 'async_trait lifetime is used after recommendation here:
         // https://github.com/dtolnay/async-trait/issues/8#issuecomment-514812245
         asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
-    ) -> Result<(), ()>;
+    ) -> Result<(), NodeStoreError>;
 
     /// Gets the default settlement engine for the provided asset code
-    async fn get_asset_settlement_engine(&self, asset_code: &str) -> Result<Option<Url>, ()>;
+    async fn get_asset_settlement_engine(
+        &self,
+        asset_code: &str,
+    ) -> Result<Option<Url>, NodeStoreError>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,8 +284,10 @@ pub struct NodeApi<S, I, O, B, A: Account> {
 impl<S, I, O, B, A> NodeApi<S, I, O, B, A>
 where
     S: NodeStore<Account = A>
+        + AccountStore<Account = A>
+        + AddressStore
         + HttpStore<Account = A>
-        + BalanceStore<Account = A>
+        + BalanceStore
         + SettlementStore<Account = A>
         + StreamNotificationsStore<Account = A>
         + RouterStore

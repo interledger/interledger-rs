@@ -173,6 +173,13 @@ impl ApiError {
         ApiError::from_api_error_type(&DEFAULT_IDEMPOTENT_CONFLICT_TYPE)
     }
 
+    #[allow(dead_code)]
+    /// Returns an Conflict [ApiError](./struct.ApiError.html)
+    /// via the [default conflict ApiErrorType](./error_types/constant.DEFAULT_CONFLICT_TYPE.html)
+    pub fn conflict() -> Self {
+        ApiError::from_api_error_type(&DEFAULT_CONFLICT_TYPE)
+    }
+
     /// Returns an Invalid Account Id [ApiError](./struct.ApiError.html)
     pub fn invalid_account_id(invalid_account_id: Option<&str>) -> Self {
         let detail = match invalid_account_id {

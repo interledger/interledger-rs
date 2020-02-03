@@ -1,14 +1,16 @@
 use crate::{http_retry::Client, number_or_string, AccountDetails, AccountSettings, NodeStore};
 use bytes::Bytes;
-use futures::{future::join_all, Future, FutureExt, StreamExt, TryFutureExt};
+use futures::{Future, FutureExt, StreamExt, TryFutureExt};
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, Mode, RouteControlRequest, RoutingRelation};
-use interledger_http::{deserialize_json, error::*, HttpAccount, HttpStore};
+use interledger_errors::*;
+use interledger_http::{deserialize_json, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
 use interledger_router::RouterStore;
 use interledger_service::{
-    Account, AddressStore, IncomingService, OutgoingRequest, OutgoingService, Username,
+    Account, AccountStore, AddressStore, IncomingService, OutgoingRequest, OutgoingService,
+    Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::SettlementAccount;
@@ -19,6 +21,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
+use std::fmt::Debug;
 use uuid::Uuid;
 use warp::{self, reply::Json, Filter, Rejection};
 
@@ -45,8 +48,10 @@ where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + Send + Sync + 'static,
     S: NodeStore<Account = A>
+        + AccountStore<Account = A>
+        + AddressStore
         + HttpStore<Account = A>
-        + BalanceStore<Account = A>
+        + BalanceStore
         + StreamNotificationsStore<Account = A>
         + ExchangeRateStore
         + RouterStore,
@@ -87,17 +92,9 @@ where
     // Converts an account username to an account id or errors out
     let account_username_to_id = warp::path::param::<Username>()
         .and(with_store.clone())
-        .and_then(move |username: Username, store: S| {
-            async move {
-                store
-                    .get_account_id_from_username(&username)
-                    .map_err(|_| {
-                        // TODO differentiate between server error and not found
-                        error!("Error getting account id from username: {}", username);
-                        Rejection::from(ApiError::account_not_found())
-                    })
-                    .await
-            }
+        .and_then(move |username: Username, store: S| async move {
+            let id = store.get_account_id_from_username(&username).await?;
+            Ok::<_, Rejection>(id)
         })
         .boxed();
 
@@ -113,7 +110,6 @@ where
                     &path_username,
                     &auth_string.expose_secret()[BEARER_TOKEN_START..],
                 )
-                .map_err(|_| Rejection::from(ApiError::unauthorized()))
                 .await?;
 
             // Only return the account if the provided username matched the fetched one
@@ -139,14 +135,7 @@ where
                 async move {
                     // If it's an admin, there's no need for more checks
                     if auth_string.expose_secret() == &admin_auth_header {
-                        let account_id = store
-                            .get_account_id_from_username(&path_username)
-                            .map_err(|_| {
-                                // TODO differentiate between server error and not found
-                                error!("Error getting account id from username: {}", path_username);
-                                Rejection::from(ApiError::account_not_found())
-                            })
-                            .await?;
+                        let account_id = store.get_account_id_from_username(&path_username).await?;
                         return Ok(account_id);
                     }
                     let account = is_authorized_user(store, path_username, auth_string).await?;
@@ -161,11 +150,9 @@ where
         .and(warp::header::<SecretString>("authorization"))
         .and(with_store.clone())
         .and_then(
-            move |path_username: Username, auth_string: SecretString, store: S| {
-                async move {
-                    let account = is_authorized_user(store, path_username, auth_string).await?;
-                    Ok::<A, Rejection>(account)
-                }
+            move |path_username: Username, auth_string: SecretString, store: S| async move {
+                let account = is_authorized_user(store, path_username, auth_string).await?;
+                Ok::<A, Rejection>(account)
             },
         )
         .boxed();
@@ -184,14 +171,7 @@ where
             let handler = outgoing_handler_clone.clone();
             let btp = btp_clone.clone();
             async move {
-                let account = store
-                    .insert_account(account_details.clone())
-                    .map_err(move |_| {
-                        error!("Error inserting account into store: {:?}", account_details);
-                        // TODO need more information
-                        Rejection::from(ApiError::internal_server_error())
-                    })
-                    .await?;
+                let account = store.insert_account(account_details.clone()).await?;
 
                 connect_to_external_services(handler, account.clone(), store_clone, btp).await?;
                 Ok::<Json, Rejection>(warp::reply::json(&account))
@@ -205,14 +185,9 @@ where
         .and(warp::path::end())
         .and(admin_only.clone())
         .and(with_store.clone())
-        .and_then(|store: S| {
-            async move {
-                let accounts = store
-                    .get_all_accounts()
-                    .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-                    .await?;
-                Ok::<Json, Rejection>(warp::reply::json(&accounts))
-            }
+        .and_then(|store: S| async move {
+            let accounts = store.get_all_accounts().await?;
+            Ok::<Json, Rejection>(warp::reply::json(&accounts))
         })
         .boxed();
 
@@ -228,10 +203,7 @@ where
             let outgoing_handler = outgoing_handler.clone();
             let btp = btp.clone();
             async move {
-                let account = store
-                    .update_account(id, account_details)
-                    .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-                    .await?;
+                let account = store.update_account(id, account_details).await?;
                 connect_to_external_services(outgoing_handler, account.clone(), store, btp).await?;
 
                 Ok::<Json, Rejection>(warp::reply::json(&account))
@@ -246,15 +218,10 @@ where
         .and(admin_or_authorized_user_only.clone())
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(|id: Uuid, store: S| {
-            async move {
-                let accounts = store
-                    .get_accounts(vec![id])
-                    .map_err(|_| Rejection::from(ApiError::account_not_found()))
-                    .await?;
+        .and_then(|id: Uuid, store: S| async move {
+            let accounts = store.get_accounts(vec![id]).await?;
 
-                Ok::<Json, Rejection>(warp::reply::json(&accounts[0]))
-            }
+            Ok::<Json, Rejection>(warp::reply::json(&accounts[0]))
         })
         .boxed();
 
@@ -269,19 +236,10 @@ where
         .and_then(|id: Uuid, store: S| {
             async move {
                 // TODO reduce the number of store calls it takes to get the balance
-                let mut accounts = store
-                    .get_accounts(vec![id])
-                    .map_err(|_| warp::reject::not_found())
-                    .await?;
+                let mut accounts = store.get_accounts(vec![id]).await?;
                 let account = accounts.pop().unwrap();
 
-                let balance = store
-                    .get_balance(account.clone())
-                    .map_err(move |_| {
-                        error!("Error getting balance for account: {}", id);
-                        Rejection::from(ApiError::internal_server_error())
-                    })
-                    .await?;
+                let balance = store.get_balance(account.id()).await?;
 
                 let asset_scale = account.asset_scale();
                 let asset_code = account.asset_code().to_owned();
@@ -301,17 +259,9 @@ where
         .and(warp::path::end())
         .and(admin_only)
         .and(with_store.clone())
-        .and_then(|id: Uuid, store: S| {
-            async move {
-                let account = store
-                    .delete_account(id)
-                    .map_err(|_| {
-                        error!("Error deleting account {}", id);
-                        Rejection::from(ApiError::internal_server_error())
-                    })
-                    .await?;
-                Ok::<Json, Rejection>(warp::reply::json(&account))
-            }
+        .and_then(|id: Uuid, store: S| async move {
+            let account = store.delete_account(id).await?;
+            Ok::<Json, Rejection>(warp::reply::json(&account))
         })
         .boxed();
 
@@ -323,17 +273,9 @@ where
         .and(warp::path::end())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|id: Uuid, settings: AccountSettings, store: S| {
-            async move {
-                let modified_account = store
-                    .modify_account_settings(id, settings)
-                    .map_err(move |_| {
-                        error!("Error updating account settings {}", id);
-                        Rejection::from(ApiError::internal_server_error())
-                    })
-                    .await?;
-                Ok::<Json, Rejection>(warp::reply::json(&modified_account))
-            }
+        .and_then(|id: Uuid, settings: AccountSettings, store: S| async move {
+            let modified_account = store.modify_account_settings(id, settings).await?;
+            Ok::<Json, Rejection>(warp::reply::json(&modified_account))
         })
         .boxed();
 
@@ -370,9 +312,10 @@ where
                         pay_request.source_amount,
                     )
                     .map_err(|err| {
-                        error!("Error sending SPSP payment: {:?}", err);
+                        let msg = format!("Error sending SPSP payment: {}", err);
+                        error!("{}", msg);
                         // TODO give a different error message depending on what type of error it is
-                        Rejection::from(ApiError::internal_server_error())
+                        Rejection::from(ApiError::internal_server_error().detail(msg))
                     })
                     .await?;
 
@@ -394,10 +337,7 @@ where
         .and_then(move |id: Uuid, store: S| {
             let server_secret_clone = server_secret_clone.clone();
             async move {
-                let accounts = store
-                    .get_accounts(vec![id])
-                    .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-                    .await?;
+                let accounts = store.get_accounts(vec![id]).await?;
                 // TODO return the response without instantiating an SpspResponder (use a simple fn)
                 Ok::<_, Rejection>(
                     SpspResponder::new(
@@ -424,19 +364,10 @@ where
             async move {
                 // TODO don't clone this
                 if let Some(username) = default_spsp_account.clone() {
-                    let id = store
-                        .get_account_id_from_username(&username)
-                        .map_err(|_| {
-                            error!("Account not found: {}", username);
-                            warp::reject::not_found()
-                        })
-                        .await?;
+                    let id = store.get_account_id_from_username(&username).await?;
 
                     // TODO this shouldn't take multiple store calls
-                    let mut accounts = store
-                        .get_accounts(vec![id])
-                        .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-                        .await?;
+                    let mut accounts = store.get_accounts(vec![id]).await?;
 
                     let account = accounts.pop().unwrap();
                     // TODO return the response without instantiating an SpspResponder (use a simple fn)
@@ -448,7 +379,9 @@ where
                         .generate_http_response(),
                     )
                 } else {
-                    Err(Rejection::from(ApiError::not_found()))
+                    Err(Rejection::from(
+                        ApiError::not_found().detail("no default spsp account was configured"),
+                    ))
                 }
             }
         })
@@ -498,11 +431,11 @@ async fn get_address_from_parent_and_update_routes<O, A, S>(
     mut service: O,
     parent: A,
     store: S,
-) -> Result<(), ()>
+) -> Result<(), warp::Rejection>
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Clone + Send + Sync + 'static,
-    S: NodeStore<Account = A> + Clone + Send + Sync + 'static,
+    S: NodeStore<Account = A> + AddressStore + Clone + Send + Sync + 'static,
 {
     debug!(
         "Getting ILP address from parent account: {} (id: {})",
@@ -517,14 +450,20 @@ where
             prepare,
             original_amount: 0,
         })
-        .map_err(|err| error!("Error getting ILDCP info: {:?}", err))
+        .map_err(|err| {
+            let msg = format!("Error getting ILDCP info: {:?}", err);
+            error!("{}", msg);
+            ApiError::internal_server_error().detail(msg)
+        })
         .await?;
 
     let info = IldcpResponse::try_from(fulfill.into_data().freeze()).map_err(|err| {
-        error!(
+        let msg = format!(
             "Unable to parse ILDCP response from fulfill packet: {:?}",
             err
         );
+        error!("{}", msg);
+        ApiError::internal_server_error().detail(msg)
     })?;
     debug!("Got ILDCP response from parent: {:?}", info);
     let ilp_address = info.ilp_address();
@@ -539,31 +478,28 @@ where
     }
     .to_prepare();
 
+    // Set the parent to be the default route for everything
+    // that starts with their global prefix
+    store.set_default_route(parent.id()).await?;
+    // Update our store's address
+    store.set_ilp_address(ilp_address).await?;
+
+    // Get the parent's routes for us
     debug!("Asking for routes from {:?}", parent.clone());
-    let ret = join_all(vec![
-        // Set the parent to be the default route for everything
-        // that starts with their global prefix
-        store.set_default_route(parent.id()),
-        // Update our store's address
-        store.set_ilp_address(ilp_address),
-        // Get the parent's routes for us
-        Box::pin(
-            service
-                .send_request(OutgoingRequest {
-                    from: parent.clone(),
-                    to: parent.clone(),
-                    original_amount: prepare.amount(),
-                    prepare: prepare.clone(),
-                })
-                .map_err(|_| ())
-                .map_ok(|_| ()),
-        ),
-    ])
-    .await;
-    // If any of the 3 futures errored, propagate the error outside
-    if ret.into_iter().any(|r| r.is_err()) {
-        return Err(());
-    }
+    service
+        .send_request(OutgoingRequest {
+            from: parent.clone(),
+            to: parent.clone(),
+            original_amount: prepare.amount(),
+            prepare: prepare.clone(),
+        })
+        .map_err(|err| {
+            let msg = format!("Error getting routes from parent: {:?}", err);
+            error!("{}", msg);
+            ApiError::internal_server_error().detail(msg)
+        })
+        .await?;
+
     Ok(())
 }
 
@@ -593,17 +529,13 @@ where
     // one configured
     if account.get_ilp_over_btp_url().is_some() {
         trace!("Newly inserted account has a BTP URL configured, will try to connect");
-        connect_to_service_account(account.clone(), true, btp)
-            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-            .await?
+        connect_to_service_account(account.clone(), true, btp).await?
     }
 
     // If we added a parent, get the address assigned to us by
     // them and update all of our routes
     if account.routing_relation() == RoutingRelation::Parent {
-        get_address_from_parent_and_update_routes(service, account.clone(), store.clone())
-            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
-            .await?;
+        get_address_from_parent_and_update_routes(service, account.clone(), store.clone()).await?;
     }
 
     // Register the account with the settlement engine
@@ -612,7 +544,6 @@ where
     // account's asset_code
     let default_settlement_engine = store
         .get_asset_settlement_engine(account.asset_code())
-        .map_err(|_| Rejection::from(ApiError::internal_server_error()))
         .await?;
 
     let settlement_engine_url = account

@@ -46,10 +46,12 @@ secrecy = { version = "0.6", features = ["serde", "bytes"] }
 zeroize = { version = "1.0.0", default-features = false }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"]}
 uuid = { version = "0.8.1", default-features = false, features = ["serde"] }
+interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false, features = ["redis_errors"] }
 
 # redis feature
 redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
 async-trait = "0.1.22"
+thiserror = "1.0.10"
 
 [dev-dependencies]
 env_logger = { version = "0.7.0", default-features = false }

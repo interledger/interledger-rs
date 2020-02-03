@@ -2,12 +2,15 @@ use super::packet::*;
 use super::service::BtpOutgoingService;
 use super::BtpAccount;
 use futures::{future::join_all, SinkExt, StreamExt, TryFutureExt};
+use interledger_errors::ApiError;
 use interledger_packet::Address;
 use interledger_service::*;
 use log::{debug, error, trace};
 use rand::random;
+use thiserror::Error;
 use tokio_tungstenite::connect_async;
 use tungstenite::Message;
+use url::Url;
 
 /// Create a BtpOutgoingService wrapping BTP connections to the accounts specified.
 /// Calling `handle_incoming` with an `IncomingService` will turn the returned
@@ -17,7 +20,7 @@ pub async fn connect_client<A, S>(
     accounts: Vec<A>,
     error_on_unavailable: bool,
     next_outgoing: S,
-) -> Result<BtpOutgoingService<S, A>, ()>
+) -> Result<BtpOutgoingService<S, A>, BtpClientError>
 where
     S: OutgoingService<A> + Clone + 'static,
     A: BtpAccount + Send + Sync + 'static,
@@ -32,8 +35,28 @@ where
             service.clone(),
         ));
     }
-    join_all(connect_btp).await;
+    let res = join_all(connect_btp).await;
+    if res.into_iter().any(|r| r.is_err()) {
+        return Err(BtpClientError::CannotConnectMultiple);
+    }
     Ok(service)
+}
+
+#[derive(Error, Debug)]
+pub enum BtpClientError {
+    #[error("Cannot connect to BTP url: {0}. Got error {1}")]
+    CannotConnect(String, Url, String),
+    #[error("Account is unavailable. Error: {0}")]
+    Unavailable(String),
+    #[error("Could not connect to at least one BTP account ")]
+    CannotConnectMultiple,
+}
+
+impl From<BtpClientError> for warp::Rejection {
+    fn from(src: BtpClientError) -> Self {
+        let err = ApiError::internal_server_error().detail(src.to_string());
+        warp::reject::custom(err)
+    }
 }
 
 /// Initiates a BTP connection with the specified account and saves it to the list of connections
@@ -45,7 +68,7 @@ pub async fn connect_to_service_account<O, A>(
     account: A,
     error_on_unavailable: bool,
     service: BtpOutgoingService<O, A>,
-) -> Result<(), ()>
+) -> Result<(), BtpClientError>
 where
     O: OutgoingService<A> + Clone + 'static,
     A: BtpAccount + Send + Sync + 'static,
@@ -65,10 +88,11 @@ where
     debug!("Connecting to {}", url);
 
     let (mut connection, _) = connect_async(url.clone())
-        .map_err(move |err| {
-            error!(
-                "Error connecting to WebSocket server for account: {} {:?}",
-                account_id, err
+        .map_err(|err| {
+            BtpClientError::CannotConnect(
+                account.username().to_string(),
+                url.clone(),
+                err.to_string(),
             )
         })
         .await?;
@@ -103,7 +127,6 @@ where
     // (right now we just assume they'll close the connection if the auth didn't work)
     let result = connection // this just a stream
         .send(auth_packet)
-        .map_err(move |_| error!("Error sending auth packet on connection: {}", url))
         .await;
 
     match result {
@@ -113,9 +136,11 @@ where
             service.add_connection(account, connection);
             Ok(())
         }
-        Err(_) => {
+        Err(err) => {
+            let msg = format!("Error sending auth packet on connection {}: {}", url, err);
+            error!("{}", msg);
             if error_on_unavailable {
-                Err(())
+                Err(BtpClientError::Unavailable(msg))
             } else {
                 Ok(())
             }

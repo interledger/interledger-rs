@@ -4,6 +4,7 @@
 //! This protocol is intended primarily for server-to-server communication between peers on the Interledger network.
 use async_trait::async_trait;
 use bytes::Bytes;
+use interledger_errors::{ApiError, HttpStoreError, JsonDeserializeError};
 use interledger_service::{Account, Username};
 use mime::Mime;
 use secrecy::SecretString;
@@ -13,8 +14,6 @@ use warp::{self, Filter, Rejection};
 
 /// [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) Outgoing Service
 mod client;
-/// [RFC7807](https://tools.ietf.org/html/rfc7807) compliant errors
-pub mod error;
 /// [ILP over HTTP](https://interledger.org/rfcs/0035-ilp-over-http/) API (implemented with [Warp](https://docs.rs/warp/0.2.0/warp/))
 mod server;
 
@@ -41,7 +40,7 @@ pub trait HttpStore: Clone + Send + Sync + 'static {
         &self,
         username: &Username,
         token: &str,
-    ) -> Result<Self::Account, ()>;
+    ) -> Result<Self::Account, HttpStoreError>;
 }
 
 // TODO: Do we really need this custom deserialization function?
@@ -56,27 +55,25 @@ pub fn deserialize_json<T: DeserializeOwned + Send>(
         .and_then(|content_type: String, buf: Bytes| {
             async move {
                 let mime_type: Mime = content_type.parse().map_err(|_| {
-                    Rejection::from(
-                        error::ApiError::bad_request().detail("Invalid content-type header."),
-                    )
+                    Rejection::from(ApiError::bad_request().detail("Invalid content-type header."))
                 })?;
                 if mime_type.type_() != mime::APPLICATION_JSON.type_() {
                     return Err(Rejection::from(
-                        error::ApiError::bad_request().detail("Invalid content-type."),
+                        ApiError::bad_request().detail("Invalid content-type."),
                     ));
                 } else if let Some(charset) = mime_type.get_param("charset") {
                     // Charset should be UTF-8
                     // https://tools.ietf.org/html/rfc8259#section-8.1
                     if charset != mime::UTF_8 {
                         return Err(Rejection::from(
-                            error::ApiError::bad_request().detail("Charset should be UTF-8."),
+                            ApiError::bad_request().detail("Charset should be UTF-8."),
                         ));
                     }
                 }
 
                 let deserializer = &mut serde_json::Deserializer::from_slice(&buf);
                 serde_path_to_error::deserialize(deserializer).map_err(|err| {
-                    warp::reject::custom(error::JsonDeserializeError {
+                    warp::reject::custom(JsonDeserializeError {
                         category: err.inner().classify(),
                         detail: err.inner().to_string(),
                         path: err.path().clone(),

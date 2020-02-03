@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::{Account, AddressStore, IlpResult, IncomingRequest, IncomingService};
 use log::{error, warn};
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 /// Extension trait for [`Account`](../interledger_service/trait.Account.html) with rate limiting related information
@@ -50,7 +51,7 @@ pub trait RateLimitStore {
         &self,
         account: Self::Account,
         prepare_amount: u64,
-    ) -> Result<(), ()>;
+    ) -> Result<(), RateLimitError>;
 }
 
 /// # Rate Limit Service

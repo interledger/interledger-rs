@@ -26,6 +26,7 @@ use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
 use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
+use interledger_errors::*;
 use interledger_http::HttpStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
@@ -90,6 +91,8 @@ fn prefixed_idempotency_key(idempotency_key: String) -> String {
 fn accounts_key(account_id: Uuid) -> String {
     format!("accounts:{}", account_id)
 }
+
+// TODO: Add descriptive errors inside the lua scripts!
 
 // The following are Lua scripts that are used to atomically execute the given logic
 // inside Redis. This allows for more complex logic without needing multiple round
@@ -230,6 +233,7 @@ impl RedisStoreBuilder {
                         },
                         routing_table.clone(),
                     )
+                    .map_err(|err| error!("{}", err))
                     .await;
                 } else {
                     debug!("Not polling routes anymore because connection was closed");
@@ -315,12 +319,9 @@ pub struct RedisStore {
 
 impl RedisStore {
     /// Gets all the account ids from Redis
-    async fn get_all_accounts_ids(&self) -> Result<Vec<Uuid>, ()> {
+    async fn get_all_accounts_ids(&self) -> Result<Vec<Uuid>, NodeStoreError> {
         let mut connection = self.connection.clone();
-        let account_ids: Vec<RedisAccountId> = connection
-            .smembers("accounts")
-            .map_err(|err| error!("Error getting account IDs: {:?}", err))
-            .await?;
+        let account_ids: Vec<RedisAccountId> = connection.smembers("accounts").await?;
         Ok(account_ids.iter().map(|rid| rid.0).collect())
     }
 
@@ -329,7 +330,7 @@ impl RedisStore {
     async fn redis_insert_account(
         &mut self,
         encrypted: AccountWithEncryptedTokens,
-    ) -> Result<AccountWithEncryptedTokens, ()> {
+    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let account = encrypted.account.clone();
         let ret = encrypted.clone();
         let mut connection = self.connection.clone();
@@ -342,21 +343,13 @@ impl RedisStore {
             pipe.exists(PARENT_ILP_KEY);
         }
 
-        let results: Vec<bool> = pipe
-            .query_async(&mut connection.clone())
-            .map_err(|err| {
-                error!(
-                    "Error checking whether account details already exist: {:?}",
-                    err
-                )
-            })
-            .await?;
+        let results: Vec<bool> = pipe.query_async(&mut connection.clone()).await?;
         if results.iter().any(|val| *val) {
             warn!(
                 "An account already exists with the same {}. Cannot insert account: {:?}",
                 account.id, account
             );
-            return Err(());
+            return Err(NodeStoreError::AccountExists(account.username.to_string()));
         }
 
         let mut pipe = redis_crate::pipe();
@@ -411,9 +404,7 @@ impl RedisStore {
 
         // The parent account settings are done via the API. We just
         // had to check for the existence of a parent
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
 
         update_routes(connection, routing_table).await?;
         debug!(
@@ -428,7 +419,7 @@ impl RedisStore {
     async fn redis_update_account(
         &self,
         encrypted: AccountWithEncryptedTokens,
-    ) -> Result<AccountWithEncryptedTokens, ()> {
+    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let account = encrypted.account.clone();
         let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
@@ -439,17 +430,14 @@ impl RedisStore {
         // TODO: Do not allow this update to happen if
         // AccountDetails.RoutingRelation == Parent and parent is
         // already set
-        let exists: bool = connection
-            .exists(accounts_key(account.id))
-            .map_err(|err| error!("Error checking whether ID exists: {:?}", err))
-            .await?;
+        let exists: bool = connection.exists(accounts_key(account.id)).await?;
 
         if !exists {
             warn!(
                 "No account exists with ID {}, cannot update account {:?}",
                 account.id, account
             );
-            return Err(());
+            return Err(NodeStoreError::AccountNotFound(account.id.to_string()));
         }
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
@@ -486,9 +474,7 @@ impl RedisStore {
         )
         .ignore();
 
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error inserting account into DB: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
         update_routes(connection, routing_table).await?;
         debug!(
             "Inserted account {} (id: {}, ILP address: {})",
@@ -503,7 +489,7 @@ impl RedisStore {
         &self,
         id: Uuid,
         settings: EncryptedAccountSettings,
-    ) -> Result<AccountWithEncryptedTokens, ()> {
+    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let connection = self.connection.clone();
         let mut self_clone = self.clone();
 
@@ -558,27 +544,32 @@ impl RedisStore {
             pipe.hset(accounts_key(id), "settle_to", settle_to);
         }
 
-        pipe.query_async(&mut connection.clone())
-            .map_err(|err| error!("Error modifying user account: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection.clone()).await?;
 
         // return the updated account
         self_clone.redis_get_account(id).await
     }
 
     /// Gets the account (tokens remain encrypted) corresponding to the provided `id` from Redis.
-    async fn redis_get_account(&mut self, id: Uuid) -> Result<AccountWithEncryptedTokens, ()> {
+    async fn redis_get_account(
+        &mut self,
+        id: Uuid,
+    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let mut accounts: Vec<AccountWithEncryptedTokens> = LOAD_ACCOUNTS
             .arg(id.to_string())
             .invoke_async(&mut self.connection.clone())
-            .map_err(|err| error!("Error loading accounts: {:?}", err))
             .await?;
-        accounts.pop().ok_or(())
+        accounts
+            .pop()
+            .ok_or_else(|| NodeStoreError::AccountNotFound(id.to_string()))
     }
 
     /// Deletes the account corresponding to the provided `id` from Redis.
     /// Returns the deleted account (tokens remain encrypted)
-    async fn redis_delete_account(&mut self, id: Uuid) -> Result<AccountWithEncryptedTokens, ()> {
+    async fn redis_delete_account(
+        &mut self,
+        id: Uuid,
+    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
         let encrypted = self.redis_get_account(id).await?;
@@ -611,9 +602,7 @@ impl RedisStore {
 
         pipe.del(uncredited_amount_key(id));
 
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error deleting account from DB: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
 
         update_routes(connection, routing_table).await?;
         debug!("Deleted account {}", account.id);
@@ -626,7 +615,10 @@ impl AccountStore for RedisStore {
     type Account = Account;
 
     // TODO cache results to avoid hitting Redis for each packet
-    async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<Account>, ()> {
+    async fn get_accounts(
+        &self,
+        account_ids: Vec<Uuid>,
+    ) -> Result<Vec<Account>, AccountStoreError> {
         let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
         let mut script = LOAD_ACCOUNTS.prepare_invoke();
@@ -636,10 +628,8 @@ impl AccountStore for RedisStore {
 
         // Need to clone the connection here to avoid lifetime errors
         let connection = self.connection.clone();
-        let accounts: Vec<AccountWithEncryptedTokens> = script
-            .invoke_async(&mut connection.clone())
-            .map_err(|err| error!("Error loading accounts: {:?}", err))
-            .await?;
+        let accounts: Vec<AccountWithEncryptedTokens> =
+            script.invoke_async(&mut connection.clone()).await?;
 
         // Decrypt the accounts. TODO: This functionality should be
         // decoupled from redis so that it gets reused by the other backends
@@ -650,22 +640,24 @@ impl AccountStore for RedisStore {
                 .collect();
             Ok(accounts)
         } else {
-            Err(())
+            Err(AccountStoreError::AccountNotFound(
+                "provided account uuids were not found".to_owned(),
+            ))
         }
     }
 
-    async fn get_account_id_from_username(&self, username: &Username) -> Result<Uuid, ()> {
+    async fn get_account_id_from_username(
+        &self,
+        username: &Username,
+    ) -> Result<Uuid, AccountStoreError> {
         let username = username.clone();
         let mut connection = self.connection.clone();
-        let id: Option<RedisAccountId> = connection
-            .hget("usernames", username.as_ref())
-            .map_err(move |err| error!("Error getting account id: {:?}", err))
-            .await?;
+        let id: Option<RedisAccountId> = connection.hget("usernames", username.as_ref()).await?;
         match id {
             Some(rid) => Ok(rid.0),
             None => {
                 debug!("Username not found: {}", username);
-                Err(())
+                Err(AccountStoreError::AccountNotFound(username.to_string()))
             }
         }
     }
@@ -721,16 +713,10 @@ impl StreamNotificationsStore for RedisStore {
 impl BalanceStore for RedisStore {
     /// Returns the balance **from the account holder's perspective**, meaning the sum of
     /// the Payable Balance and Pending Outgoing minus the Receivable Balance and the Pending Incoming.
-    async fn get_balance(&self, account: Account) -> Result<i64, ()> {
+    async fn get_balance(&self, account_id: Uuid) -> Result<i64, BalanceStoreError> {
         let mut connection = self.connection.clone();
         let values: Vec<i64> = connection
-            .hget(accounts_key(account.id), &["balance", "prepaid_amount"])
-            .map_err(move |err| {
-                error!(
-                    "Error getting balance for account: {} {:?}",
-                    account.id, err
-                )
-            })
+            .hget(accounts_key(account_id), &["balance", "prepaid_amount"])
             .await?;
 
         let balance = values[0];
@@ -740,25 +726,18 @@ impl BalanceStore for RedisStore {
 
     async fn update_balances_for_prepare(
         &self,
-        from_account: Account, // TODO: Make this take only the id
+        from_account_id: Uuid,
         incoming_amount: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), BalanceStoreError> {
         // Don't do anything if the amount was 0
         if incoming_amount == 0 {
             return Ok(());
         }
 
-        let from_account_id = from_account.id;
         let balance: i64 = PROCESS_PREPARE
             .arg(RedisAccountId(from_account_id))
             .arg(incoming_amount)
             .invoke_async(&mut self.connection.clone())
-            .map_err(move |err| {
-                warn!(
-                    "Error handling prepare from account: {}:  {:?}",
-                    from_account_id, err
-                )
-            })
             .await?;
 
         trace!(
@@ -770,23 +749,16 @@ impl BalanceStore for RedisStore {
 
     async fn update_balances_for_fulfill(
         &self,
-        to_account: Account, // TODO: Make this take only the id
+        to_account_id: Uuid,
         outgoing_amount: u64,
-    ) -> Result<(i64, u64), ()> {
+    ) -> Result<(i64, u64), BalanceStoreError> {
         if outgoing_amount == 0 {
             return Ok((0, 0));
         }
-        let to_account_id = to_account.id;
         let (balance, amount_to_settle): (i64, u64) = PROCESS_FULFILL
             .arg(RedisAccountId(to_account_id))
             .arg(outgoing_amount)
             .invoke_async(&mut self.connection.clone())
-            .map_err(move |err| {
-                error!(
-                    "Error handling Fulfill received from account: {}: {:?}",
-                    to_account_id, err
-                )
-            })
             .await?;
 
         trace!(
@@ -801,36 +773,30 @@ impl BalanceStore for RedisStore {
 
     async fn update_balances_for_reject(
         &self,
-        from_account: Account, // TODO: Make this take only the id
+        from_account_id: Uuid,
         incoming_amount: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), BalanceStoreError> {
         if incoming_amount == 0 {
             return Ok(());
         }
 
-        let from_account_id = from_account.id;
         let balance: i64 = PROCESS_REJECT
             .arg(RedisAccountId(from_account_id))
             .arg(incoming_amount)
             .invoke_async(&mut self.connection.clone())
-            .map_err(move |err| {
-                warn!(
-                    "Error handling reject for packet from account: {}: {:?}",
-                    from_account_id, err
-                )
-            })
             .await?;
 
         trace!(
             "Processed reject for incoming amount: {}. Account {} has balance (including prepaid amount): {}",
             incoming_amount, from_account_id, balance
         );
+
         Ok(())
     }
 }
 
 impl ExchangeRateStore for RedisStore {
-    fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
+    fn get_exchange_rates(&self, asset_codes: &[&str]) -> Result<Vec<f64>, ExchangeRateStoreError> {
         let rates: Vec<f64> = asset_codes
             .iter()
             .filter_map(|code| (*self.exchange_rates.read()).get(*code).cloned())
@@ -838,15 +804,22 @@ impl ExchangeRateStore for RedisStore {
         if rates.len() == asset_codes.len() {
             Ok(rates)
         } else {
-            Err(())
+            // todo add error type
+            Err(ExchangeRateStoreError::PairNotFound {
+                from: asset_codes[0].to_string(),
+                to: asset_codes[1].to_string(),
+            })
         }
     }
 
-    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()> {
+    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ExchangeRateStoreError> {
         Ok((*self.exchange_rates.read()).clone())
     }
 
-    fn set_exchange_rates(&self, rates: HashMap<String, f64>) -> Result<(), ()> {
+    fn set_exchange_rates(
+        &self,
+        rates: HashMap<String, f64>,
+    ) -> Result<(), ExchangeRateStoreError> {
         // TODO publish rate updates through a pubsub mechanism to support horizontally scaling nodes
         (*self.exchange_rates.write()) = rates;
         Ok(())
@@ -861,7 +834,7 @@ impl BtpStore for RedisStore {
         &self,
         username: &Username,
         token: &str,
-    ) -> Result<Self::Account, ()> {
+    ) -> Result<Self::Account, BtpStoreError> {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that
         // necessary if redis is often used as a cache?)
@@ -873,7 +846,6 @@ impl BtpStore for RedisStore {
         let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
             .arg(username.as_ref())
             .invoke_async(&mut connection)
-            .map_err(|err| error!("Error getting account from BTP token: {:?}", err))
             .await?;
 
         if let Some(account) = account {
@@ -887,28 +859,25 @@ impl BtpStore for RedisStore {
                         "Found account {} but BTP auth token was wrong",
                         account.username
                     );
-                    Err(())
+                    Err(BtpStoreError::Unauthorized(username.to_string()))
                 }
             } else {
                 debug!(
                     "Account {} does not have an incoming btp token configured",
                     account.username
                 );
-                Err(())
+                Err(BtpStoreError::Unauthorized(username.to_string()))
             }
         } else {
             warn!("No account found with BTP token");
-            Err(())
+            Err(BtpStoreError::AccountNotFound(username.to_string()))
         }
     }
 
-    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, ()> {
+    async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, BtpStoreError> {
         let mut connection = self.connection.clone();
 
-        let account_ids: Vec<RedisAccountId> = connection
-            .smembers("btp_outgoing")
-            .map_err(|err| error!("Error getting members of set btp_outgoing: {:?}", err))
-            .await?;
+        let account_ids: Vec<RedisAccountId> = connection.smembers("btp_outgoing").await?;
         let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
 
         if account_ids.is_empty() {
@@ -930,14 +899,13 @@ impl HttpStore for RedisStore {
         &self,
         username: &Username,
         token: &str,
-    ) -> Result<Self::Account, ()> {
+    ) -> Result<Self::Account, HttpStoreError> {
         // TODO make sure it can't do script injection!
         let decryption_key = self.decryption_key.clone();
         let token = token.to_owned();
         let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
             .arg(username.as_ref())
             .invoke_async(&mut self.connection.clone())
-            .map_err(|err| error!("Error getting account from HTTP auth: {:?}", err))
             .await?;
 
         if let Some(account) = account {
@@ -947,14 +915,14 @@ impl HttpStore for RedisStore {
                 if t == Bytes::from(token) {
                     Ok(account)
                 } else {
-                    Err(())
+                    Err(HttpStoreError::Unauthorized(username.to_string()))
                 }
             } else {
-                Err(())
+                Err(HttpStoreError::Unauthorized(username.to_string()))
             }
         } else {
             warn!("No account found with given HTTP auth");
-            Err(())
+            Err(HttpStoreError::AccountNotFound(username.to_string()))
         }
     }
 }
@@ -969,10 +937,14 @@ impl RouterStore for RedisStore {
 impl NodeStore for RedisStore {
     type Account = Account;
 
-    async fn insert_account(&self, account: AccountDetails) -> Result<Account, ()> {
+    async fn insert_account(
+        &self,
+        account: AccountDetails,
+    ) -> Result<Self::Account, NodeStoreError> {
         let encryption_key = self.encryption_key.clone();
         let id = Uuid::new_v4();
-        let account = Account::try_from(id, account, self.get_ilp_address())?;
+        let account = Account::try_from(id, account, self.get_ilp_address())
+            .map_err(NodeStoreError::InvalidAccount)?;
         debug!(
             "Generated account id for {}: {}",
             account.username.clone(),
@@ -987,17 +959,22 @@ impl NodeStore for RedisStore {
         Ok(account)
     }
 
-    async fn delete_account(&self, id: Uuid) -> Result<Account, ()> {
+    async fn delete_account(&self, id: Uuid) -> Result<Account, NodeStoreError> {
         let decryption_key = self.decryption_key.clone();
         let mut self_clone = self.clone();
         let account = self_clone.redis_delete_account(id).await?;
         Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
     }
 
-    async fn update_account(&self, id: Uuid, account: AccountDetails) -> Result<Self::Account, ()> {
+    async fn update_account(
+        &self,
+        id: Uuid,
+        account: AccountDetails,
+    ) -> Result<Self::Account, NodeStoreError> {
         let encryption_key = self.encryption_key.clone();
         let decryption_key = self.decryption_key.clone();
-        let account = Account::try_from(id, account, self.get_ilp_address())?;
+        let account = Account::try_from(id, account, self.get_ilp_address())
+            .map_err(NodeStoreError::InvalidAccount)?;
 
         debug!(
             "Generated account id for {}: {}",
@@ -1016,7 +993,7 @@ impl NodeStore for RedisStore {
         &self,
         id: Uuid,
         settings: AccountSettings,
-    ) -> Result<Self::Account, ()> {
+    ) -> Result<Self::Account, NodeStoreError> {
         let encryption_key = self.encryption_key.clone();
         let decryption_key = self.decryption_key.clone();
         let settings = EncryptedAccountSettings {
@@ -1059,7 +1036,7 @@ impl NodeStore for RedisStore {
     }
 
     // TODO limit the number of results and page through them
-    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, ()> {
+    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, NodeStoreError> {
         let decryption_key = self.decryption_key.clone();
         let mut connection = self.connection.clone();
 
@@ -1070,10 +1047,8 @@ impl NodeStore for RedisStore {
             script.arg(id.to_string());
         }
 
-        let accounts: Vec<AccountWithEncryptedTokens> = script
-            .invoke_async(&mut connection)
-            .map_err(|err| error!("Error getting account ids: {:?}", err))
-            .await?;
+        let accounts: Vec<AccountWithEncryptedTokens> =
+            script.invoke_async(&mut connection).await?;
 
         // TODO this should be refactored so that it gets reused in multiple backends
         let accounts: Vec<Account> = accounts
@@ -1084,7 +1059,7 @@ impl NodeStore for RedisStore {
         Ok(accounts)
     }
 
-    async fn set_static_routes<R>(&self, routes: R) -> Result<(), ()>
+    async fn set_static_routes<R>(&self, routes: R) -> Result<(), NodeStoreError>
     where
         R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait,
     {
@@ -1102,19 +1077,12 @@ impl NodeStore for RedisStore {
 
         let routing_table = self.routes.clone();
 
-        let accounts_exist: Vec<bool> = pipe
-            .query_async(&mut connection)
-            .map_err(|err| {
-                error!(
-                    "Error checking if accounts exist while setting static routes: {:?}",
-                    err
-                )
-            })
-            .await?;
+        let accounts_exist: Vec<bool> = pipe.query_async(&mut connection).await?;
 
         if !accounts_exist.iter().all(|a| *a) {
             error!("Error setting static routes because not all of the given accounts exist");
-            return Err(());
+            // TODO add proper error variant for "not all accoutns were found"
+            return Err(NodeStoreError::MissingAccounts);
         }
 
         let mut pipe = redis_crate::pipe();
@@ -1124,39 +1092,32 @@ impl NodeStore for RedisStore {
             .hset_multiple(STATIC_ROUTES_KEY, &routes)
             .ignore();
 
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error setting static routes: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
 
         update_routes(connection, routing_table).await?;
         Ok(())
     }
 
-    async fn set_static_route(&self, prefix: String, account_id: Uuid) -> Result<(), ()> {
+    async fn set_static_route(
+        &self,
+        prefix: String,
+        account_id: Uuid,
+    ) -> Result<(), NodeStoreError> {
         let routing_table = self.routes.clone();
         let prefix_clone = prefix.clone();
         let mut connection = self.connection.clone();
 
-        let exists: bool = connection
-            .exists(accounts_key(account_id))
-            .map_err(|err| {
-                error!(
-                    "Error checking if account exists before setting static route: {:?}",
-                    err
-                )
-            })
-            .await?;
+        let exists: bool = connection.exists(accounts_key(account_id)).await?;
         if !exists {
             error!(
                 "Cannot set static route for prefix: {} because account {} does not exist",
                 prefix_clone, account_id
             );
-            return Err(());
+            return Err(NodeStoreError::AccountNotFound(account_id.to_string()));
         }
 
         connection
             .hset(STATIC_ROUTES_KEY, prefix, RedisAccountId(account_id))
-            .map_err(|err| error!("Error setting static route: {:?}", err))
             .await?;
 
         update_routes(connection, routing_table).await?;
@@ -1164,30 +1125,21 @@ impl NodeStore for RedisStore {
         Ok(())
     }
 
-    async fn set_default_route(&self, account_id: Uuid) -> Result<(), ()> {
+    async fn set_default_route(&self, account_id: Uuid) -> Result<(), NodeStoreError> {
         let routing_table = self.routes.clone();
         // TODO replace this with a lua script to do both calls at once
         let mut connection = self.connection.clone();
-        let exists: bool = connection
-            .exists(accounts_key(account_id))
-            .map_err(|err| {
-                error!(
-                    "Error checking if account exists before setting default route: {:?}",
-                    err
-                )
-            })
-            .await?;
+        let exists: bool = connection.exists(accounts_key(account_id)).await?;
         if !exists {
             error!(
                 "Cannot set default route because account {} does not exist",
                 account_id
             );
-            return Err(());
+            return Err(NodeStoreError::AccountNotFound(account_id.to_string()));
         }
 
         connection
             .set(DEFAULT_ROUTE_KEY, RedisAccountId(account_id))
-            .map_err(|err| error!("Error setting default route: {:?}", err))
             .await?;
         debug!("Set default route to account id: {}", account_id);
         update_routes(connection, routing_table).await?;
@@ -1197,7 +1149,7 @@ impl NodeStore for RedisStore {
     async fn set_settlement_engines(
         &self,
         asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
-    ) -> Result<(), ()> {
+    ) -> Result<(), NodeStoreError> {
         let mut connection = self.connection.clone();
         let asset_to_url_map: Vec<(String, String)> = asset_to_url_map
             .into_iter()
@@ -1206,19 +1158,18 @@ impl NodeStore for RedisStore {
         debug!("Setting settlement engines to {:?}", asset_to_url_map);
         connection
             .hset_multiple(SETTLEMENT_ENGINES_KEY, &asset_to_url_map)
-            .map_err(|err| error!("Error setting settlement engines: {:?}", err))
             .await?;
         Ok(())
     }
 
-    async fn get_asset_settlement_engine(&self, asset_code: &str) -> Result<Option<Url>, ()> {
+    async fn get_asset_settlement_engine(
+        &self,
+        asset_code: &str,
+    ) -> Result<Option<Url>, NodeStoreError> {
         let mut connection = self.connection.clone();
         let asset_code = asset_code.to_owned();
 
-        let url: Option<String> = connection
-            .hget(SETTLEMENT_ENGINES_KEY, asset_code)
-            .map_err(|err| error!("Error getting settlement engine: {:?}", err))
-            .await?;
+        let url: Option<String> = connection.hget(SETTLEMENT_ENGINES_KEY, asset_code).await?;
         if let Some(url) = url {
             match Url::parse(url.as_str()) {
                 Ok(url) => Ok(Some(url)),
@@ -1227,7 +1178,7 @@ impl NodeStore for RedisStore {
                         "Settlement engine URL loaded from Redis was not a valid URL: {:?}",
                         err
                     );
-                    Err(())
+                    Err(NodeStoreError::InvalidEngineUrl(err.to_string()))
                 }
             }
         } else {
@@ -1240,7 +1191,7 @@ impl NodeStore for RedisStore {
 impl AddressStore for RedisStore {
     // Updates the ILP address of the store & iterates over all children and
     // updates their ILP Address to match the new address.
-    async fn set_ilp_address(&self, ilp_address: Address) -> Result<(), ()> {
+    async fn set_ilp_address(&self, ilp_address: Address) -> Result<(), AddressStoreError> {
         debug!("Setting ILP address to: {}", ilp_address);
         let routing_table = self.routes.clone();
         let mut connection = self.connection.clone();
@@ -1252,7 +1203,6 @@ impl AddressStore for RedisStore {
         // Save it to Redis
         connection
             .set(PARENT_ILP_KEY, ilp_address.as_bytes())
-            .map_err(|err| error!("Error setting ILP address {:?}", err))
             .await?;
 
         let accounts = self.get_all_accounts().await?;
@@ -1306,18 +1256,16 @@ impl AddressStore for RedisStore {
             }
         }
 
-        pipe.query_async(&mut connection.clone())
-            .map_err(|err| error!("Error updating children: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection.clone()).await?;
         update_routes(connection, routing_table).await?;
         Ok(())
     }
 
-    async fn clear_ilp_address(&self) -> Result<(), ()> {
+    async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
         let mut connection = self.connection.clone();
         connection
             .del(PARENT_ILP_KEY)
-            .map_err(|err| error!("Error removing parent address: {:?}", err))
+            .map_err(|err| AddressStoreError::Other(Box::new(err)))
             .await?;
 
         // overwrite the ilp address with the default value
@@ -1340,13 +1288,10 @@ impl RouteManagerStore for RedisStore {
     async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Result<Vec<Account>, ()> {
+    ) -> Result<Vec<Account>, RouteManagerStoreError> {
         let mut connection = self.connection.clone();
 
-        let account_ids: Vec<RedisAccountId> = connection
-            .smembers("send_routes_to")
-            .map_err(|err| error!("Error getting members of set send_routes_to: {:?}", err))
-            .await?;
+        let account_ids: Vec<RedisAccountId> = connection.smembers("send_routes_to").await?;
         let account_ids: Vec<Uuid> = account_ids
             .into_iter()
             .map(|id| id.0)
@@ -1360,17 +1305,11 @@ impl RouteManagerStore for RedisStore {
         Ok(accounts)
     }
 
-    async fn get_accounts_to_receive_routes_from(&self) -> Result<Vec<Account>, ()> {
+    async fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Result<Vec<Account>, RouteManagerStoreError> {
         let mut connection = self.connection.clone();
-        let account_ids: Vec<RedisAccountId> = connection
-            .smembers("receive_routes_from")
-            .map_err(|err| {
-                error!(
-                    "Error getting members of set receive_routes_from: {:?}",
-                    err
-                )
-            })
-            .await?;
+        let account_ids: Vec<RedisAccountId> = connection.smembers("receive_routes_from").await?;
         let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
 
         if account_ids.is_empty() {
@@ -1383,12 +1322,10 @@ impl RouteManagerStore for RedisStore {
 
     async fn get_local_and_configured_routes(
         &self,
-    ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), ()> {
+    ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), RouteManagerStoreError> {
         let mut connection = self.connection.clone();
-        let static_routes: Vec<(String, RedisAccountId)> = connection
-            .hgetall(STATIC_ROUTES_KEY)
-            .map_err(|err| error!("Error getting static routes: {:?}", err))
-            .await?;
+        let static_routes: Vec<(String, RedisAccountId)> =
+            connection.hgetall(STATIC_ROUTES_KEY).await?;
 
         let accounts = self.get_all_accounts().await?;
 
@@ -1422,7 +1359,7 @@ impl RouteManagerStore for RedisStore {
     async fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (String, Account)> + Send + 'async_trait,
-    ) -> Result<(), ()> {
+    ) -> Result<(), RouteManagerStoreError> {
         let routes: Vec<(String, RedisAccountId)> = routes
             .into_iter()
             .map(|(prefix, account)| (prefix, RedisAccountId(account.id)))
@@ -1431,7 +1368,7 @@ impl RouteManagerStore for RedisStore {
         let mut connection = self.connection.clone();
 
         // Save routes to Redis
-        let routing_tale = self.routes.clone();
+        let routing_table = self.routes.clone();
         let mut pipe = redis_crate::pipe();
         pipe.atomic()
             .del(ROUTES_KEY)
@@ -1439,12 +1376,11 @@ impl RouteManagerStore for RedisStore {
             .hset_multiple(ROUTES_KEY, &routes)
             .ignore();
 
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error setting routes: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
         trace!("Saved {} routes to Redis", num_routes);
 
-        update_routes(connection, routing_tale).await
+        update_routes(connection, routing_table).await?;
+        Ok(())
     }
 }
 
@@ -1521,7 +1457,7 @@ impl RateLimitStore for RedisStore {
         &self,
         account: Account,
         prepare_amount: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), RateLimitError> {
         if let Some(limit) = account.amount_per_minute_limit {
             let mut connection = self.connection.clone();
             let limit = limit - 1;
@@ -1534,7 +1470,7 @@ impl RateLimitStore for RedisStore {
                 // TODO make sure this doesn't overflow
                 .arg(0i64 - (prepare_amount as i64))
                 .query_async(&mut connection)
-                .map_err(|err| error!("Error refunding throughput limit: {:?}", err))
+                .map_err(|_| RateLimitError::StoreError)
                 .await?;
         }
 
@@ -1547,17 +1483,10 @@ impl IdempotentStore for RedisStore {
     async fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Result<Option<IdempotentData>, ()> {
-        let idempotency_key_clone = idempotency_key.clone();
+    ) -> Result<Option<IdempotentData>, IdempotentStoreError> {
         let mut connection = self.connection.clone();
         let ret: HashMap<String, String> = connection
             .hgetall(prefixed_idempotency_key(idempotency_key.clone()))
-            .map_err(move |err| {
-                error!(
-                    "Error loading idempotency key {}: {:?}",
-                    idempotency_key_clone, err
-                )
-            })
             .await?;
 
         if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
@@ -1584,7 +1513,7 @@ impl IdempotentStore for RedisStore {
         input_hash: [u8; 32],
         status_code: StatusCode,
         data: Bytes,
-    ) -> Result<(), ()> {
+    ) -> Result<(), IdempotentStoreError> {
         let mut pipe = redis_crate::pipe();
         let mut connection = self.connection.clone();
         pipe.atomic()
@@ -1599,9 +1528,7 @@ impl IdempotentStore for RedisStore {
             .ignore()
             .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
             .ignore();
-        pipe.query_async(&mut connection)
-            .map_err(|err| error!("Error caching: {:?}", err))
-            .await?;
+        pipe.query_async(&mut connection).await?;
 
         trace!(
             "Cached {:?}: {:?}, {:?}",
@@ -1622,19 +1549,13 @@ impl SettlementStore for RedisStore {
         account_id: Uuid,
         amount: u64,
         idempotency_key: Option<String>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SettlementStoreError> {
         let idempotency_key = idempotency_key.unwrap();
         let balance: i64 = PROCESS_INCOMING_SETTLEMENT
             .arg(RedisAccountId(account_id))
             .arg(amount)
             .arg(idempotency_key)
             .invoke_async(&mut self.connection.clone())
-            .map_err(move |err| {
-                error!(
-                    "Error processing incoming settlement from account: {} for amount: {}: {:?}",
-                    account_id, amount, err
-                )
-            })
             .await?;
         trace!(
             "Processed incoming settlement from account: {} for amount: {}. Balance is now: {}",
@@ -1645,7 +1566,11 @@ impl SettlementStore for RedisStore {
         Ok(())
     }
 
-    async fn refund_settlement(&self, account_id: Uuid, settle_amount: u64) -> Result<(), ()> {
+    async fn refund_settlement(
+        &self,
+        account_id: Uuid,
+        settle_amount: u64,
+    ) -> Result<(), SettlementStoreError> {
         trace!(
             "Refunding settlement for account: {} of amount: {}",
             account_id,
@@ -1655,12 +1580,6 @@ impl SettlementStore for RedisStore {
             .arg(RedisAccountId(account_id))
             .arg(settle_amount)
             .invoke_async(&mut self.connection.clone())
-            .map_err(move |err| {
-                error!(
-                    "Error refunding settlement for account: {} of amount: {}: {:?}",
-                    account_id, settle_amount, err
-                )
-            })
             .await?;
 
         trace!(
@@ -1770,7 +1689,7 @@ impl LeftoversStore for RedisStore {
     async fn get_uncredited_settlement_amount(
         &self,
         account_id: Uuid,
-    ) -> Result<(Self::AssetType, u8), ()> {
+    ) -> Result<(Self::AssetType, u8), LeftoversStoreError> {
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
         // get the amounts and instantly delete them
@@ -1778,10 +1697,7 @@ impl LeftoversStore for RedisStore {
         pipe.del(uncredited_amount_key(account_id.to_string()))
             .ignore();
 
-        let amounts: Vec<AmountWithScale> = pipe
-            .query_async(&mut self.connection.clone())
-            .map_err(move |err| error!("Error getting uncredited_settlement_amount {:?}", err))
-            .await?;
+        let amounts: Vec<AmountWithScale> = pipe.query_async(&mut self.connection.clone()).await?;
 
         // this call will only return 1 element
         let amount = amounts[0].clone();
@@ -1792,7 +1708,7 @@ impl LeftoversStore for RedisStore {
         &self,
         account_id: Uuid,
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Result<(), ()> {
+    ) -> Result<(), LeftoversStoreError> {
         trace!(
             "Saving uncredited_settlement_amount {:?} {:?}",
             account_id,
@@ -1811,7 +1727,6 @@ impl LeftoversStore for RedisStore {
                     scale: uncredited_settlement_amount.1,
                 },
             )
-            .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
             .await?;
 
         Ok(())
@@ -1821,7 +1736,7 @@ impl LeftoversStore for RedisStore {
         &self,
         account_id: Uuid,
         local_scale: u8,
-    ) -> Result<Self::AssetType, ()> {
+    ) -> Result<Self::AssetType, LeftoversStoreError> {
         let mut connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         let amount = self.get_uncredited_settlement_amount(account_id).await?;
@@ -1839,20 +1754,19 @@ impl LeftoversStore for RedisStore {
                         scale: std::cmp::max(local_scale, amount.1),
                     },
                 )
-                .map_err(move |err| error!("Error saving uncredited_settlement_amount: {:?}", err))
                 .await?;
         }
 
         Ok(scaled_amount)
     }
 
-    async fn clear_uncredited_settlement_amount(&self, account_id: Uuid) -> Result<(), ()> {
+    async fn clear_uncredited_settlement_amount(
+        &self,
+        account_id: Uuid,
+    ) -> Result<(), LeftoversStoreError> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id);
         let mut connection = self.connection.clone();
-        connection
-            .del(uncredited_amount_key(account_id))
-            .map_err(move |err| error!("Error clearing uncredited_settlement_amount: {:?}", err))
-            .await?;
+        connection.del(uncredited_amount_key(account_id)).await?;
         Ok(())
     }
 }
@@ -1865,15 +1779,13 @@ use futures::future::TryFutureExt;
 async fn update_routes(
     mut connection: RedisReconnect,
     routing_table: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
-) -> Result<(), ()> {
+) -> Result<(), RedisError> {
     let mut pipe = redis_crate::pipe();
     pipe.hgetall(ROUTES_KEY)
         .hgetall(STATIC_ROUTES_KEY)
         .get(DEFAULT_ROUTE_KEY);
-    let (routes, static_routes, default_route): (RouteVec, RouteVec, Option<RedisAccountId>) = pipe
-        .query_async(&mut connection)
-        .map_err(|err| error!("Error polling for routing table updates: {:?}", err))
-        .await?;
+    let (routes, static_routes, default_route): (RouteVec, RouteVec, Option<RedisAccountId>) =
+        pipe.query_async(&mut connection).await?;
     trace!(
         "Loaded routes from redis. Static routes: {:?}, default route: {:?}, other routes: {:?}",
         static_routes,

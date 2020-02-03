@@ -2,6 +2,7 @@
 use super::*;
 use crate::{packet::CCP_RESPONSE, server::CcpRouteManager};
 use async_trait::async_trait;
+use interledger_errors::{AddressStoreError, RouteManagerStoreError};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AddressStore, IncomingService, OutgoingRequest,
@@ -111,11 +112,11 @@ type RoutingTable<A> = HashMap<String, A>;
 #[async_trait]
 impl AddressStore for TestStore {
     /// Saves the ILP Address in the store's memory and database
-    async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
+    async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), AddressStoreError> {
         unimplemented!()
     }
 
-    async fn clear_ilp_address(&self) -> Result<(), ()> {
+    async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
         unimplemented!()
     }
 
@@ -131,14 +132,15 @@ impl RouteManagerStore for TestStore {
 
     async fn get_local_and_configured_routes(
         &self,
-    ) -> Result<(RoutingTable<TestAccount>, RoutingTable<TestAccount>), ()> {
+    ) -> Result<(RoutingTable<TestAccount>, RoutingTable<TestAccount>), RouteManagerStoreError>
+    {
         Ok((self.local.clone(), self.configured.clone()))
     }
 
     async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Result<Vec<TestAccount>, ()> {
+    ) -> Result<Vec<TestAccount>, RouteManagerStoreError> {
         let mut accounts: Vec<TestAccount> = self
             .local
             .values()
@@ -153,7 +155,9 @@ impl RouteManagerStore for TestStore {
         Ok(accounts)
     }
 
-    async fn get_accounts_to_receive_routes_from(&self) -> Result<Vec<TestAccount>, ()> {
+    async fn get_accounts_to_receive_routes_from(
+        &self,
+    ) -> Result<Vec<TestAccount>, RouteManagerStoreError> {
         let mut accounts: Vec<TestAccount> = self
             .local
             .values()
@@ -169,7 +173,7 @@ impl RouteManagerStore for TestStore {
     async fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (String, TestAccount)> + Send + 'async_trait,
-    ) -> Result<(), ()> {
+    ) -> Result<(), RouteManagerStoreError> {
         *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Ok(())
     }

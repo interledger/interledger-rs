@@ -34,6 +34,7 @@ warp = { version = "0.2", default-features = false }
 secrecy = { version = "0.6", default-features = false, features = ["serde"] }
 lazy_static = "1.4.0"
 async-trait = "0.1.22"
+interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false, features = ["warp_errors"] }
 
 [dev-dependencies]
 tokio = { version = "0.2.9", features = ["rt-core", "macros"] }

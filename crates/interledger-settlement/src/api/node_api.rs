@@ -8,9 +8,10 @@ use crate::core::{
     },
 };
 use bytes::Bytes;
+use futures::future::Either;
 use futures::TryFutureExt;
 use hyper::{Response, StatusCode};
-use interledger_http::error::*;
+use interledger_errors::*;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
 use log::error;
@@ -255,14 +256,18 @@ where
 
     let ret = futures::future::join_all(vec![
         // update the account's balance in the store
-        store.update_balance_for_incoming_settlement(
+        Either::Left(store.update_balance_for_incoming_settlement(
             account_id,
             engine_amount_u64,
             idempotency_key,
-        ),
+        )),
         // save any precision loss that occurred during the
         // scaling of the engine's amount to the account's scale
-        store.save_uncredited_settlement_amount(account_id, (precision_loss, engine_scale)),
+        Either::Right(
+            store
+                .save_uncredited_settlement_amount(account_id, (precision_loss, engine_scale))
+                .map_err(SettlementStoreError::from),
+        ),
     ])
     .await;
 

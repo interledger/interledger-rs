@@ -28,6 +28,7 @@ pub mod test_helpers {
     use super::*;
     use async_trait::async_trait;
     use futures::channel::mpsc::UnboundedSender;
+    use interledger_errors::{AccountStoreError, AddressStoreError};
     use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore, AddressStore, Username};
@@ -99,12 +100,18 @@ pub mod test_helpers {
     impl AccountStore for TestStore {
         type Account = TestAccount;
 
-        async fn get_accounts(&self, _account_ids: Vec<Uuid>) -> Result<Vec<Self::Account>, ()> {
+        async fn get_accounts(
+            &self,
+            _account_ids: Vec<Uuid>,
+        ) -> Result<Vec<Self::Account>, AccountStoreError> {
             Ok(vec![self.route.1.clone()])
         }
 
         // stub implementation (not used in these tests)
-        async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+        async fn get_account_id_from_username(
+            &self,
+            _username: &Username,
+        ) -> Result<Uuid, AccountStoreError> {
             Ok(Uuid::new_v4())
         }
     }
@@ -120,11 +127,11 @@ pub mod test_helpers {
     #[async_trait]
     impl AddressStore for TestStore {
         /// Saves the ILP Address in the store's memory and database
-        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
+        async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), AddressStoreError> {
             unimplemented!()
         }
 
-        async fn clear_ilp_address(&self) -> Result<(), ()> {
+        async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
             unimplemented!()
         }
 

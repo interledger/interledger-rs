@@ -27,6 +27,7 @@
 //! HttpServerService --> ValidatorService --> StreamReceiverService
 
 use async_trait::async_trait;
+use interledger_errors::{AccountStoreError, AddressStoreError};
 use interledger_packet::{Address, Fulfill, Prepare, Reject};
 use std::{
     fmt::{self, Debug},
@@ -181,14 +182,14 @@ pub trait AccountStore {
         &self,
         // The account ids (UUID format) of the accounts you are fetching
         account_ids: Vec<Uuid>,
-    ) -> Result<Vec<Self::Account>, ()>;
+    ) -> Result<Vec<Self::Account>, AccountStoreError>;
 
     /// Loads the account id which corresponds to the provided username
     async fn get_account_id_from_username(
         &self,
         // The username of the account you are fetching
         username: &Username,
-    ) -> Result<Uuid, ()>;
+    ) -> Result<Uuid, AccountStoreError>;
 }
 
 /// Create an IncomingService that calls the given handler for each request.
@@ -336,10 +337,10 @@ pub trait AddressStore: Clone {
         &self,
         // The new ILP Address of the node
         ilp_address: Address,
-    ) -> Result<(), ()>;
+    ) -> Result<(), AddressStoreError>;
 
     /// Resets the node's ILP Address to local.host
-    async fn clear_ilp_address(&self) -> Result<(), ()>;
+    async fn clear_ilp_address(&self) -> Result<(), AddressStoreError>;
 
     /// Gets the node's ILP Address *synchronously*
     /// (the value is stored in memory because it is read often by all services)
@@ -366,8 +367,8 @@ mod tests {
         }
 
         // and with a closure (async closure are unstable)
-        let foo2 = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| {
-            async move { next.handle_request(request).await }
+        let foo2 = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| async move {
+            next.handle_request(request).await
         };
 
         // base layer
@@ -413,8 +414,8 @@ mod tests {
         }
 
         // and with a closure (async closure are unstable)
-        let foo2 = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| {
-            async move { next.send_request(request).await }
+        let foo2 = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| async move {
+            next.send_request(request).await
         };
 
         // base layer

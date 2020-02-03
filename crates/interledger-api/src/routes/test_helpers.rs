@@ -8,7 +8,7 @@ use futures::channel::mpsc::UnboundedSender;
 use http::Response;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
-use interledger_http::error::default_rejection_handler;
+use interledger_errors::*;
 use interledger_http::{HttpAccount, HttpStore};
 use interledger_packet::{Address, ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_router::RouterStore;
@@ -175,26 +175,38 @@ impl CcpRoutingAccount for TestAccount {
 impl AccountStore for TestStore {
     type Account = TestAccount;
 
-    async fn get_accounts(&self, _account_ids: Vec<Uuid>) -> Result<Vec<TestAccount>, ()> {
+    async fn get_accounts(
+        &self,
+        _account_ids: Vec<Uuid>,
+    ) -> Result<Vec<TestAccount>, AccountStoreError> {
         Ok(vec![TestAccount])
     }
 
     // stub implementation (not used in these tests)
-    async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+    async fn get_account_id_from_username(
+        &self,
+        _username: &Username,
+    ) -> Result<Uuid, AccountStoreError> {
         Ok(Uuid::new_v4())
     }
 }
 
 impl ExchangeRateStore for TestStore {
-    fn get_exchange_rates(&self, _asset_codes: &[&str]) -> Result<Vec<f64>, ()> {
+    fn get_exchange_rates(
+        &self,
+        _asset_codes: &[&str],
+    ) -> Result<Vec<f64>, ExchangeRateStoreError> {
         Ok(vec![1.0, 2.0])
     }
 
-    fn set_exchange_rates(&self, _rates: HashMap<String, f64>) -> Result<(), ()> {
+    fn set_exchange_rates(
+        &self,
+        _rates: HashMap<String, f64>,
+    ) -> Result<(), ExchangeRateStoreError> {
         Ok(())
     }
 
-    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ()> {
+    fn get_all_exchange_rates(&self) -> Result<HashMap<String, f64>, ExchangeRateStoreError> {
         let mut ret = HashMap::new();
         ret.insert("ABC".to_owned(), 1.0);
         ret.insert("XYZ".to_owned(), 2.0);
@@ -212,11 +224,14 @@ impl RouterStore for TestStore {
 impl NodeStore for TestStore {
     type Account = TestAccount;
 
-    async fn insert_account(&self, _account: AccountDetails) -> Result<Self::Account, ()> {
+    async fn insert_account(
+        &self,
+        _account: AccountDetails,
+    ) -> Result<Self::Account, NodeStoreError> {
         Ok(TestAccount)
     }
 
-    async fn delete_account(&self, _id: Uuid) -> Result<Self::Account, ()> {
+    async fn delete_account(&self, _id: Uuid) -> Result<Self::Account, NodeStoreError> {
         Ok(TestAccount)
     }
 
@@ -224,7 +239,7 @@ impl NodeStore for TestStore {
         &self,
         _id: Uuid,
         _account: AccountDetails,
-    ) -> Result<Self::Account, ()> {
+    ) -> Result<Self::Account, NodeStoreError> {
         Ok(TestAccount)
     }
 
@@ -232,37 +247,44 @@ impl NodeStore for TestStore {
         &self,
         _id: Uuid,
         _settings: AccountSettings,
-    ) -> Result<Self::Account, ()> {
+    ) -> Result<Self::Account, NodeStoreError> {
         Ok(TestAccount)
     }
 
-    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, ()> {
+    async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, NodeStoreError> {
         Ok(vec![TestAccount, TestAccount])
     }
 
-    async fn set_static_routes<R>(&self, _routes: R) -> Result<(), ()>
+    async fn set_static_routes<R>(&self, _routes: R) -> Result<(), NodeStoreError>
     where
         R: IntoIterator<Item = (String, Uuid)> + Send + 'async_trait,
     {
         Ok(())
     }
 
-    async fn set_static_route(&self, _prefix: String, _account_id: Uuid) -> Result<(), ()> {
+    async fn set_static_route(
+        &self,
+        _prefix: String,
+        _account_id: Uuid,
+    ) -> Result<(), NodeStoreError> {
         Ok(())
     }
 
-    async fn set_default_route(&self, _account_id: Uuid) -> Result<(), ()> {
+    async fn set_default_route(&self, _account_id: Uuid) -> Result<(), NodeStoreError> {
         unimplemented!()
     }
 
     async fn set_settlement_engines(
         &self,
         _asset_to_url_map: impl IntoIterator<Item = (String, Url)> + Send + 'async_trait,
-    ) -> Result<(), ()> {
+    ) -> Result<(), NodeStoreError> {
         Ok(())
     }
 
-    async fn get_asset_settlement_engine(&self, _asset_code: &str) -> Result<Option<Url>, ()> {
+    async fn get_asset_settlement_engine(
+        &self,
+        _asset_code: &str,
+    ) -> Result<Option<Url>, NodeStoreError> {
         Ok(None)
     }
 }
@@ -270,11 +292,11 @@ impl NodeStore for TestStore {
 #[async_trait]
 impl AddressStore for TestStore {
     /// Saves the ILP Address in the store's memory and database
-    async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), ()> {
+    async fn set_ilp_address(&self, _ilp_address: Address) -> Result<(), AddressStoreError> {
         Ok(())
     }
 
-    async fn clear_ilp_address(&self) -> Result<(), ()> {
+    async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
         Ok(())
     }
 
@@ -302,31 +324,31 @@ impl StreamNotificationsStore for TestStore {
 
 #[async_trait]
 impl BalanceStore for TestStore {
-    async fn get_balance(&self, _account: TestAccount) -> Result<i64, ()> {
+    async fn get_balance(&self, _: Uuid) -> Result<i64, BalanceStoreError> {
         Ok(1)
     }
 
     async fn update_balances_for_prepare(
         &self,
-        _from_account: TestAccount,
+        _: Uuid,
         _incoming_amount: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), BalanceStoreError> {
         unimplemented!()
     }
 
     async fn update_balances_for_fulfill(
         &self,
-        _to_account: TestAccount,
+        _: Uuid,
         _outgoing_amount: u64,
-    ) -> Result<(i64, u64), ()> {
+    ) -> Result<(i64, u64), BalanceStoreError> {
         unimplemented!()
     }
 
     async fn update_balances_for_reject(
         &self,
-        _from_account: TestAccount,
+        _: Uuid,
         _incoming_amount: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), BalanceStoreError> {
         unimplemented!()
     }
 }
@@ -338,11 +360,11 @@ impl HttpStore for TestStore {
         &self,
         username: &Username,
         token: &str,
-    ) -> Result<Self::Account, ()> {
+    ) -> Result<Self::Account, HttpStoreError> {
         if username == &*USERNAME && token == AUTH_PASSWORD {
             Ok(TestAccount)
         } else {
-            Err(())
+            Err(HttpStoreError::Unauthorized(username.to_string()))
         }
     }
 }

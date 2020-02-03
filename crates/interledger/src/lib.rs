@@ -11,6 +11,11 @@ pub mod packet {
     pub use interledger_packet::*;
 }
 
+/// Error types used with the Interledger.rs components.
+pub mod errors {
+    pub use interledger_errors::*;
+}
+
 /// HTTP API for interacting with the Interledger.rs components.
 #[cfg(feature = "api")]
 pub mod api {

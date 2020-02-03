@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
 use async_trait::async_trait;
+use interledger_errors::*;
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
@@ -92,7 +93,7 @@ impl SettlementStore for TestStore {
         account_id: Uuid,
         amount: u64,
         _idempotency_key: Option<String>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SettlementStoreError> {
         let mut accounts = self.accounts.write();
         for mut a in &mut *accounts {
             if a.id() == account_id {
@@ -100,15 +101,19 @@ impl SettlementStore for TestStore {
             }
         }
         if self.should_fail {
-            Err(())
+            Err(SettlementStoreError::BalanceUpdateFailure)
         } else {
             Ok(())
         }
     }
 
-    async fn refund_settlement(&self, _account_id: Uuid, _settle_amount: u64) -> Result<(), ()> {
+    async fn refund_settlement(
+        &self,
+        _account_id: Uuid,
+        _settle_amount: u64,
+    ) -> Result<(), SettlementStoreError> {
         if self.should_fail {
-            Err(())
+            Err(SettlementStoreError::RefundFailure)
         } else {
             Ok(())
         }
@@ -120,7 +125,7 @@ impl IdempotentStore for TestStore {
     async fn load_idempotent_data(
         &self,
         idempotency_key: String,
-    ) -> Result<Option<IdempotentData>, ()> {
+    ) -> Result<Option<IdempotentData>, IdempotentStoreError> {
         let cache = self.cache.read();
         if let Some(data) = cache.get(&idempotency_key) {
             let mut guard = self.cache_hits.write();
@@ -137,7 +142,7 @@ impl IdempotentStore for TestStore {
         input_hash: [u8; 32],
         status_code: StatusCode,
         data: Bytes,
-    ) -> Result<(), ()> {
+    ) -> Result<(), IdempotentStoreError> {
         let mut cache = self.cache.write();
         cache.insert(
             idempotency_key,
@@ -151,7 +156,10 @@ impl IdempotentStore for TestStore {
 impl AccountStore for TestStore {
     type Account = TestAccount;
 
-    async fn get_accounts(&self, account_ids: Vec<Uuid>) -> Result<Vec<Self::Account>, ()> {
+    async fn get_accounts(
+        &self,
+        account_ids: Vec<Uuid>,
+    ) -> Result<Vec<Self::Account>, AccountStoreError> {
         let accounts: Vec<TestAccount> = self
             .accounts
             .read()
@@ -167,12 +175,18 @@ impl AccountStore for TestStore {
         if accounts.len() == account_ids.len() {
             Ok(accounts)
         } else {
-            Err(())
+            Err(AccountStoreError::WrongLength {
+                expected: account_ids.len(),
+                actual: accounts.len(),
+            })
         }
     }
 
     // stub implementation (not used in these tests)
-    async fn get_account_id_from_username(&self, _username: &Username) -> Result<Uuid, ()> {
+    async fn get_account_id_from_username(
+        &self,
+        _username: &Username,
+    ) -> Result<Uuid, AccountStoreError> {
         Ok(Uuid::new_v4())
     }
 }
@@ -186,7 +200,7 @@ impl LeftoversStore for TestStore {
         &self,
         account_id: Uuid,
         uncredited_settlement_amount: (Self::AssetType, u8),
-    ) -> Result<(), ()> {
+    ) -> Result<(), LeftoversStoreError> {
         let mut guard = self.uncredited_settlement_amount.write();
         if let Some(leftovers) = (*guard).get_mut(&account_id) {
             match leftovers.1.cmp(&uncredited_settlement_amount.1) {
@@ -235,7 +249,7 @@ impl LeftoversStore for TestStore {
         &self,
         account_id: Uuid,
         local_scale: u8,
-    ) -> Result<Self::AssetType, ()> {
+    ) -> Result<Self::AssetType, LeftoversStoreError> {
         let mut guard = self.uncredited_settlement_amount.write();
         if let Some(l) = guard.get_mut(&account_id) {
             let ret = l.clone();
@@ -252,7 +266,7 @@ impl LeftoversStore for TestStore {
     async fn get_uncredited_settlement_amount(
         &self,
         account_id: Uuid,
-    ) -> Result<(Self::AssetType, u8), ()> {
+    ) -> Result<(Self::AssetType, u8), LeftoversStoreError> {
         let leftovers = self.uncredited_settlement_amount.read();
         Ok(if let Some(a) = leftovers.get(&account_id) {
             a.clone()
@@ -261,7 +275,10 @@ impl LeftoversStore for TestStore {
         })
     }
 
-    async fn clear_uncredited_settlement_amount(&self, _account_id: Uuid) -> Result<(), ()> {
+    async fn clear_uncredited_settlement_amount(
+        &self,
+        _account_id: Uuid,
+    ) -> Result<(), LeftoversStoreError> {
         unreachable!()
     }
 }
