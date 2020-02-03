@@ -330,7 +330,7 @@ where
 /// which has been assigned to the node. The node will then proceed to set its
 /// ILP Address to that value.
 #[async_trait]
-pub trait AddressStore: Clone {
+pub trait AddressStore {
     /// Saves the ILP Address in the database AND in the store's memory so that it can
     /// be read without read overhead
     async fn set_ilp_address(
