@@ -160,7 +160,6 @@ where
                         // settlement engine for the status of each
                         // outgoing settlement and putting unnecessary
                         // load on the settlement engine.
-                        println!("making settelment request");
                         if settlement_client
                             .send_settlement(to, amount_to_settle)
                             .await

@@ -19,7 +19,7 @@ pub enum CreateAccountError {
     #[error("the provided routing relation is not valid: {0}")]
     InvalidRoutingRelation(String),
     #[error("the provided value for parameter `{0}` was too large")]
-    ParamTooLarge(String)
+    ParamTooLarge(String),
 }
 
 impl From<CreateAccountError> for ApiError {

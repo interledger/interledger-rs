@@ -65,7 +65,7 @@ where
         + Sync
         + 'static,
 {
-    // TODO can we make any of the Filters const or put them in lazy_static?
+    // TODO can we make any of the Filters const or put them in once_cell?
     let with_store = warp::any().map(move || store.clone()).boxed();
     let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
 

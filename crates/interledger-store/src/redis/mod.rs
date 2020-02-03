@@ -83,7 +83,7 @@ fn uncredited_amount_key(account_id: impl ToString) -> String {
 }
 
 /// Domain separator for idempotency keys
-fn prefixed_idempotency_key(idempotency_key: String) -> String {
+fn prefixed_idempotency_key(idempotency_key: &str) -> String {
     format!("idempotency-key:{}", idempotency_key)
 }
 
@@ -334,11 +334,11 @@ impl RedisStore {
     /// Inserts the account corresponding to the provided `AccountWithEncryptedtokens`
     /// in Redis. Returns the provided account (tokens remain encrypted)
     async fn redis_insert_account(
-        &mut self,
-        encrypted: AccountWithEncryptedTokens,
-    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
-        let account = encrypted.account.clone();
-        let ret = encrypted.clone();
+        &self,
+        encrypted: &AccountWithEncryptedTokens,
+    ) -> Result<(), NodeStoreError> {
+        let account = &encrypted.account;
+        let id = accounts_key(account.id);
         let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
         // Check that there isn't already an account with values that MUST be unique
@@ -349,7 +349,7 @@ impl RedisStore {
             pipe.exists(PARENT_ILP_KEY);
         }
 
-        let results: Vec<bool> = pipe.query_async(&mut connection.clone()).await?;
+        let results: Vec<bool> = pipe.query_async(&mut connection).await?;
         if results.iter().any(|val| *val) {
             warn!(
                 "An account already exists with the same {}. Cannot insert account: {:?}",
@@ -372,18 +372,9 @@ impl RedisStore {
         )
         .ignore();
 
-        // Set account details
-        pipe.cmd("HMSET")
-            .arg(accounts_key(account.id))
-            .arg(encrypted)
-            .ignore();
-
         // Set balance-related details
-        pipe.hset_multiple(
-            accounts_key(account.id),
-            &[("balance", 0), ("prepaid_amount", 0)],
-        )
-        .ignore();
+        pipe.hset_multiple(&id, &[("balance", 0), ("prepaid_amount", 0)])
+            .ignore();
 
         if account.should_send_routes() {
             pipe.sadd("send_routes_to", RedisAccountId(account.id))
@@ -403,10 +394,13 @@ impl RedisStore {
         // Add route to routing table
         pipe.hset(
             ROUTES_KEY,
-            account.ilp_address.to_bytes().to_vec(),
+            account.ilp_address.as_bytes(),
             RedisAccountId(account.id),
         )
         .ignore();
+
+        // Set account details
+        pipe.cmd("HMSET").arg(&id).arg(encrypted).ignore();
 
         // The parent account settings are done via the API. We just
         // had to check for the existence of a parent
@@ -417,15 +411,15 @@ impl RedisStore {
             "Inserted account {} (ILP address: {})",
             account.id, account.ilp_address
         );
-        Ok(ret)
+        Ok(())
     }
 
     /// Overwrites the account corresponding to the provided `AccountWithEncryptedtokens`
     /// in Redis. Returns the provided account (tokens remain encrypted)
     async fn redis_update_account(
         &self,
-        encrypted: AccountWithEncryptedTokens,
-    ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
+        encrypted: &AccountWithEncryptedTokens,
+    ) -> Result<(), NodeStoreError> {
         let account = encrypted.account.clone();
         let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
@@ -454,7 +448,7 @@ impl RedisStore {
         // Set account details
         pipe.cmd("HMSET")
             .arg(accounts_key(account.id))
-            .arg(encrypted.clone())
+            .arg(encrypted)
             .ignore();
 
         if account.should_send_routes() {
@@ -486,7 +480,7 @@ impl RedisStore {
             "Inserted account {} (id: {}, ILP address: {})",
             account.username, account.id, account.ilp_address
         );
-        Ok(encrypted)
+        Ok(())
     }
 
     /// Modifies the account corresponding to the provided `id` with the provided `settings`
@@ -496,9 +490,6 @@ impl RedisStore {
         id: Uuid,
         settings: EncryptedAccountSettings,
     ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
-        let connection = self.connection.clone();
-        let mut self_clone = self.clone();
-
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
 
@@ -547,22 +538,28 @@ impl RedisStore {
         }
 
         if let Some(settle_to) = settings.settle_to {
+            if settle_to > std::i64::MAX as u64 {
+                // Redis cannot handle values greater than i64::MAX (other stores maybe can though)
+                return Err(NodeStoreError::InvalidAccount(
+                    CreateAccountError::ParamTooLarge("settle_to".to_owned()),
+                ));
+            }
             pipe.hset(accounts_key(id), "settle_to", settle_to);
         }
 
-        pipe.query_async(&mut connection.clone()).await?;
+        pipe.query_async(&mut self.connection.clone()).await?;
 
         // return the updated account
-        self_clone.redis_get_account(id).await
+        self.redis_get_account(id).await
     }
 
     /// Gets the account (tokens remain encrypted) corresponding to the provided `id` from Redis.
     async fn redis_get_account(
-        &mut self,
+        &self,
         id: Uuid,
     ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let mut accounts: Vec<AccountWithEncryptedTokens> = LOAD_ACCOUNTS
-            .arg(id.to_string())
+            .arg(RedisAccountId(id))
             .invoke_async(&mut self.connection.clone())
             .await?;
         accounts
@@ -573,13 +570,11 @@ impl RedisStore {
     /// Deletes the account corresponding to the provided `id` from Redis.
     /// Returns the deleted account (tokens remain encrypted)
     async fn redis_delete_account(
-        &mut self,
+        &self,
         id: Uuid,
     ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
-        let mut connection = self.connection.clone();
-        let routing_table = self.routes.clone();
         let encrypted = self.redis_get_account(id).await?;
-        let account = encrypted.account.clone();
+        let account = &encrypted.account;
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
 
@@ -608,9 +603,9 @@ impl RedisStore {
 
         pipe.del(uncredited_amount_key(id));
 
+        let mut connection = self.connection.clone();
         pipe.query_async(&mut connection).await?;
-
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, self.routes.clone()).await?;
         debug!("Deleted account {}", account.id);
         Ok(encrypted)
     }
@@ -625,7 +620,6 @@ impl AccountStore for RedisStore {
         &self,
         account_ids: Vec<Uuid>,
     ) -> Result<Vec<Account>, AccountStoreError> {
-        let decryption_key = self.decryption_key.clone();
         let num_accounts = account_ids.len();
         let mut script = LOAD_ACCOUNTS.prepare_invoke();
         for id in account_ids.iter() {
@@ -633,22 +627,22 @@ impl AccountStore for RedisStore {
         }
 
         // Need to clone the connection here to avoid lifetime errors
-        let connection = self.connection.clone();
         let accounts: Vec<AccountWithEncryptedTokens> =
-            script.invoke_async(&mut connection.clone()).await?;
+            script.invoke_async(&mut self.connection.clone()).await?;
 
         // Decrypt the accounts. TODO: This functionality should be
         // decoupled from redis so that it gets reused by the other backends
         if accounts.len() == num_accounts {
             let accounts = accounts
                 .into_iter()
-                .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
+                .map(|account| account.decrypt_tokens(&self.decryption_key.expose_secret().0))
                 .collect();
             Ok(accounts)
         } else {
-            Err(AccountStoreError::AccountNotFound(
-                "provided account uuids were not found".to_owned(),
-            ))
+            Err(AccountStoreError::WrongLength {
+                expected: num_accounts,
+                actual: accounts.len(),
+            })
         }
     }
 
@@ -657,8 +651,11 @@ impl AccountStore for RedisStore {
         username: &Username,
     ) -> Result<Uuid, AccountStoreError> {
         let username = username.clone();
-        let mut connection = self.connection.clone();
-        let id: Option<RedisAccountId> = connection.hget("usernames", username.as_ref()).await?;
+        let id: Option<RedisAccountId> = self
+            .connection
+            .clone()
+            .hget("usernames", username.as_ref())
+            .await?;
         match id {
             Some(rid) => Ok(rid.0),
             None => {
@@ -720,8 +717,9 @@ impl BalanceStore for RedisStore {
     /// Returns the balance **from the account holder's perspective**, meaning the sum of
     /// the Payable Balance and Pending Outgoing minus the Receivable Balance and the Pending Incoming.
     async fn get_balance(&self, account_id: Uuid) -> Result<i64, BalanceStoreError> {
-        let mut connection = self.connection.clone();
-        let values: Vec<i64> = connection
+        let values: Vec<i64> = self
+            .connection
+            .clone()
             .hget(accounts_key(account_id), &["balance", "prepaid_amount"])
             .await?;
 
@@ -844,21 +842,16 @@ impl BtpStore for RedisStore {
         // TODO make sure it can't do script injection!
         // TODO cache the result so we don't hit redis for every packet (is that
         // necessary if redis is often used as a cache?)
-        let decryption_key = self.decryption_key.clone();
-        let mut connection = self.connection.clone();
-        let token = token.to_owned();
-        let username = username.to_owned(); // TODO: Can we avoid taking ownership?
-
         let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
             .arg(username.as_ref())
-            .invoke_async(&mut connection)
+            .invoke_async(&mut self.connection.clone())
             .await?;
 
         if let Some(account) = account {
-            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-            if let Some(t) = account.ilp_over_btp_incoming_token.clone() {
-                let t = t.expose_secret().clone();
-                if t == Bytes::from(token) {
+            let account = account.decrypt_tokens(&self.decryption_key.expose_secret().0);
+            if let Some(ref t) = account.ilp_over_btp_incoming_token {
+                let t = t.expose_secret();
+                if t.as_ref() == token.as_bytes() {
                     Ok(account)
                 } else {
                     debug!(
@@ -881,9 +874,8 @@ impl BtpStore for RedisStore {
     }
 
     async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, BtpStoreError> {
-        let mut connection = self.connection.clone();
-
-        let account_ids: Vec<RedisAccountId> = connection.smembers("btp_outgoing").await?;
+        let account_ids: Vec<RedisAccountId> =
+            self.connection.clone().smembers("btp_outgoing").await?;
         let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
 
         if account_ids.is_empty() {
@@ -907,18 +899,16 @@ impl HttpStore for RedisStore {
         token: &str,
     ) -> Result<Self::Account, HttpStoreError> {
         // TODO make sure it can't do script injection!
-        let decryption_key = self.decryption_key.clone();
-        let token = token.to_owned();
         let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
             .arg(username.as_ref())
             .invoke_async(&mut self.connection.clone())
             .await?;
 
         if let Some(account) = account {
-            let account = account.decrypt_tokens(&decryption_key.expose_secret().0);
-            if let Some(t) = account.ilp_over_http_incoming_token.clone() {
-                let t = t.expose_secret().clone();
-                if t == Bytes::from(token) {
+            let account = account.decrypt_tokens(&self.decryption_key.expose_secret().0);
+            if let Some(ref t) = account.ilp_over_http_incoming_token {
+                let t = t.expose_secret();
+                if t.as_ref() == token.as_bytes() {
                     Ok(account)
                 } else {
                     Err(HttpStoreError::Unauthorized(username.to_string()))
@@ -947,29 +937,24 @@ impl NodeStore for RedisStore {
         &self,
         account: AccountDetails,
     ) -> Result<Self::Account, NodeStoreError> {
-        let encryption_key = self.encryption_key.clone();
         let id = Uuid::new_v4();
         let account = Account::try_from(id, account, self.get_ilp_address())
             .map_err(NodeStoreError::InvalidAccount)?;
         debug!(
             "Generated account id for {}: {}",
-            account.username.clone(),
-            account.id
+            account.username, account.id
         );
         let encrypted = account
             .clone()
-            .encrypt_tokens(&encryption_key.expose_secret().0);
-        let mut self_clone = self.clone();
+            .encrypt_tokens(&self.encryption_key.expose_secret().0);
 
-        self_clone.redis_insert_account(encrypted).await?;
+        self.redis_insert_account(&encrypted).await?;
         Ok(account)
     }
 
     async fn delete_account(&self, id: Uuid) -> Result<Account, NodeStoreError> {
-        let decryption_key = self.decryption_key.clone();
-        let mut self_clone = self.clone();
-        let account = self_clone.redis_delete_account(id).await?;
-        Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
+        let account = self.redis_delete_account(id).await?;
+        Ok(account.decrypt_tokens(&self.decryption_key.expose_secret().0))
     }
 
     async fn update_account(
@@ -977,22 +962,19 @@ impl NodeStore for RedisStore {
         id: Uuid,
         account: AccountDetails,
     ) -> Result<Self::Account, NodeStoreError> {
-        let encryption_key = self.encryption_key.clone();
-        let decryption_key = self.decryption_key.clone();
         let account = Account::try_from(id, account, self.get_ilp_address())
             .map_err(NodeStoreError::InvalidAccount)?;
 
         debug!(
             "Generated account id for {}: {}",
-            account.username.clone(),
-            account.id
+            account.username, account.id
         );
         let encrypted = account
             .clone()
-            .encrypt_tokens(&encryption_key.expose_secret().0);
+            .encrypt_tokens(&self.encryption_key.expose_secret().0);
 
-        let account = self.redis_update_account(encrypted).await?;
-        Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
+        self.redis_update_account(&encrypted).await?;
+        Ok(account)
     }
 
     async fn modify_account_settings(
@@ -1000,8 +982,6 @@ impl NodeStore for RedisStore {
         id: Uuid,
         settings: AccountSettings,
     ) -> Result<Self::Account, NodeStoreError> {
-        let encryption_key = self.encryption_key.clone();
-        let decryption_key = self.decryption_key.clone();
         let settings = EncryptedAccountSettings {
             settle_to: settings.settle_to,
             settle_threshold: settings.settle_threshold,
@@ -1009,28 +989,28 @@ impl NodeStore for RedisStore {
             ilp_over_http_url: settings.ilp_over_http_url,
             ilp_over_btp_incoming_token: settings.ilp_over_btp_incoming_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    &self.encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
                 .freeze()
             }),
             ilp_over_http_incoming_token: settings.ilp_over_http_incoming_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    &self.encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
                 .freeze()
             }),
             ilp_over_btp_outgoing_token: settings.ilp_over_btp_outgoing_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    &self.encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
                 .freeze()
             }),
             ilp_over_http_outgoing_token: settings.ilp_over_http_outgoing_token.map(|token| {
                 encrypt_token(
-                    &encryption_key.expose_secret().0,
+                    &self.encryption_key.expose_secret().0,
                     token.expose_secret().as_bytes(),
                 )
                 .freeze()
@@ -1038,12 +1018,11 @@ impl NodeStore for RedisStore {
         };
 
         let account = self.redis_modify_account(id, settings).await?;
-        Ok(account.decrypt_tokens(&decryption_key.expose_secret().0))
+        Ok(account.decrypt_tokens(&self.decryption_key.expose_secret().0))
     }
 
     // TODO limit the number of results and page through them
     async fn get_all_accounts(&self) -> Result<Vec<Self::Account>, NodeStoreError> {
-        let decryption_key = self.decryption_key.clone();
         let mut connection = self.connection.clone();
 
         let account_ids = self.get_all_accounts_ids().await?;
@@ -1059,7 +1038,7 @@ impl NodeStore for RedisStore {
         // TODO this should be refactored so that it gets reused in multiple backends
         let accounts: Vec<Account> = accounts
             .into_iter()
-            .map(|account| account.decrypt_tokens(&decryption_key.expose_secret().0))
+            .map(|account| account.decrypt_tokens(&self.decryption_key.expose_secret().0))
             .collect();
 
         Ok(accounts)
@@ -1110,14 +1089,13 @@ impl NodeStore for RedisStore {
         account_id: Uuid,
     ) -> Result<(), NodeStoreError> {
         let routing_table = self.routes.clone();
-        let prefix_clone = prefix.clone();
         let mut connection = self.connection.clone();
 
         let exists: bool = connection.exists(accounts_key(account_id)).await?;
         if !exists {
             error!(
                 "Cannot set static route for prefix: {} because account {} does not exist",
-                prefix_clone, account_id
+                prefix, account_id
             );
             return Err(NodeStoreError::AccountNotFound(account_id.to_string()));
         }
@@ -1172,10 +1150,11 @@ impl NodeStore for RedisStore {
         &self,
         asset_code: &str,
     ) -> Result<Option<Url>, NodeStoreError> {
-        let mut connection = self.connection.clone();
-        let asset_code = asset_code.to_owned();
-
-        let url: Option<String> = connection.hget(SETTLEMENT_ENGINES_KEY, asset_code).await?;
+        let url: Option<String> = self
+            .connection
+            .clone()
+            .hget(SETTLEMENT_ENGINES_KEY, asset_code)
+            .await?;
         if let Some(url) = url {
             match Url::parse(url.as_str()) {
                 Ok(url) => Ok(Some(url)),
@@ -1201,7 +1180,6 @@ impl AddressStore for RedisStore {
         debug!("Setting ILP address to: {}", ilp_address);
         let routing_table = self.routes.clone();
         let mut connection = self.connection.clone();
-        let ilp_address_clone = ilp_address.clone();
 
         // Set the ILP address we have in memory
         (*self.ilp_address.write()) = ilp_address.clone();
@@ -1220,29 +1198,28 @@ impl AddressStore for RedisStore {
         // node's ilp address. Currently this is not possible, as
         // account.ilp_address() cannot access any state that exists
         // on the store.
+        let first_segment = ilp_address
+            .segments()
+            .rev()
+            .next()
+            .expect("address did not have a first segment, this should be impossible");
         let mut pipe = redis_crate::pipe();
-        for account in accounts {
+        for account in &accounts {
             // Update the address and routes of all children and non-routing accounts.
             if account.routing_relation() != RoutingRelation::Parent
                 && account.routing_relation() != RoutingRelation::Peer
             {
                 // remove the old route
-                pipe.hdel(ROUTES_KEY, &account.ilp_address as &str).ignore();
+                pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
+                    .ignore();
 
                 // if the username of the account ends with the
                 // node's address, we're already configured so no
                 // need to append anything.
-                let ilp_address_clone2 = ilp_address_clone.clone();
-                // Note: We are assuming that if the node's address
-                // ends with the account's username, then this
-                // account represents the node's non routing
-                // account. Is this a reasonable assumption to make?
-                let new_ilp_address = if ilp_address_clone2.segments().rev().next().unwrap()
-                    == account.username().to_string()
-                {
-                    ilp_address_clone2
+                let new_ilp_address = if first_segment == account.username().to_string() {
+                    ilp_address.clone()
                 } else {
-                    ilp_address_clone
+                    ilp_address
                         .with_suffix(account.username().as_bytes())
                         .unwrap()
                 };
@@ -1268,8 +1245,8 @@ impl AddressStore for RedisStore {
     }
 
     async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
-        let mut connection = self.connection.clone();
-        connection
+        self.connection
+            .clone()
             .del(PARENT_ILP_KEY)
             .map_err(|err| AddressStoreError::Other(Box::new(err)))
             .await?;
@@ -1295,9 +1272,8 @@ impl RouteManagerStore for RedisStore {
         &self,
         ignore_accounts: Vec<Uuid>,
     ) -> Result<Vec<Account>, RouteManagerStoreError> {
-        let mut connection = self.connection.clone();
-
-        let account_ids: Vec<RedisAccountId> = connection.smembers("send_routes_to").await?;
+        let account_ids: Vec<RedisAccountId> =
+            self.connection.clone().smembers("send_routes_to").await?;
         let account_ids: Vec<Uuid> = account_ids
             .into_iter()
             .map(|id| id.0)
@@ -1314,8 +1290,11 @@ impl RouteManagerStore for RedisStore {
     async fn get_accounts_to_receive_routes_from(
         &self,
     ) -> Result<Vec<Account>, RouteManagerStoreError> {
-        let mut connection = self.connection.clone();
-        let account_ids: Vec<RedisAccountId> = connection.smembers("receive_routes_from").await?;
+        let account_ids: Vec<RedisAccountId> = self
+            .connection
+            .clone()
+            .smembers("receive_routes_from")
+            .await?;
         let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
 
         if account_ids.is_empty() {
@@ -1329,9 +1308,8 @@ impl RouteManagerStore for RedisStore {
     async fn get_local_and_configured_routes(
         &self,
     ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), RouteManagerStoreError> {
-        let mut connection = self.connection.clone();
         let static_routes: Vec<(String, RedisAccountId)> =
-            connection.hgetall(STATIC_ROUTES_KEY).await?;
+            self.connection.clone().hgetall(STATIC_ROUTES_KEY).await?;
 
         let accounts = self.get_all_accounts().await?;
 
@@ -1374,7 +1352,6 @@ impl RouteManagerStore for RedisStore {
         let mut connection = self.connection.clone();
 
         // Save routes to Redis
-        let routing_table = self.routes.clone();
         let mut pipe = redis_crate::pipe();
         pipe.atomic()
             .del(ROUTES_KEY)
@@ -1385,7 +1362,7 @@ impl RouteManagerStore for RedisStore {
         pipe.query_async(&mut connection).await?;
         trace!("Saved {} routes to Redis", num_routes);
 
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, self.routes.clone()).await?;
         Ok(())
     }
 }
@@ -1430,9 +1407,8 @@ impl RateLimitStore for RedisStore {
                     .arg(prepare_amount);
             }
 
-            let mut connection = self.connection.clone();
             let results: Vec<Vec<i64>> = pipe
-                .query_async(&mut connection)
+                .query_async(&mut self.connection.clone())
                 .map_err(|err| {
                     error!("Error applying rate limits: {:?}", err);
                     RateLimitError::StoreError
@@ -1465,7 +1441,6 @@ impl RateLimitStore for RedisStore {
         prepare_amount: u64,
     ) -> Result<(), RateLimitError> {
         if let Some(limit) = account.amount_per_minute_limit {
-            let mut connection = self.connection.clone();
             let limit = limit - 1;
             let throughput_limit = format!("limit:throughput:{}", account.id);
             cmd("CL.THROTTLE")
@@ -1475,7 +1450,7 @@ impl RateLimitStore for RedisStore {
                 .arg(60)
                 // TODO make sure this doesn't overflow
                 .arg(0i64 - (prepare_amount as i64))
-                .query_async(&mut connection)
+                .query_async(&mut self.connection.clone())
                 .map_err(|_| RateLimitError::StoreError)
                 .await?;
         }
@@ -1492,7 +1467,7 @@ impl IdempotentStore for RedisStore {
     ) -> Result<Option<IdempotentData>, IdempotentStoreError> {
         let mut connection = self.connection.clone();
         let ret: HashMap<String, String> = connection
-            .hgetall(prefixed_idempotency_key(idempotency_key.clone()))
+            .hgetall(prefixed_idempotency_key(&idempotency_key))
             .await?;
 
         if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
@@ -1505,7 +1480,7 @@ impl IdempotentStore for RedisStore {
             input_hash.copy_from_slice(input_hash_slice.as_ref());
             Ok(Some(IdempotentData::new(
                 StatusCode::from_str(status_code).unwrap(),
-                Bytes::from(data.clone()),
+                Bytes::from(data.to_owned()),
                 input_hash,
             )))
         } else {
@@ -1524,7 +1499,7 @@ impl IdempotentStore for RedisStore {
         let mut connection = self.connection.clone();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&prefixed_idempotency_key(idempotency_key.clone()))
+            .arg(&prefixed_idempotency_key(&idempotency_key))
             .arg("status_code")
             .arg(status_code.as_u16())
             .arg("data")
@@ -1532,7 +1507,7 @@ impl IdempotentStore for RedisStore {
             .arg("input_hash")
             .arg(&input_hash)
             .ignore()
-            .expire(&prefixed_idempotency_key(idempotency_key.clone()), 86400)
+            .expire(&prefixed_idempotency_key(&idempotency_key), 86400)
             .ignore();
         pipe.query_async(&mut connection).await?;
 
@@ -1706,7 +1681,7 @@ impl LeftoversStore for RedisStore {
         let amounts: Vec<AmountWithScale> = pipe.query_async(&mut self.connection.clone()).await?;
 
         // this call will only return 1 element
-        let amount = amounts[0].clone();
+        let amount = amounts[0].to_owned();
         Ok((amount.num, amount.scale))
     }
 
@@ -1743,7 +1718,6 @@ impl LeftoversStore for RedisStore {
         account_id: Uuid,
         local_scale: u8,
     ) -> Result<Self::AssetType, LeftoversStoreError> {
-        let mut connection = self.connection.clone();
         trace!("Loading uncredited_settlement_amount {:?}", account_id);
         let amount = self.get_uncredited_settlement_amount(account_id).await?;
         // scale the amount from the max scale to the local scale, and then
@@ -1752,7 +1726,8 @@ impl LeftoversStore for RedisStore {
             scale_with_precision_loss(amount.0, local_scale, amount.1);
 
         if precision_loss > BigUint::from(0u32) {
-            connection
+            self.connection
+                .clone()
                 .rpush(
                     uncredited_amount_key(account_id),
                     AmountWithScale {
@@ -1771,8 +1746,10 @@ impl LeftoversStore for RedisStore {
         account_id: Uuid,
     ) -> Result<(), LeftoversStoreError> {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id);
-        let mut connection = self.connection.clone();
-        connection.del(uncredited_amount_key(account_id)).await?;
+        self.connection
+            .clone()
+            .del(uncredited_amount_key(account_id))
+            .await?;
         Ok(())
     }
 }
@@ -1857,7 +1834,7 @@ impl FromRedisValue for RedisAccountId {
     }
 }
 
-impl ToRedisArgs for AccountWithEncryptedTokens {
+impl ToRedisArgs for &AccountWithEncryptedTokens {
     fn write_redis_args<W: RedisWrite + ?Sized>(&self, out: &mut W) {
         let mut rv = Vec::with_capacity(ACCOUNT_DETAILS_FIELDS * 2);
         let account = &self.account;
