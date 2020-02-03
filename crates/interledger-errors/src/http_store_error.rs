@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// Errors for the HttpStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum HttpStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),

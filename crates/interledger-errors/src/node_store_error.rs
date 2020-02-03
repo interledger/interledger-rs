@@ -3,8 +3,9 @@ use crate::error::ApiError;
 use std::error::Error as StdError;
 use thiserror::Error;
 
-/// Errors for the RouteManagerStore
+/// Errors for the NodeStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum NodeStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),

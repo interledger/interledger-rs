@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// Errors for the BtpStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum BtpStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),

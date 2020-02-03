@@ -4,10 +4,10 @@ use thiserror::Error;
 
 /// Errors for the LeftoversStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum LeftoversStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
-    // TODO: What else should we include for this type of store?
 }
 
 impl From<LeftoversStoreError> for ApiError {
@@ -27,10 +27,10 @@ impl From<LeftoversStoreError> for warp::Rejection {
 
 /// Errors for the IdempotentStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum IdempotentStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
-    // TODO: What else should we include for this type of store?
 }
 
 impl From<IdempotentStoreError> for ApiError {
@@ -50,6 +50,7 @@ impl From<IdempotentStoreError> for warp::Rejection {
 
 /// Errors for the SettlementStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum SettlementStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),

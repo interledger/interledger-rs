@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Errors for the RouteManagerStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum RouteManagerStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),

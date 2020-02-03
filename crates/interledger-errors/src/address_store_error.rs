@@ -3,8 +3,9 @@ use interledger_packet::Address;
 use std::error::Error as StdError;
 use thiserror::Error;
 
-/// Errors for the AccountStore
+/// Errors for the AddressStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum AddressStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send>),
@@ -36,6 +37,7 @@ impl From<AddressStoreError> for ApiError {
     }
 }
 
+#[cfg(feature = "warp_errors")]
 impl From<AddressStoreError> for warp::Rejection {
     fn from(src: AddressStoreError) -> Self {
         ApiError::from(src).into()

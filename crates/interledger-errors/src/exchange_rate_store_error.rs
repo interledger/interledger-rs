@@ -2,8 +2,9 @@ use crate::error::ApiError;
 use std::error::Error as StdError;
 use thiserror::Error;
 
-/// Errors for the RouteManagerStore
+/// Errors for the ExchangeRateStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ExchangeRateStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),

@@ -2,14 +2,12 @@ use crate::error::ApiError;
 use std::error::Error as StdError;
 use thiserror::Error;
 
-/// Errors for the RouteManagerStore
+/// Errors for the BalanceStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum BalanceStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
-    // Currently Balance store implementations only wrap around internal errors
-    // and do not produce any specific errors. If more errors are needed, this enum
-    // should be expanded
 }
 
 impl From<BalanceStoreError> for ApiError {

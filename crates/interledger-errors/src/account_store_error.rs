@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Errors for the AccountStore
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum AccountStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
