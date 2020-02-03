@@ -83,11 +83,9 @@ where
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|rates: ExchangeRates, store: S| {
-            async move {
-                store.set_exchange_rates(rates.0.clone())?;
-                Ok::<_, Rejection>(warp::reply::json(&rates))
-            }
+        .and_then(|rates: ExchangeRates, store: S| async move {
+            store.set_exchange_rates(rates.0.clone())?;
+            Ok::<_, Rejection>(warp::reply::json(&rates))
         })
         .boxed();
 
@@ -96,11 +94,9 @@ where
         .and(warp::path("rates"))
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(|store: S| {
-            async move {
-                let rates = store.get_all_exchange_rates()?;
-                Ok::<_, Rejection>(warp::reply::json(&rates))
-            }
+        .and_then(|store: S| async move {
+            let rates = store.get_all_exchange_rates()?;
+            Ok::<_, Rejection>(warp::reply::json(&rates))
         })
         .boxed();
 

@@ -227,16 +227,15 @@ impl InterledgerNode {
     // connector instances to forward packets for that account to us
     pub async fn serve(self) -> Result<(), ()> {
         #[cfg(feature = "monitoring")]
-        let f =
-            futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(|r| {
-                async move {
-                    if r.0.is_ok() || r.1.is_ok() {
-                        Ok(())
-                    } else {
-                        Err(())
-                    }
+        let f = futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(
+            |r| async move {
+                if r.0.is_ok() || r.1.is_ok() {
+                    Ok(())
+                } else {
+                    Err(())
                 }
-            });
+            },
+        );
 
         #[cfg(not(feature = "monitoring"))]
         let f = self.serve_node();
@@ -429,12 +428,10 @@ impl InterledgerNode {
         #[cfg(feature = "monitoring")]
         let incoming_service_btp = incoming_service
             .clone()
-            .wrap(|request, mut next| {
-                async move {
-                    let btp = debug_span!(target: "interledger-node", "btp");
-                    let _btp_scope = btp.enter();
-                    next.handle_request(request).in_current_span().await
-                }
+            .wrap(|request, mut next| async move {
+                let btp = debug_span!(target: "interledger-node", "btp");
+                let _btp_scope = btp.enter();
+                next.handle_request(request).in_current_span().await
             })
             .in_current_span();
         #[cfg(not(feature = "monitoring"))]
@@ -451,12 +448,10 @@ impl InterledgerNode {
         #[cfg(feature = "monitoring")]
         let incoming_service_api = incoming_service
             .clone()
-            .wrap(|request, mut next| {
-                async move {
-                    let api = debug_span!(target: "interledger-node", "api");
-                    let _api_scope = api.enter();
-                    next.handle_request(request).in_current_span().await
-                }
+            .wrap(|request, mut next| async move {
+                let api = debug_span!(target: "interledger-node", "api");
+                let _api_scope = api.enter();
+                next.handle_request(request).in_current_span().await
             })
             .in_current_span();
         #[cfg(not(feature = "monitoring"))]
@@ -479,12 +474,10 @@ impl InterledgerNode {
         #[cfg(feature = "monitoring")]
         let incoming_service_http = incoming_service
             .clone()
-            .wrap(|request, mut next| {
-                async move {
-                    let http = debug_span!(target: "interledger-node", "http");
-                    let _http_scope = http.enter();
-                    next.handle_request(request).in_current_span().await
-                }
+            .wrap(|request, mut next| async move {
+                let http = debug_span!(target: "interledger-node", "http");
+                let _http_scope = http.enter();
+                next.handle_request(request).in_current_span().await
             })
             .in_current_span();
         #[cfg(not(feature = "monitoring"))]
