@@ -1,6 +1,5 @@
 use super::HttpStore;
 use bytes::{Bytes, BytesMut};
-use futures::TryFutureExt;
 use interledger_errors::ApiError;
 use interledger_packet::Prepare;
 use interledger_service::Username;
@@ -35,20 +34,19 @@ async fn get_account<S>(
     store: S,
     path_username: &Username,
     password: &SecretString,
-) -> Result<S::Account, ()>
+) -> Result<S::Account, ApiError>
 where
     S: HttpStore,
 {
     if password.expose_secret().len() < BEARER_TOKEN_START {
-        return Err(());
+        return Err(ApiError::unauthorized().detail("provided token was not a bearer token"));
     }
-    store
+    Ok(store
         .get_account_from_http_auth(
             &path_username,
             &password.expose_secret()[BEARER_TOKEN_START..],
         )
-        .map_err(|_| ())
-        .await
+        .await?)
 }
 
 #[inline]
@@ -74,12 +72,7 @@ where
     I: IncomingService<S::Account> + Clone,
 {
     let mut incoming = incoming.clone();
-    let account = get_account(store, &path_username, &password)
-        .map_err(|_| -> Rejection {
-            error!("Invalid authorization provided for user: {}", path_username);
-            ApiError::unauthorized().into()
-        })
-        .await?;
+    let account = get_account(store, &path_username, &password).await?;
 
     let buffer = bytes::BytesMut::from(body.as_ref());
     if let Ok(prepare) = Prepare::try_from(buffer) {
