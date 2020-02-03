@@ -165,14 +165,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interledger_packet::{Address, FulfillBuilder, RejectBuilder, PrepareBuilder};
+    use interledger_errors::AddressStoreError;
+    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::{incoming_service_fn, Username};
     use once_cell::sync::Lazy;
-    use std::str::FromStr;
-    use uuid::Uuid;
-    use interledger_errors::AddressStoreError;
-    use std::sync::Arc;
     use parking_lot::RwLock;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn applies_rate_limit() {
@@ -188,7 +188,6 @@ mod tests {
         let fulfill = service.handle_request(TEST_REQUEST.clone()).await.unwrap();
         assert_eq!(fulfill.data(), b"test data");
         assert_eq!(*store.was_refunded.read(), false);
-
     }
 
     #[tokio::test]
@@ -204,7 +203,10 @@ mod tests {
         });
         let store = TestStore::new(Ok(()));
         let mut service = RateLimitService::new(store.clone(), next);
-        let reject = service.handle_request(TEST_REQUEST.clone()).await.unwrap_err();
+        let reject = service
+            .handle_request(TEST_REQUEST.clone())
+            .await
+            .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
         assert_eq!(*store.was_refunded.read(), true);
     }
@@ -220,7 +222,10 @@ mod tests {
         });
         let store = TestStore::new(Err(RateLimitError::PacketLimitExceeded));
         let mut service = RateLimitService::new(store.clone(), next);
-        let reject = service.handle_request(TEST_REQUEST.clone()).await.unwrap_err();
+        let reject = service
+            .handle_request(TEST_REQUEST.clone())
+            .await
+            .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T05_RATE_LIMITED);
         assert_eq!(*store.was_refunded.read(), false);
     }
@@ -236,7 +241,10 @@ mod tests {
         });
         let store = TestStore::new(Err(RateLimitError::ThroughputLimitExceeded));
         let mut service = RateLimitService::new(store.clone(), next);
-        let reject = service.handle_request(TEST_REQUEST.clone()).await.unwrap_err();
+        let reject = service
+            .handle_request(TEST_REQUEST.clone())
+            .await
+            .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T04_INSUFFICIENT_LIQUIDITY);
         assert_eq!(*store.was_refunded.read(), false);
     }
@@ -252,7 +260,10 @@ mod tests {
         });
         let store = TestStore::new(Err(RateLimitError::StoreError));
         let mut service = RateLimitService::new(store.clone(), next);
-        let reject = service.handle_request(TEST_REQUEST.clone()).await.unwrap_err();
+        let reject = service
+            .handle_request(TEST_REQUEST.clone())
+            .await
+            .unwrap_err();
         assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
         assert_eq!(*store.was_refunded.read(), false);
     }
@@ -307,7 +318,8 @@ mod tests {
     impl TestStore {
         fn new(return_data: Result<(), RateLimitError>) -> Self {
             Self {
-                return_data, was_refunded: Arc::new(RwLock::new(false)),
+                return_data,
+                was_refunded: Arc::new(RwLock::new(false)),
             }
         }
     }
@@ -332,11 +344,7 @@ mod tests {
     impl RateLimitStore for TestStore {
         type Account = TestAccount;
 
-        async fn apply_rate_limits(
-            &self,
-            _: Self::Account,
-            _: u64,
-        ) -> Result<(), RateLimitError> {
+        async fn apply_rate_limits(&self, _: Self::Account, _: u64) -> Result<(), RateLimitError> {
             self.return_data.clone()
         }
 
@@ -354,17 +362,15 @@ mod tests {
         }
     }
 
-    static TEST_REQUEST: Lazy<IncomingRequest<TestAccount>> = Lazy::new(|| {
-        IncomingRequest {
-            from: TestAccount,
-            prepare: PrepareBuilder {
-                destination: Address::from_str("example.destination").unwrap(),
-                amount: 100,
-                expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(30),
-                execution_condition: &[0; 32],
-                data: b"test data",
-            }
-            .build()
+    static TEST_REQUEST: Lazy<IncomingRequest<TestAccount>> = Lazy::new(|| IncomingRequest {
+        from: TestAccount,
+        prepare: PrepareBuilder {
+            destination: Address::from_str("example.destination").unwrap(),
+            amount: 100,
+            expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(30),
+            execution_condition: &[0; 32],
+            data: b"test data",
         }
+        .build(),
     });
 }
