@@ -9,7 +9,6 @@ use thiserror::Error;
 pub enum RouteManagerStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
-    // TODO: What else should we include for this type of store?
 }
 
 impl From<AccountStoreError> for RouteManagerStoreError {

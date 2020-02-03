@@ -2,6 +2,7 @@ use super::crypto::{decrypt_token, encrypt_token};
 use interledger_api::AccountDetails;
 use interledger_btp::BtpAccount;
 use interledger_ccp::{CcpRoutingAccount, RoutingRelation};
+use interledger_errors::CreateAccountError;
 use interledger_http::HttpAccount;
 use interledger_packet::Address;
 use interledger_service::{Account as AccountTrait, Username};
@@ -110,41 +111,29 @@ impl Account {
         id: Uuid,
         details: AccountDetails,
         node_ilp_address: Address,
-    ) -> Result<Account, String> {
+    ) -> Result<Account, CreateAccountError> {
         let ilp_address = match details.ilp_address {
             Some(a) => a,
             None => node_ilp_address
                 .with_suffix(details.username.as_bytes())
-                .map_err(|err| {
-                    error!(
-                        "Could not append username {} to address {}",
-                        details.username, node_ilp_address
-                    );
-                    err.to_string()
-                })?,
+                .map_err(CreateAccountError::InvalidSuffix)?,
         };
 
         let ilp_over_http_url = if let Some(ref url) = details.ilp_over_http_url {
-            Some(Url::parse(url).map_err(|err| {
-                error!("Invalid URL: {:?}", err);
-                err.to_string()
-            })?)
+            Some(Url::parse(url).map_err(CreateAccountError::InvalidHttpUrl)?)
         } else {
             None
         };
 
         let ilp_over_btp_url = if let Some(ref url) = details.ilp_over_btp_url {
-            Some(Url::parse(url).map_err(|err| {
-                error!("Invalid URL: {:?}", err);
-                err.to_string()
-            })?)
+            Some(Url::parse(url).map_err(CreateAccountError::InvalidBtpUrl)?)
         } else {
             None
         };
 
         let routing_relation = if let Some(ref relation) = details.routing_relation {
             RoutingRelation::from_str(relation)
-                .map_err(|_| "Could not parse provided routing relation to string".to_string())?
+                .map_err(|_| CreateAccountError::InvalidRoutingRelation(relation.to_string()))?
         } else {
             RoutingRelation::NonRoutingAccount
         };

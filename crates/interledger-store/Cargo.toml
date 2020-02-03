@@ -51,6 +51,7 @@ interledger-errors = { path = "../interledger-errors", version = "^0.1.0", defau
 # redis feature
 redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
 async-trait = "0.1.22"
+thiserror = "1.0.10"
 
 [dev-dependencies]
 env_logger = { version = "0.7.0", default-features = false }

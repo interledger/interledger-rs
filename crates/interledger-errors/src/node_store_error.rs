@@ -1,4 +1,4 @@
-use super::{AccountStoreError, BtpStoreError};
+use super::{AccountStoreError, BtpStoreError, CreateAccountError};
 use crate::error::ApiError;
 use std::error::Error as StdError;
 use thiserror::Error;
@@ -18,7 +18,7 @@ pub enum NodeStoreError {
     #[error("not all of the given accounts exist")]
     MissingAccounts,
     #[error("invalid account: {0}")]
-    InvalidAccount(String),
+    InvalidAccount(CreateAccountError),
 }
 
 impl From<NodeStoreError> for BtpStoreError {

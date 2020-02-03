@@ -28,3 +28,6 @@ pub use exchange_rate_store_error::ExchangeRateStoreError;
 
 mod settlement_errors;
 pub use settlement_errors::{IdempotentStoreError, LeftoversStoreError, SettlementStoreError};
+
+mod create_account_error;
+pub use create_account_error::CreateAccountError;
