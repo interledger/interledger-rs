@@ -28,7 +28,7 @@ use hex::FromHex;
 use interledger::{
     api::{NodeApi, NodeStore},
     btp::{btp_service_as_filter, connect_client, BtpOutgoingService, BtpStore},
-    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, RouteManagerStore, RoutingRelation},
+    ccp::{CcpRouteManagerBuilder, CcpRoutingAccount, CcpRoutingStore, RoutingRelation},
     errors::*,
     http::{HttpClientService, HttpServer as IlpOverHttpServer, HttpStore},
     ildcp::IldcpService,
@@ -284,7 +284,7 @@ impl InterledgerNode {
             + BalanceStore
             + SettlementStore<Account = Account>
             + RouterStore<Account = Account>
-            + RouteManagerStore<Account = Account>
+            + CcpRoutingStore<Account = Account>
             + RateLimitStore<Account = Account>
             + LeftoversStore<AccountId = Uuid, AssetType = BigUint>
             + IdempotentStore
