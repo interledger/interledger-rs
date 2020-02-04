@@ -5,8 +5,8 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
-use lazy_static::lazy_static;
 use log::error;
+use once_cell::sync::Lazy;
 use std::{
     convert::TryFrom,
     fmt::{self, Debug},
@@ -26,17 +26,17 @@ const FLAG_TRANSITIVE: u8 = 0x40;
 const FLAG_PARTIAL: u8 = 0x20;
 const FLAG_UTF8: u8 = 0x10;
 
-lazy_static! {
-    pub static ref CCP_RESPONSE: Fulfill = FulfillBuilder {
+pub static CCP_RESPONSE: Lazy<Fulfill> = Lazy::new(|| {
+    FulfillBuilder {
         fulfillment: &PEER_PROTOCOL_FULFILLMENT,
         data: &[],
     }
-    .build();
-    pub static ref CCP_CONTROL_DESTINATION: Address =
-        Address::from_str("peer.route.control").unwrap();
-    pub static ref CCP_UPDATE_DESTINATION: Address =
-        Address::from_str("peer.route.update").unwrap();
-}
+    .build()
+});
+pub static CCP_CONTROL_DESTINATION: Lazy<Address> =
+    Lazy::new(|| Address::from_str("peer.route.control").unwrap());
+pub static CCP_UPDATE_DESTINATION: Lazy<Address> =
+    Lazy::new(|| Address::from_str("peer.route.update").unwrap());
 
 /// CCP Packet mode used in Route Control Requests of the CCP protocol.
 /// Idle: Account does not wish to receive more routes

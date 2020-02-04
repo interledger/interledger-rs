@@ -23,7 +23,7 @@ serde_path_to_error = { version = "0.1", default-features = false }
 http = { version = "0.2.0", default-features = false }
 chrono = { version = "0.4.9", features = ["clock"], default-features = false }
 regex = { version ="1.3.1", default-features = false, features = ["std"] }
-lazy_static = { version ="1.4.0", default-features = false }
+once_cell = "1.3.1"
 mime = { version ="0.3.14", default-features = false }
 secrecy = "0.6"
 async-trait = "0.1.22"

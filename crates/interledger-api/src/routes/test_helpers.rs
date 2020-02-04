@@ -18,7 +18,7 @@ use interledger_service::{
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -101,17 +101,18 @@ pub fn test_accounts_api(
 struct TestStore;
 
 use serde_json::json;
-lazy_static! {
-    pub static ref USERNAME: Username = Username::from_str("alice").unwrap();
-    pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-    pub static ref DETAILS: Option<Value> = Some(json!({
+pub static USERNAME: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+pub static EXAMPLE_ADDRESS: Lazy<Address> =
+    Lazy::new(|| Address::from_str("example.alice").unwrap());
+pub static DETAILS: Lazy<Option<Value>> = Lazy::new(|| {
+    Some(json!({
         "ilp_address": "example.alice",
         "username": "alice",
         "asset_code": "XYZ",
         "asset_scale": 9,
         "ilp_over_http_incoming_token" : "password",
-    }));
-}
+    }))
+});
 const AUTH_PASSWORD: &str = "password";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

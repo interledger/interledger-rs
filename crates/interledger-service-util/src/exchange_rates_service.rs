@@ -330,7 +330,7 @@ mod tests {
     use interledger_errors::AddressStoreError;
     use interledger_packet::{Address, Fulfill, FulfillBuilder, PrepareBuilder, Reject};
     use interledger_service::{outgoing_service_fn, Account};
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use std::collections::HashMap;
     use std::str::FromStr;
     use std::{
@@ -339,9 +339,7 @@ mod tests {
     };
     use uuid::Uuid;
 
-    lazy_static! {
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-    }
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
 
     #[tokio::test]
     async fn exchange_rate_ok() {

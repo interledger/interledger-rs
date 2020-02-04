@@ -223,24 +223,22 @@ mod test_functions {
 
 #[cfg(test)]
 mod test_buf_oer_ext {
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
 
     use super::fixtures::*;
     use super::*;
 
-    lazy_static! {
-        // These bufferes have their lengths encoded in multiple bytes.
-        static ref SIZE_128_VARSTR: Vec<u8> = {
-            let mut data = vec![0x81, 0x80];
-            data.extend(&[0x00; 128][..]);
-            data
-        };
-        static ref SIZE_5678_VARSTR: Vec<u8> = {
-            let mut data = vec![0x82, 0x16, 0x2e];
-            data.extend(&[0x00; 5678][..]);
-            data
-        };
-    }
+    // These bufferes have their lengths encoded in multiple bytes.
+    static SIZE_128_VARSTR: Lazy<Vec<u8>> = Lazy::new(|| {
+        let mut data = vec![0x81, 0x80];
+        data.extend(&[0x00; 128][..]);
+        data
+    });
+    static SIZE_5678_VARSTR: Lazy<Vec<u8>> = Lazy::new(|| {
+        let mut data = vec![0x82, 0x16, 0x2e];
+        data.extend(&[0x00; 5678][..]);
+        data
+    });
 
     #[test]
     fn test_peek_var_octet_string() {

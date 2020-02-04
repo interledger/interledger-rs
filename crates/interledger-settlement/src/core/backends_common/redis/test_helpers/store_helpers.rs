@@ -1,11 +1,9 @@
 use super::redis_helpers::TestContext;
 use crate::core::backends_common::redis::{EngineRedisStore, EngineRedisStoreBuilder};
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
-lazy_static! {
-    pub static ref IDEMPOTENCY_KEY: String = String::from("abcd");
-}
+pub static IDEMPOTENCY_KEY: Lazy<String> = Lazy::new(|| String::from("abcd"));
 
 pub async fn test_store() -> Result<(EngineRedisStore, TestContext), ()> {
     let context = TestContext::new();

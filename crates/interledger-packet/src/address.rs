@@ -14,7 +14,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
@@ -24,11 +24,9 @@ pub enum AddressError {
     InvalidFormat,
 }
 
-lazy_static! {
-    static ref ADDRESS_PATTERN: Regex =
-        Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$")
-            .unwrap();
-}
+static ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$").unwrap()
+});
 
 use std::error::Error;
 impl Error for AddressError {

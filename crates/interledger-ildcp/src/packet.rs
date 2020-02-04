@@ -4,7 +4,7 @@ use interledger_packet::{
     oer::{predict_var_octet_string, BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use std::{
     convert::TryFrom,
     fmt, str,
@@ -19,10 +19,8 @@ static PEER_PROTOCOL_CONDITION: [u8; 32] = [
 ];
 const ASSET_SCALE_LEN: usize = 1;
 
-lazy_static! {
-    static ref PEER_PROTOCOL_EXPIRY_DURATION: Duration = Duration::from_secs(60);
-    static ref ILDCP_DESTINATION: Address = Address::from_str("peer.config").unwrap();
-}
+static PEER_PROTOCOL_EXPIRY_DURATION: Lazy<Duration> = Lazy::new(|| Duration::from_secs(60));
+static ILDCP_DESTINATION: Lazy<Address> = Lazy::new(|| Address::from_str("peer.config").unwrap());
 
 pub fn is_ildcp_request(prepare: &Prepare) -> bool {
     prepare.execution_condition() == PEER_PROTOCOL_CONDITION

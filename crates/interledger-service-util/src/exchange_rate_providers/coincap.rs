@@ -1,17 +1,17 @@
 use futures::TryFutureExt;
-use lazy_static::lazy_static;
 use log::{error, warn};
+use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use std::{collections::HashMap, str::FromStr};
 
-lazy_static! {
-    // We use both endpoints because they contain different sets of rates
-    // This one has more cryptocurrencies
-    static ref COINCAP_ASSETS_URL: Url = Url::parse("https://api.coincap.io/v2/assets").unwrap();
-    // This one has more fiat currencies
-    static ref COINCAP_RATES_URL: Url = Url::parse("https://api.coincap.io/v2/rates").unwrap();
-}
+// We use both endpoints because they contain different sets of rates
+// This one has more cryptocurrencies
+static COINCAP_ASSETS_URL: Lazy<Url> =
+    Lazy::new(|| Url::parse("https://api.coincap.io/v2/assets").unwrap());
+// This one has more fiat currencies
+static COINCAP_RATES_URL: Lazy<Url> =
+    Lazy::new(|| Url::parse("https://api.coincap.io/v2/rates").unwrap());
 
 #[derive(Deserialize, Debug)]
 struct Rate {

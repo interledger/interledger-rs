@@ -1,6 +1,6 @@
 use super::{ApiError, ApiErrorType, ProblemType};
 use http::StatusCode;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 // Common HTTP errors
 
@@ -118,10 +118,9 @@ pub const IDEMPOTENT_STORE_CALL_ERROR_TYPE: ApiErrorType = ApiErrorType {
     status: StatusCode::CONFLICT,
 };
 
-lazy_static! {
-    /// Error which must be returned when the same idempotency key is
-    /// used for more than 1 input
-    pub static ref IDEMPOTENT_STORE_CALL_ERROR: ApiError =
-        ApiError::from_api_error_type(&IDEMPOTENT_STORE_CALL_ERROR_TYPE)
-            .detail("Could not process idempotent data in store");
-}
+/// Error which must be returned when the same idempotency key is
+/// used for more than 1 input
+pub static IDEMPOTENT_STORE_CALL_ERROR: Lazy<ApiError> = Lazy::new(|| {
+    ApiError::from_api_error_type(&IDEMPOTENT_STORE_CALL_ERROR_TYPE)
+        .detail("Could not process idempotent data in store")
+});

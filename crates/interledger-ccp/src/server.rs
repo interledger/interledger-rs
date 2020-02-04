@@ -36,7 +36,7 @@ use crate::packet::PEER_PROTOCOL_CONDITION;
 #[cfg(test)]
 use futures::TryFutureExt;
 #[cfg(test)]
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 // TODO should the route expiry be longer? we use 30 seconds now
 // because the expiry shortener will lower the expiry to 30 seconds
@@ -993,88 +993,94 @@ mod ranking_routes {
     use crate::RoutingRelation;
     use std::iter::FromIterator;
 
-    lazy_static! {
-        static ref LOCAL: HashMap<String, TestAccount> = HashMap::from_iter(vec![
+    static LOCAL: Lazy<HashMap<String, TestAccount>> = Lazy::new(|| {
+        HashMap::from_iter(vec![
             (
                 "example.a".to_string(),
-                TestAccount::new(Uuid::from_slice(&[1; 16]).unwrap(), "example.local.one")
+                TestAccount::new(Uuid::from_slice(&[1; 16]).unwrap(), "example.local.one"),
             ),
             (
                 "example.b".to_string(),
-                TestAccount::new(Uuid::from_slice(&[2; 16]).unwrap(), "example.local.two")
+                TestAccount::new(Uuid::from_slice(&[2; 16]).unwrap(), "example.local.two"),
             ),
             (
                 "example.c".to_string(),
-                TestAccount::new(Uuid::from_slice(&[3; 16]).unwrap(), "example.local.three")
+                TestAccount::new(Uuid::from_slice(&[3; 16]).unwrap(), "example.local.three"),
             ),
-        ]);
-        static ref CONFIGURED: HashMap<String, TestAccount> = HashMap::from_iter(vec![
+        ])
+    });
+    static CONFIGURED: Lazy<HashMap<String, TestAccount>> = Lazy::new(|| {
+        HashMap::from_iter(vec![
             (
                 "example.a".to_string(),
-                TestAccount::new(Uuid::from_slice(&[4; 16]).unwrap(), "example.local.four")
+                TestAccount::new(Uuid::from_slice(&[4; 16]).unwrap(), "example.local.four"),
             ),
             (
                 "example.b".to_string(),
-                TestAccount::new(Uuid::from_slice(&[5; 16]).unwrap(), "example.local.five")
+                TestAccount::new(Uuid::from_slice(&[5; 16]).unwrap(), "example.local.five"),
             ),
-        ]);
-        static ref INCOMING: HashMap<Uuid, RoutingTable<TestAccount>> = {
-            let mut child_table = RoutingTable::default();
-            let mut child = TestAccount::new(Uuid::from_slice(&[6; 16]).unwrap(), "example.child");
-            child.relation = RoutingRelation::Child;
-            child_table.add_route(
-                child,
-                Route {
-                    prefix: "example.d".to_string(),
-                    path: vec!["example.one".to_string()],
-                    auth: [0; 32],
-                    props: Vec::new(),
-                },
-            );
-            let mut peer_table_1 = RoutingTable::default();
-            let peer_1 = TestAccount::new(Uuid::from_slice(&[7; 16]).unwrap(), "example.peer1");
-            peer_table_1.add_route(
-                peer_1.clone(),
-                Route {
-                    prefix: "example.d".to_string(),
-                    path: Vec::new(),
-                    auth: [0; 32],
-                    props: Vec::new(),
-                },
-            );
-            peer_table_1.add_route(
-                peer_1.clone(),
-                Route {
-                    prefix: "example.e".to_string(),
-                    path: vec!["example.one".to_string()],
-                    auth: [0; 32],
-                    props: Vec::new(),
-                },
-            );
-            peer_table_1.add_route(
-                peer_1,
-                Route {
-                    // This route should be overridden by the configured "example.a" route
-                    prefix: "example.a.sub-prefix".to_string(),
-                    path: vec!["example.one".to_string()],
-                    auth: [0; 32],
-                    props: Vec::new(),
-                },
-            );
-            let mut peer_table_2 = RoutingTable::default();
-            let peer_2 = TestAccount::new(Uuid::from_slice(&[8; 16]).unwrap(), "example.peer2");
-            peer_table_2.add_route(
-                peer_2,
-                Route {
-                    prefix: "example.e".to_string(),
-                    path: vec!["example.one".to_string(), "example.two".to_string()],
-                    auth: [0; 32],
-                    props: Vec::new(),
-                },
-            );
-            HashMap::from_iter(vec![(Uuid::from_slice(&[6; 16]).unwrap(), child_table), (Uuid::from_slice(&[7; 16]).unwrap(), peer_table_1), (Uuid::from_slice(&[8; 16]).unwrap(), peer_table_2)])
-        };
-    }
+        ])
+    });
+    static INCOMING: Lazy<HashMap<Uuid, RoutingTable<TestAccount>>> = Lazy::new(|| {
+        let mut child_table = RoutingTable::default();
+        let mut child = TestAccount::new(Uuid::from_slice(&[6; 16]).unwrap(), "example.child");
+        child.relation = RoutingRelation::Child;
+        child_table.add_route(
+            child,
+            Route {
+                prefix: "example.d".to_string(),
+                path: vec!["example.one".to_string()],
+                auth: [0; 32],
+                props: Vec::new(),
+            },
+        );
+        let mut peer_table_1 = RoutingTable::default();
+        let peer_1 = TestAccount::new(Uuid::from_slice(&[7; 16]).unwrap(), "example.peer1");
+        peer_table_1.add_route(
+            peer_1.clone(),
+            Route {
+                prefix: "example.d".to_string(),
+                path: Vec::new(),
+                auth: [0; 32],
+                props: Vec::new(),
+            },
+        );
+        peer_table_1.add_route(
+            peer_1.clone(),
+            Route {
+                prefix: "example.e".to_string(),
+                path: vec!["example.one".to_string()],
+                auth: [0; 32],
+                props: Vec::new(),
+            },
+        );
+        peer_table_1.add_route(
+            peer_1,
+            Route {
+                // This route should be overridden by the configured "example.a" route
+                prefix: "example.a.sub-prefix".to_string(),
+                path: vec!["example.one".to_string()],
+                auth: [0; 32],
+                props: Vec::new(),
+            },
+        );
+        let mut peer_table_2 = RoutingTable::default();
+        let peer_2 = TestAccount::new(Uuid::from_slice(&[8; 16]).unwrap(), "example.peer2");
+        peer_table_2.add_route(
+            peer_2,
+            Route {
+                prefix: "example.e".to_string(),
+                path: vec!["example.one".to_string(), "example.two".to_string()],
+                auth: [0; 32],
+                props: Vec::new(),
+            },
+        );
+        HashMap::from_iter(vec![
+            (Uuid::from_slice(&[6; 16]).unwrap(), child_table),
+            (Uuid::from_slice(&[7; 16]).unwrap(), peer_table_1),
+            (Uuid::from_slice(&[8; 16]).unwrap(), peer_table_2),
+        ])
+    });
 
     #[test]
     fn prioritizes_configured_routes() {

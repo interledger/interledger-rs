@@ -218,17 +218,16 @@ mod echo_tests {
     use interledger_errors::AddressStoreError;
     use interledger_packet::{FulfillBuilder, PrepareBuilder};
     use interledger_service::incoming_service_fn;
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use ring::digest::{digest, SHA256};
     use ring::rand::{SecureRandom, SystemRandom};
     use std::str::FromStr;
     use std::time::{Duration, SystemTime};
     use uuid::Uuid;
 
-    lazy_static! {
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-    }
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    pub static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
 
     #[derive(Clone)]
     struct TestStore(Address);

@@ -3,9 +3,9 @@ use chrono::Utc;
 #[cfg(feature = "metrics_csv")]
 use csv;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, Reject};
-#[cfg(test)]
-use lazy_static::lazy_static;
 use log::{debug, warn};
+#[cfg(test)]
+use once_cell::sync::Lazy;
 use std::cmp::{max, min};
 #[cfg(feature = "metrics_csv")]
 use std::io;
@@ -234,15 +234,15 @@ mod tests {
         use super::*;
         use interledger_packet::RejectBuilder;
 
-        lazy_static! {
-            static ref INSUFFICIENT_LIQUIDITY_ERROR: Reject = RejectBuilder {
+        static INSUFFICIENT_LIQUIDITY_ERROR: Lazy<Reject> = Lazy::new(|| {
+            RejectBuilder {
                 code: ErrorCode::T04_INSUFFICIENT_LIQUIDITY,
                 message: &[],
                 triggered_by: None,
                 data: &[],
             }
-            .build();
-        }
+            .build()
+        });
 
         #[test]
         fn additive_increase() {

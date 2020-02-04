@@ -353,7 +353,7 @@ pub trait AddressStore: Clone {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use std::str::FromStr;
 
     #[test]
@@ -525,10 +525,9 @@ mod tests {
     #[derive(Clone, Debug)]
     pub struct TestAccount;
 
-    lazy_static! {
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-    }
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    pub static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
 
     impl Account for TestAccount {
         fn id(&self) -> Uuid {

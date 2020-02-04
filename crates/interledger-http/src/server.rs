@@ -147,7 +147,7 @@ mod tests {
     use interledger_errors::{default_rejection_handler, HttpStoreError};
     use interledger_packet::{Address, ErrorCode, PrepareBuilder, RejectBuilder};
     use interledger_service::{incoming_service_fn, Account};
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use secrecy::SecretString;
     use std::convert::TryInto;
     use std::str::FromStr;
@@ -155,10 +155,10 @@ mod tests {
     use url::Url;
     use uuid::Uuid;
 
-    lazy_static! {
-        static ref USERNAME: Username = Username::from_str("alice").unwrap();
-        static ref ILP_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-        pub static ref PREPARE_BYTES: BytesMut = PrepareBuilder {
+    static USERNAME: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    static ILP_ADDRESS: Lazy<Address> = Lazy::new(|| Address::from_str("example.alice").unwrap());
+    pub static PREPARE_BYTES: Lazy<BytesMut> = Lazy::new(|| {
+        PrepareBuilder {
             amount: 0,
             destination: ILP_ADDRESS.clone(),
             expires_at: SystemTime::now(),
@@ -167,8 +167,9 @@ mod tests {
         }
         .build()
         .try_into()
-        .unwrap();
-    }
+        .unwrap()
+    });
+
     const AUTH_PASSWORD: &str = "password";
 
     async fn api_call<F>(

@@ -10,8 +10,8 @@ use futures::{
 };
 use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
 use interledger_service::*;
-use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
+use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
 use std::collections::HashMap;
@@ -23,10 +23,8 @@ use uuid::Uuid;
 
 const PING_INTERVAL: u64 = 30; // seconds
 
-lazy_static! {
-    static ref PING: Message = Message::Ping(Vec::with_capacity(0));
-    static ref PONG: Message = Message::Pong(Vec::with_capacity(0));
-}
+static PING: Lazy<Message> = Lazy::new(|| Message::Ping(Vec::with_capacity(0)));
+static PONG: Lazy<Message> = Lazy::new(|| Message::Pong(Vec::with_capacity(0)));
 
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;

@@ -3,9 +3,9 @@ use super::oer::{MutBufOerExt, ReadOerExt};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use chrono::{DateTime, TimeZone, Utc};
-#[cfg(test)]
-use lazy_static::lazy_static;
 use num_bigint::BigUint;
+#[cfg(test)]
+use once_cell::sync::Lazy;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::ops::Add;
@@ -265,25 +265,24 @@ mod tests {
     mod btp_message {
         use super::*;
 
-        lazy_static! {
-            static ref MESSAGE_1: BtpMessage = BtpMessage {
-                request_id: 2,
-                protocol_data: vec![
-                    ProtocolData {
-                        protocol_name: String::from("test"),
-                        content_type: ContentType::ApplicationOctetStream,
-                        data: hex::decode("FFFF").unwrap()
-                    },
-                    ProtocolData {
-                        protocol_name: String::from("text"),
-                        content_type: ContentType::TextPlainUtf8,
-                        data: Vec::from("hello")
-                    }
-                ]
-            };
-            static ref MESSAGE_1_SERIALIZED: Vec<u8> =
-                hex::decode("060000000217010204746573740002ffff0474657874010568656c6c6f").unwrap();
-        }
+        static MESSAGE_1: Lazy<BtpMessage> = Lazy::new(|| BtpMessage {
+            request_id: 2,
+            protocol_data: vec![
+                ProtocolData {
+                    protocol_name: String::from("test"),
+                    content_type: ContentType::ApplicationOctetStream,
+                    data: hex::decode("FFFF").unwrap(),
+                },
+                ProtocolData {
+                    protocol_name: String::from("text"),
+                    content_type: ContentType::TextPlainUtf8,
+                    data: Vec::from("hello"),
+                },
+            ],
+        });
+        static MESSAGE_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
+            hex::decode("060000000217010204746573740002ffff0474657874010568656c6c6f").unwrap()
+        });
 
         #[test]
         fn from_bytes() {
@@ -302,19 +301,18 @@ mod tests {
     mod btp_response {
         use super::*;
 
-        lazy_static! {
-            static ref RESPONSE_1: BtpResponse = BtpResponse {
-                request_id: 129,
-                protocol_data: vec![ProtocolData {
-                    protocol_name: String::from("some other protocol"),
-                    content_type: ContentType::ApplicationOctetStream,
-                    data: hex::decode("AAAAAA").unwrap()
-                }]
-            };
-            static ref RESPONSE_1_SERIALIZED: Vec<u8> =
-                hex::decode("01000000811b010113736f6d65206f746865722070726f746f636f6c0003aaaaaa")
-                    .unwrap();
-        }
+        static RESPONSE_1: Lazy<BtpResponse> = Lazy::new(|| BtpResponse {
+            request_id: 129,
+            protocol_data: vec![ProtocolData {
+                protocol_name: String::from("some other protocol"),
+                content_type: ContentType::ApplicationOctetStream,
+                data: hex::decode("AAAAAA").unwrap(),
+            }],
+        });
+        static RESPONSE_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
+            hex::decode("01000000811b010113736f6d65206f746865722070726f746f636f6c0003aaaaaa")
+                .unwrap()
+        });
 
         #[test]
         fn from_bytes() {
@@ -333,18 +331,20 @@ mod tests {
     mod btp_error {
         use super::*;
 
-        lazy_static! {
-          static ref ERROR_1: BtpError = BtpError {
+        static ERROR_1: Lazy<BtpError> = Lazy::new(|| BtpError {
             request_id: 501,
             code: String::from("T00"),
             name: String::from("UnreachableError"),
-            triggered_at: DateTime::parse_from_rfc3339("2018-08-31T02:53:24.899Z").unwrap().with_timezone(&Utc),
+            triggered_at: DateTime::parse_from_rfc3339("2018-08-31T02:53:24.899Z")
+                .unwrap()
+                .with_timezone(&Utc),
             data: String::from("oops"),
             protocol_data: vec![],
-          };
+        });
 
-          static ref ERROR_1_SERIALIZED: Vec<u8> = hex::decode("02000001f52f54303010556e726561636861626c654572726f721332303138303833313032353332342e3839395a046f6f70730100").unwrap();
-        }
+        static ERROR_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
+            hex::decode("02000001f52f54303010556e726561636861626c654572726f721332303138303833313032353332342e3839395a046f6f70730100").unwrap()
+        });
 
         #[test]
         fn from_bytes() {

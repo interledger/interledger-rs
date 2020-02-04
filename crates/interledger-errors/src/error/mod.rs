@@ -5,7 +5,7 @@ pub use error_types::*;
 
 use chrono::{DateTime, Local};
 use http::header::HeaderValue;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{ser::Serializer, Serialize};
 use serde_json::error::Category;
@@ -272,9 +272,7 @@ impl From<ApiError> for Rejection {
 
 impl Reject for ApiError {}
 
-lazy_static! {
-    static ref MISSING_FIELD_REGEX: Regex = Regex::new("missing field `(.*)`").unwrap();
-}
+static MISSING_FIELD_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new("missing field `(.*)`").unwrap());
 
 #[derive(Clone, Debug)]
 pub struct JsonDeserializeError {

@@ -361,33 +361,31 @@ impl SettlementAccount for Account {
 #[cfg(test)]
 mod test {
     use super::*;
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use secrecy::SecretString;
 
-    lazy_static! {
-        static ref ACCOUNT_DETAILS: AccountDetails = AccountDetails {
-            ilp_address: Some(Address::from_str("example.alice").unwrap()),
-            username: Username::from_str("alice").unwrap(),
-            asset_scale: 6,
-            asset_code: "XYZ".to_string(),
-            max_packet_amount: 1000,
-            min_balance: Some(-1000),
-            // we are Bob and we're using this account to peer with Alice
-            ilp_over_http_url: Some("http://example.com/accounts/bob/ilp".to_string()),
-            ilp_over_http_incoming_token: Some(SecretString::new("incoming_auth_token".to_string())),
-            ilp_over_http_outgoing_token: Some(SecretString::new("outgoing_auth_token".to_string())),
-            ilp_over_btp_url: Some("btp+ws://example.com/accounts/bob/ilp/btp".to_string()),
-            ilp_over_btp_incoming_token: Some(SecretString::new("incoming_btp_token".to_string())),
-            ilp_over_btp_outgoing_token: Some(SecretString::new("outgoing_btp_token".to_string())),
-            settle_threshold: Some(0),
-            settle_to: Some(-1000),
-            routing_relation: Some("Peer".to_string()),
-            round_trip_time: Some(600),
-            amount_per_minute_limit: None,
-            packets_per_minute_limit: None,
-            settlement_engine_url: None,
-        };
-    }
+    static ACCOUNT_DETAILS: Lazy<AccountDetails> = Lazy::new(|| AccountDetails {
+        ilp_address: Some(Address::from_str("example.alice").unwrap()),
+        username: Username::from_str("alice").unwrap(),
+        asset_scale: 6,
+        asset_code: "XYZ".to_string(),
+        max_packet_amount: 1000,
+        min_balance: Some(-1000),
+        // we are Bob and we're using this account to peer with Alice
+        ilp_over_http_url: Some("http://example.com/accounts/bob/ilp".to_string()),
+        ilp_over_http_incoming_token: Some(SecretString::new("incoming_auth_token".to_string())),
+        ilp_over_http_outgoing_token: Some(SecretString::new("outgoing_auth_token".to_string())),
+        ilp_over_btp_url: Some("btp+ws://example.com/accounts/bob/ilp/btp".to_string()),
+        ilp_over_btp_incoming_token: Some(SecretString::new("incoming_btp_token".to_string())),
+        ilp_over_btp_outgoing_token: Some(SecretString::new("outgoing_btp_token".to_string())),
+        settle_threshold: Some(0),
+        settle_to: Some(-1000),
+        routing_relation: Some("Peer".to_string()),
+        round_trip_time: Some(600),
+        amount_per_minute_limit: None,
+        packets_per_minute_limit: None,
+        settlement_engine_url: None,
+    });
 
     #[test]
     fn from_account_details() {
