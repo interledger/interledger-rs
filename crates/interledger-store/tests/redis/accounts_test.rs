@@ -55,6 +55,48 @@ async fn insert_accounts() {
         *account.ilp_address(),
         Address::from_str("example.alice.user1.charlie").unwrap()
     );
+
+    // cannot insert duplicate accounts
+    let err = store
+        .insert_account(ACCOUNT_DETAILS_2.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "account `charlie` already exists");
+}
+
+#[tokio::test]
+async fn cannot_insert_invalid_accounts() {
+    let (store, _context, _) = test_store().await.unwrap();
+    let details = ACCOUNT_DETAILS_2.clone();
+    let mut acc = details.clone();
+
+    // invalid http url
+    acc.ilp_over_http_url = Some("asdf".to_owned());
+    let err = store.insert_account(acc).await.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "invalid account: the provided http url is not valid: relative URL without a base"
+    );
+
+    // invalid btp url
+    let mut acc = details.clone();
+    acc.ilp_over_btp_url = Some("asdf".to_owned());
+    let err = store.insert_account(acc).await.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "invalid account: the provided btp url is not valid: relative URL without a base"
+    );
+
+    // bad routing relation
+    let mut acc = details.clone();
+    acc.routing_relation = Some("asdf".to_owned());
+    let err = store.insert_account(acc).await.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "invalid account: the provided routing relation is not valid: asdf"
+    );
+
+    // bad usernames will not be parsed by the Username struct
 }
 
 #[tokio::test]
@@ -130,6 +172,10 @@ async fn delete_accounts() {
     let accounts = store.get_all_accounts().await.unwrap();
     assert_eq!(accounts.len(), 0);
 
+    // try deleting an account which does not exist
+    let err = store.delete_account(id).await.unwrap_err();
+    assert_eq!(err.to_string(), format!("account `{}` was not found", id));
+
     // we drop the connection so the pipe should break
     drop(context);
     let err = store.get_all_accounts().await.unwrap_err();
@@ -138,24 +184,16 @@ async fn delete_accounts() {
 
 #[tokio::test]
 async fn update_accounts() {
-    let (store, context, accounts) = test_store().await.unwrap();
-    let mut connection = context.async_connection().await.unwrap();
+    let (store, _context, accounts) = test_store().await.unwrap();
     let id = accounts[0].id();
-    let _: redis_crate::Value = redis_crate::cmd("HMSET")
-        .arg(format!("accounts:{}", id))
-        .arg("balance")
-        .arg(600u64)
-        .arg("prepaid_amount")
-        .arg(400u64)
-        .query_async(&mut connection)
-        .await
-        .unwrap();
     let mut new = ACCOUNT_DETAILS_0.clone();
     new.asset_code = String::from("TUV");
-    let account = store.update_account(id, new).await.unwrap();
+    let account = store.update_account(id, new.clone()).await.unwrap();
     assert_eq!(account.asset_code(), "TUV");
-    let balance = store.get_balance(id).await.unwrap();
-    assert_eq!(balance, 1000);
+
+    let id = Uuid::new_v4();
+    let err = store.update_account(id, new).await.unwrap_err();
+    assert_eq!(err.to_string(), format!("account `{}` was not found", id));
 }
 
 #[tokio::test]
@@ -166,8 +204,14 @@ async fn modify_account_settings_settle_to_overflow() {
     settings.settle_to = Some(std::i64::MAX as u64 + 1);
     let account = accounts[0].clone();
     let id = account.id();
-    let ret = store.modify_account_settings(id, settings).await;
-    assert!(ret.is_err());
+    let err = store
+        .modify_account_settings(id, settings)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "invalid account: the provided value for parameter `settle_to` was too large"
+    );
 }
 
 #[tokio::test]
@@ -205,7 +249,10 @@ async fn modify_account_settings() {
     let account = accounts[0].clone();
 
     let id = account.id();
-    let ret = store.modify_account_settings(id, settings).await.unwrap();
+    let ret = store
+        .modify_account_settings(id, settings.clone())
+        .await
+        .unwrap();
     assert_eq!(
         ret.get_http_auth_token().unwrap().expose_secret(),
         "test_token",
@@ -214,6 +261,13 @@ async fn modify_account_settings() {
         ret.get_ilp_over_btp_outgoing_token().unwrap(),
         &b"dylan:test"[..],
     );
+
+    let id = Uuid::new_v4();
+    let err = store
+        .modify_account_settings(id, settings)
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), format!("account `{}` was not found", id));
 }
 
 #[tokio::test]
@@ -231,6 +285,12 @@ async fn fetches_account_from_username() {
         .await
         .unwrap();
     assert_eq!(account_id, accs[0].id());
+
+    let err = store
+        .get_account_id_from_username(&Username::from_str("random").unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "account `random` was not found");
 }
 
 #[tokio::test]
@@ -278,8 +338,9 @@ async fn decrypts_outgoing_tokens_acc() {
 #[tokio::test]
 async fn errors_for_unknown_accounts() {
     let (store, _context, _) = test_store().await.unwrap();
-    let result = store
+    let err = store
         .get_accounts(vec![Uuid::new_v4(), Uuid::new_v4()])
-        .await;
-    assert!(result.is_err());
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "wrong account length (expected 2, got 0)");
 }

@@ -11,9 +11,9 @@ pub enum NodeStoreError {
     Other(#[from] Box<dyn StdError + Send + 'static>),
     #[error("Settlement engine URL loaded was not a valid url: {0}")]
     InvalidEngineUrl(String),
-    #[error("account with username/id `{0}` was not found")]
+    #[error("account `{0}` was not found")]
     AccountNotFound(String),
-    #[error("account with id `{0}` already exists")]
+    #[error("account `{0}` already exists")]
     AccountExists(String),
     #[error("not all of the given accounts exist")]
     MissingAccounts,

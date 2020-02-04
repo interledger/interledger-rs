@@ -2,10 +2,10 @@ use super::{fixtures::*, store_helpers::*};
 
 use interledger_api::NodeStore;
 use interledger_packet::Address;
-use interledger_service::{Account as AccountTrait, AddressStore};
+use interledger_service::Account as AccountTrait;
 use interledger_service::{AccountStore, Username};
 use interledger_service_util::BalanceStore;
-use interledger_store::account::Account;
+use redis_crate::AsyncCommands;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -14,22 +14,15 @@ async fn get_balance() {
     let (store, context, _accs) = test_store().await.unwrap();
     let account_id = Uuid::new_v4();
     let mut connection = context.async_connection().await.unwrap();
-    let _: redis_crate::Value = redis_crate::cmd("HMSET")
-        .arg(format!("accounts:{}", account_id))
-        .arg("balance")
-        .arg(600u64)
-        .arg("prepaid_amount")
-        .arg(400u64)
-        .query_async(&mut connection)
+    let _: redis_crate::Value = connection
+        .hset_multiple(
+            format!("accounts:{}", account_id),
+            &[("balance", 600u64), ("prepaid_amount", 400u64)],
+        )
         .await
         .unwrap();
-    let account = Account::try_from(
-        account_id,
-        ACCOUNT_DETAILS_0.clone(),
-        store.get_ilp_address(),
-    )
-    .unwrap();
-    let balance = store.get_balance(account.id()).await.unwrap();
+
+    let balance = store.get_balance(account_id).await.unwrap();
     assert_eq!(balance, 1000);
 }
 
@@ -40,26 +33,50 @@ async fn prepare_then_fulfill_with_settlement() {
         .get_accounts(vec![accs[0].id(), accs[1].id()])
         .await
         .unwrap();
-    let account0 = accounts[0].clone();
-    let account1 = accounts[1].clone();
+    let account0_id = accounts[0].id();
+    let account1_id = accounts[1].id();
     // reduce account 0's balance by 100
     store
-        .update_balances_for_prepare(account0.id(), 100)
+        .update_balances_for_prepare(account0_id, 100)
         .await
         .unwrap();
-    let balance0 = store.get_balance(account0.id()).await.unwrap();
-    let balance1 = store.get_balance(account1.id()).await.unwrap();
+    let balance0 = store.get_balance(account0_id).await.unwrap();
+    let balance1 = store.get_balance(account1_id).await.unwrap();
     assert_eq!(balance0, -100);
     assert_eq!(balance1, 0);
 
     store
-        .update_balances_for_fulfill(account1.id(), 100)
+        .update_balances_for_fulfill(account1_id, 100)
         .await
         .unwrap();
-    let balance0 = store.get_balance(account0.id()).await.unwrap();
-    let balance1 = store.get_balance(account1.id()).await.unwrap();
+    let balance0 = store.get_balance(account0_id).await.unwrap();
+    let balance1 = store.get_balance(account1_id).await.unwrap();
     assert_eq!(balance0, -100);
     assert_eq!(balance1, -1000);
+
+    // prepare/fulfill functions work even with a dropped socket if the amount is 0
+    drop(_context);
+    store
+        .update_balances_for_prepare(account1_id, 0)
+        .await
+        .unwrap();
+    store
+        .update_balances_for_fulfill(account1_id, 0)
+        .await
+        .unwrap();
+
+    // but they error of course if they need to use the socket
+    let err = store
+        .update_balances_for_prepare(account1_id, 1)
+        .await
+        .unwrap_err();
+    assert_eq!(err.to_string(), "Broken pipe (os error 32)");
+    let err = store
+        .update_balances_for_fulfill(account1_id, 1)
+        .await
+        .unwrap_err();
+    // os error 32 only appears the first time
+    assert_eq!(err.to_string(), "broken pipe");
 }
 
 #[tokio::test]
@@ -78,12 +95,7 @@ async fn process_fulfill_no_settle_to() {
     let (store, _context, _accs) = test_store().await.unwrap();
     let account = store.insert_account(acc).await.unwrap();
     let id = account.id();
-    let accounts = store.get_accounts(vec![id]).await.unwrap();
-    let acc = accounts[0].clone();
-    let (balance, amount_to_settle) = store
-        .update_balances_for_fulfill(acc.id(), 100)
-        .await
-        .unwrap();
+    let (balance, amount_to_settle) = store.update_balances_for_fulfill(id, 100).await.unwrap();
     assert_eq!(balance, 100);
     assert_eq!(amount_to_settle, 0);
 }
@@ -127,12 +139,7 @@ async fn process_fulfill_ok() {
     let (store, _context, _accs) = test_store().await.unwrap();
     let account = store.insert_account(acc).await.unwrap();
     let id = account.id();
-    let accounts = store.get_accounts(vec![id]).await.unwrap();
-    let acc = accounts[0].clone();
-    let (balance, amount_to_settle) = store
-        .update_balances_for_fulfill(acc.id(), 101)
-        .await
-        .unwrap();
+    let (balance, amount_to_settle) = store.update_balances_for_fulfill(id, 101).await.unwrap();
     assert_eq!(balance, 0);
     assert_eq!(amount_to_settle, 101);
 }
@@ -140,24 +147,16 @@ async fn process_fulfill_ok() {
 #[tokio::test]
 async fn prepare_then_reject() {
     let (store, _context, accs) = test_store().await.unwrap();
-    let accounts = store
-        .get_accounts(vec![accs[0].id(), accs[1].id()])
-        .await
-        .unwrap();
-    store
-        .update_balances_for_prepare(accounts[0].id(), 100)
-        .await
-        .unwrap();
-    let balance0 = store.get_balance(accounts[0].id()).await.unwrap();
-    let balance1 = store.get_balance(accounts[1].id()).await.unwrap();
+    let acc0 = accs[0].id();
+    let acc1 = accs[1].id();
+    store.update_balances_for_prepare(acc0, 100).await.unwrap();
+    let balance0 = store.get_balance(acc0).await.unwrap();
+    let balance1 = store.get_balance(acc1).await.unwrap();
     assert_eq!(balance0, -100);
     assert_eq!(balance1, 0);
-    store
-        .update_balances_for_reject(accounts[0].id(), 100)
-        .await
-        .unwrap();
-    let balance0 = store.get_balance(accounts[0].id()).await.unwrap();
-    let balance1 = store.get_balance(accounts[1].id()).await.unwrap();
+    store.update_balances_for_reject(acc0, 100).await.unwrap();
+    let balance0 = store.get_balance(acc0).await.unwrap();
+    let balance1 = store.get_balance(acc1).await.unwrap();
     assert_eq!(balance0, 0);
     assert_eq!(balance1, 0);
 }
@@ -165,14 +164,13 @@ async fn prepare_then_reject() {
 #[tokio::test]
 async fn enforces_minimum_balance() {
     let (store, _context, accs) = test_store().await.unwrap();
-    let accounts = store
-        .get_accounts(vec![accs[0].id(), accs[1].id()])
+    let id = accs[0].id();
+    let err = store
+        .update_balances_for_prepare(id, 10000)
         .await
-        .unwrap();
-    let result = store
-        .update_balances_for_prepare(accounts[0].id(), 10000)
-        .await;
-    assert!(result.is_err());
+        .unwrap_err();
+    let expected = format!("Incoming prepare of 10000 would bring account {} under its minimum balance. Current balance: 0, min balance: -1000", id);
+    assert!(err.to_string().contains(&expected));
 }
 
 #[tokio::test]
@@ -184,37 +182,33 @@ async fn netting_fulfilled_balances() {
         .insert_account(ACCOUNT_DETAILS_2.clone())
         .await
         .unwrap();
-    let accounts = store
-        .get_accounts(vec![accs[0].id(), acc.id()])
-        .await
-        .unwrap();
-    let account0 = accounts[0].clone();
-    let account1 = accounts[1].clone();
+    let account0 = accs[0].id();
+    let account1 = acc.id();
 
     // decrement account 0 by 100
     store
-        .update_balances_for_prepare(account0.id(), 100)
+        .update_balances_for_prepare(account0, 100)
         .await
         .unwrap();
     // increment account 1 by 100
     store
-        .update_balances_for_fulfill(account1.id(), 100)
+        .update_balances_for_fulfill(account1, 100)
         .await
         .unwrap();
 
     // decrement account 1 by 80
     store
-        .update_balances_for_prepare(account1.id(), 80)
+        .update_balances_for_prepare(account1, 80)
         .await
         .unwrap();
     // increment account 0 by 80
     store
-        .update_balances_for_fulfill(account0.id(), 80)
+        .update_balances_for_fulfill(account0, 80)
         .await
         .unwrap();
 
-    let balance0 = store.get_balance(accounts[0].id()).await.unwrap();
-    let balance1 = store.get_balance(accounts[1].id()).await.unwrap();
+    let balance0 = store.get_balance(account0).await.unwrap();
+    let balance1 = store.get_balance(account1).await.unwrap();
     assert_eq!(balance0, -20);
     assert_eq!(balance1, 20);
 }

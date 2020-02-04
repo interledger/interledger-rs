@@ -16,8 +16,10 @@ pub enum CreateAccountError {
     InvalidHttpUrl(UrlParseError),
     #[error("the provided btp url is not valid: {0}")]
     InvalidBtpUrl(UrlParseError),
-    #[error("the provided routing relation not valid: {0}")]
+    #[error("the provided routing relation is not valid: {0}")]
     InvalidRoutingRelation(String),
+    #[error("the provided value for parameter `{0}` was too large")]
+    ParamTooLarge(String),
 }
 
 impl From<CreateAccountError> for ApiError {

@@ -8,9 +8,9 @@ use thiserror::Error;
 pub enum BtpStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
-    #[error("account with username/id `{0}` was not found")]
+    #[error("account `{0}` was not found")]
     AccountNotFound(String),
-    #[error("account with id `{0}` is not authorized for this action")]
+    #[error("account `{0}` is not authorized for this action")]
     Unauthorized(String),
 }
 

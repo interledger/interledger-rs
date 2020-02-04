@@ -9,9 +9,9 @@ use thiserror::Error;
 pub enum AccountStoreError {
     #[error("{0}")]
     Other(#[from] Box<dyn StdError + Send + 'static>),
-    #[error("account with username/id `{0}` was not found")]
+    #[error("account `{0}` was not found")]
     AccountNotFound(String),
-    #[error("account with id `{0}` already exists")]
+    #[error("account `{0}` already exists")]
     AccountExists(String),
     #[error("wrong account length (expected {expected}, got {actual})")]
     WrongLength { expected: usize, actual: usize },

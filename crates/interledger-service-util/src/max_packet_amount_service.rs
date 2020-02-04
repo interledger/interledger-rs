@@ -62,3 +62,123 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use interledger_errors::AddressStoreError;
+    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
+    use once_cell::sync::Lazy;
+    use std::str::FromStr;
+    use uuid::Uuid;
+
+    #[derive(Debug, Clone)]
+    struct TestAccount(u64);
+
+    impl MaxPacketAmountAccount for TestAccount {
+        fn max_packet_amount(&self) -> u64 {
+            self.0
+        }
+    }
+
+    #[tokio::test]
+    async fn below_max_amount() {
+        let next = incoming_service_fn(move |_| {
+            Ok(FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"test data",
+            }
+            .build())
+        });
+        let store = TestStore;
+
+        let request = IncomingRequest {
+            from: TestAccount(101),
+            prepare: PrepareBuilder {
+                destination: Address::from_str("example.destination").unwrap(),
+                amount: 100,
+                expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(30),
+                execution_condition: &[0; 32],
+                data: b"test data",
+            }
+            .build(),
+        };
+
+        let mut service = MaxPacketAmountService::new(store.clone(), next);
+        let fulfill = service.handle_request(request).await.unwrap();
+        assert_eq!(fulfill.data(), b"test data");
+    }
+
+    #[tokio::test]
+    async fn above_max_amount() {
+        let next = incoming_service_fn(move |_| {
+            Ok(FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"test data",
+            }
+            .build())
+        });
+        let store = TestStore;
+
+        let request = IncomingRequest {
+            from: TestAccount(99),
+            prepare: PrepareBuilder {
+                destination: Address::from_str("example.destination").unwrap(),
+                amount: 100,
+                expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(30),
+                execution_condition: &[0; 32],
+                data: b"test data",
+            }
+            .build(),
+        };
+
+        let mut service = MaxPacketAmountService::new(store.clone(), next);
+        let reject = service.handle_request(request).await.unwrap_err();
+        assert_eq!(reject.code(), ErrorCode::F08_AMOUNT_TOO_LARGE);
+    }
+
+    #[derive(Clone)]
+    struct TestStore;
+
+    #[async_trait]
+    impl AddressStore for TestStore {
+        async fn set_ilp_address(&self, _: Address) -> Result<(), AddressStoreError> {
+            unimplemented!()
+        }
+
+        async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
+            unimplemented!()
+        }
+
+        fn get_ilp_address(&self) -> Address {
+            Address::from_str("example.connector").unwrap()
+        }
+    }
+
+    impl Account for TestAccount {
+        fn id(&self) -> Uuid {
+            Uuid::new_v4()
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
+        }
+
+        fn asset_code(&self) -> &str {
+            "XYZ"
+        }
+
+        // All connector accounts use asset scale = 9.
+        fn asset_scale(&self) -> u8 {
+            9
+        }
+
+        fn ilp_address(&self) -> &Address {
+            &EXAMPLE_ADDRESS
+        }
+    }
+
+    static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
+}

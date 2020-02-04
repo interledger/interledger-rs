@@ -143,16 +143,10 @@ where
                 // for the packet we forwarded. Note this means that we will
                 // relay the fulfillment _even if saving to the DB fails._
                 tokio::spawn(async move {
-                    let (balance, amount_to_settle) = match store
+                    let (balance, amount_to_settle) = store
                         .update_balances_for_fulfill(to.id(), outgoing_amount)
-                        .await
-                    {
-                        Ok(r) => r,
-                        Err(_) => {
-                            error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}", from_id, to_id, incoming_amount, outgoing_amount);
-                            return Err(());
-                        }
-                    };
+                        .map_err(|err| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}. Error: {}", from_id, to_id, incoming_amount, outgoing_amount, err))
+                        .await?;
                     debug!(
                         "Account balance after fulfill: {}. Amount that needs to be settled: {}",
                         balance, amount_to_settle
@@ -166,21 +160,18 @@ where
                         // settlement engine for the status of each
                         // outgoing settlement and putting unnecessary
                         // load on the settlement engine.
-                        tokio::spawn(async move {
-                            if settlement_client
-                                .send_settlement(to, amount_to_settle)
-                                .await
-                                .is_err()
-                            {
-                                store
-                                    .refund_settlement(to_id, amount_to_settle)
-                                    .map_err(|_| ())
-                                    .await?;
-                            }
-                            Ok::<(), ()>(())
-                        });
+                        if settlement_client
+                            .send_settlement(to, amount_to_settle)
+                            .await
+                            .is_err()
+                        {
+                            store
+                                .refund_settlement(to_id, amount_to_settle)
+                                .map_err(|_| ())
+                                .await?;
+                        }
                     }
-                    Ok(())
+                    Ok::<(), ()>(())
                 });
 
                 Ok(fulfill)
@@ -209,4 +200,256 @@ where
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use interledger_errors::{AddressStoreError, SettlementStoreError};
+    use interledger_packet::{Address, FulfillBuilder, PrepareBuilder, RejectBuilder};
+    use interledger_settlement::core::types::SettlementEngineDetails;
+    use once_cell::sync::Lazy;
+    use parking_lot::RwLock;
+    use std::str::FromStr;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use url::Url;
+
+    #[tokio::test]
+    async fn executes_settlement() {
+        let mock = mockito::mock("POST", mockito::Matcher::Any).create();
+        let next = outgoing_service_fn(move |_| {
+            Ok(FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"test data",
+            }
+            .build())
+        });
+        let store = TestStore::new(1);
+        let mut service = BalanceService::new(store.clone(), next);
+        let fulfill = service.send_request(TEST_REQUEST.clone()).await.unwrap();
+        assert_eq!(fulfill.data(), b"test data");
+
+        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        mock.assert();
+        assert_eq!(*store.refunded_settlement.read(), false);
+        assert_eq!(*store.rejected_message.read(), false);
+    }
+
+    #[tokio::test]
+    async fn nothing_to_settle() {
+        let mock = mockito::mock("POST", mockito::Matcher::Any)
+            .create()
+            .expect(0);
+        let next = outgoing_service_fn(move |_| {
+            Ok(FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"test data",
+            }
+            .build())
+        });
+        let store = TestStore::new(0);
+        let mut service = BalanceService::new(store.clone(), next);
+        let fulfill = service.send_request(TEST_REQUEST.clone()).await.unwrap();
+        assert_eq!(fulfill.data(), b"test data");
+
+        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        mock.assert();
+        assert_eq!(*store.refunded_settlement.read(), false);
+        assert_eq!(*store.rejected_message.read(), false);
+    }
+
+    #[tokio::test]
+    async fn executes_settlement_and_refunds() {
+        let mock = mockito::mock("POST", mockito::Matcher::Any)
+            .with_status(404)
+            .create();
+        let next = outgoing_service_fn(move |_| {
+            Ok(FulfillBuilder {
+                fulfillment: &[0; 32],
+                data: b"test data",
+            }
+            .build())
+        });
+        let store = TestStore::new(1);
+        let mut service = BalanceService::new(store.clone(), next);
+        let fulfill = service.send_request(TEST_REQUEST.clone()).await.unwrap();
+        assert_eq!(fulfill.data(), b"test data");
+
+        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        mock.assert();
+        assert_eq!(*store.refunded_settlement.read(), true);
+        assert_eq!(*store.rejected_message.read(), false);
+    }
+
+    #[tokio::test]
+    async fn updates_for_reject() {
+        let mock = mockito::mock("POST", mockito::Matcher::Any)
+            .create()
+            .expect(0);
+        let next = outgoing_service_fn(move |_| {
+            Err(RejectBuilder {
+                code: ErrorCode::T00_INTERNAL_ERROR,
+                message: &[],
+                triggered_by: None,
+                data: &[],
+            }
+            .build())
+        });
+        let store = TestStore::new(1);
+        let mut service = BalanceService::new(store.clone(), next);
+        let reject = service
+            .send_request(TEST_REQUEST.clone())
+            .await
+            .unwrap_err();
+        assert_eq!(reject.code(), ErrorCode::T00_INTERNAL_ERROR);
+
+        tokio::time::delay_for(Duration::from_millis(100u64)).await;
+        mock.assert();
+        assert_eq!(*store.rejected_message.read(), true);
+    }
+
+    #[derive(Debug, Clone)]
+    struct TestAccount {
+        pub engine_url: Url,
+    }
+
+    static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
+
+    impl Account for TestAccount {
+        fn id(&self) -> Uuid {
+            Uuid::new_v4()
+        }
+
+        fn username(&self) -> &Username {
+            &ALICE
+        }
+
+        fn asset_code(&self) -> &str {
+            "XYZ"
+        }
+
+        // All connector accounts use asset scale = 9.
+        fn asset_scale(&self) -> u8 {
+            9
+        }
+
+        fn ilp_address(&self) -> &Address {
+            &EXAMPLE_ADDRESS
+        }
+    }
+
+    impl SettlementAccount for TestAccount {
+        fn settlement_engine_details(&self) -> Option<SettlementEngineDetails> {
+            Some(SettlementEngineDetails {
+                url: self.engine_url.clone(),
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct TestStore {
+        amount_to_settle: u64,
+        rejected_message: Arc<RwLock<bool>>,
+        refunded_settlement: Arc<RwLock<bool>>,
+    }
+
+    impl TestStore {
+        fn new(amount_to_settle: u64) -> Self {
+            TestStore {
+                amount_to_settle,
+                rejected_message: Arc::new(RwLock::new(false)),
+                refunded_settlement: Arc::new(RwLock::new(false)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl AddressStore for TestStore {
+        async fn set_ilp_address(&self, _: Address) -> Result<(), AddressStoreError> {
+            unimplemented!()
+        }
+
+        async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
+            unimplemented!()
+        }
+
+        fn get_ilp_address(&self) -> Address {
+            Address::from_str("example.connector").unwrap()
+        }
+    }
+
+    #[async_trait]
+    impl BalanceStore for TestStore {
+        async fn get_balance(&self, _: Uuid) -> Result<i64, BalanceStoreError> {
+            unimplemented!()
+        }
+
+        async fn update_balances_for_prepare(
+            &self,
+            _: Uuid,
+            _: u64,
+        ) -> Result<(), BalanceStoreError> {
+            Ok(())
+        }
+
+        async fn update_balances_for_fulfill(
+            &self,
+            _: Uuid,
+            _: u64,
+        ) -> Result<(i64, u64), BalanceStoreError> {
+            Ok((0, self.amount_to_settle))
+        }
+
+        async fn update_balances_for_reject(
+            &self,
+            _: Uuid,
+            _: u64,
+        ) -> Result<(), BalanceStoreError> {
+            *self.rejected_message.write() = true;
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl SettlementStore for TestStore {
+        type Account = TestAccount;
+
+        async fn update_balance_for_incoming_settlement(
+            &self,
+            _: Uuid,
+            _: u64,
+            _: Option<String>,
+        ) -> Result<(), SettlementStoreError> {
+            Ok(())
+        }
+
+        async fn refund_settlement(&self, _: Uuid, _: u64) -> Result<(), SettlementStoreError> {
+            *self.refunded_settlement.write() = true;
+            Ok(())
+        }
+    }
+
+    static TEST_REQUEST: Lazy<OutgoingRequest<TestAccount>> = Lazy::new(|| {
+        let url = mockito::server_url();
+        OutgoingRequest {
+            to: TestAccount {
+                engine_url: Url::parse(&url).unwrap(),
+            },
+            from: TestAccount {
+                engine_url: Url::parse(&url).unwrap(),
+            },
+            original_amount: 100,
+            prepare: PrepareBuilder {
+                destination: Address::from_str("example.destination").unwrap(),
+                amount: 100,
+                expires_at: std::time::SystemTime::now() + std::time::Duration::from_secs(30),
+                execution_condition: &[0; 32],
+                data: b"test data",
+            }
+            .build(),
+        }
+    });
 }
