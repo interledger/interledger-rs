@@ -32,7 +32,7 @@ url = { version = "2.1.0", default-features = false, features = ["serde"] }
 uuid = { version = "0.8.1", default-features = false}
 warp = { version = "0.2", default-features = false }
 secrecy = { version = "0.6", default-features = false, features = ["serde"] }
-lazy_static = "1.4.0"
+once_cell = "1.3.1"
 async-trait = "0.1.22"
 interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false, features = ["warp_errors"] }
 

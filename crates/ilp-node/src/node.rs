@@ -54,8 +54,8 @@ use interledger::{
     store::account::Account,
     stream::{StreamNotificationsStore, StreamReceiverService},
 };
-use lazy_static::lazy_static;
 use num_bigint::BigUint;
+use once_cell::sync::Lazy;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
 use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
 use tokio::spawn;
@@ -72,9 +72,7 @@ use interledger::service_util::BalanceService;
 #[doc(hidden)]
 pub use interledger::service_util::ExchangeRateProvider;
 
-lazy_static! {
-    static ref DEFAULT_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
-}
+static DEFAULT_ILP_ADDRESS: Lazy<Address> = Lazy::new(|| Address::from_str("local.host").unwrap());
 
 fn default_settlement_api_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7771))

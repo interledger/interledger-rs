@@ -8,31 +8,30 @@ use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AddressStore, IncomingService, OutgoingRequest,
     OutgoingService, Username,
 };
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::{iter::FromIterator, sync::Arc};
 
-lazy_static! {
-    pub static ref ROUTING_ACCOUNT: TestAccount = TestAccount {
-        id: Uuid::new_v4(),
-        ilp_address: Address::from_str("example.peer").unwrap(),
-        relation: RoutingRelation::Peer,
-    };
-    pub static ref NON_ROUTING_ACCOUNT: TestAccount = TestAccount {
-        id: Uuid::new_v4(),
-        ilp_address: Address::from_str("example.me.nonroutingaccount").unwrap(),
-        relation: RoutingRelation::NonRoutingAccount,
-    };
-    pub static ref CHILD_ACCOUNT: TestAccount = TestAccount {
-        id: Uuid::new_v4(),
-        ilp_address: Address::from_str("example.me.child").unwrap(),
-        relation: RoutingRelation::Child,
-    };
-    pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
-    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-}
+pub static ROUTING_ACCOUNT: Lazy<TestAccount> = Lazy::new(|| TestAccount {
+    id: Uuid::new_v4(),
+    ilp_address: Address::from_str("example.peer").unwrap(),
+    relation: RoutingRelation::Peer,
+});
+pub static NON_ROUTING_ACCOUNT: Lazy<TestAccount> = Lazy::new(|| TestAccount {
+    id: Uuid::new_v4(),
+    ilp_address: Address::from_str("example.me.nonroutingaccount").unwrap(),
+    relation: RoutingRelation::NonRoutingAccount,
+});
+pub static CHILD_ACCOUNT: Lazy<TestAccount> = Lazy::new(|| TestAccount {
+    id: Uuid::new_v4(),
+    ilp_address: Address::from_str("example.me.child").unwrap(),
+    relation: RoutingRelation::Child,
+});
+pub static EXAMPLE_CONNECTOR: Lazy<Address> =
+    Lazy::new(|| Address::from_str("example.connector").unwrap());
+pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
 
 #[derive(Clone, Debug)]
 pub struct TestAccount {

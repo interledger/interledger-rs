@@ -143,7 +143,7 @@ mod tests {
     use interledger_errors::*;
     use interledger_packet::{Address, FulfillBuilder, PrepareBuilder};
     use interledger_service::outgoing_service_fn;
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::iter::FromIterator;
@@ -155,10 +155,9 @@ mod tests {
     #[derive(Debug, Clone)]
     struct TestAccount(Uuid);
 
-    lazy_static! {
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-    }
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    pub static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
 
     impl Account for TestAccount {
         fn id(&self) -> Uuid {

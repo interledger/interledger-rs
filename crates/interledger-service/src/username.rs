@@ -2,15 +2,13 @@
 use regex::Regex;
 use std::{convert::TryFrom, fmt::Display, str::FromStr};
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use unicase::UniCase;
 use unicode_normalization::UnicodeNormalization;
 
-lazy_static! {
-    // No need to add unicode flags, already supported by the crate.
-    static ref USERNAME_PATTERN: Regex = Regex::new(r"^\w{2,32}$").unwrap();
-}
+// No need to add unicode flags, already supported by the crate.
+static USERNAME_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\w{2,32}$").unwrap());
 
 /// Usernames can be unicode and must be between 2 and 32 characters.
 ///

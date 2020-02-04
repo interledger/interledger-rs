@@ -8,15 +8,13 @@ use interledger_settlement::core::{
     idempotency::{IdempotentData, IdempotentStore},
     types::{LeftoversStore, SettlementAccount, SettlementStore},
 };
-use lazy_static::lazy_static;
 use num_bigint::BigUint;
+use once_cell::sync::Lazy;
 use redis_crate::cmd;
 use url::Url;
 use uuid::Uuid;
 
-lazy_static! {
-    static ref IDEMPOTENCY_KEY: String = String::from("AJKJNUjM0oyiAN46");
-}
+static IDEMPOTENCY_KEY: Lazy<String> = Lazy::new(|| String::from("AJKJNUjM0oyiAN46"));
 
 #[tokio::test]
 async fn saves_gets_clears_uncredited_settlement_amount_properly() {

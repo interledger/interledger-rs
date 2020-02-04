@@ -1,7 +1,7 @@
 use bytes::BytesMut;
-#[cfg(test)]
-use lazy_static::lazy_static;
 use log::error;
+#[cfg(test)]
+use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
 
@@ -171,20 +171,24 @@ mod fulfillment_and_condition {
     use super::*;
     use bytes::Bytes;
 
-    lazy_static! {
-        static ref SHARED_SECRET: Vec<u8> = vec![
+    static SHARED_SECRET: Lazy<Vec<u8>> = Lazy::new(|| {
+        vec![
             126, 219, 117, 93, 118, 248, 249, 211, 20, 211, 65, 110, 237, 80, 253, 179, 81, 146,
-            229, 67, 231, 49, 92, 127, 254, 230, 144, 102, 103, 166, 150, 36
-        ];
-        static ref DATA: Vec<u8> = vec![
+            229, 67, 231, 49, 92, 127, 254, 230, 144, 102, 103, 166, 150, 36,
+        ]
+    });
+    static DATA: Lazy<Vec<u8>> = Lazy::new(|| {
+        vec![
             119, 248, 213, 234, 63, 200, 224, 140, 212, 222, 105, 159, 246, 203, 66, 155, 151, 172,
-            68, 24, 76, 232, 90, 10, 237, 146, 189, 73, 248, 196, 177, 108, 115, 223
-        ];
-        static ref FULFILLMENT: Vec<u8> = vec![
+            68, 24, 76, 232, 90, 10, 237, 146, 189, 73, 248, 196, 177, 108, 115, 223,
+        ]
+    });
+    static FULFILLMENT: Lazy<Vec<u8>> = Lazy::new(|| {
+        vec![
             24, 6, 56, 73, 229, 236, 88, 227, 82, 112, 152, 49, 152, 73, 182, 183, 198, 7, 233,
-            124, 119, 65, 13, 68, 54, 108, 120, 193, 59, 226, 107, 39
-        ];
-    }
+            124, 119, 65, 13, 68, 54, 108, 120, 193, 59, 226, 107, 39,
+        ]
+    });
 
     #[test]
     fn it_generates_the_same_fulfillment_as_javascript() {

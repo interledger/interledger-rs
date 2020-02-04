@@ -63,7 +63,7 @@ mod client_server {
     };
     use uuid::Uuid;
 
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
 
     fn get_open_port() -> SocketAddr {
         for _i in 0..1000 {
@@ -76,10 +76,9 @@ mod client_server {
         panic!("Cannot find open port!");
     }
 
-    lazy_static! {
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-    }
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    pub static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
 
     #[derive(Clone, Debug)]
     pub struct TestAccount {

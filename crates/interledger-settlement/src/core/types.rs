@@ -5,8 +5,8 @@ use interledger_errors::{ApiError, ApiErrorType, ProblemType};
 use interledger_errors::{LeftoversStoreError, SettlementStoreError};
 use interledger_packet::Address;
 use interledger_service::Account;
-use lazy_static::lazy_static;
 use num_bigint::BigUint;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::ops::{Div, Mul};
 use std::str::FromStr;
@@ -27,10 +27,8 @@ pub const CONVERSION_ERROR_TYPE: ApiErrorType = ApiErrorType {
     status: StatusCode::INTERNAL_SERVER_ERROR,
 };
 
-lazy_static! {
-    /// The Settlement ILP Address as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/)
-    pub static ref SE_ILP_ADDRESS: Address = Address::from_str("peer.settle").unwrap();
-}
+/// The Settlement ILP Address as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/)
+pub static SE_ILP_ADDRESS: Lazy<Address> = Lazy::new(|| Address::from_str("peer.settle").unwrap());
 
 /// The Quantity object as defined in the [RFC](https://interledger.org/rfcs/0038-settlement-engines/)
 /// An amount denominated in some unit of a single, fungible asset.

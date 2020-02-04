@@ -5,9 +5,9 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, PacketType as IlpPacketType, ParseError,
 };
-#[cfg(test)]
-use lazy_static::lazy_static;
 use log::warn;
+#[cfg(test)]
+use once_cell::sync::Lazy;
 use std::{convert::TryFrom, fmt, str, u64};
 
 /// The Stream Protocol's version
@@ -866,18 +866,18 @@ mod serialization {
     use super::*;
     use std::str::FromStr;
 
-    lazy_static! {
-        static ref PACKET: StreamPacket = StreamPacketBuilder {
+    static PACKET: Lazy<StreamPacket> = Lazy::new(|| {
+        StreamPacketBuilder {
             sequence: 1,
             ilp_packet_type: IlpPacketType::try_from(12).unwrap(),
             prepare_amount: 99,
             frames: &[
                 Frame::ConnectionClose(ConnectionCloseFrame {
                     code: ErrorCode::NoError,
-                    message: "oop"
+                    message: "oop",
                 }),
                 Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
-                    source_account: Address::from_str("example.blah").unwrap()
+                    source_account: Address::from_str("example.blah").unwrap(),
                 }),
                 Frame::ConnectionMaxData(ConnectionMaxDataFrame { max_offset: 1000 }),
                 Frame::ConnectionDataBlocked(ConnectionDataBlockedFrame { max_offset: 2000 }),
@@ -889,7 +889,7 @@ mod serialization {
                 }),
                 Frame::ConnectionAssetDetails(ConnectionAssetDetailsFrame {
                     source_asset_code: "XYZ",
-                    source_asset_scale: 9
+                    source_asset_scale: 9,
                 }),
                 Frame::StreamClose(StreamCloseFrame {
                     stream_id: 76,
@@ -917,26 +917,28 @@ mod serialization {
                 }),
                 Frame::StreamMaxData(StreamMaxDataFrame {
                     stream_id: 35,
-                    max_offset: 8766
+                    max_offset: 8766,
                 }),
                 Frame::StreamDataBlocked(StreamDataBlockedFrame {
                     stream_id: 888,
-                    max_offset: 44444
+                    max_offset: 44444,
                 }),
-            ]
+            ],
         }
-        .build();
-        static ref SERIALIZED: BytesMut = BytesMut::from(
+        .build()
+    });
+    static SERIALIZED: Lazy<BytesMut> = Lazy::new(|| {
+        BytesMut::from(
             &vec![
                 1, 12, 1, 1, 1, 99, 1, 14, 1, 5, 1, 3, 111, 111, 112, 2, 13, 12, 101, 120, 97, 109,
                 112, 108, 101, 46, 98, 108, 97, 104, 3, 3, 2, 3, 232, 4, 3, 2, 7, 208, 5, 3, 2, 11,
                 184, 6, 3, 2, 15, 160, 7, 5, 3, 88, 89, 90, 9, 16, 8, 1, 76, 2, 4, 98, 108, 97,
                 104, 17, 4, 1, 88, 1, 99, 18, 8, 1, 11, 2, 3, 219, 2, 1, 244, 19, 8, 1, 66, 2, 78,
                 32, 2, 23, 112, 20, 11, 1, 34, 2, 35, 40, 5, 104, 101, 108, 108, 111, 21, 5, 1, 35,
-                2, 34, 62, 22, 6, 2, 3, 120, 2, 173, 156
-            ][..]
-        );
-    }
+                2, 34, 62, 22, 6, 2, 3, 120, 2, 173, 156,
+            ][..],
+        )
+    });
 
     #[test]
     fn it_serializes_to_same_as_javascript() {

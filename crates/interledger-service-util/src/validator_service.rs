@@ -172,16 +172,16 @@ where
 #[cfg(test)]
 use interledger_packet::Address;
 #[cfg(test)]
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 #[cfg(test)]
 use std::str::FromStr;
 #[cfg(test)]
 use uuid::Uuid;
 #[cfg(test)]
-lazy_static! {
-    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-    pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-}
+pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+#[cfg(test)]
+pub static EXAMPLE_ADDRESS: Lazy<Address> =
+    Lazy::new(|| Address::from_str("example.alice").unwrap());
 #[cfg(test)]
 #[derive(Clone, Debug)]
 struct TestAccount(Uuid);

@@ -1,14 +1,12 @@
 use crate::packet::{Route, RouteUpdateRequest};
 use hex;
-use lazy_static::lazy_static;
 use log::{debug, trace};
+use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-lazy_static! {
-    static ref RANDOM: SystemRandom = SystemRandom::new();
-}
+static RANDOM: Lazy<SystemRandom> = Lazy::new(SystemRandom::new);
 
 #[derive(Debug, Clone)]
 struct PrefixMap<T> {

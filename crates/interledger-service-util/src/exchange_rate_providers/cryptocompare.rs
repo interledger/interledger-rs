@@ -1,6 +1,6 @@
 use futures::TryFutureExt;
-use lazy_static::lazy_static;
 use log::error;
+use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -9,11 +9,9 @@ use std::{
     iter::{once, FromIterator},
 };
 
-lazy_static! {
-    static ref CRYPTOCOMPARE_URL: Url =
-        Url::parse("https://min-api.cryptocompare.com/data/top/mktcapfull?limit=100&tsym=USD")
-            .unwrap();
-}
+static CRYPTOCOMPARE_URL: Lazy<Url> = Lazy::new(|| {
+    Url::parse("https://min-api.cryptocompare.com/data/top/mktcapfull?limit=100&tsym=USD").unwrap()
+});
 
 #[derive(Deserialize, Debug)]
 struct Price {

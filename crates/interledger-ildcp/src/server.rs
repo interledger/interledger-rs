@@ -54,14 +54,13 @@ where
 mod tests {
     use super::*;
     use crate::get_ildcp_info;
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use std::str::FromStr;
     use uuid::Uuid;
 
-    lazy_static! {
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-        pub static ref EXAMPLE_ADDRESS: Address = Address::from_str("example.alice").unwrap();
-    }
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
+    pub static EXAMPLE_ADDRESS: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.alice").unwrap());
 
     #[derive(Clone, Debug, Copy)]
     struct TestAccount;

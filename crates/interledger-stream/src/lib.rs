@@ -32,18 +32,18 @@ pub mod test_helpers {
     use interledger_packet::Address;
     use interledger_router::RouterStore;
     use interledger_service::{Account, AccountStore, AddressStore, Username};
-    use lazy_static::lazy_static;
+    use once_cell::sync::Lazy;
     use std::collections::HashMap;
     use std::iter::FromIterator;
     use std::str::FromStr;
     use std::sync::Arc;
     use uuid::Uuid;
 
-    lazy_static! {
-        pub static ref EXAMPLE_CONNECTOR: Address = Address::from_str("example.connector").unwrap();
-        pub static ref EXAMPLE_RECEIVER: Address = Address::from_str("example.receiver").unwrap();
-        pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-    }
+    pub static EXAMPLE_CONNECTOR: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.connector").unwrap());
+    pub static EXAMPLE_RECEIVER: Lazy<Address> =
+        Lazy::new(|| Address::from_str("example.receiver").unwrap());
+    pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
 
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct TestAccount {

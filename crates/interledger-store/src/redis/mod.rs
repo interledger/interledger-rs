@@ -40,9 +40,9 @@ use interledger_settlement::core::{
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use lazy_static::lazy_static;
 use log::{debug, error, trace, warn};
 use num_bigint::BigUint;
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use redis_crate::AsyncCommands;
 use redis_crate::{
@@ -99,35 +99,41 @@ fn accounts_key(account_id: Uuid) -> String {
 // trips for messages to be sent to and from Redis, as well as locks to ensure no other
 // process is accessing Redis at the same time.
 // For more information on scripting in Redis, see https://redis.io/commands/eval
-lazy_static! {
-    /// The node's default ILP Address
-    static ref DEFAULT_ILP_ADDRESS: Address = Address::from_str("local.host").unwrap();
 
-    /// This lua script fetches an account associated with a username. The client
-    /// MUST ensure that the returned account is authenticated.
-    static ref ACCOUNT_FROM_USERNAME: Script = Script::new(include_str!("lua/account_from_username.lua"));
+/// The node's default ILP Address
+static DEFAULT_ILP_ADDRESS: Lazy<Address> = Lazy::new(|| Address::from_str("local.host").unwrap());
 
-    /// Lua script which loads a list of accounts
-    /// If an account does not have a settlement_engine_url set
-    /// but there is one configured for that account's currency,
-    /// it will use the globally configured url
-    static ref LOAD_ACCOUNTS: Script = Script::new(include_str!("lua/load_accounts.lua"));
+/// This lua script fetches an account associated with a username. The client
+/// MUST ensure that the returned account is authenticated.
+static ACCOUNT_FROM_USERNAME: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/account_from_username.lua")));
 
-    /// Lua script which reduces the provided account's balance before sending a Prepare packet
-    static ref PROCESS_PREPARE: Script = Script::new(include_str!("lua/process_prepare.lua"));
+/// Lua script which loads a list of accounts
+/// If an account does not have a settlement_engine_url set
+/// but there is one configured for that account's currency,
+/// it will use the globally configured url
+static LOAD_ACCOUNTS: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/load_accounts.lua")));
 
-    /// Lua script which increases the provided account's balance after receiving a Fulfill packet
-    static ref PROCESS_FULFILL: Script = Script::new(include_str!("lua/process_fulfill.lua"));
+/// Lua script which reduces the provided account's balance before sending a Prepare packet
+static PROCESS_PREPARE: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/process_prepare.lua")));
 
-    /// Lua script which increases the provided account's balance after receiving a Reject packet
-    static ref PROCESS_REJECT: Script = Script::new(include_str!("lua/process_reject.lua"));
+/// Lua script which increases the provided account's balance after receiving a Fulfill packet
+static PROCESS_FULFILL: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/process_fulfill.lua")));
 
-    /// Lua script which increases the provided account's balance after a settlement attempt failed
-    static ref REFUND_SETTLEMENT: Script = Script::new(include_str!("lua/refund_settlement.lua"));
+/// Lua script which increases the provided account's balance after receiving a Reject packet
+static PROCESS_REJECT: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/process_reject.lua")));
 
-    /// Lua script which increases the provided account's balance after an incoming settlement succeeded
-    static ref PROCESS_INCOMING_SETTLEMENT: Script = Script::new(include_str!("lua/process_incoming_settlement.lua"));
-}
+/// Lua script which increases the provided account's balance after a settlement attempt failed
+static REFUND_SETTLEMENT: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/refund_settlement.lua")));
+
+/// Lua script which increases the provided account's balance after an incoming settlement succeeded
+static PROCESS_INCOMING_SETTLEMENT: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/process_incoming_settlement.lua")));
 
 /// Builder for the Redis Store
 pub struct RedisStoreBuilder {

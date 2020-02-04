@@ -20,7 +20,7 @@ use uuid::Uuid;
 use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
 use async_trait::async_trait;
 use interledger_errors::*;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -37,9 +37,7 @@ pub struct TestAccount {
     pub balance: i64,
 }
 
-lazy_static! {
-    pub static ref ALICE: Username = Username::from_str("alice").unwrap();
-}
+pub static ALICE: Lazy<Username> = Lazy::new(|| Username::from_str("alice").unwrap());
 
 impl Account for TestAccount {
     fn id(&self) -> Uuid {
