@@ -16,20 +16,8 @@ use std::{
     vec::Vec,
 };
 
-#[cfg(feature = "monitoring")]
-use tracing_subscriber::{
-    filter::EnvFilter,
-    fmt::{time::ChronoUtc, Subscriber},
-};
-
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "monitoring")]
-    Subscriber::builder()
-        .with_timer(ChronoUtc::rfc3339())
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
     // The naming convention of arguments
     //
     // - URL vs URI

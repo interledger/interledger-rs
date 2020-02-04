@@ -2,6 +2,17 @@
 use crate::instrumentation::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 
 #[cfg(feature = "monitoring")]
+use tracing_subscriber::{
+    filter::EnvFilter,
+    fmt::{time::ChronoUtc, Subscriber},
+};
+
+#[cfg(feature = "monitoring")]
+use interledger::errors::ApiError;
+#[cfg(feature = "monitoring")]
+use secrecy::{ExposeSecret, SecretString};
+
+#[cfg(feature = "monitoring")]
 use tracing_futures::Instrument;
 
 #[cfg(feature = "monitoring")]
@@ -488,7 +499,65 @@ impl InterledgerNode {
             .or(btp_service_as_filter(
                 btp_server_service_clone,
                 store.clone(),
-            ))
+            ));
+
+        // If monitoring is enabled, run a tracing subscriber
+        // and expose a new endpoint at /tracing-level which allows
+        // changing the tracing level by administrators
+        #[cfg(feature = "monitoring")]
+        let builder = Subscriber::builder()
+            .with_timer(ChronoUtc::rfc3339())
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_filter_reloading();
+        #[cfg(feature = "monitoring")]
+        let handle = builder.reload_handle();
+        #[cfg(feature = "monitoring")]
+        builder.init();
+
+        #[cfg(feature = "monitoring")]
+        let admin_auth_token = self.admin_auth_token.clone();
+        #[cfg(feature = "monitoring")]
+        let adjust_tracing = warp::put()
+            .and(warp::path("tracing-level"))
+            .and(warp::path::end())
+            .and(warp::header::<SecretString>("authorization"))
+            .and(warp::body::bytes())
+            .and_then(
+                move |auth_header: SecretString, new_level: bytes05::Bytes| {
+                    let handle = handle.clone();
+                    let admin_auth_token = admin_auth_token.clone();
+                    let admin_auth_header = format!("Bearer {}", admin_auth_token);
+                    async move {
+                        if auth_header.expose_secret().as_str() != admin_auth_header {
+                            return Err(ApiError::unauthorized()
+                                .detail("invalid admin auth token")
+                                .into());
+                        }
+                        let new_level = std::str::from_utf8(new_level.as_ref()).map_err(|_| {
+                            ApiError::bad_request().detail("invalid utf-8 body provided")
+                        })?;
+                        let new_tracing_level = new_level
+                            .parse::<tracing_subscriber::filter::EnvFilter>()
+                            .map_err(|_| {
+                                ApiError::bad_request().detail("could not parse body as log level")
+                            })?;
+                        handle.reload(new_tracing_level).map_err(|err| {
+                            ApiError::internal_server_error()
+                                .detail(format!("could not apply new log level {}", err))
+                        })?;
+                        debug!(target: "interledger-node", "Logging level adjusted to {}", new_level);
+                        Ok::<String, warp::Rejection>(format!(
+                            "Logging level changed to: {}",
+                            new_level
+                        ))
+                    }
+                },
+            );
+
+        #[cfg(feature = "monitoring")]
+        let api = api.or(adjust_tracing);
+
+        let api = api
             .recover(default_rejection_handler)
             .with(warp::log("interledger-api"))
             .boxed();
