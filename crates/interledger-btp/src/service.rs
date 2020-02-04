@@ -143,7 +143,6 @@ where
 
     /// Deletes the websocket associated with the provided `account_id`
     pub fn close_connection(&self, account_id: &Uuid) {
-        println!("account remvoed {:?}", account_id);
         self.connections.write().remove(account_id);
     }
 
@@ -343,12 +342,18 @@ where
                         Ok(packet) => packet,
                         Err(err) => {
                             error!("Request timed out. Did the peer disconnect? Err: {}", err);
+                            // Assume that such a long timeout means that the peer closed their
+                            // connection with us, so we'll remove the pending request and the websocket
+                            (*self.pending_outgoing.lock()).remove(&request_id);
+                            self.close_connection(&request.to.id());
+
                             return Err(RejectBuilder {
                                 code: ErrorCode::R00_TRANSFER_TIMED_OUT,
                                 message: &[],
                                 triggered_by: Some(&ilp_address),
                                 data: &[],
-                            }.build())
+                            }
+                            .build());
                         }
                     };
 

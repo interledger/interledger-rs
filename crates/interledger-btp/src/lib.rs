@@ -265,20 +265,43 @@ mod client_server {
         btp_service.close_connection(&server_acc_id);
         // after removing the connection this will fail
         let mut btp_client_clone = btp_client.clone();
-        let res = btp_client_clone.send_request(OutgoingRequest {
-            from: account.clone(),
-            to: account.clone(),
-            original_amount: 100,
-            prepare: PrepareBuilder {
-                destination: Address::from_str("example.destination").unwrap(),
-                amount: 100,
-                execution_condition: &[0; 32],
-                expires_at: SystemTime::now() + Duration::from_secs(30),
-                data: b"test data",
-            }
-            .build(),
-        }).await.unwrap_err();
+        let res = btp_client_clone
+            .send_request(OutgoingRequest {
+                from: account.clone(),
+                to: account.clone(),
+                original_amount: 100,
+                prepare: PrepareBuilder {
+                    destination: Address::from_str("example.destination").unwrap(),
+                    amount: 100,
+                    execution_condition: &[0; 32],
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
+                    data: b"test data",
+                }
+                .build(),
+            })
+            .await
+            .unwrap_err();
         assert_eq!(res.code(), ErrorCode::R00_TRANSFER_TIMED_OUT);
+
+        // now that we have timed out, if we try sending again we'll see that we
+        // have no more connections with this user
+        let res = btp_client_clone
+            .send_request(OutgoingRequest {
+                from: account.clone(),
+                to: account.clone(),
+                original_amount: 100,
+                prepare: PrepareBuilder {
+                    destination: Address::from_str("example.destination").unwrap(),
+                    amount: 100,
+                    execution_condition: &[0; 32],
+                    expires_at: SystemTime::now() + Duration::from_secs(30),
+                    data: b"test data",
+                }
+                .build(),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(res.code(), ErrorCode::F02_UNREACHABLE);
 
         btp_service.close();
     }
