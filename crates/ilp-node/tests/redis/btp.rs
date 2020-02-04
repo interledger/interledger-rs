@@ -8,7 +8,6 @@ use serde_json::{self, json};
 #[tokio::test]
 async fn two_nodes_btp() {
     // Nodes 1 and 2 are peers, Node 2 is the parent of Node 2
-    // install_tracing_subscriber();
     let context = TestContext::new();
 
     // Each node will use its own DB within the redis instance

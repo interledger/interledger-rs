@@ -512,7 +512,7 @@ impl InterledgerNode {
         #[cfg(feature = "monitoring")]
         let handle = builder.reload_handle();
         #[cfg(feature = "monitoring")]
-        builder.init();
+        builder.try_init().unwrap_or(());
 
         #[cfg(feature = "monitoring")]
         let admin_auth_token = self.admin_auth_token.clone();
