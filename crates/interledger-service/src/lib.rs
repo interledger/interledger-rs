@@ -258,18 +258,18 @@ pub struct WrappedService<F, I, A> {
     account_type: PhantomData<A>,
 }
 
-impl<F, IO, A, R> WrappedService<F, IO, A>
+impl<F, I, A, R> WrappedService<F, I, A>
 where
     F: Send + Sync + Fn(IncomingRequest<A>, Box<dyn IncomingService<A> + Send>) -> R,
     R: Future<Output = IlpResult>,
-    IO: IncomingService<A> + Clone,
+    I: IncomingService<A> + Clone,
     A: Account,
 {
     /// Wrap the given service such that the provided function will
     /// be called to handle each request. That function can
     /// return immediately, modify the request before passing it on,
     /// and/or handle the result of calling the inner service.
-    pub fn wrap_incoming(inner: IO, f: F) -> Self {
+    pub fn wrap_incoming(inner: I, f: F) -> Self {
         WrappedService {
             f,
             inner: Arc::new(inner),
@@ -279,11 +279,11 @@ where
 }
 
 #[async_trait]
-impl<F, IO, A, R> IncomingService<A> for WrappedService<F, IO, A>
+impl<F, I, A, R> IncomingService<A> for WrappedService<F, I, A>
 where
     F: Send + Sync + Fn(IncomingRequest<A>, Box<dyn IncomingService<A> + Send>) -> R,
     R: Future<Output = IlpResult> + Send + 'static,
-    IO: IncomingService<A> + Send + Sync + Clone + 'static,
+    I: IncomingService<A> + Send + Sync + Clone + 'static,
     A: Account + Sync,
 {
     async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
@@ -291,18 +291,18 @@ where
     }
 }
 
-impl<F, IO, A, R> WrappedService<F, IO, A>
+impl<F, O, A, R> WrappedService<F, O, A>
 where
     F: Send + Sync + Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> R,
     R: Future<Output = IlpResult>,
-    IO: OutgoingService<A> + Clone,
+    O: OutgoingService<A> + Clone,
     A: Account,
 {
     /// Wrap the given service such that the provided function will
     /// be called to handle each request. That function can
     /// return immediately, modify the request before passing it on,
     /// and/or handle the result of calling the inner service.
-    pub fn wrap_outgoing(inner: IO, f: F) -> Self {
+    pub fn wrap_outgoing(inner: O, f: F) -> Self {
         WrappedService {
             f,
             inner: Arc::new(inner),
@@ -312,11 +312,11 @@ where
 }
 
 #[async_trait]
-impl<F, IO, A, R> OutgoingService<A> for WrappedService<F, IO, A>
+impl<F, O, A, R> OutgoingService<A> for WrappedService<F, O, A>
 where
     F: Send + Sync + Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> R,
     R: Future<Output = IlpResult> + Send + 'static,
-    IO: OutgoingService<A> + Send + Sync + Clone + 'static,
+    O: OutgoingService<A> + Send + Sync + Clone + 'static,
     A: Account,
 {
     async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
