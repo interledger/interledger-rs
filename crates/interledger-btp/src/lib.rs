@@ -265,25 +265,20 @@ mod client_server {
         btp_service.close_connection(&server_acc_id);
         // after removing the connection this will fail
         let mut btp_client_clone = btp_client.clone();
-        let res = btp_client_clone
-            .send_request(OutgoingRequest {
-                from: account.clone(),
-                to: account.clone(),
-                original_amount: 100,
-                prepare: PrepareBuilder {
-                    destination: Address::from_str("example.destination").unwrap(),
-                    amount: 100,
-                    execution_condition: &[0; 32],
-                    expires_at: SystemTime::now() + Duration::from_secs(30),
-                    data: b"test data",
-                }
-                .build(),
-            });
-        // This hangs unless we close the websocket also from the client side
-        // TODO: Figure out how to make the client side connection close automatically
-        btp_client.close_connection(&account.id());
-        let res = res.await;
-        assert!(res.is_err());
+        let res = btp_client_clone.send_request(OutgoingRequest {
+            from: account.clone(),
+            to: account.clone(),
+            original_amount: 100,
+            prepare: PrepareBuilder {
+                destination: Address::from_str("example.destination").unwrap(),
+                amount: 100,
+                execution_condition: &[0; 32],
+                expires_at: SystemTime::now() + Duration::from_secs(30),
+                data: b"test data",
+            }
+            .build(),
+        }).await.unwrap_err();
+        assert_eq!(res.code(), ErrorCode::R00_TRANSFER_TIMED_OUT);
 
         btp_service.close();
     }
