@@ -17,6 +17,7 @@ pub fn build<'a, 'b>() -> App<'a, 'b> {
         routes().subcommands(vec![routes_list(), routes_set(), routes_set_all()]),
         settlement_engines().subcommands(vec![settlement_engines_set_all()]),
         status(),
+        logs(),
         testnet().subcommands(vec![testnet_setup()]),
     ])
 }
@@ -392,6 +393,16 @@ fn settlement_engines_set_all<'a, 'b>() -> App<'a, 'b> {
                 .multiple(true)
                 .help("A set of space-separated key/value pairs, representing an asset code and a settlement engine; may appear multiple times"),
         )
+}
+
+fn logs<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("logs")
+        .about("Modify the logging level of the server")
+        .args(&[Arg::with_name("level")
+            .index(1)
+            .takes_value(true)
+            .required(true)
+            .help("The desired log level (error, debug, trace)")])
 }
 
 fn status<'a, 'b>() -> App<'a, 'b> {
