@@ -33,7 +33,33 @@ paths:
             application/json:
                 schema:
                   $ref: '#/components/schemas/SpSpInformation'
-
+  # Adjust tracing level
+  /tracing-level:
+    put:
+      summary: Adjusts the node's tracing level
+      tags:
+        - admins
+      parameters:
+        - in: header
+          name: authorization
+          schema:
+            type: string
+          required: true
+          description: Bearer token with the administrator's authorization
+      requestBody:
+        required: true
+        description: The desired log level (RUST_LOG format)
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: "interledger=trace"
+      responses:
+        '200':
+          description: The new log level applied on the node
+          content:
+            text/plain:
+              example: "Logging level changed to: interledger=trace"
   # Accounts endpoints
   /accounts:
     get:

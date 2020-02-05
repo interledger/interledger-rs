@@ -96,6 +96,14 @@ mod interface_tests {
     }
 
     #[test]
+    fn adjust_logs() {
+        should_parse(&[
+            "ilp-cli logs interledger=debug --auth foo", // minimal
+            "ilp-cli logs 'interledger_store=debug,interledger_ccp=trace' --auth foo", // adjust multiple crates separately
+        ]);
+    }
+
+    #[test]
     fn accounts_incoming_payments() {
         should_parse(&[
             "ilp-cli accounts incoming-payments alice --auth foo", // minimal

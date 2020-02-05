@@ -67,6 +67,7 @@ tracing-subscriber = { version = "0.1.6", default-features = true, features = ["
 metrics = { version = "0.12.0", default-features = false, features = ["std"], optional = true }
 metrics-core = { version = "0.5.1", default-features = false, optional = true }
 metrics-runtime = { version = "0.12.0", default-features = false, features = ["metrics-observer-prometheus"], optional = true }
+cfg-if = "0.1.10"
 
 [dev-dependencies]
 approx = { version = "0.3.2", default-features = false }

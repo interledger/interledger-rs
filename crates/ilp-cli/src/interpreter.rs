@@ -66,6 +66,7 @@ pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
             _ => Err(Error::UsageErr("ilp-cli help settlement-engines")),
         },
         ("status", Some(status_matches)) => client.get_root(status_matches),
+        ("logs", Some(log_level)) => client.put_tracing_level(log_level),
         ("testnet", Some(testnet_matches)) => match testnet_matches.subcommand() {
             ("setup", Some(submatches)) => client.xpring_account(submatches),
             _ => Err(Error::UsageErr("ilp-cli help testnet")),
@@ -255,6 +256,17 @@ impl NodeClient<'_> {
             .put(&format!("{}/settlement/engines", self.url))
             .bearer_auth(auth)
             .json(&engine_pairs)
+            .send()
+            .map_err(Error::SendErr)
+    }
+
+    // PUT /tracing-level
+    fn put_tracing_level(&self, matches: &ArgMatches) -> Result<Response, Error> {
+        let (auth, args) = extract_args(matches);
+        self.client
+            .put(&format!("{}/tracing-level", self.url))
+            .bearer_auth(auth)
+            .body(args["level"].to_owned())
             .send()
             .map_err(Error::SendErr)
     }
