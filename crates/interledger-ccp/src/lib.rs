@@ -10,7 +10,7 @@
 //! we know about.
 
 use async_trait::async_trait;
-use interledger_errors::RouteManagerStoreError;
+use interledger_errors::CcpRoutingStoreError;
 use interledger_service::Account;
 use std::collections::HashMap;
 use std::{fmt, str::FromStr};
@@ -101,30 +101,30 @@ type LocalAndConfiguredRoutes<T> = (Routes<T>, Routes<T>);
 
 /// Store trait for managing the routes broadcast and set over Connector to Connector protocol
 #[async_trait]
-pub trait RouteManagerStore: Clone {
+pub trait CcpRoutingStore: Clone {
     type Account: CcpRoutingAccount;
 
     // TODO should we have a way to only get the details for specific routes?
     /// Gets the local and manually configured routes
     async fn get_local_and_configured_routes(
         &self,
-    ) -> Result<LocalAndConfiguredRoutes<Self::Account>, RouteManagerStoreError>;
+    ) -> Result<LocalAndConfiguredRoutes<Self::Account>, CcpRoutingStoreError>;
 
     /// Gets all accounts which the node should send routes to (Peer and Child accounts)
     /// The caller can also pass a vector of account ids to be ignored
     async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Result<Vec<Self::Account>, RouteManagerStoreError>;
+    ) -> Result<Vec<Self::Account>, CcpRoutingStoreError>;
 
     /// Gets all accounts which the node should receive routes to (Peer and Parent accounts)
     async fn get_accounts_to_receive_routes_from(
         &self,
-    ) -> Result<Vec<Self::Account>, RouteManagerStoreError>;
+    ) -> Result<Vec<Self::Account>, CcpRoutingStoreError>;
 
     /// Sets the new routes to the store (prefix -> account)
     async fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (String, Self::Account)> + Send + 'async_trait,
-    ) -> Result<(), RouteManagerStoreError>;
+    ) -> Result<(), CcpRoutingStoreError>;
 }

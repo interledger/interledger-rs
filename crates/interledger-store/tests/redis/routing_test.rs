@@ -1,7 +1,7 @@
 use super::{fixtures::*, redis_helpers::*, store_helpers::*};
 
 use interledger_api::{AccountDetails, NodeStore};
-use interledger_ccp::RouteManagerStore;
+use interledger_ccp::CcpRoutingStore;
 use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account as AccountTrait, AddressStore, Username};

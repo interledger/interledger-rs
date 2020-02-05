@@ -4,11 +4,11 @@ use crate::{
         CCP_RESPONSE, CCP_UPDATE_DESTINATION,
     },
     routing_table::RoutingTable,
-    CcpRoutingAccount, RouteManagerStore, RoutingRelation,
+    CcpRoutingAccount, CcpRoutingStore, RoutingRelation,
 };
 use async_trait::async_trait;
 use futures::future::join_all;
-use interledger_errors::RouteManagerStoreError;
+use interledger_errors::CcpRoutingStoreError;
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     Account, AddressStore, IlpResult, IncomingRequest, IncomingService, OutgoingRequest,
@@ -54,6 +54,8 @@ fn hash(preimage: &[u8; 32]) -> [u8; 32] {
 
 type NewAndWithdrawnRoutes = (Vec<Route>, Vec<String>);
 
+/// Builder for [CcpRouteManager](./CcpRouteManager.html)
+/// See documentation on fields for more details.
 pub struct CcpRouteManagerBuilder<I, O, S> {
     /// The next request handler that will be used both to pass on requests that are not CCP messages.
     next_incoming: I,
@@ -72,7 +74,7 @@ impl<I, O, S, A> CcpRouteManagerBuilder<I, O, S>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    S: AddressStore + RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    S: AddressStore + CcpRoutingStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     pub fn new(ilp_address: Address, store: S, outgoing: O, next_incoming: I) -> Self {
@@ -179,7 +181,7 @@ impl<I, O, S, A> CcpRouteManager<I, O, S, A>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    S: AddressStore + RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    S: AddressStore + CcpRoutingStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     /// Returns a future that will trigger this service to update its routes and broadcast
@@ -210,7 +212,7 @@ where
         }
     }
 
-    pub async fn broadcast_routes(&self) -> Result<(), RouteManagerStoreError> {
+    pub async fn broadcast_routes(&self) -> Result<(), CcpRoutingStoreError> {
         self.update_best_routes(None).await?;
         self.send_route_updates().await
     }
@@ -518,7 +520,7 @@ where
     async fn update_best_routes(
         &self,
         prefixes: Option<Vec<String>>,
-    ) -> Result<(), RouteManagerStoreError> {
+    ) -> Result<(), CcpRoutingStoreError> {
         let local_table = self.local_table.clone();
         let forwarding_table = self.forwarding_table.clone();
         let forwarding_table_updates = self.forwarding_table_updates.clone();
@@ -657,7 +659,7 @@ where
     }
 
     /// Send RouteUpdateRequests to all peers that we send routing messages to
-    async fn send_route_updates(&self) -> Result<(), RouteManagerStoreError> {
+    async fn send_route_updates(&self) -> Result<(), CcpRoutingStoreError> {
         let self_clone = self.clone();
         let unavailable_accounts = self.unavailable_accounts.clone();
         // Check which accounts we should skip this iteration
@@ -969,7 +971,7 @@ impl<I, O, S, A> IncomingService<A> for CcpRouteManager<I, O, S, A>
 where
     I: IncomingService<A> + Clone + Send + Sync + 'static,
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
-    S: AddressStore + RouteManagerStore<Account = A> + Clone + Send + Sync + 'static,
+    S: AddressStore + CcpRoutingStore<Account = A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + Send + Sync + 'static,
 {
     /// Handle the IncomingRequest if it is a CCP protocol message or
