@@ -1,4 +1,4 @@
-use crate::{http_retry::Client, ExchangeRates, NodeStore};
+use crate::{ExchangeRates, NodeStore};
 use bytes::Bytes;
 use futures::TryFutureExt;
 use interledger_errors::*;
@@ -7,7 +7,7 @@ use interledger_packet::Address;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AccountStore, AddressStore, Username};
 use interledger_service_util::ExchangeRateStore;
-use interledger_settlement::core::types::SettlementAccount;
+use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
 use log::{error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
@@ -208,19 +208,19 @@ where
             // (even if this isn't called often, it could crash the node at some point)
             let accounts = store.get_all_accounts().await?;
 
-            let client = Client::default();
+            let client = SettlementClient::default();
             // Try creating the account on the settlement engine if the settlement_engine_url of the
             // account is the one we just configured as the default for the account's asset code
             for account in accounts {
                 if let Some(details) = account.settlement_engine_details() {
                     if Some(&details.url) == asset_to_url_map.get(account.asset_code()) {
-                        let status_code = client.create_engine_account(details.url, account.id())
-                            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
+                        let response = client.create_engine_account(account.id(), details.url)
+                            .map_err(|err| Rejection::from(ApiError::internal_server_error().detail(err.to_string())))
                             .await?;
-                        if status_code.is_success() {
+                        if response.status().is_success() {
                             trace!("Account {} created on the SE", account.id());
                         } else {
-                            error!("Error creating account. Settlement engine responded with HTTP code: {}", status_code);
+                            error!("Error creating account. Settlement engine responded with HTTP code: {}", response.status());
                         }
                     }
                 }

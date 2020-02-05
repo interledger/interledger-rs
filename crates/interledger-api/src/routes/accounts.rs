@@ -1,4 +1,4 @@
-use crate::{http_retry::Client, number_or_string, AccountDetails, AccountSettings, NodeStore};
+use crate::{number_or_string, AccountDetails, AccountSettings, NodeStore};
 use bytes::Bytes;
 use futures::{Future, FutureExt, StreamExt, TryFutureExt};
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
@@ -13,7 +13,7 @@ use interledger_service::{
     Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::core::types::SettlementAccount;
+use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
@@ -588,24 +588,26 @@ where
         .or(default_settlement_engine);
     if let Some(se_url) = settlement_engine_url {
         let id = account.id();
-        let http_client = Client::default();
+        let http_client = SettlementClient::default();
         trace!(
             "Sending account {} creation request to settlement engine: {:?}",
             id,
             se_url.clone()
         );
 
-        let status_code = http_client
-            .create_engine_account(se_url, id)
-            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
+        let response = http_client
+            .create_engine_account(id, se_url)
+            .map_err(|err| {
+                Rejection::from(ApiError::internal_server_error().detail(err.to_string()))
+            })
             .await?;
 
-        if status_code.is_success() {
+        if response.status().is_success() {
             trace!("Account {} created on the SE", id);
         } else {
             error!(
                 "Error creating account. Settlement engine responded with HTTP code: {}",
-                status_code
+                response.status()
             );
         }
     }
