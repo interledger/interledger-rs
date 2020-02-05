@@ -881,7 +881,7 @@ dependencies = [
  "libc 0.2.66 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics-core 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "metrics-runtime 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "metrics-runtime 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "net2 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-bigint 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "once_cell 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1454,12 +1454,11 @@ dependencies = [
 
 [[package]]
 name = "metrics-runtime"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "arc-swap 0.3.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-utils 0.6.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "im 12.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "metrics-core 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3467,7 +3466,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum metrics 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)" = "51b70227ece8711a1aa2f99655efd795d0cff297a5b9fe39645a93aacf6ad39d"
 "checksum metrics-core 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7c064b3a1ff41f4bf6c91185c8a0caeccf8a8a27e9d0f92cc54cf3dbec812f48"
 "checksum metrics-observer-prometheus 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "4f9bb94f40e189c87cf70ef1c78815b949ab9d28fe76ebb81f15f79bd19a33d6"
-"checksum metrics-runtime 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)" = "15ef9de8e4a0dd82d38f8588ef40c11db7e12b75c45945fd3ef6993a708f7ced"
+"checksum metrics-runtime 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)" = "beb3035626782c533953bcc1a349467543b7f0e9d7b0c92edc61ee2bda7033d6"
 "checksum metrics-util 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "d11f8090a8886339f9468a04eeea0711e4cf27538b134014664308041307a1c5"
 "checksum mime 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "ba626b8a6de5da682e1caa06bdb42a335aee5a84db8e5046a3e8ab17ba0a3ae0"
 "checksum mime 0.3.16 (registry+https://github.com/rust-lang/crates.io-index)" = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
