@@ -4,10 +4,11 @@ use reqwest::{
     self,
     blocking::{Client, Response},
 };
-use std::{borrow::Cow, collections::HashMap};
+use std::collections::HashMap;
 use tungstenite::{connect, handshake::client::Request};
 use url::Url;
 
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // Custom errors
@@ -26,6 +27,8 @@ pub enum Error {
     UrlErr(#[from] url::ParseError),
     #[error("WebSocket error: {0}")]
     WebsocketErr(#[from] tungstenite::error::Error),
+    #[error("HTTP error: {0}")]
+    HttpErr(#[from] http::Error),
 }
 
 pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
@@ -143,11 +146,10 @@ impl NodeClient<'_> {
 
         url.set_scheme(scheme).map_err(Error::SchemeErr)?;
 
-        let mut request: Request = url.into();
-        request.add_header(
-            Cow::Borrowed("Authorization"),
-            Cow::Owned(format!("Bearer {}", auth)),
-        );
+        let request: Request = Request::builder()
+            .uri(url.into_string())
+            .header("Authorization", format!("Bearer {}", auth))
+            .body(())?;
 
         let (mut socket, _) = connect(request)?;
         loop {

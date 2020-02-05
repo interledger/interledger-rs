@@ -859,7 +859,7 @@ dependencies = [
  "serde 1.0.104 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.45 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "tungstenite 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tungstenite 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -928,6 +928,14 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "input_buffer"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "bytes 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1009,8 +1017,8 @@ dependencies = [
  "stream-cancel 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-tungstenite 0.10.0 (git+https://github.com/snapview/tokio-tungstenite)",
- "tungstenite 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-tungstenite 0.10.1 (git+https://github.com/snapview/tokio-tungstenite)",
+ "tungstenite 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "warp 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2736,8 +2744,8 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.10.0"
-source = "git+https://github.com/snapview/tokio-tungstenite#308d9680c0e59dd1e8651659a775c05df937934e"
+version = "0.10.1"
+source = "git+https://github.com/snapview/tokio-tungstenite#2357dc81a13b0cdbb4677da999a3826fd41a8913"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2745,7 +2753,7 @@ dependencies = [
  "pin-project 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-tls 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tungstenite 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tungstenite 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2887,6 +2895,24 @@ dependencies = [
  "http 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "httparse 1.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "input_buffer 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sha-1 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "url 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "utf-8 0.7.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "base64 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bytes 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "http 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "httparse 1.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "input_buffer 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "native-tls 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3394,6 +3420,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum im 12.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "de38d1511a0ce7677538acb1e31b5df605147c458e061b2cdb89858afb1cd182"
 "checksum indexmap 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "0b54058f0a6ff80b6803da8faf8997cde53872b38f4023728f6830b06cd3c0dc"
 "checksum input_buffer 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8e1b822cc844905551931d6f81608ed5f50a79c1078a4e2b4d42dbc7c1eedfbf"
+"checksum input_buffer 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "19a8a95243d5a0398cae618ec29477c6e3cb631152be5c19481f80bc71559754"
 "checksum iovec 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "b2b3ea6ff95e175473f8ffe6a7eb7c00d054240321b84c57051175fe3c1e075e"
 "checksum itertools 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)" = "87fa75c9dea7b07be3138c49abbb83fd4bea199b5cdc76f9804458edc5da0d6e"
 "checksum itoa 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)" = "501266b7edd0174f8530248f87f99c88fbe60ca4ef3dd486835b8d8d53136f7f"
@@ -3549,7 +3576,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum tokio-threadpool 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)" = "f0c32ffea4827978e9aa392d2f743d973c1dfa3730a2ed3f22ce1e6984da848c"
 "checksum tokio-timer 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)" = "1739638e364e558128461fc1ad84d997702c8e31c2e6b18fb99842268199e827"
 "checksum tokio-tls 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7bde02a3a5291395f59b06ec6945a3077602fac2b07eeeaf0dee2122f3619828"
-"checksum tokio-tungstenite 0.10.0 (git+https://github.com/snapview/tokio-tungstenite)" = "<none>"
+"checksum tokio-tungstenite 0.10.1 (git+https://github.com/snapview/tokio-tungstenite)" = "<none>"
 "checksum tokio-udp 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "f02298505547f73e60f568359ef0d016d5acd6e830ab9bc7c4a5b3403440121b"
 "checksum tokio-uds 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)" = "037ffc3ba0e12a0ab4aca92e5234e0dedeb48fddf6ccd260f1f150a36a9f2445"
 "checksum tokio-util 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "571da51182ec208780505a32528fc5512a8fe1443ab960b3f2f3ef093cd16930"
@@ -3562,6 +3589,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum tracing-log 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "5e0f8c7178e13481ff6765bd169b33e8d554c5d2bbede5e32c356194be02b9b9"
 "checksum tracing-subscriber 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "192ca16595cdd0661ce319e8eede9c975f227cdaabc4faaefdc256f43d852e45"
 "checksum try-lock 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e604eb7b43c06650e854be16a2a03155743d3752dd1c943f6829e26b7a36e382"
+"checksum tungstenite 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)" = "cfea31758bf674f990918962e8e5f07071a3161bd7c4138ed23e416e1ac4264e"
 "checksum tungstenite 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)" = "8a0c2bd5aeb7dcd2bb32e472c8872759308495e5eccc942e929a513cd8d36110"
 "checksum twoway 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "59b11b2b5241ba34be09c3cc85a36e56e48f9888862e19cedf23336d35316ed1"
 "checksum typenum 1.11.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6d2783fe2d6b8c1101136184eb41be8b1ad379e4657050b8aaff0c79ee7575f9"
