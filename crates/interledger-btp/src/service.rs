@@ -26,6 +26,11 @@ const PING_INTERVAL: u64 = 30; // seconds
 static PING: Lazy<Message> = Lazy::new(|| Message::Ping(Vec::with_capacity(0)));
 static PONG: Lazy<Message> = Lazy::new(|| Message::Pong(Vec::with_capacity(0)));
 
+// Return a Reject timeout if the outgoing message future does not complete
+// within this timeout. This will probably happen if the peer closed the websocket
+// with us
+const SEND_MSG_TIMEOUT: Duration = Duration::from_secs(30);
+
 type IlpResultChannel = oneshot::Sender<Result<Fulfill, Reject>>;
 type IncomingRequestBuffer<A> = UnboundedReceiver<(A, u32, Prepare)>;
 
@@ -134,6 +139,11 @@ where
             close_all_connections: Arc::new(Mutex::new(Some(close_all_connections))),
             stream_valve: Arc::new(stream_valve),
         }
+    }
+
+    /// Deletes the websocket associated with the provided `account_id`
+    pub fn close_connection(&self, account_id: &Uuid) {
+        self.connections.write().remove(account_id);
     }
 
     /// Close all of the open WebSocket connections
@@ -323,7 +333,30 @@ where
                 Ok(_) => {
                     let (sender, receiver) = oneshot::channel();
                     (*self.pending_outgoing.lock()).insert(request_id, sender);
-                    let result = receiver.await;
+
+                    // Wrap the receiver with a timeout to ensure we do not
+                    // wait too long if the other party has disconnected
+                    let result = tokio::time::timeout(SEND_MSG_TIMEOUT, receiver).await;
+
+                    let result = match result {
+                        Ok(packet) => packet,
+                        Err(err) => {
+                            error!("Request timed out. Did the peer disconnect? Err: {}", err);
+                            // Assume that such a long timeout means that the peer closed their
+                            // connection with us, so we'll remove the pending request and the websocket
+                            (*self.pending_outgoing.lock()).remove(&request_id);
+                            self.close_connection(&request.to.id());
+
+                            return Err(RejectBuilder {
+                                code: ErrorCode::R00_TRANSFER_TIMED_OUT,
+                                message: &[],
+                                triggered_by: Some(&ilp_address),
+                                data: &[],
+                            }
+                            .build());
+                        }
+                    };
+
                     // Drop the trigger here since we've gotten the response
                     // and don't need to keep the connections open if this was the
                     // last thing we were waiting for
@@ -389,6 +422,10 @@ where
     /// Close all of the open WebSocket connections
     pub fn close(&self) {
         self.outgoing.close();
+    }
+
+    pub fn close_connection(&self, account_id: &Uuid) {
+        self.outgoing.close_connection(account_id);
     }
 }
 
