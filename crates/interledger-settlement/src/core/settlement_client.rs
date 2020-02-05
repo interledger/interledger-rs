@@ -41,6 +41,39 @@ impl SettlementClient {
         .await
     }
 
+    /// Sends a message to the engine (will retry idempotently if it fails) which will get forwarded to the peer's engine
+    /// This is done by sending a POST to /accounts/:id/messages with the provided `message`
+    /// as the request's body
+    pub async fn send_message(&self, id: Uuid, engine_url: Url, message: Vec<u8>) -> Response {
+        FutureRetry::new(
+            move || self.send_message_once(id.clone(), engine_url.clone(), message.clone()),
+            RequestErrorHandler::new(self.max_retries),
+        )
+        .await
+    }
+
+    async fn send_message_once(&self, id: Uuid, engine_url: Url, message: Vec<u8>) -> Response {
+        // The `Prepare` packet's data was sent by the peer's settlement
+        // engine so we assume it is in a format that our settlement engine
+        // will understand
+        // format. `to_vec()` needed to work around lifetime error
+        let mut settlement_engine_url = engine_url;
+        settlement_engine_url
+            .path_segments_mut()
+            .expect("Invalid settlement engine URL")
+            .push("accounts")
+            .push(&id.to_string())
+            .push("messages");
+        let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
+        self.client
+            .post(settlement_engine_url.as_ref())
+            .header("Content-Type", "application/octet-stream")
+            .header("Idempotency-Key", idempotency_uuid.clone())
+            .body(message.clone())
+            .send()
+            .await
+    }
+
     /// Sends an idempotent settlement request to the engine (will retry if it fails)
     /// This is done by sending a POST to /accounts/:id/settlements with the provided `amount` and `asset_scale`
     /// as the request's body

@@ -3,8 +3,9 @@ use futures::TryFutureExt;
 use interledger_errors::BalanceStoreError;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
-use interledger_settlement::{
-    core::{SettlementClient, types::{SettlementAccount, SettlementStore}},
+use interledger_settlement::core::{
+    types::{SettlementAccount, SettlementStore},
+    SettlementClient,
 };
 use log::{debug, error};
 use std::marker::PhantomData;
@@ -161,7 +162,12 @@ where
                             // outgoing settlement and putting unnecessary
                             // load on the settlement engine.
                             if settlement_client
-                                .send_settlement(to.id(), engine_url, amount_to_settle, to.asset_scale())
+                                .send_settlement(
+                                    to.id(),
+                                    engine_url,
+                                    amount_to_settle,
+                                    to.asset_scale(),
+                                )
                                 .await
                                 .is_err()
                             {
