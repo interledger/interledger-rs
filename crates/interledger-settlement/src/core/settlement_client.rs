@@ -1,5 +1,5 @@
 use crate::core::types::Quantity;
-use futures_retry::{FutureRetry, RetryPolicy};
+use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
 use log::{debug, trace};
 use reqwest::Client;
 use serde_json::json;
@@ -31,14 +31,19 @@ impl SettlementClient {
         }
     }
 
+    /// Sends an idempotent account creation request to the engine (will retry if it fails)
+    /// This is done by sending a POST to /accounts with the provided `id` as the request's body
     pub async fn create_engine_account(&self, id: Uuid, engine_url: Url) -> Response {
         FutureRetry::new(
             move || self.create_engine_account_once(id.clone(), engine_url.clone()),
-            handle_error,
+            RequestErrorHandler::new(self.max_retries),
         )
         .await
     }
 
+    /// Sends an idempotent settlement request to the engine (will retry if it fails)
+    /// This is done by sending a POST to /accounts/:id/settlements with the provided `amount` and `asset_scale`
+    /// as the request's body
     pub async fn send_settlement(
         &self,
         id: Uuid,
@@ -48,7 +53,7 @@ impl SettlementClient {
     ) -> Response {
         FutureRetry::new(
             move || self.send_settlement_once(id, engine_url.clone(), amount, asset_scale),
-            handle_error,
+            RequestErrorHandler::new(self.max_retries),
         )
         .await
     }
@@ -74,14 +79,6 @@ impl SettlementClient {
             .await?)
     }
 
-    /// Sends a request to create a new account on the settlement engine
-
-    /// Sends a settlement request to the node's settlement engine for the provided account and amount
-    ///
-    /// # Errors
-    /// 1. Account has no engine configured
-    /// 1. HTTP request to engine failed from node side
-    /// 1. HTTP response from engine was an error
     pub async fn send_settlement_once(
         &self,
         id: Uuid,
@@ -95,7 +92,7 @@ impl SettlementClient {
         settlement_engine_url
             .path_segments_mut()
             .expect("Invalid settlement engine URL")
-            .push("accounts")
+            .push(ACCOUNTS_ENDPOINT)
             .push(&id.to_string())
             .push("settlements");
         debug!(
@@ -119,24 +116,47 @@ impl SettlementClient {
     }
 }
 
-fn handle_error(e: reqwest::Error) -> RetryPolicy<reqwest::Error> {
-    if e.is_timeout() {
-        RetryPolicy::WaitRetry(Duration::from_secs(5))
-    } else if let Some(status) = e.status() {
-        if status.is_client_error() {
-            // do not retry 4xx
-            RetryPolicy::ForwardError(e)
-        } else if status.is_server_error() {
-            // Retry 5xx every 5 seconds
+struct RequestErrorHandler {
+    max_attempts: usize,
+    current_attempt: usize,
+}
+
+impl RequestErrorHandler {
+    fn new(max_attempts: usize) -> Self {
+        RequestErrorHandler {
+            max_attempts,
+            current_attempt: 0,
+        }
+    }
+}
+
+impl ErrorHandler<reqwest::Error> for RequestErrorHandler {
+    type OutError = reqwest::Error;
+
+    /// Handler of errors for the retry logic
+    fn handle(&mut self, e: reqwest::Error) -> RetryPolicy<reqwest::Error> {
+        self.current_attempt += 1;
+        if self.current_attempt > self.max_attempts {
+            return RetryPolicy::ForwardError(e);
+        }
+        if e.is_timeout() {
             RetryPolicy::WaitRetry(Duration::from_secs(5))
+        } else if let Some(status) = e.status() {
+            if status.is_client_error() {
+                // do not retry 4xx
+                RetryPolicy::ForwardError(e)
+            } else if status.is_server_error() {
+                // Retry 5xx every 5 seconds
+                RetryPolicy::WaitRetry(Duration::from_secs(5))
+            } else {
+                // Otherwise just retry every second
+                RetryPolicy::WaitRetry(Duration::from_secs(1))
+            }
         } else {
-            // Otherwise just retry every second
+            // Retry other errors slightly more frequently since they may be
+            // related to the engine not having started yet
             RetryPolicy::WaitRetry(Duration::from_secs(1))
         }
-    } else {
-        // Retry other errors slightly more frequently since they may be
-        // related to the engine not having started yet
-        RetryPolicy::WaitRetry(Duration::from_secs(1))
     }
 }
 
@@ -149,18 +169,35 @@ impl Default for SettlementClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::fixtures::TEST_ACCOUNT_0;
-    use crate::api::test_helpers::mock_settlement;
-    use mockito::Matcher;
+    use mockito::{mock, Matcher};
+    use once_cell::sync::Lazy;
+
+    pub static SETTLEMENT_API: Lazy<Matcher> = Lazy::new(|| {
+        Matcher::Regex(r"^/accounts/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/settlements$".to_string())
+    });
+
+    fn mock_settlement(status_code: usize) -> mockito::Mock {
+        mock("POST", SETTLEMENT_API.clone())
+            // The settlement API receives json data
+            .match_header("Content-Type", "application/json")
+            .with_status(status_code)
+    }
 
     #[tokio::test]
     async fn settlement_ok() {
         let m = mock_settlement(200)
             .match_header("Idempotency-Key", Matcher::Any)
             .create();
-        let client = SettlementClient::new();
+        let client = SettlementClient::default();
 
-        let ret = client.send_settlement(TEST_ACCOUNT_0.clone(), 100).await;
+        let ret = client
+            .send_settlement(
+                Uuid::new_v4(),
+                "http://localhost:1234".parse().unwrap(),
+                100,
+                6,
+            )
+            .await;
 
         m.assert();
         assert!(ret.is_ok());
@@ -170,26 +207,18 @@ mod tests {
     async fn engine_rejects() {
         let m = mock_settlement(500)
             .match_header("Idempotency-Key", Matcher::Any)
-            .create();
-        let client = SettlementClient::new();
+            .create()
+            .expect(2); // It will hit it twice because it will retry
+        let client = SettlementClient::new(Duration::from_secs(1), 1);
 
-        let ret = client.send_settlement(TEST_ACCOUNT_0.clone(), 100).await;
-
-        m.assert();
-        assert!(ret.is_err());
-    }
-
-    #[tokio::test]
-    async fn account_does_not_have_settlement_engine() {
-        let m = mock_settlement(200)
-            .expect(0)
-            .match_header("Idempotency-Key", Matcher::Any)
-            .create();
-        let client = SettlementClient::new();
-
-        let mut acc = TEST_ACCOUNT_0.clone();
-        acc.no_details = true; // Hide the settlement engine data from the account
-        let ret = client.send_settlement(acc, 100).await;
+        let ret = client
+            .send_settlement(
+                Uuid::new_v4(),
+                "http://localhost:1234".parse().unwrap(),
+                100,
+                6,
+            )
+            .await;
 
         m.assert();
         assert!(ret.is_err());
