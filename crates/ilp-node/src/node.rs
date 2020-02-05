@@ -1,37 +1,30 @@
+use cfg_if::cfg_if;
+
 #[cfg(feature = "google-pubsub")]
 use crate::instrumentation::google_pubsub::{create_google_pubsub_wrapper, PubsubConfig};
 
-#[cfg(feature = "monitoring")]
-use tracing_subscriber::{
-    filter::EnvFilter,
-    fmt::{time::ChronoUtc, Subscriber},
-};
+cfg_if! {
+    if #[cfg(feature = "monitoring")] {
+        use tracing_subscriber::{
+            filter::EnvFilter,
+            fmt::{time::ChronoUtc, Subscriber},
+        };
+        use interledger::errors::ApiError;
+        use secrecy::{ExposeSecret, SecretString};
+        use tracing_futures::Instrument;
+        use tracing::debug_span;
+        use crate::instrumentation::{
+            metrics::{incoming_metrics, outgoing_metrics},
+            prometheus::{serve_prometheus, PrometheusConfig},
+            trace::{trace_forwarding, trace_incoming, trace_outgoing},
+        };
+        use interledger::service::IncomingService;
+        use futures::FutureExt;
+    }
+}
 
-#[cfg(feature = "monitoring")]
-use interledger::errors::ApiError;
-#[cfg(feature = "monitoring")]
-use secrecy::{ExposeSecret, SecretString};
-
-#[cfg(feature = "monitoring")]
-use tracing_futures::Instrument;
-
-#[cfg(feature = "monitoring")]
-use tracing::debug_span;
-
-#[cfg(feature = "monitoring")]
-use crate::instrumentation::{
-    metrics::{incoming_metrics, outgoing_metrics},
-    prometheus::{serve_prometheus, PrometheusConfig},
-    trace::{trace_forwarding, trace_incoming, trace_outgoing},
-};
-
-#[cfg(feature = "monitoring")]
-use interledger::service::IncomingService;
 #[cfg(any(feature = "monitoring", feature = "google-pubsub"))]
 use interledger::service::OutgoingService;
-
-#[cfg(feature = "monitoring")]
-use futures::FutureExt;
 
 use bytes::Bytes;
 use futures::TryFutureExt;
@@ -235,19 +228,21 @@ impl InterledgerNode {
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
     pub async fn serve(self) -> Result<(), ()> {
-        #[cfg(feature = "monitoring")]
-        let f = futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(
-            |r| async move {
-                if r.0.is_ok() || r.1.is_ok() {
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            },
-        );
-
-        #[cfg(not(feature = "monitoring"))]
-        let f = self.serve_node();
+        cfg_if! {
+            if #[cfg(feature = "monitoring")] {
+                let f = futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(
+                    |r| async move {
+                        if r.0.is_ok() || r.1.is_ok() {
+                            Ok(())
+                        } else {
+                            Err(())
+                        }
+                    },
+                );
+            } else {
+                let f = self.serve_node();
+            }
+        }
 
         f.await
     }
@@ -392,13 +387,16 @@ impl InterledgerNode {
         let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
 
         // Add tracing to add the outgoing request details to the incoming span
-        #[cfg(feature = "monitoring")]
-        let outgoing_service_fwd = outgoing_service
-            .clone()
-            .wrap(trace_forwarding)
-            .in_current_span();
-        #[cfg(not(feature = "monitoring"))]
-        let outgoing_service_fwd = outgoing_service.clone();
+        cfg_if! {
+            if #[cfg(feature = "monitoring")] {
+                let outgoing_service_fwd = outgoing_service
+                    .clone()
+                    .wrap(trace_forwarding)
+                    .in_current_span();
+            } else {
+                let outgoing_service_fwd = outgoing_service.clone();
+            }
+        }
 
         // Set up the Router and Routing Manager
         let incoming_service = Router::new(store.clone(), outgoing_service_fwd);
@@ -434,17 +432,20 @@ impl InterledgerNode {
             .wrap(incoming_metrics);
 
         // Handle incoming packets sent via BTP
-        #[cfg(feature = "monitoring")]
-        let incoming_service_btp = incoming_service
-            .clone()
-            .wrap(|request, mut next| async move {
-                let btp = debug_span!(target: "interledger-node", "btp");
-                let _btp_scope = btp.enter();
-                next.handle_request(request).in_current_span().await
-            })
-            .in_current_span();
-        #[cfg(not(feature = "monitoring"))]
-        let incoming_service_btp = incoming_service.clone();
+        cfg_if! {
+            if #[cfg(feature = "monitoring")] {
+                let incoming_service_btp = incoming_service
+                    .clone()
+                    .wrap(|request, mut next| async move {
+                        let btp = debug_span!(target: "interledger-node", "btp");
+                        let _btp_scope = btp.enter();
+                        next.handle_request(request).in_current_span().await
+                    })
+                    .in_current_span();
+            } else {
+                let incoming_service_btp = incoming_service.clone();
+            }
+        }
 
         btp_server_service
             .handle_incoming(incoming_service_btp.clone())
@@ -454,17 +455,20 @@ impl InterledgerNode {
             .handle_incoming(incoming_service_btp)
             .await;
 
-        #[cfg(feature = "monitoring")]
-        let incoming_service_api = incoming_service
-            .clone()
-            .wrap(|request, mut next| async move {
-                let api = debug_span!(target: "interledger-node", "api");
-                let _api_scope = api.enter();
-                next.handle_request(request).in_current_span().await
-            })
-            .in_current_span();
-        #[cfg(not(feature = "monitoring"))]
-        let incoming_service_api = incoming_service.clone();
+        cfg_if! {
+            if #[cfg(feature = "monitoring")] {
+                let incoming_service_api = incoming_service
+                    .clone()
+                    .wrap(|request, mut next| async move {
+                        let api = debug_span!(target: "interledger-node", "api");
+                        let _api_scope = api.enter();
+                        next.handle_request(request).in_current_span().await
+                    })
+                    .in_current_span();
+            } else {
+                let incoming_service_api = incoming_service.clone();
+            }
+        }
 
         // Node HTTP API
         let mut api = NodeApi::new(
@@ -480,17 +484,20 @@ impl InterledgerNode {
         }
         api.node_version(env!("CARGO_PKG_VERSION").to_string());
 
-        #[cfg(feature = "monitoring")]
-        let incoming_service_http = incoming_service
-            .clone()
-            .wrap(|request, mut next| async move {
-                let http = debug_span!(target: "interledger-node", "http");
-                let _http_scope = http.enter();
-                next.handle_request(request).in_current_span().await
-            })
-            .in_current_span();
-        #[cfg(not(feature = "monitoring"))]
-        let incoming_service_http = incoming_service.clone();
+        cfg_if! {
+            if #[cfg(feature = "monitoring")] {
+                let incoming_service_http = incoming_service
+                    .clone()
+                    .wrap(|request, mut next| async move {
+                        let http = debug_span!(target: "interledger-node", "http");
+                        let _http_scope = http.enter();
+                        next.handle_request(request).in_current_span().await
+                    })
+                    .in_current_span();
+            } else {
+                let incoming_service_http = incoming_service.clone();
+            }
+        }
 
         // add an API of ILP over HTTP and add rejection handler
         let api = api
@@ -504,58 +511,56 @@ impl InterledgerNode {
         // If monitoring is enabled, run a tracing subscriber
         // and expose a new endpoint at /tracing-level which allows
         // changing the tracing level by administrators
-        #[cfg(feature = "monitoring")]
-        let builder = Subscriber::builder()
-            .with_timer(ChronoUtc::rfc3339())
-            .with_env_filter(EnvFilter::from_default_env())
-            .with_filter_reloading();
-        #[cfg(feature = "monitoring")]
-        let handle = builder.reload_handle();
-        #[cfg(feature = "monitoring")]
-        builder.try_init().unwrap_or(());
+        cfg_if! {
+            if #[cfg(feature = "monitoring")] {
+                let builder = Subscriber::builder()
+                    .with_timer(ChronoUtc::rfc3339())
+                    .with_env_filter(EnvFilter::from_default_env())
+                    .with_filter_reloading();
+                let handle = builder.reload_handle();
+                builder.try_init().unwrap_or(());
 
-        #[cfg(feature = "monitoring")]
-        let admin_auth_token = self.admin_auth_token.clone();
-        #[cfg(feature = "monitoring")]
-        let adjust_tracing = warp::put()
-            .and(warp::path("tracing-level"))
-            .and(warp::path::end())
-            .and(warp::header::<SecretString>("authorization"))
-            .and(warp::body::bytes())
-            .and_then(
-                move |auth_header: SecretString, new_level: bytes05::Bytes| {
-                    let handle = handle.clone();
-                    let admin_auth_token = admin_auth_token.clone();
-                    let admin_auth_header = format!("Bearer {}", admin_auth_token);
-                    async move {
-                        if auth_header.expose_secret().as_str() != admin_auth_header {
-                            return Err(ApiError::unauthorized()
-                                .detail("invalid admin auth token")
-                                .into());
-                        }
-                        let new_level = std::str::from_utf8(new_level.as_ref()).map_err(|_| {
-                            ApiError::bad_request().detail("invalid utf-8 body provided")
-                        })?;
-                        let new_tracing_level = new_level
-                            .parse::<tracing_subscriber::filter::EnvFilter>()
-                            .map_err(|_| {
-                                ApiError::bad_request().detail("could not parse body as log level")
-                            })?;
-                        handle.reload(new_tracing_level).map_err(|err| {
-                            ApiError::internal_server_error()
-                                .detail(format!("could not apply new log level {}", err))
-                        })?;
-                        debug!(target: "interledger-node", "Logging level adjusted to {}", new_level);
-                        Ok::<String, warp::Rejection>(format!(
-                            "Logging level changed to: {}",
-                            new_level
-                        ))
-                    }
-                },
-            );
-
-        #[cfg(feature = "monitoring")]
-        let api = api.or(adjust_tracing);
+                let admin_auth_token = self.admin_auth_token.clone();
+                let api = {
+                    let adjust_tracing = warp::put()
+                        .and(warp::path("tracing-level"))
+                        .and(warp::path::end())
+                        .and(warp::header::<SecretString>("authorization"))
+                        .and(warp::body::bytes())
+                        .and_then(
+                            move |auth_header: SecretString, new_level: bytes05::Bytes| {
+                                let handle = handle.clone();
+                                let admin_auth_header = format!("Bearer {}", admin_auth_token);
+                                async move {
+                                    if auth_header.expose_secret().as_str() != admin_auth_header {
+                                        return Err(ApiError::unauthorized()
+                                            .detail("invalid admin auth token")
+                                            .into());
+                                    }
+                                    let new_level = std::str::from_utf8(new_level.as_ref()).map_err(|_| {
+                                        ApiError::bad_request().detail("invalid utf-8 body provided")
+                                    })?;
+                                    let new_tracing_level = new_level
+                                        .parse::<tracing_subscriber::filter::EnvFilter>()
+                                        .map_err(|_| {
+                                            ApiError::bad_request().detail("could not parse body as log level")
+                                        })?;
+                                    handle.reload(new_tracing_level).map_err(|err| {
+                                        ApiError::internal_server_error()
+                                            .detail(format!("could not apply new log level {}", err))
+                                    })?;
+                                    debug!(target: "interledger-node", "Logging level adjusted to {}", new_level);
+                                    Ok::<String, warp::Rejection>(format!(
+                                        "Logging level changed to: {}",
+                                        new_level
+                                    ))
+                                }
+                            },
+                        );
+                    api.or(adjust_tracing)
+                };
+            }
+        }
 
         let api = api
             .recover(default_rejection_handler)
