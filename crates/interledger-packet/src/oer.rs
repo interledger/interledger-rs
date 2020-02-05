@@ -144,7 +144,7 @@ pub trait MutBufOerExt: BufMut + Sized {
         self.put(buf);
     }
 
-    #[doc(hidden)]
+    /// Encodes the length of a datatype as variable-length octet encoded unsigned integer and puts it into `Buf`
     #[inline]
     fn put_var_octet_string_length(&mut self, length: usize) {
         if length < 128 {
