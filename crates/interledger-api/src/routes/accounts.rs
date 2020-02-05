@@ -558,7 +558,7 @@ async fn connect_to_external_services<O, A, S, B>(
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + BtpAccount + SettlementAccount + Clone + Send + Sync + 'static,
-    S: NodeStore<Account = A> + AddressStore + Clone + Send + Sync + 'static,
+    S: NodeStore<Account = A> + AddressStore + BalanceStore + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + 'static,
 {
     // Try to connect to the account's BTP socket if they have
@@ -596,7 +596,7 @@ where
         );
 
         let response = http_client
-            .create_engine_account(id, se_url)
+            .create_engine_account(id, se_url.clone())
             .map_err(|err| {
                 Rejection::from(ApiError::internal_server_error().detail(err.to_string()))
             })
@@ -604,6 +604,20 @@ where
 
         if response.status().is_success() {
             trace!("Account {} created on the SE", id);
+
+            // We will pre-fund our account with 0, which will return
+            // the current settle_to value
+            let (_, amount_to_settle) = store.update_balances_for_fulfill(id, 0u64).await?;
+
+            // prefund the absolute value
+            if amount_to_settle > 0 {
+                http_client
+                    .send_settlement(id, se_url, amount_to_settle, account.asset_scale())
+                    .map_err(|err| {
+                        Rejection::from(ApiError::internal_server_error().detail(err.to_string()))
+                    })
+                    .await?;
+            }
         } else {
             error!(
                 "Error creating account. Settlement engine responded with HTTP code: {}",

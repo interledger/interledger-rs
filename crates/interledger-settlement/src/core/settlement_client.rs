@@ -56,7 +56,7 @@ impl SettlementClient {
         // The `Prepare` packet's data was sent by the peer's settlement
         // engine so we assume it is in a format that our settlement engine
         // will understand
-        // format. `to_vec()` needed to work around lifetime error
+        // format.
         let mut settlement_engine_url = engine_url;
         settlement_engine_url
             .path_segments_mut()
