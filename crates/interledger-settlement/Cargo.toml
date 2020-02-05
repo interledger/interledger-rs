@@ -33,7 +33,7 @@ redis_crate = { package = "redis", version = "0.15.1", optional = true, features
 async-trait = "0.1.22"
 
 [dev-dependencies]
-parking_lot = { version = "0.9.0", default-features = false }
+parking_lot = { version = "0.10.0", default-features = false }
 mockito = { version = "0.21.0", default-features = false }
 env_logger = { version = "0.7.0", default-features = false }
 net2 = "0.2.33"

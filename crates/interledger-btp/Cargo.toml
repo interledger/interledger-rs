@@ -17,7 +17,7 @@ interledger-packet = { path = "../interledger-packet", version = "^0.4.0", defau
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"] }
-parking_lot = { version = "0.9.0", default-features = false }
+parking_lot = { version = "0.10.0", default-features = false }
 quick-error = { version = "1.2.2", default-features = false }
 rand = { version = "0.7.2", default-features = false, features = ["std"] }
 stream-cancel = { version = "0.5", default-features = false }
