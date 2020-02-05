@@ -14,8 +14,8 @@ pub use http_store_error::HttpStoreError;
 mod btp_store_error;
 pub use btp_store_error::BtpStoreError;
 
-mod routemanager_store_error;
-pub use routemanager_store_error::RouteManagerStoreError;
+mod ccprouting_store_error;
+pub use ccprouting_store_error::CcpRoutingStoreError;
 
 mod balance_store_error;
 pub use balance_store_error::BalanceStoreError;

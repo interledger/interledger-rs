@@ -2,7 +2,7 @@
 use super::*;
 use crate::{packet::CCP_RESPONSE, server::CcpRouteManager};
 use async_trait::async_trait;
-use interledger_errors::{AddressStoreError, RouteManagerStoreError};
+use interledger_errors::{AddressStoreError, CcpRoutingStoreError};
 use interledger_packet::{Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     incoming_service_fn, outgoing_service_fn, AddressStore, IncomingService, OutgoingRequest,
@@ -126,20 +126,19 @@ impl AddressStore for TestStore {
 }
 
 #[async_trait]
-impl RouteManagerStore for TestStore {
+impl CcpRoutingStore for TestStore {
     type Account = TestAccount;
 
     async fn get_local_and_configured_routes(
         &self,
-    ) -> Result<(RoutingTable<TestAccount>, RoutingTable<TestAccount>), RouteManagerStoreError>
-    {
+    ) -> Result<(RoutingTable<TestAccount>, RoutingTable<TestAccount>), CcpRoutingStoreError> {
         Ok((self.local.clone(), self.configured.clone()))
     }
 
     async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Result<Vec<TestAccount>, RouteManagerStoreError> {
+    ) -> Result<Vec<TestAccount>, CcpRoutingStoreError> {
         let mut accounts: Vec<TestAccount> = self
             .local
             .values()
@@ -156,7 +155,7 @@ impl RouteManagerStore for TestStore {
 
     async fn get_accounts_to_receive_routes_from(
         &self,
-    ) -> Result<Vec<TestAccount>, RouteManagerStoreError> {
+    ) -> Result<Vec<TestAccount>, CcpRoutingStoreError> {
         let mut accounts: Vec<TestAccount> = self
             .local
             .values()
@@ -172,7 +171,7 @@ impl RouteManagerStore for TestStore {
     async fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (String, TestAccount)> + Send + 'async_trait,
-    ) -> Result<(), RouteManagerStoreError> {
+    ) -> Result<(), CcpRoutingStoreError> {
         *self.routes.lock() = HashMap::from_iter(routes.into_iter());
         Ok(())
     }

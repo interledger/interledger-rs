@@ -25,7 +25,7 @@ use futures::channel::mpsc::UnboundedSender;
 use http::StatusCode;
 use interledger_api::{AccountDetails, AccountSettings, EncryptedAccountSettings, NodeStore};
 use interledger_btp::BtpStore;
-use interledger_ccp::{CcpRoutingAccount, RouteManagerStore, RoutingRelation};
+use interledger_ccp::{CcpRoutingAccount, CcpRoutingStore, RoutingRelation};
 use interledger_errors::*;
 use interledger_http::HttpStore;
 use interledger_packet::Address;
@@ -1265,13 +1265,13 @@ impl AddressStore for RedisStore {
 type RoutingTable<A> = HashMap<String, A>;
 
 #[async_trait]
-impl RouteManagerStore for RedisStore {
+impl CcpRoutingStore for RedisStore {
     type Account = Account;
 
     async fn get_accounts_to_send_routes_to(
         &self,
         ignore_accounts: Vec<Uuid>,
-    ) -> Result<Vec<Account>, RouteManagerStoreError> {
+    ) -> Result<Vec<Account>, CcpRoutingStoreError> {
         let account_ids: Vec<RedisAccountId> =
             self.connection.clone().smembers("send_routes_to").await?;
         let account_ids: Vec<Uuid> = account_ids
@@ -1289,7 +1289,7 @@ impl RouteManagerStore for RedisStore {
 
     async fn get_accounts_to_receive_routes_from(
         &self,
-    ) -> Result<Vec<Account>, RouteManagerStoreError> {
+    ) -> Result<Vec<Account>, CcpRoutingStoreError> {
         let account_ids: Vec<RedisAccountId> = self
             .connection
             .clone()
@@ -1307,7 +1307,7 @@ impl RouteManagerStore for RedisStore {
 
     async fn get_local_and_configured_routes(
         &self,
-    ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), RouteManagerStoreError> {
+    ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), CcpRoutingStoreError> {
         let static_routes: Vec<(String, RedisAccountId)> =
             self.connection.clone().hgetall(STATIC_ROUTES_KEY).await?;
 
@@ -1343,7 +1343,7 @@ impl RouteManagerStore for RedisStore {
     async fn set_routes(
         &mut self,
         routes: impl IntoIterator<Item = (String, Account)> + Send + 'async_trait,
-    ) -> Result<(), RouteManagerStoreError> {
+    ) -> Result<(), CcpRoutingStoreError> {
         let routes: Vec<(String, RedisAccountId)> = routes
             .into_iter()
             .map(|(prefix, account)| (prefix, RedisAccountId(account.id)))
