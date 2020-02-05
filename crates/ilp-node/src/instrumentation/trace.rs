@@ -38,7 +38,7 @@ pub async fn trace_incoming<A: Account>(
     );
     let _details_scope = details_span.enter();
 
-    next.handle_request(request).in_current_span().await
+    trace_response(next.handle_request(request).in_current_span().await)
 }
 
 /// Add tracing context when the incoming request is
