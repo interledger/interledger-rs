@@ -4,8 +4,7 @@ use interledger_errors::BalanceStoreError;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use interledger_settlement::{
-    api::SettlementClient,
-    core::types::{SettlementAccount, SettlementStore},
+    core::{SettlementClient, types::{SettlementAccount, SettlementStore}},
 };
 use log::{debug, error};
 use std::marker::PhantomData;
@@ -64,7 +63,7 @@ where
         BalanceService {
             store,
             next,
-            settlement_client: SettlementClient::new(),
+            settlement_client: SettlementClient::default(),
             account_type: PhantomData,
         }
     }
@@ -106,7 +105,6 @@ where
         let outgoing_amount = request.prepare.amount();
         let ilp_address = self.store.get_ilp_address();
         let settlement_client = self.settlement_client.clone();
-        let to_has_engine = to.settlement_engine_details().is_some();
 
         // Update the balance _before_ sending the settlement so that we don't accidentally send
         // multiple settlements for the same balance. While there will be a small moment of time (the delta
@@ -151,24 +149,27 @@ where
                         "Account balance after fulfill: {}. Amount that needs to be settled: {}",
                         balance, amount_to_settle
                     );
-                    if amount_to_settle > 0 && to_has_engine {
-                        // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
-                        // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
-                        // No other instance will know that it was trying to send an outgoing settlement. We could
-                        // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
-                        // but then we would also need to prevent a situation where every connector instance is polling the
-                        // settlement engine for the status of each
-                        // outgoing settlement and putting unnecessary
-                        // load on the settlement engine.
-                        if settlement_client
-                            .send_settlement(to, amount_to_settle)
-                            .await
-                            .is_err()
-                        {
-                            store
-                                .refund_settlement(to_id, amount_to_settle)
-                                .map_err(|_| ())
-                                .await?;
+                    if amount_to_settle > 0 {
+                        if let Some(engine_details) = to.settlement_engine_details() {
+                            let engine_url = engine_details.url;
+                            // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
+                            // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
+                            // No other instance will know that it was trying to send an outgoing settlement. We could
+                            // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
+                            // but then we would also need to prevent a situation where every connector instance is polling the
+                            // settlement engine for the status of each
+                            // outgoing settlement and putting unnecessary
+                            // load on the settlement engine.
+                            if settlement_client
+                                .send_settlement(to.id(), engine_url, amount_to_settle, to.asset_scale())
+                                .await
+                                .is_err()
+                            {
+                                store
+                                    .refund_settlement(to_id, amount_to_settle)
+                                    .map_err(|_| ())
+                                    .await?;
+                            }
                         }
                     }
                     Ok::<(), ()>(())
