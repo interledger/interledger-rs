@@ -19,7 +19,7 @@ interledger-packet = { path = "../interledger-packet", version = "^0.4.0", defau
 
 warp = { version = "0.2.1" }
 redis = { version = "0.15.1", optional = true }
-url = "2.1.0"
+url = "2.1.1"
 
 [features]
 warp_errors = []
