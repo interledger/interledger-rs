@@ -133,53 +133,55 @@ where
 
         match next.send_request(request).await {
             Ok(fulfill) => {
-                // We will spawn a task to update the balances in the database
-                // so that we DO NOT wait for the database before sending the
-                // Fulfill packet back to our peer. Due to how the flow of ILP
-                // packets work, once we get the Fulfill back from the next node
-                // we need to propagate it backwards ASAP. If we do not give the
-                // previous node the fulfillment in time, they won't pay us back
-                // for the packet we forwarded. Note this means that we will
-                // relay the fulfillment _even if saving to the DB fails._
-                tokio::spawn(async move {
-                    let (balance, amount_to_settle) = store
-                        .update_balances_for_fulfill(to.id(), outgoing_amount)
-                        .map_err(|err| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}. Error: {}", from_id, to_id, incoming_amount, outgoing_amount, err))
-                        .await?;
-                    debug!(
-                        "Account balance after fulfill: {}. Amount that needs to be settled: {}",
-                        balance, amount_to_settle
-                    );
-                    if amount_to_settle > 0 {
-                        if let Some(engine_details) = to.settlement_engine_details() {
-                            let engine_url = engine_details.url;
-                            // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
-                            // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
-                            // No other instance will know that it was trying to send an outgoing settlement. We could
-                            // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
-                            // but then we would also need to prevent a situation where every connector instance is polling the
-                            // settlement engine for the status of each
-                            // outgoing settlement and putting unnecessary
-                            // load on the settlement engine.
-                            if settlement_client
-                                .send_settlement(
-                                    to.id(),
-                                    engine_url,
-                                    amount_to_settle,
-                                    to.asset_scale(),
-                                )
-                                .await
-                                .is_err()
-                            {
-                                store
-                                    .refund_settlement(to_id, amount_to_settle)
-                                    .map_err(|_| ())
-                                    .await?;
+                if outgoing_amount > 0 {
+                    // We will spawn a task to update the balances in the database
+                    // so that we DO NOT wait for the database before sending the
+                    // Fulfill packet back to our peer. Due to how the flow of ILP
+                    // packets work, once we get the Fulfill back from the next node
+                    // we need to propagate it backwards ASAP. If we do not give the
+                    // previous node the fulfillment in time, they won't pay us back
+                    // for the packet we forwarded. Note this means that we will
+                    // relay the fulfillment _even if saving to the DB fails._
+                    tokio::spawn(async move {
+                        let (balance, amount_to_settle) = store
+                            .update_balances_for_fulfill(to.id(), outgoing_amount)
+                            .map_err(|err| error!("Error applying balance changes for fulfill from account: {} to account: {}. Incoming amount was: {}, outgoing amount was: {}. Error: {}", from_id, to_id, incoming_amount, outgoing_amount, err))
+                            .await?;
+                        debug!(
+                            "Account balance after fulfill: {}. Amount that needs to be settled: {}",
+                            balance, amount_to_settle
+                        );
+                        if amount_to_settle > 0 {
+                            if let Some(engine_details) = to.settlement_engine_details() {
+                                let engine_url = engine_details.url;
+                                // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
+                                // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
+                                // No other instance will know that it was trying to send an outgoing settlement. We could
+                                // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
+                                // but then we would also need to prevent a situation where every connector instance is polling the
+                                // settlement engine for the status of each
+                                // outgoing settlement and putting unnecessary
+                                // load on the settlement engine.
+                                if settlement_client
+                                    .send_settlement(
+                                        to.id(),
+                                        engine_url,
+                                        amount_to_settle,
+                                        to.asset_scale(),
+                                    )
+                                    .await
+                                    .is_err()
+                                {
+                                    store
+                                        .refund_settlement(to_id, amount_to_settle)
+                                        .map_err(|_| ())
+                                        .await?;
+                                }
                             }
                         }
-                    }
-                    Ok::<(), ()>(())
-                });
+                        Ok::<(), ()>(())
+                    });
+                }
 
                 Ok(fulfill)
             }
