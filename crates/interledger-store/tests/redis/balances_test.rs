@@ -115,6 +115,15 @@ async fn update_balances_for_fulfill_tests() {
             balance_after: -100,
             settle_amount: 100,
         },
+        TestParams {
+            name: "account with a positive settle to and no balance gets added",
+            balance: 0,
+            settle_threshold: 70,
+            settle_to: 50,
+            amount: 0,
+            balance_after: 0,
+            settle_amount: 0,
+        },
     ];
 
     for t in test_cases {
@@ -180,18 +189,7 @@ async fn prepare_then_fulfill_with_settlement() {
     assert_eq!(balance0, -100);
     assert_eq!(balance1, -1000);
 
-    // prepare/fulfill functions work even with a dropped socket if the amount is 0
     drop(_context);
-    store
-        .update_balances_for_prepare(account1_id, 0)
-        .await
-        .unwrap();
-    store
-        .update_balances_for_fulfill(account1_id, 0)
-        .await
-        .unwrap();
-
-    // but they error of course if they need to use the socket
     let err = store
         .update_balances_for_prepare(account1_id, 1)
         .await
