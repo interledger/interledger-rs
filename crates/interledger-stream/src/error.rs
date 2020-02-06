@@ -1,14 +1,12 @@
-use failure::Fail;
-
 /// Stream Errors
-#[derive(Fail, Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[fail(display = "Error connecting: {}", _0)]
+    #[error("Error connecting: {0}")]
     ConnectionError(String),
-    #[fail(display = "Error polling: {}", _0)]
+    #[error("Error polling: {0}")]
     PollError(String),
-    #[fail(display = "Error polling: {}", _0)]
+    #[error("Error polling: {0}")]
     SendMoneyError(String),
-    #[fail(display = "Error maximum time exceeded: {}", _0)]
+    #[error("Error maximum time exceeded: {0}")]
     TimeoutError(String),
 }
