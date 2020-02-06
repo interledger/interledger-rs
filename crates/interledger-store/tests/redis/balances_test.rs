@@ -27,6 +27,132 @@ async fn get_balance() {
 }
 
 #[tokio::test]
+async fn update_balances_for_fulfill_tests() {
+    let (store, context, _accs) = test_store().await.unwrap();
+    let id = Uuid::new_v4();
+    let mut connection = context.async_connection().await.unwrap();
+
+    struct TestParams<'a> {
+        name: &'a str,
+        // the 3 account params
+        balance: i64,
+        settle_threshold: i64,
+        settle_to: i64,
+        // the provided param to the process_fulfill call
+        amount: u64,
+        // expected results
+        balance_after: i64,
+        settle_amount: u64,
+    }
+
+    let test_cases = vec![
+        // Alice has to fulfill a payment of 10 units which would put her
+        // at her settle threshold, so she must settle down to 10, meaning she'd pay 35 units with a balance after equal to settle_to
+        TestParams {
+            name: "normal case",
+            balance: 30,
+            settle_threshold: 40,
+            settle_to: 10,
+            amount: 15,
+            balance_after: 10,
+            settle_amount: 35,
+        },
+        // If we don't hit the settle threshold, then the balance just increases
+        TestParams {
+            name: "settle threshold does not get hit",
+            balance: 30,
+            settle_threshold: 50,
+            settle_to: 10,
+            amount: 15,
+            balance_after: 45,
+            settle_amount: 0,
+        },
+        // If settle_to is bigger than settle_threshold then the balance just increases and settlement will
+        // never be triggered
+        // this does not really make any sense and you should never set settle_to > settle_threshold.
+        TestParams {
+            name: "settle_to larger than settle_threshold does not trigger settlements",
+            balance: 30,
+            settle_threshold: 40,
+            settle_to: 50,
+            amount: 15,
+            balance_after: 45,
+            settle_amount: 0,
+        },
+        // Negative balances and settle_to's only make sense in pre-funding cases. 
+        // (negative balance for an account means that it owes us money.)
+        // e.g. you're a bank and you require that I keep at least $100
+        // in my account forever as a deposit
+        // (you'd enforce that my balance does not go below 100 via 
+        // the min_balance field at the service level)
+        TestParams {
+            name: "negative values still trigger settlement",
+            balance: -150,
+            settle_threshold: -100,
+            settle_to: -500,
+            amount: 100,
+            balance_after: -500,
+            settle_amount: 450,
+        },
+        TestParams {
+            name: "no settlement if negative value does not reach threshold",
+            balance: -150,
+            settle_threshold: -100,
+            settle_to: -500,
+            amount: 49,
+            balance_after: -101,
+            settle_amount: 0,
+        },
+        // this case will get triggered during peering with a party that requires prefunding.
+        // we immediately will trigger a settlement to them during account creation by making
+        // a "fake" call to update_balances_for_fulfill with a 0 amount argument
+        TestParams {
+            name: "account with a negative settle to and no balance gets added",
+            balance: 0,
+            settle_threshold: 0,
+            settle_to: -100,
+            amount: 0,
+            balance_after: -100,
+            settle_amount: 100,
+        },
+    ];
+
+    for t in test_cases {
+        // prepare the store
+        let _: redis_crate::Value = connection
+            .hset_multiple(
+                format!("accounts:{}", id),
+                &[
+                    ("balance", t.balance),
+                    ("settle_to", t.settle_to),
+                    ("settle_threshold", t.settle_threshold),
+                    // prepaid amount is loaded and added to the return value
+                    // so there's no need to parameterize over it
+                    ("prepaid_amount", 0),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let (balance_after, settle_amount) = store
+            .update_balances_for_fulfill(id, t.amount)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            balance_after, t.balance_after,
+            "{}: incorrect balance",
+            t.name
+        );
+        assert_eq!(
+            settle_amount, t.settle_amount,
+            "{}: incorrect settle amount",
+            t.name
+        );
+    }
+}
+
+#[tokio::test]
 async fn prepare_then_fulfill_with_settlement() {
     let (store, _context, accs) = test_store().await.unwrap();
     let accounts = store
