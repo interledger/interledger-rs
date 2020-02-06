@@ -5,8 +5,8 @@ use std::io::Cursor;
 use std::str;
 use std::time::SystemTime;
 
-use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{BufMut, BytesMut};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use bytes::{buf::ext::BufMutExt, BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::oer::{self, BufOerExt, MutBufOerExt};
@@ -176,9 +176,10 @@ impl Prepare {
     #[inline]
     pub fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
-        let mut cursor = Cursor::new(&mut self.buffer);
-        cursor.set_position(self.content_offset as u64);
-        cursor.put_u64_be(amount);
+        let _ = Cursor::new(&mut self.buffer[self.content_offset..]).write_u64::<BigEndian>(amount);
+        //let mut cursor = Cursor::new(&mut self.buffer);
+        //cursor.set_position(self.content_offset as u64);
+        //cursor.write_u64(amount);
     }
 
     #[inline]
@@ -262,7 +263,7 @@ impl<'a> PrepareBuilder<'a> {
         buffer.put_u8(PacketType::Prepare as u8);
         buffer.put_var_octet_string_length(content_len);
         let content_offset = buffer.len();
-        buffer.put_u64_be(self.amount);
+        buffer.put_u64(self.amount);
 
         let mut writer = buffer.writer();
         write!(
@@ -570,8 +571,8 @@ impl MaxPacketAmountDetails {
     pub fn to_bytes(&self) -> [u8; 16] {
         let mut bytes = [0x00_u8; 16];
         let mut writer = Cursor::new(&mut bytes[..]);
-        writer.put_u64_be(self.amount_received);
-        writer.put_u64_be(self.max_amount);
+        let _ = writer.write_u64::<BigEndian>(self.amount_received);
+        let _ = writer.write_u64::<BigEndian>(self.max_amount);
         bytes
     }
 
@@ -586,69 +587,9 @@ impl MaxPacketAmountDetails {
     }
 }
 
-// Bytes05 compatibilty methods
-impl TryFrom<bytes05::BytesMut> for Prepare {
-    type Error = ParseError;
-
-    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        // TODO: Is this the best we can do?
-        let b = buffer.to_vec();
-        let buffer = BytesMut::from(b);
-        Prepare::try_from(buffer)
-    }
-}
-
-impl TryFrom<bytes05::BytesMut> for Packet {
-    type Error = ParseError;
-
-    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        // TODO: Is this the best we can do?
-        let b = buffer.to_vec();
-        let buffer = BytesMut::from(b);
-        Packet::try_from(buffer)
-    }
-}
-
-impl From<Packet> for bytes05::BytesMut {
-    fn from(packet: Packet) -> Self {
-        match packet {
-            Packet::Prepare(prepare) => prepare.into(),
-            Packet::Fulfill(fulfill) => fulfill.into(),
-            Packet::Reject(reject) => reject.into(),
-        }
-    }
-}
-
-impl From<Prepare> for bytes05::BytesMut {
-    fn from(prepare: Prepare) -> Self {
-        // bytes 0.4
-        let b = prepare.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
-    }
-}
-
-impl From<Fulfill> for bytes05::BytesMut {
-    fn from(fulfill: Fulfill) -> Self {
-        // bytes 0.4
-        let b = fulfill.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
-impl From<Reject> for bytes05::BytesMut {
-    fn from(reject: Reject) -> Self {
-        // bytes 0.4
-        let b = reject.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
     }
 }
 
@@ -687,9 +628,9 @@ mod test_packet {
         );
 
         // Empty buffer:
-        assert!(Packet::try_from(BytesMut::from(vec![])).is_err());
+        assert!(Packet::try_from(BytesMut::from(&*vec![])).is_err());
         // Unknown packet type:
-        assert!(Packet::try_from(BytesMut::from(vec![0x99])).is_err());
+        assert!(Packet::try_from(BytesMut::from(&*vec![0x99])).is_err());
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{Buf, BufMut, BytesMut, IntoBuf};
+use bytes::{Buf, BufMut, BytesMut};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -135,11 +135,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 pub trait MutBufOerExt: BufMut + Sized {
     /// Encodes bytes as variable-length octet encoded string and puts it into `Buf`.
     #[inline]
-    fn put_var_octet_string<B>(&mut self, buf: B)
-    where
-        B: IntoBuf,
-    {
-        let buf = buf.into_buf();
+    fn put_var_octet_string<B: Buf>(&mut self, buf: B) {
         self.put_var_octet_string_length(buf.remaining());
         self.put(buf);
     }
@@ -152,7 +148,7 @@ pub trait MutBufOerExt: BufMut + Sized {
         } else {
             let length_of_length = predict_var_uint_size(length as u64);
             self.put_u8(HIGH_BIT | length_of_length as u8);
-            self.put_uint_be(length as u64, length_of_length);
+            self.put_uint(length as u64, length_of_length);
         }
     }
 
@@ -161,7 +157,7 @@ pub trait MutBufOerExt: BufMut + Sized {
     fn put_var_uint(&mut self, uint: u64) {
         let size = predict_var_uint_size(uint);
         self.put_var_octet_string_length(size);
-        self.put_uint_be(uint, size);
+        self.put_uint(uint, size);
     }
 }
 
@@ -388,7 +384,7 @@ mod buf_mut_oer_ext {
             buffer
         };
 
-        let tests: &[(&[u8], &[u8])] = &[
+        let tests: &mut [(&[u8], &[u8])] = &mut [
             // Write an empty string.
             (b"", b"\x00"),
             // Write a single byte.
