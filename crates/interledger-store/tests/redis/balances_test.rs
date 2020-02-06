@@ -79,11 +79,11 @@ async fn update_balances_for_fulfill_tests() {
             balance_after: 45,
             settle_amount: 0,
         },
-        // Negative balances and settle_to's only make sense in pre-funding cases. 
+        // Negative balances and settle_to's only make sense in pre-funding cases.
         // (negative balance for an account means that it owes us money.)
         // e.g. you're a bank and you require that I keep at least $100
         // in my account forever as a deposit
-        // (you'd enforce that my balance does not go below 100 via 
+        // (you'd enforce that my balance does not go below 100 via
         // the min_balance field at the service level)
         TestParams {
             name: "negative values still trigger settlement",
