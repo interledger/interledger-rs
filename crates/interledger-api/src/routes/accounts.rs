@@ -1,4 +1,4 @@
-use crate::{http_retry::Client, number_or_string, AccountDetails, AccountSettings, NodeStore};
+use crate::{number_or_string, AccountDetails, AccountSettings, NodeStore};
 use bytes::Bytes;
 use futures::{Future, FutureExt, StreamExt, TryFutureExt};
 use interledger_btp::{connect_to_service_account, BtpAccount, BtpOutgoingService};
@@ -13,7 +13,7 @@ use interledger_service::{
     Username,
 };
 use interledger_service_util::{BalanceStore, ExchangeRateStore};
-use interledger_settlement::core::types::SettlementAccount;
+use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use log::{debug, error, trace};
@@ -558,7 +558,7 @@ async fn connect_to_external_services<O, A, S, B>(
 where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: CcpRoutingAccount + BtpAccount + SettlementAccount + Clone + Send + Sync + 'static,
-    S: NodeStore<Account = A> + AddressStore + Clone + Send + Sync + 'static,
+    S: NodeStore<Account = A> + AddressStore + BalanceStore + Clone + Send + Sync + 'static,
     B: OutgoingService<A> + Clone + 'static,
 {
     // Try to connect to the account's BTP socket if they have
@@ -588,24 +588,40 @@ where
         .or(default_settlement_engine);
     if let Some(se_url) = settlement_engine_url {
         let id = account.id();
-        let http_client = Client::default();
+        let http_client = SettlementClient::default();
         trace!(
             "Sending account {} creation request to settlement engine: {:?}",
             id,
             se_url.clone()
         );
 
-        let status_code = http_client
-            .create_engine_account(se_url, id)
-            .map_err(|_| Rejection::from(ApiError::internal_server_error()))
+        let response = http_client
+            .create_engine_account(id, se_url.clone())
+            .map_err(|err| {
+                Rejection::from(ApiError::internal_server_error().detail(err.to_string()))
+            })
             .await?;
 
-        if status_code.is_success() {
+        if response.status().is_success() {
             trace!("Account {} created on the SE", id);
+
+            // We will pre-fund our account with 0, which will return
+            // the current settle_to value
+            let (_, amount_to_settle) = store.update_balances_for_fulfill(id, 0u64).await?;
+
+            // prefund the absolute value
+            if amount_to_settle > 0 {
+                http_client
+                    .send_settlement(id, se_url, amount_to_settle, account.asset_scale())
+                    .map_err(|err| {
+                        Rejection::from(ApiError::internal_server_error().detail(err.to_string()))
+                    })
+                    .await?;
+            }
         } else {
             error!(
                 "Error creating account. Settlement engine responded with HTTP code: {}",
-                status_code
+                response.status()
             );
         }
     }

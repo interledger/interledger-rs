@@ -7,6 +7,9 @@ pub mod backends_common;
 /// All endpoints are idempotent.
 pub mod engines_api;
 
+mod settlement_client;
+pub use settlement_client::SettlementClient;
+
 /// Expose useful utilities for implementing idempotent functionalities
 pub mod idempotency;
 

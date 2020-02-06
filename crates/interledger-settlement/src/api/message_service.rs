@@ -1,12 +1,13 @@
-use crate::core::types::{SettlementAccount, SE_ILP_ADDRESS};
+use crate::core::{
+    types::{SettlementAccount, SE_ILP_ADDRESS},
+    SettlementClient,
+};
 use async_trait::async_trait;
-use futures::{compat::Future01CompatExt, TryFutureExt};
+use futures::TryFutureExt;
 use interledger_packet::{ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{Account, IlpResult, IncomingRequest, IncomingService};
 use log::error;
-use reqwest::Client;
 use std::marker::PhantomData;
-use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 const PEER_FULFILLMENT: [u8; 32] = [0; 32];
 
@@ -19,7 +20,7 @@ pub struct SettlementMessageService<I, A> {
     next: I,
     /// HTTP client used to notify the engine corresponding to the account about
     /// an incoming message from a peer's engine
-    http_client: Client,
+    client: SettlementClient,
     account_type: PhantomData<A>,
 }
 
@@ -31,7 +32,7 @@ where
     pub fn new(next: I) -> Self {
         SettlementMessageService {
             next,
-            http_client: Client::new(),
+            client: SettlementClient::default(),
             account_type: PhantomData,
         }
     }
@@ -48,35 +49,14 @@ where
         // of the settlement engine being used for this account
         if let Some(settlement_engine_details) = request.from.settlement_engine_details() {
             if request.prepare.destination() == SE_ILP_ADDRESS.clone() {
-                let mut settlement_engine_url = settlement_engine_details.url;
-                // The `Prepare` packet's data was sent by the peer's settlement
-                // engine so we assume it is in a format that our settlement engine
-                // will understand
-                // format. `to_vec()` needed to work around lifetime error
-                let message = request.prepare.data().to_vec();
-
-                settlement_engine_url
-                    .path_segments_mut()
-                    .expect("Invalid settlement engine URL")
-                    .push("accounts")
-                    .push(&request.from.id().to_string())
-                    .push("messages");
-                let idempotency_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string();
-                let http_client = self.http_client.clone();
-                let action = move || {
-                    http_client
-                        .post(settlement_engine_url.as_ref())
-                        .header("Content-Type", "application/octet-stream")
-                        .header("Idempotency-Key", idempotency_uuid.clone())
-                        .body(message.clone())
-                        .send()
-                        .compat() // Wrap to a 0.1 future
-                };
-
-                // TODO: tokio-retry is still not on futures 0.3. As a result, we wrap our action in a
-                // 0.1 future, and then wrap the Retry future in a 0.3 future to use async/await.
-                let response = Retry::spawn(ExponentialBackoff::from_millis(10).take(10), action)
-                    .compat()
+                // Send a messsage to the engine (with retries)
+                let response = self
+                    .client
+                    .send_message(
+                        request.from.id(),
+                        settlement_engine_details.url,
+                        request.prepare.data().to_vec(),
+                    )
                     .map_err(move |error| {
                         error!("Error sending message to settlement engine: {:?}", error);
                         RejectBuilder {
@@ -88,6 +68,7 @@ where
                         .build()
                     })
                     .await?;
+
                 let status = response.status();
                 if status.is_success() {
                     let body = response

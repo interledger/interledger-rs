@@ -17,7 +17,7 @@ use mockito::mock;
 use num_bigint::BigUint;
 use uuid::Uuid;
 
-use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, SETTLEMENT_API, TEST_ACCOUNT_0};
+use super::fixtures::{BODY, MESSAGES_API, SERVICE_ADDRESS, TEST_ACCOUNT_0};
 use async_trait::async_trait;
 use interledger_errors::*;
 use once_cell::sync::Lazy;
@@ -315,15 +315,6 @@ impl TestAccount {
             balance: 0,
         }
     }
-}
-
-#[allow(dead_code)]
-pub fn mock_settlement(status_code: usize) -> mockito::Mock {
-    mock("POST", SETTLEMENT_API.clone())
-        // The settlement API receives json data
-        .match_header("Content-Type", "application/json")
-        .with_status(status_code)
-        .with_body(BODY)
 }
 
 pub fn mock_message(status_code: usize) -> mockito::Mock {

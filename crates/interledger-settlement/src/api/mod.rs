@@ -1,5 +1,3 @@
-/// Settlement-related client methods
-mod client;
 /// [`IncomingService`](../../interledger_service/trait.IncomingService.html) which catches
 /// incoming requests which are sent to `peer.settle` (the node's settlement engine ILP address)
 mod message_service;
@@ -11,6 +9,5 @@ mod fixtures;
 #[cfg(test)]
 mod test_helpers;
 
-pub use client::SettlementClient;
 pub use message_service::SettlementMessageService;
 pub use node_api::create_settlements_filter;

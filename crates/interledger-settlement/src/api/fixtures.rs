@@ -23,6 +23,3 @@ pub static SERVICE_ADDRESS: Lazy<Address> =
 pub static MESSAGES_API: Lazy<Matcher> = Lazy::new(|| {
     Matcher::Regex(r"^/accounts/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/messages$".to_string())
 });
-pub static SETTLEMENT_API: Lazy<Matcher> = Lazy::new(|| {
-    Matcher::Regex(r"^/accounts/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/settlements$".to_string())
-});

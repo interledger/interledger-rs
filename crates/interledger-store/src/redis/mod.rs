@@ -756,9 +756,6 @@ impl BalanceStore for RedisStore {
         to_account_id: Uuid,
         outgoing_amount: u64,
     ) -> Result<(i64, u64), BalanceStoreError> {
-        if outgoing_amount == 0 {
-            return Ok((0, 0));
-        }
         let (balance, amount_to_settle): (i64, u64) = PROCESS_FULFILL
             .arg(RedisAccountId(to_account_id))
             .arg(outgoing_amount)

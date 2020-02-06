@@ -19,7 +19,6 @@ use url::Url;
 use uuid::Uuid;
 use warp::{self, Filter};
 
-pub(crate) mod http_retry;
 mod routes;
 
 // This enum and the following functions are used to allow clients to send either
