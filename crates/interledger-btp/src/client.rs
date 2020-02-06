@@ -79,7 +79,13 @@ where
         .expect("Accounts must have BTP URLs")
         .clone();
     if url.scheme().starts_with("btp+") {
-        url.set_scheme(&url.scheme().replace("btp+", "")).unwrap();
+        // Re-parse the URL after stripping off the leading "btp+" prefix.
+        // We cannot use set_scheme here because the URL specification
+        // does not allow converting between "special" and "non-special"
+        // schemes, and "ws" is considered special.
+        // The unwrap cannot fail since we've already been given a valid
+        // URL, and in this branch we know it begins with "btp+".
+        url = Url::parse(&url.into_string()[4..]).unwrap();
     }
     let token = account
         .get_ilp_over_btp_outgoing_token()

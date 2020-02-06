@@ -19,7 +19,7 @@ log = { version = "0.4.8", default-features = false }
 reqwest = { version = "0.10", default-features = false, features = ["default-tls", "json"] }
 serde = { version = "1.0.101", default-features = false }
 serde_json = { version = "1.0.41", default-features = false }
-url = { version = "2.1.0", default-features = false }
+url = { version = "2.1.1", default-features = false }
 once_cell = "1.3.1"
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
 ring = { version = "0.16.9", default-features = false }
@@ -33,8 +33,8 @@ async-trait = "0.1.22"
 futures-retry = "0.4.0"
 
 [dev-dependencies]
-parking_lot = { version = "0.9.0", default-features = false }
-mockito = { version = "0.21.0", default-features = false }
+parking_lot = { version = "0.10.0", default-features = false }
+mockito = { version = "0.23.1", default-features = false }
 env_logger = { version = "0.7.0", default-features = false }
 net2 = "0.2.33"
 rand = "0.7.2"
