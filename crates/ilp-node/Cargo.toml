@@ -45,7 +45,7 @@ redis_crate = { package = "redis", version = "0.15.1", optional = true, features
 ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false }
 tokio = { version = "0.2.8", features = ["rt-core", "macros", "time"] }
-url = { version = "2.1.0", default-features = false }
+url = { version = "2.1.1", default-features = false }
 libc = { version = "0.2.62", default-features = false }
 warp = { version = "0.2", default-features = false, features = ["websocket"] }
 secrecy = { version = "0.6.0", default-features = false, features = ["alloc", "serde"] }
