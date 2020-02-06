@@ -1,4 +1,4 @@
-#![type_length_limit = "7000000"]
+#![type_length_limit = "10000000"]
 mod instrumentation;
 mod node;
 
