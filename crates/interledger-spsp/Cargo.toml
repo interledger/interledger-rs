@@ -9,6 +9,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", features = ["serde"], default-features = false }
+interledger-rates = { path = "../interledger-rates", version = "^0.4.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 interledger-stream = { path = "../interledger-stream", version = "^0.4.0", default-features = false }
 

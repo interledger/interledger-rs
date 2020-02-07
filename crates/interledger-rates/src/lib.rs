@@ -61,7 +61,7 @@ pub struct ExchangeRateFetcher<S> {
     consecutive_failed_polls: Arc<AtomicU32>,
     failed_polls_before_invalidation: u32,
     store: S,
-    client: Client, // TODO What is a Client?
+    client: Client,
 }
 
 impl<S> ExchangeRateFetcher<S>

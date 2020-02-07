@@ -7,7 +7,6 @@ use interledger_packet::Address;
 use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AccountStore, AddressStore, Username};
-use interledger_service_util::ExchangeRateStore;
 use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
 use log::{error, trace};
 use secrecy::{ExposeSecret, SecretString};

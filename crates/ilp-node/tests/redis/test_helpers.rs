@@ -85,6 +85,7 @@ pub async fn send_money_to_username<T: Display + Debug>(
         .json(&json!({
             "receiver": format!("http://localhost:{}/accounts/{}/spsp", to_port, to_username),
             "source_amount": amount,
+            "slippage": 0.025 // allow up to 2.5% slippage
         }))
         .send()
         .map_err(|_| ())
