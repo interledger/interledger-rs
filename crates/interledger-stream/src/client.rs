@@ -779,219 +779,183 @@ mod send_money_tests {
 
     #[tokio::test]
     async fn computes_min_destination_amount() {
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+        struct TestData<'a> {
+            name: &'a str,
+            price_1: Option<f64>,
+            price_2: Option<f64>,
+            source_amount: u64,
+            source_scale: u8,
+            source_code: &'a str,
+            dest_scale: Option<u8>,
+            dest_code: Option<&'a str>,
+            slippage: f64,
+            expected_result: Option<u64>,
+        }
+
+        let test_data = vec![
+            TestData {
+                name: "Fails if rate is unavailable",
                 price_1: None,
                 price_2: Some(3.0),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(6),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: None,
             },
-            100,
-            2,
-            "ABC",
-            Some(6),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(dest_amount, None, "Fails if rate is unavailable");
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Fails if destination asset code is unavailable",
                 price_1: Some(1.9),
                 price_2: Some(3.0),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(6),
+                dest_code: None,
+                slippage: 0.0,
+                expected_result: None,
             },
-            100,
-            2,
-            "ABC",
-            Some(6),
-            None,
-            0.0,
-        );
-        assert_eq!(
-            dest_amount, None,
-            "Fails if destination asset code is unavailable"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Fails if destination asset code is unavailable",
                 price_1: Some(1.9),
                 price_2: Some(3.0),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: None,
+                dest_code: Some("ABC"),
+                slippage: 0.0,
+                expected_result: None,
             },
-            100,
-            2,
-            "ABC",
-            None,
-            Some("ABC"),
-            0.03,
-        );
-        assert_eq!(
-            dest_amount, None,
-            "Fails if destination asset scale is unavailable"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Computes result when amount gets larger",
                 price_1: Some(6.0),
                 price_2: Some(1.5),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(2),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(400),
             },
-            100,
-            2,
-            "ABC",
-            Some(2),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(400),
-            "Computes result when amount gets larger"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Computes result when amount gets smaller",
                 price_1: Some(1.5),
                 price_2: Some(6.0),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(2),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(25),
             },
-            100,
-            2,
-            "ABC",
-            Some(2),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(25),
-            "Computes result when amount gets smaller"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Converts from small to large scale",
                 price_1: Some(1.0),
                 price_2: Some(1.0),
+                source_amount: 33,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(6),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(330_000),
             },
-            33,
-            2,
-            "ABC",
-            Some(6),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(330_000),
-            "Converts from small to large scales"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Converts from large to small scale",
                 price_1: Some(1.0),
                 price_2: Some(1.0),
+                source_amount: 123_456_000_000,
+                source_scale: 9,
+                source_code: "ABC",
+                dest_scale: Some(4),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(1_234_560),
             },
-            123_456_000_000,
-            9,
-            "ABC",
-            Some(4),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(1_234_560),
-            "Converts from large to small scales"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Subtracts slippage in simple case",
                 price_1: Some(1.0),
                 price_2: Some(1.0),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(2),
+                dest_code: Some("XYZ"),
+                slippage: 0.01,
+                expected_result: Some(99),
             },
-            100,
-            2,
-            "ABC",
-            Some(2),
-            Some("XYZ"),
-            0.01,
-        );
-        assert_eq!(dest_amount, Some(99), "Subtracts slippage in simple case");
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Rounds up after subtracting slippage",
                 price_1: Some(1.0),
                 price_2: Some(1.0),
+                source_amount: 100,
+                source_scale: 2,
+                source_code: "ABC",
+                dest_scale: Some(2),
+                dest_code: Some("XYZ"),
+                slippage: 0.035,
+                expected_result: Some(97),
             },
-            100,
-            2,
-            "ABC",
-            Some(2),
-            Some("XYZ"),
-            0.035,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(97),
-            "Rounds amount up after subtracting slippage"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Rounds up even when destination amount is very close to 0",
                 price_1: Some(0.000_000_5),
                 price_2: Some(1.0),
+                source_amount: 100,
+                source_scale: 0,
+                source_code: "ABC",
+                dest_scale: Some(0),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(1),
             },
-            100,
-            0,
-            "ABC",
-            Some(0),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(1),
-            "Rounds up even when destination amount is very close to 0"
-        );
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                // f64 multiplication errors would cause this to be 101 after rounding up, big rationals fix this
+                name: "No floating point errors",
                 price_1: Some(1.0),
                 price_2: Some(1.0),
+                source_amount: 100,
+                source_scale: 9,
+                source_code: "ABC",
+                dest_scale: Some(9),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(100),
             },
-            100,
-            9,
-            "ABC",
-            Some(9),
-            Some("XYZ"),
-            0.0,
-        );
-        // f64 multiplication errors would cause this to be 101 after rounding up, big rationals fix this
-        assert_eq!(dest_amount, Some(100), "No floating point errors");
-
-        let dest_amount = get_min_destination_amount(
-            &TestStore {
-                route: None,
+            TestData {
+                name: "Converts when using the largest possible scale",
                 price_1: Some(1.0),
                 price_2: Some(1.0),
+                source_amount: 421,
+                source_scale: 255,
+                source_code: "ABC",
+                dest_scale: Some(255),
+                dest_code: Some("XYZ"),
+                slippage: 0.0,
+                expected_result: Some(421),
             },
-            421,
-            255,
-            "ABC",
-            Some(255),
-            Some("XYZ"),
-            0.0,
-        );
-        assert_eq!(
-            dest_amount,
-            Some(421),
-            "Converts when using the largest possible scale"
-        );
+        ];
+
+
+        for t in &test_data {
+            let dest_amount = get_min_destination_amount(
+                &TestStore {
+                    route: None,
+                    price_1: t.price_1,
+                    price_2: t.price_2
+                },
+                t.source_amount,
+                t.source_scale,
+                t.source_code,
+                t.dest_scale,
+                t.dest_code,
+                t.slippage,
+            );
+            assert_eq!(dest_amount, t.expected_result, "{}", t.name);
+        }
     }
 }
