@@ -357,7 +357,7 @@ where
 {
     /// Send a Prepare for the given source amount and apply the resulting Fulfill or Reject
     #[inline]
-    pub async fn send_money_packet(&self, source_amount: u64) -> Result<(), Error> {
+    pub async fn send_money_packet(&mut self, source_amount: u64) -> Result<(), Error> {
         let (prepare, sequence, min_destination_amount) = {
             let mut payment = self.payment.lock().await;
 
