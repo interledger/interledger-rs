@@ -1,12 +1,11 @@
 [package]
 name = "interledger-rates"
 version = "0.4.0"
-authors = ["Kincaid O'Neil <kincaidoneil@users.noreply.github.com>"]
+authors = ["Evan Schwartz <evan@ripple.com>"]
+description = "Exchange rate utilities"
+license = "Apache-2.0"
 edition = "2018"
-
-# TODO Add other metadata here!
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 async-trait = "0.1.22"

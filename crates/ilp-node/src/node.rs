@@ -474,7 +474,7 @@ impl InterledgerNode {
             bytes05::Bytes::copy_from_slice(secret_seed.as_ref()),
             admin_auth_token,
             store.clone(),
-            incoming_service_api.clone(),
+            incoming_service_api,
             outgoing_service.clone(),
             btp.clone(), // btp client service!
         );

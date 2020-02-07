@@ -5,9 +5,6 @@ function post_test_hook() {
         test_equals_or_exit '{"asset_code":"ETH","balance":-0.0005}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/alice/balance
         test_equals_or_exit '{"asset_code":"ETH","balance":0.0}' test_http_response_body -H "Authorization: Bearer hi_alice" http://localhost:7770/accounts/bob/balance
         test_equals_or_exit '{"asset_code":"ETH","balance":0.0}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/alice/balance
-        test_equals_or_exit '{"asset_code":"XRP","balance":0.0}' test_http_response_body -H "Authorization: Bearer hi_bob" http://localhost:8770/accounts/charlie/balance
-        test_equals_or_exit '{"asset_code":"XRP","balance":0.0}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/bob/balance
-        test_equals_or_exit '{"asset_code":"XRP","balance":0.0005}' test_http_response_body -H "Authorization: Bearer hi_charlie" http://localhost:9770/accounts/charlie/balance
     fi
 }
 -->
@@ -437,6 +434,7 @@ ilp-node \
 --redis_url redis://127.0.0.1:6379/ \
 --http_bind_address 127.0.0.1:7770 \
 --settlement_api_bind_address 127.0.0.1:7771 \
+--exchange_rate.provider CoinCap \
 &> logs/node-alice.log &
 
 # Start Bob's node
@@ -447,9 +445,10 @@ ilp-node \
 --redis_url redis://127.0.0.1:6381/ \
 --http_bind_address 127.0.0.1:8770 \
 --settlement_api_bind_address 127.0.0.1:8771 \
+--exchange_rate.provider CoinCap \
 &> logs/node-bob.log &
 
-# Start Charlie's node. The --ilp_address field is omitted, so the node's address will 
+# Start Charlie's node. The --ilp_address field is omitted, so the node's address will
 # be `local.host`. When a parent account is added, Charlie's node will send an ILDCP request
 # to them, which they will respond to with an address that they have assigned to Charlie.
 # Charlie will then proceed to set that as their node's address.
@@ -460,6 +459,7 @@ ilp-node \
 --redis_url redis://127.0.0.1:6384/ \
 --http_bind_address 127.0.0.1:9770 \
 --settlement_api_bind_address 127.0.0.1:9771 \
+--exchange_rate.provider CoinCap \
 &> logs/node-charlie.log &
 ```
 
@@ -528,20 +528,20 @@ ilp-cli --node http://localhost:8770 accounts create alice \
     --routing-relation Peer &> logs/account-bob-alice.log
 
 printf "Adding Charlie's account on Bob's node (XRP Child relation)...\n"
-# you can optionally provide --ilp-address example.bob.charlie as an argument, 
+# you can optionally provide --ilp-address example.bob.charlie as an argument,
 # but the node is smart enough to figure it by itself
+# Prefunds up to 1 XRP from Bob to Charlie, topped up after every packet is fulfilled
 ilp-cli --node http://localhost:8770 accounts create charlie \
     --auth hi_bob \
     --asset-code XRP \
     --asset-scale 6 \
-    --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3002 \
     --ilp-over-http-incoming-token charlie_password \
     --ilp-over-http-outgoing-token bob_other_password \
     --ilp-over-http-url http://localhost:9770/accounts/bob/ilp \
-    --settle-threshold 500 \
-    --min-balance -1000 \
-    --settle-to 0 \
+    --settle-threshold 0 \
+    --settle-to -1000000 \
+    --min-balance -10000000 \
     --routing-relation Child &> logs/account-bob-charlie.log &
 
 printf "Adding Charlie's Account...\n"
@@ -550,13 +550,12 @@ ilp-cli --node http://localhost:9770 accounts create charlie \
     --auth hi_charlie \
     --asset-code XRP \
     --asset-scale 6 \
-    --max-packet-amount 100 \
     --ilp-over-http-incoming-token charlie_password \
     --settle-to 0 &> logs/account-charlie-charlie.log
 
 printf "Adding Bob's account on Charlie's node (XRP Parent relation)...\n"
-# Once a parent is added, Charlie's node address is updated to `example.bob.charlie, 
-# and then subsequently the addresses of all NonRoutingAccount and Child accounts get 
+# Once a parent is added, Charlie's node address is updated to `example.bob.charlie,
+# and then subsequently the addresses of all NonRoutingAccount and Child accounts get
 # updated to ${NODE_ADDRESS}.${CHILD_USERNAME}, with the exception of the account whose
 # username matches the suffix of the node's address.
 # So in this case, Charlie's account address gets updated from local.host.charlie to example.bob.charlie
@@ -567,14 +566,13 @@ ilp-cli --node http://localhost:9770 accounts create bob \
     --ilp-address example.bob \
     --asset-code XRP \
     --asset-scale 6 \
-    --max-packet-amount 100 \
     --settlement-engine-url http://localhost:3003 \
     --ilp-over-http-incoming-token bob_other_password \
     --ilp-over-http-outgoing-token charlie_password \
     --ilp-over-http-url http://localhost:8770/accounts/charlie/ilp \
-    --settle-threshold 500 \
-    --min-balance -1000 \
-    --settle-to 0 \
+    --settle-threshold 200000 \
+    --settle-to -1000000 \
+    --min-balance -10000000 \
     --routing-relation Parent &> logs/account-charlie-bob.log
 
 sleep 2
@@ -586,18 +584,7 @@ Notice how we use Alice's settlement engine endpoint while registering Bob. This
 
 The `settle_threshold` and `settle_to` parameters control when settlements are triggered. The node will send a settlement when an account's balance reaches the `settle_threshold`, and it will settle for `balance - settle_to`.
 
-### 7. Set the exchange rate between ETH and XRP on Bob's connector
-
-```bash
-printf "\nSetting the exchange rate...\n"
-ilp-cli --node http://localhost:8770 rates set-all \
-    --auth hi_bob \
-    --pair ETH 1 \
-    --pair XRP 1 \
-    >/dev/null
-```
-
-### 8. Sending a Payment
+### 7. Sending a Payment
 
 <!--!
 printf "\nChecking balances prior to payment...\n"
@@ -626,7 +613,7 @@ printf "\n\n"
 The following script sends a payment from Alice to Charlie through Bob.
 
 <!--!
-printf "Sending payment of 500 from Alice to Charlie through Bob\n"
+printf "Sending payment of 0.0005 ETH (500 units with asset scale 6 is equal to 5e-4 of the base unit, ETH in this case) from Alice to Charlie through Bob\n"
 -->
 
 ```bash
@@ -644,13 +631,14 @@ wait_to_get_http_response_body '{"asset_code":"ETH","balance":0.0}' 10 -H "Autho
 printf "done\n"
 
 printf "Waiting for XRP ledger to be validated"
-wait_to_get_http_response_body '{"asset_code":"XRP","balance":0.0}' 20 -H "Authorization: Bearer hi_charlie" "http://localhost:9770/accounts/bob/balance" || error_and_exit "Could not confirm settlement."
-printf "done\n"
+sleep 10
 -->
 
 ### 8. Check Balances
 
 You may see unsettled balances before the settlement engines exactly work. Wait a few seconds and try later.
+
+If Bob's balance on Charlie's node is greater than 0, then Bob sent an XRP settlement to Charlie!
 
 <!--!
 printf "\nChecking balances after payment...\n"

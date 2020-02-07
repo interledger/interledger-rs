@@ -106,6 +106,7 @@ async fn three_nodes() {
         "route_broadcast_interval": Some(200),
         "exchange_rate": {
             "poll_interval": 60000,
+            "spread": 0.02, // take a 2% spread
         },
     }))
     .expect("Error creating node2.");
@@ -119,7 +120,7 @@ async fn three_nodes() {
         "secret_seed": random_secret(),
         "route_broadcast_interval": Some(200),
         "exchange_rate": {
-            "poll_interval": 60000,
+            "poll_interval": 60000
         },
     }))
     .expect("Error creating node3.");
@@ -131,6 +132,14 @@ async fn three_nodes() {
     create_account_on_node(node1_http, bob_on_alice, "admin")
         .await
         .unwrap();
+    let client = reqwest::Client::new();
+    client
+        .put(&format!("http://localhost:{}/rates", node1_http))
+        .header("Authorization", "Bearer admin")
+        .json(&json!({"ABC": 1, "XYZ": 2.01}))
+        .send()
+        .await
+        .unwrap();
 
     node2.serve().await.unwrap();
     create_account_on_node(node2_http, alice_on_bob, "admin")
@@ -139,8 +148,6 @@ async fn three_nodes() {
     create_account_on_node(node2_http, charlie_on_bob, "admin")
         .await
         .unwrap();
-    // Also set exchange rates
-    let client = reqwest::Client::new();
     client
         .put(&format!("http://localhost:{}/rates", node2_http))
         .header("Authorization", "Bearer admin")
@@ -156,6 +163,13 @@ async fn three_nodes() {
     create_account_on_node(node3_http, bob_on_charlie, "admin")
         .await
         .unwrap();
+    client
+        .put(&format!("http://localhost:{}/rates", node3_http))
+        .header("Authorization", "Bearer admin")
+        .json(&json!({"ABC": 1, "XYZ": 2}))
+        .send()
+        .await
+        .unwrap();
 
     delay(1000).await;
 
@@ -167,14 +181,16 @@ async fn three_nodes() {
         ])
     };
 
-    // Node 1 sends 1000 to Node 3. However, Node1's scale is 9,
+    // Node 1 sends 1,000,000 to Node 3. However, Node1's scale is 9,
     // while Node 3's scale is 6. This means that Node 3 will
-    // see 1000x less. In addition, the conversion rate is 2:1
-    // for 3's asset, so he will receive 2 total.
+    // see 1000x less. Node 2's rate is 2:1, minus a 2% spread.
+    // Node 1 has however set the rate to 2.01:1. The payment suceeds because
+    // the end delivered result to Node 3 is 1960 which is slightly
+    // over 0.975 * 2010, which is within the 2.5% slippage set by the sender.
     let receipt = send_money_to_username(
         node1_http,
         node3_http,
-        1000,
+        1_000_000,
         "charlie_on_c",
         "alice_on_a",
         "default account holder",
@@ -191,40 +207,45 @@ async fn three_nodes() {
         .to
         .to_string()
         .starts_with("example.bob.charlie_on_b.charlie_on_c."));
-    assert_eq!(receipt.sent_asset_code, "XYZ");
-    assert_eq!(receipt.sent_asset_scale, 9);
-    assert_eq!(receipt.sent_amount, 1000);
-    assert_eq!(receipt.delivered_asset_code.unwrap(), "ABC");
-    assert_eq!(receipt.delivered_amount, 2);
-    assert_eq!(receipt.delivered_asset_scale.unwrap(), 6);
+    assert_eq!(receipt.source_asset_code, "XYZ");
+    assert_eq!(receipt.source_asset_scale, 9);
+    assert_eq!(receipt.source_amount, 1_000_000);
+    assert_eq!(receipt.sent_amount, 1_000_000);
+    assert_eq!(receipt.in_flight_amount, 0);
+    assert_eq!(receipt.delivered_amount, 1960);
+    assert_eq!(receipt.destination_asset_code.unwrap(), "ABC");
+    assert_eq!(receipt.destination_asset_scale.unwrap(), 6);
     let ret = get_balances().await;
     let ret: Vec<_> = ret.into_iter().map(|r| r.unwrap()).collect();
-    // -1000 divided by asset scale 9
+    // -1000000 divided by asset scale 9
     assert_eq!(
         ret[0],
         BalanceData {
             asset_code: "XYZ".to_owned(),
-            balance: -1e-6
+            balance: -1_000_000.0 / 1e9
         }
     );
-    // 2 divided by asset scale 6
+    // 1960 divided by asset scale 6
     assert_eq!(
         ret[1],
         BalanceData {
             asset_code: "ABC".to_owned(),
-            balance: 2e-6
+            balance: 1960.0 / 1e6
         }
     );
-    // 2 divided by asset scale 6
+    // 1960 divided by asset scale 6
     assert_eq!(
         ret[2],
         BalanceData {
             asset_code: "ABC".to_owned(),
-            balance: 2e-6
+            balance: 1960.0 / 1e6
         }
     );
 
-    // Charlie sends to Alice
+    // Node 3 sends 1,000 to Node 1. However, Node 1's scale is 9,
+    // while Node 3's scale is 6. This means that Node 1 will
+    // see 1000x more. Node 2's rate is 1:2, minus a 2% spread.
+    // Node 3 should receive 495,500 units total.
     let receipt = send_money_to_username(
         node3_http,
         node1_http,
@@ -242,36 +263,38 @@ async fn three_nodes() {
         "Payment receipt incorrect (2)"
     );
     assert!(receipt.to.to_string().starts_with("example.alice"));
-    assert_eq!(receipt.sent_asset_code, "ABC");
-    assert_eq!(receipt.sent_asset_scale, 6);
+    assert_eq!(receipt.source_asset_code, "ABC");
+    assert_eq!(receipt.source_asset_scale, 6);
+    assert_eq!(receipt.source_amount, 1000);
     assert_eq!(receipt.sent_amount, 1000);
-    assert_eq!(receipt.delivered_asset_code.unwrap(), "XYZ");
-    assert_eq!(receipt.delivered_amount, 500_000);
-    assert_eq!(receipt.delivered_asset_scale.unwrap(), 9);
+    assert_eq!(receipt.in_flight_amount, 0);
+    assert_eq!(receipt.delivered_amount, 490_000);
+    assert_eq!(receipt.destination_asset_code.unwrap(), "XYZ");
+    assert_eq!(receipt.destination_asset_scale.unwrap(), 9);
     let ret = get_balances().await;
     let ret: Vec<_> = ret.into_iter().map(|r| r.unwrap()).collect();
-    // 499,000 divided by asset scale 9
+    // (490,000 - 1,000,000) divided by asset scale 9
     assert_eq!(
         ret[0],
         BalanceData {
             asset_code: "XYZ".to_owned(),
-            balance: 499e-6
+            balance: (490_000.0 - 1_000_000.0) / 1e9
         }
     );
-    // -998 divided by asset scale 6
+    // (1,960 - 1,000) divided by asset scale 6
     assert_eq!(
         ret[1],
         BalanceData {
             asset_code: "ABC".to_owned(),
-            balance: -998e-6
+            balance: (1960.0 - 1000.0) / 1e6
         }
     );
-    // -998 divided by asset scale 6
+    // (1,960 - 1,000) divided by asset scale 6
     assert_eq!(
         ret[2],
         BalanceData {
             asset_code: "ABC".to_owned(),
-            balance: -998e-6
+            balance: (1960.0 - 1000.0) / 1e6
         }
     );
 }
