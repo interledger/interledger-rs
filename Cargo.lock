@@ -2739,7 +2739,8 @@ dependencies = [
 [[package]]
 name = "tokio-tungstenite"
 version = "0.10.1"
-source = "git+https://github.com/snapview/tokio-tungstenite#2357dc81a13b0cdbb4677da999a3826fd41a8913"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8b8fe88007ebc363512449868d7da4389c9400072a3f666f212c7280082882a"
 dependencies = [
  "futures 0.3.4",
  "log 0.4.8",
