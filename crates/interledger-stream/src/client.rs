@@ -212,18 +212,16 @@ where
     // TODO Can we avoid copying here?
     let shared_secret = Bytes::from(shared_secret);
 
-    let from = from_account.ilp_address().clone();
-    let to = destination_account.clone();
-
-    if from.scheme() != to.scheme() {
+    let from = from_account.ilp_address();
+    if from.scheme() != destination_account.scheme() {
         warn!(
             "Destination ILP address starts with a different scheme prefix (\"{}\') than ours (\"{}\'), this probably won't work",
-            to.scheme(),
+            destination_account.scheme(),
             from.scheme()
         );
     }
 
-    let sender = StreamSender {
+    let mut sender = StreamSender {
         next: service,
         from_account: from_account.clone(),
         shared_secret,
@@ -280,7 +278,7 @@ where
 
         match event {
             PaymentEvent::SendMoney(packet_amount) => {
-                let sender = sender.clone();
+                let mut sender = sender.clone();
                 pending_requests.push(tokio::spawn(async move {
                     sender.send_money_packet(packet_amount).await
                 }));
@@ -336,11 +334,7 @@ where
 
 /// Sends and handles all ILP & STREAM packets, encapsulating all payment state
 #[derive(Clone)]
-struct StreamSender<
-    I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: Account + Send + Sync + 'static,
-    S: ExchangeRateStore + Send + Sync + 'static,
-> {
+struct StreamSender<I, A, S> {
     /// Next service to send and forward Interledger packets to the network
     next: I,
     /// The account sending the STREAM payment
@@ -357,9 +351,9 @@ struct StreamSender<
 
 impl<I, A, S> StreamSender<I, A, S>
 where
-    I: IncomingService<A> + Clone + Send + Sync + 'static,
-    A: Account + Send + Sync + 'static,
-    S: ExchangeRateStore + Send + Sync + 'static,
+    I: IncomingService<A>,
+    A: Account,
+    S: ExchangeRateStore,
 {
     /// Send a Prepare for the given source amount and apply the resulting Fulfill or Reject
     #[inline]
@@ -437,7 +431,6 @@ where
         // Send it!
         let reply = self
             .next
-            .clone()
             .handle_request(IncomingRequest {
                 from: self.from_account.clone(),
                 prepare,
@@ -551,7 +544,7 @@ where
     /// Send an unfulfillable Prepare with a ConnectionClose frame to the peer
     /// There's no ACK from the recipient, so we can't confirm it closed
     #[inline]
-    async fn try_send_connection_close(&self) {
+    async fn try_send_connection_close(&mut self) {
         let prepare = {
             let mut payment = self.payment.lock().await;
             let sequence = payment.next_sequence();
@@ -583,7 +576,6 @@ where
         // Packet will always be rejected since the condition is random
         debug!("Closing connection");
         self.next
-            .clone()
             .handle_request(IncomingRequest {
                 from: self.from_account.clone(),
                 prepare,
@@ -940,13 +932,12 @@ mod send_money_tests {
             },
         ];
 
-
         for t in &test_data {
             let dest_amount = get_min_destination_amount(
                 &TestStore {
                     route: None,
                     price_1: t.price_1,
-                    price_2: t.price_2
+                    price_2: t.price_2,
                 },
                 t.source_amount,
                 t.source_scale,
