@@ -448,7 +448,7 @@ mod route_control_request {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid Packet Packet is not a CCP message. Destination: peer.route.controk"
+            "Invalid Packet: Packet is not a CCP message. Destination: peer.route.controk"
         );
     }
 
@@ -459,7 +459,7 @@ mod route_control_request {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid Packet Wrong condition: 66687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f2925"
+            "Invalid Packet: Wrong condition: 66687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f2925"
         );
     }
 
@@ -470,7 +470,7 @@ mod route_control_request {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid Packet Packet expired"
+            "Invalid Packet: Packet expired"
         );
     }
 }
@@ -520,7 +520,7 @@ mod route_update_request {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid Packet Packet is not a CCP message. Destination: peer.route.updatd"
+            "Invalid Packet: Packet is not a CCP message. Destination: peer.route.updatd"
         );
     }
 
@@ -529,7 +529,7 @@ mod route_update_request {
         let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100").unwrap())).unwrap();
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Invalid Packet Wrong condition: 66687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f2925");
+        assert_eq!(result.unwrap_err().to_string(), "Invalid Packet: Wrong condition: 66687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f2925");
     }
 
     #[test]
@@ -539,7 +539,7 @@ mod route_update_request {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Invalid Packet Packet expired"
+            "Invalid Packet: Packet expired"
         );
     }
 

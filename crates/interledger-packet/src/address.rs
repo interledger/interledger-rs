@@ -272,7 +272,7 @@ mod test_address {
         );
         assert_de_tokens_error::<Address>(
             &[Token::BorrowedStr("test.alice ")],
-            "InvalidAddress(InvalidFormat)",
+            "Invalid Address: Invalid address format",
         );
     }
 
