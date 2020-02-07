@@ -391,8 +391,7 @@ impl InterledgerNode {
             if #[cfg(feature = "monitoring")] {
                 let outgoing_service_fwd = outgoing_service
                     .clone()
-                    .wrap(trace_forwarding)
-                    .in_current_span();
+                    .wrap(trace_forwarding);
             } else {
                 let outgoing_service_fwd = outgoing_service.clone();
             }
