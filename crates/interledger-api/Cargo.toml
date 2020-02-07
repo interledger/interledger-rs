@@ -8,10 +8,6 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-bytes = { version = "0.5", default-features = false }
-futures = { version = "0.3.1", default-features = false }
-futures-retry = { version = "0.4", default-features = false }
-http = { version = "0.2", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
 interledger-http = { path = "../interledger-http", version = "^0.4.0", default-features = false }
 interledger-ildcp = { path = "../interledger-ildcp", version = "^0.4.0", default-features = false }
@@ -24,10 +20,15 @@ interledger-spsp = { path = "../interledger-spsp", version = "^0.4.0", default-f
 interledger-stream = { path = "../interledger-stream", version = "^0.4.0", default-features = false }
 interledger-ccp = { path = "../interledger-ccp", version = "^0.3.0", default-features = false }
 interledger-btp = { path = "../interledger-btp", version = "^0.4.0", default-features = false }
+interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false, features = ["warp_errors"] }
+
+bytes = { version = "0.5", default-features = false }
+futures = { version = "0.3.1", default-features = false }
+futures-retry = { version = "0.4", default-features = false }
+http = { version = "0.2", default-features = false }
 log = { version = "0.4.8", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.41", default-features = false }
-serde_path_to_error = { version = "0.1.2", default-features = false }
 reqwest = { version = "0.10", default-features = false, features = ["default-tls", "json"] }
 url = { version = "2.1.1", default-features = false, features = ["serde"] }
 uuid = { version = "0.8.1", default-features = false}
@@ -35,10 +36,9 @@ warp = { version = "0.2", default-features = false }
 secrecy = { version = "0.6", default-features = false, features = ["serde"] }
 once_cell = "1.3.1"
 async-trait = "0.1.22"
-interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false, features = ["warp_errors"] }
 
 [dev-dependencies]
-tokio = { version = "0.2.9", features = ["rt-core", "macros"] }
+tokio = { version = "0.2.9", default-features = false, features = ["rt-core", "macros"] }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }

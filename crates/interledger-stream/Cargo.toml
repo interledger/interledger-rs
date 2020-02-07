@@ -12,17 +12,17 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 metrics_csv = ["csv"]
 
 [dependencies]
+interledger-ildcp = { path = "../interledger-ildcp", version = "^0.4.0", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false, features = ["serde"] }
+interledger-rates = { path = "../interledger-rates", version = "^0.4.0", default-features = false }
+interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
+
 base64 = { version = "0.11.0", default-features = false }
 bytes = { version = "0.4.12", default-features = false }
 byteorder = { version = "1.3.2", default-features = false }
 chrono = { version = "0.4.9", default-features = false, features = ["clock"] }
-csv = { version = "1.1.1", default-features = false, optional = true }
-failure = { version = "0.1.5", default-features = false, features = ["derive"] }
-futures = { version = "0.3.1", default-features = false }
+futures = { version = "0.3.1", default-features = false, features = ["std"] }
 hex = { version = "0.4.0", default-features = false }
-interledger-packet = { path = "../interledger-packet", version = "^0.4.0", features = ["serde"], default-features = false }
-interledger-rates = { path = "../interledger-rates", version = "^0.4.0", default-features = false }
-interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
 log = { version = "0.4.8", default-features = false }
 num = { version = "0.2.1" }
 parking_lot = { version = "0.10.0", default-features = false }
@@ -30,11 +30,15 @@ ring = { version = "0.16.9", default-features = false }
 serde = { version = "1.0.101", default-features = false }
 tokio = { version = "^0.2.6", default-features = false, features = ["rt-core", "time", "macros"] }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"] }
-async-trait = "0.1.22"
-pin-project = "0.4.7"
+async-trait = { version = "0.1.22", default-features = false }
+pin-project = { version = "0.4.7", default-features = false }
+thiserror = { version = "1.0.10", default-features = false }
+
+# metrics_csv feature
+csv = { version = "1.1.1", default-features = false, optional = true }
 
 [dev-dependencies]
-interledger-errors = { path = "../interledger-errors", version = "^0.1.0" }
+interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }
 interledger-router = { path = "../interledger-router", version = "^0.4.0", default-features = false }
 interledger-service-util = { path = "../interledger-service-util", version = "^0.4.0", default-features = false }
-once_cell = "1.3.1"
+once_cell = { version = "1.3.1", default-features = false }

@@ -5,7 +5,6 @@
 //! This uses a simple HTTPS request to establish a shared key between the sender and receiver that is used to
 //! authenticate ILP packets sent between them. SPSP uses the STREAM transport protocol for sending money and data over ILP.
 
-use failure::Fail;
 use interledger_packet::Address;
 use interledger_stream::Error as StreamError;
 use serde::{Deserialize, Serialize};
@@ -18,20 +17,19 @@ mod server;
 pub use client::{pay, query};
 pub use server::SpspResponder;
 
-// TODO should these error variants be renamed to remove the 'Error' suffix from each one?
-#[derive(Fail, Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[fail(display = "Unable to query SPSP server: {:?}", _0)]
+    #[error("Unable to query SPSP server: {0}")]
     HttpError(String),
-    #[fail(display = "Got invalid SPSP response from server: {:?}", _0)]
+    #[error("Got invalid SPSP response from server: {0}")]
     InvalidSpspServerResponseError(String),
-    #[fail(display = "STREAM error: {}", _0)]
-    StreamError(StreamError),
-    #[fail(display = "Error sending money: {}", _0)]
+    #[error("STREAM error: {0}")]
+    StreamError(#[from] StreamError),
+    #[error("Error sending money: {0}")]
     SendMoneyError(u64),
-    #[fail(display = "Error listening: {}", _0)]
+    #[error("Error listening: {0}")]
     ListenError(String),
-    #[fail(display = "Invalid Payment Pointer: {}", _0)]
+    #[error("Invalid Payment Pointer: {0}")]
     InvalidPaymentPointerError(String),
 }
 
