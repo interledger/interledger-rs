@@ -1,6 +1,7 @@
 use super::{Error, SpspResponse};
 use futures::TryFutureExt;
 use interledger_packet::Address;
+use interledger_rates::ExchangeRateStore;
 use interledger_service::{Account, IncomingService};
 use interledger_stream::{send_money, StreamDelivery};
 use log::{debug, error, trace};
@@ -32,15 +33,18 @@ pub async fn query(server: &str) -> Result<SpspResponse, Error> {
 /// Query the details of the given Payment Pointer and send a payment using the STREAM protocol.
 ///
 /// This returns the amount delivered, as reported by the receiver and in the receiver's asset's units.
-pub async fn pay<S, A>(
-    service: S,
+pub async fn pay<I, A, S>(
+    service: I,
     from_account: A,
+    store: S,
     receiver: &str,
     source_amount: u64,
+    slippage: f64,
 ) -> Result<StreamDelivery, Error>
 where
-    S: IncomingService<A> + Send + Sync + Clone + 'static,
-    A: Account + Send + Sync + Clone + 'static,
+    I: IncomingService<A> + Clone + Send + Sync + 'static,
+    A: Account + Send + Sync + 'static,
+    S: ExchangeRateStore + Send + Sync + 'static,
 {
     let spsp = query(receiver).await?;
     let shared_secret = spsp.shared_secret;
@@ -51,13 +55,20 @@ where
     })?;
     debug!("Sending SPSP payment to address: {}", addr);
 
-    let (receipt, _plugin) =
-        send_money(service, &from_account, addr, &shared_secret, source_amount)
-            .map_err(move |err| {
-                error!("Error sending payment: {:?}", err);
-                Error::SendMoneyError(source_amount)
-            })
-            .await?;
+    let receipt = send_money(
+        service,
+        &from_account,
+        store,
+        addr,
+        &shared_secret,
+        source_amount,
+        slippage,
+    )
+    .map_err(move |err| {
+        error!("Error sending payment: {:?}", err);
+        Error::SendMoneyError(source_amount)
+    })
+    .await?;
 
     debug!("Sent SPSP payment. StreamDelivery: {:?}", receipt);
     Ok(receipt)

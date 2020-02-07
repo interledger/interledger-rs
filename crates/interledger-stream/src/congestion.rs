@@ -62,8 +62,7 @@ impl CongestionController {
         }
     }
 
-    /// The maximum amount which can be sent is the maximum amount in flight minus the current amount in flight
-    pub fn get_max_amount(&mut self) -> u64 {
+    pub fn get_max_amount(&self) -> u64 {
         if self.amount_in_flight > self.max_in_flight {
             return 0;
         }
