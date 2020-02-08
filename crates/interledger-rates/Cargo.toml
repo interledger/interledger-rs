@@ -1,6 +1,6 @@
 [package]
 name = "interledger-rates"
-version = "0.4.0"
+version = "1.0.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Exchange rate utilities"
 license = "Apache-2.0"
@@ -8,11 +8,12 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
+interledger-errors = { path = "../interledger-errors", version = "1.0.0" }
+
 async-trait = "0.1.22"
 futures = { version = "0.3.1", default-features = false }
-interledger-errors = { path = "../interledger-errors", version = "^0.1.0" }
 log = { version = "0.4.8", default-features = false }
-once_cell = "1.3.1"
+once_cell = { version = "1.3.1", default-features = false }
 reqwest = { version = "0.10.0", default-features = false, features = ["default-tls", "json"] }
 secrecy = { version = "0.6", default-features = false, features = ["alloc", "serde"] }
 serde = { version = "1.0.101", default-features = false, features = ["derive"]}

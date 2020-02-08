@@ -1,6 +1,6 @@
 [package]
 name = "interledger-router"
-version = "0.4.0"
+version = "1.0.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Router for Interledger requests"
 license = "Apache-2.0"
@@ -8,8 +8,8 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
-interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
+interledger-service = { path = "../interledger-service", version = "1.0.0", default-features = false }
 
 log = { version = "0.4.8", default-features = false }
 parking_lot = { version = "0.10.0", default-features = false }
@@ -19,4 +19,4 @@ async-trait = { version = "0.1.22", default-features = false }
 [dev-dependencies]
 once_cell = { version = "1.3.1", default-features = false }
 tokio = { version = "0.2.6", default-features = false, features = ["rt-core", "macros"]}
-interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }
+interledger-errors = { path = "../interledger-errors", version = "1.0.0", default-features = false }
