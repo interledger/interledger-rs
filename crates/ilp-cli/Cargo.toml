@@ -1,6 +1,6 @@
 [package]
 name = "ilp-cli"
-version = "0.3.0"
+version = "1.0.0"
 authors = ["Ben Striegel <bstriegel@ripple.com>"]
 description = "Interledger.rs Command-Line Interface"
 license = "Apache-2.0"

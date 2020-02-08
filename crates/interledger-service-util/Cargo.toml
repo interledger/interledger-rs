@@ -1,6 +1,6 @@
 [package]
 name = "interledger-service-util"
-version = "0.4.0"
+version = "1.0.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Small, commonly used Interledger services that don't really fit anywhere else"
 license = "Apache-2.0"
@@ -8,11 +8,11 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
-interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }
-interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
-interledger-rates = { path = "../interledger-rates", version = "^0.4.0", default-features = false }
-interledger-service = { path = "../interledger-service", version = "^0.4.0", default-features = false }
-interledger-settlement = { path = "../interledger-settlement", version = "^0.3.0", default-features = false, features = ["settlement_api"] }
+interledger-errors = { path = "../interledger-errors", version = "1.0.0", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
+interledger-rates = { path = "../interledger-rates", version = "1.0.0", default-features = false }
+interledger-service = { path = "../interledger-service", version = "1.0.0", default-features = false }
+interledger-settlement = { path = "../interledger-settlement", version = "1.0.0", default-features = false, features = ["settlement_api"] }
 
 bytes = { version = "0.5", default-features = false }
 byteorder = { version = "1.3.2", default-features = false }

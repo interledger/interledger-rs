@@ -1,6 +1,6 @@
 [package]
 name = "interledger-service"
-version = "0.4.0"
+version = "1.0.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "The core abstraction for the Interledger.rs implementation"
 license = "Apache-2.0"
@@ -12,8 +12,8 @@ default = []
 trace = ["tracing-futures"]
 
 [dependencies]
-interledger-errors = { path = "../interledger-errors", version = "^0.1.0", default-features = false }
-interledger-packet = { path = "../interledger-packet", version = "^0.4.0", default-features = false }
+interledger-errors = { path = "../interledger-errors", version = "1.0.0", default-features = false }
+interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
 
 futures = { version = "0.3.1", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
