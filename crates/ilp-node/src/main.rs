@@ -129,6 +129,12 @@ async fn main() {
                 old data. For example, a value of 1000ms (1 second) would mean that the \
                 node forgets the oldest 1 second of histogram data points every second. \
                 Defaults to 10000ms (10 seconds)."),
+        Arg::with_name("settle_every")
+            .long("settle_every")
+            .takes_value(true)
+            .help("Settlement delay, in seconds, the peering accounts will be settled after \
+                this many seconds after the first fulfill packet unless the balance exceeds \
+                settlement threshold before."),
         ]);
 
     let mut config = get_env_config("ilp");

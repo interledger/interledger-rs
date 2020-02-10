@@ -19,7 +19,7 @@ mod rate_limit_service;
 /// match the fulfillment inside the incoming fulfills
 mod validator_service;
 
-pub use self::balance_service::{BalanceService, BalanceStore};
+pub use self::balance_service::{start_delayed_settlement, BalanceService, BalanceStore};
 pub use self::echo_service::EchoService;
 pub use self::exchange_rates_service::ExchangeRateService;
 pub use self::expiry_shortener_service::{

@@ -358,6 +358,13 @@ impl BalanceStore for TestStore {
     ) -> Result<(), BalanceStoreError> {
         unimplemented!()
     }
+
+    async fn update_balances_for_delayed_settlement(
+        &self,
+        _: Uuid,
+    ) -> Result<(i64, u64), BalanceStoreError> {
+        unimplemented!()
+    }
 }
 
 #[async_trait]
