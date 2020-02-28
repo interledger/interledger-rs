@@ -472,7 +472,7 @@ components:
           oneOf:
             - type: number
             - type: string
-          default: 0.01
+          default: 0.015
           description: Maximum acceptable slippage percentage below calculated minimum exchange rate
     PaymentResponse:
       type: object

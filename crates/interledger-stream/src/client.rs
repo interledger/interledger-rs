@@ -14,8 +14,10 @@ use interledger_service::*;
 use log::{debug, error, warn};
 use num::rational::BigRational;
 use num::traits::cast::{FromPrimitive, ToPrimitive};
-use num::traits::identities::One;
+use num::traits::identities::{One, Zero};
+use num::traits::ops::checked::CheckedDiv;
 use num::traits::pow::pow;
+use num::BigInt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::time::timeout_at;
@@ -95,24 +97,94 @@ struct StreamPayment {
     fulfilled_packets: u64,
     /// Number of rejected packets throughout the STREAM payment
     rejected_packets: u64,
+    /// Number of rejected packets applied to the fail-fast threshold
+    fail_fast_rejects: u64,
     /// Timestamp when a packet was last fulfilled for this payment
     last_fulfill_time: Instant,
 }
 
 impl StreamPayment {
-    /// Account for and return amount to send in the next Prepare
+    /// Determine amount to load in next Prepare and account for it.
+    /// Return the source packet amount and minimum destination amount
     #[inline]
-    fn apply_prepare(&mut self) -> u64 {
-        let amount = min(
-            self.get_amount_available_to_send(),
-            self.congestion_controller.get_max_amount(),
+    fn apply_prepare<S: ExchangeRateStore>(&mut self, store: &S, slippage: f64) -> (u64, u64) {
+        // Determine scaled rate with slippage used for enforcing minimum destination amount
+        // and computing its corresponding minimum source amount,
+        // where source_amount * scaled_rate = dest_amount.
+        let rate = get_rate(
+            store,
+            self.receipt.source_asset_scale,
+            &self.receipt.source_asset_code,
+            self.receipt.destination_asset_scale,
+            self.receipt
+                .destination_asset_code
+                .as_ref()
+                .map(String::as_str),
+            slippage,
+        )
+        .unwrap_or_else(BigRational::zero);
+
+        // Margin of error is the minimum difference between our scaled rate and scaled rate of intermediaries.
+        // This should probably be much smaller than the slippage we're willing to accept.
+        // (Default slippage is 1.5% vs default margin of error is 0.1%)
+        let margin_of_error = BigRational::new_raw(BigInt::from(1), BigInt::from(1000)); // 0.001
+
+        // Compute the minimum source amount. If liquidity congestion reduces the packet amount too much,
+        // exchange rate rounding errors will prevent any money from getting through.
+        // This provides a floor that enables money to get delivered, based on the minimum destination amount.
+        // Use min_source_amount = 1 / (scaled_rate * margin_of_error)
+        // More info: https://github.com/interledger-rs/interledger-rs/issues/513
+        let min_source_amount = BigRational::one()
+            .checked_div(&(rate.clone() * margin_of_error))
+            .unwrap_or_else(BigRational::zero)
+            .ceil()
+            .to_integer()
+            .to_u64()
+            .unwrap_or(0);
+
+        // Compute the source amount. In reverse order of precedence:
+
+        // (5) Amount left in window for congestion
+        let mut source_amount = self.congestion_controller.get_amount_left_in_window();
+
+        // (4) Min source amount so rounding errors don't prevent delivery
+        source_amount = max(source_amount, min_source_amount);
+
+        // (3) Distribute "dust" amount across remaining packets
+
+        // By chance at end of payment, the amount remaining is too small to deliver.
+        // Approximate the remaining number of packets.
+        // If the final packet amount might be dust (less than or close in value to min packet amount),
+        // distribute the final dust amount across the other remaining packets.
+        // Note: If the max packet amount < min source amount, the payment may fail due to rates anyways.
+        let remaining_amount = self.get_amount_available_to_send();
+        let estimated_num_packets = remaining_amount / source_amount;
+        let estimated_final_amount = remaining_amount % source_amount;
+        let possible_dust = estimated_num_packets > 0
+            && estimated_final_amount < (min_source_amount as f64 * 1.2).ceil() as u64;
+        if possible_dust {
+            // i.e. ceil(remaining_amount / estimated_num_packets)
+            source_amount =
+                (remaining_amount + (estimated_num_packets - 1)) / estimated_num_packets;
+        }
+
+        // (2) Max packet amount allowed by nodes in path
+        source_amount = min(
+            source_amount,
+            self.congestion_controller.get_max_packet_amount(),
         );
 
-        self.congestion_controller.prepare(amount);
+        // (1) Amount available to send, subtracting fulfilled and in-fligth amounts
+        source_amount = min(source_amount, self.get_amount_available_to_send());
 
-        self.receipt.sent_amount = self.receipt.sent_amount.saturating_add(amount);
-        self.receipt.in_flight_amount = self.receipt.in_flight_amount.saturating_add(amount);
-        amount
+        // Account for the prepare
+        self.congestion_controller.prepare(source_amount);
+        self.receipt.sent_amount = self.receipt.sent_amount.saturating_add(source_amount);
+        self.receipt.in_flight_amount = self.receipt.in_flight_amount.saturating_add(source_amount);
+
+        // Compute the minimum destination amount using the same rate
+        let min_destination_amount = convert(source_amount, rate).unwrap_or(0);
+        (source_amount, min_destination_amount)
     }
 
     /// Account for a fulfilled packet and update flow control
@@ -139,6 +211,18 @@ impl StreamPayment {
         self.receipt.in_flight_amount = self.receipt.in_flight_amount.saturating_sub(amount);
 
         self.rejected_packets += 1;
+
+        // Apply F99, T00, T01 to fail-fast threshold.
+        // Other final/relative errors should immediately fail; T02-T99 may be resolved with time.
+        let apply_to_fail_fast = match reject.code() {
+            IlpErrorCode::T00_INTERNAL_ERROR
+            | IlpErrorCode::T01_PEER_UNREACHABLE
+            | IlpErrorCode::F99_APPLICATION_ERROR => true,
+            _ => false,
+        };
+        if apply_to_fail_fast {
+            self.fail_fast_rejects += 1;
+        }
     }
 
     /// Save the recipient's destination asset details for calculating minimum exchange rates
@@ -192,15 +276,17 @@ impl StreamPayment {
     /// has temporarily limited sending more money)
     #[inline]
     fn is_max_in_flight(&self) -> bool {
-        self.congestion_controller.get_max_amount() == 0 || self.get_amount_available_to_send() == 0
+        self.congestion_controller.get_amount_left_in_window() == 0
+            || self.get_amount_available_to_send() == 0
     }
 
-    /// Given we've attempted sending enough packets, does our rejected packet rate indicate the payment is failing?
+    /// Given we've attempted sending enough packets, does the rate of rejects
+    /// that count towards fail-fast indicate the payment is failing?
     #[inline]
     fn is_failing(&self) -> bool {
         let num_packets = self.fulfilled_packets + self.rejected_packets;
         num_packets >= FAIL_FAST_MINIMUM_PACKET_ATTEMPTS
-            && (self.rejected_packets as f64 / num_packets as f64) > FAIL_FAST_MINIMUM_FAILURE_RATE
+            && (self.fail_fast_rejects as f64 / num_packets as f64) > FAIL_FAST_MINIMUM_FAILURE_RATE
     }
 }
 
@@ -250,6 +336,7 @@ where
             sequence: 1,
             fulfilled_packets: 0,
             rejected_packets: 0,
+            fail_fast_rejects: 0,
             last_fulfill_time: Instant::now(),
         })),
     };
@@ -258,11 +345,11 @@ where
 
     /// Actions corresponding to the state of the payment
     enum PaymentEvent {
-        /// Send more money: send a packet with the given amount
-        SendMoney(u64),
+        /// Send more money: send a packet with the given source amount and minimum destination amount
+        SendMoney((u64, u64)),
         /// Congestion controller limited in-flight amount: wait for pending requests until given deadline
         MaxInFlight(Instant),
-        /// Send full source amount: close the connection and return success
+        /// Sent full source amount: close the connection and return success
         CloseConnection,
         /// Maximum timeout since last fulfill has elapsed: terminate the payment
         Timeout,
@@ -287,15 +374,15 @@ where
                     .unwrap();
                 PaymentEvent::MaxInFlight(deadline)
             } else {
-                PaymentEvent::SendMoney(payment.apply_prepare())
+                PaymentEvent::SendMoney(payment.apply_prepare(&sender.store, sender.slippage))
             }
         };
 
         match event {
-            PaymentEvent::SendMoney(packet_amount) => {
+            PaymentEvent::SendMoney((source_amount, dest_amount)) => {
                 let mut sender = sender.clone();
                 pending_requests.push(tokio::spawn(async move {
-                    sender.send_money_packet(packet_amount).await
+                    sender.send_money_packet(source_amount, dest_amount).await
                 }));
             }
             PaymentEvent::MaxInFlight(deadline) => {
@@ -368,40 +455,25 @@ where
 {
     /// Send a Prepare for the given source amount and apply the resulting Fulfill or Reject
     #[inline]
-    pub async fn send_money_packet(&mut self, source_amount: u64) -> Result<(), Error> {
-        let (prepare, sequence, min_destination_amount) = {
+    pub async fn send_money_packet(
+        &mut self,
+        source_amount: u64,
+        min_destination_amount: u64,
+    ) -> Result<(), Error> {
+        let (prepare, sequence) = {
             let mut payment = self.payment.lock().await;
 
             // Build the STREAM packet
-
             let sequence = payment.next_sequence();
-
             let mut frames = vec![Frame::StreamMoney(StreamMoneyFrame {
                 stream_id: 1,
                 shares: 1,
             })];
-
             if payment.should_send_source_account {
                 frames.push(Frame::ConnectionNewAddress(ConnectionNewAddressFrame {
                     source_account: payment.receipt.from.clone(),
                 }));
             }
-
-            let min_destination_amount = get_min_destination_amount(
-                &self.store,
-                source_amount,
-                payment.receipt.source_asset_scale,
-                &payment.receipt.source_asset_code,
-                payment.receipt.destination_asset_scale,
-                payment
-                    .receipt
-                    .destination_asset_code
-                    .as_ref()
-                    .map(String::as_str),
-                self.slippage,
-            )
-            .unwrap_or(0); // Default to 0 if unable to calculate rate
-
             let stream_request_packet = StreamPacketBuilder {
                 ilp_packet_type: IlpPacketType::Prepare,
                 prepare_amount: min_destination_amount,
@@ -436,7 +508,7 @@ where
             }
             .build();
 
-            (prepare, sequence, min_destination_amount)
+            (prepare, sequence)
         };
 
         // Send it!
@@ -539,8 +611,11 @@ where
 
                 match (reject.code().class(), reject.code()) {
                     (ErrorClass::Temporary, _) => Ok(()),
-                    (_, IlpErrorCode::F08_AMOUNT_TOO_LARGE) => Ok(()), // Handled by the congestion controller
+                    (_, IlpErrorCode::F08_AMOUNT_TOO_LARGE) => Ok(()),
                     (_, IlpErrorCode::F99_APPLICATION_ERROR) => Ok(()),
+                    // R01 is triggered by connector when the amount rounds to 0, so keep retrying
+                    // Other Rxx errors such as timeouts are likely terminal
+                    (_, IlpErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT) => Ok(()),
                     // Any other error will stop the rest of the payment
                     _ => Err(Error::SendMoneyError(format!(
                         "Packet was rejected with error: {} {}",
@@ -599,19 +674,18 @@ where
 // TODO Abstract duplicated conversion logic from interledger-settlement &
 //      exchange rate service into interledger-rates
 
-/// Convert the given source amount into a destination amount, pulling from a provider's exchange rates
-/// and subtracting slippage to determine a minimum destination amount.
+/// Calculate the scaled rate between the source and destination assets,
+/// fetching from the provider's exchange rates, subtracting slippage, and adjusting scales.
 /// Returns None if destination asset details are unknown or rate cannot be calculated.
 #[inline]
-fn get_min_destination_amount<S: ExchangeRateStore>(
+fn get_rate<S: ExchangeRateStore>(
     store: &S,
-    source_amount: u64,
     source_scale: u8,
     source_code: &str,
     dest_scale: Option<u8>,
     dest_code: Option<&str>,
     slippage: f64,
-) -> Option<u64> {
+) -> Option<BigRational> {
     let dest_code = dest_code?;
     let dest_scale = dest_scale?;
 
@@ -626,22 +700,29 @@ fn get_min_destination_amount<S: ExchangeRateStore>(
 
     // Subtract slippage from rate
     let slippage = BigRational::from_f64(slippage)?;
-    let rate = rate * (BigRational::one() - slippage);
+    let mut rate = rate * (BigRational::one() - slippage);
 
+    // Scale rate based on source scale
+    rate /= pow(BigRational::from_u64(10)?, source_scale as usize);
+
+    // Scale rate based on destination scale
+    rate *= pow(BigRational::from_u64(10)?, dest_scale as usize);
+
+    Some(rate)
+}
+
+/// Convert the given source amount into a destination amount
+/// using the provided rate. Round up for safety.
+#[inline]
+fn convert(source_amount: u64, rate: BigRational) -> Option<u64> {
     // First, convert scaled source amount to base unit
-    let mut source_amount = BigRational::from_u64(source_amount)?;
-    source_amount /= pow(BigRational::from_u64(10)?, source_scale as usize);
+    let source_amount = BigRational::from_u64(source_amount)?;
 
     // Apply exchange rate
-    let mut dest_amount = source_amount * rate;
+    let dest_amount = source_amount * rate;
 
-    // Convert destination amount in base units to scaled units
-    dest_amount *= pow(BigRational::from_u64(10)?, dest_scale as usize);
-
-    // For safety, always round up
-    dest_amount = dest_amount.ceil();
-
-    Some(dest_amount.to_integer().to_u64()?)
+    // Round up for safety
+    Some(dest_amount.ceil().to_integer().to_u64()?)
 }
 
 #[cfg(test)]
@@ -695,6 +776,64 @@ mod send_money_tests {
         .await;
         assert!(result.is_err());
         assert_eq!(requests.lock().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn perserveres_past_liquidity_errors() {
+        let destination_address = Address::from_str("example.receiver").unwrap();
+        let account = TestAccount {
+            id: Uuid::new_v4(),
+            asset_code: "XYZ".to_string(),
+            asset_scale: 9,
+            ilp_address: destination_address.clone(),
+            max_packet_amount: Some(10),
+        };
+        let store = TestStore {
+            route: None,
+            price_1: None,
+            price_2: None,
+        };
+
+        let start_time = std::time::Instant::now();
+
+        let num_requests = Arc::new(AtomicUsize::new(0));
+        let num_requests_clone = num_requests.clone();
+
+        let result = send_money(
+            incoming_service_fn(move |_| {
+                if start_time.clone().elapsed() > Duration::from_secs(3) {
+                    // Reject with final error to stop STREAM
+                    Err(RejectBuilder {
+                        code: IlpErrorCode::F05_WRONG_CONDITION,
+                        message: b"just some final error",
+                        triggered_by: Some(&EXAMPLE_CONNECTOR),
+                        data: &[],
+                    }
+                    .build())
+                } else {
+                    num_requests_clone.fetch_add(1, Ordering::Relaxed);
+                    Err(RejectBuilder {
+                        code: IlpErrorCode::T04_INSUFFICIENT_LIQUIDITY,
+                        message: b"settle up!",
+                        triggered_by: Some(&EXAMPLE_CONNECTOR),
+                        data: &[],
+                    }
+                    .build())
+                }
+            }),
+            &account,
+            store,
+            destination_address.clone(),
+            &[0; 32][..],
+            50,
+            0.0,
+        )
+        .await;
+
+        // STREAM sender should try sending at least 1000 packets over 3 seconds,
+        // even though it's receiving T04 errors
+        assert!(result.is_err());
+        assert!(num_requests.load(Ordering::Relaxed) > 1000);
     }
 
     #[tokio::test]
@@ -944,19 +1083,19 @@ mod send_money_tests {
         ];
 
         for t in &test_data {
-            let dest_amount = get_min_destination_amount(
+            let dest_amount = get_rate(
                 &TestStore {
                     route: None,
                     price_1: t.price_1,
                     price_2: t.price_2,
                 },
-                t.source_amount,
                 t.source_scale,
                 t.source_code,
                 t.dest_scale,
                 t.dest_code,
                 t.slippage,
-            );
+            )
+            .and_then(|rate| convert(t.source_amount, rate));
             assert_eq!(dest_amount, t.expected_result, "{}", t.name);
         }
     }

@@ -62,18 +62,14 @@ impl CongestionController {
         }
     }
 
-    /// The maximum amount availble to be sent is the maximum amount in flight minus the current amount in flight
-    pub fn get_max_amount(&self) -> u64 {
-        if self.amount_in_flight > self.max_in_flight {
-            return 0;
-        }
+    /// Maximium allowed packet amount allowed to send in a packet per F08s
+    pub fn get_max_packet_amount(&self) -> u64 {
+        self.max_packet_amount.unwrap_or(u64::max_value())
+    }
 
-        let amount_left_in_window = self.max_in_flight - self.amount_in_flight;
-        if let Some(max_packet_amount) = self.max_packet_amount {
-            min(amount_left_in_window, max_packet_amount)
-        } else {
-            amount_left_in_window
-        }
+    /// The maximum amount availble to be sent is the maximum amount in flight minus the current amount in flight
+    pub fn get_amount_left_in_window(&self) -> u64 {
+        self.max_in_flight.saturating_sub(self.amount_in_flight)
     }
 
     /// Increments the amount in flight by the provided amount
@@ -194,20 +190,20 @@ mod tests {
         fn doubles_max_amount_on_fulfill() {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 2000);
+            assert_eq!(controller.get_amount_left_in_window(), 2000);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 4000);
+            assert_eq!(controller.get_amount_left_in_window(), 4000);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 8000);
+            assert_eq!(controller.get_amount_left_in_window(), 8000);
         }
 
         #[test]
@@ -223,10 +219,10 @@ mod tests {
                 csv_writer: csv::Writer::from_writer(io::stdout()),
             };
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), u64::max_value());
+            assert_eq!(controller.get_amount_left_in_window(), u64::max_value());
         }
     }
 
@@ -252,7 +248,7 @@ mod tests {
                 let amount = i * 1000;
                 controller.prepare(amount);
                 controller.fulfill(amount);
-                assert_eq!(controller.get_max_amount(), 1000 + i * 1000);
+                assert_eq!(controller.get_amount_left_in_window(), 1000 + i * 1000);
             }
         }
 
@@ -261,15 +257,15 @@ mod tests {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
             controller.state = CongestionState::AvoidCongestion;
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.reject(amount, &*INSUFFICIENT_LIQUIDITY_ERROR);
-            assert_eq!(controller.get_max_amount(), 500);
+            assert_eq!(controller.get_amount_left_in_window(), 500);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.reject(amount, &*INSUFFICIENT_LIQUIDITY_ERROR);
-            assert_eq!(controller.get_max_amount(), 250);
+            assert_eq!(controller.get_amount_left_in_window(), 250);
         }
 
         #[test]
@@ -277,31 +273,31 @@ mod tests {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
             controller.state = CongestionState::AvoidCongestion;
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 2000);
+            assert_eq!(controller.get_amount_left_in_window(), 2000);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 3000);
+            assert_eq!(controller.get_amount_left_in_window(), 3000);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.reject(amount, &*INSUFFICIENT_LIQUIDITY_ERROR);
-            assert_eq!(controller.get_max_amount(), 1500);
+            assert_eq!(controller.get_amount_left_in_window(), 1500);
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 2500);
+            assert_eq!(controller.get_amount_left_in_window(), 2500);
         }
 
         #[test]
         fn max_packet_amount() {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
-            assert_eq!(controller.get_max_amount(), 1000);
+            assert_eq!(controller.get_amount_left_in_window(), 1000);
 
             controller.prepare(1000);
             controller.reject(
@@ -314,9 +310,12 @@ mod tests {
                 }
                 .build(),
             );
-            assert_eq!(controller.get_max_amount(), 100);
+            assert_eq!(controller.get_max_packet_amount(), 100);
 
-            let amount = controller.get_max_amount();
+            let mut amount = min(
+                controller.get_max_packet_amount(),
+                controller.get_amount_left_in_window(),
+            );
             controller.prepare(amount);
             controller.reject(
                 amount,
@@ -329,12 +328,20 @@ mod tests {
                 .build(),
             );
             // it was decreased by the decrease factor
-            assert_eq!(controller.get_max_amount(), amount / 2);
+            assert_eq!(controller.get_max_packet_amount(), amount / 2);
 
-            let amount = controller.get_max_amount();
+            amount = min(
+                controller.get_max_packet_amount(),
+                controller.get_amount_left_in_window(),
+            );
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), 50);
+
+            amount = min(
+                controller.get_max_packet_amount(),
+                controller.get_amount_left_in_window(),
+            );
+            assert_eq!(amount, 50);
         }
 
         #[test]
@@ -345,7 +352,7 @@ mod tests {
             controller.prepare(500);
             controller.reject(500, &*INSUFFICIENT_LIQUIDITY_ERROR);
 
-            assert_eq!(controller.get_max_amount(), 0);
+            assert_eq!(controller.get_amount_left_in_window(), 0);
         }
 
         #[test]
@@ -361,10 +368,10 @@ mod tests {
                 csv_writer: csv::Writer::from_writer(io::stdout()),
             };
 
-            let amount = controller.get_max_amount();
+            let amount = controller.get_amount_left_in_window();
             controller.prepare(amount);
             controller.fulfill(amount);
-            assert_eq!(controller.get_max_amount(), u64::max_value());
+            assert_eq!(controller.get_amount_left_in_window(), u64::max_value());
         }
     }
 
@@ -375,13 +382,21 @@ mod tests {
         fn tracking_amount_in_flight() {
             let mut controller = CongestionController::new(1000, 1000, 2.0);
             controller.set_max_packet_amount(600);
-            assert_eq!(controller.get_max_amount(), 600);
+            assert_eq!(controller.get_max_packet_amount(), 600);
 
             controller.prepare(100);
-            assert_eq!(controller.get_max_amount(), 600);
+            let mut max_amount = min(
+                controller.get_amount_left_in_window(),
+                controller.get_max_packet_amount(),
+            );
+            assert_eq!(max_amount, 600);
 
             controller.prepare(600);
-            assert_eq!(controller.get_max_amount(), 1000 - 600 - 100);
+            max_amount = min(
+                controller.get_amount_left_in_window(),
+                controller.get_max_packet_amount(),
+            );
+            assert_eq!(max_amount, 1000 - 600 - 100);
         }
     }
 }
