@@ -29,7 +29,7 @@ use warp::{self, reply::Json, Filter, Rejection};
 pub const BEARER_TOKEN_START: usize = 7;
 
 const fn get_default_max_slippage() -> f64 {
-    0.01
+    0.015
 }
 
 #[derive(Deserialize, Debug)]
