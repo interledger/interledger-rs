@@ -402,7 +402,7 @@ impl InterledgerNode {
             Some(seconds) => {
                 use futures::stream::StreamExt;
                 let delay = Duration::from_secs(seconds.get().into());
-                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                let (tx, rx) = tokio::sync::mpsc::channel(128);
 
                 start_delayed_settlement(delay, rx.fuse(), store.clone());
 

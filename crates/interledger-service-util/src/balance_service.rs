@@ -8,7 +8,9 @@ use interledger_settlement::core::{
     SettlementClient,
 };
 use std::marker::PhantomData;
-use std::{fmt, time::Duration};
+use std::sync::{Arc, Mutex};
+use std::{fmt, time::Duration, time::Instant};
+use tokio::sync::mpsc::error::TrySendError;
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
@@ -65,6 +67,7 @@ pub struct BalanceService<S, O, A> {
     settlement_client: SettlementClient,
     policy: Policy,
     account_type: PhantomData<A>,
+    channel_last_fail: Arc<Mutex<Instant>>,
 }
 
 impl<S, O, A> BalanceService<S, O, A>
@@ -75,7 +78,7 @@ where
 {
     pub fn new(
         store: S,
-        sender: Option<tokio::sync::mpsc::UnboundedSender<ManageTimeout>>,
+        sender: Option<tokio::sync::mpsc::Sender<ManageTimeout>>,
         next: O,
     ) -> Self {
         BalanceService {
@@ -87,6 +90,7 @@ where
                 None => Policy::ThresholdOnly,
             },
             account_type: PhantomData,
+            channel_last_fail: Arc::new(Mutex::new(Instant::now())),
         }
     }
 }
@@ -171,6 +175,7 @@ where
                         to,
                         settlement_client,
                         self.policy.clone(),
+                        self.channel_last_fail.clone(),
                     );
                 }
 
@@ -211,6 +216,7 @@ fn settle_or_rollback_later<Acct, Store>(
     to: Acct,
     settlement_client: SettlementClient,
     policy: Policy,
+    channel_last_fail: Arc<Mutex<Instant>>,
 ) where
     Acct: SettlementAccount + Send + Sync + 'static,
     Store: BalanceStore + SettlementStore<Account = Acct> + Send + Sync + 'static,
@@ -223,6 +229,7 @@ fn settle_or_rollback_later<Acct, Store>(
         to,
         settlement_client,
         policy,
+        channel_last_fail,
     ));
 }
 
@@ -233,7 +240,8 @@ async fn settle_or_rollback_now<Acct, Store>(
     from_id: Uuid,
     to: Acct,
     settlement_client: SettlementClient,
-    policy: Policy,
+    mut policy: Policy,
+    channel_last_fail: Arc<Mutex<Instant>>,
 ) -> Result<(), ()>
 where
     Acct: SettlementAccount + Send + Sync + 'static,
@@ -267,13 +275,13 @@ where
             //
             // the new settlement thing will need to settle any balance x to settle_to,
             // where x >= settle_to
-            policy.settle_later(to.id());
+            policy.settle_later(to.id(), channel_last_fail);
         }
         return Ok(());
     }
 
     // cancel a pending settlement always before trying it
-    policy.clear_later(to.id());
+    policy.clear_later(to.id(), channel_last_fail);
 
     settle_or_rollback(store, to, amount_to_settle, settlement_client).await
 }
@@ -348,27 +356,94 @@ where
 #[derive(Debug, Clone)]
 enum Policy {
     ThresholdOnly,
-    TimeBased(tokio::sync::mpsc::UnboundedSender<ManageTimeout>),
+    TimeBased(tokio::sync::mpsc::Sender<ManageTimeout>),
 }
 
 impl Policy {
     /// Called to clear a pending timeout, if there's any
-    fn clear_later(&self, account_id: Uuid) {
+    fn clear_later(&mut self, account_id: Uuid, channel_last_fail: Arc<Mutex<Instant>>) {
         match *self {
-            Policy::ThresholdOnly => {}
-            Policy::TimeBased(ref sender) => {
-                let _ = sender.send(ManageTimeout::Clear(account_id));
-            } // FIXME: not sure what do with an error, like it's a quite bad situation
+            Policy::ThresholdOnly => (),
+            Policy::TimeBased(ref mut sender) => Policy::drop_error(
+                sender.try_send(ManageTimeout::Clear(account_id)),
+                channel_last_fail,
+            ),
         }
     }
 
     /// Called to signal this account id needs to be settled later
-    fn settle_later(&self, account_id: Uuid) {
+    fn settle_later(&mut self, account_id: Uuid, channel_last_fail: Arc<Mutex<Instant>>) {
         match *self {
-            Policy::ThresholdOnly => {}
-            Policy::TimeBased(ref sender) => {
-                let _ = sender.send(ManageTimeout::Set(account_id));
-            } // FIXME: not sure what do with an error, like it's a quite bad situation
+            Policy::ThresholdOnly => (),
+            Policy::TimeBased(ref mut sender) => Policy::drop_error(
+                sender.try_send(ManageTimeout::Set(account_id)),
+                channel_last_fail,
+            ),
+        }
+    }
+
+    //
+    // Rationale for dropping the errors:
+    //
+    // If the channel is full of peer accounts, it is likely
+    // that the peer account that the messages are directed towards
+    // has already been scheduled for settlement.
+    //
+    // If the channel is full because the background task is
+    // not keeping up, bounded channel prevents an infinitely-
+    // growing queue from forming.
+    //
+    // If a later change introduces a bug in the background task,
+    // resulting in it not processing the incoming messages,
+    // bounded channel likewise prevents an infinitely-growing queue.
+    //
+    // If the messages are not being received because of the receiver
+    // having closed, the background task has exited.
+    // This normally happens on shutdown.
+    //
+    // Should sending through bounded channel fail (due to afore-
+    // mentioned reasons), the intended time-based settlements are lost
+    // as a result. The threshold-based settlement will, however,
+    // eventually take over, acting as a "backup" in this situation.
+    // Moreover the bounded channel failing should only happen
+    // under an exceptionally heavy load.
+    //
+    // While the function drops the errors, it also logs them
+    // once every 60 seconds. This is to prevent flooding the log
+    // with (identical) error messages from -- most likely --
+    // the very same problem.
+    //
+    fn drop_error(
+        result: Result<(), TrySendError<ManageTimeout>>,
+        channel_last_fail: Arc<Mutex<Instant>>,
+    ) {
+        let (reason, uuid) = match result {
+            Ok(_) => return,
+            Err(TrySendError::Full(mto)) => ("full", mto.uuid()),
+            Err(TrySendError::Closed(mto)) => ("closed", mto.uuid()),
+        };
+        // Only try_lock() instead of waiting to acquire the mutex
+        // with lock(), since if the mutex is already in use
+        // by another thread, that thread too has acquired it
+        // to report (most likely) exactly the same problem.
+        // By using try_lock() we avoid worsening the possible
+        // overload situation by limiting unnecessary logging action.
+        //
+        // No check for poisoned lock is needed as
+        // Instant::now().duration_since(...) is guaranteed
+        // not to panic.
+        if let Ok(ref mut t0) = channel_last_fail.try_lock() {
+            let t = Instant::now();
+            if t.duration_since(**t0).as_secs() >= 60 {
+                warn!(
+                    "Time-based settlement failed temporarily \
+				(bounded channel {}) for (at least) the account {}. \
+				Service might be overloaded. Check the balances \
+				once the overload has passed.",
+                    reason, uuid
+                );
+                **t0 = t;
+            }
         }
     }
 }
@@ -378,6 +453,15 @@ impl Policy {
 pub enum ManageTimeout {
     Clear(Uuid),
     Set(Uuid),
+}
+
+impl ManageTimeout {
+    fn uuid(&self) -> Uuid {
+        match *self {
+            ManageTimeout::Clear(uuid) => uuid,
+            ManageTimeout::Set(uuid) => uuid,
+        }
+    }
 }
 
 #[derive(Debug)]
