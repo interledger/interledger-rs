@@ -3,10 +3,10 @@ use chrono::{DateTime, Duration, Utc};
 use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
-use tracing::error;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
 use tokio::time::timeout;
+use tracing::error;
 
 /// # Validator Service
 ///

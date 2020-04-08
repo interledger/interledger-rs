@@ -367,8 +367,8 @@ mod tests {
         }
 
         // and with a closure (async closure are unstable)
-        let foo2 = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| async move {
-            next.handle_request(request).await
+        let foo2 = move |request, mut next: Box<dyn IncomingService<TestAccount> + Send>| {
+            async move { next.handle_request(request).await }
         };
 
         // base layer
@@ -414,8 +414,8 @@ mod tests {
         }
 
         // and with a closure (async closure are unstable)
-        let foo2 = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| async move {
-            next.send_request(request).await
+        let foo2 = move |request, mut next: Box<dyn OutgoingService<TestAccount> + Send>| {
+            async move { next.send_request(request).await }
         };
 
         // base layer

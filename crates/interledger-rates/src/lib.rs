@@ -1,6 +1,5 @@
 use futures::TryFutureExt;
 use interledger_errors::ExchangeRateStoreError;
-use tracing::{debug, error, trace, warn};
 use reqwest::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -9,6 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio;
+use tracing::{debug, error, trace, warn};
 
 mod cryptocompare;
 

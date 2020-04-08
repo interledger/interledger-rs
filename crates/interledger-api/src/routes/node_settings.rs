@@ -8,7 +8,6 @@ use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AccountStore, AddressStore, Username};
 use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
-use tracing::{error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use std::{
@@ -16,6 +15,7 @@ use std::{
     iter::FromIterator,
     str::{self, FromStr},
 };
+use tracing::{error, trace};
 use url::Url;
 use uuid::Uuid;
 use warp::{self, reply::Json, Filter, Rejection};
@@ -83,9 +83,11 @@ where
         .and(admin_only.clone())
         .and(deserialize_json())
         .and(with_store.clone())
-        .and_then(|rates: ExchangeRates, store: S| async move {
-            store.set_exchange_rates(rates.0.clone())?;
-            Ok::<_, Rejection>(warp::reply::json(&rates))
+        .and_then(|rates: ExchangeRates, store: S| {
+            async move {
+                store.set_exchange_rates(rates.0.clone())?;
+                Ok::<_, Rejection>(warp::reply::json(&rates))
+            }
         })
         .boxed();
 
@@ -94,9 +96,11 @@ where
         .and(warp::path("rates"))
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(|store: S| async move {
-            let rates = store.get_all_exchange_rates()?;
-            Ok::<_, Rejection>(warp::reply::json(&rates))
+        .and_then(|store: S| {
+            async move {
+                let rates = store.get_all_exchange_rates()?;
+                Ok::<_, Rejection>(warp::reply::json(&rates))
+            }
         })
         .boxed();
 

@@ -3,9 +3,9 @@ use super::{service::BtpOutgoingService, wrapped_ws::WsWrap};
 use futures::{FutureExt, Sink, Stream};
 use futures::{SinkExt, StreamExt, TryFutureExt};
 use interledger_service::*;
-use tracing::{debug, error, warn};
 use secrecy::{ExposeSecret, SecretString};
 use std::time::Duration;
+use tracing::{debug, error, warn};
 use warp::{
     self,
     ws::{Message, WebSocket, Ws},

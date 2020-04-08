@@ -11,10 +11,10 @@ use interledger_packet::{
     RejectBuilder,
 };
 use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username};
-use tracing::debug;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::time::SystemTime;
+use tracing::debug;
 use uuid::Uuid;
 
 // Note we are using the same magic bytes as the Javascript

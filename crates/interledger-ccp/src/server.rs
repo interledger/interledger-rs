@@ -14,7 +14,6 @@ use interledger_service::{
     Account, AddressStore, IlpResult, IncomingRequest, IncomingService, OutgoingRequest,
     OutgoingService,
 };
-use tracing::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::cmp::Ordering as StdOrdering;
@@ -29,6 +28,7 @@ use std::{
     },
     time::Duration,
 };
+use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
 #[cfg(test)]

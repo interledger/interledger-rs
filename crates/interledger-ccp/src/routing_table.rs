@@ -1,10 +1,10 @@
 use crate::packet::{Route, RouteUpdateRequest};
 use hex;
-use tracing::{debug, trace};
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use tracing::{debug, trace};
 
 static RANDOM: Lazy<SystemRandom> = Lazy::new(SystemRandom::new);
 

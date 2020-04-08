@@ -41,7 +41,6 @@ use interledger_settlement::core::{
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use tracing::{debug, error, trace, warn};
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -64,6 +63,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tracing::{debug, error, trace, warn};
 use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
