@@ -1,6 +1,6 @@
 use crate::packet::{Route, RouteUpdateRequest};
 use hex;
-use log::{debug, trace};
+use tracing::{debug, trace};
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::HashMap;

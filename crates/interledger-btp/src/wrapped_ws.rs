@@ -1,6 +1,6 @@
 use futures::stream::Stream;
 use futures::Sink;
-use log::warn;
+use tracing::warn;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};

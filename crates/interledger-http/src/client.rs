@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use futures::future::TryFutureExt;
 use interledger_packet::{Address, ErrorCode, Packet, RejectBuilder};
 use interledger_service::*;
-use log::{error, trace};
+use tracing::{error, trace};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     Client, ClientBuilder, Response as HttpResponse,

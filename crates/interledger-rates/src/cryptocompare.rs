@@ -1,5 +1,5 @@
 use futures::TryFutureExt;
-use log::error;
+use tracing::error;
 use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use secrecy::{ExposeSecret, SecretString};

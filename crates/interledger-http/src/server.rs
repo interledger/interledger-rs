@@ -4,7 +4,7 @@ use interledger_errors::ApiError;
 use interledger_packet::Prepare;
 use interledger_service::Username;
 use interledger_service::{IncomingRequest, IncomingService};
-use log::error;
+use tracing::error;
 use secrecy::{ExposeSecret, SecretString};
 use std::convert::TryFrom;
 use std::net::SocketAddr;

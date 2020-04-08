@@ -11,7 +11,7 @@ use interledger_packet::{
     RejectBuilder,
 };
 use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username};
-use log::debug;
+use tracing::debug;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::time::SystemTime;

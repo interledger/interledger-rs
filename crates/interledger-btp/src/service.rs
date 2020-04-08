@@ -10,7 +10,7 @@ use futures::{
 };
 use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
 use interledger_service::*;
-use log::{debug, error, trace, warn};
+use tracing::{debug, error, trace, warn};
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use rand::random;

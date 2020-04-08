@@ -41,7 +41,7 @@ use interledger_settlement::core::{
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use log::{debug, error, trace, warn};
+use tracing::{debug, error, trace, warn};
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;

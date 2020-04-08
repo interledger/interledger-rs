@@ -6,7 +6,7 @@ use interledger_packet::{
     oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
 use interledger_service::*;
-use log::debug;
+use tracing::debug;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::str;

@@ -14,7 +14,7 @@ use hyper::{Response, StatusCode};
 use interledger_errors::*;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
-use log::error;
+use tracing::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use std::{

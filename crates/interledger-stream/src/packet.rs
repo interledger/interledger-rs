@@ -5,7 +5,7 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, PacketType as IlpPacketType, ParseError,
 };
-use log::warn;
+use tracing::warn;
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::{convert::TryFrom, fmt, str, u64};

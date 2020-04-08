@@ -14,7 +14,7 @@ use interledger_service::{
     Account, AddressStore, IlpResult, IncomingRequest, IncomingService, OutgoingRequest,
     OutgoingService,
 };
-use log::{debug, error, trace, warn};
+use tracing::{debug, error, trace, warn};
 use parking_lot::{Mutex, RwLock};
 use ring::digest::{digest, SHA256};
 use std::cmp::Ordering as StdOrdering;

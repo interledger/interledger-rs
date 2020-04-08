@@ -2,7 +2,7 @@ use super::RouterStore;
 use async_trait::async_trait;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
-use log::{error, trace};
+use tracing::{error, trace};
 use std::str;
 
 /// # Interledger Router

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use futures::TryFutureExt;
 use interledger_packet::{ErrorCode, FulfillBuilder, RejectBuilder};
 use interledger_service::{Account, IlpResult, IncomingRequest, IncomingService};
-use log::error;
+use tracing::error;
 use std::marker::PhantomData;
 
 const PEER_FULFILLMENT: [u8; 32] = [0; 32];

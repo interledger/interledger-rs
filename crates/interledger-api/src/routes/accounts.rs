@@ -17,7 +17,7 @@ use interledger_service_util::BalanceStore;
 use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use log::{debug, error, trace};
+use tracing::{debug, error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::{Account, AddressStore, IlpResult, IncomingRequest, IncomingService};
-use log::{error, warn};
+use tracing::{error, warn};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 

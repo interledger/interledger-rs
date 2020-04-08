@@ -11,7 +11,7 @@ use interledger_packet::{
 };
 use interledger_rates::ExchangeRateStore;
 use interledger_service::*;
-use log::{debug, error, warn};
+use tracing::{debug, error, warn};
 use num::rational::BigRational;
 use num::traits::cast::{FromPrimitive, ToPrimitive};
 use num::traits::identities::{One, Zero};

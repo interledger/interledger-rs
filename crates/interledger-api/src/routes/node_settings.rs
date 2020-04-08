@@ -8,7 +8,7 @@ use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AccountStore, AddressStore, Username};
 use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
-use log::{error, trace};
+use tracing::{error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use std::{

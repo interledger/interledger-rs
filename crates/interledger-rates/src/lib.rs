@@ -1,6 +1,6 @@
 use futures::TryFutureExt;
 use interledger_errors::ExchangeRateStoreError;
-use log::{debug, error, trace, warn};
+use tracing::{debug, error, trace, warn};
 use reqwest::Client;
 use secrecy::SecretString;
 use serde::Deserialize;

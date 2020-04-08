@@ -1,5 +1,5 @@
 use futures::TryFutureExt;
-use log::{error, warn};
+use tracing::{error, warn};
 use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use serde::Deserialize;

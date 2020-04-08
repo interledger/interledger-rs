@@ -7,7 +7,7 @@ use interledger_settlement::core::{
     types::{SettlementAccount, SettlementStore},
     SettlementClient,
 };
-use log::{debug, error};
+use tracing::{debug, error};
 use std::marker::PhantomData;
 use uuid::Uuid;
 

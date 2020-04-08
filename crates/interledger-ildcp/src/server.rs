@@ -3,7 +3,7 @@ use super::Account;
 use async_trait::async_trait;
 use interledger_packet::*;
 use interledger_service::*;
-use log::debug;
+use tracing::debug;
 use std::marker::PhantomData;
 
 /// A simple service that intercepts incoming ILDCP requests

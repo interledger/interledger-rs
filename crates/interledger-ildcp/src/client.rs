@@ -1,7 +1,7 @@
 use super::packet::*;
 use futures::future::TryFutureExt;
 use interledger_service::*;
-use log::{debug, error};
+use tracing::{debug, error};
 use std::convert::TryFrom;
 
 /// Sends an ILDCP Request to the provided service from the provided account

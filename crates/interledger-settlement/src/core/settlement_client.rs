@@ -1,6 +1,6 @@
 use crate::core::types::Quantity;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
-use log::{debug, trace};
+use tracing::{debug, trace};
 use reqwest::Client;
 use serde_json::json;
 use std::time::Duration;

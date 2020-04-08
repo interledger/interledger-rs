@@ -1,5 +1,5 @@
 use futures::future::{FutureExt, TryFutureExt};
-use log::{debug, error};
+use tracing::{debug, error};
 use parking_lot::RwLock;
 use redis_crate::{
     aio::{ConnectionLike, MultiplexedConnection},

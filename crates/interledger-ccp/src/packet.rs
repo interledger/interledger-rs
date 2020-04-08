@@ -5,7 +5,7 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
-use log::error;
+use tracing::error;
 use once_cell::sync::Lazy;
 use std::{
     convert::TryFrom,

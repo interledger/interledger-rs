@@ -1,5 +1,5 @@
 use bytes::BytesMut;
-use log::error;
+use tracing::error;
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
