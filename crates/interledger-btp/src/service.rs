@@ -201,14 +201,12 @@ where
         // Close connections trigger
         let read = valve.wrap(read); // close when `write_to_ws` calls `drop(connection)`
         let read = self.stream_valve.wrap(read);
-        let read_from_ws = read.for_each(handle_message_fn).then(move |_| {
-            async move {
-                debug!(
-                    "Finished reading from WebSocket stream for account: {}",
-                    account_id
-                );
-                Ok::<(), ()>(())
-            }
+        let read_from_ws = read.for_each(handle_message_fn).then(move |_| async move {
+            debug!(
+                "Finished reading from WebSocket stream for account: {}",
+                account_id
+            );
+            Ok::<(), ()>(())
         });
         tokio::spawn(read_from_ws);
 

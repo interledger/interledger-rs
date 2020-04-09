@@ -102,11 +102,9 @@ where
     // Converts an account username to an account id or errors out
     let account_username_to_id = warp::path::param::<Username>()
         .and(with_store.clone())
-        .and_then(move |username: Username, store: S| {
-            async move {
-                let id = store.get_account_id_from_username(&username).await?;
-                Ok::<_, Rejection>(id)
-            }
+        .and_then(move |username: Username, store: S| async move {
+            let id = store.get_account_id_from_username(&username).await?;
+            Ok::<_, Rejection>(id)
         })
         .boxed();
 
@@ -162,11 +160,9 @@ where
         .and(warp::header::<SecretString>("authorization"))
         .and(with_store.clone())
         .and_then(
-            move |path_username: Username, auth_string: SecretString, store: S| {
-                async move {
-                    let account = is_authorized_user(store, path_username, auth_string).await?;
-                    Ok::<A, Rejection>(account)
-                }
+            move |path_username: Username, auth_string: SecretString, store: S| async move {
+                let account = is_authorized_user(store, path_username, auth_string).await?;
+                Ok::<A, Rejection>(account)
             },
         )
         .boxed();
@@ -199,11 +195,9 @@ where
         .and(warp::path::end())
         .and(admin_only.clone())
         .and(with_store.clone())
-        .and_then(|store: S| {
-            async move {
-                let accounts = store.get_all_accounts().await?;
-                Ok::<Json, Rejection>(warp::reply::json(&accounts))
-            }
+        .and_then(|store: S| async move {
+            let accounts = store.get_all_accounts().await?;
+            Ok::<Json, Rejection>(warp::reply::json(&accounts))
         })
         .boxed();
 
@@ -243,12 +237,10 @@ where
         .and(admin_or_authorized_user_only.clone())
         .and(warp::path::end())
         .and(with_store.clone())
-        .and_then(|id: Uuid, store: S| {
-            async move {
-                let accounts = store.get_accounts(vec![id]).await?;
+        .and_then(|id: Uuid, store: S| async move {
+            let accounts = store.get_accounts(vec![id]).await?;
 
-                Ok::<Json, Rejection>(warp::reply::json(&accounts[0]))
-            }
+            Ok::<Json, Rejection>(warp::reply::json(&accounts[0]))
         })
         .boxed();
 
