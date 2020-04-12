@@ -29,18 +29,15 @@ static ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
 });
 
 use std::error::Error;
-impl Error for AddressError {
-    fn description(&self) -> &str {
+impl Error for AddressError {}
+
+impl fmt::Display for AddressError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             AddressError::InvalidLength(_length) => "Invalid address length",
             AddressError::InvalidFormat => "Invalid address format",
         }
-    }
-}
-
-impl fmt::Display for AddressError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.description().fmt(f)
+        .fmt(f)
     }
 }
 
