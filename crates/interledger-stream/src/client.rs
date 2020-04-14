@@ -116,10 +116,7 @@ impl StreamPayment {
             self.receipt.source_asset_scale,
             &self.receipt.source_asset_code,
             self.receipt.destination_asset_scale,
-            self.receipt
-                .destination_asset_code
-                .as_ref()
-                .map(String::as_str),
+            self.receipt.destination_asset_code.as_deref(),
             slippage,
         )
         .unwrap_or_else(BigRational::zero);
