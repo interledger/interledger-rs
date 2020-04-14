@@ -112,6 +112,7 @@ pub async fn get_all_accounts(node_port: u16, admin_token: &str) -> Result<Vec<A
 }
 
 #[allow(unused)]
+#[allow(clippy::mutable_key_type)]
 pub fn accounts_to_ids(accounts: Vec<Account>) -> HashMap<Address, Uuid> {
     let mut map = HashMap::new();
     for a in accounts {
