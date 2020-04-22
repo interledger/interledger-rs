@@ -18,31 +18,17 @@ use once_cell::sync::Lazy;
 
 const MAX_ADDRESS_LENGTH: usize = 1023;
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum AddressError {
+    #[error("Invalid address length: {0}")]
     InvalidLength(usize),
+    #[error("Invalid address format")]
     InvalidFormat,
 }
 
 static ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$").unwrap()
 });
-
-use std::error::Error;
-impl Error for AddressError {
-    fn description(&self) -> &str {
-        match *self {
-            AddressError::InvalidLength(_length) => "Invalid address length",
-            AddressError::InvalidFormat => "Invalid address format",
-        }
-    }
-}
-
-impl fmt::Display for AddressError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.description().fmt(f)
-    }
-}
 
 /// An ILP address backed by `Bytes`.
 #[derive(Clone, Eq, Hash, PartialEq)]
