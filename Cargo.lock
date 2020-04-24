@@ -1016,6 +1016,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio 0.2.18",
+ "tracing",
  "url 2.1.1",
  "uuid",
  "warp",
@@ -1045,6 +1046,7 @@ dependencies = [
  "thiserror",
  "tokio 0.2.18",
  "tokio-tungstenite",
+ "tracing",
  "tungstenite",
  "url 2.1.1",
  "uuid",
@@ -1068,6 +1070,7 @@ dependencies = [
  "ring",
  "serde",
  "tokio 0.2.18",
+ "tracing",
  "uuid",
 ]
 
@@ -1108,6 +1111,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "tokio 0.2.18",
+ "tracing",
  "url 2.1.1",
  "uuid",
  "warp",
@@ -1125,6 +1129,7 @@ dependencies = [
  "interledger-service",
  "once_cell",
  "tokio 0.2.18",
+ "tracing",
  "uuid",
 ]
 
@@ -1157,6 +1162,7 @@ dependencies = [
  "secrecy",
  "serde",
  "tokio 0.2.18",
+ "tracing",
 ]
 
 [[package]]
@@ -1170,6 +1176,7 @@ dependencies = [
  "once_cell",
  "parking_lot 0.10.2",
  "tokio 0.2.18",
+ "tracing",
  "uuid",
 ]
 
@@ -1215,6 +1222,7 @@ dependencies = [
  "secrecy",
  "serde",
  "tokio 0.2.18",
+ "tracing",
  "url 2.1.1",
  "uuid",
 ]
@@ -1247,6 +1255,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio 0.2.18",
+ "tracing",
  "url 2.1.1",
  "uuid",
  "warp",
@@ -1270,6 +1279,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio 0.2.18",
+ "tracing",
 ]
 
 [[package]]
@@ -1306,6 +1316,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio 0.2.18",
+ "tracing",
  "url 2.1.1",
  "uuid",
  "zeroize",
@@ -1337,6 +1348,7 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio 0.2.18",
+ "tracing",
  "uuid",
 ]
 
