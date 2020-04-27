@@ -203,6 +203,7 @@ where
 }
 
 // TODO send asset code and scale back to sender also
+#[allow(clippy::cognitive_complexity)]
 fn receive_money(
     shared_secret: &[u8; 32],
     // Our node's ILP Address ( we are the receiver, so we should return that
