@@ -445,6 +445,7 @@ where
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn parse_ilp_packet(message: Message) -> Result<(u32, Packet), ()> {
     if let Message::Binary(data) = message {
         let (request_id, ilp_data) = match BtpPacket::from_bytes(&data) {

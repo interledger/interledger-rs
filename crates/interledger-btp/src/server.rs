@@ -158,6 +158,7 @@ async fn get_auth(
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
     if let Some(message) = ws_packet {
         if message.is_binary() {

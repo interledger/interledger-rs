@@ -118,6 +118,7 @@ where
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents
+    #[allow(clippy::cognitive_complexity)]
     pub(crate) fn handle_update_request(
         &mut self,
         account: A,

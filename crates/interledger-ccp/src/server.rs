@@ -312,6 +312,7 @@ where
     }
 
     /// Remove invalid routes before processing the Route Update Request
+    #[allow(clippy::cognitive_complexity)]
     fn filter_routes(&self, mut update: RouteUpdateRequest) -> RouteUpdateRequest {
         update.new_routes = update
             .new_routes

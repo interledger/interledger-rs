@@ -118,6 +118,7 @@ where
         let store = self.store.clone();
         let store_clone = self.store.clone();
         let provider = self.provider.clone();
+        #[allow(clippy::cognitive_complexity)]
         let mut rates = self.fetch_rates()
             .map_err(move |_| {
                 // Note that a race between the read on this line and the check on the line after
