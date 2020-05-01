@@ -11,10 +11,10 @@ use interledger_packet::{
     RejectBuilder,
 };
 use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username};
-use log::debug;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::time::SystemTime;
+use tracing::debug;
 use uuid::Uuid;
 
 // Note we are using the same magic bytes as the Javascript
@@ -203,6 +203,7 @@ where
 }
 
 // TODO send asset code and scale back to sender also
+#[allow(clippy::cognitive_complexity)]
 fn receive_money(
     shared_secret: &[u8; 32],
     // Our node's ILP Address ( we are the receiver, so we should return that

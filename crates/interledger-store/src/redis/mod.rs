@@ -41,7 +41,6 @@ use interledger_settlement::core::{
     types::{Convert, ConvertDetails, LeftoversStore, SettlementStore},
 };
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use log::{debug, error, trace, warn};
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -64,6 +63,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tracing::{debug, error, trace, warn};
 use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
@@ -257,6 +257,7 @@ impl RedisStoreBuilder {
         // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
         let subscriptions_clone = store.subscriptions.clone();
         std::thread::spawn(move || {
+            #[allow(clippy::cognitive_complexity)]
             let sub_status =
                 sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
                     let channel_name = msg.get_channel_name();

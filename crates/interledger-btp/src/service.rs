@@ -10,7 +10,6 @@ use futures::{
 };
 use interledger_packet::{Address, ErrorCode, Fulfill, Packet, Prepare, Reject, RejectBuilder};
 use interledger_service::*;
-use log::{debug, error, trace, warn};
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use rand::random;
@@ -18,6 +17,7 @@ use std::collections::HashMap;
 use std::{convert::TryFrom, iter::IntoIterator, marker::PhantomData, sync::Arc, time::Duration};
 use stream_cancel::{Trigger, Valve};
 use tokio::time;
+use tracing::{debug, error, trace, warn};
 use tungstenite::Message;
 use uuid::Uuid;
 
@@ -445,6 +445,7 @@ where
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn parse_ilp_packet(message: Message) -> Result<(u32, Packet), ()> {
     if let Message::Binary(data) = message {
         let (request_id, ilp_data) = match BtpPacket::from_bytes(&data) {

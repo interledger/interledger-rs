@@ -1,6 +1,5 @@
 use futures::TryFutureExt;
 use interledger_errors::ExchangeRateStoreError;
-use log::{debug, error, trace, warn};
 use reqwest::Client;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -9,6 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio;
+use tracing::{debug, error, trace, warn};
 
 mod cryptocompare;
 
@@ -118,6 +118,7 @@ where
         let store = self.store.clone();
         let store_clone = self.store.clone();
         let provider = self.provider.clone();
+        #[allow(clippy::cognitive_complexity)]
         let mut rates = self.fetch_rates()
             .map_err(move |_| {
                 // Note that a race between the read on this line and the check on the line after

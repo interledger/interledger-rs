@@ -3,12 +3,12 @@ use bytes::Bytes;
 use hyper::{service::Service as HttpService, Body, Error, Request, Response};
 use interledger_packet::Address;
 use interledger_stream::ConnectionGenerator;
-use log::debug;
 use std::error::Error as StdError;
 use std::{
     fmt, str,
     task::{Context, Poll},
 };
+use tracing::debug;
 
 /// A Hyper::Service that responds to incoming SPSP Query requests with newly generated
 /// details for a STREAM connection.

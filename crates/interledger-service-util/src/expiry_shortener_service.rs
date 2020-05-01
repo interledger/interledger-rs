@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService};
-use log::trace;
+use tracing::trace;
 
 pub const DEFAULT_ROUND_TRIP_TIME: u32 = 500;
 pub const DEFAULT_MAX_EXPIRY_DURATION: u32 = 30000;

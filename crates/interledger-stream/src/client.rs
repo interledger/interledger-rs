@@ -11,7 +11,6 @@ use interledger_packet::{
 };
 use interledger_rates::ExchangeRateStore;
 use interledger_service::*;
-use log::{debug, error, warn};
 use num::rational::BigRational;
 use num::traits::cast::{FromPrimitive, ToPrimitive};
 use num::traits::identities::{One, Zero};
@@ -22,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::time::timeout_at;
 use tokio::time::{Duration, Instant};
+use tracing::{debug, error, warn};
 
 use std::cmp::{max, min};
 use std::marker::{Send, Sync};

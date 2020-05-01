@@ -11,7 +11,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "1.0.0", default-features = false }
 
-log = { version = "0.4.8", default-features = false }
+tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 parking_lot = { version = "0.10.0", default-features = false }
 uuid = { version = "0.8.1", default-features = false, features = ["v4"]}
 async-trait = { version = "0.1.22", default-features = false }

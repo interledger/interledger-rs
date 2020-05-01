@@ -5,7 +5,6 @@ use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
-use log::error;
 use once_cell::sync::Lazy;
 use std::{
     convert::TryFrom,
@@ -14,6 +13,7 @@ use std::{
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
+use tracing::error;
 
 pub const PEER_PROTOCOL_FULFILLMENT: [u8; 32] = [0; 32];
 pub const PEER_PROTOCOL_CONDITION: [u8; 32] = [

@@ -14,13 +14,13 @@ use hyper::{Response, StatusCode};
 use interledger_errors::*;
 use interledger_packet::PrepareBuilder;
 use interledger_service::{Account, AccountStore, OutgoingRequest, OutgoingService};
-use log::error;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use std::{
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
+use tracing::error;
 use uuid::Uuid;
 use warp::{self, reject::Rejection, Filter};
 

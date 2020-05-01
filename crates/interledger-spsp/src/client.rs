@@ -4,9 +4,9 @@ use interledger_packet::Address;
 use interledger_rates::ExchangeRateStore;
 use interledger_service::{Account, IncomingService};
 use interledger_stream::{send_money, StreamDelivery};
-use log::{debug, error, trace};
 use reqwest::Client;
 use std::convert::TryFrom;
+use tracing::{debug, error, trace};
 
 /// Get an ILP Address and shared secret by the receiver of this payment for this connection
 pub async fn query(server: &str) -> Result<SpspResponse, Error> {

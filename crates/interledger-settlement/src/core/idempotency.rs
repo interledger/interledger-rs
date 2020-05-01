@@ -6,7 +6,7 @@ use futures::TryFutureExt;
 use http::StatusCode;
 use interledger_errors::IdempotentStoreError;
 use interledger_errors::*;
-use log::error;
+use tracing::error;
 
 /// Data stored for the idempotency features
 #[derive(Debug, Clone, PartialEq)]

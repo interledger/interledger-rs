@@ -1,9 +1,9 @@
 use crate::core::types::Quantity;
 use futures_retry::{ErrorHandler, FutureRetry, RetryPolicy};
-use log::{debug, trace};
 use reqwest::Client;
 use serde_json::json;
 use std::time::Duration;
+use tracing::{debug, trace};
 use url::Url;
 use uuid::Uuid;
 

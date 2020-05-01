@@ -3,9 +3,9 @@ use super::{service::BtpOutgoingService, wrapped_ws::WsWrap};
 use futures::{FutureExt, Sink, Stream};
 use futures::{SinkExt, StreamExt, TryFutureExt};
 use interledger_service::*;
-use log::{debug, error, warn};
 use secrecy::{ExposeSecret, SecretString};
 use std::time::Duration;
+use tracing::{debug, error, warn};
 use warp::{
     self,
     ws::{Message, WebSocket, Ws},
@@ -158,6 +158,7 @@ async fn get_auth(
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn parse_auth(ws_packet: Option<Message>) -> Option<Auth> {
     if let Some(message) = ws_packet {
         if message.is_binary() {

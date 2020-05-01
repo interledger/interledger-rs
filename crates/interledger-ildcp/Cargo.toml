@@ -15,7 +15,7 @@ bytes = { version = "0.4.12", default-features = false }
 byteorder = { version = "1.3.2", default-features = false }
 futures = { version = "0.3", default-features = false }
 once_cell = { version = "1.3.1", default-features = false }
-log = { version = "0.4.8", default-features = false }
+tracing = { version = "0.1.12", default-features = false, features = ["log"] }
 async-trait = { version = "0.1.22", default-features = false }
 
 [dev-dependencies]

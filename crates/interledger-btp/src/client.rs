@@ -5,10 +5,10 @@ use futures::{future::join_all, SinkExt, StreamExt, TryFutureExt};
 use interledger_errors::ApiError;
 use interledger_packet::Address;
 use interledger_service::*;
-use log::{debug, error, trace};
 use rand::random;
 use thiserror::Error;
 use tokio_tungstenite::connect_async;
+use tracing::{debug, error, trace};
 use tungstenite::Message;
 use url::Url;
 

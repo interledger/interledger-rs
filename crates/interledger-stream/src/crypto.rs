@@ -1,9 +1,9 @@
 use bytes::BytesMut;
-use log::error;
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{aead, digest, hmac};
+use tracing::error;
 
 const NONCE_LENGTH: usize = 12;
 const AUTH_TAG_LENGTH: usize = 16;

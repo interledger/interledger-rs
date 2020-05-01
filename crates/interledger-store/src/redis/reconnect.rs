@@ -1,11 +1,11 @@
 use futures::future::{FutureExt, TryFutureExt};
-use log::{debug, error};
 use parking_lot::RwLock;
 use redis_crate::{
     aio::{ConnectionLike, MultiplexedConnection},
     Client, Cmd, ConnectionInfo, Pipeline, RedisError, RedisFuture, Value,
 };
 use std::sync::Arc;
+use tracing::{debug, error};
 
 type Result<T> = std::result::Result<T, RedisError>;
 

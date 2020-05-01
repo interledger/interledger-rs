@@ -1,10 +1,10 @@
 use crate::packet::{Route, RouteUpdateRequest};
 use hex;
-use log::{debug, trace};
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use tracing::{debug, trace};
 
 static RANDOM: Lazy<SystemRandom> = Lazy::new(SystemRandom::new);
 
@@ -118,6 +118,7 @@ where
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents
+    #[allow(clippy::cognitive_complexity)]
     pub(crate) fn handle_update_request(
         &mut self,
         account: A,

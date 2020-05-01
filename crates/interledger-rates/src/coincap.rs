@@ -1,9 +1,9 @@
 use futures::TryFutureExt;
-use log::{error, warn};
 use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use std::{collections::HashMap, str::FromStr};
+use tracing::{error, warn};
 
 // We use both endpoints because they contain different sets of rates
 // This one has more cryptocurrencies

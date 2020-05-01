@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, RejectBuilder};
 use interledger_service::*;
-use log::debug;
+use tracing::debug;
 
 /// Extension trait for [`Account`](../interledger_service/trait.Account.html) with the max packet amount
 /// allowed for this account

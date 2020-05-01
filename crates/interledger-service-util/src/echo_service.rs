@@ -6,11 +6,11 @@ use interledger_packet::{
     oer::BufOerExt, Address, ErrorCode, Prepare, PrepareBuilder, RejectBuilder,
 };
 use interledger_service::*;
-use log::debug;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::str;
 use std::time::SystemTime;
+use tracing::debug;
 
 /// The prefix that echo packets should have in its data section
 const ECHO_PREFIX: &str = "ECHOECHOECHOECHO";

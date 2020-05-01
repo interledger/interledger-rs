@@ -7,8 +7,8 @@ use interledger_settlement::core::{
     types::{SettlementAccount, SettlementStore},
     SettlementClient,
 };
-use log::{debug, error};
 use std::marker::PhantomData;
+use tracing::{debug, error};
 use uuid::Uuid;
 
 // TODO: Remove AccountStore dependency, use `AccountId: ToString` as associated type

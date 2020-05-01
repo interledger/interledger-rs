@@ -10,12 +10,12 @@ use interledger_service_util::{
     MaxPacketAmountAccount, RateLimitAccount, RoundTripTimeAccount, DEFAULT_ROUND_TRIP_TIME,
 };
 use interledger_settlement::core::types::{SettlementAccount, SettlementEngineDetails};
-use log::error;
 use ring::aead;
 use secrecy::{ExposeSecret, SecretBytesMut, SecretString};
 use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use std::str::{self, FromStr};
+use tracing::error;
 use url::Url;
 use uuid::Uuid;
 

@@ -1,5 +1,4 @@
 use futures::TryFutureExt;
-use log::error;
 use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use secrecy::{ExposeSecret, SecretString};
@@ -8,6 +7,7 @@ use std::{
     collections::HashMap,
     iter::{once, FromIterator},
 };
+use tracing::error;
 
 static CRYPTOCOMPARE_URL: Lazy<Url> = Lazy::new(|| {
     Url::parse("https://min-api.cryptocompare.com/data/top/mktcapfull?limit=100&tsym=USD").unwrap()

@@ -4,13 +4,13 @@ use bytes::BytesMut;
 use futures::future::TryFutureExt;
 use interledger_packet::{Address, ErrorCode, Packet, RejectBuilder};
 use interledger_service::*;
-use log::{error, trace};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     Client, ClientBuilder, Response as HttpResponse,
 };
 use secrecy::{ExposeSecret, SecretString};
 use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
+use tracing::{error, trace};
 
 /// The HttpClientService implements [OutgoingService](../../interledger_service/trait.OutgoingService)
 /// for sending ILP Prepare packets over to the HTTP URL associated with the provided account

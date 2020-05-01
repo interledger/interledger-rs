@@ -15,7 +15,7 @@ use redis_crate::{
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use log::{debug, error, trace};
+use tracing::{debug, error, trace};
 
 use async_trait::async_trait;
 

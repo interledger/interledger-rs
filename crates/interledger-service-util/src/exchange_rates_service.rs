@@ -3,8 +3,8 @@ use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_rates::ExchangeRateStore;
 use interledger_service::*;
 use interledger_settlement::core::types::{Convert, ConvertDetails};
-use log::{error, trace, warn};
 use std::marker::PhantomData;
+use tracing::{error, trace, warn};
 
 /// # Exchange Rates Service
 ///

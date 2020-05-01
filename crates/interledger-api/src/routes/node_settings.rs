@@ -8,7 +8,6 @@ use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{Account, AccountStore, AddressStore, Username};
 use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
-use log::{error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use std::{
@@ -16,6 +15,7 @@ use std::{
     iter::FromIterator,
     str::{self, FromStr},
 };
+use tracing::{error, trace};
 use url::Url;
 use uuid::Uuid;
 use warp::{self, reply::Json, Filter, Rejection};

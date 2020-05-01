@@ -1,9 +1,9 @@
 use futures::stream::Stream;
 use futures::Sink;
-use log::warn;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tracing::warn;
 use warp::ws::Message;
 
 /// Wrapper struct to unify the Tungstenite WebSocket connection from connect_async

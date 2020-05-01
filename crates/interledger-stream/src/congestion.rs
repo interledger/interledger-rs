@@ -3,12 +3,12 @@ use chrono::Utc;
 #[cfg(feature = "metrics_csv")]
 use csv;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, Reject};
-use log::{debug, warn};
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::cmp::{max, min};
 #[cfg(feature = "metrics_csv")]
 use std::io;
+use tracing::{debug, warn};
 
 /// A basic congestion controller that implements an
 /// Additive Increase, Multiplicative Decrease (AIMD) algorithm.

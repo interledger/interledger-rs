@@ -17,12 +17,12 @@ use interledger_service_util::BalanceStore;
 use interledger_settlement::core::{types::SettlementAccount, SettlementClient};
 use interledger_spsp::{pay, SpspResponder};
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
-use log::{debug, error, trace};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
 use std::fmt::Debug;
+use tracing::{debug, error, trace};
 use uuid::Uuid;
 use warp::{self, reply::Json, Filter, Rejection};
 
