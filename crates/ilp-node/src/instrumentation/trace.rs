@@ -24,10 +24,9 @@ pub async fn trace_incoming<A: Account>(
         prepare.amount = request.prepare.amount(),
         from.id = %request.from.id()
     );
-    let _request_scope = request_span.enter();
     // These details can be looked up by the account ID
     // so don't bother printing them unless we're debugging
-    let details_span = debug_span!(target: "interledger-node",
+    let details_span = debug_span!(parent: &request_span,
         // This isn't named because its only purpose is to add
         // more details to the request_span context
         "",
@@ -36,9 +35,13 @@ pub async fn trace_incoming<A: Account>(
         from.asset_code = %request.from.asset_code(),
         from.asset_scale = %request.from.asset_scale(),
     );
-    let _details_scope = details_span.enter();
 
-    trace_response(next.handle_request(request).in_current_span().await)
+    let span = match details_span.is_none() {
+        true => request_span,
+        false => details_span,
+    };
+
+    trace_response(next.handle_request(request).instrument(span).await)
 }
 
 /// Add tracing context when the incoming request is
@@ -56,16 +59,19 @@ pub async fn trace_forwarding<A: Account>(
         to.id = %request.to.id(),
         prepare.amount = request.prepare.amount(),
     );
-    let _request_scope = request_span.enter();
-    let details_span = debug_span!(target: "interledger-node",
+    let details_span = debug_span!(parent: &request_span,
         "",
         to.username = %request.from.username(),
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
     );
-    let _details_scope = details_span.enter();
 
-    next.send_request(request).in_current_span().await
+    let span = match details_span.is_none() {
+        true => request_span,
+        false => details_span,
+    };
+
+    next.send_request(request).instrument(span).await
 }
 
 /// Add tracing context for the outgoing request (created by this node).
@@ -82,8 +88,7 @@ pub async fn trace_outgoing<A: Account + CcpRoutingAccount>(
         from.id = %request.from.id(),
         to.id = %request.to.id(),
     );
-    let _request_scope = request_span.enter();
-    let details_span = debug_span!(target: "interledger-node",
+    let details_span = debug_span!(parent: &request_span,
         "",
         from.username = %request.from.username(),
         from.ilp_address = %request.from.ilp_address(),
@@ -93,14 +98,17 @@ pub async fn trace_outgoing<A: Account + CcpRoutingAccount>(
         to.asset_code = %request.from.asset_code(),
         to.asset_scale = %request.from.asset_scale(),
     );
-    let _details_scope = details_span.enter();
 
     // Don't log anything for failed route updates sent to child accounts
     // because there's a good chance they'll be offline
     let ignore_rejects = request.prepare.destination().scheme() == "peer"
         && request.to.routing_relation() == RoutingRelation::Child;
 
-    let result = next.send_request(request).in_current_span().await;
+    let span = match details_span.is_none() {
+        true => request_span,
+        false => details_span,
+    };
+    let result = next.send_request(request).instrument(span).await;
     if let Err(ref err) = result {
         if err.code() == ErrorCode::F02_UNREACHABLE && ignore_rejects {
             return result;
