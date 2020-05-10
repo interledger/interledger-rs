@@ -10,10 +10,9 @@ where
     A: Account + 'static,
 {
     async fn handle_request(&mut self, request: IncomingRequest<A>) -> IlpResult {
-        let span = self.span().clone();
         self.inner_mut()
             .handle_request(request)
-            .instrument(span)
+            .in_current_span()
             .await
     }
 }
@@ -25,10 +24,9 @@ where
     A: Account + 'static,
 {
     async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
-        let span = self.span().clone();
         self.inner_mut()
             .send_request(request)
-            .instrument(span)
+            .in_current_span()
             .await
     }
 }
