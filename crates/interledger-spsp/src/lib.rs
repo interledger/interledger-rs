@@ -47,7 +47,6 @@ pub struct SpspResponse {
 // From https://github.com/serde-rs/json/issues/360#issuecomment-330095360
 #[doc(hidden)]
 mod serde_base64 {
-    use base64;
     use serde::{de, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>

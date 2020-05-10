@@ -150,7 +150,6 @@ mod tests {
 
     #[test]
     fn deserialize_usernames() {
-        use serde_json;
         let rejected_deserialize: Result<Username, _> =
             serde_json::from_str(r#""no-hyphens-allowed""#);
         assert!(rejected_deserialize.is_err());

@@ -11,10 +11,8 @@ pub enum LeftoversStoreError {
 }
 
 impl From<LeftoversStoreError> for ApiError {
-    fn from(src: LeftoversStoreError) -> Self {
-        match src {
-            _ => ApiError::method_not_allowed(),
-        }
+    fn from(_src: LeftoversStoreError) -> Self {
+        ApiError::method_not_allowed()
     }
 }
 
@@ -34,10 +32,8 @@ pub enum IdempotentStoreError {
 }
 
 impl From<IdempotentStoreError> for ApiError {
-    fn from(src: IdempotentStoreError) -> Self {
-        match src {
-            _ => ApiError::method_not_allowed(),
-        }
+    fn from(_src: IdempotentStoreError) -> Self {
+        ApiError::method_not_allowed()
     }
 }
 
@@ -61,10 +57,8 @@ pub enum SettlementStoreError {
 }
 
 impl From<SettlementStoreError> for ApiError {
-    fn from(src: SettlementStoreError) -> Self {
-        match src {
-            _ => ApiError::method_not_allowed(),
-        }
+    fn from(_src: SettlementStoreError) -> Self {
+        ApiError::method_not_allowed()
     }
 }
 

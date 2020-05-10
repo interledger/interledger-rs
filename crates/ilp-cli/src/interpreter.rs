@@ -1,5 +1,4 @@
 use clap::ArgMatches;
-use http;
 use reqwest::{
     self,
     blocking::{Client, Response},

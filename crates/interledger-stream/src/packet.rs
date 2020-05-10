@@ -448,7 +448,7 @@ impl From<u8> for ErrorCode {
 
 /// Helper trait for having a common interface to read/write on Frames
 pub trait SerializableFrame<'a>: Sized {
-    fn put_contents(&self, buf: &mut impl MutBufOerExt) -> ();
+    fn put_contents(&self, buf: &mut impl MutBufOerExt);
 
     fn read_contents(reader: &'a [u8]) -> Result<Self, ParseError>;
 }

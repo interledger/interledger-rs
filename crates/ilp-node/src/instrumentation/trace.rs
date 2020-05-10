@@ -36,9 +36,10 @@ pub async fn trace_incoming<A: Account>(
         from.asset_scale = %request.from.asset_scale(),
     );
 
-    let span = match details_span.is_none() {
-        true => request_span,
-        false => details_span,
+    let span = if details_span.is_none() {
+        request_span
+    } else {
+        details_span
     };
 
     trace_response(next.handle_request(request).instrument(span).await)
@@ -66,9 +67,10 @@ pub async fn trace_forwarding<A: Account>(
         to.asset_scale = %request.from.asset_scale(),
     );
 
-    let span = match details_span.is_none() {
-        true => request_span,
-        false => details_span,
+    let span = if details_span.is_none() {
+        request_span
+    } else {
+        details_span
     };
 
     next.send_request(request).instrument(span).await
@@ -104,9 +106,10 @@ pub async fn trace_outgoing<A: Account + CcpRoutingAccount>(
     let ignore_rejects = request.prepare.destination().scheme() == "peer"
         && request.to.routing_relation() == RoutingRelation::Child;
 
-    let span = match details_span.is_none() {
-        true => request_span,
-        false => details_span,
+    let span = if details_span.is_none() {
+        request_span
+    } else {
+        details_span
     };
     let result = next.send_request(request).instrument(span).await;
     if let Err(ref err) = result {

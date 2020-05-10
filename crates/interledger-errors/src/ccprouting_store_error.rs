@@ -24,10 +24,8 @@ impl From<NodeStoreError> for CcpRoutingStoreError {
 }
 
 impl From<CcpRoutingStoreError> for ApiError {
-    fn from(src: CcpRoutingStoreError) -> Self {
-        match src {
-            _ => ApiError::method_not_allowed(),
-        }
+    fn from(_src: CcpRoutingStoreError) -> Self {
+        ApiError::method_not_allowed()
     }
 }
 

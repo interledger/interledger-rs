@@ -1,6 +1,5 @@
 use crate::InterledgerNode;
 use metrics_core::{Builder, Drain, Observe};
-use metrics_runtime;
 use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tracing::{error, info};

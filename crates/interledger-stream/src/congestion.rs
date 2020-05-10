@@ -1,7 +1,5 @@
 #[cfg(feature = "metrics_csv")]
 use chrono::Utc;
-#[cfg(feature = "metrics_csv")]
-use csv;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, Reject};
 #[cfg(test)]
 use once_cell::sync::Lazy;
