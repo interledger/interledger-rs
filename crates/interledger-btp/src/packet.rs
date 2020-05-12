@@ -260,7 +260,6 @@ impl Serializable<BtpError> for BtpError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex;
 
     mod btp_message {
         use super::*;

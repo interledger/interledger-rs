@@ -1,11 +1,9 @@
 use super::crypto::*;
 use super::packet::*;
 use async_trait::async_trait;
-use base64;
 use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use futures::channel::mpsc::UnboundedSender;
-use hex;
 use interledger_packet::{
     Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
     RejectBuilder,

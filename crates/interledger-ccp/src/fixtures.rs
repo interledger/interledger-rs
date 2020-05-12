@@ -1,7 +1,6 @@
 /* kcov-ignore-start */
 use crate::packet::*;
 use bytes::Bytes;
-use hex;
 use interledger_packet::Address;
 #[cfg(test)]
 use once_cell::sync::Lazy;

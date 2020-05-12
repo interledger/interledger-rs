@@ -1,4 +1,3 @@
-use hex;
 use std::fmt;
 use std::io::prelude::*;
 use std::io::Cursor;

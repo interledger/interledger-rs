@@ -437,8 +437,7 @@ impl InterledgerNode {
                     .clone()
                     .wrap(|request, mut next| async move {
                         let btp = debug_span!(target: "interledger-node", "btp");
-                        let _btp_scope = btp.enter();
-                        next.handle_request(request).in_current_span().await
+                        next.handle_request(request).instrument(btp).await
                     })
                     .in_current_span();
             } else {
@@ -460,8 +459,7 @@ impl InterledgerNode {
                     .clone()
                     .wrap(|request, mut next| async move {
                         let api = debug_span!(target: "interledger-node", "api");
-                        let _api_scope = api.enter();
-                        next.handle_request(request).in_current_span().await
+                        next.handle_request(request).instrument(api).await
                     })
                     .in_current_span();
             } else {
@@ -489,8 +487,7 @@ impl InterledgerNode {
                     .clone()
                     .wrap(|request, mut next| async move {
                         let http = debug_span!(target: "interledger-node", "http");
-                        let _http_scope = http.enter();
-                        next.handle_request(request).in_current_span().await
+                        next.handle_request(request).instrument(http).await
                     })
                     .in_current_span();
             } else {

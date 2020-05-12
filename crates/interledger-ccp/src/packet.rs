@@ -1,6 +1,5 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, Bytes};
-use hex;
 use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,

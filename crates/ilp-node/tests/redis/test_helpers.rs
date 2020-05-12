@@ -1,5 +1,4 @@
 use futures::TryFutureExt;
-use hex;
 use interledger::stream::StreamDelivery;
 use interledger::{packet::Address, service::Account as AccountTrait, store::account::Account};
 use ring::rand::{SecureRandom, SystemRandom};

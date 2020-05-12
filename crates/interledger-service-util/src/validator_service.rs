@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use hex;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_service::*;
 use ring::digest::{digest, SHA256};

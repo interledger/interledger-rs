@@ -51,7 +51,6 @@ use redis_crate::{
 };
 use secrecy::{ExposeSecret, Secret, SecretBytesMut};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
