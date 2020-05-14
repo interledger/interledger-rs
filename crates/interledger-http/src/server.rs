@@ -115,7 +115,7 @@ where
     ) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         let store = self.store.clone();
         let incoming = self.incoming.clone();
-        let with_store = warp::any().map(move || store.clone()).boxed();
+        let with_store = warp::any().map(move || store.clone());
         let with_incoming = warp::any().map(move || incoming.clone());
         warp::post()
             .and(warp::path("accounts"))

@@ -76,13 +76,13 @@ where
         + 'static,
 {
     // TODO can we make any of the Filters const or put them in once_cell?
-    let with_store = warp::any().map(move || store.clone()).boxed();
-    let with_incoming_handler = warp::any().map(move || incoming_handler.clone()).boxed();
+    let with_store = warp::any().map(move || store.clone());
+    let with_incoming_handler = warp::any().map(move || incoming_handler.clone());
 
     // Helper filters
     let admin_auth_header = format!("Bearer {}", admin_api_token);
     let admin_auth_header_clone = admin_auth_header.clone();
-    let with_admin_auth_header = warp::any().map(move || admin_auth_header.clone()).boxed();
+    let with_admin_auth_header = warp::any().map(move || admin_auth_header.clone());
     let admin_only = warp::header::<SecretString>("authorization")
         .and_then(move |authorization: SecretString| {
             let admin_auth_header = admin_auth_header_clone.clone();
@@ -96,8 +96,7 @@ where
         })
         // This call makes it so we do not pass on a () value on
         // success to the next filter, it just gets rid of it
-        .untuple_one()
-        .boxed();
+        .untuple_one();
 
     // Converts an account username to an account id or errors out
     let account_username_to_id = warp::path::param::<Username>()
@@ -105,8 +104,7 @@ where
         .and_then(move |username: Username, store: S| async move {
             let id = store.get_account_id_from_username(&username).await?;
             Ok::<_, Rejection>(id)
-        })
-        .boxed();
+        });
 
     let is_authorized_user = move |store: S, path_username: Username, auth_string: SecretString| {
         async move {
@@ -152,8 +150,7 @@ where
                     Ok::<Uuid, Rejection>(account.id())
                 }
             },
-        )
-        .boxed();
+        );
 
     // Checks if the account has provided a valid password (same as admin-or-auth call, minus one call, can we refactor them together?)
     let authorized_user_only = warp::path::param::<Username>()
@@ -164,8 +161,7 @@ where
                 let account = is_authorized_user(store, path_username, auth_string).await?;
                 Ok::<A, Rejection>(account)
             },
-        )
-        .boxed();
+        );
 
     // POST /accounts
     let btp_clone = btp.clone();
@@ -186,8 +182,7 @@ where
                 connect_to_external_services(handler, account.clone(), store_clone, btp).await?;
                 Ok::<Json, Rejection>(warp::reply::json(&account))
             }
-        })
-        .boxed();
+        });
 
     // GET /accounts
     let get_accounts = warp::get()
@@ -198,8 +193,7 @@ where
         .and_then(|store: S| async move {
             let accounts = store.get_all_accounts().await?;
             Ok::<Json, Rejection>(warp::reply::json(&accounts))
-        })
-        .boxed();
+        });
 
     // PUT /accounts/:username
     let btp_clone = btp.clone();
@@ -227,8 +221,7 @@ where
 
                 Ok::<Json, Rejection>(warp::reply::json(&account))
             }
-        })
-        .boxed();
+        });
 
     // GET /accounts/:username
     let get_account = warp::get()
@@ -241,8 +234,7 @@ where
             let accounts = store.get_accounts(vec![id]).await?;
 
             Ok::<Json, Rejection>(warp::reply::json(&accounts[0]))
-        })
-        .boxed();
+        });
 
     // GET /accounts/:username/balance
     let get_account_balance = warp::get()
@@ -268,8 +260,7 @@ where
                     "asset_code": asset_code,
                 })))
             }
-        })
-        .boxed();
+        });
 
     // DELETE /accounts/:username
     let btp_clone = btp.clone();
@@ -287,8 +278,7 @@ where
                 btp.close_connection(&id);
                 Ok::<Json, Rejection>(warp::reply::json(&account))
             }
-        })
-        .boxed();
+        });
 
     // PUT /accounts/:username/settings
     let outgoing_handler_clone = outgoing_handler;
@@ -322,8 +312,7 @@ where
                 .await?;
                 Ok::<Json, Rejection>(warp::reply::json(&modified_account))
             }
-        })
-        .boxed();
+        });
 
     // (Websocket) /accounts/:username/payments/incoming
     let incoming_payment_notifications = warp::path("accounts")
@@ -337,8 +326,7 @@ where
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
                 notify_user(ws, id, store).map(|result| result.unwrap())
             })
-        })
-        .boxed();
+        });
 
     // POST /accounts/:username/payments
     let post_payments = warp::post()
@@ -372,8 +360,7 @@ where
                     Ok::<Json, Rejection>(warp::reply::json(&json!(receipt)))
                 }
             },
-        )
-        .boxed();
+        );
 
     // GET /accounts/:username/spsp
     let server_secret_clone = server_secret.clone();
@@ -396,8 +383,7 @@ where
                     .generate_http_response(),
                 )
             }
-        })
-        .boxed();
+        });
 
     // GET /.well-known/pay
     // This is the endpoint a [Payment Pointer](https://github.com/interledger/rfcs/blob/master/0026-payment-pointers/0026-payment-pointers.md)
@@ -433,8 +419,7 @@ where
                     ))
                 }
             }
-        })
-        .boxed();
+        });
 
     get_spsp
         .or(get_spsp_well_known)
@@ -447,7 +432,6 @@ where
         .or(put_account_settings)
         .or(incoming_payment_notifications)
         .or(post_payments)
-        .boxed()
 }
 
 fn notify_user(

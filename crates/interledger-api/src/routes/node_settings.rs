@@ -59,9 +59,8 @@ where
         })
         // This call makes it so we do not pass on a () value on
         // success to the next filter, it just gets rid of it
-        .untuple_one()
-        .boxed();
-    let with_store = warp::any().map(move || store.clone()).boxed();
+        .untuple_one();
+    let with_store = warp::any().map(move || store.clone());
 
     // GET /
     let get_root = warp::get()
@@ -73,8 +72,7 @@ where
                 ilp_address: store.get_ilp_address(),
                 version: node_version.clone(),
             })
-        })
-        .boxed();
+        });
 
     // PUT /rates
     let put_rates = warp::put()
@@ -86,8 +84,7 @@ where
         .and_then(|rates: ExchangeRates, store: S| async move {
             store.set_exchange_rates(rates.0.clone())?;
             Ok::<_, Rejection>(warp::reply::json(&rates))
-        })
-        .boxed();
+        });
 
     // GET /rates
     let get_rates = warp::get()
@@ -97,8 +94,7 @@ where
         .and_then(|store: S| async move {
             let rates = store.get_all_exchange_rates()?;
             Ok::<_, Rejection>(warp::reply::json(&rates))
-        })
-        .boxed();
+        });
 
     // GET /routes
     // Response: Map of ILP Address prefix -> Username
@@ -123,8 +119,7 @@ where
 
                 Ok::<Json, Rejection>(warp::reply::json(&routes))
             }
-        })
-        .boxed();
+        });
 
     // PUT /routes/static
     // Body: Map of ILP Address prefix -> Username
@@ -158,8 +153,7 @@ where
                     .await?;
                 Ok::<Json, Rejection>(warp::reply::json(&routes))
             }
-        })
-        .boxed();
+        });
 
     // PUT /routes/static/:prefix
     // Body: Username
@@ -182,8 +176,7 @@ where
                 store.set_static_route(prefix, account_id).await?;
                 Ok::<String, Rejection>(username.to_string())
             }
-        })
-        .boxed();
+        });
 
     // PUT /settlement/engines
     let put_settlement_engines = warp::put()
@@ -226,8 +219,7 @@ where
                 }
             }
             Ok::<Json, Rejection>(warp::reply::json(&asset_to_url_map_clone))
-        })
-        .boxed();
+        });
 
     get_root
         .or(put_rates)
@@ -236,7 +228,6 @@ where
         .or(put_static_routes)
         .or(put_static_route)
         .or(put_settlement_engines)
-        .boxed()
 }
 
 #[cfg(test)]

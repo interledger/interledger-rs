@@ -130,7 +130,7 @@ where
     O: OutgoingService<A> + Clone + Send + Sync + 'static,
     A: SettlementAccount + Account + Send + Sync + 'static,
 {
-    let with_store = warp::any().map(move || store.clone()).boxed();
+    let with_store = warp::any().map(move || store.clone());
     let idempotency = warp::header::optional::<String>("idempotency-key");
     let account_id_filter = warp::path("accounts").and(warp::path::param::<String>()); // account_id
 
@@ -147,7 +147,7 @@ where
 
     // POST /accounts/:account_id/messages (optional idempotency-key header)
     // Body is a Vec<u8> object
-    let with_outgoing_handler = warp::any().map(move || outgoing_handler.clone()).boxed();
+    let with_outgoing_handler = warp::any().map(move || outgoing_handler.clone());
     let messages_endpoint = account_id_filter.and(warp::path("messages"));
     let messages = warp::post()
         .and(messages_endpoint)
