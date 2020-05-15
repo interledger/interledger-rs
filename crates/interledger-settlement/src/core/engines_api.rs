@@ -154,8 +154,8 @@ where
     E: SettlementEngine + Clone + Send + Sync + 'static,
     S: IdempotentStore + Clone + Send + Sync + 'static,
 {
-    let with_store = warp::any().map(move || store.clone()).boxed();
-    let with_engine = warp::any().map(move || engine.clone()).boxed();
+    let with_store = warp::any().map(move || store.clone());
+    let with_engine = warp::any().map(move || engine.clone());
     let idempotency = warp::header::optional::<String>("idempotency-key");
     let account_id = warp::path("accounts").and(warp::path::param::<String>()); // account_id
 
