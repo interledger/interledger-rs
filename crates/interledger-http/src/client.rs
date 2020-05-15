@@ -9,7 +9,7 @@ use reqwest::{
     Client, ClientBuilder, Response as HttpResponse,
 };
 use secrecy::{ExposeSecret, SecretString};
-use std::{convert::TryFrom, marker::PhantomData, sync::Arc, time::Duration};
+use std::{convert::TryFrom, iter::FromIterator, marker::PhantomData, sync::Arc, time::Duration};
 use tracing::{error, trace};
 
 /// The HttpClientService implements [OutgoingService](../../interledger_service/trait.OutgoingService)
@@ -157,8 +157,8 @@ async fn parse_packet_from_response(response: HttpResponse, ilp_address: Address
             .build()
         })
         .await?;
-    // TODO can we get the body as a BytesMut so we don't need to copy?
-    let body = BytesMut::from(body.as_ref());
+
+    let body = BytesMut::from_iter(body.into_iter());
     match Packet::try_from(body) {
         Ok(Packet::Fulfill(fulfill)) => Ok(fulfill),
         Ok(Packet::Reject(reject)) => Err(reject),
