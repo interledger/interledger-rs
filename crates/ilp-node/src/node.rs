@@ -484,14 +484,13 @@ impl InterledgerNode {
         cfg_if! {
             if #[cfg(feature = "monitoring")] {
                 let incoming_service_http = incoming_service
-                    .clone()
                     .wrap(|request, mut next| async move {
                         let http = debug_span!(target: "interledger-node", "http");
                         next.handle_request(request).instrument(http).await
                     })
                     .in_current_span();
             } else {
-                let incoming_service_http = incoming_service.clone();
+                let incoming_service_http = incoming_service;
             }
         }
 
