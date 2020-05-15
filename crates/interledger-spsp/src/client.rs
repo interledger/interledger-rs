@@ -60,7 +60,7 @@ where
         &from_account,
         store,
         addr,
-        &shared_secret,
+        shared_secret,
         source_amount,
         slippage,
     )
