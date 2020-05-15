@@ -11,6 +11,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use super::oer::{self, BufOerExt, MutBufOerExt};
 use super::{Address, ErrorCode, ParseError};
 use std::convert::TryFrom;
+use std::iter::FromIterator;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -590,9 +591,7 @@ impl TryFrom<bytes05::BytesMut> for Prepare {
     type Error = ParseError;
 
     fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        // TODO: Is this the best we can do?
-        let b = buffer.to_vec();
-        let buffer = BytesMut::from(b);
+        let buffer = BytesMut::from_iter(buffer.into_iter());
         Prepare::try_from(buffer)
     }
 }
@@ -601,9 +600,7 @@ impl TryFrom<bytes05::BytesMut> for Packet {
     type Error = ParseError;
 
     fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        // TODO: Is this the best we can do?
-        let b = buffer.to_vec();
-        let buffer = BytesMut::from(b);
+        let buffer = BytesMut::from_iter(buffer.into_iter());
         Packet::try_from(buffer)
     }
 }
