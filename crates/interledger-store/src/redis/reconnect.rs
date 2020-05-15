@@ -40,11 +40,11 @@ impl RedisReconnect {
     }
 
     /// Reconnects to redis
-    pub async fn reconnect(self) -> Result<Self> {
+    pub async fn reconnect(&self) -> Result<()> {
         let shared_connection = get_shared_connection(self.redis_info.clone()).await?;
         (*self.conn.write()) = shared_connection;
         debug!("Reconnected to Redis");
-        Ok(self)
+        Ok(())
     }
 
     fn get_shared_connection(&self) -> MultiplexedConnection {
@@ -66,8 +66,8 @@ impl ConnectionLike for RedisReconnect {
                 Err(error) => {
                     if error.is_connection_dropped() {
                         debug!("Redis connection was dropped, attempting to reconnect");
-                        // TODO: Is this correct syntax? Otherwise we get an unused result warning
-                        let _ = self.clone().reconnect().await;
+                        // FIXME: this conceals potential reconnect errors
+                        let _ = self.reconnect().await;
                     }
                     Err(error)
                 }
@@ -90,8 +90,8 @@ impl ConnectionLike for RedisReconnect {
                 Err(error) => {
                     if error.is_connection_dropped() {
                         debug!("Redis connection was dropped, attempting to reconnect");
-                        // TODO: Is this correct syntax? Otherwise we get an unused result warning
-                        let _ = self.clone().reconnect().await;
+                        // FIXME: this conceals potential reconnect errors
+                        let _ = self.reconnect().await;
                     }
                     Err(error)
                 }
