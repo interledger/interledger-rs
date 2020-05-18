@@ -208,6 +208,7 @@ where
 }
 
 // See comments above in the BalanceStore::send_request why this is done in another task.
+#[allow(clippy::too_many_arguments)]
 fn settle_or_rollback_later<Acct, Store>(
     incoming_amount: u64,
     outgoing_amount: u64,
@@ -233,6 +234,7 @@ fn settle_or_rollback_later<Acct, Store>(
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn settle_or_rollback_now<Acct, Store>(
     incoming_amount: u64,
     outgoing_amount: u64,
