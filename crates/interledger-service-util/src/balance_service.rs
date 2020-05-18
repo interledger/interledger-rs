@@ -166,7 +166,7 @@ where
                     // we need to propagate it backwards ASAP. If we do not give the
                     // previous node the fulfillment in time, they won't pay us back
                     // for the packet we forwarded. Note this means that we will
-                    // relay the fulfillment _even if saving to the DB fails.
+                    // relay the fulfillment _even if saving to the DB fails._
                     settle_or_rollback_later(
                         incoming_amount,
                         outgoing_amount,
@@ -268,13 +268,6 @@ where
         if balance > 0 {
             // so if we have the timeout configured, we should now make sure that there is a
             // timeout pending or new one is created right now.
-            //
-            // two different approaches:
-            //  - some Arc<Mutex<Something>>
-            //  - some channel of Account ids
-            //
-            // the new settlement thing will need to settle any balance x to settle_to,
-            // where x >= settle_to
             policy.settle_later(to.id(), channel_last_fail);
         }
         return Ok(());
@@ -303,14 +296,14 @@ where
 
     if let Some(engine_details) = to.settlement_engine_details() {
         let engine_url = engine_details.url;
-        // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL script)
-        // and the send_settlement fails but the program isn't alive to hear that, the balance will be incorrect.
-        // No other instance will know that it was trying to send an outgoing settlement. We could
-        // make this more robust by saving something to the DB about the outgoing settlement when we change the balance
-        // but then we would also need to prevent a situation where every connector instance is polling the
-        // settlement engine for the status of each
-        // outgoing settlement and putting unnecessary
-        // load on the settlement engine.
+        // Note that if this program crashes after changing the balance (in the PROCESS_FULFILL
+        // script) and the send_settlement fails but the program isn't alive to hear that, the
+        // balance will be incorrect. No other instance will know that it was trying to send an
+        // outgoing settlement. We could make this more robust by saving something to the DB about
+        // the outgoing settlement when we change the balance but then we would also need to
+        // prevent a situation where every connector instance is polling the settlement engine for
+        // the status of each outgoing settlement and putting unnecessary load on the settlement
+        // engine.
 
         let result = client
             .send_settlement(to.id(), engine_url, amount, to.asset_scale())
@@ -352,7 +345,6 @@ where
 
 /// Captures the behaviour of either operating in a delayed settlement or threshold-only
 /// environment.
-// Tried to go with this as a trait first but perhaps it works better as an enum.
 #[derive(Debug, Clone)]
 enum Policy {
     ThresholdOnly,
@@ -382,7 +374,6 @@ impl Policy {
         }
     }
 
-    //
     // Rationale for dropping the errors:
     //
     // If the channel is full of peer accounts, it is likely
@@ -412,7 +403,6 @@ impl Policy {
     // once every 60 seconds. This is to prevent flooding the log
     // with (identical) error messages from -- most likely --
     // the very same problem.
-    //
     fn drop_error(
         result: Result<(), TrySendError<ManageTimeout>>,
         channel_last_fail: Arc<Mutex<Instant>>,
@@ -422,24 +412,17 @@ impl Policy {
             Err(TrySendError::Full(mto)) => ("full", mto.uuid()),
             Err(TrySendError::Closed(mto)) => ("closed", mto.uuid()),
         };
-        // Only try_lock() instead of waiting to acquire the mutex
-        // with lock(), since if the mutex is already in use
-        // by another thread, that thread too has acquired it
-        // to report (most likely) exactly the same problem.
-        // By using try_lock() we avoid worsening the possible
-        // overload situation by limiting unnecessary logging action.
-        //
-        // No check for poisoned lock is needed as
-        // Instant::now().duration_since(...) is guaranteed
-        // not to panic.
+
+        // By using try_lock() we avoid worsening any overload situation by limiting unnecessary
+        // logging action.
         if let Ok(ref mut t0) = channel_last_fail.try_lock() {
             let t = Instant::now();
             if t.duration_since(**t0).as_secs() >= 60 {
                 warn!(
                     "Time-based settlement failed temporarily \
-				(bounded channel {}) for (at least) the account {}. \
-				Service might be overloaded. Check the balances \
-				once the overload has passed.",
+                    (bounded channel {}) for (at least) the account {}. \
+                    Service might be overloaded. Check the balances \
+                    once the overload has passed.",
                     reason, uuid
                 );
                 **t0 = t;
@@ -484,6 +467,9 @@ impl fmt::Display for ExitReason {
     }
 }
 
+/// Start a background task for time based settlement. If time based settlement is configured but
+/// this task is never started the time based settlement does not happen and a warning is logged
+/// every minute on eligble random peering account.
 pub fn start_delayed_settlement<St, Store, Acct>(
     delay: Duration,
     cmds: St,
@@ -578,8 +564,10 @@ where
                         let store = store.clone();
 
                         tokio::spawn(async move {
-                            // TODO: this operation sounds like it ought to be implemented
-                            // elsewhere as well, couldn't find
+                            // bailing out instead of not re-scheduling on failing to load the
+                            // account: it is assumed that if this account is valid and should be
+                            // settled there is near-continouos traffic which would trigger either
+                            // the threshold or time based settlement again.
                             let to = match store.get_accounts(vec![id]).await {
                                 Ok(mut accounts) if accounts.len() == 1 => {
                                     Ok(accounts.pop().unwrap())
