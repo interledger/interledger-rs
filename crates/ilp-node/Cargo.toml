@@ -9,7 +9,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
 
 [features]
-default = ["balance-tracking", "redis"]
+default = ["balance-tracking", "redis", "monitoring"]
 balance-tracking = []
 redis = ["redis_crate", "interledger/redis"]
 
