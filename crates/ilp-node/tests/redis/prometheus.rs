@@ -89,8 +89,8 @@ async fn prometheus() {
     }))
     .unwrap();
 
-    node_a.serve().await.unwrap();
-    node_b.serve().await.unwrap();
+    node_a.serve(None).await.unwrap();
+    node_b.serve(None).await.unwrap();
 
     create_account_on_node(node_b_http, a_on_b, "admin")
         .await
