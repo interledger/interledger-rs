@@ -19,6 +19,7 @@ pub fn build<'a, 'b>() -> App<'a, 'b> {
         status(),
         logs(),
         testnet().subcommands(vec![testnet_setup()]),
+        admin().subcommands(vec![admin_incoming()]),
     ])
 }
 
@@ -428,4 +429,13 @@ fn testnet_setup<'a, 'b>() -> App<'a, 'b> {
                 .long("return-testnet-credential")
                 .help("Return the authorization credential for our account on the testnet node instead of the account on our local node"),
         ])
+}
+
+fn admin<'a, 'b>() -> App<'a, 'b> {
+    SubCommand::with_name("admin").about("Administrative tools")
+}
+
+fn admin_incoming<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("incoming")
+        .about("Open a persistent connection to a node for monitoring all incoming payments")
 }

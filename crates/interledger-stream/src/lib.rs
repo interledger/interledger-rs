@@ -39,6 +39,7 @@ pub mod test_helpers {
     use std::iter::FromIterator;
     use std::str::FromStr;
     use std::sync::Arc;
+    use tokio::sync::broadcast;
     use uuid::Uuid;
 
     pub static EXAMPLE_CONNECTOR: Lazy<Address> =
@@ -98,6 +99,10 @@ pub mod test_helpers {
         }
 
         fn publish_payment_notification(&self, _payment: PaymentNotification) {}
+
+        fn admin_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
+            broadcast::channel(0).1
+        }
     }
 
     #[derive(Clone)]
