@@ -28,8 +28,8 @@ async fn create_engine_account<E, S>(
     store: S,
 ) -> Result<impl warp::Reply, warp::Rejection>
 where
-    E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    E: SettlementEngine + Clone + Send + Sync,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     let input_hash = get_hash_of(account_id.id.as_ref());
     let (status_code, message) = make_idempotent_call(
@@ -58,8 +58,8 @@ async fn delete_engine_account<E, S>(
     store: S,
 ) -> Result<impl warp::Reply, warp::Rejection>
 where
-    E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    E: SettlementEngine + Clone + Send + Sync,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     let input_hash = get_hash_of(account_id.as_ref());
     let (status_code, message) = make_idempotent_call(
@@ -89,8 +89,8 @@ async fn engine_send_money<E, S>(
     store: S,
 ) -> Result<impl warp::Reply, warp::Rejection>
 where
-    E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    E: SettlementEngine + Clone + Send + Sync,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     let input = format!("{}{:?}", id, quantity);
     let input_hash = get_hash_of(input.as_ref());
@@ -121,8 +121,8 @@ async fn engine_receive_message<E, S>(
     store: S,
 ) -> Result<impl warp::Reply, warp::Rejection>
 where
-    E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    E: SettlementEngine + Clone + Send + Sync,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     let input = format!("{}{:?}", id, message);
     let input_hash = get_hash_of(input.as_ref());
@@ -149,10 +149,10 @@ where
 pub fn create_settlement_engine_filter<E, S>(
     engine: E,
     store: S,
-) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
+) -> impl warp::Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
 where
-    E: SettlementEngine + Clone + Send + Sync + 'static,
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    E: SettlementEngine + Clone + Send + Sync,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     let with_store = warp::any().map(move || store.clone());
     let with_engine = warp::any().map(move || engine.clone());
@@ -208,7 +208,6 @@ where
         .or(settlements)
         .or(messages)
         .recover(default_rejection_handler)
-        .boxed()
 }
 
 #[cfg(test)]
