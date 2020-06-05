@@ -73,7 +73,7 @@ where
                 if (prefix.is_empty() || dest.starts_with(prefix.as_str()))
                     && prefix.len() >= matching_prefix.len()
                 {
-                    next_hop.replace(account.clone());
+                    next_hop.replace(*account);
                     matching_prefix = prefix.as_str();
                 }
             }

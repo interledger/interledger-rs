@@ -35,7 +35,7 @@ impl SettlementClient {
     /// This is done by sending a POST to /accounts with the provided `id` as the request's body
     pub async fn create_engine_account(&self, id: Uuid, engine_url: Url) -> Response {
         FutureRetry::new(
-            move || self.create_engine_account_once(id.clone(), engine_url.clone()),
+            move || self.create_engine_account_once(id, engine_url.clone()),
             RequestErrorHandler::new(self.max_retries),
         )
         .await
@@ -46,7 +46,7 @@ impl SettlementClient {
     /// as the request's body
     pub async fn send_message(&self, id: Uuid, engine_url: Url, message: Vec<u8>) -> Response {
         FutureRetry::new(
-            move || self.send_message_once(id.clone(), engine_url.clone(), message.clone()),
+            move || self.send_message_once(id, engine_url.clone(), message.clone()),
             RequestErrorHandler::new(self.max_retries),
         )
         .await
