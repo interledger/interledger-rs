@@ -245,7 +245,7 @@ mod send_money_to_receiver {
                 price_2: None,
             },
             destination_account,
-            &shared_secret[..],
+            shared_secret.to_vec(),
             100,
             0.0,
         )
@@ -309,7 +309,7 @@ mod send_money_to_receiver {
             &sender_account,
             store,
             destination_account,
-            &shared_secret[..],
+            shared_secret.to_vec(),
             1000,
             0.014,
         )

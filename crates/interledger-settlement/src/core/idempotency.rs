@@ -61,7 +61,7 @@ async fn check_idempotency<S>(
     input_hash: [u8; 32],
 ) -> Result<Option<(StatusCode, Bytes)>, ApiError>
 where
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     let ret: Option<IdempotentData> = store
         .load_idempotent_data(idempotency_key.clone())
@@ -100,7 +100,7 @@ pub async fn make_idempotent_call<S>(
     default_return_value: Bytes,
 ) -> Result<(StatusCode, Bytes), ApiError>
 where
-    S: IdempotentStore + Clone + Send + Sync + 'static,
+    S: IdempotentStore + Clone + Send + Sync,
 {
     if let Some(idempotency_key) = idempotency_key {
         // If there an idempotency key was provided, check idempotency

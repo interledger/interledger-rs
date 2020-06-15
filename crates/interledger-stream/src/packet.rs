@@ -30,8 +30,7 @@ pub struct StreamPacketBuilder<'a> {
 impl<'a> StreamPacketBuilder<'a> {
     /// Serializes the builder into a Stream Packet
     pub fn build(&self) -> StreamPacket {
-        // TODO predict length first
-        let mut buffer_unencrypted = Vec::new();
+        let mut buffer_unencrypted = Vec::with_capacity(26);
 
         buffer_unencrypted.put_u8(STREAM_VERSION);
         buffer_unencrypted.put_u8(self.ilp_packet_type as u8);
