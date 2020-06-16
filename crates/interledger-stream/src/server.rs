@@ -114,8 +114,8 @@ pub trait StreamNotificationsStore {
     /// via its Pubsub interface
     fn publish_payment_notification(&self, _payment: PaymentNotification);
 
-    /// Subscribes to the store's admin (node-wide) payment notification publisher
-    fn admin_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification>;
+    /// Subscribes to the store's node-wide payment notification publisher
+    fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification>;
 }
 
 /// An OutgoingService that fulfills incoming STREAM packets.

@@ -324,7 +324,7 @@ impl StreamNotificationsStore for TestStore {
         unimplemented!()
     }
 
-    fn admin_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
+    fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
         unimplemented!()
     }
 }

@@ -100,7 +100,7 @@ pub mod test_helpers {
 
         fn publish_payment_notification(&self, _payment: PaymentNotification) {}
 
-        fn admin_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
+        fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
             broadcast::channel(0).1
         }
     }

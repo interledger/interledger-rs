@@ -73,9 +73,9 @@ pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
             ("setup", Some(submatches)) => client.xpring_account(submatches),
             _ => Err(Error::UsageErr("ilp-cli help testnet")),
         },
-        ("admin", Some(admin_matches)) => match admin_matches.subcommand() {
-            ("incoming", Some(submatches)) => client.ws_admin_incoming(submatches),
-            _ => Err(Error::UsageErr("ilp-cli help admin")),
+        ("payments", Some(payments_matches)) => match payments_matches.subcommand() {
+            ("incoming", Some(submatches)) => client.ws_payments_incoming(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help payments")),
         },
         _ => Err(Error::UsageErr("ilp-cli help")),
     }
@@ -161,10 +161,10 @@ impl NodeClient<'_> {
         }
     }
 
-    // WebSocket /admin/incoming
-    fn ws_admin_incoming(&self, matches: &ArgMatches) -> Result<Response, Error> {
+    // WebSocket /payments/incoming
+    fn ws_payments_incoming(&self, matches: &ArgMatches) -> Result<Response, Error> {
         let (auth, _args) = extract_args(matches);
-        let mut url = Url::parse(&format!("{}/admin/incoming", self.url))?;
+        let mut url = Url::parse(&format!("{}/payments/incoming", self.url))?;
 
         let scheme = match url.scheme() {
             "http" => Ok("ws"),

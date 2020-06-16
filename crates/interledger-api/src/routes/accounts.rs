@@ -328,8 +328,8 @@ where
             })
         });
 
-    // (Websocket) /admin/incoming
-    let admin_payment_notifications = warp::path("admin")
+    // (Websocket) /payments/incoming
+    let all_payment_notifications = warp::path("payments")
         .and(admin_only)
         .and(warp::path("incoming"))
         .and(warp::path::end())
@@ -337,7 +337,7 @@ where
         .and(with_store.clone())
         .map(|ws: warp::ws::Ws, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
-                notify_admin(ws, store).map(|result| result.unwrap())
+                notify_all_payments(ws, store).map(|result| result.unwrap())
             })
         });
 
@@ -443,7 +443,7 @@ where
         .or(get_account_balance)
         .or(put_account_settings)
         .or(incoming_payment_notifications)
-        .or(admin_payment_notifications)
+        .or(all_payment_notifications)
         .or(post_payments)
 }
 
@@ -474,14 +474,14 @@ fn notify_user(
 }
 
 // Similar to notify_user, but instead of associating an account Uuid with a sender,
-// it only assumes control of the store's admin notification receiver; its messages
+// it only assumes control of the store's all payment notification receiver; its messages
 // are published alongside account-specific notifications and the dedicated thread
-// owns the admin sender.
-fn notify_admin(
+// owns the applicable sender.
+fn notify_all_payments(
     socket: warp::ws::WebSocket,
     store: impl StreamNotificationsStore,
 ) -> impl Future<Output = Result<(), ()>> {
-    let rx = store.admin_payment_subscription().into_stream();
+    let rx = store.all_payment_subscription().into_stream();
     let rx = rx.map(|notification: _| {
         let msg = serde_json::to_string(&notification.map_err(|e| e.to_string())).unwrap();
         Ok(warp::ws::Message::text(msg))
