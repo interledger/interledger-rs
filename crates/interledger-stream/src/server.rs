@@ -12,6 +12,7 @@ use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, 
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::time::SystemTime;
+use tokio::sync::broadcast;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -84,7 +85,7 @@ impl ConnectionGenerator {
 }
 
 /// Notification that STREAM fulfilled a packet and received a single Interledger payment, used by Pubsub API consumers
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PaymentNotification {
     /// The username of the account that received the Interledger payment
     pub to_username: Username,
@@ -112,6 +113,9 @@ pub trait StreamNotificationsStore {
     /// Instructs the store to publish the provided payment notification object
     /// via its Pubsub interface
     fn publish_payment_notification(&self, _payment: PaymentNotification);
+
+    /// Subscribes to the store's node-wide payment notification publisher
+    fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification>;
 }
 
 /// An OutgoingService that fulfills incoming STREAM packets.

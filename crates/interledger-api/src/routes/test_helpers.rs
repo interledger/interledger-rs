@@ -26,6 +26,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use url::Url;
 use uuid::Uuid;
 use warp::{self, Filter};
@@ -320,6 +321,10 @@ impl StreamNotificationsStore for TestStore {
     }
 
     fn publish_payment_notification(&self, _payment: PaymentNotification) {
+        unimplemented!()
+    }
+
+    fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
         unimplemented!()
     }
 }
