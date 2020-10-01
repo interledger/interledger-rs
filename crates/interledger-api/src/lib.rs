@@ -53,9 +53,7 @@ where
 {
     match NumOrStr::deserialize(deserializer)? {
         NumOrStr::Num(n) => Ok(Some(n)),
-        NumOrStr::Str(s) => T::from_str(&s)
-            .map_err(de::Error::custom)
-            .and_then(|n| Ok(Some(n))),
+        NumOrStr::Str(s) => T::from_str(&s).map_err(de::Error::custom).map(Some),
     }
 }
 
