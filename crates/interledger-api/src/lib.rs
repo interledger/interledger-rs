@@ -1,3 +1,4 @@
+#![type_length_limit = "1707074"]
 use async_trait::async_trait;
 use bytes::Bytes;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
