@@ -70,7 +70,7 @@ jobs:
             curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
             export NVM_DIR="/home/circleci/.nvm"
             source $NVM_DIR/nvm.sh
-            nvm install "v11.15.0"
+            nvm install "v12.18.4"
 
             # install yarn & components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
             curl -o- -L https://yarnpkg.com/install.sh | bash
