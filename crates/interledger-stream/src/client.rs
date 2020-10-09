@@ -211,12 +211,12 @@ impl StreamPayment {
 
         // Apply F99, T00, T01 to fail-fast threshold.
         // Other final/relative errors should immediately fail; T02-T99 may be resolved with time.
-        let apply_to_fail_fast = match reject.code() {
+        let apply_to_fail_fast = matches!(
+            reject.code(),
             IlpErrorCode::T00_INTERNAL_ERROR
-            | IlpErrorCode::T01_PEER_UNREACHABLE
-            | IlpErrorCode::F99_APPLICATION_ERROR => true,
-            _ => false,
-        };
+                | IlpErrorCode::T01_PEER_UNREACHABLE
+                | IlpErrorCode::F99_APPLICATION_ERROR
+        );
         if apply_to_fail_fast {
             self.fail_fast_rejects += 1;
         }
