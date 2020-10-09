@@ -48,6 +48,7 @@ pub fn get_open_port(try_port: Option<u16>) -> u16 {
             .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
             .is_ok()
         {
+            socket.listen(1).unwrap();
             let listener = socket.into_tcp_listener();
             return listener.local_addr().unwrap().port();
         }
