@@ -1,11 +1,9 @@
 use super::{Error, SpspResponse};
 use futures::TryFutureExt;
-use interledger_packet::Address;
 use interledger_rates::ExchangeRateStore;
 use interledger_service::{Account, IncomingService};
 use interledger_stream::{send_money, StreamDelivery};
 use reqwest::Client;
-use std::convert::TryFrom;
 use tracing::{debug, error, trace};
 
 /// Get an ILP Address and shared secret by the receiver of this payment for this connection
@@ -48,11 +46,7 @@ where
 {
     let spsp = query(receiver).await?;
     let shared_secret = spsp.shared_secret;
-    let dest = spsp.destination_account;
-    let addr = Address::try_from(dest).map_err(move |err| {
-        error!("Error parsing address");
-        Error::InvalidSpspServerResponseError(err.to_string())
-    })?;
+    let addr = spsp.destination_account;
     debug!("Sending SPSP payment to address: {}", addr);
 
     let receipt = send_money(

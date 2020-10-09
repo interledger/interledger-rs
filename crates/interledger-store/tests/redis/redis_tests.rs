@@ -88,8 +88,10 @@ mod redis_helpers {
     #![allow(dead_code)]
 
     use redis_crate::{self, RedisError};
+    use socket2::{Domain, Socket, Type};
     use std::env;
     use std::fs;
+    use std::net::SocketAddr;
     use std::path::PathBuf;
     use std::process;
     use std::thread::sleep;
@@ -146,14 +148,13 @@ mod redis_helpers {
                 ServerType::Tcp => {
                     // this is technically a race but we can't do better with
                     // the tools that redis gives us :(
-                    let listener = net2::TcpBuilder::new_v4()
-                        .unwrap()
-                        .reuse_address(true)
-                        .unwrap()
-                        .bind("127.0.0.1:0")
-                        .unwrap()
-                        .listen(1)
+                    let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+                    socket.reuse_address().unwrap();
+                    socket
+                        .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
                         .unwrap();
+                    socket.listen(1).unwrap();
+                    let listener = socket.into_tcp_listener();
                     let server_port = listener.local_addr().unwrap().port();
                     cmd.arg("--port")
                         .arg(server_port.to_string())

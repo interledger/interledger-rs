@@ -74,7 +74,7 @@ metrics-runtime = { version = "0.13.0", default-features = false, features = ["m
 [dev-dependencies]
 approx = { version = "0.3.2", default-features = false }
 base64 = { version = "0.11.0", default-features = false }
-net2 = { version = "0.2.33", default-features = false }
+socket2 = "0.3.15"
 rand = { version = "0.7.2", default-features = false }
 reqwest = { version = "0.10.0", default-features = false, features = ["default-tls", "json"] }
 serde_json = { version = "1.0.41", default-features = false }

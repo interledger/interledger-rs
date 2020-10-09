@@ -1,3 +1,4 @@
+#![type_length_limit = "1707074"]
 use async_trait::async_trait;
 use bytes::Bytes;
 use interledger_btp::{BtpAccount, BtpOutgoingService};
@@ -52,9 +53,7 @@ where
 {
     match NumOrStr::deserialize(deserializer)? {
         NumOrStr::Num(n) => Ok(Some(n)),
-        NumOrStr::Str(s) => T::from_str(&s)
-            .map_err(de::Error::custom)
-            .and_then(|n| Ok(Some(n))),
+        NumOrStr::Str(s) => T::from_str(&s).map_err(de::Error::custom).map(Some),
     }
 }
 

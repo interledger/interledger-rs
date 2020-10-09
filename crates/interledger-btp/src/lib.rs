@@ -54,7 +54,7 @@ mod client_server {
     use super::*;
     use interledger_packet::{Address, ErrorCode, FulfillBuilder, PrepareBuilder, RejectBuilder};
     use interledger_service::*;
-    use net2::TcpBuilder;
+    use socket2::{Domain, Socket, Type};
     use std::str::FromStr;
     use std::{
         net::SocketAddr,
@@ -67,10 +67,15 @@ mod client_server {
 
     fn get_open_port() -> SocketAddr {
         for _i in 0..1000 {
-            let listener = TcpBuilder::new_v4().unwrap();
-            listener.reuse_address(true).unwrap();
-            if let Ok(listener) = listener.bind("127.0.0.1:0") {
-                return listener.listen(1).unwrap().local_addr().unwrap();
+            let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+            socket.reuse_address().unwrap();
+            if socket
+                .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
+                .is_ok()
+            {
+                socket.listen(1).unwrap();
+                let listener = socket.into_tcp_listener();
+                return listener.local_addr().unwrap();
             }
         }
         panic!("Cannot find open port!");

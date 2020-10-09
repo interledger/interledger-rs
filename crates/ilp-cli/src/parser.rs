@@ -151,7 +151,7 @@ fn accounts_create<'a, 'b>() -> App<'a, 'b> {
 
 fn accounts_update<'a, 'b>() -> App<'a, 'b> {
     AuthorizedSubCommand::with_name("update")
-        .about("Creates a new account on this node")
+        .about("Overwrite the account on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
@@ -265,7 +265,7 @@ fn accounts_list<'a, 'b>() -> App<'a, 'b> {
 
 fn accounts_update_settings<'a, 'b>() -> App<'a, 'b> {
     AuthorizedSubCommand::with_name("update-settings")
-        .about("Overwrite the details of an account on this node")
+        .about("Update account settings (limited fields only) on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
