@@ -147,7 +147,7 @@ async fn main() {
         }
         set_app_env(&config, &mut app, &path, path.len());
     }
-    let matches = app.clone().get_matches();
+    let matches = app.get_matches();
     merge_args(&mut config, &matches);
 
     cfg_if! {
