@@ -91,8 +91,8 @@ pub fn create_google_pubsub_wrapper<A: Account + 'static>(
     move |request: OutgoingRequest<A>,
           mut next: Box<dyn OutgoingService<A> + Send>|
           -> Pin<BoxedIlpFuture> {
-        let (client, api_endpoint, token_fetcher) = if let Some(utilities) = utilities.clone() {
-            utilities
+        let (client, api_endpoint, token_fetcher) = if let Some(ref utilities) = utilities {
+            utilities.clone()
         } else {
             return Box::pin(async move { next.send_request(request).await });
         };
@@ -112,7 +112,7 @@ pub fn create_google_pubsub_wrapper<A: Account + 'static>(
             let result = next.send_request(request).await;
 
             // Only fulfilled packets are published for now
-            if let Ok(fulfill) = result.clone() {
+            if let Ok(ref fulfill) = result {
                 let fulfillment = base64::encode(fulfill.fulfillment());
                 let get_token_future =
                     token_fetcher
