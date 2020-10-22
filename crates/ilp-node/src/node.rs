@@ -5,14 +5,16 @@ use crate::instrumentation::google_pubsub::{create_google_pubsub_wrapper, Pubsub
 
 cfg_if! {
     if #[cfg(feature = "monitoring")] {
-        use tracing_subscriber::{
-            filter::EnvFilter,
-            fmt::{time::ChronoUtc, Subscriber},
-        };
         use interledger::errors::ApiError;
         use secrecy::{ExposeSecret, SecretString};
-        use tracing_futures::Instrument;
         use tracing::debug_span;
+        use tracing_appender::non_blocking::NonBlocking;
+        use tracing_futures::Instrument;
+        use tracing_subscriber::{
+            filter::EnvFilter,
+            fmt::{format, time::ChronoUtc, Formatter},
+            reload::Handle,
+        };
         use crate::instrumentation::{
             metrics::{incoming_metrics, outgoing_metrics},
             prometheus::{serve_prometheus, PrometheusConfig},
@@ -20,6 +22,7 @@ cfg_if! {
         };
         use interledger::service::IncomingService;
         use futures::FutureExt;
+        use std::{io::{self, Stdout}, sync::Arc};
     }
 }
 
@@ -61,7 +64,12 @@ use interledger::{
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
-use std::{convert::TryFrom, net::SocketAddr, str, str::FromStr, time::Duration};
+use std::{
+    convert::TryFrom,
+    net::SocketAddr,
+    str::{self, FromStr},
+    time::Duration,
+};
 use tokio::spawn;
 use tracing::{debug, error, info};
 use url::Url;
@@ -227,10 +235,10 @@ impl InterledgerNode {
     /// also run the Prometheus metrics server on the given address.
     // TODO when a BTP connection is made, insert a outgoing HTTP entry into the Store to tell other
     // connector instances to forward packets for that account to us
-    pub async fn serve(self) -> Result<(), ()> {
+    pub async fn serve(self, log_writer: Option<LogWriter>) -> Result<(), ()> {
         cfg_if! {
             if #[cfg(feature = "monitoring")] {
-                let f = futures::future::join(serve_prometheus(self.clone()), self.serve_node()).then(
+                let f = futures::future::join(serve_prometheus(self.clone()), self.serve_node(log_writer)).then(
                     |r| async move {
                         if r.0.is_ok() || r.1.is_ok() {
                             Ok(())
@@ -240,14 +248,14 @@ impl InterledgerNode {
                     },
                 );
             } else {
-                let f = self.serve_node();
+                let f = self.serve_node(log_writer);
             }
         }
 
         f.await
     }
 
-    async fn serve_node(self) -> Result<(), ()> {
+    async fn serve_node(self, log_writer: Option<LogWriter>) -> Result<(), ()> {
         let ilp_address = if let Some(address) = &self.ilp_address {
             address.clone()
         } else {
@@ -268,7 +276,7 @@ impl InterledgerNode {
 
         match database_url.scheme() {
             #[cfg(feature = "redis")]
-            "redis" | "redis+unix" => serve_redis_node(self, ilp_address).await,
+            "redis" | "redis+unix" => serve_redis_node(self, ilp_address, log_writer).await,
             other => {
                 error!("unsupported data source scheme: {}", other);
                 Err(())
@@ -277,7 +285,12 @@ impl InterledgerNode {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    pub(crate) async fn chain_services<S>(self, store: S, ilp_address: Address) -> Result<(), ()>
+    pub(crate) async fn chain_services<S>(
+        self,
+        store: S,
+        ilp_address: Address,
+        _log_writer: Option<LogWriter>,
+    ) -> Result<(), ()>
     where
         S: NodeStore<Account = Account>
             + AddressStore
@@ -508,50 +521,58 @@ impl InterledgerNode {
         // changing the tracing level by administrators
         cfg_if! {
             if #[cfg(feature = "monitoring")] {
-                let builder = Subscriber::builder()
-                    .with_timer(ChronoUtc::rfc3339())
-                    .with_env_filter(EnvFilter::from_default_env())
-                    .with_filter_reloading();
-                let handle = builder.reload_handle();
-                builder.try_init().unwrap_or(());
+                let admin_only = warp::header::<SecretString>("authorization")
+                    .and_then(move |authorization: SecretString| {
+                        let admin_auth_header = format!("Bearer {}", self.admin_auth_token.clone());
+                        async move {
+                            if authorization.expose_secret() == &admin_auth_header {
+                                Ok::<(), warp::Rejection>(())
+                            } else {
+                                Err(warp::Rejection::from(ApiError::unauthorized()))
+                            }
+                        }
+                    })
+                    .untuple_one()
+                    .boxed();
 
-                let admin_auth_token = self.admin_auth_token.clone();
                 let api = {
+                    let tracing_handle = _log_writer.and_then(|al| al.handle);
+
                     let adjust_tracing = warp::put()
                         .and(warp::path("tracing-level"))
                         .and(warp::path::end())
-                        .and(warp::header::<SecretString>("authorization"))
+                        .and(admin_only)
                         .and(warp::body::bytes())
                         .and_then(
-                            move |auth_header: SecretString, new_level: bytes05::Bytes| {
-                                let handle = handle.clone();
-                                let admin_auth_header = format!("Bearer {}", admin_auth_token);
+                            move |new_level_input: bytes05::Bytes| {
+                                let handle = tracing_handle.clone().unwrap();
                                 async move {
-                                    if auth_header.expose_secret().as_str() != admin_auth_header {
-                                        return Err(ApiError::unauthorized()
-                                            .detail("invalid admin auth token")
-                                            .into());
-                                    }
-                                    let new_level = std::str::from_utf8(new_level.as_ref()).map_err(|_| {
+                                    let new_level_str = std::str::from_utf8(new_level_input.as_ref()).map_err(|_| {
                                         ApiError::bad_request().detail("invalid utf-8 body provided")
                                     })?;
-                                    let new_tracing_level = new_level
-                                        .parse::<tracing_subscriber::filter::EnvFilter>()
+
+                                    let new_level = new_level_str
+                                        .parse::<tracing_subscriber::filter::Directive>()
                                         .map_err(|_| {
                                             ApiError::bad_request().detail("could not parse body as log level")
                                         })?;
-                                    handle.reload(new_tracing_level).map_err(|err| {
+
+                                    let curr_env = handle.with_current(|env| env.to_string()).unwrap();
+                                    let new_env = curr_env.parse::<EnvFilter>().unwrap().add_directive(new_level);
+
+                                    handle.reload(new_env).map_err(|err| {
                                         ApiError::internal_server_error()
-                                            .detail(format!("could not apply new log level {}", err))
+                                            .detail(format!("could not apply new log level: {}", err))
                                     })?;
-                                    debug!(target: "interledger-node", "Logging level adjusted to {}", new_level);
+                                    debug!(target: "interledger-node", "Logging level adjusted to {}", new_level_str);
                                     Ok::<String, warp::Rejection>(format!(
                                         "Logging level changed to: {}",
-                                        new_level
+                                        new_level_str
                                     ))
                                 }
                             },
                         );
+
                     api.or(adjust_tracing)
                 };
             }
@@ -584,5 +605,40 @@ impl InterledgerNode {
         }
 
         Ok(())
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "monitoring")] {
+        type TracingSubscriber =
+            Formatter<format::DefaultFields, format::Format<format::Full, ChronoUtc>, NonBlocking>;
+
+        #[derive(Clone)]
+        pub struct LogWriter {
+            stdout:     Arc<Stdout>,
+            pub handle: Option<Handle<EnvFilter, TracingSubscriber>>,
+        }
+
+        impl Default for LogWriter {
+            fn default() -> Self {
+                LogWriter {
+                    stdout: Arc::new(io::stdout()),
+                    handle: None,
+                }
+            }
+        }
+
+        impl std::io::Write for LogWriter {
+            fn flush(&mut self) -> std::io::Result<()> {
+                self.stdout.lock().flush()
+            }
+
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.stdout.lock().write(buf)
+            }
+        }
+    } else {
+        #[derive(Clone)]
+        pub struct LogWriter;
     }
 }

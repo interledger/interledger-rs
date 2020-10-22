@@ -74,7 +74,7 @@ pub async fn outgoing_metrics<A: Account + CcpRoutingAccount>(
     }
 
     recorder().record_histogram(
-        Key::from_name_and_labels("requests.outgoing.duration", labels.clone()),
+        Key::from_name_and_labels("requests.outgoing.duration", labels),
         (Instant::now() - start_time).as_nanos() as u64,
     );
 

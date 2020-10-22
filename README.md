@@ -11,12 +11,13 @@
 ![rustc](https://img.shields.io/badge/rustc-1.39+-red.svg)
 ![Rust](https://img.shields.io/badge/rust-stable-Success)
 [![Docker Image](https://img.shields.io/docker/pulls/interledgerrs/ilp-node.svg?maxAge=2592000)](https://hub.docker.com/r/interledgerrs/ilp-node/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Requirements
 
 All crates require Rust 2018 edition and are tested on the following channels:
 
-- `1.39.0` (minimum supported)
+- `1.45.0` (minimum supported)
 - `stable`
 
 ## Connecting to the Testnet

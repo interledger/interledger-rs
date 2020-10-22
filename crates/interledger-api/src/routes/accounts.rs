@@ -268,7 +268,7 @@ where
         .and(warp::path("accounts"))
         .and(account_username_to_id.clone())
         .and(warp::path::end())
-        .and(admin_only)
+        .and(admin_only.clone())
         .and(with_store.clone())
         .and_then(move |id: Uuid, store: S| {
             let btp = btp_clone.clone();
@@ -325,6 +325,19 @@ where
         .map(|id: Uuid, ws: warp::ws::Ws, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
                 notify_user(ws, id, store).map(|result| result.unwrap())
+            })
+        });
+
+    // (Websocket) /payments/incoming
+    let all_payment_notifications = warp::path("payments")
+        .and(admin_only)
+        .and(warp::path("incoming"))
+        .and(warp::path::end())
+        .and(warp::ws())
+        .and(with_store.clone())
+        .map(|ws: warp::ws::Ws, store: S| {
+            ws.on_upgrade(move |ws: warp::ws::WebSocket| {
+                notify_all_payments(ws, store).map(|result| result.unwrap())
             })
         });
 
@@ -430,6 +443,7 @@ where
         .or(get_account_balance)
         .or(put_account_settings)
         .or(incoming_payment_notifications)
+        .or(all_payment_notifications)
         .or(post_payments)
 }
 
@@ -450,6 +464,29 @@ fn notify_user(
     });
 
     // Then it gets forwarded to the client
+    rx.forward(socket)
+        .map(|result| {
+            if let Err(e) = result {
+                eprintln!("websocket send error: {}", e);
+            }
+        })
+        .then(futures::future::ok)
+}
+
+// Similar to notify_user, but instead of associating an account Uuid with a sender,
+// it only assumes control of the store's all payment notification receiver; its messages
+// are published alongside account-specific notifications and the dedicated thread
+// owns the applicable sender.
+fn notify_all_payments(
+    socket: warp::ws::WebSocket,
+    store: impl StreamNotificationsStore,
+) -> impl Future<Output = Result<(), ()>> {
+    let rx = store.all_payment_subscription().into_stream();
+    let rx = rx.map(|notification: _| {
+        let msg = serde_json::to_string(&notification.map_err(|e| e.to_string())).unwrap();
+        Ok(warp::ws::Message::text(msg))
+    });
+
     rx.forward(socket)
         .map(|result| {
             if let Err(e) = result {

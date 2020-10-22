@@ -29,7 +29,7 @@ async fn coincap() {
         },
     }))
     .unwrap();
-    node.serve().await.unwrap();
+    node.serve(None).await.unwrap();
 
     // Wait a few seconds so our node can poll the API
     tokio::time::delay_for(Duration::from_millis(1000)).await;
@@ -85,7 +85,7 @@ async fn cryptocompare() {
         },
     }))
     .unwrap();
-    node.serve().await.unwrap();
+    node.serve(None).await.unwrap();
 
     // Wait a few seconds so our node can poll the API
     tokio::time::delay_for(Duration::from_millis(1000)).await;

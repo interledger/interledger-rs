@@ -73,6 +73,10 @@ pub fn run(matches: &ArgMatches) -> Result<Response, Error> {
             ("setup", Some(submatches)) => client.xpring_account(submatches),
             _ => Err(Error::UsageErr("ilp-cli help testnet")),
         },
+        ("payments", Some(payments_matches)) => match payments_matches.subcommand() {
+            ("incoming", Some(submatches)) => client.ws_payments_incoming(submatches),
+            _ => Err(Error::UsageErr("ilp-cli help payments")),
+        },
         _ => Err(Error::UsageErr("ilp-cli help")),
     }
 }
@@ -133,6 +137,34 @@ impl NodeClient<'_> {
             "{}/accounts/{}/payments/incoming",
             self.url, args["username"]
         ))?;
+
+        let scheme = match url.scheme() {
+            "http" => Ok("ws"),
+            "https" => Ok("wss"),
+            s => Err(Error::ProtocolErr(format!(
+                "{} (only HTTP and HTTPS are supported)",
+                s
+            ))),
+        }?;
+
+        url.set_scheme(scheme).map_err(Error::SchemeErr)?;
+
+        let request: Request = Request::builder()
+            .uri(url.into_string())
+            .header("Authorization", format!("Bearer {}", auth))
+            .body(())?;
+
+        let (mut socket, _) = connect(request)?;
+        loop {
+            let msg = socket.read_message()?;
+            println!("{}", msg);
+        }
+    }
+
+    // WebSocket /payments/incoming
+    fn ws_payments_incoming(&self, matches: &ArgMatches) -> Result<Response, Error> {
+        let (auth, _args) = extract_args(matches);
+        let mut url = Url::parse(&format!("{}/payments/incoming", self.url))?;
 
         let scheme = match url.scheme() {
             "http" => Ok("ws"),

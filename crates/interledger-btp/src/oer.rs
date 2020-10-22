@@ -146,10 +146,7 @@ mod writer_ext {
         assert_eq!(one, vec![0x01, 0xb0]);
 
         let mut larger = vec![];
-        let mut larger_string: Vec<u8> = Vec::with_capacity(256 as usize);
-        for _ in 0..256 {
-            larger_string.push(0xb0);
-        }
+        let larger_string: Vec<u8> = vec![0xb0; 256];
         larger.write_var_octet_string(&larger_string).unwrap();
         let mut expected = vec![0x82, 0x01, 0x00];
         expected.extend(larger_string);
@@ -178,10 +175,7 @@ mod reader_ext {
         );
 
         let mut larger = vec![0x82, 0x01, 0x00];
-        let mut larger_string: Vec<u8> = Vec::with_capacity(256 as usize);
-        for _ in 0..256 {
-            larger_string.push(0xb0);
-        }
+        let larger_string: Vec<u8> = vec![0xb0; 256];
         larger.extend(&larger_string);
         assert_eq!(
             Cursor::new(larger).read_var_octet_string().unwrap(),

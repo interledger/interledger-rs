@@ -125,7 +125,7 @@ async fn three_nodes() {
     }))
     .expect("Error creating node3.");
 
-    node1.serve().await.unwrap();
+    node1.serve(None).await.unwrap();
     create_account_on_node(node1_http, alice_on_alice, "admin")
         .await
         .unwrap();
@@ -141,7 +141,7 @@ async fn three_nodes() {
         .await
         .unwrap();
 
-    node2.serve().await.unwrap();
+    node2.serve(None).await.unwrap();
     create_account_on_node(node2_http, alice_on_bob, "admin")
         .await
         .unwrap();
@@ -156,7 +156,7 @@ async fn three_nodes() {
         .await
         .unwrap();
 
-    node3.serve().await.unwrap();
+    node3.serve(None).await.unwrap();
     create_account_on_node(node3_http, charlie_on_charlie, "admin")
         .await
         .unwrap();
