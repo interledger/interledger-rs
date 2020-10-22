@@ -62,6 +62,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tokio::sync::broadcast;
 use tracing::{debug, error, trace, warn};
 use url::Url;
 use uuid::Uuid;
@@ -210,10 +211,13 @@ impl RedisStoreBuilder {
             ilp_address
         };
 
+        let (all_payment_publisher, _) = broadcast::channel::<PaymentNotification>(256);
+
         let store = RedisStore {
             ilp_address: Arc::new(RwLock::new(node_ilp_address)),
             connection,
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            payment_publisher: all_payment_publisher,
             exchange_rates: Arc::new(RwLock::new(HashMap::new())),
             routes: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
             encryption_key: Arc::new(encryption_key),
@@ -255,6 +259,7 @@ impl RedisStoreBuilder {
         // This currently must be a thread rather than a task due to the redis-rs driver
         // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
         let subscriptions_clone = store.subscriptions.clone();
+        let payment_publisher = store.payment_publisher.clone();
         std::thread::spawn(move || {
             #[allow(clippy::cognitive_complexity)]
             let sub_status =
@@ -270,6 +275,11 @@ impl RedisStoreBuilder {
                                 }
                             };
                             trace!("Subscribed message received for account {}: {:?}", account_id, message);
+                            if payment_publisher.receiver_count() > 0 {
+                                if let Err(err) = payment_publisher.send(message.clone()) {
+                                    error!("Failed to send a node-wide payment notification: {:?}", err);
+                                }
+                            }
                             match subscriptions_clone.read().get(&account_id) {
                                 Some(sender) => {
                                     if let Err(err) = sender.unbounded_send(message) {
@@ -310,6 +320,8 @@ pub struct RedisStore {
     connection: RedisReconnect,
     /// WebSocket sender which publishes incoming payment updates
     subscriptions: Arc<RwLock<HashMap<Uuid, UnboundedSender<PaymentNotification>>>>,
+    /// A subscriber to all payment notifications, exposed via a WebSocket
+    payment_publisher: broadcast::Sender<PaymentNotification>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
     /// The store keeps the routing table in memory so that it can be returned
     /// synchronously while the Router is processing packets.
@@ -710,6 +722,10 @@ impl StreamNotificationsStore for RedisStore {
 
             Ok::<(), ()>(())
         });
+    }
+
+    fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification> {
+        self.payment_publisher.subscribe()
     }
 }
 

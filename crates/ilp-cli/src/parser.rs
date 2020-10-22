@@ -19,6 +19,7 @@ pub fn build<'a, 'b>() -> App<'a, 'b> {
         status(),
         logs(),
         testnet().subcommands(vec![testnet_setup()]),
+        payments().subcommands(vec![payments_incoming()]),
     ])
 }
 
@@ -150,7 +151,7 @@ fn accounts_create<'a, 'b>() -> App<'a, 'b> {
 
 fn accounts_update<'a, 'b>() -> App<'a, 'b> {
     AuthorizedSubCommand::with_name("update")
-        .about("Creates a new account on this node")
+        .about("Overwrite the account on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
@@ -264,7 +265,7 @@ fn accounts_list<'a, 'b>() -> App<'a, 'b> {
 
 fn accounts_update_settings<'a, 'b>() -> App<'a, 'b> {
     AuthorizedSubCommand::with_name("update-settings")
-        .about("Overwrite the details of an account on this node")
+        .about("Update account settings (limited fields only) on this node")
         .args(&[
             Arg::with_name("username")
                 .index(1)
@@ -428,4 +429,13 @@ fn testnet_setup<'a, 'b>() -> App<'a, 'b> {
                 .long("return-testnet-credential")
                 .help("Return the authorization credential for our account on the testnet node instead of the account on our local node"),
         ])
+}
+
+fn payments<'a, 'b>() -> App<'a, 'b> {
+    SubCommand::with_name("payments").about("All incoming payments")
+}
+
+fn payments_incoming<'a, 'b>() -> App<'a, 'b> {
+    AuthorizedSubCommand::with_name("incoming")
+        .about("Open a persistent connection to a node for monitoring all incoming payments")
 }

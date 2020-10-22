@@ -104,12 +104,15 @@ where
 
             match outgoing_amount {
                 Ok(outgoing_amount) => {
-                    // The conversion succeeded, but the produced f64
-                    // is larger than the maximum value for a u64.
-                    // When it gets cast to a u64, it will end up being 0.
-                    if outgoing_amount != 0.0 && outgoing_amount as u64 == 0 {
+                    // Valid outgoing amount must be representable by a non-zero u64 once converted from f64.
+                    // FIXME: f64 > u64::MAX as f64 isn't very reliable for comparisons for
+                    // extremely small values; this should ideally be handled better.
+                    if outgoing_amount != 0.0
+                        && (outgoing_amount > u64::MAX as f64 || outgoing_amount < 1.0)
+                    {
                         let (code, message) = if outgoing_amount < 1.0 {
-                            // user wanted to send a positive value but it got rounded down to 0
+                            // Amount was too small to be converted to a non-zero u64, i.e. smaller
+                            // than 1.0.
                             (
                                 ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT,
                                 format!(
@@ -118,7 +121,8 @@ where
                                 ),
                             )
                         } else {
-                            // amount that arrived was too large for us to forward
+                            // Amount was too large to be converted to u64 from f64, i.e. greater
+                            // than u64::MAX as f64.
                             (
                                 ErrorCode::F08_AMOUNT_TOO_LARGE,
                                 format!(

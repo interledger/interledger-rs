@@ -211,12 +211,12 @@ impl StreamPayment {
 
         // Apply F99, T00, T01 to fail-fast threshold.
         // Other final/relative errors should immediately fail; T02-T99 may be resolved with time.
-        let apply_to_fail_fast = match reject.code() {
+        let apply_to_fail_fast = matches!(
+            reject.code(),
             IlpErrorCode::T00_INTERNAL_ERROR
-            | IlpErrorCode::T01_PEER_UNREACHABLE
-            | IlpErrorCode::F99_APPLICATION_ERROR => true,
-            _ => false,
-        };
+                | IlpErrorCode::T01_PEER_UNREACHABLE
+                | IlpErrorCode::F99_APPLICATION_ERROR
+        );
         if apply_to_fail_fast {
             self.fail_fast_rejects += 1;
         }
@@ -294,7 +294,7 @@ pub async fn send_money<I, A, S>(
     from_account: &A,
     store: S,
     destination_account: Address,
-    shared_secret: &[u8],
+    shared_secret: Vec<u8>,
     source_amount: u64,
     slippage: f64,
 ) -> Result<StreamDelivery, Error>
@@ -303,7 +303,6 @@ where
     A: Account + Send + Sync + 'static,
     S: ExchangeRateStore + Send + Sync + 'static,
 {
-    // TODO Can we avoid copying here?
     let shared_secret = Bytes::from(shared_secret);
 
     let from = from_account.ilp_address();
@@ -766,7 +765,7 @@ mod send_money_tests {
                 price_2: None,
             },
             Address::from_str("example.destination").unwrap(),
-            &[0; 32][..],
+            vec![0; 32],
             100,
             0.0,
         )
@@ -821,7 +820,7 @@ mod send_money_tests {
             &account,
             store,
             destination_address.clone(),
-            &[0; 32][..],
+            vec![0; 32],
             50,
             0.0,
         )
@@ -906,7 +905,7 @@ mod send_money_tests {
                 price_2: None,
             },
             destination_address.clone(),
-            &[0; 32][..],
+            vec![0; 32],
             50,
             0.0,
         )

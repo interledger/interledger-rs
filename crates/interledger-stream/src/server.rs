@@ -12,6 +12,7 @@ use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, 
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::time::SystemTime;
+use tokio::sync::broadcast;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -84,7 +85,7 @@ impl ConnectionGenerator {
 }
 
 /// Notification that STREAM fulfilled a packet and received a single Interledger payment, used by Pubsub API consumers
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PaymentNotification {
     /// The username of the account that received the Interledger payment
     pub to_username: Username,
@@ -112,6 +113,9 @@ pub trait StreamNotificationsStore {
     /// Instructs the store to publish the provided payment notification object
     /// via its Pubsub interface
     fn publish_payment_notification(&self, _payment: PaymentNotification);
+
+    /// Subscribes to the store's node-wide payment notification publisher
+    fn all_payment_subscription(&self) -> broadcast::Receiver<PaymentNotification>;
 }
 
 /// An OutgoingService that fulfills incoming STREAM packets.
@@ -384,9 +388,8 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -412,9 +415,8 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -441,9 +443,8 @@ mod receiving_money {
         data.extend_from_slice(b"x");
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -480,9 +481,8 @@ mod receiving_money {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -532,7 +532,6 @@ mod stream_receiver_service {
     use interledger_packet::PrepareBuilder;
     use interledger_service::outgoing_service_fn;
 
-    use std::convert::TryFrom;
     use std::str::FromStr;
     use std::time::UNIX_EPOCH;
 
@@ -547,9 +546,8 @@ mod stream_receiver_service {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -600,10 +598,9 @@ mod stream_receiver_service {
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
         data.extend_from_slice(b"extra");
-        let dest = Address::try_from(destination_account).unwrap();
 
         let prepare = PrepareBuilder {
-            destination: dest,
+            destination: destination_account,
             amount: 100,
             expires_at: UNIX_EPOCH,
             data: &data[..],
@@ -661,8 +658,7 @@ mod stream_receiver_service {
         let data = stream_packet.into_encrypted(&shared_secret[..]);
         let execution_condition = generate_condition(&shared_secret[..], &data);
 
-        let dest = Address::try_from(destination_account).unwrap();
-        let dest = dest.with_suffix(b"extra").unwrap();
+        let dest = destination_account.with_suffix(b"extra").unwrap();
 
         let prepare = PrepareBuilder {
             destination: dest,

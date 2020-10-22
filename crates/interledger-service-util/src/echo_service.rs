@@ -136,8 +136,6 @@ where
             }
         };
 
-        let source_address = Address::try_from(source_address).unwrap();
-
         // create a new prepare packet to echo the prepare
         let execution_condition =
             <[u8; 32]>::try_from(request.prepare.execution_condition()).unwrap();

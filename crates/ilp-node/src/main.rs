@@ -2,6 +2,18 @@
 mod instrumentation;
 pub mod node;
 
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(feature = "monitoring")] {
+        use tracing_subscriber::{
+            filter::EnvFilter,
+            fmt::{time::ChronoUtc, Subscriber},
+        };
+        use node::LogWriter;
+    }
+}
+
 #[cfg(feature = "redis")]
 mod redis_store;
 
@@ -138,10 +150,32 @@ async fn main() {
     let matches = app.get_matches();
     merge_args(&mut config, &matches);
 
+    cfg_if! {
+        if #[cfg(feature = "monitoring")] {
+            let mut log_writer = LogWriter::default();
+
+            let (nb_log_writer, _guard) = tracing_appender::non_blocking(log_writer.clone());
+
+            let tracing_builder = Subscriber::builder()
+                .with_timer(ChronoUtc::rfc3339())
+                .with_env_filter(EnvFilter::from_default_env())
+                .with_writer(nb_log_writer)
+                .with_filter_reloading();
+
+            log_writer.handle = Some(tracing_builder.reload_handle());
+
+            let _ = tracing_builder.try_init();
+
+            let log_writer = Some(log_writer);
+        } else {
+            let log_writer = None;
+        }
+    }
+
     let node = config
         .try_into::<InterledgerNode>()
         .expect("Could not parse provided configuration options into an Interledger Node config");
-    node.serve().await.unwrap();
+    node.serve(log_writer.clone()).await.unwrap();
 
     // Add a future which is always pending. This will ensure main does not exist
     // TODO: Is there a better way of doing this?

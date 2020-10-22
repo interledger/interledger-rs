@@ -9,7 +9,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
 
 [features]
-default = ["balance-tracking", "redis"]
+default = ["balance-tracking", "redis", "monitoring"]
 balance-tracking = []
 redis = ["redis_crate", "interledger/redis"]
 
@@ -23,6 +23,7 @@ monitoring = [
     "metrics-runtime",
     "tracing-futures",
     "tracing-subscriber",
+    "tracing-appender",
 ]
 
 [[test]]
@@ -65,6 +66,7 @@ yup-oauth2 = { version = "3.1.1", default-features = false, optional = true }
 # Tracing / metrics / prometheus for instrumentation
 tracing-futures = { version = "0.2", default-features = false, features = ["tokio", "futures-03"], optional = true }
 tracing-subscriber = { version = "0.2.0", default-features = false, features = ["tracing-log", "fmt", "env-filter", "chrono"], optional = true }
+tracing-appender = { version = "0.1", optional = true }
 metrics = { version = "0.12.0", default-features = false, features = ["std"], optional = true }
 metrics-core = { version = "0.5.1", default-features = false, optional = true }
 metrics-runtime = { version = "0.13.0", default-features = false, features = ["metrics-observer-prometheus"], optional = true }
@@ -72,11 +74,12 @@ metrics-runtime = { version = "0.13.0", default-features = false, features = ["m
 [dev-dependencies]
 approx = { version = "0.3.2", default-features = false }
 base64 = { version = "0.11.0", default-features = false }
-net2 = { version = "0.2.33", default-features = false }
+socket2 = "0.3.15"
 rand = { version = "0.7.2", default-features = false }
 reqwest = { version = "0.10.0", default-features = false, features = ["default-tls", "json"] }
 serde_json = { version = "1.0.41", default-features = false }
 tokio-retry = { version = "0.2.0", default-features = false }
+tungstenite = {version = "0.10", default-features = false }
 
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }

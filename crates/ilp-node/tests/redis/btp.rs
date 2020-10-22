@@ -79,7 +79,7 @@ async fn two_nodes_btp() {
     }))
     .expect("Error creating node_b.");
 
-    node_b.serve().await.unwrap();
+    node_b.serve(None).await.unwrap();
     create_account_on_node(node_b_http, a_on_b, "admin")
         .await
         .unwrap();
@@ -87,7 +87,7 @@ async fn two_nodes_btp() {
         .await
         .unwrap();
 
-    node_a.serve().await.unwrap();
+    node_a.serve(None).await.unwrap();
     create_account_on_node(node_a_http, alice_on_a, "admin")
         .await
         .unwrap();

@@ -3,7 +3,8 @@
 
 use futures::TryFutureExt;
 use redis_crate::{self as redis, RedisError};
-use std::{env, fs, path::PathBuf, process, thread::sleep, time::Duration};
+use socket2::{Domain, Socket, Type};
+use std::{env, fs, net::SocketAddr, path::PathBuf, process, thread::sleep, time::Duration};
 
 #[derive(PartialEq)]
 enum ServerType {
@@ -48,14 +49,13 @@ impl RedisServer {
             ServerType::Tcp => {
                 // this is technically a race but we can't do better with
                 // the tools that redis gives us :(
-                let listener = net2::TcpBuilder::new_v4()
-                    .unwrap()
-                    .reuse_address(true)
-                    .unwrap()
-                    .bind("127.0.0.1:0")
-                    .unwrap()
-                    .listen(1)
+                let socket = Socket::new(Domain::ipv4(), Type::stream(), None).unwrap();
+                socket.reuse_address().unwrap();
+                socket
+                    .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
                     .unwrap();
+                socket.listen(1).unwrap();
+                let listener = socket.into_tcp_listener();
                 let server_port = listener.local_addr().unwrap().port();
                 cmd.arg("--port")
                     .arg(server_port.to_string())
