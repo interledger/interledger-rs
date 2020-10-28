@@ -324,7 +324,9 @@ where
         .and(with_store.clone())
         .map(|id: Uuid, ws: warp::ws::Ws, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
-                notify_user(ws, id, store).map(|result| result.unwrap())
+                let (ws_tx, ws_rx) = ws.split();
+                tokio::task::spawn(notify_user(ws_tx, id, store).map(|result| result.unwrap()));
+                consume_msg_drain(ws_rx)
             })
         });
 
@@ -337,7 +339,9 @@ where
         .and(with_store.clone())
         .map(|ws: warp::ws::Ws, store: S| {
             ws.on_upgrade(move |ws: warp::ws::WebSocket| {
-                notify_all_payments(ws, store).map(|result| result.unwrap())
+                let (ws_tx, ws_rx) = ws.split();
+                tokio::task::spawn(notify_all_payments(ws_tx, store).map(|result| result.unwrap()));
+                consume_msg_drain(ws_rx)
             })
         });
 
@@ -447,8 +451,17 @@ where
         .or(post_payments)
 }
 
+async fn consume_msg_drain(mut ws_rx: futures::stream::SplitStream<warp::ws::WebSocket>) {
+    while let Some(result) = ws_rx.next().await {
+        if let Err(e) = result {
+            debug!("consume msg drain read error: {}", e);
+            break;
+        }
+    }
+}
+
 fn notify_user(
-    socket: warp::ws::WebSocket,
+    ws_tx: futures::stream::SplitSink<warp::ws::WebSocket, warp::ws::Message>,
     id: Uuid,
     store: impl StreamNotificationsStore,
 ) -> impl Future<Output = Result<(), ()>> {
@@ -464,7 +477,7 @@ fn notify_user(
     });
 
     // Then it gets forwarded to the client
-    rx.forward(socket)
+    rx.forward(ws_tx)
         .map(|result| {
             if let Err(e) = result {
                 eprintln!("websocket send error: {}", e);
@@ -478,7 +491,7 @@ fn notify_user(
 // are published alongside account-specific notifications and the dedicated thread
 // owns the applicable sender.
 fn notify_all_payments(
-    socket: warp::ws::WebSocket,
+    ws_tx: futures::stream::SplitSink<warp::ws::WebSocket, warp::ws::Message>,
     store: impl StreamNotificationsStore,
 ) -> impl Future<Output = Result<(), ()>> {
     let rx = store.all_payment_subscription().into_stream();
@@ -487,7 +500,7 @@ fn notify_all_payments(
         Ok(warp::ws::Message::text(msg))
     });
 
-    rx.forward(socket)
+    rx.forward(ws_tx)
         .map(|result| {
             if let Err(e) = result {
                 eprintln!("websocket send error: {}", e);
