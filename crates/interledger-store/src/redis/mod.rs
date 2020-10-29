@@ -43,7 +43,7 @@ use interledger_settlement::core::{
 use interledger_stream::{PaymentNotification, StreamNotificationsStore};
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use redis_crate::AsyncCommands;
 use redis_crate::{
     self, cmd, from_redis_value, Client, ConnectionInfo, ControlFlow, ErrorKind, FromRedisValue,
@@ -216,7 +216,7 @@ impl RedisStoreBuilder {
         let store = RedisStore {
             ilp_address: Arc::new(RwLock::new(node_ilp_address)),
             connection,
-            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            subscriptions: Arc::new(Mutex::new(HashMap::new())),
             payment_publisher: all_payment_publisher,
             exchange_rates: Arc::new(RwLock::new(HashMap::new())),
             routes: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
@@ -280,12 +280,17 @@ impl RedisStoreBuilder {
                                     error!("Failed to send a node-wide payment notification: {:?}", err);
                                 }
                             }
-                            match subscriptions_clone.read().get(&account_id) {
-                                Some(sender) => {
-                                    if let Err(err) = sender.unbounded_send(message) {
-                                        error!("Failed to send message: {}", err);
-                                    }
-                                }
+                            match subscriptions_clone.lock().get_mut(&account_id) {
+                                  Some(senders) => {
+                                    senders.retain(|sender| {
+                                        if let Err(err) = sender.unbounded_send(message.clone()) {
+                                            debug!("Failed to send message: {}", err);
+                                            false
+                                        } else {
+                                            true
+                                        }
+                                    });
+                                },
                                 None => trace!("Ignoring message for account {} because there were no open subscriptions", account_id),
                             }
                         } else {
@@ -318,8 +323,8 @@ pub struct RedisStore {
     ilp_address: Arc<RwLock<Address>>,
     /// A connection which reconnects if dropped by accident
     connection: RedisReconnect,
-    /// WebSocket sender which publishes incoming payment updates
-    subscriptions: Arc<RwLock<HashMap<Uuid, UnboundedSender<PaymentNotification>>>>,
+    /// WebSocket senders which publish incoming payment updates
+    subscriptions: Arc<Mutex<HashMap<Uuid, Vec<UnboundedSender<PaymentNotification>>>>>,
     /// A subscriber to all payment notifications, exposed via a WebSocket
     payment_publisher: broadcast::Sender<PaymentNotification>,
     exchange_rates: Arc<RwLock<HashMap<String, f64>>>,
@@ -688,7 +693,11 @@ impl StreamNotificationsStore for RedisStore {
         sender: UnboundedSender<PaymentNotification>,
     ) {
         trace!("Added payment notification listener for {}", id);
-        self.subscriptions.write().insert(id, sender);
+        self.subscriptions
+            .lock()
+            .entry(id)
+            .or_insert_with(Vec::new)
+            .push(sender);
     }
 
     fn publish_payment_notification(&self, payment: PaymentNotification) {
