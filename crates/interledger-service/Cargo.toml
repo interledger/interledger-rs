@@ -15,7 +15,7 @@ trace = ["tracing-futures"]
 interledger-errors = { path = "../interledger-errors", version = "1.0.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
 
-futures = { version = "0.3.1", default-features = false }
+futures = { version = "0.3.7", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["derive"] }
 regex = { version = "1.3.1", default-features = false, features = ["std", "unicode-perl"] }
 once_cell = { version = "1.3.1", default-features = false, features = ["std"] }
