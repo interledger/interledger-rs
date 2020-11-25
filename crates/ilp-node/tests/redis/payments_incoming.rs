@@ -137,7 +137,9 @@ async fn payments_incoming() {
     }
 
     // create a cross-thread collection of payment notifications
-    let pmt_notifications = Arc::new(Mutex::new(Vec::<PmtNotification>::with_capacity(3)));
+    let pmt_notifications = Arc::new(Mutex::new(
+        Vec::<(PmtNotification, PmtNotification)>::with_capacity(3),
+    ));
 
     // spawn a thread that listens in on node-wide payment notifications for node b
     let notifications = pmt_notifications.clone();
@@ -153,9 +155,12 @@ async fn payments_incoming() {
         // loop as many times as there are expected payment notifications
         for _ in 0..3 {
             let msg = payments_ws.read_message().unwrap();
-            let notification: PmtNotificationWrapper =
+            let payment: PmtNotificationWrapper =
                 serde_json::from_str(&msg.into_text().unwrap()).unwrap();
-            notifications.lock().unwrap().push(notification.Ok);
+            let msg = payments_ws.read_message().unwrap();
+            let close: PmtNotificationWrapper =
+                serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+            notifications.lock().unwrap().push((payment.Ok, close.Ok));
         }
 
         payments_ws.close(None).unwrap();
@@ -202,18 +207,17 @@ async fn payments_incoming() {
 
     // check if all the payment notifications were received as expected
     let messages = pmt_notifications.lock().unwrap();
-
     assert_eq!(messages.len(), 3);
 
-    assert_eq!(messages[0].to_username, "bob_on_b");
-    assert_eq!(messages[1].to_username, "caleb_on_b");
-    assert_eq!(messages[2].to_username, "dave_on_b");
+    assert_eq!(messages[0].0.to_username, "bob_on_b");
+    assert_eq!(messages[1].0.to_username, "caleb_on_b");
+    assert_eq!(messages[2].0.to_username, "dave_on_b");
 
-    assert_eq!(messages[0].from_username, "a_on_b");
-    assert_eq!(messages[1].from_username, "a_on_b");
-    assert_eq!(messages[2].from_username, "a_on_b");
+    assert_eq!(messages[0].0.from_username, "a_on_b");
+    assert_eq!(messages[1].0.from_username, "a_on_b");
+    assert_eq!(messages[2].0.from_username, "a_on_b");
 
-    assert_eq!(messages[0].amount, 1000);
-    assert_eq!(messages[1].amount, 2000);
-    assert_eq!(messages[2].amount, 3000);
+    assert_eq!(messages[0].0.amount, 1000);
+    assert_eq!(messages[1].0.amount, 2000);
+    assert_eq!(messages[2].0.amount, 3000);
 }
