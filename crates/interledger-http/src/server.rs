@@ -65,12 +65,13 @@ async fn ilp_over_http<S, I>(
     password: SecretString,
     body: Bytes,
     store: S,
-    mut incoming: I,
+    incoming: I,
 ) -> Result<impl warp::Reply, warp::Rejection>
 where
     S: HttpStore,
     I: IncomingService<S::Account> + Clone,
 {
+    let mut incoming = incoming.clone();
     let account = get_account(store, &path_username, &password).await?;
 
     let buffer = bytes::BytesMut::from(body.as_ref());

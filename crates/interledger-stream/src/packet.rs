@@ -371,7 +371,7 @@ impl<'a> fmt::Debug for Frame<'a> {
 }
 
 /// The Stream Frame types [as defined in the RFC](https://interledger.org/rfcs/0029-stream/#53-frames)
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 pub enum FrameType {
     ConnectionClose = 0x01,
@@ -414,7 +414,7 @@ impl From<u8> for FrameType {
 }
 
 /// The STREAM Error Codes [as defined in the RFC](https://interledger.org/rfcs/0029-stream/#54-error-codes)
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 pub enum ErrorCode {
     NoError = 0x01,
@@ -472,7 +472,7 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
-        buf.put_u8(self.code as u8);
+        buf.put_u8(self.code.clone() as u8);
         buf.put_var_octet_string(self.message.as_bytes());
     }
 }
@@ -640,7 +640,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
         buf.put_var_uint(self.stream_id);
-        buf.put_u8(self.code as u8);
+        buf.put_u8(self.code.clone() as u8);
         buf.put_var_octet_string(self.message.as_bytes());
     }
 }

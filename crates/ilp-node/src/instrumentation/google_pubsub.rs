@@ -92,7 +92,7 @@ pub fn create_google_pubsub_wrapper<A: Account + 'static>(
           mut next: Box<dyn OutgoingService<A> + Send>|
           -> Pin<BoxedIlpFuture> {
         let (client, api_endpoint, token_fetcher) = if let Some(ref utilities) = utilities {
-            utilities.clone()
+            utilities
         } else {
             return Box::pin(async move { next.send_request(request).await });
         };

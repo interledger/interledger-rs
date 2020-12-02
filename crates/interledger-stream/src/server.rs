@@ -162,6 +162,7 @@ where
         let to_username = request.to.username().clone();
         let from_username = request.from.username().clone();
         let amount = request.prepare.amount();
+        let store = self.store.clone();
 
         let destination = request.prepare.destination();
         let to_address = request.to.ilp_address();
@@ -178,16 +179,13 @@ where
                     &request.prepare,
                 );
                 match response {
-                    Ok(ref _fulfill) => {
-                        self.store
-                            .publish_payment_notification(PaymentNotification {
-                                to_username,
-                                from_username,
-                                amount,
-                                destination,
-                                timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
-                            })
-                    }
+                    Ok(ref _fulfill) => store.publish_payment_notification(PaymentNotification {
+                        to_username,
+                        from_username,
+                        amount,
+                        destination: destination.clone(),
+                        timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                    }),
                     Err(ref reject) => {
                         if reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
                             // Assume the packet isn't for us if the decryption step fails.
