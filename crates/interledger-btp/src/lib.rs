@@ -131,7 +131,7 @@ mod client_server {
 
     #[derive(Clone)]
     pub struct TestStore {
-        accounts: Arc<Vec<TestAccount>>,
+        accounts: Arc<[TestAccount]>,
     }
 
     #[async_trait]
@@ -173,7 +173,7 @@ mod client_server {
 
         let server_acc_id = Uuid::new_v4();
         let server_store = TestStore {
-            accounts: Arc::new(vec![TestAccount {
+            accounts: Arc::new([TestAccount {
                 id: server_acc_id,
                 ilp_over_btp_incoming_token: Some("test_auth_token".to_string()),
                 ilp_over_btp_outgoing_token: None,
