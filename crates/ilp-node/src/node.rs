@@ -229,6 +229,8 @@ pub struct InterledgerNode {
     pub google_pubsub: Option<PubsubConfig>,
     /// The delay in seconds to settle peering account to `settle_to` level in addition to settling
     /// the account when it exceeds the settlement threshold.
+    ///
+    /// See further notes at `--help` output.
     #[cfg(feature = "balance-tracking")]
     pub settle_every: Option<NonZeroU32>,
 }
