@@ -270,6 +270,12 @@ where
         if balance > 0 {
             // so if we have the timeout configured, we should now make sure that there is a
             // timeout pending or new one is created right now.
+            //
+            // FIXME: when multiple nodes share a database and accounts, there is no coordination
+            // between the nodes and there can be multiple settlements when only one is expected.
+            // One way to avoid this would be to record a last_settled_at timestamp, making sure it
+            // is always older than our settlement period, and rescheduling a timeout whenever it
+            // would had been too early to settle.
             policy.settle_later(to.id(), channel_last_fail);
         }
         return Ok(());
