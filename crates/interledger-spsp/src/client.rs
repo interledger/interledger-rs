@@ -69,9 +69,11 @@ where
 }
 
 fn payment_pointer_to_url(payment_pointer: &str) -> String {
-    let mut url: String = if payment_pointer.starts_with('$') {
-        let mut url = "https://".to_string();
-        url.push_str(&payment_pointer[1..]);
+    let mut url: String = if let Some(suffix) = payment_pointer.strip_prefix("$") {
+        let prefix = "https://";
+        let mut url = String::with_capacity(prefix.len() + suffix.len());
+        url.push_str(prefix);
+        url.push_str(suffix);
         url
     } else {
         payment_pointer.to_string()

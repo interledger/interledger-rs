@@ -265,8 +265,8 @@ impl RedisStoreBuilder {
             let sub_status =
                 sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
                     let channel_name = msg.get_channel_name();
-                    if channel_name.starts_with(STREAM_NOTIFICATIONS_PREFIX) {
-                        if let Ok(account_id) = Uuid::from_str(&channel_name[STREAM_NOTIFICATIONS_PREFIX.len()..]) {
+                    if let Some(suffix) = channel_name.strip_prefix(STREAM_NOTIFICATIONS_PREFIX) {
+                        if let Ok(account_id) = Uuid::from_str(&suffix) {
                             let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
                                 Ok(s) => s,
                                 Err(e) => {
