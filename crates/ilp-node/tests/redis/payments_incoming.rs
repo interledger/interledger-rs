@@ -5,14 +5,9 @@ use serde::Deserialize;
 use serde_json::{self, json};
 use tungstenite::{client, handshake::client::Request};
 
-use std::{
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
-};
-
 #[tokio::test]
 async fn payments_incoming() {
+    use tokio::stream::StreamExt;
     let context = TestContext::new();
 
     let mut connection_info1 = context.get_client_connection_info();
@@ -137,13 +132,8 @@ async fn payments_incoming() {
     }
 
     // create a cross-thread collection of payment notifications
-    let pmt_notifications = Arc::new(Mutex::new(
-        Vec::<(PmtNotification, PmtNotification)>::with_capacity(3),
-    ));
-
-    // spawn a thread that listens in on node-wide payment notifications for node b
-    let notifications = pmt_notifications.clone();
-    std::thread::spawn(move || {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let handle = std::thread::spawn(move || {
         let ws_request = Request::builder()
             .uri(format!("ws://localhost:{}/payments/incoming", node_b_http))
             .header("Authorization", "Bearer admin")
@@ -160,7 +150,9 @@ async fn payments_incoming() {
             let msg = payments_ws.read_message().unwrap();
             let close: PmtNotificationWrapper =
                 serde_json::from_str(&msg.into_text().unwrap()).unwrap();
-            notifications.lock().unwrap().push((payment.Ok, close.Ok));
+            tx.send((payment.Ok, close.Ok))
+                .map_err(|_| ())
+                .expect("send failed");
         }
 
         payments_ws.close(None).unwrap();
@@ -202,11 +194,22 @@ async fn payments_incoming() {
     .await
     .unwrap();
 
-    // a small delay to make sure the notifications are intercepted in the other thread
-    thread::sleep(Duration::from_secs(1));
+    // FIXME: this should be doable with rx.collect::<????>().await.unwrap()
+    let mut messages = vec![];
+    loop {
+        let next = rx.next().await;
+        if let Some(next) = next {
+            messages.push(next);
+        } else {
+            break;
+        }
+    }
+
+    handle
+        .join()
+        .expect("as the messages stopped the thread should have exited as well");
 
     // check if all the payment notifications were received as expected
-    let messages = pmt_notifications.lock().unwrap();
     assert_eq!(messages.len(), 3);
 
     assert_eq!(messages[0].0.to_username, "bob_on_b");
