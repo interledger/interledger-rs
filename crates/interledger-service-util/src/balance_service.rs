@@ -255,7 +255,7 @@ where
         .await?;
 
     // this message is really important, if you want to recover the balance after a crash; all of
-    // the "amount that need to be settled" must be summed and added to accounts "balance".
+    // the "amount that need to be settled" must be summed and added to the account's "balance".
     debug!(
         "Account {} balance after fulfill: {}. Amount that needs to be settled: {}",
         to.id(),
@@ -344,7 +344,7 @@ where
             );
         }
     } else {
-        debug!("Settlement for account {} for {} failed as the account has no settlement-engine details",
+        debug!("Settlement for account {} for {} failed as the account has no settlement engine details",
             to.id(), amount);
     }
 
@@ -469,14 +469,14 @@ impl fmt::Display for ExitReason {
         match *self {
             InputClosed => write!(fmt, "Input was closed and ran out of timed settlements"),
             Shutdown => write!(fmt, "Tokio is shutting down"),
-            Capacity => write!(fmt, "Timer service is over capacity"),
+            Capacity => write!(fmt, "Timer service capacity exceeded"),
             Other(ref e) => write!(fmt, "Other: {}", e),
         }
     }
 }
 
 /// Start a background task for time based settlement. If time based settlement is configured but
-/// this task is never started the time based settlement does not happen and a warning is logged
+/// this task is never started, the time-based settlement does not happen and a warning is logged
 /// every minute on eligble random peering account.
 pub fn start_delayed_settlement<St, Store, Acct>(
     delay: Duration,
@@ -497,7 +497,7 @@ where
     let client = SettlementClient::default();
     tokio::spawn(async move {
         info!(
-            "Starting to run delayed settlements with timeout of {:?}",
+            "Starting to run delayed settlements with a timeout of {:?}",
             delay
         );
 
@@ -589,7 +589,7 @@ where
                                 }
                                 Err(e) => {
                                     warn!(
-                                        "Failed to load account {} for time based settlement: {}",
+                                        "Failed to load account {} for time-based settlement: {}",
                                         id, e
                                     );
                                     Err(())
@@ -597,10 +597,10 @@ where
                             }?;
 
                             let (balance, amount_to_settle) = store.update_balances_for_delayed_settlement(id).await
-                                .map_err(|e| warn!("Time based settlement failed for {}: {}", id, e))?;
+                                .map_err(|e| warn!("Time-based settlement failed for {}: {}", id, e))?;
 
                             debug!(
-                                "Account {} balance at time based settlement: {}, Amount that needs to be settled: {}",
+                                "Account {} balance at time-based settlement: {}, amount that needs to be settled: {}",
                                 to.id(), balance, amount_to_settle
                             );
 

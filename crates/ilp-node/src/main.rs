@@ -132,7 +132,7 @@ async fn main() {
         Arg::with_name("settle_every")
             .long("settle_every")
             .takes_value(true)
-            .help("Settlement delay, in seconds, the peering accounts will be settled after \
+            .help("Settlement delay, in seconds; the peering accounts will be settled after \
                 this many seconds after the first fulfill packet unless the balance had \
                 exceeded the settlement threshold.\n\n\
                 \
