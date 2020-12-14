@@ -64,10 +64,11 @@ use interledger::{
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer};
+#[cfg(feature = "balance-tracking")]
+use std::num::NonZeroU32;
 use std::{
     convert::TryFrom,
     net::SocketAddr,
-    num::NonZeroU32,
     str::{self, FromStr},
     time::Duration,
 };
