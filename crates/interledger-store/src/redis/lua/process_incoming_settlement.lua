@@ -1,6 +1,7 @@
-local account = 'accounts:' .. ARGV[1]
-local amount = tonumber(ARGV[2])
-local idempotency_key = ARGV[3]
+local accounts_key = ARGV[1]
+local account = accounts_key .. ':' .. ARGV[2]
+local amount = tonumber(ARGV[3])
+local idempotency_key = ARGV[4]
 
 local balance, prepaid_amount = unpack(redis.call('HMGET', account, 'balance', 'prepaid_amount'))
 

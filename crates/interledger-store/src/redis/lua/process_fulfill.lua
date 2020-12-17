@@ -1,5 +1,6 @@
-local to_account = 'accounts:' .. ARGV[1]
-local to_amount = tonumber(ARGV[2])
+local accounts_key = ARGV[1]
+local to_account = accounts_key .. ':' .. ARGV[2]
+local to_amount = tonumber(ARGV[3])
 
 local balance = redis.call('HINCRBY', to_account, 'balance', to_amount)
 local prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'prepaid_amount', 'settle_threshold', 'settle_to'))

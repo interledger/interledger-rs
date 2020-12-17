@@ -30,6 +30,7 @@ pub async fn serve_redis_node(
     let redis_addr = redis_connection_info.addr.clone();
     let redis_secret = generate_redis_secret(&node.secret_seed);
     let store = RedisStoreBuilder::new(redis_connection_info, redis_secret)
+        .with_db_prefix(node.database_prefix.as_str())
         .node_ilp_address(ilp_address.clone())
         .connect()
         .map_err(move |err| error!(target: "interledger-node", "Error connecting to Redis: {:?} {:?}", redis_addr, err))

@@ -7,7 +7,10 @@ local function into_dictionary(flat_map)
     return result
 end
 
-local settlement_engines = into_dictionary(redis.call('HGETALL', 'settlement_engines'))
+
+local accounts_key = ARGV[1]
+local settlement_engines_key = ARGV[2]
+local settlement_engines = into_dictionary(redis.call('HGETALL', settlement_engines_key))
 local accounts = {}
 
 -- TODO get rid of the two representations of account
@@ -21,24 +24,28 @@ local accounts = {}
 -- settlement_engine_url into the account we are going to return
 local account
 local account_dict
+
 for index, id in ipairs(ARGV) do
-    account = redis.call('HGETALL', 'accounts:' .. id)
+    -- skip first two arguments
+    if index > 2 then
+        account = redis.call('HGETALL', accounts_key .. ':' .. id)
 
-    if account ~= nil then
-        account_dict = into_dictionary(account)
+        if account ~= nil then
+            account_dict = into_dictionary(account)
 
-        -- If the account does not have a settlement_engine_url specified
-        -- but there is one configured for that currency, set the
-        -- account to use that url
-        if account_dict.settlement_engine_url == nil then
-            local url = settlement_engines[account_dict.asset_code]
-            if url ~= nil then
-                table.insert(account, 'settlement_engine_url')
-                table.insert(account, url)
+            -- If the account does not have a settlement_engine_url specified
+            -- but there is one configured for that currency, set the
+            -- account to use that url
+            if account_dict.settlement_engine_url == nil then
+                local url = settlement_engines[account_dict.asset_code]
+                if url ~= nil then
+                    table.insert(account, 'settlement_engine_url')
+                    table.insert(account, url)
+                end
             end
-        end
 
-        table.insert(accounts, account)
+            table.insert(accounts, account)
+        end
     end
 end
 return accounts
