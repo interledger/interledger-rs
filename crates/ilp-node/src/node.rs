@@ -92,9 +92,6 @@ fn default_settlement_api_bind_address() -> SocketAddr {
 fn default_http_bind_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], 7770))
 }
-fn default_database_prefix() -> String {
-    "".to_string()
-}
 // We allow unreachable code on the below function because there must always be exactly one default
 // regardless of how many data sources the crate is compiled to support,
 // but we don't know which will be enabled or in which quantities or configurations.
@@ -204,7 +201,7 @@ pub struct InterledgerNode {
     )]
     pub database_url: String,
     /// Database prefix which can be used in case a db instance is shared by multiple nodes
-    #[serde(default = "default_database_prefix")]
+    #[serde(default)]
     pub database_prefix: String,
     /// IP address and port to listen for HTTP connections
     /// This is used for both the API and ILP over HTTP packets
