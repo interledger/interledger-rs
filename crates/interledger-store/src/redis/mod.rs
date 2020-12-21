@@ -933,6 +933,7 @@ impl BalanceStore for RedisStore {
         to_account_id: Uuid,
     ) -> Result<(i64, u64), BalanceStoreError> {
         let (balance, amount_to_settle): (i64, u64) = PROCESS_DELAYED_SETTLEMENT
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(to_account_id))
             .invoke_async(&mut self.connection.clone())
             .await?;
