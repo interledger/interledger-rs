@@ -179,7 +179,7 @@ where
         .and(with_store.clone())
         .and_then(delete_engine_account);
 
-    // POST /accounts/:aVcount_id/settlements (optional idempotency-key header)
+    // POST /accounts/:account_id/settlements (optional idempotency-key header)
     // Body is a Quantity object
     let settlement_endpoint = account_id.and(warp::path("settlements"));
     let settlements = warp::post()

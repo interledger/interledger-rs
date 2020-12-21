@@ -128,6 +128,9 @@ static PROCESS_FULFILL: Lazy<Script> =
 static PROCESS_REJECT: Lazy<Script> =
     Lazy::new(|| Script::new(include_str!("lua/process_reject.lua")));
 
+static PROCESS_DELAYED_SETTLEMENT: Lazy<Script> =
+    Lazy::new(|| Script::new(include_str!("lua/process_settle.lua")));
+
 /// Lua script which increases the provided account's balance after a settlement attempt failed
 static REFUND_SETTLEMENT: Lazy<Script> =
     Lazy::new(|| Script::new(include_str!("lua/refund_settlement.lua")));
@@ -819,6 +822,25 @@ impl BalanceStore for RedisStore {
         );
 
         Ok(())
+    }
+
+    async fn update_balances_for_delayed_settlement(
+        &self,
+        to_account_id: Uuid,
+    ) -> Result<(i64, u64), BalanceStoreError> {
+        let (balance, amount_to_settle): (i64, u64) = PROCESS_DELAYED_SETTLEMENT
+            .arg(RedisAccountId(to_account_id))
+            .invoke_async(&mut self.connection.clone())
+            .await?;
+
+        trace!(
+            "Processed account {} for delayed settlement, balance: {}, to_settle: {}",
+            to_account_id,
+            balance,
+            amount_to_settle
+        );
+
+        Ok((balance, amount_to_settle))
     }
 }
 
