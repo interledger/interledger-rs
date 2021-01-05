@@ -17,8 +17,6 @@ async fn payments_incoming() {
 
     let mut connection_info1 = context.get_client_connection_info();
     connection_info1.db = 1;
-    let mut connection_info2 = context.get_client_connection_info();
-    connection_info2.db = 2;
 
     // test ports
     let node_a_http = get_open_port(None);
@@ -72,7 +70,8 @@ async fn payments_incoming() {
     // node a config
     let node_a: InterledgerNode = serde_json::from_value(json!({
         "admin_auth_token": "admin",
-        "database_url": connection_info_to_string(connection_info1),
+        "database_url": connection_info_to_string(connection_info1.clone()),
+        "database_prefix": "testnodea",
         "http_bind_address": format!("127.0.0.1:{}", node_a_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_a_settlement),
         "secret_seed": random_secret(),
@@ -88,7 +87,8 @@ async fn payments_incoming() {
         "ilp_address": "example.parent",
         "default_spsp_account": "bob_on_b",
         "admin_auth_token": "admin",
-        "database_url": connection_info_to_string(connection_info2),
+        "database_url": connection_info_to_string(connection_info1),
+        "database_prefix": "testnodeb",
         "http_bind_address": format!("127.0.0.1:{}", node_b_http),
         "settlement_api_bind_address": format!("127.0.0.1:{}", node_b_settlement),
         "secret_seed": random_secret(),

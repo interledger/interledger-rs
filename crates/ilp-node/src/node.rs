@@ -202,6 +202,9 @@ pub struct InterledgerNode {
         alias = "redis_url"
     )]
     pub database_url: String,
+    /// Database prefix which can be used in case a db instance is shared by multiple nodes
+    #[serde(default)]
+    pub database_prefix: String,
     /// IP address and port to listen for HTTP connections
     /// This is used for both the API and ILP over HTTP packets
     #[serde(default = "default_http_bind_address")]

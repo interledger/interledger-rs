@@ -2,8 +2,8 @@
 -- returns similarly the balance and the amount to settle, but is called with only the account id as the only argument.
 --
 -- upon completion the `balance` is at the level of `settle_to`
-local to_account = 'accounts:' .. ARGV[1]
-
+local accounts_key = ARGV[1]
+local to_account = accounts_key .. ':' .. ARGV[2]
 local balance, prepaid_amount, settle_threshold, settle_to = unpack(redis.call('HMGET', to_account, 'balance', 'prepaid_amount', 'settle_threshold', 'settle_to'))
 local settle_amount = 0
 

@@ -79,6 +79,11 @@ async fn main() {
             .takes_value(true)
             .default_value("redis://127.0.0.1:6379")
             .help("Redis URI (for example, \"redis://127.0.0.1:6379\" or \"unix:/tmp/redis.sock\")"),
+        Arg::with_name("database_prefix")
+            .long("database_prefix")
+            .takes_value(true)
+            .default_value("")
+            .help("Unique prefix that can be used to identify part of the db that this node will use. This can be used to enable multiple nodes to share the same database instance"),
         Arg::with_name("http_bind_address")
             .long("http_bind_address")
             .takes_value(true)

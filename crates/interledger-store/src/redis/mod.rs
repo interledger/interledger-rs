@@ -6,6 +6,8 @@
 //   routes:current         hash        dynamic routing table
 //   routes:static          hash        static routing table
 //   accounts:<id>          hash        information for each account
+//   accounts               set
+//   usernames              hash
 //   btp_outgoing
 // For interactive exploration of the store,
 // use the redis-cli tool included with your redis install.
@@ -52,15 +54,16 @@ use redis_crate::{
 use secrecy::{ExposeSecret, Secret, SecretBytesMut};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-};
-use std::{
+    borrow::Cow,
     iter::{self, FromIterator},
     str,
     str::FromStr,
     sync::Arc,
     time::Duration,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
 };
 use tokio::sync::broadcast;
 use tracing::{debug, error, trace, warn};
@@ -70,6 +73,7 @@ use zeroize::Zeroize;
 
 const DEFAULT_POLL_INTERVAL: u64 = 30000; // 30 seconds
 const ACCOUNT_DETAILS_FIELDS: usize = 21;
+const DEFAULT_DB_PREFIX: &str = "";
 
 static PARENT_ILP_KEY: &str = "parent_node_account_address";
 static ROUTES_KEY: &str = "routes:current";
@@ -77,20 +81,41 @@ static STATIC_ROUTES_KEY: &str = "routes:static";
 static DEFAULT_ROUTE_KEY: &str = "routes:default";
 static STREAM_NOTIFICATIONS_PREFIX: &str = "stream_notifications:";
 static SETTLEMENT_ENGINES_KEY: &str = "settlement_engines";
+static USERNAMES_KEY: &str = "usernames";
+static ACCOUNTS_KEY: &str = "accounts";
+static SEND_ROUTES_KEY: &str = "send_routes_to";
+static RECEIVE_ROUTES_FROM_KEY: &str = "receive_routes_from";
+static BPT_OUTGOING: &str = "btp_outgoing";
 
 /// Domain separator for leftover amounts
-fn uncredited_amount_key(account_id: impl ToString) -> String {
-    format!("uncredited-amount:{}", account_id.to_string())
+fn uncredited_amount_key(prefix: &str, account_id: impl ToString) -> String {
+    prefixed_key(
+        prefix,
+        &format!("uncredited-amount:{}", account_id.to_string()),
+    )
+    .into_owned()
 }
 
 /// Domain separator for idempotency keys
-fn prefixed_idempotency_key(idempotency_key: &str) -> String {
-    format!("idempotency-key:{}", idempotency_key)
+fn prefixed_idempotency_key(prefix: &str, idempotency_key: &str) -> String {
+    prefixed_key(
+        prefix,
+        format!("idempotency-key:{}", idempotency_key).as_str(),
+    )
+    .into_owned()
+}
+
+fn prefixed_key<'a>(prefix: &str, key: &'a str) -> Cow<'a, str> {
+    if prefix.is_empty() {
+        Cow::Borrowed(key)
+    } else {
+        Cow::Owned(format!("{}:{}", prefix, key))
+    }
 }
 
 /// Domain separator for accounts
-fn accounts_key(account_id: Uuid) -> String {
-    format!("accounts:{}", account_id)
+fn accounts_key(prefix: &str, account_id: Uuid) -> String {
+    prefixed_key(prefix, &format!("accounts:{}", account_id)).into_owned()
 }
 
 // TODO: Add descriptive errors inside the lua scripts!
@@ -146,6 +171,7 @@ pub struct RedisStoreBuilder {
     poll_interval: u64,
     /// Connector's ILP Address. Used to insert `Child` accounts as
     node_ilp_address: Address,
+    db_prefix: String,
 }
 
 impl RedisStoreBuilder {
@@ -156,6 +182,7 @@ impl RedisStoreBuilder {
             secret,
             poll_interval: DEFAULT_POLL_INTERVAL,
             node_ilp_address: DEFAULT_ILP_ADDRESS.clone(),
+            db_prefix: DEFAULT_DB_PREFIX.to_string(),
         }
     }
 
@@ -168,6 +195,13 @@ impl RedisStoreBuilder {
     /// Sets the poll interval at which the store will update its routes
     pub fn poll_interval(&mut self, poll_interval: u64) -> &mut Self {
         self.poll_interval = poll_interval;
+        self
+    }
+
+    /// Sets the redis db prefix that will be used for top level keys for this node
+    /// It can be used if there is a need for the same redis db to be shared by multiple nodes
+    pub fn with_db_prefix(&mut self, prefix: &str) -> &mut Self {
+        self.db_prefix = prefix.to_string();
         self
     }
 
@@ -200,7 +234,7 @@ impl RedisStoreBuilder {
         // found, use the builder's provided address (local.host) or the
         // one we decided to override it with
         let address: Option<String> = connection
-            .get(PARENT_ILP_KEY)
+            .get(&*prefixed_key(&self.db_prefix, PARENT_ILP_KEY))
             .map_err(|err| {
                 error!(
                     "Error checking whether we have a parent configured: {:?}",
@@ -225,6 +259,7 @@ impl RedisStoreBuilder {
             routes: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
             encryption_key: Arc::new(encryption_key),
             decryption_key: Arc::new(decryption_key),
+            db_prefix: self.db_prefix.clone(),
         };
 
         // Poll for routing table updates
@@ -233,6 +268,7 @@ impl RedisStoreBuilder {
         let redis_info = store.connection.redis_info.clone();
         let routing_table = store.routes.clone();
 
+        let db_prefix = self.db_prefix.clone();
         let poll_routes = async move {
             let mut interval = tokio::time::interval(Duration::from_millis(poll_interval));
             // Irrefutable while pattern, can we do something here?
@@ -245,6 +281,7 @@ impl RedisStoreBuilder {
                             redis_info: redis_info.clone(),
                         },
                         routing_table.clone(),
+                        &db_prefix,
                     )
                     .map_err(|err| error!("{}", err))
                     .await;
@@ -263,12 +300,13 @@ impl RedisStoreBuilder {
         // not yet supporting asynchronous subscriptions (see https://github.com/mitsuhiko/redis-rs/issues/183).
         let subscriptions_clone = store.subscriptions.clone();
         let payment_publisher = store.payment_publisher.clone();
+        let db_prefix = prefixed_key(&self.db_prefix, STREAM_NOTIFICATIONS_PREFIX).into_owned();
         std::thread::spawn(move || {
             #[allow(clippy::cognitive_complexity)]
             let sub_status =
                 sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
                     let channel_name = msg.get_channel_name();
-                    if let Some(suffix) = channel_name.strip_prefix(STREAM_NOTIFICATIONS_PREFIX) {
+                    if let Some(suffix) = channel_name.strip_prefix(&db_prefix) {
                         if let Ok(account_id) = Uuid::from_str(&suffix) {
                             let message: PaymentNotification = match serde_json::from_slice(msg.get_payload_bytes()) {
                                 Ok(s) => s,
@@ -342,13 +380,17 @@ pub struct RedisStore {
     encryption_key: Arc<Secret<EncryptionKey>>,
     /// Decryption Key to provide cleartext data to users
     decryption_key: Arc<Secret<DecryptionKey>>,
+    /// Prefix for all top level keys. This enables multiple nodes to use the same db instance.
+    db_prefix: String,
 }
 
 impl RedisStore {
     /// Gets all the account ids from Redis
     async fn get_all_accounts_ids(&self) -> Result<Vec<Uuid>, NodeStoreError> {
         let mut connection = self.connection.clone();
-        let account_ids: Vec<RedisAccountId> = connection.smembers("accounts").await?;
+        let account_ids: Vec<RedisAccountId> = connection
+            .smembers(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
+            .await?;
         Ok(account_ids.iter().map(|rid| rid.0).collect())
     }
 
@@ -359,15 +401,18 @@ impl RedisStore {
         encrypted: &AccountWithEncryptedTokens,
     ) -> Result<(), NodeStoreError> {
         let account = &encrypted.account;
-        let id = accounts_key(account.id);
+        let id = accounts_key(&self.db_prefix, account.id);
         let mut connection = self.connection.clone();
         let routing_table = self.routes.clone();
         // Check that there isn't already an account with values that MUST be unique
         let mut pipe = redis_crate::pipe();
-        pipe.exists(accounts_key(account.id));
-        pipe.hexists("usernames", account.username().as_ref());
+        pipe.exists(&id);
+        pipe.hexists(
+            &*prefixed_key(&self.db_prefix, USERNAMES_KEY),
+            account.username().as_ref(),
+        );
         if account.routing_relation == RoutingRelation::Parent {
-            pipe.exists(PARENT_ILP_KEY);
+            pipe.exists(&*prefixed_key(&self.db_prefix, PARENT_ILP_KEY));
         }
 
         let results: Vec<bool> = pipe.query_async(&mut connection).await?;
@@ -383,11 +428,15 @@ impl RedisStore {
         pipe.atomic();
 
         // Add the account key to the list of accounts
-        pipe.sadd("accounts", RedisAccountId(account.id)).ignore();
+        pipe.sadd(
+            &*prefixed_key(&self.db_prefix, ACCOUNTS_KEY),
+            RedisAccountId(account.id),
+        )
+        .ignore();
 
         // Save map for Username -> Account ID
         pipe.hset(
-            "usernames",
+            &*prefixed_key(&self.db_prefix, USERNAMES_KEY),
             account.username().as_ref(),
             RedisAccountId(account.id),
         )
@@ -398,23 +447,32 @@ impl RedisStore {
             .ignore();
 
         if account.should_send_routes() {
-            pipe.sadd("send_routes_to", RedisAccountId(account.id))
-                .ignore();
+            pipe.sadd(
+                &*prefixed_key(&self.db_prefix, SEND_ROUTES_KEY),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         if account.should_receive_routes() {
-            pipe.sadd("receive_routes_from", RedisAccountId(account.id))
-                .ignore();
+            pipe.sadd(
+                &*prefixed_key(&self.db_prefix, RECEIVE_ROUTES_FROM_KEY),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         if account.ilp_over_btp_url.is_some() {
-            pipe.sadd("btp_outgoing", RedisAccountId(account.id))
-                .ignore();
+            pipe.sadd(
+                &*prefixed_key(&self.db_prefix, BPT_OUTGOING),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         // Add route to routing table
         pipe.hset(
-            ROUTES_KEY,
+            &*prefixed_key(&self.db_prefix, ROUTES_KEY),
             account.ilp_address.as_bytes(),
             RedisAccountId(account.id),
         )
@@ -427,7 +485,7 @@ impl RedisStore {
         // had to check for the existence of a parent
         pipe.query_async(&mut connection).await?;
 
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, routing_table, &self.db_prefix).await?;
         debug!(
             "Inserted account {} (ILP address: {})",
             account.id, account.ilp_address
@@ -451,7 +509,9 @@ impl RedisStore {
         // TODO: Do not allow this update to happen if
         // AccountDetails.RoutingRelation == Parent and parent is
         // already set
-        let exists: bool = connection.exists(accounts_key(account.id)).await?;
+        let exists: bool = connection
+            .exists(accounts_key(&self.db_prefix, account.id))
+            .await?;
 
         if !exists {
             warn!(
@@ -464,39 +524,52 @@ impl RedisStore {
         pipe.atomic();
 
         // Add the account key to the list of accounts
-        pipe.sadd("accounts", RedisAccountId(account.id)).ignore();
+        pipe.sadd(
+            &*prefixed_key(&self.db_prefix, ACCOUNTS_KEY),
+            RedisAccountId(account.id),
+        )
+        .ignore();
 
         // Set account details
         pipe.cmd("HMSET")
-            .arg(accounts_key(account.id))
+            .arg(accounts_key(&self.db_prefix, account.id))
             .arg(encrypted)
             .ignore();
 
         if account.should_send_routes() {
-            pipe.sadd("send_routes_to", RedisAccountId(account.id))
-                .ignore();
+            pipe.sadd(
+                &*prefixed_key(&self.db_prefix, SEND_ROUTES_KEY),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         if account.should_receive_routes() {
-            pipe.sadd("receive_routes_from", RedisAccountId(account.id))
-                .ignore();
+            pipe.sadd(
+                &*prefixed_key(&self.db_prefix, RECEIVE_ROUTES_FROM_KEY),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         if account.ilp_over_btp_url.is_some() {
-            pipe.sadd("btp_outgoing", RedisAccountId(account.id))
-                .ignore();
+            pipe.sadd(
+                &*prefixed_key(&self.db_prefix, BPT_OUTGOING),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         // Add route to routing table
         pipe.hset(
-            ROUTES_KEY,
+            &*prefixed_key(&self.db_prefix, ROUTES_KEY),
             account.ilp_address.to_bytes().to_vec(),
             RedisAccountId(account.id),
         )
         .ignore();
 
         pipe.query_async(&mut connection).await?;
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, routing_table, &self.db_prefix).await?;
         debug!(
             "Inserted account {} (id: {}, ILP address: {})",
             account.username, account.id, account.ilp_address
@@ -514,48 +587,41 @@ impl RedisStore {
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
 
+        let accounts_key = accounts_key(&self.db_prefix, id);
         if let Some(ref endpoint) = settings.ilp_over_btp_url {
-            pipe.hset(accounts_key(id), "ilp_over_btp_url", endpoint);
+            pipe.hset(&accounts_key, "ilp_over_btp_url", endpoint);
         }
 
         if let Some(ref endpoint) = settings.ilp_over_http_url {
-            pipe.hset(accounts_key(id), "ilp_over_http_url", endpoint);
+            pipe.hset(&accounts_key, "ilp_over_http_url", endpoint);
         }
 
         if let Some(ref token) = settings.ilp_over_btp_outgoing_token {
-            pipe.hset(
-                accounts_key(id),
-                "ilp_over_btp_outgoing_token",
-                token.as_ref(),
-            );
+            pipe.hset(&accounts_key, "ilp_over_btp_outgoing_token", token.as_ref());
         }
 
         if let Some(ref token) = settings.ilp_over_http_outgoing_token {
             pipe.hset(
-                accounts_key(id),
+                &accounts_key,
                 "ilp_over_http_outgoing_token",
                 token.as_ref(),
             );
         }
 
         if let Some(ref token) = settings.ilp_over_btp_incoming_token {
-            pipe.hset(
-                accounts_key(id),
-                "ilp_over_btp_incoming_token",
-                token.as_ref(),
-            );
+            pipe.hset(&accounts_key, "ilp_over_btp_incoming_token", token.as_ref());
         }
 
         if let Some(ref token) = settings.ilp_over_http_incoming_token {
             pipe.hset(
-                accounts_key(id),
+                &accounts_key,
                 "ilp_over_http_incoming_token",
                 token.as_ref(),
             );
         }
 
         if let Some(settle_threshold) = settings.settle_threshold {
-            pipe.hset(accounts_key(id), "settle_threshold", settle_threshold);
+            pipe.hset(&accounts_key, "settle_threshold", settle_threshold);
         }
 
         if let Some(settle_to) = settings.settle_to {
@@ -565,7 +631,7 @@ impl RedisStore {
                     CreateAccountError::ParamTooLarge("settle_to".to_owned()),
                 ));
             }
-            pipe.hset(accounts_key(id), "settle_to", settle_to);
+            pipe.hset(&accounts_key, "settle_to", settle_to);
         }
 
         pipe.query_async(&mut self.connection.clone()).await?;
@@ -580,6 +646,8 @@ impl RedisStore {
         id: Uuid,
     ) -> Result<AccountWithEncryptedTokens, NodeStoreError> {
         let mut accounts: Vec<AccountWithEncryptedTokens> = LOAD_ACCOUNTS
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
+            .arg(&*prefixed_key(&self.db_prefix, SETTLEMENT_ENGINES_KEY))
             .arg(RedisAccountId(id))
             .invoke_async(&mut self.connection.clone())
             .await?;
@@ -599,34 +667,54 @@ impl RedisStore {
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
 
-        pipe.srem("accounts", RedisAccountId(account.id)).ignore();
-
-        pipe.del(accounts_key(account.id)).ignore();
-        pipe.hdel("usernames", account.username().as_ref()).ignore();
+        pipe.srem(
+            &*prefixed_key(&self.db_prefix, ACCOUNTS_KEY),
+            RedisAccountId(account.id),
+        )
+        .ignore();
+        pipe.del(&*accounts_key(&self.db_prefix, account.id))
+            .ignore();
+        pipe.hdel(
+            &*prefixed_key(&self.db_prefix, USERNAMES_KEY),
+            account.username().as_ref(),
+        )
+        .ignore();
 
         if account.should_send_routes() {
-            pipe.srem("send_routes_to", RedisAccountId(account.id))
-                .ignore();
+            pipe.srem(
+                &*prefixed_key(&self.db_prefix, SEND_ROUTES_KEY),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         if account.should_receive_routes() {
-            pipe.srem("receive_routes_from", RedisAccountId(account.id))
-                .ignore();
+            pipe.srem(
+                &*prefixed_key(&self.db_prefix, RECEIVE_ROUTES_FROM_KEY),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
         if account.ilp_over_btp_url.is_some() {
-            pipe.srem("btp_outgoing", RedisAccountId(account.id))
-                .ignore();
+            pipe.srem(
+                &*prefixed_key(&self.db_prefix, BPT_OUTGOING),
+                RedisAccountId(account.id),
+            )
+            .ignore();
         }
 
-        pipe.hdel(ROUTES_KEY, account.ilp_address.to_bytes().to_vec())
-            .ignore();
+        pipe.hdel(
+            &*prefixed_key(&self.db_prefix, ROUTES_KEY),
+            account.ilp_address.to_bytes().to_vec(),
+        )
+        .ignore();
 
-        pipe.del(uncredited_amount_key(id));
+        pipe.del(uncredited_amount_key(&self.db_prefix, id));
 
         let mut connection = self.connection.clone();
         pipe.query_async(&mut connection).await?;
-        update_routes(connection, self.routes.clone()).await?;
+        update_routes(connection, self.routes.clone(), &self.db_prefix).await?;
         debug!("Deleted account {}", account.id);
         Ok(encrypted)
     }
@@ -643,6 +731,9 @@ impl AccountStore for RedisStore {
     ) -> Result<Vec<Account>, AccountStoreError> {
         let num_accounts = account_ids.len();
         let mut script = LOAD_ACCOUNTS.prepare_invoke();
+        script.arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY));
+        script.arg(&*prefixed_key(&self.db_prefix, SETTLEMENT_ENGINES_KEY));
+
         for id in account_ids.iter() {
             script.arg(id.to_string());
         }
@@ -675,7 +766,10 @@ impl AccountStore for RedisStore {
         let id: Option<RedisAccountId> = self
             .connection
             .clone()
-            .hget("usernames", username.as_ref())
+            .hget(
+                &*prefixed_key(&self.db_prefix, USERNAMES_KEY),
+                username.as_ref(),
+            )
             .await?;
         match id {
             Some(rid) => Ok(rid.0),
@@ -724,7 +818,11 @@ impl StreamNotificationsStore for RedisStore {
                 message, account_id
             );
             // https://github.com/rust-lang/rust/issues/64960#issuecomment-544219926
-            let published_args = format!("{}{}", STREAM_NOTIFICATIONS_PREFIX, account_id.clone());
+            let published_args = format!(
+                "{}{}",
+                prefixed_key(&self_clone.db_prefix, STREAM_NOTIFICATIONS_PREFIX),
+                account_id.clone()
+            );
             redis_crate::cmd("PUBLISH")
                 .arg(published_args)
                 .arg(message)
@@ -749,7 +847,10 @@ impl BalanceStore for RedisStore {
         let values: Vec<i64> = self
             .connection
             .clone()
-            .hget(accounts_key(account_id), &["balance", "prepaid_amount"])
+            .hget(
+                accounts_key(&self.db_prefix, account_id),
+                &["balance", "prepaid_amount"],
+            )
             .await?;
 
         let balance = values[0];
@@ -768,6 +869,7 @@ impl BalanceStore for RedisStore {
         }
 
         let balance: i64 = PROCESS_PREPARE
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(from_account_id))
             .arg(incoming_amount)
             .invoke_async(&mut self.connection.clone())
@@ -786,6 +888,7 @@ impl BalanceStore for RedisStore {
         outgoing_amount: u64,
     ) -> Result<(i64, u64), BalanceStoreError> {
         let (balance, amount_to_settle): (i64, u64) = PROCESS_FULFILL
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(to_account_id))
             .arg(outgoing_amount)
             .invoke_async(&mut self.connection.clone())
@@ -811,6 +914,7 @@ impl BalanceStore for RedisStore {
         }
 
         let balance: i64 = PROCESS_REJECT
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(from_account_id))
             .arg(incoming_amount)
             .invoke_async(&mut self.connection.clone())
@@ -829,6 +933,7 @@ impl BalanceStore for RedisStore {
         to_account_id: Uuid,
     ) -> Result<(i64, u64), BalanceStoreError> {
         let (balance, amount_to_settle): (i64, u64) = PROCESS_DELAYED_SETTLEMENT
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(to_account_id))
             .invoke_async(&mut self.connection.clone())
             .await?;
@@ -888,6 +993,8 @@ impl BtpStore for RedisStore {
         // TODO cache the result so we don't hit redis for every packet (is that
         // necessary if redis is often used as a cache?)
         let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
+            .arg(&*prefixed_key(&self.db_prefix, USERNAMES_KEY))
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(username.as_ref())
             .invoke_async(&mut self.connection.clone())
             .await?;
@@ -919,8 +1026,11 @@ impl BtpStore for RedisStore {
     }
 
     async fn get_btp_outgoing_accounts(&self) -> Result<Vec<Self::Account>, BtpStoreError> {
-        let account_ids: Vec<RedisAccountId> =
-            self.connection.clone().smembers("btp_outgoing").await?;
+        let account_ids: Vec<RedisAccountId> = self
+            .connection
+            .clone()
+            .smembers(&*prefixed_key(&self.db_prefix, BPT_OUTGOING))
+            .await?;
         let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
 
         if account_ids.is_empty() {
@@ -945,6 +1055,8 @@ impl HttpStore for RedisStore {
     ) -> Result<Self::Account, HttpStoreError> {
         // TODO make sure it can't do script injection!
         let account: Option<AccountWithEncryptedTokens> = ACCOUNT_FROM_USERNAME
+            .arg(&*prefixed_key(&self.db_prefix, USERNAMES_KEY))
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(username.as_ref())
             .invoke_async(&mut self.connection.clone())
             .await?;
@@ -1073,6 +1185,8 @@ impl NodeStore for RedisStore {
         let account_ids = self.get_all_accounts_ids().await?;
 
         let mut script = LOAD_ACCOUNTS.prepare_invoke();
+        script.arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY));
+        script.arg(&*prefixed_key(&self.db_prefix, SETTLEMENT_ENGINES_KEY));
         for id in account_ids.iter() {
             script.arg(id.to_string());
         }
@@ -1102,7 +1216,7 @@ impl NodeStore for RedisStore {
             HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| account_id));
         let mut pipe = redis_crate::pipe();
         for account_id in accounts {
-            pipe.exists(accounts_key((*account_id).0));
+            pipe.exists(accounts_key(&self.db_prefix, (*account_id).0));
         }
 
         let routing_table = self.routes.clone();
@@ -1117,14 +1231,14 @@ impl NodeStore for RedisStore {
 
         let mut pipe = redis_crate::pipe();
         pipe.atomic()
-            .del(STATIC_ROUTES_KEY)
+            .del(&*prefixed_key(&self.db_prefix, STATIC_ROUTES_KEY))
             .ignore()
-            .hset_multiple(STATIC_ROUTES_KEY, &routes)
+            .hset_multiple(&*prefixed_key(&self.db_prefix, STATIC_ROUTES_KEY), &routes)
             .ignore();
 
         pipe.query_async(&mut connection).await?;
 
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, routing_table, &self.db_prefix).await?;
         Ok(())
     }
 
@@ -1136,7 +1250,9 @@ impl NodeStore for RedisStore {
         let routing_table = self.routes.clone();
         let mut connection = self.connection.clone();
 
-        let exists: bool = connection.exists(accounts_key(account_id)).await?;
+        let exists: bool = connection
+            .exists(accounts_key(&self.db_prefix, account_id))
+            .await?;
         if !exists {
             error!(
                 "Cannot set static route for prefix: {} because account {} does not exist",
@@ -1146,10 +1262,14 @@ impl NodeStore for RedisStore {
         }
 
         connection
-            .hset(STATIC_ROUTES_KEY, prefix, RedisAccountId(account_id))
+            .hset(
+                &*prefixed_key(&self.db_prefix, STATIC_ROUTES_KEY),
+                prefix,
+                RedisAccountId(account_id),
+            )
             .await?;
 
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, routing_table, &self.db_prefix).await?;
 
         Ok(())
     }
@@ -1158,7 +1278,9 @@ impl NodeStore for RedisStore {
         let routing_table = self.routes.clone();
         // TODO replace this with a lua script to do both calls at once
         let mut connection = self.connection.clone();
-        let exists: bool = connection.exists(accounts_key(account_id)).await?;
+        let exists: bool = connection
+            .exists(accounts_key(&self.db_prefix, account_id))
+            .await?;
         if !exists {
             error!(
                 "Cannot set default route because account {} does not exist",
@@ -1168,10 +1290,13 @@ impl NodeStore for RedisStore {
         }
 
         connection
-            .set(DEFAULT_ROUTE_KEY, RedisAccountId(account_id))
+            .set(
+                &*prefixed_key(&self.db_prefix, DEFAULT_ROUTE_KEY),
+                RedisAccountId(account_id),
+            )
             .await?;
         debug!("Set default route to account id: {}", account_id);
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, routing_table, &self.db_prefix).await?;
         Ok(())
     }
 
@@ -1186,7 +1311,10 @@ impl NodeStore for RedisStore {
             .collect();
         debug!("Setting settlement engines to {:?}", asset_to_url_map);
         connection
-            .hset_multiple(SETTLEMENT_ENGINES_KEY, &asset_to_url_map)
+            .hset_multiple(
+                &*prefixed_key(&self.db_prefix, SETTLEMENT_ENGINES_KEY),
+                &asset_to_url_map,
+            )
             .await?;
         Ok(())
     }
@@ -1198,7 +1326,10 @@ impl NodeStore for RedisStore {
         let url: Option<String> = self
             .connection
             .clone()
-            .hget(SETTLEMENT_ENGINES_KEY, asset_code)
+            .hget(
+                &*prefixed_key(&self.db_prefix, SETTLEMENT_ENGINES_KEY),
+                asset_code,
+            )
             .await?;
         if let Some(url) = url {
             match Url::parse(url.as_str()) {
@@ -1231,7 +1362,10 @@ impl AddressStore for RedisStore {
 
         // Save it to Redis
         connection
-            .set(PARENT_ILP_KEY, ilp_address.as_bytes())
+            .set(
+                &*prefixed_key(&self.db_prefix, PARENT_ILP_KEY),
+                ilp_address.as_bytes(),
+            )
             .await?;
 
         let accounts = self.get_all_accounts().await?;
@@ -1255,8 +1389,11 @@ impl AddressStore for RedisStore {
                 && account.routing_relation() != RoutingRelation::Peer
             {
                 // remove the old route
-                pipe.hdel(ROUTES_KEY, account.ilp_address.as_bytes())
-                    .ignore();
+                pipe.hdel(
+                    &*prefixed_key(&self.db_prefix, ROUTES_KEY),
+                    account.ilp_address.as_bytes(),
+                )
+                .ignore();
 
                 // if the username of the account ends with the
                 // node's address, we're already configured so no
@@ -1269,14 +1406,14 @@ impl AddressStore for RedisStore {
                         .unwrap()
                 };
                 pipe.hset(
-                    accounts_key(account.id()),
+                    accounts_key(&self.db_prefix, account.id()),
                     "ilp_address",
                     new_ilp_address.as_bytes(),
                 )
                 .ignore();
 
                 pipe.hset(
-                    ROUTES_KEY,
+                    &*prefixed_key(&self.db_prefix, ROUTES_KEY),
                     new_ilp_address.as_bytes(),
                     RedisAccountId(account.id()),
                 )
@@ -1285,14 +1422,14 @@ impl AddressStore for RedisStore {
         }
 
         pipe.query_async(&mut connection.clone()).await?;
-        update_routes(connection, routing_table).await?;
+        update_routes(connection, routing_table, &self.db_prefix).await?;
         Ok(())
     }
 
     async fn clear_ilp_address(&self) -> Result<(), AddressStoreError> {
         self.connection
             .clone()
-            .del(PARENT_ILP_KEY)
+            .del(&*prefixed_key(&self.db_prefix, PARENT_ILP_KEY))
             .map_err(|err| AddressStoreError::Other(Box::new(err)))
             .await?;
 
@@ -1317,8 +1454,11 @@ impl CcpRoutingStore for RedisStore {
         &self,
         ignore_accounts: Vec<Uuid>,
     ) -> Result<Vec<Account>, CcpRoutingStoreError> {
-        let account_ids: Vec<RedisAccountId> =
-            self.connection.clone().smembers("send_routes_to").await?;
+        let account_ids: Vec<RedisAccountId> = self
+            .connection
+            .clone()
+            .smembers(&*prefixed_key(&self.db_prefix, SEND_ROUTES_KEY))
+            .await?;
         let account_ids: Vec<Uuid> = account_ids
             .into_iter()
             .map(|id| id.0)
@@ -1338,7 +1478,7 @@ impl CcpRoutingStore for RedisStore {
         let account_ids: Vec<RedisAccountId> = self
             .connection
             .clone()
-            .smembers("receive_routes_from")
+            .smembers(&*prefixed_key(&self.db_prefix, RECEIVE_ROUTES_FROM_KEY))
             .await?;
         let account_ids: Vec<Uuid> = account_ids.into_iter().map(|id| id.0).collect();
 
@@ -1353,8 +1493,11 @@ impl CcpRoutingStore for RedisStore {
     async fn get_local_and_configured_routes(
         &self,
     ) -> Result<(RoutingTable<Account>, RoutingTable<Account>), CcpRoutingStoreError> {
-        let static_routes: Vec<(String, RedisAccountId)> =
-            self.connection.clone().hgetall(STATIC_ROUTES_KEY).await?;
+        let static_routes: Vec<(String, RedisAccountId)> = self
+            .connection
+            .clone()
+            .hgetall(&*prefixed_key(&self.db_prefix, STATIC_ROUTES_KEY))
+            .await?;
 
         let accounts = self.get_all_accounts().await?;
 
@@ -1399,15 +1542,15 @@ impl CcpRoutingStore for RedisStore {
         // Save routes to Redis
         let mut pipe = redis_crate::pipe();
         pipe.atomic()
-            .del(ROUTES_KEY)
+            .del(&*prefixed_key(&self.db_prefix, ROUTES_KEY))
             .ignore()
-            .hset_multiple(ROUTES_KEY, &routes)
+            .hset_multiple(&*prefixed_key(&self.db_prefix, ROUTES_KEY), &routes)
             .ignore();
 
         pipe.query_async(&mut connection).await?;
         trace!("Saved {} routes to Redis", num_routes);
 
-        update_routes(connection, self.routes.clone()).await?;
+        update_routes(connection, self.routes.clone(), &self.db_prefix).await?;
         Ok(())
     }
 }
@@ -1431,9 +1574,11 @@ impl RateLimitStore for RedisStore {
 
             if let Some(limit) = account.packets_per_minute_limit {
                 let limit = limit - 1;
-                let packets_limit = format!("limit:packets:{}", account.id);
+                let packets_limit =
+                    prefixed_key(&self.db_prefix, &format!("limit:packets:{}", account.id))
+                        .into_owned();
                 pipe.cmd("CL.THROTTLE")
-                    .arg(packets_limit)
+                    .arg(&packets_limit)
                     .arg(limit)
                     .arg(limit)
                     .arg(60)
@@ -1442,9 +1587,11 @@ impl RateLimitStore for RedisStore {
 
             if let Some(limit) = account.amount_per_minute_limit {
                 let limit = limit - 1;
-                let throughput_limit = format!("limit:throughput:{}", account.id);
+                let throughput_limit =
+                    prefixed_key(&self.db_prefix, &format!("limit:throughput:{}", account.id))
+                        .into_owned();
                 pipe.cmd("CL.THROTTLE")
-                    .arg(throughput_limit)
+                    .arg(&throughput_limit)
                     // TODO allow separate configuration for burst limit
                     .arg(limit)
                     .arg(limit)
@@ -1487,9 +1634,11 @@ impl RateLimitStore for RedisStore {
     ) -> Result<(), RateLimitError> {
         if let Some(limit) = account.amount_per_minute_limit {
             let limit = limit - 1;
-            let throughput_limit = format!("limit:throughput:{}", account.id);
+            let throughput_limit =
+                prefixed_key(&self.db_prefix, &format!("limit:throughput:{}", account.id))
+                    .into_owned();
             cmd("CL.THROTTLE")
-                .arg(throughput_limit)
+                .arg(&throughput_limit)
                 .arg(limit)
                 .arg(limit)
                 .arg(60)
@@ -1512,7 +1661,7 @@ impl IdempotentStore for RedisStore {
     ) -> Result<Option<IdempotentData>, IdempotentStoreError> {
         let mut connection = self.connection.clone();
         let ret: HashMap<String, String> = connection
-            .hgetall(prefixed_idempotency_key(&idempotency_key))
+            .hgetall(prefixed_idempotency_key(&self.db_prefix, &idempotency_key))
             .await?;
 
         if let (Some(status_code), Some(data), Some(input_hash_slice)) = (
@@ -1544,7 +1693,7 @@ impl IdempotentStore for RedisStore {
         let mut connection = self.connection.clone();
         pipe.atomic()
             .cmd("HMSET") // cannot use hset_multiple since data and status_code have different types
-            .arg(&prefixed_idempotency_key(&idempotency_key))
+            .arg(&prefixed_idempotency_key(&self.db_prefix, &idempotency_key))
             .arg("status_code")
             .arg(status_code.as_u16())
             .arg("data")
@@ -1552,7 +1701,10 @@ impl IdempotentStore for RedisStore {
             .arg("input_hash")
             .arg(&input_hash)
             .ignore()
-            .expire(&prefixed_idempotency_key(&idempotency_key), 86400)
+            .expire(
+                &prefixed_idempotency_key(&self.db_prefix, &idempotency_key),
+                86400,
+            )
             .ignore();
         pipe.query_async(&mut connection).await?;
 
@@ -1578,9 +1730,10 @@ impl SettlementStore for RedisStore {
     ) -> Result<(), SettlementStoreError> {
         let idempotency_key = idempotency_key.unwrap();
         let balance: i64 = PROCESS_INCOMING_SETTLEMENT
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(account_id))
             .arg(amount)
-            .arg(idempotency_key)
+            .arg(&*prefixed_key(&self.db_prefix, idempotency_key.as_str()))
             .invoke_async(&mut self.connection.clone())
             .await?;
         trace!(
@@ -1603,6 +1756,7 @@ impl SettlementStore for RedisStore {
             settle_amount
         );
         let balance: i64 = REFUND_SETTLEMENT
+            .arg(&*prefixed_key(&self.db_prefix, ACCOUNTS_KEY))
             .arg(RedisAccountId(account_id))
             .arg(settle_amount)
             .invoke_async(&mut self.connection.clone())
@@ -1719,9 +1873,16 @@ impl LeftoversStore for RedisStore {
         let mut pipe = redis_crate::pipe();
         pipe.atomic();
         // get the amounts and instantly delete them
-        pipe.lrange(uncredited_amount_key(account_id.to_string()), 0, -1);
-        pipe.del(uncredited_amount_key(account_id.to_string()))
-            .ignore();
+        pipe.lrange(
+            uncredited_amount_key(&self.db_prefix, account_id.to_string()),
+            0,
+            -1,
+        );
+        pipe.del(uncredited_amount_key(
+            &self.db_prefix,
+            account_id.to_string(),
+        ))
+        .ignore();
 
         let amounts: Vec<AmountWithScale> = pipe.query_async(&mut self.connection.clone()).await?;
 
@@ -1747,7 +1908,7 @@ impl LeftoversStore for RedisStore {
         let mut connection = self.connection.clone();
         connection
             .rpush(
-                uncredited_amount_key(account_id),
+                uncredited_amount_key(&self.db_prefix, account_id),
                 AmountWithScale {
                     num: uncredited_settlement_amount.0,
                     scale: uncredited_settlement_amount.1,
@@ -1774,7 +1935,7 @@ impl LeftoversStore for RedisStore {
             self.connection
                 .clone()
                 .rpush(
-                    uncredited_amount_key(account_id),
+                    uncredited_amount_key(&self.db_prefix, account_id),
                     AmountWithScale {
                         num: precision_loss,
                         scale: std::cmp::max(local_scale, amount.1),
@@ -1793,7 +1954,7 @@ impl LeftoversStore for RedisStore {
         trace!("Clearing uncredited_settlement_amount {:?}", account_id);
         self.connection
             .clone()
-            .del(uncredited_amount_key(account_id))
+            .del(uncredited_amount_key(&self.db_prefix, account_id))
             .await?;
         Ok(())
     }
@@ -1807,11 +1968,12 @@ use futures::future::TryFutureExt;
 async fn update_routes(
     mut connection: RedisReconnect,
     routing_table: Arc<RwLock<Arc<HashMap<String, Uuid>>>>,
+    db_prefix: &str,
 ) -> Result<(), RedisError> {
     let mut pipe = redis_crate::pipe();
-    pipe.hgetall(ROUTES_KEY)
-        .hgetall(STATIC_ROUTES_KEY)
-        .get(DEFAULT_ROUTE_KEY);
+    pipe.hgetall(&*prefixed_key(db_prefix, ROUTES_KEY))
+        .hgetall(&*prefixed_key(db_prefix, STATIC_ROUTES_KEY))
+        .get(&*prefixed_key(db_prefix, DEFAULT_ROUTE_KEY));
     let (routes, static_routes, default_route): (RouteVec, RouteVec, Option<RedisAccountId>) =
         pipe.query_async(&mut connection).await?;
     trace!(
