@@ -2,8 +2,8 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/rust
-    resource_class: large
+      - image: circleci/rust:1.49
+    resource_class: medium
     environment:
       CARGO_HOME: /home/circleci/.cargo
     steps:
