@@ -309,6 +309,9 @@ fn receive_money(
             }));
         }
 
+        // The last packet contains the ConnectionClose frame;
+        // if this is the case, return this information to the caller
+        // to be included in the payment notification
         if let Frame::ConnectionClose(_) = frame {
             connection_closed = true;
         }
