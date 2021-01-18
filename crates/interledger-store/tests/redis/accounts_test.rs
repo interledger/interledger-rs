@@ -199,9 +199,11 @@ async fn update_accounts() {
 #[tokio::test]
 async fn modify_account_settings_settle_to_overflow() {
     let (store, _context, accounts) = test_store().await.unwrap();
-    let mut settings = AccountSettings::default();
     // Redis.rs cannot save a value larger than i64::MAX
-    settings.settle_to = Some(std::i64::MAX as u64 + 1);
+    let settings = AccountSettings {
+        settle_to: Some(std::i64::MAX as u64 + 1),
+        ..Default::default()
+    };
     let account = accounts[0].clone();
     let id = account.id();
     let err = store
