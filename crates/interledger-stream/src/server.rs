@@ -75,12 +75,11 @@ impl ConnectionGenerator {
     ///
     /// This method returns a Result in case we want to change the internal
     /// logic in the future.
-    pub fn rederive_secret(&self, destination_account: &Address) -> Result<[u8; 32], ()> {
+    pub fn rederive_secret(&self, destination_account: &Address) -> [u8; 32] {
         let local_part = destination_account.segments().rev().next().unwrap();
         // Note this computes the HMAC with the token _encoded as UTF8_,
         // rather than decoding the base64 first.
-        let shared_secret = hmac_sha256(&self.secret_generator[..], &local_part.as_bytes()[..]);
-        Ok(shared_secret)
+        hmac_sha256(&self.secret_generator[..], &local_part.as_bytes()[..])
     }
 }
 
@@ -169,38 +168,36 @@ where
 
         // The case where the request is bound for this server
         if dest.starts_with(to_address.as_ref()) {
-            if let Ok(shared_secret) = self.connection_generator.rederive_secret(&destination) {
-                let response = receive_money(
-                    &shared_secret,
-                    &to_address,
-                    request.to.asset_code(),
-                    request.to.asset_scale(),
-                    &request.prepare,
-                );
-                match response {
-                    Ok(ref _fulfill) => {
-                        self.store
-                            .publish_payment_notification(PaymentNotification {
-                                to_username,
-                                from_username,
-                                amount,
-                                destination,
-                                timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
-                            })
+            let shared_secret = self.connection_generator.rederive_secret(&destination);
+            let response = receive_money(
+                &shared_secret,
+                &to_address,
+                request.to.asset_code(),
+                request.to.asset_scale(),
+                &request.prepare,
+            );
+            match response {
+                Ok(ref _fulfill) => self
+                    .store
+                    .publish_payment_notification(PaymentNotification {
+                        to_username,
+                        from_username,
+                        amount,
+                        destination,
+                        timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                    }),
+                Err(ref reject) => {
+                    if reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
+                        // Assume the packet isn't for us if the decryption step fails.
+                        // Note this means that if the packet data is modified in any way,
+                        // the sender will likely see an error like F02: Unavailable (this is
+                        // a bit confusing but the packet data should not be modified at all
+                        // under normal circumstances).
+                        return self.next.send_request(request).await;
                     }
-                    Err(ref reject) => {
-                        if reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
-                            // Assume the packet isn't for us if the decryption step fails.
-                            // Note this means that if the packet data is modified in any way,
-                            // the sender will likely see an error like F02: Unavailable (this is
-                            // a bit confusing but the packet data should not be modified at all
-                            // under normal circumstances).
-                            return self.next.send_request(request).await;
-                        }
-                    }
-                };
-                return response;
-            }
+                }
+            };
+            return response;
         }
         self.next.send_request(request).await
     }
@@ -347,9 +344,7 @@ mod connection_generator {
             .starts_with(receiver_address.as_ref()));
 
         assert_eq!(
-            connection_generator
-                .rederive_secret(&destination_account)
-                .unwrap(),
+            connection_generator.rederive_secret(&destination_account),
             shared_secret
         );
     }
@@ -397,9 +392,7 @@ mod receiving_money {
         }
         .build();
 
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
-            .unwrap();
+        let shared_secret = connection_generator.rederive_secret(&prepare.destination());
         let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_ok());
     }
@@ -424,9 +417,7 @@ mod receiving_money {
         }
         .build();
 
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
-            .unwrap();
+        let shared_secret = connection_generator.rederive_secret(&prepare.destination());
         let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_ok());
     }
@@ -452,9 +443,7 @@ mod receiving_money {
         }
         .build();
 
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
-            .unwrap();
+        let shared_secret = connection_generator.rederive_secret(&prepare.destination());
         let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_err());
     }
@@ -490,9 +479,7 @@ mod receiving_money {
         }
         .build();
 
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
-            .unwrap();
+        let shared_secret = connection_generator.rederive_secret(&prepare.destination());
         let result = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare);
         assert!(result.is_err());
     }
@@ -505,9 +492,7 @@ mod receiving_money {
         let condition = prepare.execution_condition().to_vec();
         let server_secret = Bytes::from(vec![0u8; 32]);
         let connection_generator = ConnectionGenerator::new(server_secret);
-        let shared_secret = connection_generator
-            .rederive_secret(&prepare.destination())
-            .expect("Receiver should be able to rederive the shared secret");
+        let shared_secret = connection_generator.rederive_secret(&prepare.destination());
         assert_eq!(
             &shared_secret[..],
             hex::decode("b7d09d2e16e6f83c55b60e42fcd7c2b8ed49624a1df73c59b383dbe2e8690309")
