@@ -288,12 +288,8 @@ mod test_address {
         let addr1 = Address::from_str("test.alice.1234.5789").unwrap();
         let addr2 = Address::from_str("test.bob").unwrap();
         assert_ne!(addr1, addr2);
-        assert_eq!(addr1, addr1);
-        assert_eq!(addr2, addr2);
-        assert!(addr1 == addr1.clone());
-        assert!(addr1 != addr2);
+        assert_eq!(addr1, addr1.clone());
         assert!(addr1.eq(&addr1));
-        assert!(addr1.ne(&addr2));
     }
 
     #[test]
