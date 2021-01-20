@@ -3,7 +3,10 @@ use once_cell::sync::Lazy;
 use reqwest::{Client, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
-use std::{collections::HashMap, iter::once};
+use std::{
+    collections::HashMap,
+    iter::{once, FromIterator},
+};
 use tracing::error;
 
 static CRYPTOCOMPARE_URL: Lazy<Url> = Lazy::new(|| {
@@ -89,5 +92,5 @@ pub async fn query_cryptocompare(
             }
         })
         .chain(once(("USD".to_string(), 1.0)));
-    Ok(rates.collect())
+    Ok(HashMap::from_iter(rates))
 }

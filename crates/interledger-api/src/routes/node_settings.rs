@@ -12,6 +12,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use std::{
     collections::HashMap,
+    iter::FromIterator,
     str::{self, FromStr},
 };
 use tracing::{error, trace};
@@ -109,11 +110,12 @@ where
                 let accounts = store
                     .get_accounts(routes.values().cloned().collect())
                     .await?;
-                let routes: HashMap<String, String> = routes
-                    .iter()
-                    .map(|(prefix, _)| prefix.to_string())
-                    .zip(accounts.into_iter().map(|a| a.username().to_string()))
-                    .collect();
+                let routes: HashMap<String, String> = HashMap::from_iter(
+                    routes
+                        .iter()
+                        .map(|(prefix, _)| prefix.to_string())
+                        .zip(accounts.into_iter().map(|a| a.username().to_string())),
+                );
 
                 Ok::<Json, Rejection>(warp::reply::json(&routes))
             }

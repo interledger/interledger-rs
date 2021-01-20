@@ -36,6 +36,7 @@ pub mod test_helpers {
     use interledger_service_util::MaxPacketAmountAccount;
     use once_cell::sync::Lazy;
     use std::collections::HashMap;
+    use std::iter::FromIterator;
     use std::str::FromStr;
     use std::sync::Arc;
     use tokio::sync::broadcast;
@@ -133,14 +134,13 @@ pub mod test_helpers {
 
     impl RouterStore for TestStore {
         fn routing_table(&self) -> Arc<HashMap<String, Uuid>> {
-            Arc::new(
+            Arc::new(HashMap::from_iter(
                 vec![(
                     self.route.clone().unwrap().0,
                     self.route.clone().unwrap().1.id(),
                 )]
-                .into_iter()
-                .collect(),
-            )
+                .into_iter(),
+            ))
         }
     }
 

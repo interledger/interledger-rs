@@ -9,7 +9,7 @@ static ENCRYPTION_KEY_GENERATION_STRING: &[u8] = b"ilp_store_redis_encryption_ke
 
 use core::sync::atomic;
 use secrecy::{DebugSecret, Secret, SecretBytesMut};
-use std::{fmt, ptr};
+use std::ptr;
 use zeroize::Zeroize;
 
 #[derive(Debug)]
@@ -77,17 +77,6 @@ impl Drop for GenerationKey {
     }
 }
 
-#[derive(Debug)]
-pub struct DecryptError;
-
-impl fmt::Display for DecryptError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error while performing decryption")
-    }
-}
-
-impl std::error::Error for DecryptError {}
-
 // this logic is taken from [here](https://github.com/iqlusioninc/crates/blob/develop/zeroize/src/lib.rs#L388-L400)
 // Perform a [volatile
 // write](https://doc.rust-lang.org/beta/std/ptr/fn.write_volatile.html) to the
@@ -149,9 +138,9 @@ pub fn encrypt_token(encryption_key: &aead::LessSafeKey, token: &[u8]) -> BytesM
 pub fn decrypt_token(
     decryption_key: &aead::LessSafeKey,
     encrypted: &[u8],
-) -> Result<SecretBytesMut, DecryptError> {
+) -> Result<SecretBytesMut, ()> {
     if encrypted.len() < aead::MAX_TAG_LEN {
-        return Err(DecryptError);
+        return Err(());
     }
 
     let mut encrypted = encrypted.to_vec();
@@ -163,7 +152,7 @@ pub fn decrypt_token(
     if let Ok(token) = decryption_key.open_in_place(nonce, aead::Aad::empty(), &mut encrypted) {
         Ok(SecretBytesMut::new(&token[..]))
     } else {
-        Err(DecryptError)
+        Err(())
     }
 }
 

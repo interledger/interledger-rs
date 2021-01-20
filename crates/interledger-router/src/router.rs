@@ -146,6 +146,7 @@ mod tests {
     use once_cell::sync::Lazy;
     use parking_lot::Mutex;
     use std::collections::HashMap;
+    use std::iter::FromIterator;
     use std::str::FromStr;
     use std::sync::Arc;
     use std::time::UNIX_EPOCH;
@@ -263,9 +264,9 @@ mod tests {
     async fn no_route() {
         let mut router = Router::new(
             TestStore {
-                routes: vec![("example.other".to_string(), Uuid::new_v4())]
-                    .into_iter()
-                    .collect(),
+                routes: HashMap::from_iter(
+                    vec![("example.other".to_string(), Uuid::new_v4())].into_iter(),
+                ),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -296,9 +297,9 @@ mod tests {
     async fn finds_exact_route() {
         let mut router = Router::new(
             TestStore {
-                routes: vec![("example.destination".to_string(), Uuid::new_v4())]
-                    .into_iter()
-                    .collect(),
+                routes: HashMap::from_iter(
+                    vec![("example.destination".to_string(), Uuid::new_v4())].into_iter(),
+                ),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -329,7 +330,7 @@ mod tests {
     async fn catch_all_route() {
         let mut router = Router::new(
             TestStore {
-                routes: vec![(String::new(), Uuid::new_v4())].into_iter().collect(),
+                routes: HashMap::from_iter(vec![(String::new(), Uuid::new_v4())].into_iter()),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -360,9 +361,9 @@ mod tests {
     async fn finds_matching_prefix() {
         let mut router = Router::new(
             TestStore {
-                routes: vec![("example.".to_string(), Uuid::new_v4())]
-                    .into_iter()
-                    .collect(),
+                routes: HashMap::from_iter(
+                    vec![("example.".to_string(), Uuid::new_v4())].into_iter(),
+                ),
             },
             outgoing_service_fn(|_| {
                 Ok(FulfillBuilder {
@@ -398,13 +399,14 @@ mod tests {
         let to_clone = to.clone();
         let mut router = Router::new(
             TestStore {
-                routes: vec![
-                    (String::new(), id0),
-                    ("example.destination".to_string(), id2),
-                    ("example.".to_string(), id1),
-                ]
-                .into_iter()
-                .collect(),
+                routes: HashMap::from_iter(
+                    vec![
+                        (String::new(), id0),
+                        ("example.destination".to_string(), id2),
+                        ("example.".to_string(), id1),
+                    ]
+                    .into_iter(),
+                ),
             },
             outgoing_service_fn(move |request: OutgoingRequest<TestAccount>| {
                 *to_clone.lock() = Some(request.to);

@@ -2,6 +2,7 @@ use crate::packet::{Route, RouteUpdateRequest};
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::HashMap;
+use std::iter::FromIterator;
 use tracing::{debug, trace};
 
 static RANDOM: Lazy<SystemRandom> = Lazy::new(SystemRandom::new);
@@ -107,11 +108,12 @@ where
     }
 
     pub(crate) fn get_simplified_table(&self) -> HashMap<String, A> {
-        self.prefix_map
-            .map
-            .iter()
-            .map(|(address, (account, _route))| (address.clone(), account.clone()))
-            .collect()
+        HashMap::from_iter(
+            self.prefix_map
+                .map
+                .iter()
+                .map(|(address, (account, _route))| (address.clone(), account.clone())),
+        )
     }
 
     /// Handle a CCP Route Update Request from the peer this table represents

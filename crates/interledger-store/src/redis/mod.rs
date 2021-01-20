@@ -53,8 +53,18 @@ use redis_crate::{
 };
 use secrecy::{ExposeSecret, Secret, SecretBytesMut};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, iter, str, str::FromStr, sync::Arc, time::Duration};
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    borrow::Cow,
+    iter::{self, FromIterator},
+    str,
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 use tokio::sync::broadcast;
 use tracing::{debug, error, trace, warn};
 use url::Url;
@@ -1202,7 +1212,8 @@ impl NodeStore for RedisStore {
             .into_iter()
             .map(|(s, id)| (s, RedisAccountId(id)))
             .collect();
-        let accounts = routes.iter().map(|(_prefix, account_id)| account_id);
+        let accounts: HashSet<_> =
+            HashSet::from_iter(routes.iter().map(|(_prefix, account_id)| account_id));
         let mut pipe = redis_crate::pipe();
         for account_id in accounts {
             pipe.exists(accounts_key(&self.db_prefix, (*account_id).0));
@@ -1490,29 +1501,29 @@ impl CcpRoutingStore for RedisStore {
 
         let accounts = self.get_all_accounts().await?;
 
-        let local_table: HashMap<String, Account> = accounts
-            .iter()
-            .map(|account| (account.ilp_address.to_string(), account.clone()))
-            .collect();
+        let local_table = HashMap::from_iter(
+            accounts
+                .iter()
+                .map(|account| (account.ilp_address.to_string(), account.clone())),
+        );
 
-        let account_map: HashMap<Uuid, &Account> = accounts
-            .iter()
-            .map(|account| (account.id, account))
-            .collect();
-        let configured_table: HashMap<String, Account> = static_routes
-            .into_iter()
-            .filter_map(|(prefix, account_id)| {
-                if let Some(account) = account_map.get(&account_id.0) {
-                    Some((prefix, (*account).clone()))
-                } else {
-                    warn!(
-                        "No account for ID: {}, ignoring configured route for prefix: {}",
-                        account_id, prefix
-                    );
-                    None
-                }
-            })
-            .collect();
+        let account_map: HashMap<Uuid, &Account> =
+            HashMap::from_iter(accounts.iter().map(|account| (account.id, account)));
+        let configured_table: HashMap<String, Account> = HashMap::from_iter(
+            static_routes
+                .into_iter()
+                .filter_map(|(prefix, account_id)| {
+                    if let Some(account) = account_map.get(&account_id.0) {
+                        Some((prefix, (*account).clone()))
+                    } else {
+                        warn!(
+                            "No account for ID: {}, ignoring configured route for prefix: {}",
+                            account_id, prefix
+                        );
+                        None
+                    }
+                }),
+        );
 
         Ok((local_table, configured_table))
     }
@@ -1976,15 +1987,16 @@ async fn update_routes(
     let default_route_iter = iter::once(default_route)
         .filter_map(|r| r)
         .map(|rid| (String::new(), rid.0));
-    let routes = routes
-        .into_iter()
-        .map(|(s, rid)| (s, rid.0))
-        // Include the default route if there is one
-        .chain(default_route_iter)
-        // Having the static_routes inserted after ensures that they will overwrite
-        // any routes with the same prefix from the first set
-        .chain(static_routes.into_iter().map(|(s, rid)| (s, rid.0)))
-        .collect();
+    let routes = HashMap::from_iter(
+        routes
+            .into_iter()
+            .map(|(s, rid)| (s, rid.0))
+            // Include the default route if there is one
+            .chain(default_route_iter)
+            // Having the static_routes inserted after ensures that they will overwrite
+            // any routes with the same prefix from the first set
+            .chain(static_routes.into_iter().map(|(s, rid)| (s, rid.0))),
+    );
     // TODO we may not want to print this because the routing table will be very big
     // if the node has a lot of local accounts
     trace!("Routing table is: {:?}", routes);
