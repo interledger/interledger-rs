@@ -1,0 +1,46 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    env:
+      RUST_LOG: "interledger=trace"
+      RUST_BACKTRACE: "full"
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server redis-tools libssl-dev
+      - name: Install rust toolchain
+        uses: hecrj/setup-rust-action@v1.3.4
+        with:
+          rust-version: stable
+          components: clippy, rustfmt
+
+      - name: Build
+        run: cargo build --all-features --all-targets
+
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Audit
+        # FIXME: Disabled:
+        # 1. spin: is no longer actively maintained
+        # 2. sized-chunks: no safe upgrade.
+        # 3. net2: has been removed from crates, still present as a dep to tokio
+        run: cargo audit --ignore RUSTSEC-2019-0031 --ignore RUSTSEC-2020-0041 --ignore RUSTSEC-2020-0016
+
+      - name: Test
+        run: timeout 10m cargo test --all --all-features
+
+
+        
