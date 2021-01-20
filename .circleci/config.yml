@@ -93,7 +93,7 @@ jobs:
   update-docker-images:
     docker:
       - image: circleci/rust
-    resource_class: medium+
+    resource_class: medium
     steps:
       - setup_remote_docker:
           docker_layer_caching: true
@@ -135,7 +135,7 @@ jobs:
   build-release-binary-linux:
     docker:
       - image: circleci/rust
-    resource_class: medium+
+    resource_class: medium
     steps:
       - setup_remote_docker:
           docker_layer_caching: true
@@ -159,7 +159,7 @@ jobs:
   build-release-binary-darwin:
     macos:
       xcode: "10.2.0"
-    resource_class: medium+
+    resource_class: medium
     steps:
       - checkout
       - run:
