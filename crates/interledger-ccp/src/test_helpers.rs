@@ -172,7 +172,7 @@ impl CcpRoutingStore for TestStore {
         &mut self,
         routes: impl IntoIterator<Item = (String, TestAccount)> + Send + 'async_trait,
     ) -> Result<(), CcpRoutingStoreError> {
-        *self.routes.lock() = HashMap::from_iter(routes.into_iter());
+        *self.routes.lock() = routes.into_iter().collect();
         Ok(())
     }
 }

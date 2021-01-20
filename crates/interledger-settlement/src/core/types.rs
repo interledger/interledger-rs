@@ -8,6 +8,7 @@ use interledger_service::Account;
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::{Div, Mul};
 use std::str::FromStr;
 use url::Url;
@@ -192,18 +193,29 @@ pub struct ConvertDetails {
     pub to: u8,
 }
 
+#[derive(Debug)]
+pub struct ConversionError;
+
+impl fmt::Display for ConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Conversion error")
+    }
+}
+
+impl std::error::Error for ConversionError {}
+
 /// Helper trait for u64 and f64 asset code conversions for amounts and rates
 pub trait Convert {
     type Item: Sized;
 
     /// Returns the scaled result, or an error if there was an overflow
-    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()>;
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError>;
 }
 
 impl Convert for u64 {
     type Item = u64;
 
-    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()> {
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError> {
         let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
         let scale = 10u64.pow(scale_diff.into());
         let (res, overflow) = if details.to >= details.from {
@@ -212,7 +224,7 @@ impl Convert for u64 {
             self.overflowing_div(scale)
         };
         if overflow {
-            Err(())
+            Err(ConversionError)
         } else {
             Ok(res)
         }
@@ -223,7 +235,7 @@ impl Convert for f64 {
     type Item = f64;
     // Not overflow safe. Would require using a package for Big floating point
     // numbers such as BigDecimal
-    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()> {
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError> {
         let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
         let scale = 10f64.powi(scale_diff.into());
         let res = if details.to >= details.from {
@@ -232,7 +244,7 @@ impl Convert for f64 {
             self / scale
         };
         if res == std::f64::INFINITY {
-            Err(())
+            Err(ConversionError)
         } else {
             Ok(res)
         }
@@ -242,7 +254,7 @@ impl Convert for f64 {
 impl Convert for BigUint {
     type Item = BigUint;
 
-    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ()> {
+    fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError> {
         let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
         let scale = 10u64.pow(scale_diff.into());
         if details.to >= details.from {
