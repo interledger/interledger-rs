@@ -27,7 +27,7 @@ Admin or account-holder only.
 
 #### Message
 
-In the format of text message of WebSocket, the endpoint will send the following JSON when receiving payments:
+In the format of text message of WebSocket, the endpoint will send the following JSON as a payment notification when receiving payments:
 
 ```json
 {
@@ -35,11 +35,17 @@ In the format of text message of WebSocket, the endpoint will send the following
     "from_username": "Sending account username",
     "destination": "Destination ILP address",
     "amount": 1000,
-    "timestamp": "Receiving time in RFC3339 format"
+    "timestamp": "Receiving time in RFC3339 format",
+    "sequence": 2,
+    "connection_closed": false
 }
 ```
 
 Note that the `from_username` corresponds to the account that received the packet _on this node_, not the original sender.
+
+The `sequence` field reports the sequence number of each received packet carrying a payment amount.
+
+A payment notification with `amount: 0` and `connection_closed: true` will be sent when the last packet (which has a `ConnectionClose` frame) has been received. All other payment notifications report an actual payment amount and `connection_closed: false`.
 
 
 ### `/accounts/:username/ilp/btp` - Bilateral Transfer Protocol (BTP)

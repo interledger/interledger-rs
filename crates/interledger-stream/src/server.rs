@@ -96,6 +96,26 @@ pub struct PaymentNotification {
     pub amount: u64,
     /// The time this payment notification was fired in RFC3339 format
     pub timestamp: String,
+    /// The sequence number of the packet
+    pub sequence: u64,
+    /// Whether or not a packet signifying closing the connection was received.
+    /// In that case, the PaymentNotification will have `amount: 0`
+    /// and `connection_closed: true`.
+    pub connection_closed: bool,
+}
+
+/// The Ok(ReceiveOk) variant of receive_money(...) return result
+struct ReceiveOk {
+    fulfill: Fulfill,
+    sequence: u64,
+}
+
+#[derive(Debug)]
+/// The Err(ReceiveErr) variant of receive_money(...) return result
+struct ReceiveErr {
+    reject: Reject,
+    sequence: u64,
+    connection_closed: bool,
 }
 
 /// A trait representing the Publish side of a pub/sub store
@@ -177,7 +197,7 @@ where
                 &request.prepare,
             );
             match response {
-                Ok(ref _fulfill) => self
+                Ok(ref ok) => self
                     .store
                     .publish_payment_notification(PaymentNotification {
                         to_username,
@@ -185,9 +205,23 @@ where
                         amount,
                         destination,
                         timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                        sequence: ok.sequence,
+                        connection_closed: false,
                     }),
-                Err(ref reject) => {
-                    if reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
+                Err(ref err) => {
+                    if err.connection_closed {
+                        self.store
+                            .publish_payment_notification(PaymentNotification {
+                                to_username,
+                                from_username,
+                                amount: 0,
+                                destination,
+                                timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                                sequence: err.sequence,
+                                connection_closed: true,
+                            });
+                    }
+                    if err.reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
                         // Assume the packet isn't for us if the decryption step fails.
                         // Note this means that if the packet data is modified in any way,
                         // the sender will likely see an error like F02: Unavailable (this is
@@ -197,7 +231,7 @@ where
                     }
                 }
             };
-            return response;
+            return response.map(|x| x.fulfill).map_err(|x| x.reject);
         }
         self.next.send_request(request).await
     }
@@ -213,7 +247,7 @@ fn receive_money(
     asset_code: &str,
     asset_scale: u8,
     prepare: &Prepare,
-) -> Result<Fulfill, Reject> {
+) -> Result<ReceiveOk, ReceiveErr> {
     // Generate fulfillment
     let fulfillment = generate_fulfillment(&shared_secret[..], prepare.data());
     let condition = hash_sha256(&fulfillment);
@@ -235,16 +269,21 @@ fn receive_money(
 
     let stream_packet = StreamPacket::from_encrypted(shared_secret, copied_data).map_err(|_| {
         debug!("Unable to parse data, rejecting Prepare packet");
-        RejectBuilder {
-            code: ErrorCode::F06_UNEXPECTED_PAYMENT,
-            message: b"Could not decrypt data",
-            triggered_by: Some(ilp_address),
-            data: &[],
+        ReceiveErr {
+            reject: RejectBuilder {
+                code: ErrorCode::F06_UNEXPECTED_PAYMENT,
+                message: b"Could not decrypt data",
+                triggered_by: Some(ilp_address),
+                data: &[],
+            }
+            .build(),
+            sequence: 0,
+            connection_closed: false,
         }
-        .build()
     })?;
 
     let mut response_frames: Vec<Frame> = Vec::new();
+    let mut connection_closed = false;
 
     // Handle STREAM frames
     // TODO reject if they send data?
@@ -269,6 +308,13 @@ fn receive_money(
                 source_asset_scale: asset_scale,
             }));
         }
+
+        // The last packet contains the ConnectionClose frame;
+        // if this is the case, return this information to the caller
+        // to be included in the payment notification
+        if let Frame::ConnectionClose(_) = frame {
+            connection_closed = true;
+        }
     }
 
     // Return Fulfill or Reject Packet
@@ -292,7 +338,10 @@ fn receive_money(
             data: &encrypted_response[..],
         }
         .build();
-        Ok(fulfill)
+        Ok(ReceiveOk {
+            fulfill,
+            sequence: stream_packet.sequence(),
+        })
     } else {
         let response_packet = StreamPacketBuilder {
             sequence: stream_packet.sequence(),
@@ -322,7 +371,11 @@ fn receive_money(
             data: &encrypted_response[..],
         }
         .build();
-        Err(reject)
+        Err(ReceiveErr {
+            reject,
+            sequence: stream_packet.sequence(),
+            connection_closed,
+        })
     }
 }
 
@@ -501,7 +554,8 @@ mod receiving_money {
             "did not regenerate the same shared secret",
         );
         let fulfill = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare)
-            .expect("Receiver should be able to generate the fulfillment");
+            .expect("Receiver should be able to generate the fulfillment")
+            .fulfill;
         assert_eq!(
             &hash_sha256(fulfill.fulfillment())[..],
             &condition[..],
