@@ -42,5 +42,3 @@ jobs:
       - name: Test
         run: timeout 10m cargo test --all --all-features
 
-
-        

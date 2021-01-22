@@ -4,92 +4,11 @@ jobs:
     docker:
       - image: circleci/rust
     resource_class: medium
-    environment:
-      CARGO_HOME: /home/circleci/.cargo
     steps:
-      - checkout
       - run:
-          name: Install Dependencies
+          name: Deprecation message
           command: |
-            # install system dependeicies
-            sudo apt-get update
-            sudo apt-get install -y redis-server redis-tools libssl-dev
-
-            # install rust components
-            cargo install cargo-audit
-            rustup component add clippy
-      - run:
-          name: Reduce codegen Units
-          # If we don't include this, the linker runs out of memory when building
-          # the project on CI. We don't include this normally though because
-          # it should be able to build with more units on other machines
-          command: printf "[profile.dev]\ncodegen-units = 1\n" >> Cargo.toml
-      - run:
-          name: Build
-          command: cargo build --all-features --all-targets
-      - run:
-          name: Test
-          # Note the timeout is included to make sure that they
-          # do not run for more than 10 minutes under any circumstances
-          # (We have had issues with bugs causing the tests to "run"
-          # for 5 hours, wasting a ton of compute credits)
-          command: timeout 10m cargo test --all --all-features
-          environment:
-            - RUST_LOG: "interledger=trace"
-            - RUST_BACKTRACE: "full"
-      - run:
-          name: Check Style
-          command: |
-            cargo fmt --all -- --check
-            cargo clippy --all-targets --all-features -- -D warnings
-      - run:
-          name: Audit Dependencies
-          # FIXME: Disabled:
-          # 1. spin: is no longer actively maintained
-          # 2. sized-chunks: no safe upgrade.
-          # 3. net2: has been removed from crates, still present as a dep to tokio
-          command: cargo audit --ignore RUSTSEC-2019-0031 --ignore RUSTSEC-2020-0041 --ignore RUSTSEC-2020-0016
-
-  test-md:
-    docker:
-      - image: circleci/rust
-    resource_class: medium
-    environment:
-      # setting BASH_ENV to custom file because .bashrc of circleci/rust doesn't work with
-      # non-interactive shell.
-      BASH_ENV: /home/circleci/.bash_circleci
-      CARGO_HOME: /home/circleci/.cargo
-    steps:
-      - checkout
-      - run:
-          name: Install Dependencies
-          command: |
-            # install system dependeicies
-            sudo apt-get update
-            sudo apt-get install -y redis-server redis-tools lsof libssl-dev
-
-            # install nvm
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
-            export NVM_DIR="/home/circleci/.nvm"
-            source $NVM_DIR/nvm.sh
-            nvm install "v12.18.4"
-
-            # install yarn & components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
-            curl -o- -L https://yarnpkg.com/install.sh | bash
-            export PATH="/home/circleci/.yarn/bin:/home/circleci/.config/yarn/global/node_modules/.bin:$PATH"
-            yarn global add ganache-cli ilp-settlement-xrp conventional-changelog-cli
-
-            # env
-            echo 'export NVM_DIR="/home/circleci/.nvm"' >> ${BASH_ENV}
-            echo 'source $NVM_DIR/nvm.sh' >> ${BASH_ENV}
-            echo "export PATH=/home/circleci/.cargo/bin:$PATH" >> ${BASH_ENV}
-      - run:
-          name: Run run-md Test
-          command: |
-            scripts/run-md-test.sh '^.*$' 1
-      - store_artifacts:
-          path: /tmp/run-md-test
-          destination: run-md-test
+            echo "We have migrated to github actions, this remains as a placeholder to fulfill old configuration requirements."
   update-docker-images:
     docker:
       - image: circleci/rust
@@ -280,49 +199,45 @@ workflows:
             tags:
               only: # we need this to kick builds when tags are given
                 - /.*/
-      - test-md:
-          filters:
-            tags:
-              only: # we need this to kick builds when tags are given
-                - /.*/
-      - update-docker-images: # updates docker images on DockerHub, only if the branch is master or something is tagged
-          filters:
-            branches:
-              only: # master branch will be tagged as `latest` image
-                - master
-            tags:
-              only: # whatever tagged binary crates
-                - /^(ilp-node-|ilp-cli-).*$/
-          requires:
-            - build
-      - build-release-binary-linux:
-          filters:
-            branches:
-              ignore: # no branch pushes are built
-                - /.*/
-            tags:
-              only: # whatever tagged binary crates
-                - /^(ilp-node-|ilp-cli-).*$/
-          requires:
-            - build
-      - build-release-binary-darwin:
-          filters:
-            branches:
-              ignore: # no branch pushes are built
-                - /.*/
-            tags:
-              only: # whatever tagged binary crates
-                - /^(ilp-node-|ilp-cli-).*$/
-          requires:
-            - build
-      - release-binaries:
-          filters:
-            branches:
-              ignore: # no branch pushes are built
-                - /.*/
-            tags:
-              only: # whatever tagged binary crates
-                - /^(ilp-node-|ilp-cli-).*$/
-          requires:
-            - build-release-binary-linux
-            - build-release-binary-darwin
+#         Not supported by current build plan anymore, to be deprecated in favor of github actions
+#      - update-docker-images: # updates docker images on DockerHub, only if the branch is master or something is tagged
+#          filters:
+#            branches:
+#              only: # master branch will be tagged as `latest` image
+#                - master
+#            tags:
+#              only: # whatever tagged binary crates
+#                - /^(ilp-node-|ilp-cli-).*$/
+#          requires:
+#            - build
+#      - build-release-binary-linux:
+#          filters:
+#            branches:
+#              ignore: # no branch pushes are built
+#                - /.*/
+#            tags:
+#              only: # whatever tagged binary crates
+#                - /^(ilp-node-|ilp-cli-).*$/
+#          requires:
+#            - build
+#      - build-release-binary-darwin:
+#          filters:
+#            branches:
+#              ignore: # no branch pushes are built
+#                - /.*/
+#            tags:
+#              only: # whatever tagged binary crates
+#                - /^(ilp-node-|ilp-cli-).*$/
+#          requires:
+#            - build
+#      - release-binaries:
+#          filters:
+#            branches:
+#              ignore: # no branch pushes are built
+#                - /.*/
+#            tags:
+#              only: # whatever tagged binary crates
+#                - /^(ilp-node-|ilp-cli-).*$/
+#          requires:
+#            - build-release-binary-linux
+#            - build-release-binary-darwin
