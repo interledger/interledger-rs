@@ -1,0 +1,33 @@
+name: Test MD
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install node
+        uses: actions/setup-node@v2
+        with:
+          node-version: 'v12.18.4'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server redis-tools libssl-dev
+
+          # install components (ganache-cli ilp-settlement-xrp conventional-changelog-cli)
+          npm install -g ganache-cli ilp-settlement-xrp conventional-changelog-cli
+      - name: Test
+        run: |
+          scripts/run-md-test.sh '^.*$' 1
+
+      - name: 'Store artifacts'
+        uses: actions/upload-artifact@v2
+        with:
+          name: run-md-test
+          path: /tmp/run-md-test
+
