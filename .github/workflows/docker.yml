@@ -28,8 +28,12 @@ jobs:
       - name: Get tags
         id: tags
         run: |
-          TAG=${GITHUB_REF/refs\/tags\//}
+          TAG=${GITHUB_REF#refs/tags/}
+          if [ $TAG = "refs/heads/master" ]; then
+              TAG=""
+          fi
           echo ::set-output name=tag::${TAG}
+
           ILP_NODE_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-node ${TAG})
           echo ::set-output name=ilp_node_image_tag::${ILP_NODE_IMAGE_TAG}
           echo "ilp node image tag: ${ILP_NODE_IMAGE_TAG}"
@@ -59,7 +63,7 @@ jobs:
 
 #   Build and push together with ilp-node in the case of push to master or tag with 'ilp-node-*'
 #   todo: this is a dry-run now, change to push = true when tested
-      - name: Build ilp-tesnet
+      - name: Build ilp-testnet
         if: startsWith(steps.get_tag.outputs.tag, 'ilp-cli-') != true
         uses: docker/build-push-action@v2
         with:
