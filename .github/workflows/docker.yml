@@ -37,9 +37,14 @@ jobs:
           ILP_NODE_CLI_IMAGE_TAG=$(./.circleci/release/get_docker_image_tag.sh ilp-cli ${TAG})
           echo ::set-output name=ilp_node_cli_image_tag::${ILP_NODE_CLI_IMAGE_TAG}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
 #   Build and push ilp-node in the case of push to master or tag with 'ilp-node-*'
 #   todo: this is a dry-run now, change to push = true when tested
-#   todo: change to appropriate repo
       - name: Build ilp-node
         if: startsWith(steps.get_tag.outputs.tag, 'ilp-cli-') != true
         uses: docker/build-push-action@v2
@@ -47,30 +52,28 @@ jobs:
           context: .
           file: ./docker/ilp-node.dockerfile
           push: false
-          tags: papadoubi/ilp-node:${{steps.tags.outputs.ilp_node_image_tag}}
+          tags: interledgerrs/ilp-node:${{steps.tags.outputs.ilp_node_image_tag}}
           build-args: |
             CARGO_BUILD_OPTION=--release
             RUST_BIN_DIR_NAME=release
 
 #   Build and push together with ilp-node in the case of push to master or tag with 'ilp-node-*'
 #   todo: this is a dry-run now, change to push = true when tested
-#   todo: change to appropriate repo
-        - name: Build ilp-tesnet
-          if: startsWith(steps.get_tag.outputs.tag, 'ilp-cli-') != true
-          uses: docker/build-push-action@v2
-          with:
-            file: ./docker/Dockerfile
-            push: false
-            tags: papadoubi/testnet-bundle:${{steps.tags.outputs.ilp_node_image_tag}}
+      - name: Build ilp-tesnet
+        if: startsWith(steps.get_tag.outputs.tag, 'ilp-cli-') != true
+        uses: docker/build-push-action@v2
+        with:
+          file: ./docker/Dockerfile
+          push: false
+          tags: interledgerrs/testnet-bundle:${{steps.tags.outputs.ilp_node_image_tag}}
 
 #  Build and push in the case of push to master or tag with `ilp-cli-*`
 #   todo: this is a dry-run now, change to push = true when tested
-#   todo: change to appropriate repo
-        - name: Build ilp-cli
-          if: startsWith(steps.get_tag.outputs.tag, 'ilp-node-') != true
-          uses: docker/build-push-action@v2
-          with:
-            file: ./docker/ilp-cli.dockerfile
-            push: false
-            tags: papadoubi/ilp-cli:${{steps.tags.outputs.ilp_node_image_tag}}
+      - name: Build ilp-cli
+        if: startsWith(steps.get_tag.outputs.tag, 'ilp-node-') != true
+        uses: docker/build-push-action@v2
+        with:
+          file: ./docker/ilp-cli.dockerfile
+          push: false
+          tags: interledgerrs/ilp-cli:${{steps.tags.outputs.ilp_node_image_tag}}
 
