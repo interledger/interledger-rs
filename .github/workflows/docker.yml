@@ -55,7 +55,7 @@ jobs:
         with:
           context: .
           file: ./docker/ilp-node.dockerfile
-          push: false
+          push: true
           tags: interledgerrs/ilp-node:${{steps.tags.outputs.ilp_node_image_tag}}
           build-args: |
             CARGO_BUILD_OPTION=--release
@@ -68,7 +68,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           file: ./docker/Dockerfile
-          push: false
+          push: true
           tags: interledgerrs/testnet-bundle:${{steps.tags.outputs.ilp_node_image_tag}}
 
 #  Build and push in the case of push to master or tag with `ilp-cli-*`
@@ -78,6 +78,6 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           file: ./docker/ilp-cli.dockerfile
-          push: false
-          tags: interledgerrs/ilp-cli:${{steps.tags.outputs.ilp_node_image_tag}}
+          push: true
+          tags: interledgerrs/ilp-cli:${{steps.tags.outputs.ilp_node_cli_image_tag}}
 
