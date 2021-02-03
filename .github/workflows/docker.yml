@@ -79,5 +79,5 @@ jobs:
         with:
           file: ./docker/ilp-cli.dockerfile
           push: true
-          tags: interledgerrs/ilp-cli:${{steps.tags.outputs.ilp_node_image_tag}}
+          tags: interledgerrs/ilp-cli:${{steps.tags.outputs.ilp_node_cli_image_tag}}
 
