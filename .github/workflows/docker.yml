@@ -48,9 +48,8 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
 #   Build and push ilp-node in the case of push to master or tag with 'ilp-node-*'
-#   todo: this is a dry-run now, change to push = true when tested
       - name: Build ilp-node
-        if: startsWith(steps.get_tag.outputs.tag, 'ilp-cli-') != true
+        if: startsWith(steps.tags.outputs.tag, 'ilp-cli-') != true
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -62,9 +61,8 @@ jobs:
             RUST_BIN_DIR_NAME=release
 
 #   Build and push together with ilp-node in the case of push to master or tag with 'ilp-node-*'
-#   todo: this is a dry-run now, change to push = true when tested
       - name: Build ilp-testnet
-        if: startsWith(steps.get_tag.outputs.tag, 'ilp-cli-') != true
+        if: startsWith(steps.tags.outputs.tag, 'ilp-cli-') != true
         uses: docker/build-push-action@v2
         with:
           file: ./docker/Dockerfile
@@ -72,9 +70,8 @@ jobs:
           tags: interledgerrs/testnet-bundle:${{steps.tags.outputs.ilp_node_image_tag}}
 
 #  Build and push in the case of push to master or tag with `ilp-cli-*`
-#   todo: this is a dry-run now, change to push = true when tested
       - name: Build ilp-cli
-        if: startsWith(steps.get_tag.outputs.tag, 'ilp-node-') != true
+        if: startsWith(steps.tags.outputs.tag, 'ilp-node-') != true
         uses: docker/build-push-action@v2
         with:
           file: ./docker/ilp-cli.dockerfile
