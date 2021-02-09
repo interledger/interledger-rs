@@ -7,6 +7,7 @@ use interledger_errors::*;
 use interledger_http::{deserialize_json, HttpAccount, HttpStore};
 use interledger_ildcp::IldcpRequest;
 use interledger_ildcp::IldcpResponse;
+use interledger_packet::Address;
 use interledger_rates::ExchangeRateStore;
 use interledger_router::RouterStore;
 use interledger_service::{
@@ -22,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryFrom;
 use std::fmt::Debug;
+use std::str::FromStr;
 use tracing::{debug, error, trace};
 use uuid::Uuid;
 use warp::{self, reply::Json, Filter, Rejection};
@@ -423,7 +425,7 @@ where
     let server_secret_clone = server_secret.clone();
     let get_spsp = warp::get()
         .and(warp::path("accounts"))
-        .and(account_username_to_id)
+        .and(account_username_to_id.clone())
         .and(warp::path("spsp"))
         .and(warp::path::end())
         .and(with_store.clone())
@@ -439,6 +441,46 @@ where
                     )
                     .generate_http_response(),
                 )
+            }
+        });
+
+    // GET /accounts/:username/spsp/tracking_info
+    let server_secret_clone = server_secret.clone();
+    let get_spsp_with_tracking = warp::get()
+        .and(warp::path("accounts"))
+        .and(account_username_to_id)
+        .and(warp::path("spsp"))
+        .and(warp::path::param::<String>())
+        .and(warp::path::end())
+        .and(with_store.clone())
+        .and_then(move |id: Uuid, tracking_info: String, store: S| {
+            let server_secret_clone = server_secret_clone.clone();
+            async move {
+                let accounts = store.get_accounts(vec![id]).await?;
+                // TODO return the response without instantiating an SpspResponder (use a simple fn)
+
+                let with_tracking = format!("{}.{}", accounts[0].ilp_address(), tracking_info);
+                match Address::from_str(&with_tracking) {
+                    Ok(addr) => {
+                        trace!(
+                            account_id = %id,
+                            "Appended tracking info: {}",
+                            addr,
+                        );
+                        Ok::<_, Rejection>(
+                            SpspResponder::new(addr, server_secret_clone.clone())
+                                .generate_http_response(),
+                        )
+                    }
+                    Err(err) => {
+                        let msg = format!("Error appending tracking info: {}", err);
+                        error!(address_with_tracking = ?with_tracking, "{}", msg);
+                        // TODO give a different error message depending on what type of error it is
+                        Err(Rejection::from(
+                            ApiError::internal_server_error().detail(msg),
+                        ))
+                    }
+                }
             }
         });
 
@@ -483,6 +525,7 @@ where
     // See `combine!` docs for more details.
     combine!(
         get_spsp,
+        get_spsp_with_tracking,
         get_spsp_well_known,
         post_accounts,
         get_accounts,
