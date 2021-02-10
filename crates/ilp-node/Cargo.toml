@@ -61,7 +61,7 @@ chrono = { version = "0.4.9", default-features = false, optional = true}
 parking_lot = { version = "0.10.0", default-features = false, optional = true }
 reqwest = { version = "0.10.0", default-features = false, features = ["default-tls", "json"], optional = true }
 serde_json = { version = "1.0.41", default-features = false, optional = true }
-yup-oauth2 = { version = "3.1.1", default-features = false, optional = true }
+yup-oauth2 = { version = "4", optional = true }
 
 # Tracing / metrics / prometheus for instrumentation
 tracing-futures = { version = "0.2", default-features = false, features = ["tokio", "futures-03"], optional = true }
