@@ -421,7 +421,8 @@ impl InterledgerNode {
             ExchangeRateService::new(exchange_rate_spread, store.clone(), outgoing_service);
 
         #[cfg(feature = "google-pubsub")]
-        let outgoing_service = outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub));
+        let outgoing_service =
+            outgoing_service.wrap(create_google_pubsub_wrapper(google_pubsub).await);
 
         // Add tracing to add the outgoing request details to the incoming span
         cfg_if! {

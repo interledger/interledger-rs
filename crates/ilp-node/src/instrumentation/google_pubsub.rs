@@ -1,18 +1,17 @@
 use chrono::Utc;
-use futures::{compat::Future01CompatExt, Future, TryFutureExt};
+use futures::{Future, TryFutureExt};
 use interledger::{
     packet::Address,
     service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username},
 };
-use parking_lot::Mutex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::spawn;
+use tokio::{spawn, sync::Mutex};
 use tracing::{error, info};
-use yup_oauth2::{service_account_key_from_file, GetToken, ServiceAccountAccess};
+use yup_oauth2::{read_service_account_key, ServiceAccountAuthenticator};
 
-static TOKEN_SCOPES: Option<&str> = Some("https://www.googleapis.com/auth/pubsub");
+static TOKEN_SCOPES: &[&str] = &["https://www.googleapis.com/auth/pubsub"];
 
 /// Configuration for the Google PubSub packet publisher
 #[derive(Deserialize, Clone, Debug)]
@@ -61,20 +60,24 @@ type BoxedIlpFuture = Box<dyn Future<Output = IlpResult> + Send + 'static>;
 /// of fulfilled packets to Google Cloud PubSub.
 ///
 /// This is an experimental feature that may be removed in the future.
-pub fn create_google_pubsub_wrapper<A: Account + 'static>(
+pub async fn create_google_pubsub_wrapper<A: Account + 'static>(
     config: Option<PubsubConfig>,
 ) -> impl Fn(OutgoingRequest<A>, Box<dyn OutgoingService<A> + Send>) -> Pin<BoxedIlpFuture> + Clone
 {
     // If Google credentials were passed in, create an HTTP client and
     // OAuth2 client that will automatically fetch and cache access tokens
     let utilities = if let Some(config) = config {
-        let key = service_account_key_from_file(config.service_account_credentials.as_str())
+        let key = read_service_account_key(config.service_account_credentials.as_str())
+            .await
             .expect("Unable to load Google Cloud credentials from file");
-        let access = ServiceAccountAccess::new(key);
+        let access = ServiceAccountAuthenticator::builder(key)
+            .build()
+            .await
+            .expect("Failed to build Google Cloud service account authenticator");
         // This needs to be wrapped in a Mutex because the .token()
         // method takes a mutable reference to self and we want to
         // reuse the same fetcher so that it caches the tokens
-        let token_fetcher = Arc::new(Mutex::new(access.build()));
+        let token_fetcher = Arc::new(Mutex::new(access));
 
         // TODO make sure the client uses HTTP/2
         let client = Client::new();
@@ -114,21 +117,23 @@ pub fn create_google_pubsub_wrapper<A: Account + 'static>(
             // Only fulfilled packets are published for now
             if let Ok(ref fulfill) = result {
                 let fulfillment = base64::encode(fulfill.fulfillment());
-                let get_token_future =
-                    token_fetcher
-                        .lock()
-                        .token(TOKEN_SCOPES)
-                        .compat()
-                        .map_err(|err| {
-                            error!("Error fetching OAuth token for Google PubSub: {:?}", err)
-                        });
 
                 // Spawn a task to submit the packet to PubSub so we
                 // don't block returning the fulfillment
                 // Note this means that if there is a problem submitting the
                 // packet record to PubSub, it will only log an error
                 spawn(async move {
-                    let token = get_token_future.await?;
+                    // additional block to highlight that the lock is only held for this request
+                    let token = {
+                        token_fetcher
+                            .lock()
+                            .await
+                            .token(TOKEN_SCOPES)
+                            .map_err(|err| {
+                                error!("Error fetching OAuth token for Google PubSub: {:?}", err)
+                            })
+                            .await?
+                    };
                     let record = PacketRecord {
                         prev_hop_account,
                         prev_hop_asset_code,
@@ -145,7 +150,7 @@ pub fn create_google_pubsub_wrapper<A: Account + 'static>(
                     let data = base64::encode(&serde_json::to_string(&record).unwrap());
                     let res = client
                         .post(api_endpoint.as_str())
-                        .bearer_auth(token.access_token)
+                        .bearer_auth(token.as_str())
                         .json(&PubsubRequest {
                             messages: vec![PubsubMessage {
                                 // TODO should there be an ID?
