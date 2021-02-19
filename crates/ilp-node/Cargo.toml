@@ -80,7 +80,10 @@ reqwest = { version = "0.10.0", default-features = false, features = ["default-t
 serde_json = { version = "1.0.41", default-features = false }
 tokio-retry = { version = "0.2.0", default-features = false }
 tungstenite = {version = "0.10", default-features = false }
-
+criterion = { version = "0.3", default-features = false , features = ["cargo_bench_support", 'html_reports']}
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
 codecov = { repository = "interledger-rs/interledger-rs" }
+[[bench]]
+name = "multiple_payments"
+harness = false
