@@ -271,9 +271,11 @@ fn output_config_error(error: ConfigError, config_path: Option<&str>) {
     }
 }
 
-// returns (subcommand paths, config path)
+/// Does early matching for command line arguments to get any given configuration file.
+///
+/// Returns (subcommand paths, config path)
 fn precheck_arguments(
-    mut app: App,
+    mut app: App<'_, '_>,
     args: &[OsString],
 ) -> Result<(Vec<String>, Option<String>), clap::Error> {
     // not to cause `required fields error`.
@@ -374,7 +376,7 @@ fn get_env_config(prefix: &str) -> Config {
 // given from CLI.
 // Usually `env` fn is used when creating `App` but this function automatically fills it so
 // we don't need to call `env` fn manually.
-fn set_app_env(env_config: &Config, app: &mut App, path: &[String], depth: usize) {
+fn set_app_env(env_config: &Config, app: &mut App<'_, '_>, path: &[String], depth: usize) {
     if depth == 1 {
         for item in &mut app.p.opts {
             if let Ok(value) = env_config.get_str(&item.b.name.to_lowercase()) {
@@ -399,7 +401,7 @@ fn get_deepest_command<'a>(matches: &'a ArgMatches, path: &mut Vec<String>) -> &
     matches
 }
 
-fn reset_required(app: &mut App) {
+fn reset_required(app: &mut App<'_, '_>) {
     app.p.required.clear();
     for subcommand in &mut app.p.subcommands {
         reset_required(subcommand);
