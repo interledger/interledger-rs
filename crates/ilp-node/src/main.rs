@@ -30,6 +30,70 @@ use std::{
 
 #[tokio::main]
 async fn main() {
+    let app = cmdline_configuration();
+    let args = std::env::args_os().collect::<Vec<_>>();
+
+    let stdin = std::io::stdin();
+
+    let additional_config = if !is_fd_tty(0) {
+        // this might be read by load_configuration, depending on the presence of a config file
+        let lock = stdin.lock();
+        Some(lock)
+    } else {
+        None
+    };
+
+    let node = match load_configuration(app, args, additional_config) {
+        Ok(node) => node,
+        Err(BadConfig::BadArguments(e)) => {
+            e.exit();
+        }
+        Err(BadConfig::MergingStdinFailed(e)) => {
+            output_config_error(e, None);
+            std::process::exit(0);
+        }
+        Err(BadConfig::MergingConfigFileFailed(path, e)) => {
+            output_config_error(e, Some(path.as_ref()));
+            std::process::exit(0);
+        }
+        Err(BadConfig::ConversionFailed(e)) => {
+            // this used to be an expect
+            panic!("Could not parse provided configuration options into an Interledger Node config: {}", e);
+        }
+    };
+
+    drop(stdin);
+
+    cfg_if! {
+        if #[cfg(feature = "monitoring")] {
+            let mut log_writer = LogWriter::default();
+
+            let (nb_log_writer, _guard) = tracing_appender::non_blocking(log_writer.clone());
+
+            let tracing_builder = Subscriber::builder()
+                .with_timer(ChronoUtc::rfc3339())
+                .with_env_filter(EnvFilter::from_default_env())
+                .with_writer(nb_log_writer)
+                .with_filter_reloading();
+
+            log_writer.handle = Some(tracing_builder.reload_handle());
+
+            let _ = tracing_builder.try_init();
+
+            let log_writer = Some(log_writer);
+        } else {
+            let log_writer = None;
+        }
+    }
+
+    node.serve(log_writer.clone()).await.unwrap();
+
+    // Add a future which is always pending. This will ensure main does not exist
+    // TODO: Is there a better way of doing this?
+    futures::future::pending().await
+}
+
+fn cmdline_configuration() -> clap::App<'static, 'static> {
     // The naming convention of arguments
     //
     // - URL vs URI
@@ -45,7 +109,7 @@ async fn main() {
     //     - `http_bind_address`
     // - Addresses to which other services are bound
     //     - `xxx_bind_address`
-    let mut app = App::new("ilp-node")
+    App::new("ilp-node")
         .about("Run an Interledger.rs node (sender, connector, receiver bundle)")
         .version(crate_version!())
         // TODO remove this line once this issue is solved:
@@ -144,57 +208,40 @@ async fn main() {
                 Note: In a cluster configuration where multiple nodes share a \
                 single database and database accounts, using this can result in \
                 many settlements."),
-        ]);
+        ])
+}
 
+enum BadConfig {
+    BadArguments(clap::Error),
+    MergingStdinFailed(config::ConfigError),
+    MergingConfigFileFailed(String, config::ConfigError),
+    ConversionFailed(config::ConfigError),
+}
+
+fn load_configuration<R: Read>(
+    mut app: App<'_, '_>,
+    args: Vec<OsString>,
+    additional_config: Option<R>,
+) -> Result<InterledgerNode, BadConfig> {
     let mut config = get_env_config("ilp");
-    if let Ok((path, config_file)) = precheck_arguments(app.clone()) {
-        if !is_fd_tty(0) {
-            if let Err(error) = merge_std_in(&mut config) {
-                output_config_error(error, None);
-                return;
-            };
+    if let Ok((path, config_file)) = precheck_arguments(app.clone(), &args) {
+        if let Some(additional_config) = additional_config {
+            merge_read_in(additional_config, &mut config).map_err(BadConfig::MergingStdinFailed)?;
         }
-        if let Some(ref config_path) = config_file {
-            if let Err(error) = merge_config_file(config_path, &mut config) {
-                output_config_error(error, Some(config_path));
-                return;
-            };
+        if let Some(config_path) = config_file {
+            merge_config_file(&config_path, &mut config)
+                .map_err(|e| BadConfig::MergingConfigFileFailed(config_path, e))?;
         }
         set_app_env(&config, &mut app, &path, path.len());
     }
-    let matches = app.get_matches();
+
+    let matches = app
+        .get_matches_from_safe(args.iter())
+        .map_err(BadConfig::BadArguments)?;
+
     merge_args(&mut config, &matches);
 
-    cfg_if! {
-        if #[cfg(feature = "monitoring")] {
-            let mut log_writer = LogWriter::default();
-
-            let (nb_log_writer, _guard) = tracing_appender::non_blocking(log_writer.clone());
-
-            let tracing_builder = Subscriber::builder()
-                .with_timer(ChronoUtc::rfc3339())
-                .with_env_filter(EnvFilter::from_default_env())
-                .with_writer(nb_log_writer)
-                .with_filter_reloading();
-
-            log_writer.handle = Some(tracing_builder.reload_handle());
-
-            let _ = tracing_builder.try_init();
-
-            let log_writer = Some(log_writer);
-        } else {
-            let log_writer = None;
-        }
-    }
-
-    let node = config
-        .try_into::<InterledgerNode>()
-        .expect("Could not parse provided configuration options into an Interledger Node config");
-    node.serve(log_writer.clone()).await.unwrap();
-
-    // Add a future which is always pending. This will ensure main does not exist
-    // TODO: Is there a better way of doing this?
-    futures::future::pending().await
+    config.try_into().map_err(BadConfig::ConversionFailed)
 }
 
 fn output_config_error(error: ConfigError, config_path: Option<&str>) {
@@ -213,10 +260,13 @@ fn output_config_error(error: ConfigError, config_path: Option<&str>) {
 }
 
 // returns (subcommand paths, config path)
-fn precheck_arguments(mut app: App) -> Result<(Vec<String>, Option<String>), ()> {
+fn precheck_arguments(
+    mut app: App,
+    args: &[OsString],
+) -> Result<(Vec<String>, Option<String>), ()> {
     // not to cause `required fields error`.
     reset_required(&mut app);
-    let matches = app.get_matches_safe();
+    let matches = app.get_matches_from_safe_borrow(args.iter());
     if matches.is_err() {
         // if app could not get any appropriate match, just return not to show help etc.
         return Err(());
@@ -245,11 +295,10 @@ fn merge_config_file(config_path: &str, config: &mut Config) -> Result<(), Confi
     Ok(())
 }
 
-fn merge_std_in(config: &mut Config) -> Result<(), ConfigError> {
-    let stdin = std::io::stdin();
-    let mut stdin_lock = stdin.lock();
+fn merge_read_in<R: Read>(mut input: R, config: &mut Config) -> Result<(), ConfigError> {
     let mut buf = Vec::new();
-    if let Ok(_read) = stdin_lock.read_to_end(&mut buf) {
+
+    if let Ok(_read) = input.read_to_end(&mut buf) {
         if let Ok(buf_str) = String::from_utf8(buf) {
             let config_hash = FileFormat::Json
                 .parse(None, &buf_str)
