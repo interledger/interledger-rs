@@ -171,11 +171,11 @@ fn cmdline_configuration() -> clap::App<'static, 'static> {
                 Note that CryptoCompare can also be used when the node is configured via a config file or stdin, because an API key must be provided to use that service."),
         Arg::with_name("exchange_rate.poll_interval")
             .long("exchange_rate.poll_interval")
-            .default_value("60000")
+            .default_value("60000") // also change ExchangeRateConfig::default_poll_interval
             .help("Interval, defined in milliseconds, on which the node will poll the exchange_rate.provider (if specified) for exchange rates."),
         Arg::with_name("exchange_rate.spread")
             .long("exchange_rate.spread")
-            .default_value("0")
+            .default_value("0") // also change ExchangeRateConfig::default_spread
             .help("Spread, as a fraction, to add on top of the exchange rate. \
                 This amount is kept as the node operator's profit, or may cover \
                 fluctuations in exchange rates.
@@ -211,6 +211,7 @@ fn cmdline_configuration() -> clap::App<'static, 'static> {
         ])
 }
 
+#[derive(Debug)]
 enum BadConfig {
     BadArguments(clap::Error),
     MergingStdinFailed(config::ConfigError),
@@ -252,6 +253,10 @@ fn output_config_error(error: ConfigError, config_path: Option<&str>) {
 
     match &error {
         ConfigError::PathParse(_) => println!("Error in parsing config: {:?}", error),
+
+        // Note: configuring using a file called `ilp-node` is still allowed even though
+        // `cargo run ilp-node` from the workspace root ends here; it only happens if there was an
+        // error reading the file.
         _ if is_config_path_ilp_node => println!("Running ilp-node with `cargo run ilp-node` and \
                     `cargo run -p ilp-node` is deprecated. Please either execute the binary directly, or use \
                     `cargo run --bin ilp-node`"),
@@ -287,6 +292,8 @@ fn merge_config_file(config_path: &str, config: &mut Config) -> Result<(), Confi
     // if the key is not defined in the given config already, set it to the config
     // because the original values override the ones from the config file
     for (k, v) in file_config {
+        // Note: the error from `Config::get_str` is for "value was not found" or "couldn't be
+        // turned into a string", not "the string representation is invalid for this key".
         if config.get_str(&k).is_err() {
             config.set(&k, v)?;
         }
@@ -303,6 +310,8 @@ fn merge_read_in<R: Read>(mut input: R, config: &mut Config) -> Result<(), Confi
             let config_hash = FileFormat::Json
                 .parse(None, &buf_str)
                 .or_else(|_| FileFormat::Yaml.parse(None, &buf_str))
+                // FIXME: toml doesn't probably ever work with `config` and the others, see test
+                // fixture data
                 .or_else(|_| FileFormat::Toml.parse(None, &buf_str))
                 .ok();
             if let Some(config_hash) = config_hash {
@@ -322,13 +331,16 @@ fn merge_read_in<R: Read>(mut input: R, config: &mut Config) -> Result<(), Confi
 fn merge_args(config: &mut Config, matches: &ArgMatches) {
     for (key, value) in &matches.args {
         if config.get_str(key).is_ok() {
+            // Note: this means the key already pointed to a string convertable value, not that it
+            // was valid for the property it configures.
             continue;
         }
         if value.vals.is_empty() {
             // flag
+            // FIXME: this is never hit in the tests, unsure what it is for
             config.set(key, Value::new(None, true)).unwrap();
         } else {
-            // value
+            // merge the cmdline value to the config
             config
                 .set(key, Value::new(None, value.vals[0].to_str().unwrap()))
                 .unwrap();
@@ -403,4 +415,287 @@ fn is_fd_tty(file_descriptor: c_int) -> bool {
         result = isatty(file_descriptor);
     }
     result == 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cmdline_configuration, load_configuration, BadConfig, InterledgerNode};
+    use std::ffi::OsString;
+    use std::io::Write;
+
+    #[test]
+    fn loads_configuration_from_cmdline() {
+        // as of writing this, there are two required parameters
+        let args = [
+            "ilp-node",
+            "--admin_auth_token",
+            "foobar",
+            "--secret_seed",
+            "8852500887504328225458511465394229327394647958135038836332350604",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
+        let app = cmdline_configuration();
+        let additional = Option::<std::io::Empty>::None;
+
+        let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
+            "admin_auth_token": "foobar",
+            "secret_seed": "8852500887504328225458511465394229327394647958135038836332350604",
+        }))
+        .unwrap();
+
+        let node = load_configuration(app, args, additional).unwrap();
+
+        // this will start failing if the defaults for command line arguments do not match the
+        // serde(default) values for the fields.
+        assert_eq!(expected, node);
+    }
+
+    static ADDITIONAL_SECRETS: &[(&str, &[u8])] = &[
+        ("json", b"{ \"secret_seed\": \"8852500887504328225458511465394229327394647958135038836332350604\" }"),
+        // toml is not supported: the used crate `config` will disregard top level value which
+        // is not a table, but even then, the keys underneath will have the "table." prefix and
+        // will not match the actual expected values
+        // ("toml", &b"[interledger]\nsecret_seed = \"8852500887504328225458511465394229327394647958135038836332350604\"\n"[..]),
+        ("yaml", b"secret_seed: \"8852500887504328225458511465394229327394647958135038836332350604\"\n"),
+    ];
+
+    static ADDITIONAL_AUTH_TOKEN: &[(&str, &[u8])] = &[
+        ("json", b"{ \"admin_auth_token\": \"foobar\" }"),
+        // toml is not supported; see ADDITIONAL_SECRETS
+        ("yaml", b"admin_auth_token: \"foobar\"\n"),
+    ];
+
+    #[test]
+    fn loads_configuration_with_secret_over_stdin() {
+        let args = ["ilp-node", "--admin_auth_token", "foobar"]
+            .iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>();
+        let app = cmdline_configuration();
+
+        for (format, additional) in ADDITIONAL_SECRETS {
+            let additional = Some(std::io::Cursor::new(additional));
+
+            let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
+                "admin_auth_token": "foobar",
+                "secret_seed": "8852500887504328225458511465394229327394647958135038836332350604",
+            }))
+            .unwrap();
+
+            let node = load_configuration(app.clone(), args.clone(), additional)
+                .unwrap_or_else(|e| panic!("with {}: {:?}", format, e));
+            assert_eq!(expected, node, "secret_seed in {}", format);
+        }
+    }
+
+    #[test]
+    fn loads_configuration_from_cmdline_and_a_file() {
+        for (format, additional) in ADDITIONAL_SECRETS {
+            let mut named_temp = tempfile::Builder::new()
+                .suffix(&format!(".{}", format))
+                .tempfile()
+                .unwrap();
+            named_temp.write_all(additional).unwrap();
+            named_temp.flush().unwrap();
+            let name = named_temp.path().to_str().expect(
+                "path wasn't UTF-8, but tempfile only uses alphanumeric random in the name",
+            );
+
+            let mut args = [
+                "ilp-node",
+                "--admin_auth_token",
+                "foobar",
+                "this_will_be_overridden_with_the_temp_config_file",
+            ]
+            .iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>();
+
+            {
+                let last = args.last_mut().unwrap();
+                last.clear();
+                last.push(name);
+            }
+
+            let app = cmdline_configuration();
+            let additional = Option::<std::io::Empty>::None;
+            let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
+                "admin_auth_token": "foobar",
+                "secret_seed": "8852500887504328225458511465394229327394647958135038836332350604",
+            }))
+            .unwrap();
+
+            let node = load_configuration(app, args, additional).unwrap();
+
+            assert_eq!(expected, node);
+        }
+    }
+
+    #[test]
+    fn loads_configuration_from_cmdline_and_a_file_and_stdin() {
+        let fixtures = ADDITIONAL_SECRETS.iter().zip(ADDITIONAL_AUTH_TOKEN.iter());
+
+        for ((format, secret), (_, token)) in fixtures {
+            let mut named_temp = tempfile::Builder::new()
+                .suffix(&format!(".{}", format))
+                .tempfile()
+                .unwrap();
+            named_temp.write_all(secret).unwrap();
+            named_temp.flush().unwrap();
+            let name = named_temp.path().to_str().expect(
+                "path wasn't UTF-8, but tempfile only uses alphanumeric random in the name",
+            );
+
+            let mut args = [
+                "ilp-node",
+                "this_will_be_overridden_with_the_temp_config_file",
+            ]
+            .iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>();
+
+            {
+                let last = args.last_mut().unwrap();
+                last.clear();
+                last.push(name);
+            }
+
+            let app = cmdline_configuration();
+            let additional = Some(std::io::Cursor::new(token));
+            let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
+                "admin_auth_token": "foobar",
+                "secret_seed": "8852500887504328225458511465394229327394647958135038836332350604",
+            }))
+            .unwrap();
+
+            let node = load_configuration(app, args, additional).unwrap();
+
+            assert_eq!(expected, node);
+        }
+    }
+
+    /// Ensures the previous precedence is followed, which has been:
+    ///
+    /// 1. stdin input
+    /// 2. config file
+    /// 3. cmdline
+    #[test]
+    fn config_precedence() {
+        // stdin json is the ...4 version, ...5 is on config file and ...6 is on cmdline
+        let json = ADDITIONAL_SECRETS[0].1;
+
+        let mut args = [
+            "ilp-node",
+            "--admin_auth_token",
+            "foobar",
+            "--secret_seed",
+            "0000000000000000000000000000000000000000000000000000000000000006",
+            "this_will_be_replaced_with_a_path_to_config_file",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+
+        let mut named_temp = tempfile::Builder::new()
+            .suffix(&".json")
+            .tempfile()
+            .unwrap();
+
+        named_temp.write_all(&b"{\"secret_seed\":\"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5\"}\n"[..]).unwrap();
+        named_temp.flush().unwrap();
+
+        {
+            let last = args.last_mut().unwrap();
+            last.clear();
+            last.push(named_temp.path());
+        }
+
+        let app = cmdline_configuration("anything");
+        let additional = Some(std::io::Cursor::new(json));
+        let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
+            "admin_auth_token": "foobar",
+            "secret_seed": "8852500887504328225458511465394229327394647958135038836332350604",
+        }))
+        .unwrap();
+
+        let node = load_configuration(app, args.clone(), additional).unwrap();
+
+        assert_eq!(expected, node);
+
+        // now without the stdin the config file should prevail
+
+        let app = cmdline_configuration("anything");
+        let additional = Option::<std::io::Empty>::None;
+        let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
+            "admin_auth_token": "foobar",
+            "secret_seed": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5",
+        }))
+        .unwrap();
+
+        let node = load_configuration(app, args, additional).unwrap();
+
+        assert_eq!(expected, node);
+    }
+
+    #[test]
+    fn invalid_preceding_values_error_out() {
+        // command line is the only place where a valid secret_seed is provided, but the presence
+        // rules force an error at the stdin or config file. the old implementation looked like it
+        // allowed replacing invalid values but not in practice.
+        let stdin = &b"{ \"secret_seed\": \"AAA\" }\n";
+
+        let mut args = [
+            "ilp-node",
+            "--admin_auth_token",
+            "foobar",
+            "--secret_seed",
+            "0000000000000000000000000000000000000000000000000000000000000006",
+            "this_will_be_replaced_with_a_path_to_config_file",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+
+        let mut named_temp = tempfile::Builder::new()
+            .suffix(&".json")
+            .tempfile()
+            .unwrap();
+
+        named_temp
+            .write_all(&b"{\"secret_seed\":\"non_hex_this_is_invalid\"}\n"[..])
+            .unwrap();
+        named_temp.flush().unwrap();
+
+        {
+            let last = args.last_mut().unwrap();
+            last.clear();
+            last.push(named_temp.path());
+        }
+
+        let app = cmdline_configuration("anything");
+        let additional = Some(std::io::Cursor::new(stdin));
+        let bad = load_configuration(app, args.clone(), additional).unwrap_err();
+
+        // the value from stdin is retained until the final deserialization (the file or cmdline
+        // values are ignored as the stdin already contained a string convertable value).
+        assert!(
+            matches!(bad, BadConfig::ConversionFailed(_)),
+            "unexpected: {:?}",
+            bad
+        );
+
+        let app = cmdline_configuration("anything");
+        let additional = Option::<std::io::Empty>::None;
+        let bad = load_configuration(app, args, additional).unwrap_err();
+
+        // same here, but the config file value is retained and cmdline value is ignored, for the
+        // same reasons.
+        assert!(
+            matches!(bad, BadConfig::ConversionFailed(_)),
+            "unexpected: {:?}",
+            bad
+        );
+    }
 }

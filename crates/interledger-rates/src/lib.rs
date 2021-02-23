@@ -53,6 +53,23 @@ pub enum ExchangeRateProvider {
     CryptoCompare(SecretString),
 }
 
+impl PartialEq<ExchangeRateProvider> for ExchangeRateProvider {
+    fn eq(&self, other: &Self) -> bool {
+        // this was originally added to be able to test the configurations, to have a PartialEq
+        // derive on InterledgerNode.
+        use secrecy::ExposeSecret;
+        match (self, other) {
+            (ExchangeRateProvider::CoinCap, ExchangeRateProvider::CoinCap) => true,
+            (ExchangeRateProvider::CryptoCompare(l), ExchangeRateProvider::CryptoCompare(r))
+                if l.expose_secret() == r.expose_secret() =>
+            {
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Poll exchange rate providers for the current exchange rates
 #[derive(Clone)]
 pub struct ExchangeRateFetcher<S> {

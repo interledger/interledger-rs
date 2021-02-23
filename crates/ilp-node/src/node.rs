@@ -144,7 +144,7 @@ where
 }
 
 /// Configuration for calculating exchange rates between various pairs.
-#[derive(Deserialize, Clone, Default)]
+#[derive(Deserialize, Clone, PartialEq, Debug)]
 pub struct ExchangeRateConfig {
     /// Interval, defined in milliseconds, on which the node will poll the exchange rate provider.
     /// Defaults to 60000ms (60 seconds).
@@ -171,12 +171,28 @@ pub struct ExchangeRateConfig {
     pub spread: f64,
 }
 
+impl Default for ExchangeRateConfig {
+    fn default() -> Self {
+        // FIXME: we cannot (efficiently) use the serde defaults for a Default derive so we are
+        // left with this. We could deserialize an empty serde_json::Value.
+        Self {
+            poll_interval: Self::default_poll_interval(),
+            poll_failure_tolerance: Self::default_poll_failure_tolerance(),
+            provider: Default::default(),
+            spread: Self::default_spread(),
+        }
+    }
+}
+
 impl ExchangeRateConfig {
-    fn default_poll_interval() -> u64 {
+    pub(crate) fn default_poll_interval() -> u64 {
         60_000
     }
-    fn default_poll_failure_tolerance() -> u32 {
+    pub(crate) fn default_poll_failure_tolerance() -> u32 {
         5
+    }
+    pub(crate) fn default_spread() -> f64 {
+        0.0
     }
 }
 
@@ -184,7 +200,7 @@ impl ExchangeRateConfig {
 /// a connector, and a management API.
 /// Will connect to the database at the given URL; see the crate features defined in
 /// Cargo.toml to see a list of all supported stores.
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq, Debug)]
 pub struct InterledgerNode {
     /// ILP address of the node
     #[serde(deserialize_with = "deserialize_optional_address")]
