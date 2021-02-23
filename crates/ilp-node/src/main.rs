@@ -17,7 +17,7 @@ cfg_if! {
 #[cfg(feature = "redis")]
 mod redis_store;
 
-use clap::{crate_version, App, Arg, ArgMatches};
+use clap::{App, Arg, ArgMatches};
 use config::{Config, Source};
 use config::{ConfigError, FileFormat, Value};
 use libc::{c_int, isatty};
@@ -30,7 +30,13 @@ use std::{
 
 #[tokio::main]
 async fn main() {
-    let app = cmdline_configuration();
+    let version = format!(
+        "{}-{}",
+        env!("CARGO_PKG_VERSION"),
+        env!("VERGEN_GIT_SHA_SHORT")
+    );
+
+    let app = cmdline_configuration(&version);
     let args = std::env::args_os().collect::<Vec<_>>();
 
     let stdin = std::io::stdin();
@@ -93,7 +99,7 @@ async fn main() {
     futures::future::pending().await
 }
 
-fn cmdline_configuration() -> clap::App<'static, 'static> {
+fn cmdline_configuration<'b>(version: &'b str) -> clap::App<'static, 'b> {
     // The naming convention of arguments
     //
     // - URL vs URI
@@ -111,10 +117,7 @@ fn cmdline_configuration() -> clap::App<'static, 'static> {
     //     - `xxx_bind_address`
     App::new("ilp-node")
         .about("Run an Interledger.rs node (sender, connector, receiver bundle)")
-        .version(crate_version!())
-        // TODO remove this line once this issue is solved:
-    // https://github.com/clap-rs/clap/issues/1536
-    .after_help("")
+        .version(version)
     .args(&[
         // Positional arguments
         Arg::with_name("config")
@@ -436,7 +439,7 @@ mod tests {
         .iter()
         .map(OsString::from)
         .collect();
-        let app = cmdline_configuration();
+        let app = cmdline_configuration("anything");
         let additional = Option::<std::io::Empty>::None;
 
         let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
@@ -473,7 +476,7 @@ mod tests {
             .iter()
             .map(OsString::from)
             .collect::<Vec<_>>();
-        let app = cmdline_configuration();
+        let app = cmdline_configuration("anything");
 
         for (format, additional) in ADDITIONAL_SECRETS {
             let additional = Some(std::io::Cursor::new(additional));
@@ -519,7 +522,7 @@ mod tests {
                 last.push(name);
             }
 
-            let app = cmdline_configuration();
+            let app = cmdline_configuration("anything");
             let additional = Option::<std::io::Empty>::None;
             let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
                 "admin_auth_token": "foobar",
@@ -562,7 +565,7 @@ mod tests {
                 last.push(name);
             }
 
-            let app = cmdline_configuration();
+            let app = cmdline_configuration("anything");
             let additional = Some(std::io::Cursor::new(token));
             let expected = serde_json::from_value::<InterledgerNode>(serde_json::json!({
                 "admin_auth_token": "foobar",

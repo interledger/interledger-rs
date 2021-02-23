@@ -7,6 +7,7 @@ license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
+build = "build.rs"
 
 [features]
 default = ["balance-tracking", "redis", "monitoring"]
@@ -31,6 +32,9 @@ name = "redis_tests"
 path = "tests/redis/redis_tests.rs"
 required-features = ["redis"]
 
+[build-dependencies]
+# vergen allows to get the VERGEN_BUILD_TIMESTAMP etc environment variables
+vergen = { version = "4" }
 
 [dependencies]
 interledger = { path = "../interledger", version = "1.0.0", default-features = false, features = ["node"] }
