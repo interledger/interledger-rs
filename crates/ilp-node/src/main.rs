@@ -123,7 +123,7 @@ fn cmdline_configuration<'b>(version: &'b str) -> clap::App<'static, 'b> {
         Arg::with_name("config")
             .takes_value(true)
             .index(1)
-            .help("Name of config file (in JSON, YAML, or TOML format)"),
+            .help("Name of config file (in JSON or YAML format)"),
         // Non-positional arguments
         Arg::with_name("ilp_address")
             .long("ilp_address")
@@ -314,12 +314,8 @@ fn merge_read_in<R: Read>(mut input: R, config: &mut Config) -> Result<(), Confi
         if let Ok(buf_str) = String::from_utf8(buf) {
             let config_hash = FileFormat::Json
                 .parse(None, &buf_str)
-                .or_else(|_| FileFormat::Yaml.parse(None, &buf_str))
-                // FIXME: toml doesn't probably ever work with `config` and the others, see test
-                // fixture data
-                .or_else(|_| FileFormat::Toml.parse(None, &buf_str))
-                .ok();
-            if let Some(config_hash) = config_hash {
+                .or_else(|_| FileFormat::Yaml.parse(None, &buf_str));
+            if let Ok(config_hash) = config_hash {
                 // if the key is not defined in the given config already, set it to the config
                 // because the original values override the ones from the stdin
                 for (k, v) in config_hash {
@@ -459,16 +455,11 @@ mod tests {
 
     static ADDITIONAL_SECRETS: &[(&str, &[u8])] = &[
         ("json", b"{ \"secret_seed\": \"8852500887504328225458511465394229327394647958135038836332350604\" }"),
-        // toml is not supported: the used crate `config` will disregard top level value which
-        // is not a table, but even then, the keys underneath will have the "table." prefix and
-        // will not match the actual expected values
-        // ("toml", &b"[interledger]\nsecret_seed = \"8852500887504328225458511465394229327394647958135038836332350604\"\n"[..]),
         ("yaml", b"secret_seed: \"8852500887504328225458511465394229327394647958135038836332350604\"\n"),
     ];
 
     static ADDITIONAL_AUTH_TOKEN: &[(&str, &[u8])] = &[
         ("json", b"{ \"admin_auth_token\": \"foobar\" }"),
-        // toml is not supported; see ADDITIONAL_SECRETS
         ("yaml", b"admin_auth_token: \"foobar\"\n"),
     ];
 
