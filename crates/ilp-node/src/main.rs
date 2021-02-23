@@ -45,7 +45,7 @@ async fn main() {
 
     let node = match load_configuration(app, args, additional_config) {
         Ok(node) => node,
-        Err(BadConfig::BadArguments(e)) => {
+        Err(BadConfig::HelpOrVersion(e)) | Err(BadConfig::BadArguments(e)) => {
             e.exit();
         }
         Err(BadConfig::MergingStdinFailed(e)) => {
@@ -213,6 +213,7 @@ fn cmdline_configuration() -> clap::App<'static, 'static> {
 
 #[derive(Debug)]
 enum BadConfig {
+    HelpOrVersion(clap::Error),
     BadArguments(clap::Error),
     MergingStdinFailed(config::ConfigError),
     MergingConfigFileFailed(String, config::ConfigError),
@@ -225,16 +226,19 @@ fn load_configuration<R: Read>(
     additional_config: Option<R>,
 ) -> Result<InterledgerNode, BadConfig> {
     let mut config = get_env_config("ilp");
-    if let Ok((path, config_file)) = precheck_arguments(app.clone(), &args) {
-        if let Some(additional_config) = additional_config {
-            merge_read_in(additional_config, &mut config).map_err(BadConfig::MergingStdinFailed)?;
-        }
-        if let Some(config_path) = config_file {
-            merge_config_file(&config_path, &mut config)
-                .map_err(|e| BadConfig::MergingConfigFileFailed(config_path, e))?;
-        }
-        set_app_env(&config, &mut app, &path, path.len());
+    let (path, config_file) =
+        precheck_arguments(app.clone(), &args).map_err(BadConfig::HelpOrVersion)?;
+
+    if let Some(additional_config) = additional_config {
+        merge_read_in(additional_config, &mut config).map_err(BadConfig::MergingStdinFailed)?;
     }
+
+    if let Some(config_path) = config_file {
+        merge_config_file(&config_path, &mut config)
+            .map_err(|e| BadConfig::MergingConfigFileFailed(config_path, e))?;
+    }
+
+    set_app_env(&config, &mut app, &path, path.len());
 
     let matches = app
         .get_matches_from_safe(args.iter())
@@ -268,15 +272,11 @@ fn output_config_error(error: ConfigError, config_path: Option<&str>) {
 fn precheck_arguments(
     mut app: App,
     args: &[OsString],
-) -> Result<(Vec<String>, Option<String>), ()> {
+) -> Result<(Vec<String>, Option<String>), clap::Error> {
     // not to cause `required fields error`.
     reset_required(&mut app);
-    let matches = app.get_matches_from_safe_borrow(args.iter());
-    if matches.is_err() {
-        // if app could not get any appropriate match, just return not to show help etc.
-        return Err(());
-    }
-    let matches = &matches.unwrap();
+    let matches = app.get_matches_from_safe_borrow(args.iter())?;
+    let matches = &matches;
     let mut path = Vec::<String>::new();
     let subcommand = get_deepest_command(matches, &mut path);
     let mut config_path: Option<String> = None;
