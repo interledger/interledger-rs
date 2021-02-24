@@ -409,13 +409,9 @@ fn reset_required(app: &mut App<'_, '_>) {
 // We use this function to check if we should read config from STDIN. If STDIN is NOT pointed to
 // TTY, we try to read config from STDIN.
 fn is_fd_tty(file_descriptor: c_int) -> bool {
-    let result: c_int;
     // Because `isatty` is a `libc` function called using FFI, this is unsafe.
     // https://doc.rust-lang.org/book/ch19-01-unsafe-rust.html#using-extern-functions-to-call-external-code
-    unsafe {
-        result = isatty(file_descriptor);
-    }
-    result == 1
+    unsafe { isatty(file_descriptor) == 1 }
 }
 
 #[cfg(test)]
