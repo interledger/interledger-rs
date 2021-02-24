@@ -1038,7 +1038,7 @@ dependencies = [
 
 [[package]]
 name = "ilp-node"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "approx",
  "base64 0.11.0",
