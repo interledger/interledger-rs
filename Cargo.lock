@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "ilp-cli"
-version = "1.0.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "http",
@@ -1038,7 +1038,7 @@ dependencies = [
 
 [[package]]
 name = "ilp-node"
-version = "1.0.0"
+version = "0.6.0"
 dependencies = [
  "approx",
  "base64 0.11.0",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "interledger"
-version = "1.0.0"
+version = "0.6.0"
 dependencies = [
  "interledger-api",
  "interledger-btp",
@@ -1137,7 +1137,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-api"
-version = "1.0.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bytes 0.5.6",
@@ -1171,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-btp"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1201,7 +1201,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-ccp"
-version = "1.0.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-errors"
-version = "1.0.0"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "http",
@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-http"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bytes 0.5.6",
@@ -1265,7 +1265,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-ildcp"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-packet"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "byteorder",
  "bytes 0.5.6",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-rates"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "futures 0.3.13",
  "interledger-errors",
@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-router"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "interledger-errors",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-service"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "futures 0.3.13",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-service-util"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1370,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-settlement"
-version = "1.0.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bytes 0.5.6",
@@ -1404,7 +1404,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-spsp"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.11.0",
  "bytes 0.5.6",
@@ -1424,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-store"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bytes 0.5.6",
@@ -1464,7 +1464,7 @@ dependencies = [
 
 [[package]]
 name = "interledger-stream"
-version = "1.0.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "base64 0.11.0",
