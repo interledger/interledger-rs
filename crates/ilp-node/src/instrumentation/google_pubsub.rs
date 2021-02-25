@@ -14,7 +14,7 @@ use yup_oauth2::{read_service_account_key, ServiceAccountAuthenticator};
 static TOKEN_SCOPES: &[&str] = &["https://www.googleapis.com/auth/pubsub"];
 
 /// Configuration for the Google PubSub packet publisher
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct PubsubConfig {
     /// Path to the Service Account Key JSON file.
     /// You can obtain this file by logging into [console.cloud.google.com](https://console.cloud.google.com/)

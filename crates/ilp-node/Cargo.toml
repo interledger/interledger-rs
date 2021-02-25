@@ -7,6 +7,7 @@ license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 default-run = "ilp-node"
+build = "build.rs"
 
 [features]
 default = ["balance-tracking", "redis", "monitoring"]
@@ -31,6 +32,9 @@ name = "redis_tests"
 path = "tests/redis/redis_tests.rs"
 required-features = ["redis"]
 
+[build-dependencies]
+# vergen allows to get the VERGEN_BUILD_TIMESTAMP etc environment variables
+vergen = { version = "4" }
 
 [dependencies]
 interledger = { path = "../interledger", version = "1.0.0", default-features = false, features = ["node"] }
@@ -39,7 +43,7 @@ bytes = { version = "0.4.12", default-features = false }
 bytes05 = { package = "bytes", version = "0.5", default-features = false }
 cfg-if = { version = "0.1.10", default-features = false }
 clap = { version = "2.33.0", default-features = false }
-config = { version = "0.10.1", default-features = false, features = ["json", "toml", "yaml"] }
+config = { version = "0.10.1", default-features = false, features = ["json", "yaml"] }
 futures = { version = "0.3.7", default-features = false, features = ["compat"] }
 hex = { version = "0.4.0", default-features = false }
 once_cell = { version = "1.3.1", default-features = false }
@@ -81,9 +85,12 @@ serde_json = { version = "1.0.41", default-features = false }
 tokio-retry = { version = "0.2.0", default-features = false }
 tungstenite = {version = "0.10", default-features = false }
 criterion = { version = "0.3", default-features = false , features = ["cargo_bench_support", 'html_reports']}
+tempfile = "3"
+
 [badges]
 circle-ci = { repository = "interledger-rs/interledger-rs" }
 codecov = { repository = "interledger-rs/interledger-rs" }
+
 [[bench]]
 name = "multiple_payments"
 harness = false

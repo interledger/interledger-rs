@@ -9,7 +9,7 @@ use warp::{
 };
 
 /// Configuration for [Prometheus](https://prometheus.io) metrics collection.
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq, Debug)]
 pub struct PrometheusConfig {
     /// IP address and port to host the Prometheus endpoint on.
     pub bind_address: SocketAddr,
