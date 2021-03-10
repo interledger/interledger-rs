@@ -69,14 +69,10 @@ impl TryFrom<BytesMut> for Packet {
     type Error = ParseError;
 
     fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
-        match buffer.first() {
-            Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
-            Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
-            Some(&14) => Ok(Packet::Reject(Reject::try_from(buffer)?)),
-            _ => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                buffer.first(),
-            ))),
+        match PacketType::try_from(buffer.as_ref())? {
+            PacketType::Prepare => Prepare::try_from(buffer).map(Packet::from),
+            PacketType::Fulfill => Fulfill::try_from(buffer).map(Packet::from),
+            PacketType::Reject => Reject::try_from(buffer).map(Packet::from),
         }
     }
 }
