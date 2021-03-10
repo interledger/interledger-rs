@@ -23,13 +23,14 @@ pub fn predict_var_octet_string(length: usize) -> usize {
 /// Returns the minimum number of bytes needed to encode the value.
 /// Returns an error of the value requires more than 8 bytes.
 fn predict_var_uint_size(value: u64) -> usize {
-    for i in 1..=8 {
-        let max = u64::MAX >> (64 - 8 * i);
-        if value <= max {
-            return i;
-        }
-    }
-    unreachable!()
+    // avoid branching on zero by always orring one; it will not have any effect on other inputs
+    let value = value | 1;
+
+    // this will be now be 0..=63 as we handled the zero away
+    let highest_bit = 64 - value.leading_zeros();
+
+    // do a highest_bit.ceiling_div(8)
+    ((highest_bit + 8 - 1) / 8) as usize
 }
 
 pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
