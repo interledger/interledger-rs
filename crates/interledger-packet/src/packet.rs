@@ -34,15 +34,11 @@ impl TryFrom<&[u8]> for PacketType {
     type Error = ParseError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        match bytes.first() {
-            Some(&12) => Ok(PacketType::Prepare),
-            Some(&13) => Ok(PacketType::Fulfill),
-            Some(&14) => Ok(PacketType::Reject),
-            _ => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                bytes,
-            ))),
-        }
+        let first = bytes
+            .first()
+            .ok_or_else(|| ParseError::InvalidPacket("Unknown packet type: None".into()))?;
+
+        PacketType::try_from(*first)
     }
 }
 
@@ -54,9 +50,9 @@ impl TryFrom<u8> for PacketType {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
             14 => Ok(PacketType::Reject),
-            _ => Err(ParseError::InvalidPacket(format!(
+            byte => Err(ParseError::InvalidPacket(format!(
                 "Unknown packet type: {:?}",
-                byte,
+                Some(byte),
             ))),
         }
     }
@@ -73,14 +69,10 @@ impl TryFrom<BytesMut> for Packet {
     type Error = ParseError;
 
     fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
-        match buffer.first() {
-            Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
-            Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
-            Some(&14) => Ok(Packet::Reject(Reject::try_from(buffer)?)),
-            _ => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                buffer.first(),
-            ))),
+        match PacketType::try_from(buffer.as_ref())? {
+            PacketType::Prepare => Prepare::try_from(buffer).map(Packet::from),
+            PacketType::Fulfill => Fulfill::try_from(buffer).map(Packet::from),
+            PacketType::Reject => Reject::try_from(buffer).map(Packet::from),
         }
     }
 }
@@ -658,6 +650,14 @@ mod test_packet_type {
         assert_eq!(PacketType::try_from(13).unwrap(), PacketType::Fulfill);
         assert_eq!(PacketType::try_from(14).unwrap(), PacketType::Reject);
         assert!(PacketType::try_from(15).is_err());
+    }
+
+    #[test]
+    fn try_from_empty() {
+        assert_eq!(
+            "Invalid Packet: Unknown packet type: None",
+            format!("{}", PacketType::try_from(&[][..]).unwrap_err())
+        );
     }
 }
 
