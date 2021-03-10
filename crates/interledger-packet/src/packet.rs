@@ -34,15 +34,11 @@ impl TryFrom<&[u8]> for PacketType {
     type Error = ParseError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        match bytes.first() {
-            Some(&12) => Ok(PacketType::Prepare),
-            Some(&13) => Ok(PacketType::Fulfill),
-            Some(&14) => Ok(PacketType::Reject),
-            _ => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                bytes,
-            ))),
-        }
+        let first = bytes
+            .first()
+            .ok_or_else(|| ParseError::InvalidPacket("Unknown packet type: []".into()))?;
+
+        PacketType::try_from(*first)
     }
 }
 
@@ -658,6 +654,14 @@ mod test_packet_type {
         assert_eq!(PacketType::try_from(13).unwrap(), PacketType::Fulfill);
         assert_eq!(PacketType::try_from(14).unwrap(), PacketType::Reject);
         assert!(PacketType::try_from(15).is_err());
+    }
+
+    #[test]
+    fn try_from_empty() {
+        assert_eq!(
+            "Invalid Packet: Unknown packet type: []",
+            format!("{}", PacketType::try_from(&[][..]).unwrap_err())
+        );
     }
 }
 
