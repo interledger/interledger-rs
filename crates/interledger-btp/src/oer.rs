@@ -11,24 +11,40 @@ const LOWER_SEVEN_BITS: u8 = 0x7f;
 pub trait ReadOerExt: Read + ReadBytesExt + Debug {
     #[inline]
     fn read_var_octet_string(&mut self) -> Result<Vec<u8>> {
+        let length = self.read_var_octet_string_length()?;
+
+        // TODO handle if the length is too long
+        let mut buf = Vec::with_capacity(length as usize);
+        self.take(length).read_to_end(&mut buf)?;
+        Ok(buf)
+    }
+
+    fn read_var_octet_string_length(&mut self) -> Result<u64> {
         let length: u8 = self.read_u8()?;
 
         if length == 0 {
-            return Ok(vec![]);
+            return Ok(0);
         }
 
         let actual_length: u64 = if length & HIGH_BIT != 0 {
             let length_prefix_length = length & LOWER_SEVEN_BITS;
-            // TODO check for canonical length
+            if length_prefix_length == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Indefinite lengths are not allowed",
+                ));
+            } else if length_prefix_length > 8 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Length of length out of range: {}", length_prefix_length),
+                ));
+            }
             self.read_uint::<BigEndian>(length_prefix_length as usize)? as u64
         } else {
             u64::from(length)
         };
 
-        // TODO handle if the length is too long
-        let mut buf = Vec::with_capacity(actual_length as usize);
-        self.take(actual_length).read_to_end(&mut buf)?;
-        Ok(buf)
+        Ok(actual_length)
     }
 
     #[inline]
@@ -182,5 +198,60 @@ mod reader_ext {
             Cursor::new(larger).read_var_octet_string().unwrap(),
             &larger_string[..]
         );
+    }
+
+    #[test]
+    fn indefinite_len_octets() {
+        // FIXME: couldn't find the ending octets but this encoding is not at least introduced in
+        // the
+        // https://github.com/interledger/rfcs/blob/master/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md#short-form
+        // so we have to assume it wasn't meant to be supported.
+        let bytes = vec![0x80u8, 0x00, 0x01, 0x02];
+
+        let e = Cursor::new(bytes)
+            .read_var_octet_string_length()
+            .unwrap_err();
+
+        assert_eq!("Indefinite lengths are not allowed", e.to_string());
+    }
+
+    #[test]
+    fn way_too_long_octets_with_126_bytes_of_length() {
+        // this would be quite the long string, not great for network programming
+        let mut bytes = vec![(128 | 126)];
+        bytes.extend(std::iter::repeat(0xff).take(125));
+        bytes.push(1);
+
+        let e = Cursor::new(bytes)
+            .read_var_octet_string_length()
+            .unwrap_err();
+
+        assert_eq!("Length of length out of range: 126", e.to_string());
+    }
+
+    #[test]
+    fn way_too_long_octets_with_9_bytes_of_length() {
+        let mut bytes = vec![(128 | 9)];
+        bytes.extend(std::iter::repeat(0xff).take(8));
+        bytes.push(1);
+
+        let e = Cursor::new(bytes)
+            .read_var_octet_string_length()
+            .unwrap_err();
+
+        assert_eq!("Length of length out of range: 9", e.to_string());
+    }
+
+    #[test]
+    fn max_len_octets() {
+        let mut bytes = vec![(128 | 8)];
+        bytes.extend(std::iter::repeat(0xff).take(8));
+
+        // in reality the limit doesn't need to be over u32, or u16 or possibly even u8 range, this
+        // u64::MAX length octet stream would be quite the chore to process.
+
+        let len = Cursor::new(bytes).read_var_octet_string_length().unwrap();
+
+        assert_eq!(u64::MAX, len);
     }
 }
