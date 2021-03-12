@@ -111,6 +111,11 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                     ErrorKind::InvalidData,
                     "length prefix too large",
                 ))
+            } else if length_prefix_length == 0 {
+                Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "0x80 as length prefix is not supported",
+                ))
             } else {
                 Ok(self.read_uint::<BigEndian>(length_prefix_length)? as usize)
             }
