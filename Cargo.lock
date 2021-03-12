@@ -1187,7 +1187,6 @@ dependencies = [
  "interledger-errors",
  "interledger-packet",
  "interledger-service",
- "num-bigint",
  "once_cell",
  "parking_lot 0.10.2",
  "pin-project 0.4.27",

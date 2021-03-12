@@ -12,7 +12,6 @@ use url::Url;
 
 mod client;
 mod errors;
-mod oer;
 mod packet;
 mod server;
 mod service;

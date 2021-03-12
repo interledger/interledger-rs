@@ -114,7 +114,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
             } else if length_prefix_length == 0 {
                 Err(Error::new(
                     ErrorKind::InvalidData,
-                    "0x80 as length prefix is not supported",
+                    "indefinite lengths are not allowed",
                 ))
             } else {
                 Ok(self.read_uint::<BigEndian>(length_prefix_length)? as usize)
@@ -309,19 +309,89 @@ mod test_buf_oer_ext {
     }
 
     #[test]
-    fn test_read_var_octet_string_length() {
+    fn read_too_big_var_octet_string_length() {
         // The length of the octet string fits in 9 bytes, which is too big.
         let mut too_big: &[u8] = &[HIGH_BIT | 0x09];
         assert_eq!(
             too_big.read_var_octet_string_length().unwrap_err().kind(),
             ErrorKind::InvalidData,
         );
+    }
 
-        let mut too_small = &[HIGH_BIT | 0x00u8][..];
-        assert_eq!(
-            too_small.read_var_octet_string_length().unwrap_err().kind(),
-            ErrorKind::InvalidData,
-        );
+    #[test]
+    fn read_empty_octet_string() {
+        let mut reader = &[0][..];
+        let slice = reader.read_var_octet_string().unwrap();
+        assert!(slice.is_empty());
+    }
+
+    #[test]
+    fn read_smaller_octet_string() {
+        let mut two_bytes = &[0x01, 0xb0][..];
+        assert_eq!(two_bytes.read_var_octet_string().unwrap(), &[0xb0]);
+    }
+
+    #[test]
+    fn read_longer_length_octet_string() {
+        let mut larger = vec![0x82, 0x01, 0x00];
+        let larger_string = [0xb0; 256];
+        larger.extend(&larger_string);
+
+        let mut reader = &larger[..];
+
+        assert_eq!(reader.read_var_octet_string().unwrap(), &larger_string[..]);
+    }
+
+    #[test]
+    fn indefinite_len_octets() {
+        #[allow(clippy::identity_op)]
+        let indefinite = HIGH_BIT | 0x00;
+
+        let mut bytes = &[indefinite, 0x00, 0x01, 0x02][..];
+
+        let e = bytes.read_var_octet_string_length().unwrap_err();
+
+        assert_eq!(e.kind(), ErrorKind::InvalidData);
+        assert_eq!("indefinite lengths are not allowed", e.to_string());
+    }
+
+    #[test]
+    fn way_too_long_octets_with_126_bytes_of_length() {
+        // this would be quite the long string, not great for network programming
+        let mut bytes = vec![HIGH_BIT | 126];
+        bytes.extend(std::iter::repeat(0xff).take(125));
+        bytes.push(1);
+
+        let mut reader = &bytes[..];
+
+        let e = reader.read_var_octet_string_length().unwrap_err();
+
+        assert_eq!("length prefix too large", e.to_string());
+    }
+
+    #[test]
+    fn way_too_long_octets_with_9_bytes_of_length() {
+        let mut bytes = vec![HIGH_BIT | 9];
+        bytes.extend(std::iter::repeat(0xff).take(8));
+        bytes.push(1);
+
+        let mut reader = &bytes[..];
+
+        let e = reader.read_var_octet_string_length().unwrap_err();
+
+        assert_eq!("length prefix too large", e.to_string());
+    }
+
+    #[test]
+    fn max_len_octets() {
+        let mut bytes = vec![HIGH_BIT | 4];
+        bytes.extend(std::iter::repeat(0xff).take(4));
+
+        let mut reader = &bytes[..];
+
+        let len = reader.read_var_octet_string_length().unwrap();
+
+        assert_eq!(u32::MAX, len as u32);
     }
 
     #[test]
