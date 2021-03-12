@@ -7,7 +7,7 @@ use std::io::{self, Read, Result, Write};
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
 
-// TODO test traits
+// FIXME: interledger-packet already has a fixed version of this trait, this is extra
 pub trait ReadOerExt: Read + ReadBytesExt + Debug {
     #[inline]
     fn read_var_octet_string(&mut self) -> Result<Vec<u8>> {
