@@ -22,7 +22,9 @@ pub fn predict_var_octet_string(length: usize) -> usize {
 
 /// Returns the minimum number of bytes needed to encode the value.
 /// Returns an error of the value requires more than 8 bytes.
-fn predict_var_uint_size(value: u64) -> usize {
+pub fn predict_var_uint_size(value: u64) -> usize {
+    // FIXME: when renaming/retouching this fn shouldn't return more than u8
+
     // avoid branching on zero by always orring one; it will not have any effect on other inputs
     let value = value | 1;
 
