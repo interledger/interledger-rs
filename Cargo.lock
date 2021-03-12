@@ -1305,7 +1305,6 @@ dependencies = [
  "bytes 0.5.6",
  "chrono",
  "criterion",
- "hex",
  "once_cell",
  "regex",
  "serde",
