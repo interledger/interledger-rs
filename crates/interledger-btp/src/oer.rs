@@ -46,13 +46,14 @@ pub trait WriteOerExt: Write + WriteBytesExt + Debug {
     fn write_var_octet_string(&mut self, string: &[u8]) -> Result<()> {
         let length = string.len();
 
+        // FIXME: this is duplicate of interledger-packet/src/oer.rs like the rest of the file
+
         if length < 128 {
             self.write_u8(length as u8)?;
         } else {
-            let bit_length_of_length = format!("{:b}", length).chars().count();
-            let length_of_length = { bit_length_of_length as f32 / 8.0 }.ceil() as u8;
-            self.write_u8(HIGH_BIT | length_of_length)?;
-            self.write_uint::<BigEndian>(length as u64, length_of_length as usize)?;
+            let len_of_len = interledger_packet::oer::predict_var_uint_size(length as u64);
+            self.write_u8(HIGH_BIT | len_of_len as u8)?;
+            self.write_uint::<BigEndian>(length as u64, len_of_len as usize)?;
         }
         self.write_all(string)?;
         Ok(())
