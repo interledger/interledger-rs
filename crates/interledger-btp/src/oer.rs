@@ -46,7 +46,7 @@ pub trait WriteOerExt: Write + WriteBytesExt + Debug {
     fn write_var_octet_string(&mut self, string: &[u8]) -> Result<()> {
         let length = string.len();
 
-        if length < 127 {
+        if length < 128 {
             self.write_u8(length as u8)?;
         } else {
             let bit_length_of_length = format!("{:b}", length).chars().count();
