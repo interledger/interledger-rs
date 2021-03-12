@@ -185,7 +185,6 @@ checksum = "206fdffcfa2df7cbe15601ef46c813fce0965eb3286db6b56c583b814b51c81c"
 dependencies = [
  "byteorder",
  "iovec",
- "serde",
 ]
 
 [[package]]
@@ -1291,7 +1290,6 @@ name = "interledger-packet"
 version = "1.0.0"
 dependencies = [
  "byteorder",
- "bytes 0.4.12",
  "bytes 0.5.6",
  "chrono",
  "criterion",

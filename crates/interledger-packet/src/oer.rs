@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{Buf, BufMut, BytesMut, IntoBuf};
+use bytes::{Buf, BufMut, BytesMut};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -15,14 +15,14 @@ pub fn predict_var_octet_string(length: usize) -> usize {
     if length < 128 {
         1 + length
     } else {
-        let length_of_length = predict_var_uint_size(length as u64);
+        let length_of_length = predict_var_uint_size(length as u64) as usize;
         1 + length_of_length + length
     }
 }
 
 /// Returns the minimum number of bytes needed to encode the value.
 /// Returns an error of the value requires more than 8 bytes.
-pub fn predict_var_uint_size(value: u64) -> usize {
+pub fn predict_var_uint_size(value: u64) -> u8 {
     // FIXME: when renaming/retouching this fn shouldn't return more than u8
 
     // avoid branching on zero by always orring one; it will not have any effect on other inputs
@@ -32,7 +32,7 @@ pub fn predict_var_uint_size(value: u64) -> usize {
     let highest_bit = 64 - value.leading_zeros();
 
     // do a highest_bit.ceiling_div(8)
-    ((highest_bit + 8 - 1) / 8) as usize
+    ((highest_bit + 8 - 1) / 8) as u8
 }
 
 pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
@@ -143,11 +143,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 pub trait MutBufOerExt: BufMut + Sized {
     /// Encodes bytes as variable-length octet encoded string and puts it into `Buf`.
     #[inline]
-    fn put_var_octet_string<B>(&mut self, buf: B)
-    where
-        B: IntoBuf,
-    {
-        let buf = buf.into_buf();
+    fn put_var_octet_string<B: Buf>(&mut self, buf: B) {
         self.put_var_octet_string_length(buf.remaining());
         self.put(buf);
     }
@@ -158,18 +154,18 @@ pub trait MutBufOerExt: BufMut + Sized {
         if length < 128 {
             self.put_u8(length as u8);
         } else {
-            let length_of_length = predict_var_uint_size(length as u64);
+            let length_of_length = predict_var_uint_size(length as u64) as usize;
             self.put_u8(HIGH_BIT | length_of_length as u8);
-            self.put_uint_be(length as u64, length_of_length);
+            self.put_uint(length as u64, length_of_length);
         }
     }
 
-    /// Encodes `u64` as variable-length octet encoded unsigned integer and puts it into `Buf`
+    /// Encodes `u64` as variable-length octet encoded unsigned integer and puts it into `BufMut`
     #[inline]
     fn put_var_uint(&mut self, uint: u64) {
-        let size = predict_var_uint_size(uint);
+        let size = predict_var_uint_size(uint) as usize;
         self.put_var_octet_string_length(size);
-        self.put_uint_be(uint, size);
+        self.put_uint(uint, size);
     }
 }
 
@@ -408,7 +404,7 @@ mod buf_mut_oer_ext {
 
         for (varstr, buffer) in tests {
             let mut writer = Vec::new();
-            writer.put_var_octet_string(varstr);
+            writer.put_var_octet_string(*varstr);
             assert_eq!(&writer[..], *buffer);
         }
     }

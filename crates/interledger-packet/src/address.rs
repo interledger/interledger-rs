@@ -38,7 +38,7 @@ impl FromStr for Address {
     type Err = ParseError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        Address::try_from(Bytes::from(src))
+        Address::try_from(Bytes::copy_from_slice(src.as_bytes()))
     }
 }
 
@@ -65,7 +65,7 @@ impl TryFrom<&[u8]> for Address {
     type Error = ParseError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(Bytes::from(bytes))
+        Self::try_from(Bytes::copy_from_slice(bytes))
     }
 }
 
@@ -155,7 +155,7 @@ impl Address {
         let mut new_address = BytesMut::with_capacity(new_address_len);
 
         new_address.put_slice(self.0.as_ref());
-        new_address.put(b'.');
+        new_address.put_u8(b'.');
         new_address.put_slice(suffix);
 
         Address::try_from(new_address.freeze())
@@ -235,7 +235,7 @@ mod test_address {
         let longest_address = &make_address(1023)[..];
         assert_eq!(
             Address::try_from(longest_address).unwrap(),
-            Address(Bytes::from(longest_address)),
+            Address(longest_address.iter().copied().collect::<Bytes>()),
         );
 
         for address in INVALID_ADDRESSES {

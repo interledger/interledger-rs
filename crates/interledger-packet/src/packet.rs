@@ -1,18 +1,16 @@
 use std::fmt;
 use std::io::prelude::*;
-use std::io::Cursor;
 use std::str;
 use std::time::SystemTime;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
 use crate::hex::HexString;
 use crate::oer::{self, BufOerExt, MutBufOerExt};
 use crate::{Address, ErrorCode, ParseError};
 use std::convert::TryFrom;
-use std::iter::FromIterator;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -169,9 +167,8 @@ impl Prepare {
     #[inline]
     pub fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
-        let mut cursor = Cursor::new(&mut self.buffer);
-        cursor.set_position(self.content_offset as u64);
-        cursor.put_u64_be(amount);
+        let mut buffer = &mut self.buffer[self.content_offset..self.content_offset + 8];
+        buffer.put_u64(amount);
     }
 
     #[inline]
@@ -184,7 +181,7 @@ impl Prepare {
         self.expires_at = expires_at;
         let offset = self.content_offset + AMOUNT_LEN;
         write!(
-            &mut self.buffer[offset..],
+            &mut self.buffer[offset..offset + EXPIRY_LEN],
             "{}",
             DateTime::<Utc>::from(expires_at).format(INTERLEDGER_TIMESTAMP_FORMAT),
         )
@@ -245,6 +242,7 @@ impl fmt::Debug for Prepare {
 
 impl<'a> PrepareBuilder<'a> {
     pub fn build(&self) -> Prepare {
+        use bytes::buf::BufMutExt;
         const STATIC_LEN: usize = AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
         let destination_size = oer::predict_var_octet_string(self.destination.len());
         let data_size = oer::predict_var_octet_string(self.data.len());
@@ -255,7 +253,7 @@ impl<'a> PrepareBuilder<'a> {
         buffer.put_u8(PacketType::Prepare as u8);
         buffer.put_var_octet_string_length(content_len);
         let content_offset = buffer.len();
-        buffer.put_u64_be(self.amount);
+        buffer.put_u64(self.amount);
 
         let mut writer = buffer.writer();
         write!(
@@ -554,17 +552,28 @@ impl MaxPacketAmountDetails {
     }
 
     // Convert to use TryFrom? Also probably should go to max_packet_amount.rs
-    pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, std::io::Error> {
-        let amount_received = bytes.read_u64::<BigEndian>()?;
-        let max_amount = bytes.read_u64::<BigEndian>()?;
+    pub fn from_bytes<B: Buf>(mut bytes: B) -> Result<Self, std::io::Error> {
+        if bytes.remaining() < 16 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                // copied from read_exact
+                "failed to fill whole buffer",
+            ));
+        }
+        let amount_received = bytes.get_u64();
+        let max_amount = bytes.get_u64();
         Ok(MaxPacketAmountDetails::new(amount_received, max_amount))
     }
 
     pub fn to_bytes(&self) -> [u8; 16] {
-        let mut bytes = [0x00_u8; 16];
-        let mut writer = Cursor::new(&mut bytes[..]);
-        writer.put_u64_be(self.amount_received);
-        writer.put_u64_be(self.max_amount);
+        let mut bytes = [0x00u8; 16];
+
+        let buf = self.amount_received.to_be_bytes();
+        bytes[..8].copy_from_slice(&buf[..]);
+
+        let buf = self.max_amount.to_be_bytes();
+        bytes[8..].copy_from_slice(&buf[..]);
+
         bytes
     }
 
@@ -579,65 +588,9 @@ impl MaxPacketAmountDetails {
     }
 }
 
-// Bytes05 compatibilty methods
-impl TryFrom<bytes05::BytesMut> for Prepare {
-    type Error = ParseError;
-
-    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        let buffer = BytesMut::from_iter(buffer.into_iter());
-        Prepare::try_from(buffer)
-    }
-}
-
-impl TryFrom<bytes05::BytesMut> for Packet {
-    type Error = ParseError;
-
-    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        let buffer = BytesMut::from_iter(buffer.into_iter());
-        Packet::try_from(buffer)
-    }
-}
-
-impl From<Packet> for bytes05::BytesMut {
-    fn from(packet: Packet) -> Self {
-        match packet {
-            Packet::Prepare(prepare) => prepare.into(),
-            Packet::Fulfill(fulfill) => fulfill.into(),
-            Packet::Reject(reject) => reject.into(),
-        }
-    }
-}
-
-impl From<Prepare> for bytes05::BytesMut {
-    fn from(prepare: Prepare) -> Self {
-        // bytes 0.4
-        let b = prepare.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
-    }
-}
-
-impl From<Fulfill> for bytes05::BytesMut {
-    fn from(fulfill: Fulfill) -> Self {
-        // bytes 0.4
-        let b = fulfill.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
-impl From<Reject> for bytes05::BytesMut {
-    fn from(reject: Reject) -> Self {
-        // bytes 0.4
-        let b = reject.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
     }
 }
 
@@ -684,9 +637,9 @@ mod test_packet {
         );
 
         // Empty buffer:
-        assert!(Packet::try_from(BytesMut::from(vec![])).is_err());
+        assert!(Packet::try_from(BytesMut::new()).is_err());
         // Unknown packet type:
-        assert!(Packet::try_from(BytesMut::from(vec![0x99])).is_err());
+        assert!(Packet::try_from(BytesMut::from(&[0x99][..])).is_err());
     }
 
     #[test]
@@ -942,7 +895,7 @@ mod test_max_packet_amount_details {
 
     #[test]
     fn test_from_bytes() {
-        assert_eq!(MaxPacketAmountDetails::from_bytes(&BYTES).unwrap(), DETAILS,);
+        assert_eq!(MaxPacketAmountDetails::from_bytes(BYTES).unwrap(), DETAILS,);
         assert_eq!(
             MaxPacketAmountDetails::from_bytes(&[][..])
                 .unwrap_err()
