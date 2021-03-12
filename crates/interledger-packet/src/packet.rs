@@ -235,7 +235,7 @@ impl fmt::Debug for Prepare {
             )
             .field(
                 "execution_condition",
-                &hex::encode(self.execution_condition()),
+                &HexString(&self.execution_condition()),
             )
             .field("data_length", &self.data().len())
             .finish()
@@ -349,7 +349,7 @@ impl fmt::Debug for Fulfill {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("Fulfill")
-            .field("fulfillment", &hex::encode(self.fulfillment()))
+            .field("fulfillment", &HexString(self.fulfillment()))
             .field("data_length", &self.data().len())
             .finish()
     }
@@ -963,5 +963,16 @@ mod test_max_packet_amount_details {
     #[test]
     fn test_max_amount() {
         assert_eq!(DETAILS.max_amount(), 0x0006_0504);
+    }
+}
+
+struct HexString<'a>(&'a [u8]);
+
+impl<'a> fmt::Debug for HexString<'a> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for b in self.0 {
+            write!(fmt, "{:02x}", b)?;
+        }
+        Ok(())
     }
 }
