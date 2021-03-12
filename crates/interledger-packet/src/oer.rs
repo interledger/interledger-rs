@@ -111,6 +111,11 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                     ErrorKind::InvalidData,
                     "length prefix too large",
                 ))
+            } else if length_prefix_length == 0 {
+                Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "0x80 as length prefix is not supported",
+                ))
             } else {
                 Ok(self.read_uint::<BigEndian>(length_prefix_length)? as usize)
             }
@@ -313,6 +318,12 @@ mod test_buf_oer_ext {
         let mut too_big: &[u8] = &[HIGH_BIT | 0x09];
         assert_eq!(
             too_big.read_var_octet_string_length().unwrap_err().kind(),
+            ErrorKind::InvalidData,
+        );
+
+        let mut too_small = &[HIGH_BIT | 0x00u8][..];
+        assert_eq!(
+            too_small.read_var_octet_string_length().unwrap_err().kind(),
             ErrorKind::InvalidData,
         );
     }
