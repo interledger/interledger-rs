@@ -34,7 +34,7 @@ required-features = ["redis"]
 
 [build-dependencies]
 # vergen allows to get the VERGEN_BUILD_TIMESTAMP etc environment variables
-vergen = { version = "4" }
+vergen = { version = "4.2" }
 
 [dependencies]
 interledger = { path = "../interledger", version = "1.0.0", default-features = false, features = ["node"] }
