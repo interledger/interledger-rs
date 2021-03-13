@@ -513,27 +513,43 @@ impl<'a> RejectBuilder<'a> {
     }
 }
 
+/// Parses the outermost ILP packet ("envelope") to expected type (first byte).
+///
+/// ```text
+/// +------+------------+---------//--+
+/// | type |   varlen   |   content   |
+/// |  u8  | 1..9 bytes |             |
+/// +------+------------+---------//--+
+///  0      1            n
+///                      ^
+///                      |
+///  returned (offset and slice start)
+/// ```
+///
+/// Returns the offset and slice starting with the offset.
 fn deserialize_envelope(
     packet_type: PacketType,
     mut reader: &[u8],
 ) -> Result<(usize, &[u8]), ParseError> {
     let got_type = reader.read_u8()?;
-    if got_type == packet_type as u8 {
-        let content_offset = 1 + {
-            // This could probably be determined a better way...
-            let mut peek = &reader[..];
-            let before = peek.len();
-            peek.read_var_octet_string_length()?;
-            before - peek.len()
-        };
-        let content = reader.peek_var_octet_string()?;
-        Ok((content_offset, content))
-    } else {
-        Err(ParseError::InvalidPacket(format!(
+
+    if got_type != packet_type as u8 {
+        return Err(ParseError::InvalidPacket(format!(
             "Unexpected packet type: {:?}",
             got_type,
-        )))
+        )));
     }
+
+    let content_offset = 1 + {
+        // This could probably be determined a better way...
+        let mut peek = &reader[..];
+        let before = peek.len();
+        peek.read_var_octet_string_length()?;
+        before - peek.len()
+    };
+
+    let content = reader.peek_var_octet_string()?;
+    Ok((content_offset, content))
 }
 
 #[derive(Clone, Debug, PartialEq)]
