@@ -32,7 +32,7 @@ const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_shared_secret";
 /// accept incoming packets for multiple connections.
 #[derive(Clone)]
 pub struct ConnectionGenerator {
-    secret_generator: Bytes,
+    secret_generator: [u8; 32],
 }
 
 impl ConnectionGenerator {
@@ -42,7 +42,7 @@ impl ConnectionGenerator {
         let secret = hmac_sha256(&server_secret[..], STREAM_SERVER_SECRET_GENERATOR);
 
         ConnectionGenerator {
-            secret_generator: secret.iter().copied().collect(),
+            secret_generator: secret,
         }
     }
 
