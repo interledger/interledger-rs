@@ -272,6 +272,77 @@ impl Serializable<BtpError> for BtpError {
 mod tests {
     use super::*;
 
+    mod fuzzed {
+        use super::BtpPacket;
+        use super::Serializable;
+
+        #[test]
+        fn fuzz_0() {
+            fails_to_parse(&[]);
+        }
+
+        #[test]
+        fn fuzz_1() {
+            fails_to_parse(&[6, 0, 0, 1, 0, 1, 45]);
+        }
+
+        #[test]
+        fn fuzz_2() {
+            fails_to_parse(&[1, 1, 0, 0, 4, 4, 0]);
+        }
+
+        #[test]
+        fn fuzz_3() {
+            // 9 is the length of the next section but there are only two bytes, this used to parse
+            // just fine because there was no checking for how much was actually read
+            fails_to_parse(&[1, 1, 65, 0, 0, 9, 1, 0]);
+        }
+
+        #[test]
+        #[ignore]
+        fn fuzz_4() {
+            // this one has garbage at the end; not sure what the spec says
+            roundtrip(&[1, 0, 0, 2, 0, 2, 0, 0, 250, 134]);
+        }
+
+        #[test]
+        #[ignore]
+        fn fuzz_5() {
+            // this one again has garbage at the end, but inside the protocol data
+            roundtrip(&[1, 1, 0, 1, 0, 6, 1, 0, 6, 1, 6, 1, 1]);
+            //                            /  |
+            //                  len of len   /
+            //                    num_entries
+        }
+
+        #[test]
+        fn fuzz_6() {
+            fails_to_parse(&[1, 1, 2, 217, 19, 50, 212]);
+        }
+
+        #[test]
+        fn fuzz_7() {
+            fails_to_parse(&[2, 0, 0, 30, 30, 134, 30, 8, 36, 128, 96, 50]);
+        }
+
+        #[test]
+        fn fuzz_8() {
+            // old implementation tries to do malloc(2214616063) here
+            fails_to_parse(&[1, 1, 0, 6, 1, 132, 132, 0, 91, 255, 50]);
+        }
+
+        fn fails_to_parse(data: &[u8]) {
+            BtpPacket::from_bytes(data).unwrap_err();
+        }
+
+        #[allow(unused)]
+        fn roundtrip(data: &[u8]) {
+            let parsed = BtpPacket::from_bytes(data).expect("failed to parse test case input");
+            let out = parsed.to_bytes();
+            assert_eq!(data, out, "{:?}", parsed);
+        }
+    }
+
     mod btp_message {
         use super::*;
 
