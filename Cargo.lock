@@ -928,6 +928,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hex-literal"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5af1f635ef1bc545d78392b136bfe1c9809e029023c84a3638a864a10b8819c8"
+
+[[package]]
 name = "http"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1210,9 +1216,10 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "byteorder",
- "bytes 0.4.12",
+ "bytes 0.5.6",
  "futures 0.3.13",
  "hex",
+ "hex-literal",
  "interledger-errors",
  "interledger-packet",
  "interledger-service",
