@@ -345,7 +345,7 @@ impl InterledgerNode {
             ilp_address
         );
 
-        let secret_seed = Bytes::from(&self.secret_seed[..]);
+        let secret_seed = Bytes::copy_from_slice(&self.secret_seed[..]);
         let http_bind_address = self.http_bind_address;
         let settlement_api_bind_address = self.settlement_api_bind_address;
         let ilp_address_clone = ilp_address.clone();
@@ -523,7 +523,7 @@ impl InterledgerNode {
 
         // Node HTTP API
         let mut api = NodeApi::new(
-            bytes05::Bytes::copy_from_slice(secret_seed.as_ref()),
+            bytes::Bytes::copy_from_slice(secret_seed.as_ref()),
             admin_auth_token,
             store.clone(),
             incoming_service_api,
@@ -585,7 +585,7 @@ impl InterledgerNode {
                         .and(admin_only)
                         .and(warp::body::bytes())
                         .and_then(
-                            move |new_level_input: bytes05::Bytes| {
+                            move |new_level_input: Bytes| {
                                 let handle = tracing_handle.clone().unwrap();
                                 async move {
                                     let new_level_str = std::str::from_utf8(new_level_input.as_ref()).map_err(|_| {

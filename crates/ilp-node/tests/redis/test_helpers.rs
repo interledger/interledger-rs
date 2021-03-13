@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use futures::TryFutureExt;
 use interledger::stream::StreamDelivery;
 use interledger::{packet::Address, service::Account as AccountTrait, store::account::Account};
@@ -7,7 +8,6 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str;
-// use tracing_subscriber;
 use uuid::Uuid;
 
 #[allow(unused)]
@@ -60,7 +60,7 @@ pub async fn create_account_on_engine<T: Serialize>(
 
     let res = res.error_for_status().map_err(|_| ())?;
 
-    let data: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
+    let data: Bytes = res.bytes().map_err(|_| ()).await?;
 
     Ok(str::from_utf8(&data).unwrap().to_string())
 }
@@ -105,7 +105,7 @@ pub async fn get_all_accounts(node_port: u16, admin_token: &str) -> Result<Vec<A
         .await?;
 
     let res = res.error_for_status().map_err(|_| ())?;
-    let body: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
+    let body: Bytes = res.bytes().map_err(|_| ()).await?;
     let ret: Vec<Account> = serde_json::from_slice(&body).unwrap();
     Ok(ret)
 }
@@ -138,7 +138,7 @@ pub async fn get_balance<T: Display>(
         .await?;
 
     let res = res.error_for_status().map_err(|_| ())?;
-    let body: bytes05::Bytes = res.bytes().map_err(|_| ()).await?;
+    let body: Bytes = res.bytes().map_err(|_| ()).await?;
     let ret: BalanceData = serde_json::from_slice(&body).unwrap();
     Ok(ret)
 }
