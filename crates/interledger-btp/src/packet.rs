@@ -382,6 +382,36 @@ mod tests {
             roundtrip(&[6, 0, 0, 1, 1, 6, 1, 1, 0, 253, 1, 0]);
         }
 
+        #[test]
+        fn fuzz_12() {
+            // this has a length of length 128 | 1 which means single byte length, which doesn't
+            // really make sense per rules
+            fails_to_parse(
+                &[6, 0, 0, 1, 1, 7, 129, 1, 1, 1, 6, 1, 0],
+                //                  ^^^  ^
+                //         len of len     string len
+            );
+        }
+
+        #[test]
+        fn fuzz_13() {
+            fails_on_strict(
+                &[6, 0, 0, 0, 0, 6, 2, 0, 1, 0, 1, 0],
+                &[6, 0, 0, 0, 0, 5, 1, 1, 0, 1, 0],
+            );
+        }
+
+        fn fails_on_strict(data: &[u8], lenient_output: &[u8]) {
+            let parsed = BtpPacket::from_bytes(data);
+            if cfg!(feature = "strict") {
+                parsed.unwrap_err();
+            } else {
+                // without strict, the input is not roundtrippable as it wastes bytes
+                let out = parsed.unwrap().to_bytes();
+                assert_eq!(out, lenient_output);
+            }
+        }
+
         fn fails_to_parse(data: &[u8]) {
             BtpPacket::from_bytes(data).unwrap_err();
         }
