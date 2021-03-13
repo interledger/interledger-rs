@@ -67,7 +67,7 @@ serde_json = { version = "1.0.41", default-features = false, optional = true }
 yup-oauth2 = { version = "4", optional = true }
 
 # Tracing / metrics / prometheus for instrumentation
-tracing-futures = { version = "0.2", default-features = false, features = ["tokio", "futures-03"], optional = true }
+tracing-futures = { version = "0.2", default-features = false, features = ["std", "futures-03"], optional = true }
 tracing-subscriber = { version = "0.2.0", default-features = false, features = ["tracing-log", "fmt", "env-filter", "chrono"], optional = true }
 tracing-appender = { version = "0.1", optional = true }
 metrics = { version = "0.12.0", default-features = false, features = ["std"], optional = true }
