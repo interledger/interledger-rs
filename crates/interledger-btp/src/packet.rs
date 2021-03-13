@@ -120,7 +120,7 @@ where
     for entry in protocol_data {
         buf.put_var_octet_string(entry.protocol_name.as_bytes());
         buf.put_u8(entry.content_type.clone() as u8);
-        buf.put_var_octet_string(&entry.data);
+        buf.put_var_octet_string(&*entry.data);
     }
 }
 
@@ -152,11 +152,11 @@ impl Serializable<BtpMessage> for BtpMessage {
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u8(PacketType::Message as u8);
-        buf.put_u32_be(self.request_id);
+        buf.put_u32(self.request_id);
         // TODO make sure this isn't copying the contents
         let mut contents = Vec::new();
         put_protocol_data(&mut contents, &self.protocol_data);
-        buf.put_var_octet_string(&contents);
+        buf.put_var_octet_string(&*contents);
         buf
     }
 }
@@ -189,10 +189,10 @@ impl Serializable<BtpResponse> for BtpResponse {
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u8(PacketType::Response as u8);
-        buf.put_u32_be(self.request_id);
+        buf.put_u32(self.request_id);
         let mut contents = Vec::new();
         put_protocol_data(&mut contents, &self.protocol_data);
-        buf.put_var_octet_string(&contents);
+        buf.put_var_octet_string(&*contents);
         buf
     }
 }
@@ -239,7 +239,7 @@ impl Serializable<BtpError> for BtpError {
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u8(PacketType::Error as u8);
-        buf.put_u32_be(self.request_id);
+        buf.put_u32(self.request_id);
         let mut contents = Vec::new();
         // TODO check that the code is only 3 chars
         contents.put(self.code.as_bytes());
@@ -252,7 +252,7 @@ impl Serializable<BtpError> for BtpError {
         );
         contents.put_var_octet_string(self.data.as_bytes());
         put_protocol_data(&mut contents, &self.protocol_data);
-        buf.put_var_octet_string(&contents);
+        buf.put_var_octet_string(&*contents);
         buf
     }
 }

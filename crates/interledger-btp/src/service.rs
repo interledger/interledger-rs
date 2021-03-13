@@ -476,7 +476,7 @@ fn parse_ilp_packet(message: Message) -> Result<(u32, Packet), ()> {
                 return Err(());
             }
         };
-        if let Ok(packet) = Packet::try_from(BytesMut::from(ilp_data)) {
+        if let Ok(packet) = Packet::try_from(BytesMut::from(ilp_data.as_slice())) {
             Ok((request_id, packet))
         } else {
             Err(())

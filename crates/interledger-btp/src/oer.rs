@@ -1,5 +1,5 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use bytes::{Buf, BufMut, Bytes, IntoBuf};
+use bytes::{Buf, BufMut, Bytes};
 use num_bigint::BigUint;
 use std::fmt::Debug;
 use std::io::{self, Read, Result, Write};
@@ -82,13 +82,14 @@ pub trait BufOerExt: Buf + Sized {
         let actual_length: usize = if length & HIGH_BIT != 0 {
             let length_prefix_length = length & LOWER_SEVEN_BITS;
             // TODO check for canonical length
-            self.get_uint_be(length_prefix_length as usize) as usize
+            self.get_uint(length_prefix_length as usize) as usize
         } else {
             length as usize
         };
 
         // TODO handle if the length is too long
-        let buf = Bytes::from(self.bytes()).slice_to(actual_length);
+        let buf =
+            Bytes::from(self.bytes().iter().copied().collect::<Bytes>()).split_to(actual_length);
         self.advance(actual_length);
         buf
     }
@@ -104,28 +105,24 @@ impl<B: Buf + Sized> BufOerExt for B {}
 
 pub trait MutBufOerExt: BufMut + Sized {
     #[inline]
-    fn put_var_octet_string<B>(&mut self, buf: B)
-    where
-        B: IntoBuf,
-    {
-        let buf = buf.into_buf();
+    fn put_var_octet_string<B: Buf>(&mut self, buf: B) {
         let length = buf.remaining();
 
         if length < 127 {
             self.put_u8(length as u8);
         } else {
-            let bit_length_of_length = format!("{:b}", length).chars().count();
-            let length_of_length = { bit_length_of_length as f32 / 8.0 }.ceil() as u8;
-            self.put_u8(HIGH_BIT | length_of_length);
-            self.put_uint_be(length as u64, length_of_length as usize);
+            let len_of_len = interledger_packet::oer::predict_var_uint_size(length as u64);
+            self.put_u8(HIGH_BIT | len_of_len);
+            self.put_uint(length as u64, len_of_len as usize);
         }
         self.put(buf);
     }
 
     #[inline]
     // Write a u64 as an OER VarUInt
+    // FIXME: get rid of the biguint
     fn put_var_uint(&mut self, uint: &BigUint) {
-        self.put_var_octet_string(uint.to_bytes_be());
+        self.put_var_octet_string(&*uint.to_bytes_be());
     }
 }
 
