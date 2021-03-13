@@ -1422,7 +1422,6 @@ name = "interledger-spsp"
 version = "1.0.0"
 dependencies = [
  "base64 0.11.0",
- "bytes 0.4.12",
  "bytes 0.5.6",
  "futures 0.3.13",
  "hyper",
