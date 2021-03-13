@@ -7,6 +7,9 @@ license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
+[features]
+strict = ["interledger-packet/strict"]
+
 [dependencies]
 interledger-errors = { path = "../interledger-errors", version = "1.0.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
