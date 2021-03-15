@@ -116,12 +116,12 @@ where
             request_id: random(),
             protocol_data: vec![
                 ProtocolData {
-                    protocol_name: String::from("auth"),
+                    protocol_name: "auth".into(),
                     content_type: ContentType::ApplicationOctetStream,
                     data: vec![],
                 },
                 ProtocolData {
-                    protocol_name: String::from("auth_token"),
+                    protocol_name: "auth_token".into(),
                     content_type: ContentType::TextPlainUtf8,
                     data: token,
                 },

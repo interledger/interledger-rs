@@ -499,7 +499,7 @@ fn ilp_packet_to_ws_message(request_id: u32, packet: Packet) -> Message {
         BtpMessage {
             request_id,
             protocol_data: vec![ProtocolData {
-                protocol_name: "ilp".to_string(),
+                protocol_name: "ilp".into(),
                 content_type: ContentType::ApplicationOctetStream,
                 data,
             }],
@@ -509,7 +509,7 @@ fn ilp_packet_to_ws_message(request_id: u32, packet: Packet) -> Message {
         BtpResponse {
             request_id,
             protocol_data: vec![ProtocolData {
-                protocol_name: "ilp".to_string(),
+                protocol_name: "ilp".into(),
                 content_type: ContentType::ApplicationOctetStream,
                 data,
             }],
