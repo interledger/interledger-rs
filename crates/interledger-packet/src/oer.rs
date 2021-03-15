@@ -281,13 +281,13 @@ mod test_buf_oer_ext {
 
     #[test]
     fn test_peek_var_octet_string() {
-        let tests: &[(Vec<u8>, &[u8])] = &[
-            (vec![0x00], &[]),
-            (ZERO_LENGTH_VARSTR.to_vec(), &[]),
-            (ONE_BYTE_VARSTR.to_vec(), &[0x01]),
-            (TWO_BYTE_VARSTR.to_vec(), &[0x01, 0x02]),
-            (SIZE_128_VARSTR.clone(), &[0; 128][..]),
-            (SIZE_5678_VARSTR.clone(), &[0; 5678][..]),
+        let tests: &[(&[u8], &[u8])] = &[
+            (&[0x00], &[]),
+            (&ZERO_LENGTH_VARSTR, &[]),
+            (&ONE_BYTE_VARSTR, &[0x01]),
+            (&TWO_BYTE_VARSTR, &[0x01, 0x02]),
+            (&SIZE_128_VARSTR, &[0; 128][..]),
+            (&SIZE_5678_VARSTR, &[0; 5678][..]),
         ];
         for (buffer, varstr) in tests {
             assert_eq!((&buffer[..]).peek_var_octet_string().unwrap(), *varstr,);
@@ -459,20 +459,21 @@ mod test_buf_oer_ext {
 
         for (buffer, value, offset) in tests {
             let mut reader = &buffer[..];
-            assert_eq!(reader.read_var_uint().unwrap(), *value);
+            let uint = reader.read_var_uint().unwrap();
+            assert_eq!(uint, *value);
             assert_eq!(reader.len(), buffer.len() - *offset);
         }
 
-        let tests: &[(Vec<u8>, ErrorKind)] = &[
+        let tests: &[(&[u8], ErrorKind)] = &[
             // VarUint's must have at least 1 byte.
-            (vec![0x00], ErrorKind::InvalidData),
+            (&[0x00], ErrorKind::InvalidData),
             // Data must be present.
-            (vec![0x04], ErrorKind::UnexpectedEof),
+            (&[0x04], ErrorKind::UnexpectedEof),
             // Enough bytes must be present.
-            (vec![0x04, 0x01, 0x02, 0x03], ErrorKind::UnexpectedEof),
+            (&[0x04, 0x01, 0x02, 0x03], ErrorKind::UnexpectedEof),
             // Too many bytes.
             (
-                vec![0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+                &[0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
                 ErrorKind::InvalidData,
             ),
         ];
@@ -507,8 +508,10 @@ mod buf_mut_oer_ext {
             (long_varstr, &long_buffer[..]),
         ];
 
+        let mut writer = BytesMut::with_capacity(10);
+
         for (varstr, buffer) in tests {
-            let mut writer = Vec::new();
+            writer.clear();
             writer.put_var_octet_string(*varstr);
             assert_eq!(&writer[..], *buffer);
         }
@@ -516,36 +519,34 @@ mod buf_mut_oer_ext {
 
     #[test]
     fn test_put_var_uint() {
-        let tests: &[(Vec<u8>, u64, usize)] = &[
-            (vec![0x01, 0x00], 0, 2),
-            (vec![0x01, 0x09], 9, 2),
-            (vec![0x02, 0x01, 0x02], 0x0102, 3),
-            (vec![0x03, 0x01, 0x02, 0x03], 0x0001_0203, 4),
-            (vec![0x04, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+        let tests: &[(&[u8], u64, usize)] = &[
+            (&[0x01, 0x00], 0, 2),
+            (&[0x01, 0x09], 9, 2),
+            (&[0x02, 0x01, 0x02], 0x0102, 3),
+            (&[0x03, 0x01, 0x02, 0x03], 0x0001_0203, 4),
+            (&[0x04, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+            (&[0x05, 0x01, 0x02, 0x03, 0x04, 0x05], 0x0001_0203_0405, 6),
             (
-                vec![0x05, 0x01, 0x02, 0x03, 0x04, 0x05],
-                0x0001_0203_0405,
-                6,
-            ),
-            (
-                vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                &[0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
                 0x0102_0304_0506,
                 7,
             ),
             (
-                vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+                &[0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
                 0x0001_0203_0405_0607,
                 8,
             ),
             (
-                vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+                &[0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
                 0x0102_0304_0506_0708,
                 9,
             ),
         ];
 
+        let mut writer = BytesMut::with_capacity(10);
+
         for (buffer, value, _offset) in tests {
-            let mut writer = Vec::new();
+            writer.clear();
             writer.put_var_uint(*value);
             assert_eq!(writer, *buffer);
         }
