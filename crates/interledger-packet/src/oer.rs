@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use std::convert::TryFrom;
 use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
@@ -117,7 +118,26 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                     "indefinite lengths are not allowed",
                 ))
             } else {
-                Ok(self.read_uint::<BigEndian>(length_prefix_length)? as usize)
+                let uint = self.read_uint::<BigEndian>(length_prefix_length)?;
+
+                check_no_leading_zeroes(length_prefix_length, uint)?;
+
+                if length_prefix_length == 1 && uint < 128 {
+                    // this doesn't apply to the var uint which is at minimum two octets (0x00,
+                    // 0x00) but var len octet strings.
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        "variable length prefix with unnecessary multibyte length",
+                    ));
+                }
+
+                // it makes no sense for a length to be u64 but usize, and even that is quite a lot
+                usize::try_from(uint).map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "var octet length overflow",
+                    )
+                })
             }
         } else {
             Ok(length as usize)
@@ -133,9 +153,26 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
         } else if size > 8 {
             Err(Error::new(ErrorKind::InvalidData, "VarUInt too large"))
         } else {
-            Ok(self.read_uint::<BigEndian>(size)?)
+            let uint = self.read_uint::<BigEndian>(size)?;
+
+            check_no_leading_zeroes(size, uint)?;
+
+            Ok(uint)
         }
     }
+}
+
+fn check_no_leading_zeroes(_size_on_wire: usize, _uint: u64) -> Result<()> {
+    #[cfg(feature = "strict")]
+    if _size_on_wire != predict_var_uint_size(_uint) as usize {
+        // if we dont check for this fuzzing roundtrip tests will break, as there are
+        // "128 | 1, x" class of inputs, where "x" = 0..128
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "variable length prefix with leading zeros",
+        ));
+    }
+    Ok(())
 }
 
 pub trait MutBufOerExt: BufMut + Sized {
