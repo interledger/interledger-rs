@@ -71,18 +71,29 @@ impl Serializable<BtpPacket> for BtpPacket {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ContentType {
-    ApplicationOctetStream = 0,
-    TextPlainUtf8 = 1,
-    Unknown,
+    ApplicationOctetStream,
+    TextPlainUtf8,
+    Unknown(u8),
 }
+
 impl From<u8> for ContentType {
     fn from(type_int: u8) -> Self {
         match type_int {
             0 => ContentType::ApplicationOctetStream,
             1 => ContentType::TextPlainUtf8,
-            _ => ContentType::Unknown,
+            x => ContentType::Unknown(x),
+        }
+    }
+}
+
+impl From<ContentType> for u8 {
+    fn from(ct: ContentType) -> Self {
+        match ct {
+            ContentType::ApplicationOctetStream => 0,
+            ContentType::TextPlainUtf8 => 1,
+            ContentType::Unknown(x) => x,
         }
     }
 }
@@ -129,7 +140,7 @@ fn put_protocol_data<T: BufMut>(buf: &mut T, protocol_data: &[ProtocolData]) {
     buf.put_var_uint(protocol_data.len() as u64);
     for entry in protocol_data {
         buf.put_var_octet_string(entry.protocol_name.as_bytes());
-        buf.put_u8(entry.content_type.clone() as u8);
+        buf.put_u8(entry.content_type.into());
         buf.put_var_octet_string(&*entry.data);
     }
 }
