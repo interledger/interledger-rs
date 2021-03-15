@@ -134,6 +134,19 @@ fn put_protocol_data<T: BufMut>(buf: &mut T, protocol_data: &[ProtocolData]) {
     }
 }
 
+fn check_no_trailing_bytes(buf: &[u8]) -> Result<(), std::io::Error> {
+    // according to spec, there should not be room for trailing bytes.
+    // this certainly helps with fuzzing.
+    if !buf.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "extra trailing bytes",
+        ));
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct BtpMessage {
     pub request_id: u32,
@@ -153,7 +166,11 @@ impl Serializable<BtpMessage> for BtpMessage {
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
+
+        check_no_trailing_bytes(reader)?;
+
         let protocol_data = read_protocol_data(&mut contents)?;
+
         Ok(BtpMessage {
             request_id,
             protocol_data,
@@ -190,6 +207,9 @@ impl Serializable<BtpResponse> for BtpResponse {
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
+
+        check_no_trailing_bytes(reader)?;
+
         let protocol_data = read_protocol_data(&mut contents)?;
         Ok(BtpResponse {
             request_id,
@@ -230,6 +250,9 @@ impl Serializable<BtpError> for BtpError {
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
+
+        check_no_trailing_bytes(reader)?;
+
         let mut code: [u8; 3] = [0; 3];
         contents.read_exact(&mut code)?;
         let name = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
@@ -299,20 +322,18 @@ mod tests {
         }
 
         #[test]
-        #[ignore]
         fn fuzz_4() {
-            // this one has garbage at the end; not sure what the spec says
-            roundtrip(&[1, 0, 0, 2, 0, 2, 0, 0, 250, 134]);
+            // this one has garbage at the end
+            fails_to_parse(&[1, 0, 0, 2, 0, 2, 0, 0, 250, 134]);
         }
 
         #[test]
-        #[ignore]
         fn fuzz_5() {
             // this one again has garbage at the end, but inside the protocol data
-            roundtrip(&[1, 1, 0, 1, 0, 6, 1, 0, 6, 1, 6, 1, 1]);
-            //                            /  |
-            //                  len of len   /
-            //                    num_entries
+            fails_to_parse(&[1, 1, 0, 1, 0, 6, 1, 0, 6, 1, 6, 1, 1]);
+            //                                 /  |
+            //                       len of len   /
+            //                         num_entries
         }
 
         #[test]
