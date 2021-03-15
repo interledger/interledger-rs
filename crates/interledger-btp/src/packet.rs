@@ -133,6 +133,9 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, ParseErro
             data,
         });
     }
+
+    check_no_trailing_bytes(reader)?;
+
     Ok(protocol_data)
 }
 
@@ -361,6 +364,22 @@ mod tests {
         fn fuzz_8() {
             // old implementation tries to do malloc(2214616063) here
             fails_to_parse(&[1, 1, 0, 6, 1, 132, 132, 0, 91, 255, 50]);
+        }
+
+        #[test]
+        fn fuzz_9() {
+            fails_to_parse(&[6, 0, 0, 1, 1, 6, 1, 0]);
+        }
+
+        #[test]
+        fn fuzz_10() {
+            // garbage in the protocol data
+            fails_to_parse(&[6, 0, 0, 1, 1, 6, 1, 0, 253, 1, 1, 1]);
+        }
+
+        #[test]
+        fn fuzz_11() {
+            roundtrip(&[6, 0, 0, 1, 1, 6, 1, 1, 0, 253, 1, 0]);
         }
 
         fn fails_to_parse(data: &[u8]) {
