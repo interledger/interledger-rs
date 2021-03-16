@@ -8,8 +8,9 @@ use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
-use super::oer::{self, BufOerExt, MutBufOerExt};
-use super::{Address, ErrorCode, ParseError};
+use crate::hex::HexString;
+use crate::oer::{self, BufOerExt, MutBufOerExt};
+use crate::{Address, ErrorCode, ParseError};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
@@ -963,16 +964,5 @@ mod test_max_packet_amount_details {
     #[test]
     fn test_max_amount() {
         assert_eq!(DETAILS.max_amount(), 0x0006_0504);
-    }
-}
-
-struct HexString<'a>(&'a [u8]);
-
-impl<'a> fmt::Debug for HexString<'a> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for b in self.0 {
-            write!(fmt, "{:02x}", b)?;
-        }
-        Ok(())
     }
 }
