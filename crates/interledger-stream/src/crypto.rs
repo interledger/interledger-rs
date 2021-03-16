@@ -133,15 +133,8 @@ fn encrypt_with_nonce(
 /// The nonce and auth tag are extracted from the first 12 and 16 bytes
 /// of the ciphertext.
 pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMut, ()> {
-    use bytes::Buf;
-
-    // FIXME: note the next comment which includes nonce and tag but only makes sure that one of
-    // AUTH_TAG_LENGTH is present. This was implemented with bytes04 originally which didn't error
-    // for trying to split_to contents which didn't exist. When upgrading to bytes05 this became
-    // obvious because split_to now panics.
-
     // ciphertext must include at least a nonce and tag
-    if ciphertext.len() < AUTH_TAG_LENGTH {
+    if ciphertext.len() < NONCE_LENGTH + AUTH_TAG_LENGTH {
         return Err(());
     }
     let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
@@ -153,10 +146,7 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
     nonce.copy_from_slice(&ciphertext.split_to(NONCE_LENGTH));
 
     let additional_data: &[u8] = &[];
-
-    // FIXME: see reason for AUTH_TAG_LENGTH.min(...) from above; at least in many of this crates
-    // tests this is empty slice.
-    let auth_tag = ciphertext.split_to(AUTH_TAG_LENGTH.min(ciphertext.remaining()));
+    let auth_tag = ciphertext.split_to(AUTH_TAG_LENGTH);
 
     // Ring expects the tag to come after the data
     ciphertext.unsplit(auth_tag);
