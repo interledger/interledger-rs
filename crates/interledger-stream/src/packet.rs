@@ -145,6 +145,11 @@ impl StreamPacket {
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
+    #[cfg(fuzzing)]
+    pub fn from_decrypted(data: BytesMut) -> Result<Self, ParseError> {
+        Self::from_bytes_unencrypted(data)
+    }
+
     /// Constructs a [Stream Packet](./struct.StreamPacket.html) from a buffer
     ///
     /// # Errors
