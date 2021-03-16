@@ -424,6 +424,8 @@ mod test_buf_oer_ext {
         let mut bytes = vec![HIGH_BIT | 4];
         bytes.extend(std::iter::repeat(0xff).take(4));
 
+        // here 84 ff ff ff ff is used as a max usize (in 32-bit systems)
+
         let mut reader = &bytes[..];
 
         let len = reader.read_var_octet_string_length().unwrap();
@@ -484,6 +486,17 @@ mod test_buf_oer_ext {
                 *error_kind,
             );
         }
+    }
+
+    #[test]
+    fn peek_too_long_uint() {
+        // in interledger-stream there is a use case to accept larger than u64::MAX for a varuint.
+        // it is done through peeking for the length of the varuint, using the length > 8 to
+        // default to u64::MAX.
+        let bytes: &[u8] = &[0x09u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
+
+        let reader = bytes;
+        assert_eq!(9, reader.peek_var_octet_string().unwrap().len());
     }
 }
 
