@@ -444,7 +444,6 @@ mod route_control_request {
     fn errors_with_wrong_destination() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6b1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from_without_expiry(&prepare);
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
             "Invalid Packet: Packet is not a CCP message. Destination: peer.route.controk"
@@ -455,7 +454,6 @@ mod route_control_request {
     fn errors_with_wrong_condition() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from_without_expiry(&prepare);
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
             "Invalid Packet: Wrong condition: 66687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f2925"
@@ -466,7 +464,6 @@ mod route_control_request {
     fn errors_with_expired_packet() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from(&prepare);
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
             "Invalid Packet: Packet expired"
@@ -515,7 +512,6 @@ mod route_update_request {
     fn errors_with_wrong_destination() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174643221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
             "Invalid Packet: Packet is not a CCP message. Destination: peer.route.updatd"
@@ -526,7 +522,6 @@ mod route_update_request {
     fn errors_with_wrong_condition() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
-        assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Invalid Packet: Wrong condition: 66687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f2925");
     }
 
@@ -534,7 +529,6 @@ mod route_update_request {
     fn errors_with_expired_packet() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from(&prepare);
-        assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
             "Invalid Packet: Packet expired"
