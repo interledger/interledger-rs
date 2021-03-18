@@ -267,18 +267,17 @@ mod tests {
                 ProtocolData {
                     protocol_name: String::from("test"),
                     content_type: ContentType::ApplicationOctetStream,
-                    data: hex::decode("FFFF").unwrap(),
+                    data: hex_literal::hex!("FFFF")[..].to_vec(),
                 },
                 ProtocolData {
                     protocol_name: String::from("text"),
                     content_type: ContentType::TextPlainUtf8,
-                    data: Vec::from("hello"),
+                    data: b"hello".to_vec(),
                 },
             ],
         });
-        static MESSAGE_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
-            hex::decode("060000000217010204746573740002ffff0474657874010568656c6c6f").unwrap()
-        });
+        static MESSAGE_1_SERIALIZED: &[u8] =
+            &hex_literal::hex!("060000000217010204746573740002ffff0474657874010568656c6c6f");
 
         #[test]
         fn from_bytes() {
@@ -302,13 +301,12 @@ mod tests {
             protocol_data: vec![ProtocolData {
                 protocol_name: String::from("some other protocol"),
                 content_type: ContentType::ApplicationOctetStream,
-                data: hex::decode("AAAAAA").unwrap(),
+                data: hex_literal::hex!("AAAAAA").to_vec(),
             }],
         });
-        static RESPONSE_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
-            hex::decode("01000000811b010113736f6d65206f746865722070726f746f636f6c0003aaaaaa")
-                .unwrap()
-        });
+        static RESPONSE_1_SERIALIZED: &[u8] = &hex_literal::hex!(
+            "01000000811b010113736f6d65206f746865722070726f746f636f6c0003aaaaaa"
+        );
 
         #[test]
         fn from_bytes() {
@@ -338,9 +336,7 @@ mod tests {
             protocol_data: vec![],
         });
 
-        static ERROR_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
-            hex::decode("02000001f52f54303010556e726561636861626c654572726f721332303138303833313032353332342e3839395a046f6f70730100").unwrap()
-        });
+        static ERROR_1_SERIALIZED: &[u8] = &hex_literal::hex!("02000001f52f54303010556e726561636861626c654572726f721332303138303833313032353332342e3839395a046f6f70730100");
 
         #[test]
         fn from_bytes() {

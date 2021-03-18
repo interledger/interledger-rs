@@ -1,6 +1,6 @@
 use interledger::{
     ccp::{CcpRoutingAccount, RoutingRelation},
-    packet::{ErrorCode, Fulfill, Reject},
+    packet::{hex::HexString, ErrorCode, Fulfill, Reject},
     service::{
         Account, IlpResult, IncomingRequest, IncomingService, OutgoingRequest, OutgoingService,
     },
@@ -124,7 +124,7 @@ pub async fn trace_outgoing<A: Account + CcpRoutingAccount>(
 fn trace_response(result: Result<Fulfill, Reject>) -> Result<Fulfill, Reject> {
     match result {
         Ok(ref fulfill) => {
-            debug_span!(target: "interledger-node", "", fulfillment = %hex::encode(fulfill.fulfillment())).in_scope(
+            debug_span!(target: "interledger-node", "", fulfillment = ?HexString(fulfill.fulfillment())).in_scope(
                 || {
                     info!(target: "interledger-node", result = "fulfill");
                 },

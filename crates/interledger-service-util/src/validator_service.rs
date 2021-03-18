@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use interledger_packet::{ErrorCode, RejectBuilder};
+use interledger_packet::{hex::HexString, ErrorCode, RejectBuilder};
 use interledger_service::*;
 use ring::digest::{digest, SHA256};
 use std::marker::PhantomData;
@@ -142,7 +142,7 @@ where
             if generated_condition.as_ref() == condition {
                 Ok(fulfill)
             } else {
-                error!("Fulfillment did not match condition. Fulfillment: {}, hash: {}, actual condition: {}", hex::encode(fulfill.fulfillment()), hex::encode(generated_condition), hex::encode(condition));
+                error!("Fulfillment did not match condition. Fulfillment: {:?}, hash: {:?}, actual condition: {:?}", HexString(fulfill.fulfillment()), HexString(generated_condition.as_ref()), HexString(&condition[..]));
                 Err(RejectBuilder {
                     code: ErrorCode::F09_INVALID_PEER_RESPONSE,
                     message: b"Fulfillment did not match condition",

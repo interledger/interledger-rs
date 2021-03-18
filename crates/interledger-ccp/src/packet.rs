@@ -1,6 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, Bytes};
 use interledger_packet::{
+    hex::HexString,
     oer::{BufOerExt, MutBufOerExt},
     Address, Fulfill, FulfillBuilder, ParseError, Prepare, PrepareBuilder,
 };
@@ -68,7 +69,6 @@ impl TryFrom<u8> for Mode {
 #[derive(Clone, PartialEq)]
 pub struct RouteControlRequest {
     pub mode: Mode,
-    // TODO change debug to format this as hex
     pub last_known_routing_table_id: [u8; 16],
     pub last_known_epoch: u32,
     pub features: Vec<String>,
@@ -80,7 +80,7 @@ impl Debug for RouteControlRequest {
             .field("mode", &self.mode)
             .field(
                 "last_known_routing_table_id",
-                &hex::encode(self.last_known_routing_table_id),
+                &HexString(&self.last_known_routing_table_id),
             )
             .field("last_known_epoch", &self.last_known_epoch)
             .field("features", &self.features)
@@ -111,8 +111,8 @@ impl RouteControlRequest {
         if prepare.execution_condition() != PEER_PROTOCOL_CONDITION {
             error!("Unexpected condition: {:x?}", prepare.execution_condition());
             return Err(ParseError::InvalidPacket(format!(
-                "Wrong condition: {}",
-                hex::encode(prepare.execution_condition()),
+                "Wrong condition: {:?}",
+                HexString(&prepare.execution_condition()),
             )));
         }
 
@@ -239,7 +239,7 @@ impl Debug for Route {
         fmt.debug_struct("Route")
             .field("prefix", &self.prefix)
             .field("path", &self.path)
-            .field("auth", &hex::encode(self.auth))
+            .field("auth", &HexString(&self.auth))
             .field("props", &self.props)
             .finish()
     }
@@ -313,7 +313,7 @@ pub struct RouteUpdateRequest {
 impl Debug for RouteUpdateRequest {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.debug_struct("RouteUpdateRequest")
-            .field("routing_table_id", &hex::encode(self.routing_table_id))
+            .field("routing_table_id", &HexString(&self.routing_table_id))
             .field("current_epoch_index", &self.current_epoch_index)
             .field("from_epoch_index", &self.from_epoch_index)
             .field("to_epoch_index", &self.to_epoch_index)
@@ -348,8 +348,8 @@ impl RouteUpdateRequest {
         if prepare.execution_condition() != PEER_PROTOCOL_CONDITION {
             error!("Unexpected condition: {:x?}", prepare.execution_condition());
             return Err(ParseError::InvalidPacket(format!(
-                "Wrong condition: {}",
-                hex::encode(prepare.execution_condition()),
+                "Wrong condition: {:?}",
+                HexString(&prepare.execution_condition()),
             )));
         }
 
