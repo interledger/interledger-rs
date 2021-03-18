@@ -1,9 +1,9 @@
 fn main() {
     {
-        use vergen::{gen, ConstantsFlags};
-        let mut flags = ConstantsFlags::empty();
-        // there are other flags available as well, this is VERGEN_GIT_SHA_SHORT
-        flags.insert(ConstantsFlags::SHA_SHORT);
-        gen(flags).expect("Unable to generate the cargo keys! Do you have git installed?");
+        use vergen::{vergen, Config, ShaKind};
+        let mut config = Config::default();
+        *config.git_mut().sha_mut() = true;
+        *config.git_mut().sha_kind_mut() = ShaKind::Short;
+        vergen(config).expect("Unable to generate the cargo keys! Do you have git installed?");
     }
 }
