@@ -29,6 +29,16 @@ pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(fuzzing)]
+pub fn fuzz_control_request(data: &[u8]) {
+    packet::RouteControlRequest::fuzz_from_prepare_data(data);
+}
+
+#[cfg(fuzzing)]
+pub fn fuzz_update_request(data: &[u8]) {
+    packet::RouteUpdateRequest::fuzz_from_prepare_data(data);
+}
+
 /// Data structure used to describe the routing relation of an account with its peers.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize, Ord, Eq)]

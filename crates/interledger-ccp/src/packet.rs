@@ -116,8 +116,19 @@ impl RouteControlRequest {
             )));
         }
 
-        let mut data = prepare.data();
+        Self::try_from_data(prepare.data())
+    }
 
+    #[cfg(any(fuzzing, test))]
+    pub fn fuzz_from_prepare_data(data: &[u8]) {
+        if let Ok(s) = Self::try_from_data(data) {
+            let prepare = s.to_prepare();
+            let roundtripped = Self::try_from_without_expiry(&prepare).unwrap();
+            assert_eq!(s, roundtripped);
+        }
+    }
+
+    fn try_from_data(mut data: &[u8]) -> Result<Self, ParseError> {
         let mode = Mode::try_from(data.read_u8()?)?;
         let mut last_known_routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut last_known_routing_table_id)?;
@@ -353,7 +364,19 @@ impl RouteUpdateRequest {
             )));
         }
 
-        let mut data = prepare.data();
+        Self::try_from_data(prepare.data())
+    }
+
+    #[cfg(any(fuzzing, test))]
+    pub fn fuzz_from_prepare_data(data: &[u8]) {
+        if let Ok(s) = Self::try_from_data(data) {
+            let prepare = s.to_prepare();
+            let roundtripped = Self::try_from_without_expiry(&prepare).unwrap();
+            assert_eq!(s, roundtripped);
+        }
+    }
+
+    fn try_from_data(mut data: &[u8]) -> Result<Self, ParseError> {
         let mut routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut routing_table_id)?;
         let current_epoch_index = data.read_u32::<BigEndian>()?;
