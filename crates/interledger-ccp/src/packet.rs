@@ -133,8 +133,10 @@ impl RouteControlRequest {
         let mut last_known_routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut last_known_routing_table_id)?;
         let last_known_epoch = data.read_u32::<BigEndian>()?;
+
+        // TODO: see discussion for Route::try_from(&mut &[u8])
         let num_features = data.read_var_uint()?;
-        let mut features: Vec<String> = Vec::with_capacity(num_features as usize);
+        let mut features: Vec<String> = Vec::new();
         for _i in 0..num_features {
             features.push(String::from_utf8(data.read_var_octet_string()?.to_vec())?);
         }
@@ -262,16 +264,26 @@ impl TryFrom<&mut &[u8]> for Route {
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
         let prefix = str::from_utf8(data.read_var_octet_string()?)?.to_string();
+
+        // FIXME: this is prone to pre-allocating a lot (see fuzzed test cases), like every
+        // instance of reading a `length` as var_uint and following it up with a preallocation in
+        // this crate. Other crates such as interledger-stream gets away from this by having an
+        // iterator which just iterates the values starting from the specific offset and `length`
+        // is checked against the number of elements iterator found. interledger-btp use just the
+        // default growing of the vec (unideal) and check against trailing bytes (missing here).
+        //
+        // Using the unideal version (growing vec) for now.
         let path_len = data.read_var_uint()? as usize;
-        let mut path: Vec<String> = Vec::with_capacity(path_len);
+        let mut path: Vec<String> = Vec::new();
         for _i in 0..path_len {
             path.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }
         let mut auth: [u8; 32] = [0; 32];
         data.read_exact(&mut auth)?;
 
+        // TODO: see discussion above
         let prop_len = data.read_var_uint()? as usize;
-        let mut props = Vec::with_capacity(prop_len);
+        let mut props = Vec::new();
         for _i in 0..prop_len {
             // For some reason we need to cast `data to `&mut &[u8]` again, otherwise
             // error[E0382]: use of moved value: `data`
@@ -384,13 +396,17 @@ impl RouteUpdateRequest {
         let to_epoch_index = data.read_u32::<BigEndian>()?;
         let hold_down_time = data.read_u32::<BigEndian>()?;
         let speaker = Address::try_from(data.read_var_octet_string()?)?;
+
+        // TODO: see discussion for Route::try_from(&mut &[u8])
         let new_routes_len = data.read_var_uint()? as usize;
-        let mut new_routes: Vec<Route> = Vec::with_capacity(new_routes_len);
+        let mut new_routes: Vec<Route> = Vec::new();
         for _i in 0..new_routes_len {
             new_routes.push(Route::try_from(&mut data)?);
         }
+
+        // TODO: see discussion for Route::try_from(&mut &[u8])
         let withdrawn_routes_len = data.read_var_uint()? as usize;
-        let mut withdrawn_routes = Vec::with_capacity(withdrawn_routes_len);
+        let mut withdrawn_routes = Vec::new();
         for _i in 0..withdrawn_routes_len {
             withdrawn_routes.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }

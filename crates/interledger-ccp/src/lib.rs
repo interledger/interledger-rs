@@ -142,7 +142,6 @@ pub trait CcpRoutingStore: Clone {
 #[cfg(test)]
 mod tests {
     #[test]
-    #[ignore]
     fn fuzz_0_preallocation() {
         // this allocates 8_356_511_975_664 bytes
         let _ = crate::packet::RouteUpdateRequest::fuzz_from_prepare_data(&[
@@ -159,7 +158,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn fuzz_1_preallocation() {
         // this allocates 103_079_215_104 bytes
         let _ = crate::packet::RouteControlRequest::fuzz_from_prepare_data(&[
