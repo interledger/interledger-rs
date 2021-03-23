@@ -309,7 +309,9 @@ impl Serializable<BtpError> for BtpError {
 mod tests {
     use super::*;
 
+    // separate mod helps to avoid the 30s test case with `cargo test -- fuzzed`
     mod fuzzed {
+        use super::super::{put_protocol_data, read_protocol_data};
         use super::BtpPacket;
         use super::Serializable;
 
@@ -399,6 +401,54 @@ mod tests {
                 &[6, 0, 0, 0, 0, 6, 2, 0, 1, 0, 1, 0],
                 &[6, 0, 0, 0, 0, 5, 1, 1, 0, 1, 0],
             );
+        }
+
+        #[test]
+        fn fuzz_14() {
+            // this failed originally by producing a longer output than input in strict.
+            //
+            // longer output was created because the timestamp was parsed when it contained illegal
+            // characters, and the formatted version of the parsed timestamp was longer than in the
+            // input.
+            #[rustfmt::skip]
+            roundtrip(&[
+                // packettype error
+                2,
+                // request id
+                0, 127, 1, 12, 73,
+                // code
+                9, 9, 9,
+                // name = length prefix + 9x9
+                9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+                // timestamp = length prefix (18) + "4\t3\t\u{c}\t\t3\t\u{c}\t5\t3\t60Z"
+                //                                  "4.3....3...5.3.60Z"
+                // this is output as         (19) + "00040303050360.000Z"
+                18, 52, 9, 51, 9, 12, 9, 9, 51, 9, 12, 9, 53, 9, 51, 9, 54, 48, 90,
+                // data = length prefix + rest
+                0,
+                // protocol data
+                1, 3, 1, 1, 0, 0, 1, 0, 6, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 79, 9, 9,
+                9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 51,
+            ]);
+        }
+
+        #[test]
+        fn fuzz_14_1() {
+            // protocol data from the previous test case
+            let input: &[u8] = &[
+                1, 3, 1, 1, 0, 0, 1, 0, 6, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 79, 9, 9,
+                9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 51,
+            ];
+
+            let mut cursor = input;
+
+            let pd = read_protocol_data(&mut cursor).unwrap();
+
+            let mut out = bytes::BytesMut::new();
+
+            put_protocol_data(&mut out, &pd);
+
+            assert_eq!(input, out);
         }
 
         fn fails_on_strict(data: &[u8], lenient_output: &[u8]) {
