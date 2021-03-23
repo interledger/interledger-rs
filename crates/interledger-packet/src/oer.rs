@@ -6,9 +6,12 @@ use std::u64;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BufMut, BytesMut};
+use chrono::{TimeZone, Utc};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
+// NOTE: this is stricly different than packet::INTERLEDGER_TIMESTAMP_FORMAT
+static VARIABLE_LENGTH_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
 
 /// Returns the size (in bytes) of the buffer that encodes a VarOctetString of
 /// `length` bytes.
@@ -55,6 +58,11 @@ pub trait BufOerExt<'a> {
     fn skip_var_octet_string(&mut self) -> Result<()>;
     fn read_var_octet_string_length(&mut self) -> Result<usize>;
     fn read_var_uint(&mut self) -> Result<u64>;
+
+    /// Decodes a variable length timestamp according to [RFC-0030].
+    ///
+    /// [RFC-0030]: https://github.com/interledger/rfcs/blob/2473d2963a65e5534076c483f3c08a81b8e0cc88/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md#variable-length-timestamps
+    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp>;
 }
 
 impl<'a> BufOerExt<'a> for &'a [u8] {
@@ -132,12 +140,14 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                 }
 
                 // it makes no sense for a length to be u64 but usize, and even that is quite a lot
-                usize::try_from(uint).map_err(|_| {
+                let uint = usize::try_from(uint).map_err(|_| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         "var octet length overflow",
                     )
-                })
+                })?;
+
+                Ok(uint)
             }
         } else {
             Ok(length as usize)
@@ -159,6 +169,86 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
             Ok(uint)
         }
+    }
+
+    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp> {
+        use once_cell::sync::OnceCell;
+        use regex::bytes::Regex;
+
+        static RE: OnceCell<Regex> = OnceCell::new();
+        let re = RE.get_or_init(|| Regex::new(r"^[0-9]{4}[0-9]{2}{5}(\.[0-9]{1,3})?Z$").unwrap());
+
+        let octets = self.read_var_octet_string()?;
+
+        let len = match octets.len() {
+            15 | 17 | 18 | 19 => Ok(octets.len() as u8),
+            x => Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid length for variable length timestamp: {}", x),
+            )),
+        }?;
+
+        if !re.is_match(octets) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Input failed to parse as timestamp",
+            ));
+        }
+
+        // the string might still have bad date in it
+        let s = std::str::from_utf8(octets)
+            .expect("re matches only ascii, utf8 conversion must succeed");
+
+        let ts = Utc
+            .datetime_from_str(s, VARIABLE_LENGTH_TIMESTAMP_FORMAT)
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Invalid variable length datetime: {}", e),
+                )
+            })?;
+
+        Ok(VariableLengthTimestamp { inner: ts, len })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct VariableLengthTimestamp {
+    inner: chrono::DateTime<chrono::Utc>,
+    len: u8,
+}
+
+impl VariableLengthTimestamp {
+    /// Returns a full length timestamp of the value parsed as RFC3339.
+    pub fn parse_from_rfc3339(s: &str) -> std::result::Result<Self, chrono::ParseError> {
+        Ok(VariableLengthTimestamp {
+            inner: chrono::DateTime::parse_from_rfc3339(s)?.with_timezone(&Utc),
+            len: 19,
+        })
+    }
+}
+
+use std::fmt;
+
+impl fmt::Display for VariableLengthTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use chrono::Timelike;
+
+        // first let chrono format without the fractions and ending Z
+        fmt::Display::fmt(&self.inner.format("%Y%m%d%H%M%S"), f)?;
+
+        // then depending on the length add enough fractions (chrono doesn't support %.1f or %.2f)
+        let nanos = self.inner.time().nanosecond() % 1_000_000_000;
+        match self.len {
+            15 => Ok(()),
+            17 => write!(f, ".{:01}", nanos / 100_000_000),
+            18 => write!(f, ".{:02}", nanos / 10_000_000),
+            19 => write!(f, ".{:03}", nanos / 1_000_000),
+            x => unreachable!("should not have timestamp of length: {}", x),
+        }?;
+
+        // all varlen timestamps end with Z
+        write!(f, "Z")
     }
 }
 
@@ -201,6 +291,17 @@ pub trait MutBufOerExt: BufMut + Sized {
         let size = predict_var_uint_size(uint) as usize;
         self.put_var_octet_string_length(size);
         self.put_uint(uint, size);
+    }
+
+    /// Encodes the given timestamp per the rules, see
+    /// [`BufOerExt::read_variable_length_timestamp`].
+    fn put_variable_length_timestamp(&mut self, vts: &VariableLengthTimestamp) {
+        use bytes::buf::BufMutExt;
+        use std::io::Write;
+
+        self.put_var_octet_string_length(vts.len as usize);
+        write!(self.writer(), "{}", vts)
+            .expect("BufMut should expand and formatting should never fail");
     }
 }
 
@@ -498,6 +599,29 @@ mod test_buf_oer_ext {
         let reader = bytes;
         assert_eq!(9, reader.peek_var_octet_string().unwrap().len());
     }
+
+    #[test]
+    fn read_variable_length_timestamp() {
+        let valid: &[(&[u8], &str)] = &[
+            (b"20171224161432.279Z", "2017-12-24 16:14:32.279 UTC"),
+            (b"20171224161432.27Z", "2017-12-24 16:14:32.270 UTC"),
+            (b"20171224161432.2Z", "2017-12-24 16:14:32.200 UTC"),
+            (b"20171224161432Z", "2017-12-24 16:14:32 UTC"),
+            (b"20161231235960.852Z", "2016-12-31 23:59:60.852 UTC"),
+            (b"20171225000000Z", "2017-12-25 00:00:00 UTC"),
+            (b"99991224161432.279Z", "9999-12-24 16:14:32.279 UTC"),
+        ];
+
+        let mut buffer = BytesMut::with_capacity(1 + valid[0].0.len());
+
+        for &(input, expected) in valid {
+            buffer.clear();
+            buffer.put_var_octet_string(input);
+            let ts = buffer.as_ref().read_variable_length_timestamp().unwrap();
+            assert_eq!(ts.len as usize, input.len());
+            assert_eq!(expected, ts.inner.to_string());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -562,6 +686,35 @@ mod buf_mut_oer_ext {
             writer.clear();
             writer.put_var_uint(*value);
             assert_eq!(writer, *buffer);
+        }
+    }
+
+    #[test]
+    fn test_put_variable_length_timestamp() {
+        let tests: &[(&[u8], &str)] = &[
+            (b"20171224161432.279Z", "20171224161432.279Z"),
+            (b"20171224161432.27Z", "20171224161432.27Z"),
+            (b"20171224161432.2Z", "20171224161432.2Z"),
+            (b"20171224161432Z", "20171224161432Z"),
+        ];
+
+        let mut write_buffer = BytesMut::with_capacity(1 + tests[0].0.len());
+
+        for (data, input) in tests {
+            write_buffer.clear();
+
+            write_buffer.put_var_octet_string(*data);
+            let ts = write_buffer
+                .as_ref()
+                .read_variable_length_timestamp()
+                .unwrap();
+
+            assert_eq!(&ts.to_string(), input);
+
+            write_buffer.clear();
+            write_buffer.put_variable_length_timestamp(&ts);
+
+            assert_eq!(data, &write_buffer[1..].as_ref());
         }
     }
 }
