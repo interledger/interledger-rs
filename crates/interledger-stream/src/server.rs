@@ -32,16 +32,17 @@ const STREAM_SERVER_SECRET_GENERATOR: &[u8] = b"ilp_stream_shared_secret";
 /// accept incoming packets for multiple connections.
 #[derive(Clone)]
 pub struct ConnectionGenerator {
-    secret_generator: Bytes,
+    secret_generator: [u8; 32],
 }
 
 impl ConnectionGenerator {
     pub fn new(server_secret: Bytes) -> Self {
         assert_eq!(server_secret.len(), 32, "Server secret must be 32 bytes");
+
+        let secret = hmac_sha256(&server_secret[..], STREAM_SERVER_SECRET_GENERATOR);
+
         ConnectionGenerator {
-            secret_generator: Bytes::from(
-                &hmac_sha256(&server_secret[..], STREAM_SERVER_SECRET_GENERATOR)[..],
-            ),
+            secret_generator: secret,
         }
     }
 
@@ -388,7 +389,8 @@ mod connection_generator {
     fn generates_valid_ilp_address() {
         let server_secret = [9; 32];
         let receiver_address = Address::from_str("example.receiver").unwrap();
-        let connection_generator = ConnectionGenerator::new(Bytes::from(&server_secret[..]));
+        let connection_generator =
+            ConnectionGenerator::new(Bytes::copy_from_slice(&server_secret[..]));
         let (destination_account, shared_secret) =
             connection_generator.generate_address_and_secret(&receiver_address);
 

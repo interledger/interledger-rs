@@ -141,10 +141,10 @@ impl RouteControlRequest {
 
         data.put_u8(self.mode as u8);
         data.put_slice(&self.last_known_routing_table_id);
-        data.put_u32_be(self.last_known_epoch);
+        data.put_u32(self.last_known_epoch);
         data.put_var_uint(self.features.len() as u64);
         for feature in self.features.iter() {
-            data.put_var_octet_string(feature.as_bytes().to_vec());
+            data.put_var_octet_string(feature.as_bytes());
         }
 
         PrepareBuilder {
@@ -187,7 +187,7 @@ impl TryFrom<&mut &[u8]> for RouteProp {
         let is_utf8 = meta & FLAG_UTF8 != 0;
 
         let id = data.read_u16::<BigEndian>()?;
-        let value = Bytes::from(data.read_var_octet_string()?);
+        let value = Bytes::copy_from_slice(data.read_var_octet_string()?);
 
         Ok(RouteProp {
             is_optional,
@@ -220,7 +220,7 @@ impl RouteProp {
         }
 
         buf.put_u8(meta);
-        buf.put_u16_be(self.id);
+        buf.put_u16(self.id);
         buf.put_var_octet_string(&self.value[..]);
     }
 }
@@ -285,10 +285,10 @@ impl Route {
     where
         B: BufMut,
     {
-        buf.put_var_octet_string(&self.prefix[..]);
+        buf.put_var_octet_string(self.prefix.as_bytes());
         buf.put_var_uint(self.path.len() as u64);
         for address in self.path.iter() {
-            buf.put_var_octet_string(&address[..]);
+            buf.put_var_octet_string(address.as_bytes());
         }
         buf.put(&self.auth[..]);
         buf.put_var_uint(self.props.len() as u64);
@@ -387,18 +387,18 @@ impl RouteUpdateRequest {
     pub fn to_prepare(&self) -> Prepare {
         let mut data = Vec::new();
         data.put(&self.routing_table_id[..]);
-        data.put_u32_be(self.current_epoch_index);
-        data.put_u32_be(self.from_epoch_index);
-        data.put_u32_be(self.to_epoch_index);
-        data.put_u32_be(self.hold_down_time);
-        data.put_var_octet_string(&self.speaker[..]);
+        data.put_u32(self.current_epoch_index);
+        data.put_u32(self.from_epoch_index);
+        data.put_u32(self.to_epoch_index);
+        data.put_u32(self.hold_down_time);
+        data.put_var_octet_string(self.speaker.as_bytes());
         data.put_var_uint(self.new_routes.len() as u64);
         for route in self.new_routes.iter() {
             route.write_to(&mut data);
         }
         data.put_var_uint(self.withdrawn_routes.len() as u64);
         for route in self.withdrawn_routes.iter() {
-            data.put_var_octet_string(&route[..]);
+            data.put_var_octet_string(route.as_bytes());
         }
 
         PrepareBuilder {
@@ -423,6 +423,7 @@ mod route_control_request {
     use super::*;
     use crate::fixtures::*;
     use bytes::BytesMut;
+    use hex_literal::hex;
 
     #[test]
     fn deserialize() {
@@ -442,7 +443,7 @@ mod route_control_request {
 
     #[test]
     fn errors_with_wrong_destination() {
-        let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6b1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172").unwrap())).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6b1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from_without_expiry(&prepare);
         assert!(result.is_err());
         assert_eq!(
@@ -453,7 +454,7 @@ mod route_control_request {
 
     #[test]
     fn errors_with_wrong_condition() {
-        let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172").unwrap())).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from_without_expiry(&prepare);
         assert!(result.is_err());
         assert_eq!(
@@ -464,7 +465,7 @@ mod route_control_request {
 
     #[test]
     fn errors_with_expired_packet() {
-        let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c6c0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172").unwrap())).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from(&prepare);
         assert!(result.is_err());
         assert_eq!(
@@ -479,6 +480,7 @@ mod route_update_request {
     use super::*;
     use crate::fixtures::*;
     use bytes::BytesMut;
+    use hex_literal::hex;
 
     #[test]
     fn deserialize() {
@@ -514,7 +516,7 @@ mod route_update_request {
 
     #[test]
     fn errors_with_wrong_destination() {
-        let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174643221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100").unwrap())).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174643221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
         assert!(result.is_err());
         assert_eq!(
@@ -525,7 +527,7 @@ mod route_update_request {
 
     #[test]
     fn errors_with_wrong_condition() {
-        let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100").unwrap())).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Invalid Packet: Wrong condition: 66687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f2925");
@@ -533,7 +535,7 @@ mod route_update_request {
 
     #[test]
     fn errors_with_expired_packet() {
-        let prepare = Prepare::try_from(BytesMut::from(hex::decode("0c7e0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100").unwrap())).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from(&prepare);
         assert!(result.is_err());
         assert_eq!(

@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{Buf, BufMut, BytesMut, IntoBuf};
+use bytes::{Buf, BufMut, BytesMut};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
@@ -15,21 +15,22 @@ pub fn predict_var_octet_string(length: usize) -> usize {
     if length < 128 {
         1 + length
     } else {
-        let length_of_length = predict_var_uint_size(length as u64);
+        let length_of_length = predict_var_uint_size(length as u64) as usize;
         1 + length_of_length + length
     }
 }
 
-/// Returns the minimum number of bytes needed to encode the value.
-/// Returns an error of the value requires more than 8 bytes.
-fn predict_var_uint_size(value: u64) -> usize {
-    for i in 1..=8 {
-        let max = u64::MAX >> (64 - 8 * i);
-        if value <= max {
-            return i;
-        }
-    }
-    unreachable!()
+/// Returns the minimum number of bytes needed to encode the `value` without leading zeroes in
+/// big-endian representation.
+pub fn predict_var_uint_size(value: u64) -> u8 {
+    // avoid branching on zero by always orring one; it will not have any effect on other inputs
+    let value = value | 1;
+
+    // this will be now be 0..=63 as we handled the zero away
+    let highest_bit = 64 - value.leading_zeros();
+
+    // do a highest_bit.ceiling_div(8)
+    ((highest_bit + 8 - 1) / 8) as u8
 }
 
 pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
@@ -110,6 +111,11 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                     ErrorKind::InvalidData,
                     "length prefix too large",
                 ))
+            } else if length_prefix_length == 0 {
+                Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "indefinite lengths are not allowed",
+                ))
             } else {
                 Ok(self.read_uint::<BigEndian>(length_prefix_length)? as usize)
             }
@@ -135,11 +141,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 pub trait MutBufOerExt: BufMut + Sized {
     /// Encodes bytes as variable-length octet encoded string and puts it into `Buf`.
     #[inline]
-    fn put_var_octet_string<B>(&mut self, buf: B)
-    where
-        B: IntoBuf,
-    {
-        let buf = buf.into_buf();
+    fn put_var_octet_string<B: Buf>(&mut self, buf: B) {
         self.put_var_octet_string_length(buf.remaining());
         self.put(buf);
     }
@@ -150,18 +152,18 @@ pub trait MutBufOerExt: BufMut + Sized {
         if length < 128 {
             self.put_u8(length as u8);
         } else {
-            let length_of_length = predict_var_uint_size(length as u64);
+            let length_of_length = predict_var_uint_size(length as u64) as usize;
             self.put_u8(HIGH_BIT | length_of_length as u8);
-            self.put_uint_be(length as u64, length_of_length);
+            self.put_uint(length as u64, length_of_length);
         }
     }
 
-    /// Encodes `u64` as variable-length octet encoded unsigned integer and puts it into `Buf`
+    /// Encodes `u64` as variable-length octet encoded unsigned integer and puts it into `BufMut`
     #[inline]
     fn put_var_uint(&mut self, uint: u64) {
-        let size = predict_var_uint_size(uint);
+        let size = predict_var_uint_size(uint) as usize;
         self.put_var_octet_string_length(size);
-        self.put_uint_be(uint, size);
+        self.put_uint(uint, size);
     }
 }
 
@@ -307,7 +309,7 @@ mod test_buf_oer_ext {
     }
 
     #[test]
-    fn test_read_var_octet_string_length() {
+    fn read_too_big_var_octet_string_length() {
         // The length of the octet string fits in 9 bytes, which is too big.
         let mut too_big: &[u8] = &[HIGH_BIT | 0x09];
         assert_eq!(
@@ -317,30 +319,102 @@ mod test_buf_oer_ext {
     }
 
     #[test]
+    fn read_empty_octet_string() {
+        let mut reader = &[0][..];
+        let slice = reader.read_var_octet_string().unwrap();
+        assert!(slice.is_empty());
+    }
+
+    #[test]
+    fn read_smaller_octet_string() {
+        let mut two_bytes = &[0x01, 0xb0][..];
+        assert_eq!(two_bytes.read_var_octet_string().unwrap(), &[0xb0]);
+    }
+
+    #[test]
+    fn read_longer_length_octet_string() {
+        let mut larger = vec![0x82, 0x01, 0x00];
+        let larger_string = [0xb0; 256];
+        larger.extend(&larger_string);
+
+        let mut reader = &larger[..];
+
+        assert_eq!(reader.read_var_octet_string().unwrap(), &larger_string[..]);
+    }
+
+    #[test]
+    fn indefinite_len_octets() {
+        #[allow(clippy::identity_op)]
+        let indefinite = HIGH_BIT | 0x00;
+
+        let mut bytes = &[indefinite, 0x00, 0x01, 0x02][..];
+
+        let e = bytes.read_var_octet_string_length().unwrap_err();
+
+        assert_eq!(e.kind(), ErrorKind::InvalidData);
+        assert_eq!("indefinite lengths are not allowed", e.to_string());
+    }
+
+    #[test]
+    fn way_too_long_octets_with_126_bytes_of_length() {
+        // this would be quite the long string, not great for network programming
+        let mut bytes = vec![HIGH_BIT | 126];
+        bytes.extend(std::iter::repeat(0xff).take(125));
+        bytes.push(1);
+
+        let mut reader = &bytes[..];
+
+        let e = reader.read_var_octet_string_length().unwrap_err();
+
+        assert_eq!("length prefix too large", e.to_string());
+    }
+
+    #[test]
+    fn way_too_long_octets_with_9_bytes_of_length() {
+        let mut bytes = vec![HIGH_BIT | 9];
+        bytes.extend(std::iter::repeat(0xff).take(8));
+        bytes.push(1);
+
+        let mut reader = &bytes[..];
+
+        let e = reader.read_var_octet_string_length().unwrap_err();
+
+        assert_eq!("length prefix too large", e.to_string());
+    }
+
+    #[test]
+    fn max_len_octets() {
+        let mut bytes = vec![HIGH_BIT | 4];
+        bytes.extend(std::iter::repeat(0xff).take(4));
+
+        let mut reader = &bytes[..];
+
+        let len = reader.read_var_octet_string_length().unwrap();
+
+        assert_eq!(u32::MAX, len as u32);
+    }
+
+    #[test]
     fn test_read_var_uint() {
-        let tests: &[(Vec<u8>, u64, usize)] = &[
-            (vec![0x01, 0x00], 0, 2),
-            (vec![0x01, 0x09], 9, 2),
-            (vec![0x02, 0x01, 0x02], 0x0102, 3),
-            (vec![0x03, 0x01, 0x02, 0x03], 0x0001_0203, 4),
-            (vec![0x04, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+        let tests: &[(&[u8], u64, usize)] = &[
+            (&[0x01, 0x00], 0, 2),
+            (&[0x01, 0x09], 9, 2),
+            (&[0x02, 0x01, 0x02], 0x0102, 3),
+            (&[0x03, 0x01, 0x02, 0x03], 0x0001_0203, 4),
+            (&[0x04, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+            (&[0x05, 0x01, 0x02, 0x03, 0x04, 0x05], 0x0001_0203_0405, 6),
             (
-                vec![0x05, 0x01, 0x02, 0x03, 0x04, 0x05],
-                0x0001_0203_0405,
-                6,
-            ),
-            (
-                vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                &[0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
                 0x0102_0304_0506,
                 7,
             ),
             (
-                vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+                &[0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
                 0x0001_0203_0405_0607,
                 8,
             ),
             (
-                vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+                &[0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
                 0x0102_0304_0506_0708,
                 9,
             ),
@@ -398,7 +472,7 @@ mod buf_mut_oer_ext {
 
         for (varstr, buffer) in tests {
             let mut writer = Vec::new();
-            writer.put_var_octet_string(varstr);
+            writer.put_var_octet_string(*varstr);
             assert_eq!(&writer[..], *buffer);
         }
     }

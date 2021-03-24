@@ -100,7 +100,7 @@ impl<'a> StreamPacketBuilder<'a> {
                 }
                 Frame::Unknown => continue,
             }
-            buffer_unencrypted.put_var_octet_string(contents);
+            buffer_unencrypted.put_var_octet_string(&*contents);
         }
 
         StreamPacket {
@@ -976,10 +976,12 @@ mod serialization {
     fn it_saturates_max_money_frame_receive_max() {
         let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
-        buffer.put_var_octet_string(vec![
-            // receive_max
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-        ]);
+        buffer.put_var_octet_string(
+            &[
+                // receive_max
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+            ][..],
+        );
         buffer.put_var_uint(123); // total_received
         let frame = StreamMaxMoneyFrame::read_contents(&buffer).unwrap();
         assert_eq!(frame.receive_max, u64::MAX);
@@ -989,10 +991,12 @@ mod serialization {
     fn it_saturates_money_blocked_frame_send_max() {
         let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
-        buffer.put_var_octet_string(vec![
-            // send_max
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-        ]);
+        buffer.put_var_octet_string(
+            &[
+                // send_max
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+            ][..],
+        );
         buffer.put_var_uint(123); // total_sent
         let frame = StreamMoneyBlockedFrame::read_contents(&buffer).unwrap();
         assert_eq!(frame.send_max, u64::MAX);

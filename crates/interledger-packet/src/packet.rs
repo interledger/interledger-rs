@@ -1,17 +1,16 @@
 use std::fmt;
 use std::io::prelude::*;
-use std::io::Cursor;
 use std::str;
 use std::time::SystemTime;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
-use super::oer::{self, BufOerExt, MutBufOerExt};
-use super::{Address, ErrorCode, ParseError};
+use crate::hex::HexString;
+use crate::oer::{self, BufOerExt, MutBufOerExt};
+use crate::{Address, ErrorCode, ParseError};
 use std::convert::TryFrom;
-use std::iter::FromIterator;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -34,15 +33,11 @@ impl TryFrom<&[u8]> for PacketType {
     type Error = ParseError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        match bytes.first() {
-            Some(&12) => Ok(PacketType::Prepare),
-            Some(&13) => Ok(PacketType::Fulfill),
-            Some(&14) => Ok(PacketType::Reject),
-            _ => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                bytes,
-            ))),
-        }
+        let first = bytes
+            .first()
+            .ok_or_else(|| ParseError::InvalidPacket("Unknown packet type: None".into()))?;
+
+        PacketType::try_from(*first)
     }
 }
 
@@ -54,9 +49,9 @@ impl TryFrom<u8> for PacketType {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
             14 => Ok(PacketType::Reject),
-            _ => Err(ParseError::InvalidPacket(format!(
+            byte => Err(ParseError::InvalidPacket(format!(
                 "Unknown packet type: {:?}",
-                byte,
+                Some(byte),
             ))),
         }
     }
@@ -73,14 +68,10 @@ impl TryFrom<BytesMut> for Packet {
     type Error = ParseError;
 
     fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
-        match buffer.first() {
-            Some(&12) => Ok(Packet::Prepare(Prepare::try_from(buffer)?)),
-            Some(&13) => Ok(Packet::Fulfill(Fulfill::try_from(buffer)?)),
-            Some(&14) => Ok(Packet::Reject(Reject::try_from(buffer)?)),
-            _ => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                buffer.first(),
-            ))),
+        match PacketType::try_from(buffer.as_ref())? {
+            PacketType::Prepare => Prepare::try_from(buffer).map(Packet::from),
+            PacketType::Fulfill => Fulfill::try_from(buffer).map(Packet::from),
+            PacketType::Reject => Reject::try_from(buffer).map(Packet::from),
         }
     }
 }
@@ -176,9 +167,8 @@ impl Prepare {
     #[inline]
     pub fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
-        let mut cursor = Cursor::new(&mut self.buffer);
-        cursor.set_position(self.content_offset as u64);
-        cursor.put_u64_be(amount);
+        let mut buffer = &mut self.buffer[self.content_offset..self.content_offset + 8];
+        buffer.put_u64(amount);
     }
 
     #[inline]
@@ -191,7 +181,7 @@ impl Prepare {
         self.expires_at = expires_at;
         let offset = self.content_offset + AMOUNT_LEN;
         write!(
-            &mut self.buffer[offset..],
+            &mut self.buffer[offset..offset + EXPIRY_LEN],
             "{}",
             DateTime::<Utc>::from(expires_at).format(INTERLEDGER_TIMESTAMP_FORMAT),
         )
@@ -243,7 +233,7 @@ impl fmt::Debug for Prepare {
             )
             .field(
                 "execution_condition",
-                &hex::encode(self.execution_condition()),
+                &HexString(&self.execution_condition()),
             )
             .field("data_length", &self.data().len())
             .finish()
@@ -252,6 +242,7 @@ impl fmt::Debug for Prepare {
 
 impl<'a> PrepareBuilder<'a> {
     pub fn build(&self) -> Prepare {
+        use bytes::buf::BufMutExt;
         const STATIC_LEN: usize = AMOUNT_LEN + EXPIRY_LEN + CONDITION_LEN;
         let destination_size = oer::predict_var_octet_string(self.destination.len());
         let data_size = oer::predict_var_octet_string(self.data.len());
@@ -262,7 +253,7 @@ impl<'a> PrepareBuilder<'a> {
         buffer.put_u8(PacketType::Prepare as u8);
         buffer.put_var_octet_string_length(content_len);
         let content_offset = buffer.len();
-        buffer.put_u64_be(self.amount);
+        buffer.put_u64(self.amount);
 
         let mut writer = buffer.writer();
         write!(
@@ -357,7 +348,7 @@ impl fmt::Debug for Fulfill {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("Fulfill")
-            .field("fulfillment", &hex::encode(self.fulfillment()))
+            .field("fulfillment", &HexString(self.fulfillment()))
             .field("data_length", &self.data().len())
             .finish()
     }
@@ -522,27 +513,43 @@ impl<'a> RejectBuilder<'a> {
     }
 }
 
+/// Parses the outermost ILP packet ("envelope") to expected type (first byte).
+///
+/// ```text
+/// +------+------------+---------//--+
+/// | type |   varlen   |   content   |
+/// |  u8  | 1..9 bytes |             |
+/// +------+------------+---------//--+
+///  0      1            n
+///                      ^
+///                      |
+///  returned (offset and slice start)
+/// ```
+///
+/// Returns the offset and slice starting with the offset.
 fn deserialize_envelope(
     packet_type: PacketType,
     mut reader: &[u8],
 ) -> Result<(usize, &[u8]), ParseError> {
     let got_type = reader.read_u8()?;
-    if got_type == packet_type as u8 {
-        let content_offset = 1 + {
-            // This could probably be determined a better way...
-            let mut peek = &reader[..];
-            let before = peek.len();
-            peek.read_var_octet_string_length()?;
-            before - peek.len()
-        };
-        let content = reader.peek_var_octet_string()?;
-        Ok((content_offset, content))
-    } else {
-        Err(ParseError::InvalidPacket(format!(
+
+    if got_type != packet_type as u8 {
+        return Err(ParseError::InvalidPacket(format!(
             "Unexpected packet type: {:?}",
             got_type,
-        )))
+        )));
     }
+
+    let content_offset = 1 + {
+        // This could probably be determined a better way...
+        let mut peek = &reader[..];
+        let before = peek.len();
+        peek.read_var_octet_string_length()?;
+        before - peek.len()
+    };
+
+    let content = reader.peek_var_octet_string()?;
+    Ok((content_offset, content))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -561,17 +568,28 @@ impl MaxPacketAmountDetails {
     }
 
     // Convert to use TryFrom? Also probably should go to max_packet_amount.rs
-    pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, std::io::Error> {
-        let amount_received = bytes.read_u64::<BigEndian>()?;
-        let max_amount = bytes.read_u64::<BigEndian>()?;
+    pub fn from_bytes<B: Buf>(mut bytes: B) -> Result<Self, std::io::Error> {
+        if bytes.remaining() < 16 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                // copied from read_exact
+                "failed to fill whole buffer",
+            ));
+        }
+        let amount_received = bytes.get_u64();
+        let max_amount = bytes.get_u64();
         Ok(MaxPacketAmountDetails::new(amount_received, max_amount))
     }
 
     pub fn to_bytes(&self) -> [u8; 16] {
-        let mut bytes = [0x00_u8; 16];
-        let mut writer = Cursor::new(&mut bytes[..]);
-        writer.put_u64_be(self.amount_received);
-        writer.put_u64_be(self.max_amount);
+        let mut bytes = [0x00u8; 16];
+
+        let buf = self.amount_received.to_be_bytes();
+        bytes[..8].copy_from_slice(&buf[..]);
+
+        let buf = self.max_amount.to_be_bytes();
+        bytes[8..].copy_from_slice(&buf[..]);
+
         bytes
     }
 
@@ -586,65 +604,9 @@ impl MaxPacketAmountDetails {
     }
 }
 
-// Bytes05 compatibilty methods
-impl TryFrom<bytes05::BytesMut> for Prepare {
-    type Error = ParseError;
-
-    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        let buffer = BytesMut::from_iter(buffer.into_iter());
-        Prepare::try_from(buffer)
-    }
-}
-
-impl TryFrom<bytes05::BytesMut> for Packet {
-    type Error = ParseError;
-
-    fn try_from(buffer: bytes05::BytesMut) -> Result<Self, Self::Error> {
-        let buffer = BytesMut::from_iter(buffer.into_iter());
-        Packet::try_from(buffer)
-    }
-}
-
-impl From<Packet> for bytes05::BytesMut {
-    fn from(packet: Packet) -> Self {
-        match packet {
-            Packet::Prepare(prepare) => prepare.into(),
-            Packet::Fulfill(fulfill) => fulfill.into(),
-            Packet::Reject(reject) => reject.into(),
-        }
-    }
-}
-
-impl From<Prepare> for bytes05::BytesMut {
-    fn from(prepare: Prepare) -> Self {
-        // bytes 0.4
-        let b = prepare.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
-    }
-}
-
-impl From<Fulfill> for bytes05::BytesMut {
-    fn from(fulfill: Fulfill) -> Self {
-        // bytes 0.4
-        let b = fulfill.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
-    }
-}
-
-impl From<Reject> for bytes05::BytesMut {
-    fn from(reject: Reject) -> Self {
-        // bytes 0.4
-        let b = reject.buffer.as_ref();
-        // convert to Bytes05
-        bytes05::BytesMut::from(b)
     }
 }
 
@@ -658,6 +620,14 @@ mod test_packet_type {
         assert_eq!(PacketType::try_from(13).unwrap(), PacketType::Fulfill);
         assert_eq!(PacketType::try_from(14).unwrap(), PacketType::Reject);
         assert!(PacketType::try_from(15).is_err());
+    }
+
+    #[test]
+    fn try_from_empty() {
+        assert_eq!(
+            "Invalid Packet: Unknown packet type: None",
+            format!("{}", PacketType::try_from(&[][..]).unwrap_err())
+        );
     }
 }
 
@@ -683,9 +653,9 @@ mod test_packet {
         );
 
         // Empty buffer:
-        assert!(Packet::try_from(BytesMut::from(vec![])).is_err());
+        assert!(Packet::try_from(BytesMut::new()).is_err());
         // Unknown packet type:
-        assert!(Packet::try_from(BytesMut::from(vec![0x99])).is_err());
+        assert!(Packet::try_from(BytesMut::from(&[0x99][..])).is_err());
     }
 
     #[test]
@@ -941,7 +911,7 @@ mod test_max_packet_amount_details {
 
     #[test]
     fn test_from_bytes() {
-        assert_eq!(MaxPacketAmountDetails::from_bytes(&BYTES).unwrap(), DETAILS,);
+        assert_eq!(MaxPacketAmountDetails::from_bytes(BYTES).unwrap(), DETAILS,);
         assert_eq!(
             MaxPacketAmountDetails::from_bytes(&[][..])
                 .unwrap_err()

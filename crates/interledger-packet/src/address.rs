@@ -5,7 +5,6 @@
 // Addresses are never empty.
 #![allow(clippy::len_without_is_empty)]
 
-use regex::Regex;
 use std::fmt;
 use std::str;
 
@@ -26,8 +25,13 @@ pub enum AddressError {
     InvalidFormat,
 }
 
-static ADDRESS_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$").unwrap()
+// SAFETY: this regex must only match utf-8, as the conversions in Address use unchecked
+// conversions.
+static ADDRESS_PATTERN: Lazy<regex::bytes::Regex> = Lazy::new(|| {
+    regex::bytes::Regex::new(
+        r"^(g|private|example|peer|self|test[1-3]?|local)([.][a-zA-Z0-9_~-]+)+$",
+    )
+    .unwrap()
 });
 
 /// An ILP address backed by `Bytes`.
@@ -38,22 +42,33 @@ impl FromStr for Address {
     type Err = ParseError;
 
     fn from_str(src: &str) -> Result<Self, Self::Err> {
-        Address::try_from(Bytes::from(src))
+        Address::try_from(src.as_bytes())
     }
 }
 
-impl TryFrom<Bytes> for Address {
-    type Error = ParseError;
-
-    fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+impl Address {
+    fn try_from_buf<B: bytes::Buf>(mut buf: B) -> Result<Self, ParseError> {
         // https://interledger.org/rfcs/0015-ilp-addresses/#address-requirements
-        if bytes.len() > MAX_ADDRESS_LENGTH {
+        if buf.remaining() > MAX_ADDRESS_LENGTH {
             return Err(ParseError::InvalidAddress(AddressError::InvalidLength(
-                bytes.len(),
+                buf.remaining(),
             )));
         }
 
-        if ADDRESS_PATTERN.is_match(str::from_utf8(&bytes)?) {
+        // TODO: bytes1 changes bytes() to be chunk()
+        let (bytes, matches) = if buf.bytes().len() == buf.remaining() {
+            // the underlying buffer is not a chained buf
+            (None, ADDRESS_PATTERN.is_match(buf.bytes()))
+        } else {
+            // the underlying buffer is multiple slices, copy it now for simplest possible matching
+            let bytes = buf.to_bytes();
+            let matches = ADDRESS_PATTERN.is_match(bytes.as_ref());
+            (Some(bytes), matches)
+        };
+
+        if matches {
+            // it's important that we only call copy_to_bytes once as it advances internal state
+            let bytes = bytes.unwrap_or_else(|| buf.to_bytes());
             Ok(Address(bytes))
         } else {
             Err(ParseError::InvalidAddress(AddressError::InvalidFormat))
@@ -61,11 +76,19 @@ impl TryFrom<Bytes> for Address {
     }
 }
 
+impl TryFrom<Bytes> for Address {
+    type Error = ParseError;
+
+    fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+        Address::try_from_buf(bytes)
+    }
+}
+
 impl TryFrom<&[u8]> for Address {
     type Error = ParseError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(Bytes::from(bytes))
+        Address::try_from_buf(bytes)
     }
 }
 
@@ -133,6 +156,8 @@ impl Address {
 
     /// Returns an iterator over all the segments of the ILP Address
     pub fn segments(&self) -> impl DoubleEndedIterator<Item = &str> {
+        // safety: this is safe because in Address::try_from_buf the input is validated to be valid
+        // ascii
         unsafe {
             self.0
                 .split(|&b| b == b'.')
@@ -155,7 +180,7 @@ impl Address {
         let mut new_address = BytesMut::with_capacity(new_address_len);
 
         new_address.put_slice(self.0.as_ref());
-        new_address.put(b'.');
+        new_address.put_u8(b'.');
         new_address.put_slice(suffix);
 
         Address::try_from(new_address.freeze())
@@ -235,7 +260,7 @@ mod test_address {
         let longest_address = &make_address(1023)[..];
         assert_eq!(
             Address::try_from(longest_address).unwrap(),
-            Address(Bytes::from(longest_address)),
+            Address(longest_address.iter().copied().collect::<Bytes>()),
         );
 
         for address in INVALID_ADDRESSES {

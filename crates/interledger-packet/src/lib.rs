@@ -8,6 +8,7 @@ mod error;
 mod errors;
 #[cfg(test)]
 mod fixtures;
+pub mod hex;
 pub mod oer;
 mod packet;
 

@@ -1,14 +1,11 @@
 use super::errors::ParseError;
-use super::oer::{MutBufOerExt, ReadOerExt};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use chrono::{DateTime, TimeZone, Utc};
-use num_bigint::BigUint;
+use interledger_packet::oer::{BufOerExt, MutBufOerExt};
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::io::prelude::*;
-use std::io::Cursor;
-use std::ops::Add;
 use std::str;
 
 static GENERALIZED_TIME_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
@@ -47,6 +44,12 @@ pub enum BtpPacket {
 
 impl Serializable<BtpPacket> for BtpPacket {
     fn from_bytes(bytes: &[u8]) -> Result<BtpPacket, ParseError> {
+        if bytes.is_empty() {
+            return Err(ParseError::IoErr(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "too short packet",
+            )));
+        }
         match PacketType::from(bytes[0]) {
             PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
             PacketType::Response => Ok(BtpPacket::Response(BtpResponse::from_bytes(bytes)?)),
@@ -89,19 +92,16 @@ pub struct ProtocolData {
     pub content_type: ContentType,
     pub data: Vec<u8>,
 }
-fn read_protocol_data<T>(reader: &mut T) -> Result<Vec<ProtocolData>, ParseError>
-where
-    T: ReadOerExt,
-{
+
+fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, ParseError> {
+    // TODO: using bytes here might make sense
     let mut protocol_data = Vec::new();
 
     let num_entries = reader.read_var_uint()?;
-    let mut i = BigUint::from(0u32);
-    while i < num_entries {
-        i = i.add(BigUint::from(1u8)); // this is probably slow
-        let protocol_name = String::from_utf8(reader.read_var_octet_string()?)?;
+    for _ in 0..num_entries {
+        let protocol_name = str::from_utf8(reader.read_var_octet_string()?)?.to_owned();
         let content_type = ContentType::from(reader.read_u8()?);
-        let data = reader.read_var_octet_string()?;
+        let data = reader.read_var_octet_string()?.to_vec();
         protocol_data.push(ProtocolData {
             protocol_name,
             content_type,
@@ -111,16 +111,12 @@ where
     Ok(protocol_data)
 }
 
-fn put_protocol_data<T>(buf: &mut T, protocol_data: &[ProtocolData])
-where
-    T: BufMut,
-{
-    let length = BigUint::from(protocol_data.len());
-    buf.put_var_uint(&length);
+fn put_protocol_data<T: BufMut>(buf: &mut T, protocol_data: &[ProtocolData]) {
+    buf.put_var_uint(protocol_data.len() as u64);
     for entry in protocol_data {
         buf.put_var_octet_string(entry.protocol_name.as_bytes());
         buf.put_u8(entry.content_type.clone() as u8);
-        buf.put_var_octet_string(&entry.data);
+        buf.put_var_octet_string(&*entry.data);
     }
 }
 
@@ -129,9 +125,10 @@ pub struct BtpMessage {
     pub request_id: u32,
     pub protocol_data: Vec<ProtocolData>,
 }
+
 impl Serializable<BtpMessage> for BtpMessage {
     fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, ParseError> {
-        let mut reader = Cursor::new(bytes);
+        let mut reader = &bytes[..];
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Message {
             return Err(ParseError::InvalidPacket(format!(
@@ -141,7 +138,7 @@ impl Serializable<BtpMessage> for BtpMessage {
             )));
         }
         let request_id = reader.read_u32::<BigEndian>()?;
-        let mut contents = Cursor::new(reader.read_var_octet_string()?);
+        let mut contents = reader.read_var_octet_string()?;
         let protocol_data = read_protocol_data(&mut contents)?;
         Ok(BtpMessage {
             request_id,
@@ -152,11 +149,11 @@ impl Serializable<BtpMessage> for BtpMessage {
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u8(PacketType::Message as u8);
-        buf.put_u32_be(self.request_id);
+        buf.put_u32(self.request_id);
         // TODO make sure this isn't copying the contents
         let mut contents = Vec::new();
         put_protocol_data(&mut contents, &self.protocol_data);
-        buf.put_var_octet_string(&contents);
+        buf.put_var_octet_string(&*contents);
         buf
     }
 }
@@ -168,7 +165,7 @@ pub struct BtpResponse {
 }
 impl Serializable<BtpResponse> for BtpResponse {
     fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, ParseError> {
-        let mut reader = Cursor::new(bytes);
+        let mut reader = bytes;
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Response {
             return Err(ParseError::InvalidPacket(format!(
@@ -178,7 +175,7 @@ impl Serializable<BtpResponse> for BtpResponse {
             )));
         }
         let request_id = reader.read_u32::<BigEndian>()?;
-        let mut contents = Cursor::new(reader.read_var_octet_string()?);
+        let mut contents = reader.read_var_octet_string()?;
         let protocol_data = read_protocol_data(&mut contents)?;
         Ok(BtpResponse {
             request_id,
@@ -189,10 +186,10 @@ impl Serializable<BtpResponse> for BtpResponse {
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u8(PacketType::Response as u8);
-        buf.put_u32_be(self.request_id);
+        buf.put_u32(self.request_id);
         let mut contents = Vec::new();
         put_protocol_data(&mut contents, &self.protocol_data);
-        buf.put_var_octet_string(&contents);
+        buf.put_var_octet_string(&*contents);
         buf
     }
 }
@@ -208,7 +205,7 @@ pub struct BtpError {
 }
 impl Serializable<BtpError> for BtpError {
     fn from_bytes(bytes: &[u8]) -> Result<BtpError, ParseError> {
-        let mut reader = Cursor::new(bytes);
+        let mut reader = bytes;
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Error {
             return Err(ParseError::InvalidPacket(format!(
@@ -218,17 +215,17 @@ impl Serializable<BtpError> for BtpError {
             )));
         }
         let request_id = reader.read_u32::<BigEndian>()?;
-        let mut contents = Cursor::new(reader.read_var_octet_string()?);
+        let mut contents = reader.read_var_octet_string()?;
         let mut code: [u8; 3] = [0; 3];
         contents.read_exact(&mut code)?;
-        let name = String::from_utf8(contents.read_var_octet_string()?)?;
-        let triggered_at_string = String::from_utf8(contents.read_var_octet_string()?)?;
+        let name = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
+        let triggered_at_string = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
         let triggered_at = Utc.datetime_from_str(&triggered_at_string, GENERALIZED_TIME_FORMAT)?;
-        let data = String::from_utf8(contents.read_var_octet_string()?)?;
+        let data = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
         let protocol_data = read_protocol_data(&mut contents)?;
         Ok(BtpError {
             request_id,
-            code: String::from_utf8(code.to_vec())?,
+            code: str::from_utf8(&code[..])?.to_owned(),
             name,
             triggered_at,
             data,
@@ -239,7 +236,7 @@ impl Serializable<BtpError> for BtpError {
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.put_u8(PacketType::Error as u8);
-        buf.put_u32_be(self.request_id);
+        buf.put_u32(self.request_id);
         let mut contents = Vec::new();
         // TODO check that the code is only 3 chars
         contents.put(self.code.as_bytes());
@@ -252,7 +249,7 @@ impl Serializable<BtpError> for BtpError {
         );
         contents.put_var_octet_string(self.data.as_bytes());
         put_protocol_data(&mut contents, &self.protocol_data);
-        buf.put_var_octet_string(&contents);
+        buf.put_var_octet_string(&*contents);
         buf
     }
 }
