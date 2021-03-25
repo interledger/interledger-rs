@@ -1485,7 +1485,7 @@ mod handle_route_update_request {
                 .store
                 .routes
                 .lock()
-                .get(&"example.prefix1"[..])
+                .get("example.prefix1")
                 .unwrap()
                 .id(),
             ROUTING_ACCOUNT.id()
@@ -1495,7 +1495,7 @@ mod handle_route_update_request {
                 .store
                 .routes
                 .lock()
-                .get(&"example.prefix2"[..])
+                .get("example.prefix2")
                 .unwrap()
                 .id(),
             ROUTING_ACCOUNT.id()

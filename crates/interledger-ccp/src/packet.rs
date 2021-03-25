@@ -427,7 +427,7 @@ mod route_control_request {
 
     #[test]
     fn deserialize() {
-        let prepare = Prepare::try_from(BytesMut::from(&CONTROL_REQUEST_SERIALIZED[..])).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(CONTROL_REQUEST_SERIALIZED)).unwrap();
         let request = RouteControlRequest::try_from_without_expiry(&prepare).unwrap();
         assert_eq!(request, *CONTROL_REQUEST);
     }
@@ -435,8 +435,7 @@ mod route_control_request {
     #[test]
     fn serialize() {
         let prepare = CONTROL_REQUEST.to_prepare();
-        let test_prepare =
-            Prepare::try_from(BytesMut::from(&CONTROL_REQUEST_SERIALIZED[..])).unwrap();
+        let test_prepare = Prepare::try_from(BytesMut::from(CONTROL_REQUEST_SERIALIZED)).unwrap();
         // Note this doesn't compare the serialized values directly because we aren't using mock timers so the expires at dates come out different
         assert_eq!(prepare.data(), test_prepare.data(),);
     }
@@ -484,8 +483,7 @@ mod route_update_request {
 
     #[test]
     fn deserialize() {
-        let prepare =
-            Prepare::try_from(BytesMut::from(&UPDATE_REQUEST_SIMPLE_SERIALIZED[..])).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_SIMPLE_SERIALIZED)).unwrap();
         let request = RouteUpdateRequest::try_from_without_expiry(&prepare).unwrap();
         assert_eq!(request, *UPDATE_REQUEST_SIMPLE);
     }
@@ -494,14 +492,13 @@ mod route_update_request {
     fn serialize() {
         let prepare = UPDATE_REQUEST_SIMPLE.to_prepare();
         let test_prepare =
-            Prepare::try_from(BytesMut::from(&UPDATE_REQUEST_SIMPLE_SERIALIZED[..])).unwrap();
+            Prepare::try_from(BytesMut::from(UPDATE_REQUEST_SIMPLE_SERIALIZED)).unwrap();
         assert_eq!(prepare.data(), test_prepare.data());
     }
 
     #[test]
     fn deserialize_complex() {
-        let prepare =
-            Prepare::try_from(BytesMut::from(&UPDATE_REQUEST_COMPLEX_SERIALIZED[..])).unwrap();
+        let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_COMPLEX_SERIALIZED)).unwrap();
         let request = RouteUpdateRequest::try_from_without_expiry(&prepare).unwrap();
         assert_eq!(request, *UPDATE_REQUEST_COMPLEX);
     }
@@ -510,7 +507,7 @@ mod route_update_request {
     fn serialize_complex() {
         let prepare = UPDATE_REQUEST_COMPLEX.to_prepare();
         let test_prepare =
-            Prepare::try_from(BytesMut::from(&UPDATE_REQUEST_COMPLEX_SERIALIZED[..])).unwrap();
+            Prepare::try_from(BytesMut::from(UPDATE_REQUEST_COMPLEX_SERIALIZED)).unwrap();
         assert_eq!(prepare.data(), test_prepare.data());
     }
 

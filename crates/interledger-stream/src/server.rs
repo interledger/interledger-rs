@@ -54,7 +54,7 @@ impl ConnectionGenerator {
         let token = base64::encode_config(&generate_token(), base64::URL_SAFE_NO_PAD);
         // Note the shared secret is generated from the base64-encoded version of the token,
         // rather than from the unencoded bytes
-        let shared_secret = hmac_sha256(&self.secret_generator[..], &token.as_bytes()[..]);
+        let shared_secret = hmac_sha256(&self.secret_generator[..], token.as_bytes());
         // Note that the unwrap here is safe because we know the base_address
         // is valid and adding base64-url characters will always be valid
         let destination_account = base_address.with_suffix(&token.as_ref()).unwrap();
@@ -80,7 +80,7 @@ impl ConnectionGenerator {
         let local_part = destination_account.segments().rev().next().unwrap();
         // Note this computes the HMAC with the token _encoded as UTF8_,
         // rather than decoding the base64 first.
-        hmac_sha256(&self.secret_generator[..], &local_part.as_bytes()[..])
+        hmac_sha256(&self.secret_generator[..], local_part.as_bytes())
     }
 }
 

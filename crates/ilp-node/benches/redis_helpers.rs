@@ -1,7 +1,6 @@
 // Copied from https://github.com/mitsuhiko/redis-rs/blob/9a1777e8a90c82c315a481cdf66beb7d69e681a2/tests/support/mod.rs
 #![allow(dead_code)]
 
-use futures::TryFutureExt;
 use redis_crate::{self as redis, ConnectionAddr, ConnectionInfo, RedisError};
 use socket2::{Domain, Socket, Type};
 use std::env;
@@ -207,10 +206,7 @@ impl TestContext {
     }
 
     pub async fn async_connection(&self) -> Result<redis::aio::Connection, ()> {
-        self.client
-            .get_async_connection()
-            .map_err(|err| panic!(err))
-            .await
+        Ok(self.client.get_async_connection().await.unwrap())
     }
 
     pub fn stop_server(&mut self) {
