@@ -5,8 +5,8 @@ use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use futures::channel::mpsc::UnboundedSender;
 use interledger_packet::{
-    Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType, Prepare, Reject,
-    RejectBuilder,
+    hex::HexString, Address, ErrorCode, Fulfill, FulfillBuilder, PacketType as IlpPacketType,
+    Prepare, Reject, RejectBuilder,
 };
 use interledger_service::{Account, IlpResult, OutgoingRequest, OutgoingService, Username};
 use serde::{Deserialize, Serialize};
@@ -328,9 +328,9 @@ fn receive_money(
         }
         .build();
         debug!(
-            "Fulfilling prepare for amount {} with fulfillment: {} and encrypted stream packet: {:?}",
+            "Fulfilling prepare for amount {} with fulfillment: {:?} and encrypted stream packet: {:?}",
             prepare_amount,
-            hex::encode(&fulfillment[..]),
+            HexString(&fulfillment[..]),
             response_packet
         );
         let encrypted_response = response_packet.into_encrypted(shared_secret);
@@ -425,8 +425,10 @@ mod receiving_money {
     use interledger_packet::PrepareBuilder;
     use std::convert::TryFrom;
 
+    use hex_literal::hex;
     use std::str::FromStr;
     use std::time::UNIX_EPOCH;
+
     #[test]
     fn fulfills_valid_packet() {
         let ilp_address = Address::from_str("example.destination").unwrap();
@@ -543,16 +545,14 @@ mod receiving_money {
     fn fulfills_packets_sent_to_javascript_receiver() {
         // This was created by the JS ilp-protocol-stream library
         let ilp_address = Address::from_str("test.peerB").unwrap();
-        let prepare = Prepare::try_from(bytes::BytesMut::from(&hex::decode("0c819900000000000001f43230313931303238323134313533383338f31a96346c613011947f39a0f1f4e573c2fc3e7e53797672b01d2898e90c9a0723746573742e70656572422e4e6a584430754a504275477a353653426d4933755836682d3b6cc484c0d4e9282275d4b37c6ae18f35b497ddbfcbce6d9305b9451b4395c3158aa75e05bf27582a237109ec6ca0129d840da7abd96826c8147d0d").unwrap()[..])).unwrap();
+        let prepare = Prepare::try_from(bytes::BytesMut::from(&hex!("0c819900000000000001f43230313931303238323134313533383338f31a96346c613011947f39a0f1f4e573c2fc3e7e53797672b01d2898e90c9a0723746573742e70656572422e4e6a584430754a504275477a353653426d4933755836682d3b6cc484c0d4e9282275d4b37c6ae18f35b497ddbfcbce6d9305b9451b4395c3158aa75e05bf27582a237109ec6ca0129d840da7abd96826c8147d0d")[..])).unwrap();
         let condition = prepare.execution_condition().to_vec();
         let server_secret = Bytes::from(vec![0u8; 32]);
         let connection_generator = ConnectionGenerator::new(server_secret);
         let shared_secret = connection_generator.rederive_secret(&prepare.destination());
         assert_eq!(
             &shared_secret[..],
-            hex::decode("b7d09d2e16e6f83c55b60e42fcd7c2b8ed49624a1df73c59b383dbe2e8690309")
-                .unwrap()
-                .as_ref() as &[u8],
+            &hex!("b7d09d2e16e6f83c55b60e42fcd7c2b8ed49624a1df73c59b383dbe2e8690309")[..],
             "did not regenerate the same shared secret",
         );
         let fulfill = receive_money(&shared_secret, &ilp_address, "ABC", 9, &prepare)

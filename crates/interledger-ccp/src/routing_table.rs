@@ -1,4 +1,5 @@
 use crate::packet::{Route, RouteUpdateRequest};
+use interledger_packet::hex::HexString;
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::HashMap;
@@ -123,9 +124,9 @@ where
     ) -> Result<Vec<String>, String> {
         if self.id != request.routing_table_id {
             debug!(
-                "Saw new routing table. Old ID: {}, new ID: {}",
-                hex::encode(&self.id[..]),
-                hex::encode(&request.routing_table_id[..])
+                "Saw new routing table. Old ID: {:?}, new ID: {:?}",
+                HexString(&self.id[..]),
+                HexString(&request.routing_table_id[..])
             );
             self.id = request.routing_table_id;
             self.epoch = 0;
@@ -133,8 +134,8 @@ where
 
         if request.from_epoch_index > self.epoch {
             return Err(format!(
-                "Gap in routing table {}. Expected epoch: {}, got from_epoch: {}",
-                hex::encode(&self.id[..]),
+                "Gap in routing table {:?}. Expected epoch: {}, got from_epoch: {}",
+                HexString(&self.id[..]),
                 self.epoch,
                 request.from_epoch_index
             ));
@@ -156,8 +157,8 @@ where
 
         if request.new_routes.is_empty() && request.withdrawn_routes.is_empty() {
             trace!(
-                "Got heartbeat route update for table ID: {}, epoch: {}",
-                hex::encode(&self.id[..]),
+                "Got heartbeat route update for table ID: {:?}, epoch: {}",
+                HexString(&self.id[..]),
                 self.epoch
             );
         }
@@ -178,8 +179,8 @@ where
         }
 
         trace!(
-            "Updated routing table {} to epoch: {}",
-            hex::encode(&self.id[..]),
+            "Updated routing table {:?} to epoch: {}",
+            HexString(&self.id[..]),
             self.epoch
         );
 

@@ -44,7 +44,7 @@ cfg-if = { version = "0.1.10", default-features = false }
 clap = { version = "2.33.0", default-features = false }
 config = { version = "0.10.1", default-features = false, features = ["json", "yaml"] }
 futures = { version = "0.3.7", default-features = false, features = ["compat"] }
-hex = { version = "0.4.0", default-features = false }
+hex = { version = "0.4.0" }
 once_cell = { version = "1.3.1", default-features = false }
 num-bigint = { version = "0.2.3", default-features = false, features = ["std"] }
 redis_crate = { package = "redis", version = "0.15.1", optional = true, default-features = false, features = ["tokio-rt-core"] }

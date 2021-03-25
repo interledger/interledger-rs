@@ -9,7 +9,7 @@ use crate::{
 use async_trait::async_trait;
 use futures::future::join_all;
 use interledger_errors::CcpRoutingStoreError;
-use interledger_packet::{Address, ErrorCode, RejectBuilder};
+use interledger_packet::{hex::HexString, Address, ErrorCode, RejectBuilder};
 use interledger_service::{
     Account, AddressStore, IlpResult, IncomingRequest, IncomingService, OutgoingRequest,
     OutgoingService,
@@ -485,10 +485,10 @@ where
             last_known_epoch,
             features: Vec::new(),
         };
-        debug!("Sending Route Control Request to account: {} (id: {}), last known table id: {}, last known epoch: {}",
+        debug!("Sending Route Control Request to account: {} (id: {}), last known table id: {:?}, last known epoch: {}",
             account.username(),
             account_id,
-            hex::encode(&last_known_routing_table_id[..]),
+            HexString(&last_known_routing_table_id[..]),
             last_known_epoch);
         let prepare = control.to_prepare();
         let result = self

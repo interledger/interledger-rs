@@ -5,6 +5,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use interledger_packet::oer::{BufOerExt, MutBufOerExt};
 #[cfg(test)]
 use once_cell::sync::Lazy;
+use std::borrow::Cow;
 use std::io::prelude::*;
 use std::str;
 
@@ -88,7 +89,7 @@ impl From<u8> for ContentType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ProtocolData {
-    pub protocol_name: String,
+    pub protocol_name: Cow<'static, str>,
     pub content_type: ContentType,
     pub data: Vec<u8>,
 }
@@ -99,7 +100,20 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, ParseErro
 
     let num_entries = reader.read_var_uint()?;
     for _ in 0..num_entries {
-        let protocol_name = str::from_utf8(reader.read_var_octet_string()?)?.to_owned();
+        let protocol_name = str::from_utf8(reader.read_var_octet_string()?)?;
+
+        // avoid allocations for the names contained in the API. if this list needs to be expanded
+        // might be better to use phf but this might be still cheaper with 3 equality checks
+        let protocol_name = if protocol_name == "ilp" {
+            Cow::Borrowed("ilp")
+        } else if protocol_name == "auth" {
+            Cow::Borrowed("auth")
+        } else if protocol_name == "auth_token" {
+            Cow::Borrowed("auth_token")
+        } else {
+            Cow::Owned(protocol_name.to_owned())
+        };
+
         let content_type = ContentType::from(reader.read_u8()?);
         let data = reader.read_var_octet_string()?.to_vec();
         protocol_data.push(ProtocolData {
@@ -265,20 +279,19 @@ mod tests {
             request_id: 2,
             protocol_data: vec![
                 ProtocolData {
-                    protocol_name: String::from("test"),
+                    protocol_name: "test".into(),
                     content_type: ContentType::ApplicationOctetStream,
-                    data: hex::decode("FFFF").unwrap(),
+                    data: hex_literal::hex!("FFFF")[..].to_vec(),
                 },
                 ProtocolData {
-                    protocol_name: String::from("text"),
+                    protocol_name: "text".into(),
                     content_type: ContentType::TextPlainUtf8,
-                    data: Vec::from("hello"),
+                    data: b"hello".to_vec(),
                 },
             ],
         });
-        static MESSAGE_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
-            hex::decode("060000000217010204746573740002ffff0474657874010568656c6c6f").unwrap()
-        });
+        static MESSAGE_1_SERIALIZED: &[u8] =
+            &hex_literal::hex!("060000000217010204746573740002ffff0474657874010568656c6c6f");
 
         #[test]
         fn from_bytes() {
@@ -300,15 +313,14 @@ mod tests {
         static RESPONSE_1: Lazy<BtpResponse> = Lazy::new(|| BtpResponse {
             request_id: 129,
             protocol_data: vec![ProtocolData {
-                protocol_name: String::from("some other protocol"),
+                protocol_name: "some other protocol".into(),
                 content_type: ContentType::ApplicationOctetStream,
-                data: hex::decode("AAAAAA").unwrap(),
+                data: hex_literal::hex!("AAAAAA").to_vec(),
             }],
         });
-        static RESPONSE_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
-            hex::decode("01000000811b010113736f6d65206f746865722070726f746f636f6c0003aaaaaa")
-                .unwrap()
-        });
+        static RESPONSE_1_SERIALIZED: &[u8] = &hex_literal::hex!(
+            "01000000811b010113736f6d65206f746865722070726f746f636f6c0003aaaaaa"
+        );
 
         #[test]
         fn from_bytes() {
@@ -338,9 +350,7 @@ mod tests {
             protocol_data: vec![],
         });
 
-        static ERROR_1_SERIALIZED: Lazy<Vec<u8>> = Lazy::new(|| {
-            hex::decode("02000001f52f54303010556e726561636861626c654572726f721332303138303833313032353332342e3839395a046f6f70730100").unwrap()
-        });
+        static ERROR_1_SERIALIZED: &[u8] = &hex_literal::hex!("02000001f52f54303010556e726561636861626c654572726f721332303138303833313032353332342e3839395a046f6f70730100");
 
         #[test]
         fn from_bytes() {

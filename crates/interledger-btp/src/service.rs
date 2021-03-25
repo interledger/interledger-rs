@@ -308,8 +308,10 @@ where
     /// request will be passed through to the `next` handler.
     async fn send_request(&mut self, request: OutgoingRequest<A>) -> IlpResult {
         let account_id = request.to.id();
-        let connections = self.connections.read().clone(); // have to clone here to avoid await errors
-        if let Some(connection) = connections.get(&account_id) {
+
+        let found = self.connections.read().get(&account_id).cloned();
+
+        if let Some(connection) = found {
             let request_id = random::<u32>();
             let ilp_address = self.ilp_address.clone();
 
@@ -497,7 +499,7 @@ fn ilp_packet_to_ws_message(request_id: u32, packet: Packet) -> Message {
         BtpMessage {
             request_id,
             protocol_data: vec![ProtocolData {
-                protocol_name: "ilp".to_string(),
+                protocol_name: "ilp".into(),
                 content_type: ContentType::ApplicationOctetStream,
                 data,
             }],
@@ -507,7 +509,7 @@ fn ilp_packet_to_ws_message(request_id: u32, packet: Packet) -> Message {
         BtpResponse {
             request_id,
             protocol_data: vec![ProtocolData {
-                protocol_name: "ilp".to_string(),
+                protocol_name: "ilp".into(),
                 content_type: ContentType::ApplicationOctetStream,
                 data,
             }],
