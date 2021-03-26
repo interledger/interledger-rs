@@ -499,7 +499,6 @@ mod tests {
             BtpPacket::from_bytes(data).unwrap_err();
         }
 
-        #[allow(unused)]
         fn roundtrip(data: &[u8]) {
             let parsed = BtpPacket::from_bytes(data).expect("failed to parse test case input");
             let out = parsed.to_bytes();
