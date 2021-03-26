@@ -307,76 +307,99 @@ mod tests {
         use super::Serializable;
 
         #[test]
-        fn fuzz_0() {
+        fn fuzz_0_empty_input() {
             fails_to_parse(&[]);
         }
 
         #[test]
-        fn fuzz_1() {
+        fn fuzz_1_too_large_uint() {
             fails_to_parse(&[6, 0, 0, 1, 0, 1, 45]);
+            //                                 ^^
+            //                                  length of uint
         }
 
         #[test]
-        fn fuzz_2() {
+        fn fuzz_2_too_short_var_octets() {
             fails_to_parse(&[1, 1, 0, 0, 4, 4, 0]);
+            //                           ^ length of var_octet_string
         }
 
         #[test]
-        fn fuzz_3() {
+        fn fuzz_3_too_short_var_octets() {
             // 9 is the length of the next section but there are only two bytes, this used to parse
             // just fine because there was no checking for how much was actually read
+            // possible duplicate
             fails_to_parse(&[1, 1, 65, 0, 0, 9, 1, 0]);
+            //                               ^ length of var_octet_string
         }
 
         #[test]
-        fn fuzz_4() {
+        fn fuzz_4_trailing_bytes() {
             // this one has garbage at the end
             fails_to_parse(&[1, 0, 0, 2, 0, 2, 0, 0, 250, 134]);
+            //                                       ^^^  ^^^ extra
         }
 
         #[test]
-        fn fuzz_5() {
+        fn fuzz_5_trailing_bytes_inside_protocol_data() {
             // this one again has garbage at the end, but inside the protocol data
             fails_to_parse(&[1, 1, 0, 1, 0, 6, 1, 0, 6, 1, 6, 1, 1]);
+            //                              /  |  |  ^  ^  ^  ^  ^
+            //             protocol data len   |  |    extra
             //                                 /  |
             //                       len of len   /
             //                         num_entries
         }
 
         #[test]
-        fn fuzz_6() {
+        fn fuzz_6_too_short_var_octets() {
             fails_to_parse(&[1, 1, 2, 217, 19, 50, 212]);
         }
 
         #[test]
-        fn fuzz_7() {
+        fn fuzz_7_too_short_var_octets() {
             fails_to_parse(&[2, 0, 0, 30, 30, 134, 30, 8, 36, 128, 96, 50]);
         }
 
         #[test]
-        fn fuzz_8() {
+        fn fuzz_8_large_allocation() {
             // old implementation tries to do malloc(2214616063) here
             fails_to_parse(&[1, 1, 0, 6, 1, 132, 132, 0, 91, 255, 50]);
         }
 
         #[test]
-        fn fuzz_9() {
-            fails_to_parse(&[6, 0, 0, 1, 1, 6, 1, 0]);
+        fn fuzz_9_short_var_octet_string() {
+            // might be duplicate
+            #[rustfmt::skip]
+            fails_to_parse(&[
+                // message
+                6,
+                // requestid
+                0, 0, 1, 1,
+                // var octet string len
+                6,
+                // varuint len
+                1,
+                // varuint zero
+                0,
+            ]);
         }
 
         #[test]
-        fn fuzz_10() {
+        fn fuzz_10_garbage_protocol_data() {
             // garbage in the protocol data
+            // possible duplicate
             fails_to_parse(&[6, 0, 0, 1, 1, 6, 1, 0, 253, 1, 1, 1]);
         }
 
         #[test]
-        fn fuzz_11() {
+        fn fuzz_11_failed_roundtrip() {
+            // didn't originally record why this failed roundtrip
             roundtrip(&[6, 0, 0, 1, 1, 6, 1, 1, 0, 253, 1, 0]);
         }
 
         #[test]
-        fn fuzz_12() {
+        fn fuzz_12_waste_in_length_of_length() {
             // this has a length of length 128 | 1 which means single byte length, which doesn't
             // really make sense per rules
             fails_to_parse(
@@ -387,15 +410,34 @@ mod tests {
         }
 
         #[test]
-        fn fuzz_13() {
+        fn fuzz_13_wasteful_var_uint() {
+            #[rustfmt::skip]
             fails_on_strict(
-                &[6, 0, 0, 0, 0, 6, 2, 0, 1, 0, 1, 0],
+                &[
+                    // message
+                    6,
+                    // requestid
+                    0, 0, 0, 0,
+                    // var octet length
+                    6,
+                        // length of var uint
+                        2,
+                        // var uint byte 1/2
+                        0,
+                        // var uint byte 2/2
+                        1,
+                        // protocol name, var octet string
+                        0,
+                        // content type
+                        1,
+                        // data
+                        0],
                 &[6, 0, 0, 0, 0, 5, 1, 1, 0, 1, 0],
             );
         }
 
         #[test]
-        fn fuzz_14() {
+        fn fuzz_14_invalid_timestamp() {
             // this failed originally by producing a longer output than input in strict.
             //
             // longer output was created because the timestamp was parsed when it contained illegal
