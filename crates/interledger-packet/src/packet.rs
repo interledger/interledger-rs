@@ -18,6 +18,8 @@ const CONDITION_LEN: usize = 32;
 const FULFILLMENT_LEN: usize = 32;
 const ERROR_CODE_LEN: usize = 3;
 
+// NOTE: this is strictly different from the oer::GENERALIZED_TIMESTAMP_FORMAT which has a dot, and
+// is used for much more lenient timestamps with 0-3 fractions.
 static INTERLEDGER_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%3f";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -309,6 +311,7 @@ impl TryFrom<BytesMut> for Fulfill {
 
 impl Fulfill {
     /// The returned value always has a length of 32.
+    // FIXME: the return value could now be &[u8; 32]
     #[inline]
     pub fn fulfillment(&self) -> &[u8] {
         let begin = self.content_offset;
