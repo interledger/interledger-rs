@@ -1,6 +1,12 @@
 name: CI
 
-on: [push, pull_request]
+# limit ci building to pushes to master not to get twice the notification email from github
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+    branches: '*'
 
 jobs:
   build:
