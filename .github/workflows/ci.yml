@@ -67,6 +67,7 @@ jobs:
           scripts/run-md-test.sh '^.*$' 1
 
       - name: 'Store artifacts'
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: run-md-test
