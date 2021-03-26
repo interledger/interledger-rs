@@ -506,6 +506,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn content_type_roundtrips() {
+        // this is an important property for any of the datatypes, otherwise fuzzer will find the
+        // [^01] examples, which may not have any examples above.
+        for x in 0..=255u8 {
+            let y: u8 = ContentType::from(x).into();
+            assert_eq!(x, y);
+        }
+    }
+
     mod btp_message {
         use super::*;
 
