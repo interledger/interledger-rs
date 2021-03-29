@@ -316,7 +316,7 @@ impl<'a> fmt::Debug for FrameIterator<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[ ")?;
         let mut iter = FrameIterator {
-            buffer: &self.buffer[..],
+            buffer: self.buffer,
         };
         if let Some(next) = iter.next() {
             write!(f, "{:?}", next)?;

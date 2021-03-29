@@ -142,7 +142,7 @@ pub struct BtpMessage {
 
 impl Serializable<BtpMessage> for BtpMessage {
     fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, ParseError> {
-        let mut reader = &bytes[..];
+        let mut reader = bytes;
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Message {
             return Err(ParseError::InvalidPacket(format!(

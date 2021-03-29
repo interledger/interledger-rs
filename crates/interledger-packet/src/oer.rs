@@ -299,11 +299,11 @@ mod test_buf_oer_ext {
             ErrorKind::UnexpectedEof,
         );
 
+        // this is a workaround for clippy::redundant_slicing
+        let mut cursor = LENGTH_TOO_HIGH_VARSTR;
+
         assert_eq!(
-            (&LENGTH_TOO_HIGH_VARSTR[..])
-                .skip_var_octet_string()
-                .unwrap_err()
-                .kind(),
+            cursor.skip_var_octet_string().unwrap_err().kind(),
             ErrorKind::UnexpectedEof,
         );
     }

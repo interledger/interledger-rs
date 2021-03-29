@@ -709,6 +709,8 @@ fn get_rate<S: ExchangeRateStore>(
 
 /// Convert the given source amount into a destination amount
 /// using the provided rate. Round up for safety.
+///
+/// Returns `Some` when the value can after conversion be represented with an u64.
 #[inline]
 fn convert(source_amount: u64, rate: BigRational) -> Option<u64> {
     // First, convert scaled source amount to base unit
@@ -718,7 +720,7 @@ fn convert(source_amount: u64, rate: BigRational) -> Option<u64> {
     let dest_amount = source_amount * rate;
 
     // Round up for safety
-    Some(dest_amount.ceil().to_integer().to_u64()?)
+    dest_amount.ceil().to_integer().to_u64()
 }
 
 #[cfg(test)]

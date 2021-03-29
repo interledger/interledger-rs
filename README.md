@@ -17,7 +17,6 @@
 
 All crates require Rust 2018 edition and are tested on the following channels:
 
-- `1.45.0` (minimum supported)
 - `stable`
 
 ## Connecting to the Testnet

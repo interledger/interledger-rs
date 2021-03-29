@@ -27,14 +27,14 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
 /// and the hardcoded string "ilp_stream_fulfillment"
 pub fn generate_fulfillment(shared_secret: &[u8], data: &[u8]) -> [u8; 32] {
     // generate the key as defined in the specificatoin
-    let key = hmac_sha256(&shared_secret[..], &FULFILLMENT_GENERATION_STRING);
+    let key = hmac_sha256(shared_secret, &FULFILLMENT_GENERATION_STRING);
     // return the hmac-sha256 of the data based on the generated key
-    hmac_sha256(&key[..], &data[..])
+    hmac_sha256(&key[..], data)
 }
 
 /// Returns a 32-byte sha256 digest of the provided preimage
 pub fn hash_sha256(preimage: &[u8]) -> [u8; 32] {
-    let output = digest::digest(&digest::SHA256, &preimage[..]);
+    let output = digest::digest(&digest::SHA256, preimage);
     let mut to_return: [u8; 32] = [0; 32];
     to_return.copy_from_slice(output.as_ref());
     to_return
@@ -94,7 +94,7 @@ fn encrypt_with_nonce(
     mut plaintext: BytesMut,
     nonce: [u8; NONCE_LENGTH],
 ) -> BytesMut {
-    let key = hmac_sha256(&shared_secret[..], &ENCRYPTION_KEY_STRING);
+    let key = hmac_sha256(shared_secret, &ENCRYPTION_KEY_STRING);
     let key = aead::UnboundKey::new(&aead::AES_256_GCM, &key)
         .expect("Failed to create a new sealing key for encrypting data!");
     let key = aead::LessSafeKey::new(key);
@@ -108,7 +108,7 @@ fn encrypt_with_nonce(
     )
     .unwrap_or_else(|err| {
         error!("Error encrypting {:?}", err);
-        panic!(err);
+        panic!("Error encrypting {:?}", err);
     });
 
     // Rearrange the bytes so that the tag goes first (should have put it last in the JS implementation, but oh well)
@@ -225,8 +225,7 @@ mod encrypt_decrypt_test {
 
     #[test]
     fn it_encrypts_to_same_as_javascript() {
-        let encrypted =
-            encrypt_with_nonce(&SHARED_SECRET[..], BytesMut::from(&PLAINTEXT[..]), NONCE);
+        let encrypted = encrypt_with_nonce(SHARED_SECRET, BytesMut::from(PLAINTEXT), NONCE);
         assert_eq!(&encrypted[..], CIPHERTEXT);
     }
 

@@ -365,7 +365,7 @@ impl<'a> FulfillBuilder<'a> {
         buffer.put_var_octet_string_length(content_len);
         let content_offset = buffer.len();
         buffer.put_slice(&self.fulfillment[..]);
-        buffer.put_var_octet_string(&self.data[..]);
+        buffer.put_var_octet_string(self.data);
         Fulfill {
             buffer,
             content_offset,
@@ -542,7 +542,7 @@ fn deserialize_envelope(
 
     let content_offset = 1 + {
         // This could probably be determined a better way...
-        let mut peek = &reader[..];
+        let mut peek = reader;
         let before = peek.len();
         peek.read_var_octet_string_length()?;
         before - peek.len()

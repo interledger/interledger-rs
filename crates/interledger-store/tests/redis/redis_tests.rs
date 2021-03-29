@@ -97,8 +97,6 @@ mod redis_helpers {
     use std::thread::sleep;
     use std::time::Duration;
 
-    use futures::future::TryFutureExt;
-
     #[derive(PartialEq)]
     enum ServerType {
         Tcp,
@@ -249,10 +247,7 @@ mod redis_helpers {
         }
 
         pub async fn async_connection(&self) -> Result<redis_crate::aio::Connection, ()> {
-            self.client
-                .get_async_connection()
-                .map_err(|err| panic!(err))
-                .await
+            Ok(self.client.get_async_connection().await.unwrap())
         }
 
         pub fn stop_server(&mut self) {
