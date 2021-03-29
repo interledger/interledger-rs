@@ -31,7 +31,6 @@ fuzz_target!(|data: &[u8]| {
                 }
                 .build();
 
-                // FIXME: it could be that trailing bytes do not error?
                 assert_eq!(f, other);
             }
             Packet::Reject(r) => {
