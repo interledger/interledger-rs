@@ -9,6 +9,7 @@ WORKDIR /usr/src
 COPY ./Cargo.toml /usr/src/Cargo.toml
 COPY ./Cargo.lock /usr/src/Cargo.lock
 COPY ./crates /usr/src/crates
+COPY ./.git /usr/src/
 
 RUN cargo build ${CARGO_BUILD_OPTION} --package ilp-node --bin ilp-node
 
