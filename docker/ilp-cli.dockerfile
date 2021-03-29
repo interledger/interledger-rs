@@ -5,6 +5,7 @@ WORKDIR /usr/src
 COPY ./Cargo.toml /usr/src/Cargo.toml
 COPY ./Cargo.lock /usr/src/Cargo.lock
 COPY ./crates /usr/src/crates
+COPY ./.git /usr/src/
 
 # TODO: investigate using a method like https://whitfin.io/speeding-up-rust-docker-builds/
 # to ensure that the dependencies are cached so the build doesn't take as long
