@@ -1,6 +1,17 @@
 name: CI
 
-on: [push, pull_request]
+# limit ci building to pushes to master not to get twice the notification email
+# from github.
+#
+# if you want to test your branch on your fork, just replace the 'branches'
+# filter below for 'push' with the one for 'pull_request' temporarily and drop
+# the commit when creating the PR.
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+    branches: '*'
 
 jobs:
   build:
@@ -67,6 +78,7 @@ jobs:
           scripts/run-md-test.sh '^.*$' 1
 
       - name: 'Store artifacts'
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: run-md-test

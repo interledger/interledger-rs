@@ -35,7 +35,7 @@ function clear_redis_file() {
 }
 
 function clear_binaries() {
-    rm ~/.interledger/bin/*
+    rm -f ~/.interledger/bin/*
 }
 
 # $1 = target directory
