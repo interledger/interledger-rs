@@ -40,8 +40,6 @@ pub fn fuzz_decrypted_stream_packet(data: &[u8]) {
         }
         .build();
 
-        // TODO: currently this should find a crash with two values having the same Debug string
-        // from input: [1, 14, 3, 19, 5, 3, 1, 14, 3, 0, 0, 0, 0, 14, 3, 0, 14, 5, 17]
         assert_eq!(pkt, other);
     }
 }
