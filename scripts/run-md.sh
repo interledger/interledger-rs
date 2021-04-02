@@ -16,7 +16,8 @@ else
 fi
 
 cat "$MD_FILE" | "$(dirname $0)/parse-md.sh" > "$TMP_SCRIPT"
-bash -O expand_aliases "$TMP_SCRIPT"
+bash -x -O expand_aliases "$TMP_SCRIPT"
+sudo tcpdump -i lo0 &
 
 if [ $? -eq 0 ]; then
   rm "$TMP_SCRIPT"
