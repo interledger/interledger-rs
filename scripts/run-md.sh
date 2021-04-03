@@ -16,7 +16,7 @@ else
 fi
 
 TCPDUMP_OUTPUT_FILENAME=$(echo "$MD_FILE" | sha256sum | cut -f1 -d\ ).pcap
-tcpdump -i lo -s 65535 -w "/tmp/run-md-test/${TCPDUMP_OUTPUT_FILENAME}" &
+sudo tcpdump -i lo -s 65535 -w "/tmp/run-md-test/${TCPDUMP_OUTPUT_FILENAME}" &
 TCPDUMP_PID=$!
 
 bash -x -O expand_aliases "$TMP_SCRIPT"
