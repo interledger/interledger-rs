@@ -15,10 +15,14 @@ else
   MD_FILE=-
 fi
 
-cat "$MD_FILE" | "$(dirname $0)/parse-md.sh" > "$TMP_SCRIPT"
-bash -x -O expand_aliases "$TMP_SCRIPT"
-sudo tcpdump -i lo0 &
+TCPDUMP_OUTPUT_FILENAME=$(echo "$MD_FILE" | sha256sum | cut -f1 -d\ ).pcap
+tcpdump -i lo -s 65535 -w "/tmp/run-md-test/${TCPDUMP_OUTPUT_FILENAME}" &
+TCPDUMP_PID=$!
 
+bash -x -O expand_aliases "$TMP_SCRIPT"
+cat "$MD_FILE" | "$(dirname $0)/parse-md.sh" > "$TMP_SCRIPT"
+
+kill -9 $TCPDUMP_PID
 if [ $? -eq 0 ]; then
   rm "$TMP_SCRIPT"
   exit 0
