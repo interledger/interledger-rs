@@ -207,7 +207,7 @@ where
                 request.to.asset_scale(),
                 &request.prepare,
             );
-            return match response {
+            match response {
                 Ok(ReceiveOk { fulfill, sequence }) => {
                     self.store
                         .publish_payment_notification(PaymentNotification {
@@ -253,9 +253,10 @@ where
 
                     Err(reject)
                 }
-            };
+            }
+        } else {
+            self.next.send_request(request).await
         }
-        self.next.send_request(request).await
     }
 }
 
