@@ -348,8 +348,6 @@ impl InterledgerNode {
         let secret_seed = Bytes::copy_from_slice(&self.secret_seed[..]);
         let http_bind_address = self.http_bind_address;
         let settlement_api_bind_address = self.settlement_api_bind_address;
-        let ilp_address_clone = ilp_address.clone();
-        let ilp_address_clone2 = ilp_address.clone();
         let admin_auth_token = self.admin_auth_token.clone();
         let default_spsp_account = self.default_spsp_account.clone();
         let route_broadcast_interval = self.route_broadcast_interval;
@@ -365,42 +363,41 @@ impl InterledgerNode {
             .map_err(|_| error!(target: "interledger-node", "Error getting accounts"))
             .await?;
 
-        let outgoing_service = outgoing_service_fn(move |request: OutgoingRequest<Account>| {
-            // Don't log anything for failed route updates sent to child accounts
-            // because there's a good chance they'll be offline
-            if request.prepare.destination().scheme() != "peer"
-                || request.to.routing_relation() != RoutingRelation::Child
-            {
-                error!(target: "interledger-node", "No route found for outgoing request");
+        let outgoing_service = outgoing_service_fn({
+            let ilp_address = ilp_address.clone();
+            move |request: OutgoingRequest<Account>| {
+                // Don't log anything for failed route updates sent to child accounts
+                // because there's a good chance they'll be offline
+                if request.prepare.destination().scheme() != "peer"
+                    || request.to.routing_relation() != RoutingRelation::Child
+                {
+                    error!(target: "interledger-node", "No route found for outgoing request");
+                }
+                Err(RejectBuilder {
+                    code: ErrorCode::F02_UNREACHABLE,
+                    message: &format!(
+                        // TODO we might not want to expose the internal account ID in the error
+                        "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
+                        request.to.id(),
+                        request.prepare.destination(),
+                    )
+                    .as_bytes(),
+                    triggered_by: Some(&ilp_address),
+                    data: &[],
+                }
+                .build())
             }
-            Err(RejectBuilder {
-                code: ErrorCode::F02_UNREACHABLE,
-                message: &format!(
-                    // TODO we might not want to expose the internal account ID in the error
-                    "No outgoing route for account: {} (ILP address of the Prepare packet: {})",
-                    request.to.id(),
-                    request.prepare.destination(),
-                )
-                .as_bytes(),
-                triggered_by: Some(&ilp_address_clone),
-                data: &[],
-            }
-            .build())
         });
 
         // Connect to all of the accounts that have outgoing ilp_over_btp_urls configured
         // but don't fail if we are unable to connect
         // TODO try reconnecting to those accounts later
-        let btp_client_service = connect_client(
-            ilp_address_clone2.clone(),
-            btp_accounts,
-            false,
-            outgoing_service,
-        )
-        .map_err(|err| error!("{}", err))
-        .await?;
+        let btp_client_service =
+            connect_client(ilp_address.clone(), btp_accounts, false, outgoing_service)
+                .map_err(|err| error!("{}", err))
+                .await?;
         let btp_server_service =
-            BtpOutgoingService::new(ilp_address_clone2, btp_client_service.clone());
+            BtpOutgoingService::new(ilp_address.clone(), btp_client_service.clone());
         let btp_server_service_clone = btp_server_service.clone();
         let btp = btp_client_service.clone();
 
