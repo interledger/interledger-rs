@@ -157,10 +157,7 @@ pub fn decrypt(shared_secret: &[u8], mut ciphertext: BytesMut) -> Result<BytesMu
             aead::Aad::from(additional_data),
             &mut ciphertext,
         )
-        .map_err(|err| {
-            // FIXME: many of the tests see this if you have logging on.
-            error!("Error decrypting {:?}", err);
-        })?
+        .map_err(|_| ())?
         .len();
     ciphertext.truncate(length);
     Ok(ciphertext)
