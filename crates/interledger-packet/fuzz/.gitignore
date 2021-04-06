@@ -3,3 +3,4 @@ target
 corpus
 artifacts
 afl_out
+Cargo.lock
