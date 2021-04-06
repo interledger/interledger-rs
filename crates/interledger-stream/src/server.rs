@@ -276,18 +276,10 @@ fn receive_money(
     let condition = hash_sha256(&fulfillment);
     let is_fulfillable = condition == prepare.execution_condition();
 
-    // Parse STREAM packet
-    // TODO avoid copying data
     let prepare_amount = prepare.amount();
 
-    // Note that we are copying the Prepare packet data. This is a bad idea
-    // in cases where STREAM is used to send a significant amount of data.
-    // This implementation doesn't currently support handling the STREAM data
-    // so copying the bytes of the other STREAM frames shouldn't be a big
-    // performance hit in practice.
-    // The data is copied so that we can take the Prepare packet by
-    // reference in the case that the decryption fails and we want to pass
-    // the request on to the next service.
+    // Creating a copy for the prepare.data() cannot be avoided, as the decryption happens in place
+    // while the outer Prepare needs to remain unchanged.
     let copied_data = BytesMut::from(prepare.data());
 
     let stream_packet = StreamPacket::from_encrypted(shared_secret, copied_data)
