@@ -18,6 +18,8 @@ const CONDITION_LEN: usize = 32;
 const FULFILLMENT_LEN: usize = 32;
 const ERROR_CODE_LEN: usize = 3;
 
+// NOTE: this is strictly different from the oer::GENERALIZED_TIMESTAMP_FORMAT which has a dot, and
+// is used for much more lenient timestamps with 0-3 fractions.
 static INTERLEDGER_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%3f";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -309,6 +311,7 @@ impl TryFrom<BytesMut> for Fulfill {
 
 impl Fulfill {
     /// The returned value always has a length of 32.
+    // FIXME: the return value could now be &[u8; 32]
     #[inline]
     pub fn fulfillment(&self) -> &[u8] {
         let begin = self.content_offset;
@@ -607,6 +610,57 @@ impl MaxPacketAmountDetails {
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
+    }
+}
+
+#[cfg(test)]
+mod fuzzed {
+    use super::{FulfillBuilder, Packet};
+    use bytes::BytesMut;
+    use std::convert::TryFrom;
+
+    // most of the fuzzing findings fixed in this crate come from fuzzings in the other crates
+
+    #[test]
+    #[ignore]
+    fn fuzzed_0_additional_trailing_bytes() {
+        // first case found by parsing, then building a new copy of the packet, and asserting it's
+        // equal to the parsed
+
+        #[rustfmt::skip]
+        let data: &[u8] = &[
+            // fulfill packet type
+            13,
+            // varlen octet string length (40)
+            // differs here, output has 33 which would make sense, 32 bytes for fulfillment and 1
+            // byte for 0-byte var octet string data.
+            40,
+            // fullfillment (32)
+            40, 136, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 164, 255, 14, 13, 136,
+            136, 136, 1, 136, 8, 0, 238, 238, 238, 0, 1, 0, 0, 0,
+            // data var octet string length (0)
+            0,
+            // extra trailer which should not be there
+            0, 93, 0, 14, 40, 40, 40,
+        ];
+
+        let fulfill = match Packet::try_from(BytesMut::from(data)).unwrap() {
+            Packet::Fulfill(f) => f,
+            other => unreachable!("this must be a fulfill: {:?}", other),
+        };
+
+        let other = FulfillBuilder {
+            fulfillment: <&[u8; 32]>::try_from(fulfill.fulfillment()).unwrap(),
+            data: fulfill.data(),
+        }
+        .build();
+
+        /*
+        let fulfill = BytesMut::from(fulfill);
+        let other = BytesMut::from(other);
+        */
+
+        assert_eq!(fulfill, other);
     }
 }
 

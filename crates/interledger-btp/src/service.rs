@@ -338,6 +338,7 @@ where
 
                     // Wrap the receiver with a timeout to ensure we do not
                     // wait too long if the other party has disconnected
+                    // FIXME: this causes the test case to take 30s
                     let result = tokio::time::timeout(SEND_MSG_TIMEOUT, receiver).await;
 
                     let result = match result {

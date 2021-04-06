@@ -1,15 +1,12 @@
 use super::errors::ParseError;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
-use chrono::{DateTime, TimeZone, Utc};
-use interledger_packet::oer::{BufOerExt, MutBufOerExt};
+use interledger_packet::oer::{BufOerExt, MutBufOerExt, VariableLengthTimestamp};
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::borrow::Cow;
 use std::io::prelude::*;
 use std::str;
-
-static GENERALIZED_TIME_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
 
 pub trait Serializable<T> {
     fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
@@ -71,18 +68,29 @@ impl Serializable<BtpPacket> for BtpPacket {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ContentType {
-    ApplicationOctetStream = 0,
-    TextPlainUtf8 = 1,
-    Unknown,
+    ApplicationOctetStream,
+    TextPlainUtf8,
+    Unknown(u8),
 }
+
 impl From<u8> for ContentType {
     fn from(type_int: u8) -> Self {
         match type_int {
             0 => ContentType::ApplicationOctetStream,
             1 => ContentType::TextPlainUtf8,
-            _ => ContentType::Unknown,
+            x => ContentType::Unknown(x),
+        }
+    }
+}
+
+impl From<ContentType> for u8 {
+    fn from(ct: ContentType) -> Self {
+        match ct {
+            ContentType::ApplicationOctetStream => 0,
+            ContentType::TextPlainUtf8 => 1,
+            ContentType::Unknown(x) => x,
         }
     }
 }
@@ -122,6 +130,9 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, ParseErro
             data,
         });
     }
+
+    check_no_trailing_bytes(reader)?;
+
     Ok(protocol_data)
 }
 
@@ -129,9 +140,22 @@ fn put_protocol_data<T: BufMut>(buf: &mut T, protocol_data: &[ProtocolData]) {
     buf.put_var_uint(protocol_data.len() as u64);
     for entry in protocol_data {
         buf.put_var_octet_string(entry.protocol_name.as_bytes());
-        buf.put_u8(entry.content_type.clone() as u8);
+        buf.put_u8(entry.content_type.into());
         buf.put_var_octet_string(&*entry.data);
     }
+}
+
+fn check_no_trailing_bytes(buf: &[u8]) -> Result<(), std::io::Error> {
+    // according to spec, there should not be room for trailing bytes.
+    // this certainly helps with fuzzing.
+    if !buf.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "extra trailing bytes",
+        ));
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -153,7 +177,11 @@ impl Serializable<BtpMessage> for BtpMessage {
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
+
+        check_no_trailing_bytes(reader)?;
+
         let protocol_data = read_protocol_data(&mut contents)?;
+
         Ok(BtpMessage {
             request_id,
             protocol_data,
@@ -190,6 +218,9 @@ impl Serializable<BtpResponse> for BtpResponse {
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
+
+        check_no_trailing_bytes(reader)?;
+
         let protocol_data = read_protocol_data(&mut contents)?;
         Ok(BtpResponse {
             request_id,
@@ -213,7 +244,7 @@ pub struct BtpError {
     pub request_id: u32,
     pub code: String,
     pub name: String,
-    pub triggered_at: DateTime<Utc>,
+    pub triggered_at: VariableLengthTimestamp,
     pub data: String,
     pub protocol_data: Vec<ProtocolData>,
 }
@@ -230,11 +261,13 @@ impl Serializable<BtpError> for BtpError {
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
+
+        check_no_trailing_bytes(reader)?;
+
         let mut code: [u8; 3] = [0; 3];
         contents.read_exact(&mut code)?;
         let name = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
-        let triggered_at_string = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
-        let triggered_at = Utc.datetime_from_str(&triggered_at_string, GENERALIZED_TIME_FORMAT)?;
+        let triggered_at = contents.read_variable_length_timestamp()?;
         let data = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
         let protocol_data = read_protocol_data(&mut contents)?;
         Ok(BtpError {
@@ -255,12 +288,7 @@ impl Serializable<BtpError> for BtpError {
         // TODO check that the code is only 3 chars
         contents.put(self.code.as_bytes());
         contents.put_var_octet_string(self.name.as_bytes());
-        contents.put_var_octet_string(
-            self.triggered_at
-                .format(GENERALIZED_TIME_FORMAT)
-                .to_string()
-                .as_bytes(),
-        );
+        contents.put_variable_length_timestamp(&self.triggered_at);
         contents.put_var_octet_string(self.data.as_bytes());
         put_protocol_data(&mut contents, &self.protocol_data);
         buf.put_var_octet_string(&*contents);
@@ -271,6 +299,222 @@ impl Serializable<BtpError> for BtpError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // separate mod helps to avoid the 30s test case with `cargo test -- fuzzed`
+    mod fuzzed {
+        use super::super::{put_protocol_data, read_protocol_data};
+        use super::BtpPacket;
+        use super::Serializable;
+
+        #[test]
+        fn fuzz_0_empty_input() {
+            fails_to_parse(&[]);
+        }
+
+        #[test]
+        fn fuzz_1_too_large_uint() {
+            fails_to_parse(&[6, 0, 0, 1, 0, 1, 45]);
+            //                                 ^^
+            //                                  length of uint
+        }
+
+        #[test]
+        fn fuzz_2_too_short_var_octets() {
+            fails_to_parse(&[1, 1, 0, 0, 4, 4, 0]);
+            //                           ^ length of var_octet_string
+        }
+
+        #[test]
+        fn fuzz_3_too_short_var_octets() {
+            // 9 is the length of the next section but there are only two bytes, this used to parse
+            // just fine because there was no checking for how much was actually read
+            // possible duplicate
+            fails_to_parse(&[1, 1, 65, 0, 0, 9, 1, 0]);
+            //                               ^ length of var_octet_string
+        }
+
+        #[test]
+        fn fuzz_4_trailing_bytes() {
+            // this one has garbage at the end
+            fails_to_parse(&[1, 0, 0, 2, 0, 2, 0, 0, 250, 134]);
+            //                                       ^^^  ^^^ extra
+        }
+
+        #[test]
+        fn fuzz_5_trailing_bytes_inside_protocol_data() {
+            // this one again has garbage at the end, but inside the protocol data
+            fails_to_parse(&[1, 1, 0, 1, 0, 6, 1, 0, 6, 1, 6, 1, 1]);
+            //                              /  |  |  ^  ^  ^  ^  ^
+            //             protocol data len   |  |    extra
+            //                                 /  |
+            //                       len of len   /
+            //                         num_entries
+        }
+
+        #[test]
+        fn fuzz_6_too_short_var_octets() {
+            fails_to_parse(&[1, 1, 2, 217, 19, 50, 212]);
+        }
+
+        #[test]
+        fn fuzz_7_too_short_var_octets() {
+            fails_to_parse(&[2, 0, 0, 30, 30, 134, 30, 8, 36, 128, 96, 50]);
+        }
+
+        #[test]
+        fn fuzz_8_large_allocation() {
+            // old implementation tries to do malloc(2214616063) here
+            fails_to_parse(&[1, 1, 0, 6, 1, 132, 132, 0, 91, 255, 50]);
+        }
+
+        #[test]
+        fn fuzz_9_short_var_octet_string() {
+            // might be duplicate
+            #[rustfmt::skip]
+            fails_to_parse(&[
+                // message
+                6,
+                // requestid
+                0, 0, 1, 1,
+                // var octet string len
+                6,
+                // varuint len
+                1,
+                // varuint zero
+                0,
+            ]);
+        }
+
+        #[test]
+        fn fuzz_10_garbage_protocol_data() {
+            // garbage in the protocol data
+            // possible duplicate
+            fails_to_parse(&[6, 0, 0, 1, 1, 6, 1, 0, 253, 1, 1, 1]);
+        }
+
+        #[test]
+        fn fuzz_11_failed_roundtrip() {
+            // didn't originally record why this failed roundtrip
+            roundtrip(&[6, 0, 0, 1, 1, 6, 1, 1, 0, 253, 1, 0]);
+        }
+
+        #[test]
+        fn fuzz_12_waste_in_length_of_length() {
+            // this has a length of length 128 | 1 which means single byte length, which doesn't
+            // really make sense per rules
+            fails_to_parse(
+                &[6, 0, 0, 1, 1, 7, 129, 1, 1, 1, 6, 1, 0],
+                //                  ^^^  ^
+                //         len of len     string len
+            );
+        }
+
+        #[test]
+        fn fuzz_13_wasteful_var_uint() {
+            #[rustfmt::skip]
+            fails_on_strict(
+                &[
+                    // message
+                    6,
+                    // requestid
+                    0, 0, 0, 0,
+                    // var octet length
+                    6,
+                        // length of var uint
+                        2,
+                        // var uint byte 1/2
+                        0,
+                        // var uint byte 2/2
+                        1,
+                        // protocol name, var octet string
+                        0,
+                        // content type
+                        1,
+                        // data
+                        0],
+                &[6, 0, 0, 0, 0, 5, 1, 1, 0, 1, 0],
+            );
+        }
+
+        #[test]
+        fn fuzz_14_invalid_timestamp() {
+            // this failed originally by producing a longer output than input in strict.
+            //
+            // longer output was created because the timestamp was parsed when it contained illegal
+            // characters, and the formatted version of the parsed timestamp was longer than in the
+            // input.
+            #[rustfmt::skip]
+            fails_to_parse(&[
+                // packettype error
+                2,
+                // request id
+                0, 127, 1, 12, 73,
+                // code
+                9, 9, 9,
+                // name = length prefix + 9x9
+                9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+                // timestamp = length prefix (18) + "4\t3\t\u{c}\t\t3\t\u{c}\t5\t3\t60Z"
+                //                                  "4.3....3...5.3.60Z"
+                // this is output as         (19) + "00040303050360.000Z"
+                18, 52, 9, 51, 9, 12, 9, 9, 51, 9, 12, 9, 53, 9, 51, 9, 54, 48, 90,
+                // data = length prefix + rest
+                0,
+                // protocol data
+                1, 3, 1, 1, 0, 0, 1, 0, 6, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 79, 9, 9,
+                9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 51,
+            ]);
+        }
+
+        #[test]
+        fn fuzz_14_1() {
+            // protocol data from the previous test case
+            let input: &[u8] = &[
+                1, 3, 1, 1, 0, 0, 1, 0, 6, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 79, 9, 9,
+                9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 51,
+            ];
+
+            let mut cursor = input;
+
+            let pd = read_protocol_data(&mut cursor).unwrap();
+
+            let mut out = bytes::BytesMut::new();
+
+            put_protocol_data(&mut out, &pd);
+
+            assert_eq!(input, out);
+        }
+
+        fn fails_on_strict(data: &[u8], lenient_output: &[u8]) {
+            let parsed = BtpPacket::from_bytes(data);
+            if cfg!(feature = "strict") {
+                parsed.unwrap_err();
+            } else {
+                // without strict, the input is not roundtrippable as it wastes bytes
+                let out = parsed.unwrap().to_bytes();
+                assert_eq!(out, lenient_output);
+            }
+        }
+
+        fn fails_to_parse(data: &[u8]) {
+            BtpPacket::from_bytes(data).unwrap_err();
+        }
+
+        fn roundtrip(data: &[u8]) {
+            let parsed = BtpPacket::from_bytes(data).expect("failed to parse test case input");
+            let out = parsed.to_bytes();
+            assert_eq!(data, out, "{:?}", parsed);
+        }
+    }
+
+    #[test]
+    fn content_type_roundtrips() {
+        // this is an important property for any of the datatypes, otherwise fuzzer will find the
+        // [^01] examples, which may not have any examples above.
+        for x in 0..=255u8 {
+            let y: u8 = ContentType::from(x).into();
+            assert_eq!(x, y);
+        }
+    }
 
     mod btp_message {
         use super::*;
@@ -343,9 +587,8 @@ mod tests {
             request_id: 501,
             code: String::from("T00"),
             name: String::from("UnreachableError"),
-            triggered_at: DateTime::parse_from_rfc3339("2018-08-31T02:53:24.899Z")
-                .unwrap()
-                .with_timezone(&Utc),
+            triggered_at: VariableLengthTimestamp::parse_from_rfc3339("2018-08-31T02:53:24.899Z")
+                .unwrap(),
             data: String::from("oops"),
             protocol_data: vec![],
         });

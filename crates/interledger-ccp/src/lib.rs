@@ -29,6 +29,16 @@ pub use server::{CcpRouteManager, CcpRouteManagerBuilder};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(fuzzing)]
+pub fn fuzz_control_request(data: &[u8]) {
+    packet::RouteControlRequest::fuzz_from_prepare_data(data);
+}
+
+#[cfg(fuzzing)]
+pub fn fuzz_update_request(data: &[u8]) {
+    packet::RouteUpdateRequest::fuzz_from_prepare_data(data);
+}
+
 /// Data structure used to describe the routing relation of an account with its peers.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize, Ord, Eq)]
@@ -127,4 +137,31 @@ pub trait CcpRoutingStore: Clone {
         &mut self,
         routes: impl IntoIterator<Item = (String, Self::Account)> + Send + 'async_trait,
     ) -> Result<(), CcpRoutingStoreError>;
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fuzz_0_preallocation() {
+        // this allocates 8_356_511_975_664 bytes
+        let _ = crate::packet::RouteUpdateRequest::fuzz_from_prepare_data(&[
+            10, 1, 0, 0, 0, 0, 0, 0, 24, 81, 0, 1, 0, 0, 103, 103, 103, 103, 103, 103, 103, 103,
+            103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 46, 103, 103, 103, 103,
+            103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103,
+            103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103,
+            103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 71, 103, 103,
+            103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103,
+            103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103, 103,
+            103, 103, 103, 103, 71, 103, 103, 103, 103, 103, 103, 49, 1, 95, 1, 100, 7, 0, 0, 81,
+            17, 159, 59, 10, 81, 175,
+        ]);
+    }
+
+    #[test]
+    fn fuzz_1_preallocation() {
+        // this allocates 103_079_215_104 bytes
+        let _ = crate::packet::RouteControlRequest::fuzz_from_prepare_data(&[
+            1, 1, 1, 0, 0, 59, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 5, 1, 0, 0, 0, 0, 59,
+        ]);
+    }
 }

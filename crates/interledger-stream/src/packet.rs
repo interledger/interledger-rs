@@ -145,6 +145,11 @@ impl StreamPacket {
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
+    #[cfg(any(fuzzing, test))]
+    pub fn from_decrypted(data: BytesMut) -> Result<Self, ParseError> {
+        Self::from_bytes_unencrypted(data)
+    }
+
     /// Constructs a [Stream Packet](./struct.StreamPacket.html) from a buffer
     ///
     /// # Errors
@@ -857,6 +862,70 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
         Ok(u64::MAX)
     } else {
         Ok(reader.read_var_uint()?)
+    }
+}
+
+#[cfg(test)]
+mod fuzzing {
+    use super::{StreamPacket, StreamPacketBuilder};
+
+    #[test]
+    #[ignore]
+    fn fuzzed_0_extra_trailer_bytes() {
+        // junk trailer mentioned in RFC might be applicable here, see
+        // fuzzed_1_unknown_frames_dont_roundtrip
+        roundtrip(&[
+            1, 14, 3, 19, 5, 3, 1, 14, 3, 0, 0, 0, 0, 14, 3, 0, 14, 5, 17,
+        ]);
+
+        // roundtripped version looks like:
+        //
+        // [1, 14, 3, 19, 5, 3, 1, 14, 1, 0]
+        //                             ^
+        //                              differs, was 3
+        //
+        // which is almost &input[0..10] except
+    }
+
+    #[test]
+    #[ignore]
+    fn fuzzed_1_unknown_frames_dont_roundtrip() {
+        // from the [RFC]'s it sounds like the at least trailer junk should be kept around,
+        // it would help if unknown frames would be kept around as well for fuzzing at least.
+        //
+        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+        roundtrip(&[
+            1, 14, 3, 5, 0, 0, 3, 5, 14, 9, 1, 3, 1, 3, 0, 4, 20, 3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+        ]);
+
+        // roundtripped version looks like:
+        //
+        // [1, 14, 3, 5, 0, 0, 3, 5, 14, 9, 1, 3]
+        //
+        // which is &input[0..12]
+    }
+
+    fn roundtrip(input: &[u8]) {
+        use bytes::{Buf, BytesMut};
+
+        // this started off as almost copy  of crate::fuzz_decrypted_stream_packet but should be
+        // extended if necessary
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b).unwrap();
+
+        let other = StreamPacketBuilder {
+            sequence: pkt.sequence(),
+            ilp_packet_type: pkt.ilp_packet_type(),
+            prepare_amount: pkt.prepare_amount(),
+            frames: &pkt.frames().collect::<Vec<_>>(),
+        }
+        .build();
+
+        println!("{:?}", pkt.buffer_unencrypted.bytes());
+        println!("{:?}", other.buffer_unencrypted.bytes());
+
+        assert_eq!(pkt, other);
     }
 }
 

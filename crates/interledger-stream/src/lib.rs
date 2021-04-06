@@ -23,6 +23,27 @@ pub use server::{
     ConnectionGenerator, PaymentNotification, StreamNotificationsStore, StreamReceiverService,
 };
 
+#[cfg(fuzzing)]
+pub fn fuzz_decrypted_stream_packet(data: &[u8]) {
+    let b = bytes::BytesMut::from(data);
+    if let Ok(pkt) = packet::StreamPacket::from_decrypted(b) {
+        if pkt.frames().any(|x| matches!(x, packet::Frame::Unknown)) {
+            // TODO: builder just skips over these, probably shouldn't
+            return;
+        }
+
+        let other = packet::StreamPacketBuilder {
+            sequence: pkt.sequence(),
+            ilp_packet_type: pkt.ilp_packet_type(),
+            prepare_amount: pkt.prepare_amount(),
+            frames: &pkt.frames().collect::<Vec<_>>(),
+        }
+        .build();
+
+        assert_eq!(pkt, other);
+    }
+}
+
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;

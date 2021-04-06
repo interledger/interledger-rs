@@ -7,6 +7,10 @@ license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
+[features]
+# used when fuzzing; accepts only roundtripping input
+strict = []
+
 [dependencies]
 byteorder = { version = "1.3.2" }
 bytes = { package = "bytes", version = "0.5", features = ["serde"] }

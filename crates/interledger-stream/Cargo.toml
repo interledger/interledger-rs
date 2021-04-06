@@ -10,6 +10,7 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 # Optional feature to log connection statistics using a CSV file
 [features]
 metrics_csv = ["csv"]
+strict = ["interledger-packet/strict"]
 
 [dependencies]
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false, features = ["serde"] }

@@ -1,13 +1,17 @@
 #![forbid(unsafe_code)]
 
+use std::convert::TryFrom;
 use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BufMut, BytesMut};
+use chrono::{TimeZone, Utc};
 
 const HIGH_BIT: u8 = 0x80;
 const LOWER_SEVEN_BITS: u8 = 0x7f;
+// NOTE: this is stricly different than packet::INTERLEDGER_TIMESTAMP_FORMAT
+static VARIABLE_LENGTH_TIMESTAMP_FORMAT: &str = "%Y%m%d%H%M%S%.3fZ";
 
 /// Returns the size (in bytes) of the buffer that encodes a VarOctetString of
 /// `length` bytes.
@@ -54,6 +58,11 @@ pub trait BufOerExt<'a> {
     fn skip_var_octet_string(&mut self) -> Result<()>;
     fn read_var_octet_string_length(&mut self) -> Result<usize>;
     fn read_var_uint(&mut self) -> Result<u64>;
+
+    /// Decodes a variable length timestamp according to [RFC-0030].
+    ///
+    /// [RFC-0030]: https://github.com/interledger/rfcs/blob/2473d2963a65e5534076c483f3c08a81b8e0cc88/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md#variable-length-timestamps
+    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp>;
 }
 
 impl<'a> BufOerExt<'a> for &'a [u8] {
@@ -117,7 +126,28 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                     "indefinite lengths are not allowed",
                 ))
             } else {
-                Ok(self.read_uint::<BigEndian>(length_prefix_length)? as usize)
+                let uint = self.read_uint::<BigEndian>(length_prefix_length)?;
+
+                check_no_leading_zeroes(length_prefix_length, uint)?;
+
+                if length_prefix_length == 1 && uint < 128 {
+                    // this doesn't apply to the var uint which is at minimum two octets (0x00,
+                    // 0x00) but var len octet strings.
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        "variable length prefix with unnecessary multibyte length",
+                    ));
+                }
+
+                // it makes no sense for a length to be u64 but usize, and even that is quite a lot
+                let uint = usize::try_from(uint).map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "var octet length overflow",
+                    )
+                })?;
+
+                Ok(uint)
             }
         } else {
             Ok(length as usize)
@@ -133,9 +163,106 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
         } else if size > 8 {
             Err(Error::new(ErrorKind::InvalidData, "VarUInt too large"))
         } else {
-            Ok(self.read_uint::<BigEndian>(size)?)
+            let uint = self.read_uint::<BigEndian>(size)?;
+
+            check_no_leading_zeroes(size, uint)?;
+
+            Ok(uint)
         }
     }
+
+    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp> {
+        use once_cell::sync::OnceCell;
+        use regex::bytes::Regex;
+
+        static RE: OnceCell<Regex> = OnceCell::new();
+        let re = RE.get_or_init(|| Regex::new(r"^[0-9]{4}[0-9]{2}{5}(\.[0-9]{1,3})?Z$").unwrap());
+
+        let octets = self.read_var_octet_string()?;
+
+        let len = match octets.len() {
+            15 | 17 | 18 | 19 => Ok(octets.len() as u8),
+            x => Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid length for variable length timestamp: {}", x),
+            )),
+        }?;
+
+        if !re.is_match(octets) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Input failed to parse as timestamp",
+            ));
+        }
+
+        // the string might still have bad date in it
+        let s = std::str::from_utf8(octets)
+            .expect("re matches only ascii, utf8 conversion must succeed");
+
+        let ts = Utc
+            .datetime_from_str(s, VARIABLE_LENGTH_TIMESTAMP_FORMAT)
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Invalid variable length datetime: {}", e),
+                )
+            })?;
+
+        Ok(VariableLengthTimestamp { inner: ts, len })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct VariableLengthTimestamp {
+    inner: chrono::DateTime<chrono::Utc>,
+    len: u8,
+}
+
+impl VariableLengthTimestamp {
+    /// Returns a full length timestamp of the value parsed as RFC3339.
+    pub fn parse_from_rfc3339(s: &str) -> std::result::Result<Self, chrono::ParseError> {
+        Ok(VariableLengthTimestamp {
+            inner: chrono::DateTime::parse_from_rfc3339(s)?.with_timezone(&Utc),
+            len: 19,
+        })
+    }
+}
+
+use std::fmt;
+
+impl fmt::Display for VariableLengthTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use chrono::Timelike;
+
+        // first let chrono format without the fractions and ending Z
+        fmt::Display::fmt(&self.inner.format("%Y%m%d%H%M%S"), f)?;
+
+        // then depending on the length add enough fractions (chrono doesn't support %.1f or %.2f)
+        let nanos = self.inner.time().nanosecond() % 1_000_000_000;
+        match self.len {
+            15 => Ok(()),
+            17 => write!(f, ".{:01}", nanos / 100_000_000),
+            18 => write!(f, ".{:02}", nanos / 10_000_000),
+            19 => write!(f, ".{:03}", nanos / 1_000_000),
+            x => unreachable!("should not have timestamp of length: {}", x),
+        }?;
+
+        // all varlen timestamps end with Z
+        write!(f, "Z")
+    }
+}
+
+fn check_no_leading_zeroes(_size_on_wire: usize, _uint: u64) -> Result<()> {
+    #[cfg(feature = "strict")]
+    if _size_on_wire != predict_var_uint_size(_uint) as usize {
+        // if we dont check for this fuzzing roundtrip tests will break, as there are
+        // "128 | 1, x" class of inputs, where "x" = 0..128
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "variable length prefix with leading zeros",
+        ));
+    }
+    Ok(())
 }
 
 pub trait MutBufOerExt: BufMut + Sized {
@@ -164,6 +291,17 @@ pub trait MutBufOerExt: BufMut + Sized {
         let size = predict_var_uint_size(uint) as usize;
         self.put_var_octet_string_length(size);
         self.put_uint(uint, size);
+    }
+
+    /// Encodes the given timestamp per the rules, see
+    /// [`BufOerExt::read_variable_length_timestamp`].
+    fn put_variable_length_timestamp(&mut self, vts: &VariableLengthTimestamp) {
+        use bytes::buf::BufMutExt;
+        use std::io::Write;
+
+        self.put_var_octet_string_length(vts.len as usize);
+        write!(self.writer(), "{}", vts)
+            .expect("BufMut should expand and formatting should never fail");
     }
 }
 
@@ -244,13 +382,13 @@ mod test_buf_oer_ext {
 
     #[test]
     fn test_peek_var_octet_string() {
-        let tests: &[(Vec<u8>, &[u8])] = &[
-            (vec![0x00], &[]),
-            (ZERO_LENGTH_VARSTR.to_vec(), &[]),
-            (ONE_BYTE_VARSTR.to_vec(), &[0x01]),
-            (TWO_BYTE_VARSTR.to_vec(), &[0x01, 0x02]),
-            (SIZE_128_VARSTR.clone(), &[0; 128][..]),
-            (SIZE_5678_VARSTR.clone(), &[0; 5678][..]),
+        let tests: &[(&[u8], &[u8])] = &[
+            (&[0x00], &[]),
+            (&ZERO_LENGTH_VARSTR, &[]),
+            (&ONE_BYTE_VARSTR, &[0x01]),
+            (&TWO_BYTE_VARSTR, &[0x01, 0x02]),
+            (&SIZE_128_VARSTR, &[0; 128][..]),
+            (&SIZE_5678_VARSTR, &[0; 5678][..]),
         ];
         for (buffer, varstr) in tests {
             assert_eq!((&buffer[..]).peek_var_octet_string().unwrap(), *varstr,);
@@ -387,6 +525,8 @@ mod test_buf_oer_ext {
         let mut bytes = vec![HIGH_BIT | 4];
         bytes.extend(std::iter::repeat(0xff).take(4));
 
+        // here 84 ff ff ff ff is used as a max usize (in 32-bit systems)
+
         let mut reader = &bytes[..];
 
         let len = reader.read_var_octet_string_length().unwrap();
@@ -422,20 +562,21 @@ mod test_buf_oer_ext {
 
         for (buffer, value, offset) in tests {
             let mut reader = &buffer[..];
-            assert_eq!(reader.read_var_uint().unwrap(), *value);
+            let uint = reader.read_var_uint().unwrap();
+            assert_eq!(uint, *value);
             assert_eq!(reader.len(), buffer.len() - *offset);
         }
 
-        let tests: &[(Vec<u8>, ErrorKind)] = &[
+        let tests: &[(&[u8], ErrorKind)] = &[
             // VarUint's must have at least 1 byte.
-            (vec![0x00], ErrorKind::InvalidData),
+            (&[0x00], ErrorKind::InvalidData),
             // Data must be present.
-            (vec![0x04], ErrorKind::UnexpectedEof),
+            (&[0x04], ErrorKind::UnexpectedEof),
             // Enough bytes must be present.
-            (vec![0x04, 0x01, 0x02, 0x03], ErrorKind::UnexpectedEof),
+            (&[0x04, 0x01, 0x02, 0x03], ErrorKind::UnexpectedEof),
             // Too many bytes.
             (
-                vec![0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+                &[0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
                 ErrorKind::InvalidData,
             ),
         ];
@@ -445,6 +586,40 @@ mod test_buf_oer_ext {
                 (&buffer[..]).read_var_uint().unwrap_err().kind(),
                 *error_kind,
             );
+        }
+    }
+
+    #[test]
+    fn peek_too_long_uint() {
+        // in interledger-stream there is a use case to accept larger than u64::MAX for a varuint.
+        // it is done through peeking for the length of the varuint, using the length > 8 to
+        // default to u64::MAX.
+        let bytes: &[u8] = &[0x09u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
+
+        let reader = bytes;
+        assert_eq!(9, reader.peek_var_octet_string().unwrap().len());
+    }
+
+    #[test]
+    fn read_variable_length_timestamp() {
+        let valid: &[(&[u8], &str)] = &[
+            (b"20171224161432.279Z", "2017-12-24 16:14:32.279 UTC"),
+            (b"20171224161432.27Z", "2017-12-24 16:14:32.270 UTC"),
+            (b"20171224161432.2Z", "2017-12-24 16:14:32.200 UTC"),
+            (b"20171224161432Z", "2017-12-24 16:14:32 UTC"),
+            (b"20161231235960.852Z", "2016-12-31 23:59:60.852 UTC"),
+            (b"20171225000000Z", "2017-12-25 00:00:00 UTC"),
+            (b"99991224161432.279Z", "9999-12-24 16:14:32.279 UTC"),
+        ];
+
+        let mut buffer = BytesMut::with_capacity(1 + valid[0].0.len());
+
+        for &(input, expected) in valid {
+            buffer.clear();
+            buffer.put_var_octet_string(input);
+            let ts = buffer.as_ref().read_variable_length_timestamp().unwrap();
+            assert_eq!(ts.len as usize, input.len());
+            assert_eq!(expected, ts.inner.to_string());
         }
     }
 }
@@ -470,8 +645,10 @@ mod buf_mut_oer_ext {
             (long_varstr, &long_buffer[..]),
         ];
 
+        let mut writer = BytesMut::with_capacity(10);
+
         for (varstr, buffer) in tests {
-            let mut writer = Vec::new();
+            writer.clear();
             writer.put_var_octet_string(*varstr);
             assert_eq!(&writer[..], *buffer);
         }
@@ -479,38 +656,65 @@ mod buf_mut_oer_ext {
 
     #[test]
     fn test_put_var_uint() {
-        let tests: &[(Vec<u8>, u64, usize)] = &[
-            (vec![0x01, 0x00], 0, 2),
-            (vec![0x01, 0x09], 9, 2),
-            (vec![0x02, 0x01, 0x02], 0x0102, 3),
-            (vec![0x03, 0x01, 0x02, 0x03], 0x0001_0203, 4),
-            (vec![0x04, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+        let tests: &[(&[u8], u64, usize)] = &[
+            (&[0x01, 0x00], 0, 2),
+            (&[0x01, 0x09], 9, 2),
+            (&[0x02, 0x01, 0x02], 0x0102, 3),
+            (&[0x03, 0x01, 0x02, 0x03], 0x0001_0203, 4),
+            (&[0x04, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+            (&[0x05, 0x01, 0x02, 0x03, 0x04, 0x05], 0x0001_0203_0405, 6),
             (
-                vec![0x05, 0x01, 0x02, 0x03, 0x04, 0x05],
-                0x0001_0203_0405,
-                6,
-            ),
-            (
-                vec![0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                &[0x06, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
                 0x0102_0304_0506,
                 7,
             ),
             (
-                vec![0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+                &[0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
                 0x0001_0203_0405_0607,
                 8,
             ),
             (
-                vec![0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+                &[0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
                 0x0102_0304_0506_0708,
                 9,
             ),
         ];
 
+        let mut writer = BytesMut::with_capacity(10);
+
         for (buffer, value, _offset) in tests {
-            let mut writer = Vec::new();
+            writer.clear();
             writer.put_var_uint(*value);
             assert_eq!(writer, *buffer);
+        }
+    }
+
+    #[test]
+    fn test_put_variable_length_timestamp() {
+        let tests: &[(&[u8], &str)] = &[
+            (b"20171224161432.279Z", "20171224161432.279Z"),
+            (b"20171224161432.27Z", "20171224161432.27Z"),
+            (b"20171224161432.2Z", "20171224161432.2Z"),
+            (b"20171224161432Z", "20171224161432Z"),
+        ];
+
+        let mut write_buffer = BytesMut::with_capacity(1 + tests[0].0.len());
+
+        for (data, input) in tests {
+            write_buffer.clear();
+
+            write_buffer.put_var_octet_string(*data);
+            let ts = write_buffer
+                .as_ref()
+                .read_variable_length_timestamp()
+                .unwrap();
+
+            assert_eq!(&ts.to_string(), input);
+
+            write_buffer.clear();
+            write_buffer.put_variable_length_timestamp(&ts);
+
+            assert_eq!(data, &write_buffer[1..].as_ref());
         }
     }
 }
