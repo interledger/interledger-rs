@@ -16,8 +16,9 @@ else
 fi
 
 # run tcpdump in the same directory where other artifacts to be uploaded reside
-TCPDUMP_OUTPUT_FILENAME=$(echo "$MD_FILE" | sha256sum | cut -f1 -d\ ).pcap
-echo "saving packet capture for '$MD_FILE' as $TCP_DUMP_OUTPUT_FILENAME"
+PARENT_DIR_NAME="${PWD##*/}"
+TCPDUMP_OUTPUT_FILENAME="$PARENT_DIR_NAME".pcap
+echo "saving packet capture for $PARENT_DIR_NAME/${MD_FILE##*/} as $TCPDUMP_OUTPUT_FILENAME"
 sudo tcpdump -i lo -s 65535 -w "/tmp/run-md-test/${TCPDUMP_OUTPUT_FILENAME}" &
 TCPDUMP_PID=$!
 
