@@ -111,12 +111,22 @@ struct ReceiveOk {
     sequence: u64,
 }
 
-#[derive(Debug)]
 /// The Err(ReceiveErr) variant of receive_money(...) return result
-struct ReceiveErr {
-    reject: Reject,
-    sequence: u64,
-    connection_closed: bool,
+#[derive(Debug)]
+enum ReceiveErr {
+    /// When decrypting fails, it means that the packet was definitely not for this service running
+    /// on this node. It should be handled by forwarding it to another handler.
+    ///
+    /// This variant is used to describe decryption failure in addition to all kinds of parsing
+    /// failures.
+    InvalidPacket,
+
+    /// We definitely reject and terminate processing of this transaction.
+    Rejection {
+        reject: Reject,
+        sequence: u64,
+        connection_closed: bool,
+    },
 }
 
 /// A trait representing the Publish side of a pub/sub store
@@ -198,19 +208,37 @@ where
                 &request.prepare,
             );
             match response {
-                Ok(ref ok) => self
-                    .store
-                    .publish_payment_notification(PaymentNotification {
-                        to_username,
-                        from_username,
-                        amount,
-                        destination,
-                        timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
-                        sequence: ok.sequence,
-                        connection_closed: false,
-                    }),
-                Err(ref err) => {
-                    if err.connection_closed {
+                Ok(ReceiveOk { fulfill, sequence }) => {
+                    self.store
+                        .publish_payment_notification(PaymentNotification {
+                            to_username,
+                            from_username,
+                            amount,
+                            destination,
+                            timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
+                            sequence,
+                            connection_closed: false,
+                        });
+                    Ok(fulfill)
+                }
+                Err(ReceiveErr::InvalidPacket) => {
+                    // Additional context for the spared comment; the decryption or parsing fails
+                    // path used to be handled by signalling an F06 from the receive_money step:
+                    //
+                    // <historical_comment>
+                    // Assume the packet isn't for us if the decryption step fails. Note this means
+                    // that if the packet data is modified in any way, the sender will likely see
+                    // an error like F02: Unavailable (this is a bit confusing but the packet data
+                    // should not be modified at all under normal circumstances).
+                    // </historical_comment>
+                    self.next.send_request(request).await
+                }
+                Err(ReceiveErr::Rejection {
+                    reject,
+                    sequence,
+                    connection_closed,
+                }) => {
+                    if connection_closed {
                         self.store
                             .publish_payment_notification(PaymentNotification {
                                 to_username,
@@ -218,23 +246,17 @@ where
                                 amount: 0,
                                 destination,
                                 timestamp: DateTime::<Utc>::from(SystemTime::now()).to_rfc3339(),
-                                sequence: err.sequence,
+                                sequence,
                                 connection_closed: true,
                             });
                     }
-                    if err.reject.code() == ErrorCode::F06_UNEXPECTED_PAYMENT {
-                        // Assume the packet isn't for us if the decryption step fails.
-                        // Note this means that if the packet data is modified in any way,
-                        // the sender will likely see an error like F02: Unavailable (this is
-                        // a bit confusing but the packet data should not be modified at all
-                        // under normal circumstances).
-                        return self.next.send_request(request).await;
-                    }
+
+                    Err(reject)
                 }
-            };
-            return response.map(|x| x.fulfill).map_err(|x| x.reject);
+            }
+        } else {
+            self.next.send_request(request).await
         }
-        self.next.send_request(request).await
     }
 }
 
@@ -254,34 +276,14 @@ fn receive_money(
     let condition = hash_sha256(&fulfillment);
     let is_fulfillable = condition == prepare.execution_condition();
 
-    // Parse STREAM packet
-    // TODO avoid copying data
     let prepare_amount = prepare.amount();
 
-    // Note that we are copying the Prepare packet data. This is a bad idea
-    // in cases where STREAM is used to send a significant amount of data.
-    // This implementation doesn't currently support handling the STREAM data
-    // so copying the bytes of the other STREAM frames shouldn't be a big
-    // performance hit in practice.
-    // The data is copied so that we can take the Prepare packet by
-    // reference in the case that the decryption fails and we want to pass
-    // the request on to the next service.
+    // Creating a copy for the prepare.data() cannot be avoided, as the decryption happens in place
+    // while the outer Prepare needs to remain unchanged.
     let copied_data = BytesMut::from(prepare.data());
 
-    let stream_packet = StreamPacket::from_encrypted(shared_secret, copied_data).map_err(|_| {
-        debug!("Unable to parse data, rejecting Prepare packet");
-        ReceiveErr {
-            reject: RejectBuilder {
-                code: ErrorCode::F06_UNEXPECTED_PAYMENT,
-                message: b"Could not decrypt data",
-                triggered_by: Some(ilp_address),
-                data: &[],
-            }
-            .build(),
-            sequence: 0,
-            connection_closed: false,
-        }
-    })?;
+    let stream_packet = StreamPacket::from_encrypted(shared_secret, copied_data)
+        .map_err(|_| ReceiveErr::InvalidPacket)?;
 
     let mut response_frames: Vec<Frame> = Vec::new();
     let mut connection_closed = false;
@@ -372,7 +374,7 @@ fn receive_money(
             data: &encrypted_response[..],
         }
         .build();
-        Err(ReceiveErr {
+        Err(ReceiveErr::Rejection {
             reject,
             sequence: stream_packet.sequence(),
             connection_closed,

@@ -141,7 +141,7 @@ impl StreamPacket {
     pub fn from_encrypted(shared_secret: &[u8], ciphertext: BytesMut) -> Result<Self, ParseError> {
         // TODO handle decryption failure
         let decrypted = decrypt(shared_secret, ciphertext)
-            .map_err(|_err| ParseError::InvalidPacket(String::from("Unable to decrypt packet")))?;
+            .map_err(|_| ParseError::InvalidPacket(String::from("Unable to decrypt packet")))?;
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
