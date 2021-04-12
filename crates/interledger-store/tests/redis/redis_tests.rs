@@ -2,6 +2,7 @@ mod accounts_test;
 mod balances_test;
 mod btp_test;
 mod http_test;
+mod notifications;
 mod rate_limiting_test;
 mod rates_test;
 mod routing_test;
