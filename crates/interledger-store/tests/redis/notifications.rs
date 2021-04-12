@@ -61,8 +61,16 @@ async fn notifications_on_multitenant_config() {
 
     // these used to only log before #700:
     //
-    // Ignoring unexpected message from Redis subscription for channel: first:stream_notifications:...
-    // Ignoring unexpected message from Redis subscription for channel: second:stream_notifications:...
+    // WARN interledger_store::redis: Ignoring unexpected message from Redis subscription for channel: first:stream_notifications:...
+    // WARN interledger_store::redis: Ignoring unexpected message from Redis subscription for channel: second:stream_notifications:...
+    //
+    // after fixing this, there will still be:
+    //
+    // TRACE interledger_store::redis: Ignoring message for account ... because there were no open subscriptions
+    // TRACE interledger_store::redis: Ignoring message for account ... because there were no open subscriptions
+    //
+    // even though the subscription to all exists. this tests uses the all_payment_subscription()
+    // and that should be ok, since the trigger still comes through PSUBSCRIBE.
 
     let (msg1, msg2) = futures::future::join(rx1.next(), rx2.next()).await;
     assert_eq!(msg1.unwrap().expect("cannot lag yet").sequence, 2);
