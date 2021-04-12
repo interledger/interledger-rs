@@ -56,7 +56,7 @@ thiserror = { version = "1.0.10", default-features = false }
 redis_crate = { package = "redis", version = "0.15.1", default-features = false, features = ["tokio-rt-core"], optional = true }
 
 [dev-dependencies]
-env_logger = { version = "0.7.0", default-features = false }
 rand = { version = "0.7.2", default-features = false }
 socket2 = "0.3.15"
 os_type = { version = "2.2", default-features = false }
+tracing-subscriber = { version = "0.2", default-features = false, features = ["tracing-log", "fmt", "env-filter", "chrono"] }

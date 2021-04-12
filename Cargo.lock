@@ -1429,7 +1429,6 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "bytes 0.5.6",
- "env_logger",
  "futures 0.3.13",
  "http",
  "interledger-api",
@@ -1458,6 +1457,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
  "zeroize",

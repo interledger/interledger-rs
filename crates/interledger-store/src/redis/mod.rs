@@ -293,8 +293,10 @@ impl RedisStoreBuilder {
         let db_prefix = prefixed_key(&self.db_prefix, STREAM_NOTIFICATIONS_PREFIX).into_owned();
         std::thread::spawn(move || {
             #[allow(clippy::cognitive_complexity)]
+            // our notifications will be PUBLISH'd to topics under this prefix
+            let prefix = format!("{}*", &db_prefix);
             let sub_status =
-                sub_connection.psubscribe::<_, _, Vec<String>>(&["*"], move |msg| {
+                sub_connection.psubscribe::<_, _, Vec<String>>(&[prefix], move |msg| {
                     let channel_name = msg.get_channel_name();
                     if let Some(suffix) = channel_name.strip_prefix(&db_prefix) {
                         if let Ok(account_id) = Uuid::from_str(&suffix) {
