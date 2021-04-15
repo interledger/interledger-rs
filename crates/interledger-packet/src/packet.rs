@@ -146,9 +146,7 @@ impl TryFrom<BytesMut> for Prepare {
         let re = RE.get_or_init(|| Regex::new(r"[0-9]{17}").unwrap());
 
         if !re.is_match(&expires_at) {
-            return Err(ParseError::InvalidPacket(
-                "DateTime must be numerical".into(),
-            ));
+            return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
         }
 
         let expires_at = str::from_utf8(&expires_at[..])?;
@@ -759,28 +757,11 @@ mod test_prepare {
 
     #[test]
     fn test_invalid_ts() {
-        use std::convert::TryInto;
         for i in 12..(12 + 17) {
             let mut prep = BytesMut::from(PREPARE_BYTES);
             prep[i] = 9; // convert a byte from the address to a junk character
-            let x = match Prepare::try_from(prep) {
-                Ok(x) => x,
-                Err(_) => {
-                    continue;
-                }
-            };
-
-            let built = PrepareBuilder {
-                amount: x.amount(),
-                expires_at: x.expires_at(),
-                execution_condition: x.execution_condition().try_into().unwrap(),
-                destination: x.destination(),
-                data: x.data(),
-            }
-            .build();
-
-            assert_eq!(x, built);
-            assert_eq!(BytesMut::from(x), BytesMut::from(built));
+            let err = Prepare::try_from(prep).unwrap_err();
+            assert_eq!("Invalid Packet: DateTime must be numeric", &err.to_string());
         }
     }
 
