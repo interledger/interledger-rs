@@ -129,12 +129,28 @@ impl TryFrom<BytesMut> for Prepare {
     type Error = ParseError;
 
     fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
+        use once_cell::sync::OnceCell;
+        use regex::bytes::Regex;
+
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
 
+        // Fixed Length DateTime format - RFC 0027
+        // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
         let mut expires_at = [0x00; 17];
         content.read_exact(&mut expires_at)?;
+
+        static RE: OnceCell<Regex> = OnceCell::new();
+        // Not using digit here as unicode feature needs to be enabled
+        let re = RE.get_or_init(|| Regex::new(r"[0-9]{17}").unwrap());
+
+        if !re.is_match(&expires_at) {
+            return Err(ParseError::InvalidPacket(
+                "DateTime must be numerical".into(),
+            ));
+        }
+
         let expires_at = str::from_utf8(&expires_at[..])?;
         let expires_at: DateTime<Utc> =
             Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
@@ -738,6 +754,14 @@ mod test_prepare {
     fn test_invalid_address() {
         let mut prep = BytesMut::from(PREPARE_BYTES);
         prep[67] = 42; // convert a byte from the address to a junk character
+        assert!(Prepare::try_from(prep).is_err());
+    }
+
+    #[test]
+    fn test_invalid_datetime() {
+        let mut prep = BytesMut::from(PREPARE_BYTES);
+        // content offset = 4 bytes, amount is 8 bytes, datetime start at prep[12]
+        prep[12] = 42; // convert a byte from the datetime to a junk character
         assert!(Prepare::try_from(prep).is_err());
     }
 
