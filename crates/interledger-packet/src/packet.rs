@@ -138,7 +138,11 @@ impl TryFrom<BytesMut> for Prepare {
         let mut expires_at = [0x00; 17];
         content.read_exact(&mut expires_at)?;
 
-        if !expires_at.iter().all(|e| (b'0'..=b'9').contains(e)) {
+        if !expires_at
+            .iter()
+            .map(|e| (b'0'..=b'9').contains(e))
+            .fold(true, |a, b| a & b)
+        {
             return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
         }
 
