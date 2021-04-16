@@ -129,9 +129,6 @@ impl TryFrom<BytesMut> for Prepare {
     type Error = ParseError;
 
     fn try_from(buffer: BytesMut) -> Result<Self, Self::Error> {
-        use once_cell::sync::OnceCell;
-        use regex::bytes::Regex;
-
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
@@ -141,11 +138,7 @@ impl TryFrom<BytesMut> for Prepare {
         let mut expires_at = [0x00; 17];
         content.read_exact(&mut expires_at)?;
 
-        static RE: OnceCell<Regex> = OnceCell::new();
-        // Not using digit here as unicode feature needs to be enabled
-        let re = RE.get_or_init(|| Regex::new(r"[0-9]{17}").unwrap());
-
-        if !re.is_match(&expires_at) {
+        if !expires_at.iter().all(|e| (b'0'..=b'9').contains(e)) {
             return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
         }
 
