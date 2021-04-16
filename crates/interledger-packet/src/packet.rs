@@ -133,8 +133,19 @@ impl TryFrom<BytesMut> for Prepare {
         let content_len = content.len();
         let amount = content.read_u64::<BigEndian>()?;
 
+        // Fixed Length DateTime format - RFC 0027
+        // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
         let mut expires_at = [0x00; 17];
         content.read_exact(&mut expires_at)?;
+
+        if !expires_at
+            .iter()
+            .map(|e| (b'0'..=b'9').contains(e))
+            .fold(true, |a, b| a & b)
+        {
+            return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
+        }
+
         let expires_at = str::from_utf8(&expires_at[..])?;
         let expires_at: DateTime<Utc> =
             Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
@@ -739,6 +750,16 @@ mod test_prepare {
         let mut prep = BytesMut::from(PREPARE_BYTES);
         prep[67] = 42; // convert a byte from the address to a junk character
         assert!(Prepare::try_from(prep).is_err());
+    }
+
+    #[test]
+    fn test_invalid_ts() {
+        for i in 12..(12 + 17) {
+            let mut prep = BytesMut::from(PREPARE_BYTES);
+            prep[i] = 9; // convert a byte from the address to a junk character
+            let err = Prepare::try_from(prep).unwrap_err();
+            assert_eq!("Invalid Packet: DateTime must be numeric", &err.to_string());
+        }
     }
 
     #[test]
