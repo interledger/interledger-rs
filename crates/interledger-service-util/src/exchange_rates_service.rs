@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use interledger_packet::{ErrorCode, RejectBuilder};
 use interledger_rates::ExchangeRateStore;
 use interledger_service::*;
-use interledger_settlement::core::types::{Convert, ConvertDetails};
+use interledger_settlement::core::types::{ConversionError, Convert, ConvertDetails};
 use std::marker::PhantomData;
 use tracing::{error, trace, warn};
 
@@ -51,8 +51,8 @@ where
     async fn send_request(&mut self, mut request: OutgoingRequest<A>) -> IlpResult {
         let ilp_address = self.store.get_ilp_address();
         if request.prepare.amount() > 0 {
-            let rate: f64 = if request.from.asset_code() == request.to.asset_code() {
-                1f64
+            let rates: (f64, f64) = if request.from.asset_code() == request.to.asset_code() {
+                (1f64, 1f64)
             } else if let Ok(rates) = self
                 .store
                 .get_exchange_rates(&[&request.from.asset_code(), &request.to.asset_code()])
@@ -61,7 +61,7 @@ where
                 // we multiply by the incoming asset's rate and divide by the outgoing asset's rate. For example,
                 // if an incoming packet is denominated in an asset worth 1 USD and the outgoing asset is worth
                 // 10 USD, the outgoing amount will be 1/10th of the source amount.
-                rates[0] / rates[1]
+                (rates[0], rates[1])
             } else {
                 error!(
                     "No exchange rates available for assets: {}, {}",
@@ -82,94 +82,109 @@ where
                 .build());
             };
 
-            // Apply spread
-            // TODO should this be applied differently for "local" or same-currency packets?
-            let rate = rate * (1.0 - self.spread);
-            let rate = if rate.is_finite() && rate.is_sign_positive() {
-                rate
-            } else {
-                warn!(
-                    "Exchange rate would have been {} based on rate and spread, using 0.0 instead",
-                    rate
-                );
-                0.0
-            };
-
             // Can we overflow here?
-            let outgoing_amount = (request.prepare.amount() as f64) * rate;
-            let outgoing_amount = outgoing_amount.normalize_scale(ConvertDetails {
-                from: request.from.asset_scale(),
-                to: request.to.asset_scale(),
-            });
+            let outgoing_amount = calculate_outgoing_amount(
+                request.prepare.amount(),
+                self.spread,
+                rates,
+                (request.from.asset_scale(), request.to.asset_scale()),
+            );
 
             match outgoing_amount {
                 Ok(outgoing_amount) => {
-                    // Valid outgoing amount must be representable by a non-zero u64 once converted from f64.
-                    // FIXME: f64 > u64::MAX as f64 isn't very reliable for comparisons for
-                    // extremely small values; this should ideally be handled better.
-                    if outgoing_amount != 0.0
-                        && (outgoing_amount > u64::MAX as f64 || outgoing_amount < 1.0)
-                    {
-                        let (code, message) = if outgoing_amount < 1.0 {
-                            // Amount was too small to be converted to a non-zero u64, i.e. smaller
-                            // than 1.0.
-                            (
-                                ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT,
-                                format!(
-                                    "Could not cast to f64, amount too small: {}",
-                                    outgoing_amount
-                                ),
-                            )
-                        } else {
-                            // Amount was too large to be converted to u64 from f64, i.e. greater
-                            // than u64::MAX as f64.
-                            (
-                                ErrorCode::F08_AMOUNT_TOO_LARGE,
-                                format!(
-                                    "Could not cast to f64, amount too large: {}",
-                                    outgoing_amount
-                                ),
-                            )
-                        };
-
-                        return Err(RejectBuilder {
-                            code,
-                            message: message.as_bytes(),
-                            triggered_by: Some(&ilp_address),
-                            data: &[],
-                        }
-                        .build());
-                    }
                     request.prepare.set_amount(outgoing_amount as u64);
                     trace!("Converted incoming amount of: {} {} (scale {}) from account {} to outgoing amount of: {} {} (scale {}) for account {}",
                         request.original_amount, request.from.asset_code(), request.from.asset_scale(), request.from.id(),
                         outgoing_amount, request.to.asset_code(), request.to.asset_scale(), request.to.id());
                 }
-                Err(_) => {
-                    // This branch gets executed when the `Convert` trait
-                    // returns an error. Happens due to float
-                    // multiplication overflow .
-                    // (float overflow in Rust produces +inf)
+                Err(outgoing_amount_error) => {
+                    let (code, message) = match outgoing_amount_error {
+                        // Amount was too small to be converted to a non-zero u64, i.e. smaller
+                        // than 1.0.
+                        OutgoingAmountError::LessThanOne(outgoing_amount) => (
+                            ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT,
+                            format!(
+                                "Could not cast to f64, amount too small: {}",
+                                outgoing_amount
+                            ),
+                        ),
+                        // Amount was too large to be converted to u64 from f64, i.e. greater
+                        // than u64::MAX as f64.
+                        OutgoingAmountError::ToU64ConvertOverflow(outgoing_amount) => (
+                            ErrorCode::F08_AMOUNT_TOO_LARGE,
+                            format!(
+                                "Could not cast to f64, amount too large: {}",
+                                outgoing_amount
+                            ),
+                        ),
+                        OutgoingAmountError::FloatOverflow => (
+                            ErrorCode::F08_AMOUNT_TOO_LARGE,
+                            format!(
+                                "Could not convert exchange rate from {}:{} to: {}:{}. Got incoming amount: {}",
+                                request.from.asset_code(),
+                                request.from.asset_scale(),
+                                request.to.asset_code(),
+                                request.to.asset_scale(),
+                                request.prepare.amount(),
+                            ),
+                        ),
+                    };
                     return Err(RejectBuilder {
-                        code: ErrorCode::F08_AMOUNT_TOO_LARGE,
-                        message: format!(
-                            "Could not convert exchange rate from {}:{} to: {}:{}. Got incoming amount: {}",
-                            request.from.asset_code(),
-                            request.from.asset_scale(),
-                            request.to.asset_code(),
-                            request.to.asset_scale(),
-                            request.prepare.amount(),
-                        )
-                        .as_bytes(),
+                        code,
+                        message: message.as_bytes(),
                         triggered_by: Some(&ilp_address),
                         data: &[],
                     }
                     .build());
                 }
-            }
+            };
         }
 
         self.next.send_request(request).await
+    }
+}
+
+#[derive(PartialEq, Debug)]
+enum OutgoingAmountError {
+    ToU64ConvertOverflow(f64),
+    FloatOverflow,
+    LessThanOne(f64),
+}
+
+fn calculate_outgoing_amount(
+    input: u64,
+    spread: f64,
+    (rate_src, rate_dest): (f64, f64),
+    (asset_scale_src, asset_scale_dest): (u8, u8),
+) -> Result<u64, OutgoingAmountError> {
+    let rate = rate_src / rate_dest;
+    // Apply spread
+    // TODO should this be applied differently for "local" or same-currency packets?
+    let rate = rate * (1.0 - spread);
+    let rate = if rate.is_finite() && rate.is_sign_positive() {
+        rate
+    } else {
+        warn!(
+            "Exchange rate would have been {} based on rate and spread, using 0.0 instead",
+            rate
+        );
+        0.0
+    };
+    // Can we overflow here?
+    let outgoing_amount = (input as f64) * rate;
+    match outgoing_amount.normalize_scale(ConvertDetails {
+        from: asset_scale_src,
+        to: asset_scale_dest,
+    }) {
+        // Happens when rate == 0 or spread >= 1
+        // In latter case the node takes everything to itself
+        Ok(x) if x == 0.0f64 => Ok(0),
+        Ok(x) if x < 1.0f64 => Err(OutgoingAmountError::LessThanOne(x)),
+        // FIXME: u64::MAX is higher than 2^53 or whatever is the max integer precision in f64
+        Ok(x) if x > u64::MAX as f64 => Err(OutgoingAmountError::ToU64ConvertOverflow(x)),
+        Ok(x) => Ok(x as u64),
+        // Error happens if float happens to be std::f64::INFINITY after conversion
+        Err(ConversionError) => Err(OutgoingAmountError::FloatOverflow),
     }
 }
 
