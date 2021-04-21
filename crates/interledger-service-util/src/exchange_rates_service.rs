@@ -264,6 +264,85 @@ mod tests {
         assert_eq!(ret.1[0].prepare.amount(), 0);
     }
 
+    // Errors most likely are caused by floating point errors
+    #[test]
+    #[ignore = "Floating-point error"]
+    fn calculates_with_small_input() {
+        for i in 1..100 {
+            assert_eq!(
+                calculate_outgoing_amount(i, 0.0, (0.00000025, 0.25), (0, 6)),
+                Ok(i)
+            );
+        }
+    }
+    // Errors most likely are caused by floating point errors
+    #[test]
+    fn calculates_with_big_input() {
+        assert_eq!(
+            calculate_outgoing_amount(159000000000, 0.0, (0.000009, 1.0), (3, 0)),
+            Ok(1431)
+        );
+    }
+
+    #[test]
+    fn calculates_with_positive_spread() {
+        assert_eq!(
+            calculate_outgoing_amount(50, 0.11, (1.0, 1.0), (0, 0)),
+            Ok(44)
+        );
+    }
+
+    #[test]
+    fn calculates_with_maximum_spread() {
+        assert_eq!(
+            calculate_outgoing_amount(50, 1.0, (1.0, 1.0), (0, 0)),
+            Ok(0)
+        );
+    }
+
+    #[test]
+    fn calculates_with_negative_spread() {
+        assert_eq!(
+            calculate_outgoing_amount(50, -0.11, (1.0, 1.0), (0, 0)),
+            Ok(55)
+        );
+    }
+
+    #[test]
+    fn calculates_with_u64_convert_overflow() {
+        assert_eq!(
+            calculate_outgoing_amount(u64::MAX, 0.0, (1.0, 1.0), (0, 1)),
+            Err(OutgoingAmountError::ToU64ConvertOverflow(
+                184467440737095500000.0
+            ))
+        );
+    }
+
+    #[test]
+    fn calculates_with_float_overflow() {
+        assert_eq!(
+            calculate_outgoing_amount(u64::MAX, 0.0, (f64::MAX, 1.0), (0, 255)),
+            Err(OutgoingAmountError::FloatOverflow)
+        );
+    }
+
+    #[test]
+    fn calculates_with_less_than_one() {
+        assert_eq!(
+            calculate_outgoing_amount(1, 0.0, (1.0, 2.0), (0, 0)),
+            Err(OutgoingAmountError::LessThanOne(0.5))
+        );
+    }
+
+    #[test]
+    #[ignore = "Scale difference overflow"]
+    fn calculates_with_high_asset_scale() {
+        assert_eq!(
+            calculate_outgoing_amount(10, 0.0, (1.0, 1.0), (i8::MAX as u8 + 1, i8::MAX as u8)),
+            Ok(1)
+        );
+    }
+
     // Instantiates an exchange rate service and returns the fulfill/reject
     // packet and the outgoing request after performing an asset conversion
     async fn exchange_rate(
