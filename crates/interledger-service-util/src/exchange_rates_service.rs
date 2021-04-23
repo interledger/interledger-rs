@@ -171,15 +171,19 @@ fn calculate_outgoing_amount(
         0.0
     };
     // Can we overflow here?
-    let outgoing_amount = (input as f64) * rate;
-    match outgoing_amount.normalize_scale(ConvertDetails {
-        from: asset_scale_src,
-        to: asset_scale_dest,
-    }) {
+    let outgoing_amount = 1.0f64
+        .normalize_scale(ConvertDetails {
+            from: asset_scale_src,
+            to: asset_scale_dest,
+        })
+        .map(|scale| rate * scale * (input as f64));
+
+    match outgoing_amount {
         // Happens when rate == 0 or spread >= 1
         // In latter case the node takes everything to itself
         Ok(x) if x == 0.0f64 => Ok(0),
         Ok(x) if x < 1.0f64 => Err(OutgoingAmountError::LessThanOne(x)),
+        Ok(x) if !x.is_finite() => Err(OutgoingAmountError::FloatOverflow),
         // FIXME: u64::MAX is higher than 2^53 or whatever is the max integer precision in f64
         Ok(x) if x > u64::MAX as f64 => Err(OutgoingAmountError::ToU64ConvertOverflow(x)),
         Ok(x) => Ok(x as u64),
@@ -266,7 +270,6 @@ mod tests {
 
     // Errors most likely are caused by floating point errors
     #[test]
-    #[ignore = "Floating-point error"]
     fn calculates_with_small_input() {
         for i in 1..100 {
             assert_eq!(
