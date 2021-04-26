@@ -313,6 +313,12 @@ impl TryFrom<BytesMut> for Fulfill {
         content.skip(FULFILLMENT_LEN)?;
         content.skip_var_octet_string()?;
 
+        if !content.is_empty() {
+            return Err(ParseError::InvalidPacket(
+                "Packet contains trailing bytes".into(),
+            ));
+        }
+
         Ok(Fulfill {
             buffer,
             content_offset,
@@ -625,57 +631,6 @@ impl From<Prepare> for BytesMut {
 }
 
 #[cfg(test)]
-mod fuzzed {
-    use super::{FulfillBuilder, Packet};
-    use bytes::BytesMut;
-    use std::convert::TryFrom;
-
-    // most of the fuzzing findings fixed in this crate come from fuzzings in the other crates
-
-    #[test]
-    #[ignore]
-    fn fuzzed_0_additional_trailing_bytes() {
-        // first case found by parsing, then building a new copy of the packet, and asserting it's
-        // equal to the parsed
-
-        #[rustfmt::skip]
-        let data: &[u8] = &[
-            // fulfill packet type
-            13,
-            // varlen octet string length (40)
-            // differs here, output has 33 which would make sense, 32 bytes for fulfillment and 1
-            // byte for 0-byte var octet string data.
-            40,
-            // fullfillment (32)
-            40, 136, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 164, 255, 14, 13, 136,
-            136, 136, 1, 136, 8, 0, 238, 238, 238, 0, 1, 0, 0, 0,
-            // data var octet string length (0)
-            0,
-            // extra trailer which should not be there
-            0, 93, 0, 14, 40, 40, 40,
-        ];
-
-        let fulfill = match Packet::try_from(BytesMut::from(data)).unwrap() {
-            Packet::Fulfill(f) => f,
-            other => unreachable!("this must be a fulfill: {:?}", other),
-        };
-
-        let other = FulfillBuilder {
-            fulfillment: <&[u8; 32]>::try_from(fulfill.fulfillment()).unwrap(),
-            data: fulfill.data(),
-        }
-        .build();
-
-        /*
-        let fulfill = BytesMut::from(fulfill);
-        let other = BytesMut::from(other);
-        */
-
-        assert_eq!(fulfill, other);
-    }
-}
-
-#[cfg(test)]
 mod test_packet_type {
     use super::*;
 
@@ -888,6 +843,33 @@ mod test_fulfill {
             buffer
         };
         assert!(Fulfill::try_from(with_data_in_junk).is_err());
+
+        // Fail to parse a packet with trailing bytes after the data field
+        // the trailing bytes included in the length of the octet string
+        #[rustfmt::skip]
+        let with_trailing_bytes: &[u8] = &[
+            // fulfill packet type
+            13,
+            // varlen octet string length (40)
+            // differs here, output has 33 which would make sense, 32 bytes for fulfillment and 1
+            // byte for 0-byte var octet string data.
+            40,
+            // fullfillment (32)
+            40, 136, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 164, 255, 14, 13, 136,
+            136, 136, 1, 136, 8, 0, 238, 238, 238, 0, 1, 0, 0, 0,
+            // data var octet string length (0)
+            0,
+            // extra trailer which should not be there
+            0, 93, 0, 14, 40, 40, 40,
+        ];
+
+        assert_eq!(
+            "Invalid Packet: Packet contains trailing bytes",
+            format!(
+                "{}",
+                Fulfill::try_from(BytesMut::from(with_trailing_bytes)).unwrap_err()
+            )
+        );
     }
 
     #[test]
