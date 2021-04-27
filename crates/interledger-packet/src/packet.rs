@@ -568,7 +568,21 @@ fn deserialize_envelope(
         before - peek.len()
     };
 
-    let content = reader.peek_var_octet_string()?;
+    let content = reader.read_var_octet_string()?;
+
+    // TODO: consider moving behind #[cfg(feature = "strict")] for dependent crate benefit
+    #[cfg(fuzzing)]
+    {
+        // Trailing bytes in the reader but not counted in length prefix
+        // is allowed for creating packet structs as not specified in specs
+        // but needs to caught for roundtripping in fuzzing
+        if !content.is_empty() {
+            return Err(ParseError::InvalidPacket(
+                "Packet contains unaccounted for trailing bytes".into(),
+            ));
+        }
+    }
+
     Ok((content_offset, content))
 }
 
@@ -843,9 +857,13 @@ mod test_fulfill {
             buffer
         };
         assert!(Fulfill::try_from(with_data_in_junk).is_err());
+    }
 
-        // Fail to parse a packet with trailing bytes after the data field
-        // the trailing bytes included in the length of the octet string
+    #[test]
+    fn reject_try_from_data_with_trailing_bytes() {
+        // It should fail to parse a erroneous packet with trailing bytes after the data field.
+        // This differ from the test_try_from test in that
+        // the trailing bytes are counted in the total length (varlen prefix) of the data
         #[rustfmt::skip]
         let with_trailing_bytes: &[u8] = &[
             // fulfill packet type
@@ -857,9 +875,9 @@ mod test_fulfill {
             // fullfillment (32)
             40, 136, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 164, 255, 14, 13, 136,
             136, 136, 1, 136, 8, 0, 238, 238, 238, 0, 1, 0, 0, 0,
-            // data var octet string length (0)
+            // data var octet string length (1)
             0,
-            // extra trailer which should not be there
+            // extra trailer which should not be there (7)
             0, 93, 0, 14, 40, 40, 40,
         ];
 
