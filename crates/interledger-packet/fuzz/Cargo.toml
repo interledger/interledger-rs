@@ -15,6 +15,7 @@ bytes = "0.5"
 
 [dependencies.interledger-packet]
 path = ".."
+features = ["strict"]
 
 # Prevent this from interfering with workspaces
 [workspace]
