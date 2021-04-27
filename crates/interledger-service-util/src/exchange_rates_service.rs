@@ -338,7 +338,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Scale difference overflow"]
     fn calculates_with_high_asset_scale() {
         assert_eq!(
             calculate_outgoing_amount(10, 0.0, (1.0, 1.0), (i8::MAX as u8 + 1, i8::MAX as u8)),
