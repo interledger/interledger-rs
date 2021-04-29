@@ -402,11 +402,13 @@ mod tests {
             10.0
         );
         // 299 units with base 3 is 29.9 with base 2
-        assert_eq!(
-            299f64
+        assert!(
+            (299f64
                 .normalize_scale(ConvertDetails { from: 3, to: 2 })
-                .unwrap(),
-            29.9
+                .unwrap()
+                - 29.9)
+                .abs()
+                < 0.1f64
         );
 
         assert_eq!(
