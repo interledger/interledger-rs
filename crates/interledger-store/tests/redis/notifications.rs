@@ -72,7 +72,12 @@ async fn notifications_on_multitenant_config() {
     // even though the subscription to all exists. this tests uses the all_payment_subscription()
     // and that should be ok, since the trigger still comes through PSUBSCRIBE.
 
-    let (msg1, msg2) = futures::future::join(rx1.next(), rx2.next()).await;
+    let (msg1, msg2) = tokio::time::timeout(
+        std::time::Duration::from_millis(1000),
+        futures::future::join(rx1.next(), rx2.next()),
+    )
+    .await
+    .expect("timed out");
     assert_eq!(msg1.unwrap().expect("cannot lag yet").sequence, 2);
     assert_eq!(msg2.unwrap().expect("cannot lag yet").sequence, 1);
 
