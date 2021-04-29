@@ -970,7 +970,7 @@ mod test_reject {
         #[cfg(not(feature = "strict"))]
         {
             let with_junk_data = with_junk_data.unwrap();
-            assert_eq!(with_junk_data.unwrap().code(), REJECT_BUILDER.code);
+            assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
             assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
             assert_eq!(
                 with_junk_data.triggered_by().as_ref(),
