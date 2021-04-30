@@ -313,6 +313,12 @@ impl TryFrom<BytesMut> for Fulfill {
         content.skip(FULFILLMENT_LEN)?;
         content.skip_var_octet_string()?;
 
+        if !content.is_empty() {
+            return Err(ParseError::InvalidPacket(
+                "Packet contains trailing bytes".into(),
+            ));
+        }
+
         Ok(Fulfill {
             buffer,
             content_offset,
@@ -562,7 +568,20 @@ fn deserialize_envelope(
         before - peek.len()
     };
 
-    let content = reader.peek_var_octet_string()?;
+    let content = reader.read_var_octet_string()?;
+
+    #[cfg(feature = "strict")]
+    {
+        // Trailing bytes in the reader but not counted in length prefix
+        // is allowed for creating packet structs as it is not prohibited
+        // in specs but required to return error for roundtripping in fuzzing
+        if !reader.is_empty() {
+            return Err(ParseError::InvalidPacket(
+                "Packet contains unaccounted for trailing bytes".into(),
+            ));
+        }
+    }
+
     Ok((content_offset, content))
 }
 
@@ -621,57 +640,6 @@ impl MaxPacketAmountDetails {
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
-    }
-}
-
-#[cfg(test)]
-mod fuzzed {
-    use super::{FulfillBuilder, Packet};
-    use bytes::BytesMut;
-    use std::convert::TryFrom;
-
-    // most of the fuzzing findings fixed in this crate come from fuzzings in the other crates
-
-    #[test]
-    #[ignore]
-    fn fuzzed_0_additional_trailing_bytes() {
-        // first case found by parsing, then building a new copy of the packet, and asserting it's
-        // equal to the parsed
-
-        #[rustfmt::skip]
-        let data: &[u8] = &[
-            // fulfill packet type
-            13,
-            // varlen octet string length (40)
-            // differs here, output has 33 which would make sense, 32 bytes for fulfillment and 1
-            // byte for 0-byte var octet string data.
-            40,
-            // fullfillment (32)
-            40, 136, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 164, 255, 14, 13, 136,
-            136, 136, 1, 136, 8, 0, 238, 238, 238, 0, 1, 0, 0, 0,
-            // data var octet string length (0)
-            0,
-            // extra trailer which should not be there
-            0, 93, 0, 14, 40, 40, 40,
-        ];
-
-        let fulfill = match Packet::try_from(BytesMut::from(data)).unwrap() {
-            Packet::Fulfill(f) => f,
-            other => unreachable!("this must be a fulfill: {:?}", other),
-        };
-
-        let other = FulfillBuilder {
-            fulfillment: <&[u8; 32]>::try_from(fulfill.fulfillment()).unwrap(),
-            data: fulfill.data(),
-        }
-        .build();
-
-        /*
-        let fulfill = BytesMut::from(fulfill);
-        let other = BytesMut::from(other);
-        */
-
-        assert_eq!(fulfill, other);
     }
 }
 
@@ -782,16 +750,30 @@ mod test_prepare {
             let mut buffer = BytesMut::from(PREPARE_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
-        })
-        .unwrap();
-        assert_eq!(with_junk_data.amount(), PREPARE.amount());
-        assert_eq!(with_junk_data.expires_at(), *fixtures::EXPIRES_AT);
-        assert_eq!(
-            with_junk_data.execution_condition(),
-            fixtures::EXECUTION_CONDITION
-        );
-        assert_eq!(with_junk_data.destination(), PREPARE.destination());
-        assert_eq!(with_junk_data.data(), fixtures::DATA);
+        });
+
+        // feature = "strict" is used when fuzzing and is tested here to ensure
+        // error is returned instead of roundtripping when junk data is added
+        #[cfg(feature = "strict")]
+        {
+            assert_eq!(
+                "Invalid Packet: Packet contains unaccounted for trailing bytes",
+                format!("{}", with_junk_data.unwrap_err())
+            );
+        }
+
+        #[cfg(not(feature = "strict"))]
+        {
+            let with_junk_data = with_junk_data.unwrap();
+            assert_eq!(with_junk_data.amount(), PREPARE.amount());
+            assert_eq!(with_junk_data.expires_at(), *fixtures::EXPIRES_AT);
+            assert_eq!(
+                with_junk_data.execution_condition(),
+                fixtures::EXECUTION_CONDITION
+            );
+            assert_eq!(with_junk_data.destination(), PREPARE.destination());
+            assert_eq!(with_junk_data.data(), fixtures::DATA);
+        }
     }
 
     #[test]
@@ -872,10 +854,24 @@ mod test_fulfill {
             let mut buffer = BytesMut::from(FULFILL_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
-        })
-        .unwrap();
-        assert_eq!(with_junk_data.fulfillment(), fixtures::FULFILLMENT);
-        assert_eq!(with_junk_data.data(), fixtures::DATA);
+        });
+
+        // feature = "strict" is used when fuzzing and is tested here to ensure
+        // error is returned instead of roundtripping when junk data is added
+        #[cfg(feature = "strict")]
+        {
+            assert_eq!(
+                "Invalid Packet: Packet contains unaccounted for trailing bytes",
+                format!("{}", with_junk_data.unwrap_err())
+            );
+        }
+
+        #[cfg(not(feature = "strict"))]
+        {
+            let with_junk_data = with_junk_data.unwrap();
+            assert_eq!(with_junk_data.fulfillment(), fixtures::FULFILLMENT);
+            assert_eq!(with_junk_data.data(), fixtures::DATA);
+        }
 
         // Fail to parse a packet missing a data field, even if a VarStr is in
         // the junk data.
@@ -888,6 +884,37 @@ mod test_fulfill {
             buffer
         };
         assert!(Fulfill::try_from(with_data_in_junk).is_err());
+    }
+
+    #[test]
+    fn reject_try_from_data_with_trailing_bytes() {
+        // It should fail to parse a erroneous packet with trailing bytes after the data field.
+        // This differ from the test_try_from test in that
+        // the trailing bytes are counted in the total length (varlen prefix) of the data
+        #[rustfmt::skip]
+        let with_trailing_bytes: &[u8] = &[
+            // fulfill packet type
+            13,
+            // varlen octet string length (40)
+            // differs here, output has 33 which would make sense, 32 bytes for fulfillment and 1
+            // byte for 0-byte var octet string data.
+            40,
+            // fullfillment (32)
+            40, 136, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 164, 255, 14, 13, 136,
+            136, 136, 1, 136, 8, 0, 238, 238, 238, 0, 1, 0, 0, 0,
+            // data var octet string length (1)
+            0,
+            // extra trailer which should not be there (7)
+            0, 93, 0, 14, 40, 40, 40,
+        ];
+
+        assert_eq!(
+            "Invalid Packet: Packet contains trailing bytes",
+            format!(
+                "{}",
+                Fulfill::try_from(BytesMut::from(with_trailing_bytes)).unwrap_err()
+            )
+        );
     }
 
     #[test]
@@ -928,15 +955,29 @@ mod test_reject {
             let mut buffer = BytesMut::from(REJECT_BYTES);
             buffer.extend_from_slice(&[0x11, 0x12, 0x13]);
             buffer
-        })
-        .unwrap();
-        assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
-        assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
-        assert_eq!(
-            with_junk_data.triggered_by().as_ref(),
-            REJECT_BUILDER.triggered_by
-        );
-        assert_eq!(with_junk_data.data(), fixtures::DATA);
+        });
+
+        // feature = "strict" is used when fuzzing and is tested here to ensure
+        // error is returned instead of roundtripping when junk data is added
+        #[cfg(feature = "strict")]
+        {
+            assert_eq!(
+                "Invalid Packet: Packet contains unaccounted for trailing bytes",
+                format!("{}", with_junk_data.unwrap_err())
+            );
+        }
+
+        #[cfg(not(feature = "strict"))]
+        {
+            let with_junk_data = with_junk_data.unwrap();
+            assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
+            assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
+            assert_eq!(
+                with_junk_data.triggered_by().as_ref(),
+                REJECT_BUILDER.triggered_by
+            );
+            assert_eq!(with_junk_data.data(), fixtures::DATA);
+        }
     }
 
     #[test]
