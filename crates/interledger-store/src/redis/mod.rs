@@ -291,10 +291,15 @@ impl RedisStoreBuilder {
         let subscriptions_clone = store.subscriptions.clone();
         let payment_publisher = store.payment_publisher.clone();
         let db_prefix = prefixed_key(&self.db_prefix, STREAM_NOTIFICATIONS_PREFIX).into_owned();
+
+        // add a oneshot to provide some synchronization on a busy continious integration server
+        // between this "thread of execution" and the launched listener.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
         std::thread::spawn(move || {
-            #[allow(clippy::cognitive_complexity)]
             // our notifications will be PUBLISH'd to topics under this prefix
             let prefix = format!("{}*", &db_prefix);
+            tx.send(()).expect("exiting as parent has exited");
             let sub_status =
                 sub_connection.psubscribe::<_, _, Vec<String>>(&[prefix], move |msg| {
                     let channel_name = msg.get_channel_name();
@@ -339,6 +344,9 @@ impl RedisStoreBuilder {
                 Ok(_) => debug!("Successfully subscribed to Redis pubsub"),
             }
         });
+
+        // this will at least wait until the thread has started and done a thing.
+        rx.await.expect("psubscribe thread failed to launch");
 
         Ok(store)
     }
