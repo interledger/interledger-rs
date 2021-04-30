@@ -309,7 +309,14 @@ impl<'a> Iterator for FrameIterator<'a> {
             // TODO don't ignore errors if the packet is just invalid
             match self.try_read_next_frame() {
                 Ok(frame) => return Some(frame),
-                Err(err) => warn!("Error reading STREAM frame: {:?}", err),
+                Err(err) => {
+                    warn!("Error reading STREAM frame: {:?}", err);
+
+                    #[cfg(feature = "strict")]
+                    {
+                        return None;
+                    }
+                }
             }
         }
 
@@ -868,23 +875,28 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
 #[cfg(test)]
 mod fuzzing {
     use super::{StreamPacket, StreamPacketBuilder};
+    use bytes::{Buf, BytesMut};
 
     #[test]
-    #[ignore]
-    fn fuzzed_0_extra_trailer_bytes() {
-        // junk trailer mentioned in RFC might be applicable here, see
-        // fuzzed_1_unknown_frames_dont_roundtrip
-        roundtrip(&[
-            1, 14, 3, 19, 5, 3, 1, 14, 3, 0, 0, 0, 0, 14, 3, 0, 14, 5, 17,
-        ]);
+    #[cfg(feature = "strict")]
+    fn fuzzed_0_varint_length_prefix_with_leading_zeros_should_error() {
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 3, 19, 5, 3, 1, 14,
+			// len + num frame (which is zero)
+            3, 0, 0, 0,
+			// junk since num frame is zero
+            1, 14, 3, 0, 14, 5, 17,
+        ];
 
-        // roundtripped version looks like:
-        //
-        // [1, 14, 3, 19, 5, 3, 1, 14, 1, 0]
-        //                             ^
-        //                              differs, was 3
-        //
-        // which is almost &input[0..10] except
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "I/O Error: variable length prefix with leading zeros",
+            format!("{}", pkt.unwrap_err())
+        );
     }
 
     #[test]
@@ -906,9 +918,43 @@ mod fuzzing {
         // which is &input[0..12]
     }
 
-    fn roundtrip(input: &[u8]) {
-        use bytes::{Buf, BytesMut};
+    #[test]
+    #[cfg(feature = "strict")]
+    fn fuzzed_2_frame_data_with_parse_error_should_error() {
+        // TODO: The input for this test is from a test (fuzzed_1_unknown_frames_dont_roundtrip)
+        // identifying a roundtripping problem when Unknown frames are in the packet data.
+        // That problem is still present, but data needs to be updated.
 
+        #[rustfmt::skip]
+		let input: &[u8] = &[
+			// Version
+            1,
+			// Packet type
+			14,
+			// len + Sequence
+			3, 5, 0, 0,
+			// len + Prepare amount
+			3, 5, 14, 9,
+			// len + num frame
+			1, 3,
+			// frame type - ConnectionClose
+			1,
+			// len + frame content
+			// This content does not parse successfully as ConnectionCloseFrame
+			3, 0, 4, 20,
+			// rest of frames and junk data
+			3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            format!("{}", pkt.unwrap_err())
+        );
+    }
+
+    fn roundtrip(input: &[u8]) {
         // this started off as almost copy  of crate::fuzz_decrypted_stream_packet but should be
         // extended if necessary
         let b = BytesMut::from(input);
