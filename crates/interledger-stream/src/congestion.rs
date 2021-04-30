@@ -1,11 +1,7 @@
-#[cfg(feature = "metrics_csv")]
-use chrono::Utc;
 use interledger_packet::{ErrorCode, MaxPacketAmountDetails, Reject};
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::cmp::{max, min};
-#[cfg(feature = "metrics_csv")]
-use std::io;
 use tracing::{debug, warn};
 
 /// A basic congestion controller that implements an
@@ -27,9 +23,6 @@ pub struct CongestionController {
     amount_in_flight: u64,
     /// The maximum allowed amount to be in flight
     max_in_flight: u64,
-    /// Writer object to write our metrics to a csv
-    #[cfg(feature = "metrics_csv")]
-    csv_writer: csv::Writer<io::Stdout>,
 }
 
 #[derive(PartialEq)]
@@ -41,13 +34,6 @@ enum CongestionState {
 impl CongestionController {
     /// Constructs a new congestion controller
     pub fn new(start_amount: u64, increase_amount: u64, decrease_factor: f64) -> Self {
-        #[cfg(feature = "metrics_csv")]
-        let mut csv_writer = csv::Writer::from_writer(io::stdout());
-        #[cfg(feature = "metrics_csv")]
-        csv_writer
-            .write_record(&["time", "max_amount_in_flight", "amount_fulfilled"])
-            .unwrap();
-
         CongestionController {
             state: CongestionState::SlowStart,
             increase_amount,
@@ -55,8 +41,6 @@ impl CongestionController {
             max_packet_amount: None,
             amount_in_flight: 0,
             max_in_flight: start_amount,
-            #[cfg(feature = "metrics_csv")]
-            csv_writer,
         }
     }
 
@@ -113,9 +97,6 @@ impl CongestionController {
                 prepare_amount, self.max_in_flight
             );
         }
-
-        #[cfg(feature = "metrics_csv")]
-        self.log_stats(prepare_amount);
     }
 
     /// Decrements the amount in flight by the provided amount
@@ -131,9 +112,6 @@ impl CongestionController {
                     1,
                 );
                 debug!("Rejected packet with T04 error. Amount in flight was: {}, decreasing max in flight to: {}", self.amount_in_flight + prepare_amount, self.max_in_flight);
-
-                #[cfg(feature = "metrics_csv")]
-                self.log_stats(0);
             }
             ErrorCode::F08_AMOUNT_TOO_LARGE => {
                 if let Ok(details) = MaxPacketAmountDetails::from_bytes(reject.data()) {
@@ -162,18 +140,6 @@ impl CongestionController {
     #[cfg(test)]
     fn set_max_packet_amount(&mut self, max_packet_amount: u64) {
         self.max_packet_amount = Some(max_packet_amount)
-    }
-
-    #[cfg(feature = "metrics_csv")]
-    fn log_stats(&mut self, amount_sent: u64) {
-        self.csv_writer
-            .write_record(&[
-                format!("{}", Utc::now().timestamp_millis()),
-                format!("{}", self.max_in_flight),
-                format!("{}", amount_sent),
-            ])
-            .unwrap();
-        self.csv_writer.flush().unwrap();
     }
 }
 
@@ -213,8 +179,6 @@ mod tests {
                 max_packet_amount: None,
                 amount_in_flight: 0,
                 max_in_flight: u64::max_value() - 1,
-                #[cfg(feature = "metrics_csv")]
-                csv_writer: csv::Writer::from_writer(io::stdout()),
             };
 
             let amount = controller.get_amount_left_in_window();
@@ -362,8 +326,6 @@ mod tests {
                 max_packet_amount: None,
                 amount_in_flight: 0,
                 max_in_flight: u64::max_value() - 1,
-                #[cfg(feature = "metrics_csv")]
-                csv_writer: csv::Writer::from_writer(io::stdout()),
             };
 
             let amount = controller.get_amount_left_in_window();

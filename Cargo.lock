@@ -1298,7 +1298,6 @@ dependencies = [
 name = "interledger-rates"
 version = "1.0.0"
 dependencies = [
- "async-trait",
  "futures 0.3.13",
  "interledger-errors",
  "once_cell",
@@ -1472,7 +1471,6 @@ dependencies = [
  "byteorder",
  "bytes 0.5.6",
  "chrono",
- "csv",
  "futures 0.3.13",
  "hex-literal",
  "interledger-errors",
