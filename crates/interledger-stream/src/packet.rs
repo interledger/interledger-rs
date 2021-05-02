@@ -155,7 +155,7 @@ impl StreamPacket {
     /// # Errors
     /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
     /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
-    fn from_bytes_unencrypted(buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
+    fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
         let version = reader.read_u8()?;
@@ -173,43 +173,37 @@ impl StreamPacket {
         let num_frames = reader.read_var_uint()?;
         let frames_offset = buffer_unencrypted.len() - reader.len();
 
-        #[cfg(feature = "strict")]
-        {
-            let mut frame_iter = FrameIterator {
-                buffer: &buffer_unencrypted[frames_offset..],
-            };
+        let mut reader = &buffer_unencrypted[frames_offset..];
+        for _ in 0..num_frames {
+            // First byte is the frame type
+            reader.skip(1)?;
+            reader.skip_var_octet_string()?;
+        }
 
+        let junk_data_len = reader.len();
+
+        if junk_data_len > 0 {
+            let _ = buffer_unencrypted.split_off(buffer_unencrypted.len() - junk_data_len);
+        }
+
+        if num_frames
+            == (FrameIterator {
+                buffer: &buffer_unencrypted[frames_offset..],
+            })
+            .count() as u64
+        {
+            // Try reading through all the frames to make sure they can be parsed correctly
             Ok(StreamPacket {
-                buffer_unencrypted: frame_iter
-                    .check_num_frames_and_remove_junk(num_frames, buffer_unencrypted.clone())?,
+                buffer_unencrypted,
                 sequence,
                 ilp_packet_type,
                 prepare_amount,
                 frames_offset,
             })
-        }
-
-        #[cfg(not(feature = "strict"))]
-        {
-            if num_frames
-                == (FrameIterator {
-                    buffer: &buffer_unencrypted[frames_offset..],
-                })
-                .count() as u64
-            {
-                // Try reading through all the frames to make sure they can be parsed correctly
-                Ok(StreamPacket {
-                    buffer_unencrypted,
-                    sequence,
-                    ilp_packet_type,
-                    prepare_amount,
-                    frames_offset,
-                })
-            } else {
-                Err(ParseError::InvalidPacket(
-                    "Incorrect number of frames or unable to parse all frames".to_string(),
-                ))
-            }
+        } else {
+            Err(ParseError::InvalidPacket(
+                "Incorrect number of frames or unable to parse all frames".to_string(),
+            ))
         }
     }
 
@@ -318,49 +312,21 @@ impl<'a> FrameIterator<'a> {
 
         Ok(frame)
     }
-
-    /// Returns length of the junk data
-    #[cfg(feature = "strict")]
-    fn check_num_frames_and_remove_junk(
-        &mut self,
-        num_frames: u64,
-        mut buffer_unencrypted: BytesMut,
-    ) -> Result<BytesMut, ParseError> {
-        for _ in 0..num_frames {
-            if self.next().is_none() {
-                return Err(ParseError::InvalidPacket(
-                    "Incorrect number of frames or unable to parse all frames".to_string(),
-                ));
-            }
-        }
-
-        if !self.buffer.is_empty() {
-            let _ = buffer_unencrypted.split_off(self.buffer.len() + 1);
-        }
-
-        Ok(buffer_unencrypted)
-    }
 }
 
 impl<'a> Iterator for FrameIterator<'a> {
     type Item = Frame<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.buffer.is_empty() {
-            // TODO don't ignore errors if the packet is just invalid
+        if !self.buffer.is_empty() {
             match self.try_read_next_frame() {
                 Ok(frame) => return Some(frame),
                 Err(err) => {
                     warn!("Error reading STREAM frame: {:?}", err);
-
-                    #[cfg(feature = "strict")]
-                    {
-                        return None;
-                    }
+                    return None;
                 }
             }
         }
-
         None
     }
 }
@@ -925,9 +891,9 @@ mod fuzzing {
         let input: &[u8] = &[
             // Version, packet type, sequence and prepare amount
             1, 14, 3, 19, 5, 3, 1, 14,
-			// len + num frame (which is zero)
+            // len + num frame (which is zero)
             3, 0, 0, 0,
-			// junk since num frame is zero
+            // junk since num frame is zero
             1, 14, 3, 0, 14, 5, 17,
         ];
 
@@ -960,7 +926,6 @@ mod fuzzing {
     }
 
     #[test]
-    #[cfg(feature = "strict")]
     fn fuzzed_2_frame_data_with_parse_error_should_error() {
         // TODO: The input for this test is from a test
         // (fuzzed_1_unknown_frames_dont_roundtrip)
@@ -968,24 +933,24 @@ mod fuzzing {
         // That problem is still present but needs new set of data
 
         #[rustfmt::skip]
-		let input: &[u8] = &[
-			// Version
+        let input: &[u8] = &[
+            // Version
             1,
-			// Packet type
-			14,
-			// len + Sequence
-			3, 5, 0, 0,
-			// len + Prepare amount
-			3, 5, 14, 9,
-			// len + num frame
-			1, 3,
-			// frame type - ConnectionClose
-			1,
-			// len + frame content
-			// This content does not parse successfully as ConnectionCloseFrame
-			3, 0, 4, 20,
-			// rest of frames and junk data
-			3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // Packet type
+            14,
+            // len + Sequence
+            3, 5, 0, 0,
+            // len + Prepare amount
+            3, 5, 14, 9,
+            // len + num frame
+            1, 3,
+            // frame type - ConnectionClose
+            1,
+            // len + frame content
+            // This content does not parse successfully as ConnectionCloseFrame
+            3, 0, 4, 20,
+            // rest of frames and junk data
+            3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let b = BytesMut::from(input);
         let pkt = StreamPacket::from_decrypted(b);
@@ -997,7 +962,6 @@ mod fuzzing {
     }
 
     #[test]
-    #[cfg(feature = "strict")]
     fn fuzzed_3_extra_trailer_bytes() {
         // From the [RFC]'s it sounds like the at least trailer junk should be kept around,
         // but only under the condition that they are zero-bytes and MUST be ignored in parsing.
@@ -1005,13 +969,13 @@ mod fuzzing {
         //
         // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
         #[rustfmt::skip]
-		let input: &[u8] = &[
+        let input: &[u8] = &[
             // Version, packet type, sequence and prepare amount
-			1, 14, 1, 0, 1, 0,
-			// num frames
-			1, 0,
-			// junk data since zero frames
-			0, 31, 31, 31, 0, 96, 17];
+            1, 14, 1, 0, 1, 0,
+            // num frames
+            1, 0,
+            // junk data since zero frames
+            0, 31, 31, 31, 0, 96, 17];
 
         roundtrip(input);
     }
