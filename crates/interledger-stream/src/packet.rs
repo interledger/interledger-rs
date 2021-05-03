@@ -183,6 +183,8 @@ impl StreamPacket {
         let junk_data_len = reader.len();
 
         if junk_data_len > 0 {
+            // trailing bytes are supported for future compatibility, see
+            // https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
             let _ = buffer_unencrypted.split_off(buffer_unencrypted.len() - junk_data_len);
         }
 
