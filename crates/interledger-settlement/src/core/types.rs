@@ -236,18 +236,13 @@ impl Convert for f64 {
     // Not overflow safe. Would require using a package for Big floating point
     // numbers such as BigDecimal
     fn normalize_scale(&self, details: ConvertDetails) -> Result<Self::Item, ConversionError> {
-        let scale_diff = (details.from as i8 - details.to as i8).abs() as u8;
-        let scale = 10f64.powi(scale_diff.into());
-        let res = if details.to >= details.from {
-            self * scale
-        } else {
-            self / scale
-        };
+        let scale_diff = details.to as i32 - details.from as i32;
+        let scale = 10f64.powi(scale_diff);
+        let res = self * scale;
         if res == std::f64::INFINITY {
-            Err(ConversionError)
-        } else {
-            Ok(res)
+            return Err(ConversionError);
         }
+        Ok(res)
     }
 }
 
@@ -407,11 +402,13 @@ mod tests {
             10.0
         );
         // 299 units with base 3 is 29.9 with base 2
-        assert_eq!(
-            299f64
+        assert!(
+            (299f64
                 .normalize_scale(ConvertDetails { from: 3, to: 2 })
-                .unwrap(),
-            29.9
+                .unwrap()
+                - 29.9)
+                .abs()
+                < 0.1f64
         );
 
         assert_eq!(
