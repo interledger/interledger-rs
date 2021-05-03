@@ -888,24 +888,22 @@ mod fuzzing {
 
     #[test]
     #[cfg(feature = "strict")]
-    fn fuzzed_0_varint_length_prefix_with_leading_zeros_should_error() {
+    fn fuzzed_0_extra_trailer_bytes() {
+        // From the [RFC]'s it sounds like the at least trailer junk should be kept around,
+        // but only under the condition that they are zero-bytes and MUST be ignored in parsing.
+        // For Fuzzing, at least, we remove the extra bytes for roundtripping support.
+        //
+        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
         #[rustfmt::skip]
         let input: &[u8] = &[
             // Version, packet type, sequence and prepare amount
-            1, 14, 3, 19, 5, 3, 1, 14,
-            // len + num frame (which is zero)
-            3, 0, 0, 0,
-            // junk since num frame is zero
-            1, 14, 3, 0, 14, 5, 17,
-        ];
+            1, 14, 1, 0, 1, 0,
+            // num frames
+            1, 0,
+            // junk data since zero frames
+            0, 31, 31, 31, 0, 96, 17];
 
-        let b = BytesMut::from(input);
-        let pkt = StreamPacket::from_decrypted(b);
-
-        assert_eq!(
-            "I/O Error: variable length prefix with leading zeros",
-            format!("{}", pkt.unwrap_err())
-        );
+        roundtrip(input);
     }
 
     #[test]
@@ -964,21 +962,22 @@ mod fuzzing {
     }
 
     #[test]
-    fn fuzzed_3_extra_trailer_bytes() {
-        // From the [RFC]'s it sounds like the at least trailer junk should be kept around,
-        // but only under the condition that they are zero-bytes and MUST be ignored in parsing.
-        // For Fuzzing, at least, we remove the extra bytes for roundtripping support.
-        //
-        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+    #[ignore]
+    fn fuzzed_3() {
         #[rustfmt::skip]
         let input: &[u8] = &[
             // Version, packet type, sequence and prepare amount
-            1, 14, 1, 0, 1, 0,
+            1, 14, 1, 14, 1, 14,
             // num frames
-            1, 0,
-            // junk data since zero frames
-            0, 31, 31, 31, 0, 96, 17];
+            1, 1,
+            // frame data (frame type + content)
+            1, 14, 1, 0, 1, 1, 4, 0, 255, 255, 255, 255, 255, 128, 255, 128
+            ];
 
+        // roundtrip result
+        // [1, 14, 1, 14, 1, 14, 1, 1, 1, 2, 1, 0]
+        //                                ^ ----^
+        //                                Suspect due to content prefix length
         roundtrip(input);
     }
 
