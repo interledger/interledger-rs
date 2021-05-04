@@ -671,49 +671,6 @@ mod fuzzed {
             "Invalid Packet: Reject.ErrorCode was not IA5String"
         );
     }
-
-    #[allow(unused)]
-    fn roundtrip(bytes: &[u8]) {
-        use super::{FulfillBuilder, Packet::*, PrepareBuilder, RejectBuilder};
-        use std::convert::TryInto;
-        match Packet::try_from(BytesMut::from(bytes)).unwrap() {
-            Prepare(p) => {
-                let other = PrepareBuilder {
-                    amount: p.amount(),
-                    expires_at: p.expires_at(),
-                    destination: p.destination(),
-                    execution_condition: p
-                        .execution_condition()
-                        .try_into()
-                        .expect("wrong length slice"),
-                    data: p.data(),
-                }
-                .build();
-
-                assert_eq!(p, other);
-            }
-            Fulfill(f) => {
-                let other = FulfillBuilder {
-                    fulfillment: f.fulfillment().try_into().expect("wrong length slice"),
-                    data: f.data(),
-                }
-                .build();
-
-                assert_eq!(f, other);
-            }
-            Reject(r) => {
-                let other = RejectBuilder {
-                    code: r.code(),
-                    message: r.message(),
-                    triggered_by: r.triggered_by().as_ref(),
-                    data: r.data(),
-                }
-                .build();
-
-                assert_eq!(r, other);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
