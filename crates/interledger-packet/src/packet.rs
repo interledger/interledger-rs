@@ -160,6 +160,12 @@ impl TryFrom<BytesMut> for Prepare {
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
 
+        if !content.is_empty() {
+            return Err(ParseError::InvalidPacket(
+                "Packet contains trailing bytes".into(),
+            ));
+        }
+
         Ok(Prepare {
             buffer,
             content_offset,
@@ -433,6 +439,12 @@ impl TryFrom<BytesMut> for Reject {
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
 
+        if !content.is_empty() {
+            return Err(ParseError::InvalidPacket(
+                "Packet contains trailing bytes".into(),
+            ));
+        }
+
         Ok(Reject {
             buffer,
             code,
@@ -692,7 +704,12 @@ mod fuzzed {
             42,
         ];
 
-        crate::lenient_packet_roundtrips(&orig[..]).unwrap();
+        let e = crate::lenient_packet_roundtrips(&orig[..]).unwrap_err();
+
+        assert_eq!(
+            &e.to_string(),
+            "Invalid Packet: Packet contains trailing bytes"
+        );
     }
 }
 

@@ -28,7 +28,7 @@ pub fn lenient_packet_roundtrips(data: &[u8]) -> Result<(), ParseError> {
     let pkt = Packet::try_from(BytesMut::from(data))?;
 
     // try to create a corresponding builder and a new set of bytes
-    match pkt {
+    let other = match pkt {
         Packet::Prepare(p) => {
             let other = PrepareBuilder {
                 amount: p.amount(),
@@ -47,23 +47,7 @@ pub fn lenient_packet_roundtrips(data: &[u8]) -> Result<(), ParseError> {
                 return Ok(());
             }
 
-            // doublecheck to see if this was because fuzzer added bytes in the trailer of the
-            // initial varlen field.
-            //
-            // bytes outside of the outermost varlen field are not accepted per specs.
-
-            assert_eq!(p.amount(), other.amount());
-            assert_eq!(p.expires_at(), other.expires_at());
-            assert_eq!(p.destination(), other.destination());
-            assert_eq!(p.execution_condition(), other.execution_condition());
-            assert_eq!(p.data(), other.data());
-
-            let p = BytesMut::from(p);
-            let other = BytesMut::from(other);
-
-            // since the components are equal, make sure that the only way the difference can
-            // be is with *extra* bytes
-            assert!(p.len() > other.len());
+            BytesMut::from(other)
         }
         Packet::Fulfill(f) => {
             let other = FulfillBuilder {
@@ -76,12 +60,7 @@ pub fn lenient_packet_roundtrips(data: &[u8]) -> Result<(), ParseError> {
                 return Ok(());
             }
 
-            assert_eq!(f.fulfillment(), other.fulfillment());
-            assert_eq!(f.data(), other.data());
-
-            let f = BytesMut::from(f);
-            let other = BytesMut::from(other);
-            assert!(f.len() > other.len());
+            BytesMut::from(other)
         }
         Packet::Reject(r) => {
             let other = RejectBuilder {
@@ -96,16 +75,11 @@ pub fn lenient_packet_roundtrips(data: &[u8]) -> Result<(), ParseError> {
                 return Ok(());
             }
 
-            assert_eq!(r.code(), other.code());
-            assert_eq!(r.message(), other.message());
-            assert_eq!(r.triggered_by(), other.triggered_by());
-            assert_eq!(r.data(), other.data());
-
-            let r = BytesMut::from(r);
-            let other = BytesMut::from(other);
-            assert!(r.len() > other.len());
+            BytesMut::from(other)
         }
-    }
+    };
+
+    assert_eq!(data, other);
 
     Ok(())
 }
