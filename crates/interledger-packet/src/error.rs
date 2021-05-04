@@ -13,9 +13,15 @@ pub enum ErrorClass {
 }
 
 impl ErrorCode {
-    #[inline]
-    pub const fn new(bytes: [u8; 3]) -> Self {
-        ErrorCode(bytes)
+    /// Returns a `Some(ErrorCode)` value if the given bytes are IA5String or 7-bit ascii
+    pub fn new(bytes: [u8; 3]) -> Option<Self> {
+        if bytes.iter().all(|&b| b < 128) {
+            // asn.1 defintion says IA5String which means 7-bit ascii
+            // https://github.com/interledger/rfcs/blob/2473d2963a65e5534076c483f3c08a81b8e0cc88/asn1/InterledgerProtocol.asn#L43
+            Some(ErrorCode(bytes))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -121,7 +127,19 @@ mod test_error_code {
             ErrorCode::R00_TRANSFER_TIMED_OUT.class(),
             ErrorClass::Relative
         );
-        assert_eq!(ErrorCode::new(*b"???").class(), ErrorClass::Unknown);
+        assert_eq!(
+            ErrorCode::new(*b"???")
+                .expect("questionmarks are accepted")
+                .class(),
+            ErrorClass::Unknown
+        );
+    }
+
+    #[test]
+    fn rejects_non_ia5string() {
+        use std::convert::TryInto;
+        let bytes = "ä1".as_bytes().try_into().unwrap();
+        assert_eq!(ErrorCode::new(bytes), None);
     }
 
     #[test]
