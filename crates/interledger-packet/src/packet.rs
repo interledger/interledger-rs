@@ -653,7 +653,7 @@ mod fuzzed {
     use std::convert::TryFrom;
 
     #[test]
-    fn fuzzed_0_non_utf8_error_code() {
+    fn fuzzed_0_non_ascii_error_code() {
         #[rustfmt::skip]
         let orig = [
             // reject
