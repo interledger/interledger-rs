@@ -887,7 +887,6 @@ mod fuzzing {
     use bytes::{Buf, BytesMut};
 
     #[test]
-    #[cfg(feature = "strict")]
     fn fuzzed_0_extra_trailer_bytes() {
         // From the [RFC]'s it sounds like the at least trailer junk should be kept around,
         // but only under the condition that they are zero-bytes and MUST be ignored in parsing.
