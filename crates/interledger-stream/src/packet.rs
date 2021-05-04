@@ -466,6 +466,18 @@ impl From<u8> for ErrorCode {
     }
 }
 
+fn check_frame_data_prefix_length(_reader: &[u8]) -> Result<(), ParseError> {
+    // Content slice passed to the `read_contents` function should not
+    // contain extra bytes.
+    #[cfg(feature = "strict")]
+    if !_reader.is_empty() {
+        return Err(ParseError::InvalidPacket(
+            "Frame content length mismatch content".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Helper trait for having a common interface to read/write on Frames
 pub trait SerializableFrame<'a>: Sized {
     fn put_contents(&self, buf: &mut impl MutBufOerExt);
@@ -487,6 +499,7 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
+        check_frame_data_prefix_length(reader)?;
         let message = str::from_utf8(message_bytes)?;
 
         Ok(ConnectionCloseFrame { code, message })
@@ -508,6 +521,7 @@ pub struct ConnectionNewAddressFrame {
 impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_account = reader.read_var_octet_string()?;
+        check_frame_data_prefix_length(reader)?;
         let source_account = Address::try_from(source_account)?;
 
         Ok(ConnectionNewAddressFrame { source_account })
@@ -543,6 +557,7 @@ impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_asset_code = str::from_utf8(reader.read_var_octet_string()?)?;
         let source_asset_scale = reader.read_u8()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(ConnectionAssetDetailsFrame {
             source_asset_scale,
@@ -566,6 +581,7 @@ pub struct ConnectionMaxDataFrame {
 impl<'a> SerializableFrame<'a> for ConnectionMaxDataFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_offset = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(ConnectionMaxDataFrame { max_offset })
     }
@@ -585,6 +601,7 @@ pub struct ConnectionDataBlockedFrame {
 impl<'a> SerializableFrame<'a> for ConnectionDataBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_offset = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(ConnectionDataBlockedFrame { max_offset })
     }
@@ -604,6 +621,7 @@ pub struct ConnectionMaxStreamIdFrame {
 impl<'a> SerializableFrame<'a> for ConnectionMaxStreamIdFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_stream_id = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(ConnectionMaxStreamIdFrame { max_stream_id })
     }
@@ -623,6 +641,7 @@ pub struct ConnectionStreamIdBlockedFrame {
 impl<'a> SerializableFrame<'a> for ConnectionStreamIdBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_stream_id = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(ConnectionStreamIdBlockedFrame { max_stream_id })
     }
@@ -650,6 +669,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
         let stream_id = reader.read_var_uint()?;
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
+        check_frame_data_prefix_length(reader)?;
         let message = str::from_utf8(message_bytes)?;
 
         Ok(StreamCloseFrame {
@@ -692,6 +712,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let shares = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(StreamMoneyFrame { stream_id, shares })
     }
@@ -725,6 +746,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
         let stream_id = reader.read_var_uint()?;
         let receive_max = saturating_read_var_uint(&mut reader)?;
         let total_received = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(StreamMaxMoneyFrame {
             stream_id,
@@ -758,6 +780,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
         let stream_id = reader.read_var_uint()?;
         let send_max = saturating_read_var_uint(&mut reader)?;
         let total_sent = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(StreamMoneyBlockedFrame {
             stream_id,
@@ -804,6 +827,7 @@ impl<'a> SerializableFrame<'a> for StreamDataFrame<'a> {
         let stream_id = reader.read_var_uint()?;
         let offset = reader.read_var_uint()?;
         let data = reader.read_var_octet_string()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(StreamDataFrame {
             stream_id,
@@ -832,6 +856,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxDataFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(StreamMaxDataFrame {
             stream_id,
@@ -858,6 +883,7 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
+        check_frame_data_prefix_length(reader)?;
 
         Ok(StreamDataBlockedFrame {
             stream_id,
@@ -961,23 +987,38 @@ mod fuzzing {
     }
 
     #[test]
-    #[ignore]
-    fn fuzzed_3() {
+    #[cfg(features = "strict")]
+    fn fuzzed_3_frame_content_length_prefix_should_not_have_extra_bytes() {
         #[rustfmt::skip]
         let input: &[u8] = &[
             // Version, packet type, sequence and prepare amount
             1, 14, 1, 14, 1, 14,
             // num frames
             1, 1,
-            // frame data (frame type + content)
-            1, 14, 1, 0, 1, 1, 4, 0, 255, 255, 255, 255, 255, 128, 255, 128
+            // frame data (frame type, ConnectionCloseFrame)
+            1,
+            // frame data length
+            14,
+            // ErrorCode
+            1,
+            // Content length is zero here
+            0,
+            // Here are all the extra bytes that
+            // frame data length included but not in content
+            1, 1, 4, 0, 255, 255, 255, 255, 255, 128, 255, 128
             ];
 
         // roundtrip result
         // [1, 14, 1, 14, 1, 14, 1, 1, 1, 2, 1, 0]
         //                                ^ ----^
         //                                Suspect due to content prefix length
-        roundtrip(input);
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            format!("{}", pkt.unwrap_err())
+        );
     }
 
     fn roundtrip(input: &[u8]) {
