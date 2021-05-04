@@ -671,6 +671,88 @@ mod fuzzed {
             "Invalid Packet: Reject.ErrorCode was not IA5String"
         );
     }
+
+    #[test]
+    fn fuzzed_0_with_fixed_errorcode() {
+        #[rustfmt::skip]
+        let orig = [
+            // reject
+            14,
+            // varlen for the content
+            13,
+            // fixed error code
+            116, 119, 127,
+            // varlen address
+            6, 116, 101, 115, 116, 46, 116,
+            // varlen message
+            0,
+            // varlen data
+            0,
+            // extra byte in the end
+            42,
+        ];
+
+        roundtrip(&orig);
+    }
+
+    fn roundtrip(bytes: &[u8]) {
+        use super::{FulfillBuilder, Packet::*, PrepareBuilder, RejectBuilder};
+        use std::convert::TryInto;
+        match Packet::try_from(BytesMut::from(bytes)).unwrap() {
+            Prepare(p) => {
+                let other = PrepareBuilder {
+                    amount: p.amount(),
+                    expires_at: p.expires_at(),
+                    destination: p.destination(),
+                    execution_condition: p
+                        .execution_condition()
+                        .try_into()
+                        .expect("wrong length slice"),
+                    data: p.data(),
+                }
+                .build();
+
+                if p != other {
+                    assert_eq!(p.amount(), other.amount());
+                    assert_eq!(p.expires_at(), other.expires_at());
+                    assert_eq!(p.destination(), other.destination());
+                    assert_eq!(p.execution_condition(), other.execution_condition());
+                    assert_eq!(p.data(), other.data());
+                }
+            }
+            Fulfill(f) => {
+                let other = FulfillBuilder {
+                    fulfillment: f.fulfillment().try_into().expect("wrong length slice"),
+                    data: f.data(),
+                }
+                .build();
+
+                if f != other {
+                    assert_eq!(f.fulfillment(), other.fulfillment());
+                    assert_eq!(f.data(), other.data());
+                }
+            }
+            Reject(r) => {
+                let other = RejectBuilder {
+                    code: r.code(),
+                    message: r.message(),
+                    triggered_by: r.triggered_by().as_ref(),
+                    data: r.data(),
+                }
+                .build();
+
+                if r != other {
+                    // doublecheck to see if this was because fuzzer added bytes in the trailer of
+                    // the initial varlen field.
+
+                    assert_eq!(r.code(), other.code());
+                    assert_eq!(r.message(), other.message());
+                    assert_eq!(r.triggered_by(), other.triggered_by());
+                    assert_eq!(r.data(), other.data());
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
