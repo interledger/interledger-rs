@@ -438,17 +438,18 @@ impl From<u8> for FrameType {
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum ErrorCode {
-    NoError = 0x01,
-    InternalError = 0x02,
-    EndpointBusy = 0x03,
-    FlowControlError = 0x04,
-    StreamIdError = 0x05,
-    StreamStateError = 0x06,
-    FrameFormatError = 0x07,
-    ProtocolViolation = 0x08,
-    ApplicationError = 0x09,
-    Unknown,
+    NoError,
+    InternalError,
+    EndpointBusy,
+    FlowControlError,
+    StreamIdError,
+    StreamStateError,
+    FrameFormatError,
+    ProtocolViolation,
+    ApplicationError,
+    Unknown(u8),
 }
+
 impl From<u8> for ErrorCode {
     fn from(num: u8) -> Self {
         match num {
@@ -461,7 +462,24 @@ impl From<u8> for ErrorCode {
             0x07 => ErrorCode::FrameFormatError,
             0x08 => ErrorCode::ProtocolViolation,
             0x09 => ErrorCode::ApplicationError,
-            _ => ErrorCode::Unknown,
+            _ => ErrorCode::Unknown(num),
+        }
+    }
+}
+
+impl From<ErrorCode> for u8 {
+    fn from(error_code: ErrorCode) -> u8 {
+        match error_code {
+            ErrorCode::NoError => 0x01,
+            ErrorCode::InternalError => 0x02,
+            ErrorCode::EndpointBusy => 0x03,
+            ErrorCode::FlowControlError => 0x04,
+            ErrorCode::StreamIdError => 0x05,
+            ErrorCode::StreamStateError => 0x06,
+            ErrorCode::FrameFormatError => 0x07,
+            ErrorCode::ProtocolViolation => 0x08,
+            ErrorCode::ApplicationError => 0x09,
+            ErrorCode::Unknown(num) => num,
         }
     }
 }
@@ -506,7 +524,7 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
-        buf.put_u8(self.code as u8);
+        buf.put_u8(self.code.into());
         buf.put_var_octet_string(self.message.as_bytes());
     }
 }
@@ -681,7 +699,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
         buf.put_var_uint(self.stream_id);
-        buf.put_u8(self.code as u8);
+        buf.put_u8(self.code.into());
         buf.put_var_octet_string(self.message.as_bytes());
     }
 }
@@ -1019,6 +1037,27 @@ mod fuzzing {
             "Invalid Packet: Incorrect number of frames or unable to parse all frames",
             format!("{}", pkt.unwrap_err())
         );
+    }
+
+    #[test]
+    fn fuzzed_4_handles_unknown_error_code() {
+        #[rustfmt::skip]
+        roundtrip(&[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 0, 1, 14,
+            // num frames
+            1, 1,
+            // frame type
+            1,
+            // frame data
+            2,
+            // errorcode
+            89,
+            // content
+            0,
+        ]);
+
+        // roundtripped version looks like:
     }
 
     fn roundtrip(input: &[u8]) {
