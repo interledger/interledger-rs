@@ -488,7 +488,7 @@ impl From<ErrorCode> for u8 {
     }
 }
 
-fn check_frame_data_prefix_length(_reader: &[u8]) -> Result<(), ParseError> {
+fn ensure_no_inner_trailing_bytes(_reader: &[u8]) -> Result<(), ParseError> {
     // Content slice passed to the `read_contents` function should not
     // contain extra bytes.
     #[cfg(feature = "strict")]
@@ -521,7 +521,7 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
         let message = str::from_utf8(message_bytes)?;
 
         Ok(ConnectionCloseFrame { code, message })
@@ -562,7 +562,7 @@ pub struct ConnectionNewAddressFrame {
 impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_account = reader.read_var_octet_string()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
         let source_account = Address::try_from(source_account)?;
 
         Ok(ConnectionNewAddressFrame { source_account })
@@ -598,7 +598,7 @@ impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_asset_code = str::from_utf8(reader.read_var_octet_string()?)?;
         let source_asset_scale = reader.read_u8()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionAssetDetailsFrame {
             source_asset_scale,
@@ -622,7 +622,7 @@ pub struct ConnectionMaxDataFrame {
 impl<'a> SerializableFrame<'a> for ConnectionMaxDataFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_offset = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionMaxDataFrame { max_offset })
     }
@@ -642,7 +642,7 @@ pub struct ConnectionDataBlockedFrame {
 impl<'a> SerializableFrame<'a> for ConnectionDataBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_offset = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionDataBlockedFrame { max_offset })
     }
@@ -662,7 +662,7 @@ pub struct ConnectionMaxStreamIdFrame {
 impl<'a> SerializableFrame<'a> for ConnectionMaxStreamIdFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_stream_id = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionMaxStreamIdFrame { max_stream_id })
     }
@@ -682,7 +682,7 @@ pub struct ConnectionStreamIdBlockedFrame {
 impl<'a> SerializableFrame<'a> for ConnectionStreamIdBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_stream_id = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionStreamIdBlockedFrame { max_stream_id })
     }
@@ -710,7 +710,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
         let stream_id = reader.read_var_uint()?;
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
         let message = str::from_utf8(message_bytes)?;
 
         Ok(StreamCloseFrame {
@@ -753,7 +753,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let shares = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMoneyFrame { stream_id, shares })
     }
@@ -787,7 +787,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
         let stream_id = reader.read_var_uint()?;
         let receive_max = saturating_read_var_uint(&mut reader)?;
         let total_received = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMaxMoneyFrame {
             stream_id,
@@ -821,7 +821,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
         let stream_id = reader.read_var_uint()?;
         let send_max = saturating_read_var_uint(&mut reader)?;
         let total_sent = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMoneyBlockedFrame {
             stream_id,
@@ -868,7 +868,7 @@ impl<'a> SerializableFrame<'a> for StreamDataFrame<'a> {
         let stream_id = reader.read_var_uint()?;
         let offset = reader.read_var_uint()?;
         let data = reader.read_var_octet_string()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamDataFrame {
             stream_id,
@@ -897,7 +897,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxDataFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMaxDataFrame {
             stream_id,
@@ -924,7 +924,7 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
-        check_frame_data_prefix_length(reader)?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamDataBlockedFrame {
             stream_id,
