@@ -98,7 +98,11 @@ impl<'a> StreamPacketBuilder<'a> {
                     buffer_unencrypted.put_u8(FrameType::StreamDataBlocked as u8);
                     frame.put_contents(&mut contents);
                 }
-                Frame::Unknown => continue,
+                Frame::Unknown(ref unknown_frame) => {
+                    // The frame type u8 was stored and handled by UnknownFrameData
+                    buffer_unencrypted.put_u8(unknown_frame.frame_type);
+                    unknown_frame.put_contents(&mut contents);
+                }
             }
             buffer_unencrypted.put_var_octet_string(&*contents);
         }
@@ -308,7 +312,7 @@ impl<'a> FrameIterator<'a> {
                     "Ignoring unknown frame of type {}: {:x?}",
                     frame_type, contents,
                 );
-                Frame::Unknown
+                Frame::Unknown(UnknownFrameData::store_raw_contents(frame_type, &contents))
             }
         };
 
@@ -366,7 +370,7 @@ pub enum Frame<'a> {
     StreamData(StreamDataFrame<'a>),
     StreamMaxData(StreamMaxDataFrame),
     StreamDataBlocked(StreamDataBlockedFrame),
-    Unknown,
+    Unknown(UnknownFrameData<'a>),
 }
 
 impl<'a> fmt::Debug for Frame<'a> {
@@ -386,7 +390,7 @@ impl<'a> fmt::Debug for Frame<'a> {
             Frame::StreamData(frame) => write!(f, "{:?}", frame),
             Frame::StreamMaxData(frame) => write!(f, "{:?}", frame),
             Frame::StreamDataBlocked(frame) => write!(f, "{:?}", frame),
-            Frame::Unknown => write!(f, "UnknownFrame"),
+            Frame::Unknown(unknown_data) => write!(f, "{:?}", unknown_data),
         }
     }
 }
@@ -526,6 +530,25 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
         buf.put_u8(self.code.into());
         buf.put_var_octet_string(self.message.as_bytes());
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct UnknownFrameData<'a> {
+    frame_type: u8,
+    content: &'a [u8],
+}
+
+impl<'a> UnknownFrameData<'a> {
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) {
+        buf.put(self.content)
+    }
+
+    fn store_raw_contents(frame_type: u8, content: &'a [u8]) -> Self {
+        UnknownFrameData {
+            frame_type,
+            content,
+        }
     }
 }
 
@@ -960,31 +983,24 @@ mod fuzzing {
     }
 
     #[test]
-    #[ignore]
     fn fuzzed_1_unknown_frames_dont_roundtrip() {
-        // from the [RFC]'s it sounds like the at least trailer junk should be kept around,
-        // it would help if unknown frames would be kept around as well for fuzzing at least.
-        //
-        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+        #[rustfmt::skip]
         roundtrip(&[
-            1, 14, 3, 5, 0, 0, 3, 5, 14, 9, 1, 3, 1, 3, 0, 4, 20, 3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
+            // Version, packet type, sequence and prepare amount
+            1, 14, 3, 5, 0, 0, 3, 5, 14, 9,
+            // num frames
+            1, 3,
+            // first frame, frame type is unknown
+            10, 3, 0, 4, 20,
+            // second frame and data
+            1, 5, 1, 3, 111, 111, 112,
+            // Third frame and data
+            2, 13, 12, 101, 120, 97, 109, 112, 108, 101, 46, 98, 108, 97, 104,
         ]);
-
-        // roundtripped version looks like:
-        //
-        // [1, 14, 3, 5, 0, 0, 3, 5, 14, 9, 1, 3]
-        //
-        // which is &input[0..12]
     }
 
     #[test]
     fn fuzzed_2_frame_data_with_parse_error_should_error() {
-        // TODO: The input for this test is from a test
-        // (fuzzed_1_unknown_frames_dont_roundtrip)
-        // identifying a roundtripping problem when Unknown frames are in the packet data.
-        // That problem is still present but needs new set of data
-
         #[rustfmt::skip]
         let input: &[u8] = &[
             // Version
@@ -1232,6 +1248,7 @@ mod serialization {
     }
 
     #[test]
+    #[cfg(not(feature = "roundtrip-only"))]
     fn it_saturates_max_money_frame_receive_max() {
         let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
@@ -1247,6 +1264,7 @@ mod serialization {
     }
 
     #[test]
+    #[cfg(not(feature = "roundtrip-only"))]
     fn it_saturates_money_blocked_frame_send_max() {
         let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
