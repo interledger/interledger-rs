@@ -8,8 +8,10 @@ edition = "2018"
 repository = "https://github.com/interledger-rs/interledger-rs"
 
 [features]
-# used when fuzzing; accepts only roundtripping input
+# strict adherence to the rfcs, but not taking any "roundtrip-only" shortcuts
 strict = []
+# used when fuzzing; accepts only roundtripping input
+roundtrip-only = ["strict"]
 
 [dependencies]
 byteorder = { version = "1.3.2" }

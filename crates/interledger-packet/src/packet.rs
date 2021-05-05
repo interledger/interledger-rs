@@ -135,10 +135,10 @@ impl TryFrom<BytesMut> for Prepare {
 
         // Fixed Length DateTime format - RFC 0027
         // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
-        let mut expires_at = [0x00; 17];
-        content.read_exact(&mut expires_at)?;
+        let mut read_expires_at = [0x00; 17];
+        content.read_exact(&mut read_expires_at)?;
 
-        if !expires_at
+        if !read_expires_at
             .iter()
             .map(|e| (b'0'..=b'9').contains(e))
             .fold(true, |a, b| a & b)
@@ -146,10 +146,29 @@ impl TryFrom<BytesMut> for Prepare {
             return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
         }
 
-        let expires_at = str::from_utf8(&expires_at[..])?;
+        let expires_at = str::from_utf8(&read_expires_at[..])?;
         let expires_at: DateTime<Utc> =
             Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
         let expires_at = SystemTime::from(expires_at);
+
+        if cfg!(feature = "roundtrip-only") {
+            // chrono will leniently parse some timestamps into forms which don't roundtrip.
+            // this works around the class of fuzzer findings demonstrated by
+            // fuzzed_1_chrono_60s_rollover.
+            let mut roundtripped = [0u8; 17];
+            write!(
+                &mut roundtripped[..],
+                "{}",
+                DateTime::<Utc>::from(expires_at).format(INTERLEDGER_TIMESTAMP_FORMAT),
+            )
+            .unwrap();
+
+            if roundtripped != read_expires_at {
+                return Err(ParseError::InvalidPacket(
+                    "Non-roundtripping datetime".into(),
+                ));
+            }
+        }
 
         // Skip execution condition.
         content.skip(CONDITION_LEN)?;
@@ -717,6 +736,35 @@ mod fuzzed {
         } else {
             res.unwrap();
         }
+    }
+
+    #[test]
+    #[cfg(feature = "roundtrip-only")]
+    fn fuzzed_1_chrono_60s_rollover() {
+        // this has been reduced from the original
+        #[rustfmt::skip]
+        let orig = [
+            // prepare
+            12,
+            // variable length len
+            65,
+            // amount
+            0, 0, 0, 0, 0, 0, 0, 1,
+            // timestamp, "2000-05-31T16:01:60.251" which is parsed and later formatted as
+            // "2000-05-31T16:02:00.251" (dashes, T, colons and dot added for readability)
+            50, 48, 48, 48, 48, 53, 51, 49, 49, 54, 48, 49, 54, 48, 50, 53, 49,
+            // execution condition
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            // destination varlen
+            6,
+            // destination "test.a"
+            116, 101, 115, 116, 46, 97,
+            // data varlen
+            0,
+        ];
+
+        crate::lenient_packet_roundtrips(&orig[..]).unwrap_err();
     }
 }
 
