@@ -919,7 +919,17 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
 fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, ParseError> {
     if reader.peek_var_octet_string()?.len() > 8 {
         reader.skip_var_octet_string()?;
-        Ok(u64::MAX)
+
+        if cfg!(feature = "roundtrip-only") {
+            // This is needed because the returned value u64::MAX
+            // will make rounttrip fail, i.e. ByteMut::from(packet)
+            // will not equal to the original data.
+            Err(ParseError::WrongType(
+                "Fuzzing roundtrip for var_uint larger than u64::MAX unavailable".to_string(),
+            ))
+        } else {
+            Ok(u64::MAX)
+        }
     } else {
         Ok(reader.read_var_uint()?)
     }
@@ -1056,8 +1066,36 @@ mod fuzzing {
             // content
             0,
         ]);
+    }
 
-        // roundtripped version looks like:
+    #[test]
+    #[cfg(feature = "roundtrip-only")]
+    fn fuzzed_5_saturating_read_var_uint_replacement_cannot_roundtrip() {
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 0, 1, 14,
+            // num frames
+            1, 1,
+            // frame type - 0x13
+            19,
+            // frame data length
+            17,
+            // some frame data
+            1, 1,
+            // other frame data varuint length is 12, > 8
+            12, 1, 153, 14, 0, 0, 0, 58, 0, 0, 91, 24, 0,
+            // other frame data
+            1, 0
+        ];
+
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            format!("{}", pkt.unwrap_err())
+        );
     }
 
     fn roundtrip(input: &[u8]) {
