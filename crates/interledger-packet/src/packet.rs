@@ -682,8 +682,8 @@ mod fuzzed {
 
         let e = Packet::try_from(BytesMut::from(&orig[..])).unwrap_err();
         assert_eq!(
+            "Invalid Packet: Reject.ErrorCode was not IA5String",
             &e.to_string(),
-            "Invalid Packet: Reject.ErrorCode was not IA5String"
         );
     }
 
@@ -711,8 +711,8 @@ mod fuzzed {
 
         if cfg!(feature = "strict") {
             assert_eq!(
+                "Invalid Packet: Unexpected inner trailing bytes",
                 &res.unwrap_err().to_string(),
-                "Invalid Packet: Unexpected inner trailing bytes"
             );
         } else {
             res.unwrap();
@@ -736,7 +736,7 @@ mod test_packet_type {
     fn try_from_empty() {
         assert_eq!(
             "Invalid Packet: Unknown packet type: None",
-            format!("{}", PacketType::try_from(&[][..]).unwrap_err())
+            &PacketType::try_from(&[][..]).unwrap_err().to_string()
         );
     }
 }
@@ -835,7 +835,7 @@ mod test_prepare {
         {
             assert_eq!(
                 "Invalid Packet: Unexpected outer trailing bytes",
-                format!("{}", with_junk_data.unwrap_err())
+                &with_junk_data.unwrap_err().to_string()
             );
         }
 
@@ -935,16 +935,12 @@ mod test_fulfill {
 
         // feature = "strict" is used when fuzzing and is tested here to ensure
         // error is returned instead of roundtripping when junk data is added
-        #[cfg(feature = "strict")]
-        {
+        if cfg!(feature = "strict") {
             assert_eq!(
                 "Invalid Packet: Unexpected outer trailing bytes",
-                format!("{}", with_junk_data.unwrap_err())
+                &with_junk_data.unwrap_err().to_string()
             );
-        }
-
-        #[cfg(not(feature = "strict"))]
-        {
+        } else {
             let with_junk_data = with_junk_data.unwrap();
             assert_eq!(with_junk_data.fulfillment(), fixtures::FULFILLMENT);
             assert_eq!(with_junk_data.data(), fixtures::DATA);
@@ -990,7 +986,7 @@ mod test_fulfill {
         if cfg!(feature = "strict") {
             assert_eq!(
                 "Invalid Packet: Unexpected inner trailing bytes",
-                format!("{}", res.unwrap_err())
+                &res.unwrap_err().to_string()
             );
         } else {
             res.unwrap();
@@ -1039,16 +1035,12 @@ mod test_reject {
 
         // feature = "strict" is used when fuzzing and is tested here to ensure
         // error is returned instead of roundtripping when junk data is added
-        #[cfg(feature = "strict")]
-        {
+        if cfg!(feature = "strict") {
             assert_eq!(
                 "Invalid Packet: Unexpected outer trailing bytes",
-                format!("{}", with_junk_data.unwrap_err())
+                &with_junk_data.unwrap_err().to_string()
             );
-        }
-
-        #[cfg(not(feature = "strict"))]
-        {
+        } else {
             let with_junk_data = with_junk_data.unwrap();
             assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
             assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);
