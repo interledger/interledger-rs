@@ -1214,6 +1214,46 @@ mod serialization {
         )
     });
 
+    static UNKNOWN_FRAME_PACKET: Lazy<StreamPacket> = Lazy::new(|| {
+        StreamPacketBuilder {
+            sequence: 1,
+            ilp_packet_type: IlpPacketType::try_from(12).unwrap(),
+            prepare_amount: 99,
+            frames: &[Frame::Unknown(UnknownFrameData {
+                frame_type: 89,
+                content: &[1, 2, 3],
+            })],
+        }
+        .build()
+    });
+
+    static SERIALIZED_UNKNOWN_FRAME_PACKET: Lazy<BytesMut> = Lazy::new(|| {
+        BytesMut::from(
+            &vec![
+                1, 12, 1, 1, 1, 99, // Version, type, sequence amount
+                1, 1,  // num frames
+                89, // frame type - Unknown
+                3, 1, 2, 3, // frame data
+            ][..],
+        )
+    });
+
+    #[test]
+    fn it_serializes_unknown_frame_data() {
+        assert_eq!(
+            UNKNOWN_FRAME_PACKET.buffer_unencrypted,
+            *SERIALIZED_UNKNOWN_FRAME_PACKET
+        );
+    }
+
+    #[test]
+    fn it_deserializes_packets_with_unknown_frame_data() {
+        assert_eq!(
+            StreamPacket::from_bytes_unencrypted(SERIALIZED_UNKNOWN_FRAME_PACKET.clone()).unwrap(),
+            *UNKNOWN_FRAME_PACKET
+        );
+    }
+
     #[test]
     fn it_serializes_to_same_as_javascript() {
         assert_eq!(PACKET.buffer_unencrypted, *SERIALIZED);
