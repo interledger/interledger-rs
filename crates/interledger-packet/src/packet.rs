@@ -160,11 +160,7 @@ impl TryFrom<BytesMut> for Prepare {
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
 
-        if !content.is_empty() {
-            return Err(ParseError::InvalidPacket(
-                "Packet contains trailing bytes".into(),
-            ));
-        }
+        ensure_no_inner_trailing_bytes(content)?;
 
         Ok(Prepare {
             buffer,
@@ -319,11 +315,7 @@ impl TryFrom<BytesMut> for Fulfill {
         content.skip(FULFILLMENT_LEN)?;
         content.skip_var_octet_string()?;
 
-        if !content.is_empty() {
-            return Err(ParseError::InvalidPacket(
-                "Packet contains trailing bytes".into(),
-            ));
-        }
+        ensure_no_inner_trailing_bytes(content)?;
 
         Ok(Fulfill {
             buffer,
@@ -439,11 +431,7 @@ impl TryFrom<BytesMut> for Reject {
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
 
-        if !content.is_empty() {
-            return Err(ParseError::InvalidPacket(
-                "Packet contains trailing bytes".into(),
-            ));
-        }
+        ensure_no_inner_trailing_bytes(content)?;
 
         Ok(Reject {
             buffer,
@@ -585,17 +573,7 @@ fn deserialize_envelope(
 
     let content = reader.read_var_octet_string()?;
 
-    #[cfg(feature = "strict")]
-    {
-        // Trailing bytes in the reader but not counted in length prefix
-        // is allowed for creating packet structs as it is not prohibited
-        // in specs but required to return error for roundtripping in fuzzing
-        if !reader.is_empty() {
-            return Err(ParseError::InvalidPacket(
-                "Packet contains unaccounted for trailing bytes".into(),
-            ));
-        }
-    }
+    ensure_no_outer_trailing_bytes(reader)?;
 
     Ok((content_offset, content))
 }
@@ -658,6 +636,31 @@ impl From<Prepare> for BytesMut {
     }
 }
 
+/// Called at the end of each parse to ensure that the given buffer is empty, as in there are no
+/// trailing bytes. Calling these bytes as the "inner" bytes as opposed to "outer" bytes seen by
+/// the [`deserialize_envelope`].
+fn ensure_no_inner_trailing_bytes(content: &[u8]) -> Result<(), ParseError> {
+    if content.is_empty() || !cfg!(feature = "strict") {
+        Ok(())
+    } else {
+        Err(ParseError::InvalidPacket(
+            "Unexpected inner trailing bytes".into(),
+        ))
+    }
+}
+
+/// Called at the end of [`deserialize_envelope`] to make sure that there are no trailing bytes
+/// after the outermost variable length container which are called "outer".
+fn ensure_no_outer_trailing_bytes(reader: &[u8]) -> Result<(), ParseError> {
+    if reader.is_empty() || !cfg!(feature = "strict") {
+        Ok(())
+    } else {
+        Err(ParseError::InvalidPacket(
+            "Unexpected outer trailing bytes".into(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod fuzzed {
     use super::Packet;
@@ -704,12 +707,16 @@ mod fuzzed {
             42,
         ];
 
-        let e = crate::lenient_packet_roundtrips(&orig[..]).unwrap_err();
+        let res = Packet::try_from(BytesMut::from(&orig[..]));
 
-        assert_eq!(
-            &e.to_string(),
-            "Invalid Packet: Packet contains trailing bytes"
-        );
+        if cfg!(feature = "strict") {
+            assert_eq!(
+                &res.unwrap_err().to_string(),
+                "Invalid Packet: Unexpected inner trailing bytes"
+            );
+        } else {
+            res.unwrap();
+        }
     }
 }
 
@@ -827,7 +834,7 @@ mod test_prepare {
         #[cfg(feature = "strict")]
         {
             assert_eq!(
-                "Invalid Packet: Packet contains unaccounted for trailing bytes",
+                "Invalid Packet: Unexpected outer trailing bytes",
                 format!("{}", with_junk_data.unwrap_err())
             );
         }
@@ -931,7 +938,7 @@ mod test_fulfill {
         #[cfg(feature = "strict")]
         {
             assert_eq!(
-                "Invalid Packet: Packet contains unaccounted for trailing bytes",
+                "Invalid Packet: Unexpected outer trailing bytes",
                 format!("{}", with_junk_data.unwrap_err())
             );
         }
@@ -978,13 +985,16 @@ mod test_fulfill {
             0, 93, 0, 14, 40, 40, 40,
         ];
 
-        assert_eq!(
-            "Invalid Packet: Packet contains trailing bytes",
-            format!(
-                "{}",
-                Fulfill::try_from(BytesMut::from(with_trailing_bytes)).unwrap_err()
-            )
-        );
+        let res = Fulfill::try_from(BytesMut::from(with_trailing_bytes));
+
+        if cfg!(feature = "strict") {
+            assert_eq!(
+                "Invalid Packet: Unexpected inner trailing bytes",
+                format!("{}", res.unwrap_err())
+            );
+        } else {
+            res.unwrap();
+        }
     }
 
     #[test]
@@ -1032,7 +1042,7 @@ mod test_reject {
         #[cfg(feature = "strict")]
         {
             assert_eq!(
-                "Invalid Packet: Packet contains unaccounted for trailing bytes",
+                "Invalid Packet: Unexpected outer trailing bytes",
                 format!("{}", with_junk_data.unwrap_err())
             );
         }
