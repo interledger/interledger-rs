@@ -155,7 +155,7 @@ impl StreamPacket {
     /// # Errors
     /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
     /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
-    fn from_bytes_unencrypted(buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
+    fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
         let version = reader.read_u8()?;
@@ -173,13 +173,28 @@ impl StreamPacket {
         let num_frames = reader.read_var_uint()?;
         let frames_offset = buffer_unencrypted.len() - reader.len();
 
-        // Try reading through all the frames to make sure they can be parsed correctly
+        let mut reader = &buffer_unencrypted[frames_offset..];
+        for _ in 0..num_frames {
+            // First byte is the frame type
+            reader.skip(1)?;
+            reader.skip_var_octet_string()?;
+        }
+
+        let junk_data_len = reader.len();
+
+        if junk_data_len > 0 {
+            // trailing bytes are supported for future compatibility, see
+            // https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+            let _ = buffer_unencrypted.split_off(buffer_unencrypted.len() - junk_data_len);
+        }
+
         if num_frames
             == (FrameIterator {
                 buffer: &buffer_unencrypted[frames_offset..],
             })
             .count() as u64
         {
+            // Try reading through all the frames to make sure they can be parsed correctly
             Ok(StreamPacket {
                 buffer_unencrypted,
                 sequence,
@@ -305,14 +320,15 @@ impl<'a> Iterator for FrameIterator<'a> {
     type Item = Frame<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.buffer.is_empty() {
-            // TODO don't ignore errors if the packet is just invalid
+        if !self.buffer.is_empty() {
             match self.try_read_next_frame() {
                 Ok(frame) => return Some(frame),
-                Err(err) => warn!("Error reading STREAM frame: {:?}", err),
+                Err(err) => {
+                    warn!("Error reading STREAM frame: {:?}", err);
+                    return None;
+                }
             }
         }
-
         None
     }
 }
@@ -868,23 +884,25 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
 #[cfg(test)]
 mod fuzzing {
     use super::{StreamPacket, StreamPacketBuilder};
+    use bytes::{Buf, BytesMut};
 
     #[test]
-    #[ignore]
     fn fuzzed_0_extra_trailer_bytes() {
-        // junk trailer mentioned in RFC might be applicable here, see
-        // fuzzed_1_unknown_frames_dont_roundtrip
-        roundtrip(&[
-            1, 14, 3, 19, 5, 3, 1, 14, 3, 0, 0, 0, 0, 14, 3, 0, 14, 5, 17,
-        ]);
+        // From the [RFC]'s it sounds like the at least trailer junk should be kept around,
+        // but only under the condition that they are zero-bytes and MUST be ignored in parsing.
+        // For Fuzzing, at least, we remove the extra bytes for roundtripping support.
+        //
+        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 0, 1, 0,
+            // num frames
+            1, 0,
+            // junk data since zero frames
+            0, 31, 31, 31, 0, 96, 17];
 
-        // roundtripped version looks like:
-        //
-        // [1, 14, 3, 19, 5, 3, 1, 14, 1, 0]
-        //                             ^
-        //                              differs, was 3
-        //
-        // which is almost &input[0..10] except
+        roundtrip(input);
     }
 
     #[test]
@@ -906,9 +924,63 @@ mod fuzzing {
         // which is &input[0..12]
     }
 
-    fn roundtrip(input: &[u8]) {
-        use bytes::{Buf, BytesMut};
+    #[test]
+    fn fuzzed_2_frame_data_with_parse_error_should_error() {
+        // TODO: The input for this test is from a test
+        // (fuzzed_1_unknown_frames_dont_roundtrip)
+        // identifying a roundtripping problem when Unknown frames are in the packet data.
+        // That problem is still present but needs new set of data
 
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version
+            1,
+            // Packet type
+            14,
+            // len + Sequence
+            3, 5, 0, 0,
+            // len + Prepare amount
+            3, 5, 14, 9,
+            // len + num frame
+            1, 3,
+            // frame type - ConnectionClose
+            1,
+            // len + frame content
+            // This content does not parse successfully as ConnectionCloseFrame
+            3, 0, 4, 20,
+            // rest of frames and junk data
+            3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            format!("{}", pkt.unwrap_err())
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn fuzzed_3() {
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 14, 1, 14,
+            // num frames
+            1, 1,
+            // frame data (frame type + content)
+            1, 14, 1, 0, 1, 1, 4, 0, 255, 255, 255, 255, 255, 128, 255, 128
+            ];
+
+        // roundtrip result
+        // [1, 14, 1, 14, 1, 14, 1, 1, 1, 2, 1, 0]
+        //                                ^ ----^
+        //                                Suspect due to content prefix length
+        roundtrip(input);
+    }
+
+    fn roundtrip(input: &[u8]) {
         // this started off as almost copy  of crate::fuzz_decrypted_stream_packet but should be
         // extended if necessary
         let b = BytesMut::from(input);
