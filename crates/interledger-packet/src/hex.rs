@@ -1,6 +1,7 @@
 use std::fmt;
 
 /// Slice as hex string debug formatter, doesn't require allocating a string.
+#[derive(PartialEq, Eq)]
 pub struct HexString<'a>(pub &'a [u8]);
 
 impl<'a> fmt::Debug for HexString<'a> {

@@ -23,6 +23,7 @@ pub use self::packet::{FulfillBuilder, PrepareBuilder, RejectBuilder};
 #[cfg(any(fuzzing, test))]
 pub fn lenient_packet_roundtrips(data: &[u8]) -> Result<(), ParseError> {
     use bytes::BytesMut;
+    use hex::HexString;
     use std::convert::{TryFrom, TryInto};
 
     let pkt = Packet::try_from(BytesMut::from(data))?;
@@ -79,7 +80,7 @@ pub fn lenient_packet_roundtrips(data: &[u8]) -> Result<(), ParseError> {
         }
     };
 
-    assert_eq!(data, other);
+    assert_eq!(HexString(data), HexString(&other[..]));
 
     Ok(())
 }
