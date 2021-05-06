@@ -945,7 +945,7 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
 
         if cfg!(feature = "roundtrip-only") {
             // This is needed because the returned value u64::MAX
-            // will make rounttrip fail, i.e. ByteMut::from(packet)
+            // will make roundtrip fail, i.e. BytesMut::from(packet)
             // will not equal to the original data.
             Err(ParseError::WrongType(
                 "Fuzzing roundtrip for var_uint larger than u64::MAX unavailable".to_string(),
@@ -1052,16 +1052,12 @@ mod fuzzing {
             1, 1, 4, 0, 255, 255, 255, 255, 255, 128, 255, 128
             ];
 
-        // roundtrip result
-        // [1, 14, 1, 14, 1, 14, 1, 1, 1, 2, 1, 0]
-        //                                ^ ----^
-        //                                Suspect due to content prefix length
         let b = BytesMut::from(input);
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
             "Invalid Packet: Incorrect number of frames or unable to parse all frames",
-            format!("{}", pkt.unwrap_err())
+            &pkt.unwrap_err().to_string()
         );
     }
 
@@ -1110,7 +1106,7 @@ mod fuzzing {
 
         assert_eq!(
             "Invalid Packet: Incorrect number of frames or unable to parse all frames",
-            format!("{}", pkt.unwrap_err())
+            &pkt.unwrap_err().to_string()
         );
     }
 
@@ -1229,7 +1225,7 @@ mod serialization {
 
     static SERIALIZED_UNKNOWN_FRAME_PACKET: Lazy<BytesMut> = Lazy::new(|| {
         BytesMut::from(
-            &vec![
+            &[
                 1, 12, 1, 1, 1, 99, // Version, type, sequence amount
                 1, 1,  // num frames
                 89, // frame type - Unknown
