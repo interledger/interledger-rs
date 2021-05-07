@@ -14,6 +14,8 @@ libfuzzer-sys = "0.4"
 
 [dependencies.interledger-stream]
 path = ".."
+# roundtrip enables strict features as well
+features = ["roundtrip-only"]
 
 # Prevent this from interfering with workspaces
 [workspace]

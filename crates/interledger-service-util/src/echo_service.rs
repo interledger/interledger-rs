@@ -312,7 +312,7 @@ mod echo_tests {
 
         // test
         let result = echo_service
-            .handle_request(IncomingRequest { prepare, from })
+            .handle_request(IncomingRequest { from, prepare })
             .await;
         assert!(result.is_ok());
     }
@@ -358,7 +358,7 @@ mod echo_tests {
 
         // test
         let result = echo_service
-            .handle_request(IncomingRequest { prepare, from })
+            .handle_request(IncomingRequest { from, prepare })
             .await;
         assert!(result.is_ok());
     }
@@ -404,7 +404,7 @@ mod echo_tests {
 
         // test
         let result = echo_service
-            .handle_request(IncomingRequest { prepare, from })
+            .handle_request(IncomingRequest { from, prepare })
             .await;
         assert!(result.is_ok());
     }
@@ -445,7 +445,7 @@ mod echo_tests {
 
         // test
         let result = echo_service
-            .handle_request(IncomingRequest { prepare, from })
+            .handle_request(IncomingRequest { from, prepare })
             .await;
         assert!(result.is_err());
     }
@@ -487,7 +487,7 @@ mod echo_tests {
 
         // test
         let result = echo_service
-            .handle_request(IncomingRequest { prepare, from })
+            .handle_request(IncomingRequest { from, prepare })
             .await;
         assert!(result.is_err());
     }

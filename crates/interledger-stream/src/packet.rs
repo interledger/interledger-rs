@@ -98,7 +98,11 @@ impl<'a> StreamPacketBuilder<'a> {
                     buffer_unencrypted.put_u8(FrameType::StreamDataBlocked as u8);
                     frame.put_contents(&mut contents);
                 }
-                Frame::Unknown => continue,
+                Frame::Unknown(ref unknown_frame) => {
+                    // The frame type u8 was stored and handled by UnknownFrameData
+                    buffer_unencrypted.put_u8(unknown_frame.frame_type);
+                    unknown_frame.put_contents(&mut contents);
+                }
             }
             buffer_unencrypted.put_var_octet_string(&*contents);
         }
@@ -155,7 +159,7 @@ impl StreamPacket {
     /// # Errors
     /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
     /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
-    fn from_bytes_unencrypted(buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
+    fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
         let version = reader.read_u8()?;
@@ -173,13 +177,28 @@ impl StreamPacket {
         let num_frames = reader.read_var_uint()?;
         let frames_offset = buffer_unencrypted.len() - reader.len();
 
-        // Try reading through all the frames to make sure they can be parsed correctly
+        let mut reader = &buffer_unencrypted[frames_offset..];
+        for _ in 0..num_frames {
+            // First byte is the frame type
+            reader.skip(1)?;
+            reader.skip_var_octet_string()?;
+        }
+
+        let junk_data_len = reader.len();
+
+        if junk_data_len > 0 {
+            // trailing bytes are supported for future compatibility, see
+            // https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+            let _ = buffer_unencrypted.split_off(buffer_unencrypted.len() - junk_data_len);
+        }
+
         if num_frames
             == (FrameIterator {
                 buffer: &buffer_unencrypted[frames_offset..],
             })
             .count() as u64
         {
+            // Try reading through all the frames to make sure they can be parsed correctly
             Ok(StreamPacket {
                 buffer_unencrypted,
                 sequence,
@@ -293,7 +312,7 @@ impl<'a> FrameIterator<'a> {
                     "Ignoring unknown frame of type {}: {:x?}",
                     frame_type, contents,
                 );
-                Frame::Unknown
+                Frame::Unknown(UnknownFrameData::store_raw_contents(frame_type, &contents))
             }
         };
 
@@ -305,14 +324,15 @@ impl<'a> Iterator for FrameIterator<'a> {
     type Item = Frame<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.buffer.is_empty() {
-            // TODO don't ignore errors if the packet is just invalid
+        if !self.buffer.is_empty() {
             match self.try_read_next_frame() {
                 Ok(frame) => return Some(frame),
-                Err(err) => warn!("Error reading STREAM frame: {:?}", err),
+                Err(err) => {
+                    warn!("Error reading STREAM frame: {:?}", err);
+                    return None;
+                }
             }
         }
-
         None
     }
 }
@@ -350,7 +370,7 @@ pub enum Frame<'a> {
     StreamData(StreamDataFrame<'a>),
     StreamMaxData(StreamMaxDataFrame),
     StreamDataBlocked(StreamDataBlockedFrame),
-    Unknown,
+    Unknown(UnknownFrameData<'a>),
 }
 
 impl<'a> fmt::Debug for Frame<'a> {
@@ -370,7 +390,7 @@ impl<'a> fmt::Debug for Frame<'a> {
             Frame::StreamData(frame) => write!(f, "{:?}", frame),
             Frame::StreamMaxData(frame) => write!(f, "{:?}", frame),
             Frame::StreamDataBlocked(frame) => write!(f, "{:?}", frame),
-            Frame::Unknown => write!(f, "UnknownFrame"),
+            Frame::Unknown(unknown_data) => write!(f, "{:?}", unknown_data),
         }
     }
 }
@@ -422,17 +442,18 @@ impl From<u8> for FrameType {
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum ErrorCode {
-    NoError = 0x01,
-    InternalError = 0x02,
-    EndpointBusy = 0x03,
-    FlowControlError = 0x04,
-    StreamIdError = 0x05,
-    StreamStateError = 0x06,
-    FrameFormatError = 0x07,
-    ProtocolViolation = 0x08,
-    ApplicationError = 0x09,
-    Unknown,
+    NoError,
+    InternalError,
+    EndpointBusy,
+    FlowControlError,
+    StreamIdError,
+    StreamStateError,
+    FrameFormatError,
+    ProtocolViolation,
+    ApplicationError,
+    Unknown(u8),
 }
+
 impl From<u8> for ErrorCode {
     fn from(num: u8) -> Self {
         match num {
@@ -445,9 +466,38 @@ impl From<u8> for ErrorCode {
             0x07 => ErrorCode::FrameFormatError,
             0x08 => ErrorCode::ProtocolViolation,
             0x09 => ErrorCode::ApplicationError,
-            _ => ErrorCode::Unknown,
+            _ => ErrorCode::Unknown(num),
         }
     }
+}
+
+impl From<ErrorCode> for u8 {
+    fn from(error_code: ErrorCode) -> u8 {
+        match error_code {
+            ErrorCode::NoError => 0x01,
+            ErrorCode::InternalError => 0x02,
+            ErrorCode::EndpointBusy => 0x03,
+            ErrorCode::FlowControlError => 0x04,
+            ErrorCode::StreamIdError => 0x05,
+            ErrorCode::StreamStateError => 0x06,
+            ErrorCode::FrameFormatError => 0x07,
+            ErrorCode::ProtocolViolation => 0x08,
+            ErrorCode::ApplicationError => 0x09,
+            ErrorCode::Unknown(num) => num,
+        }
+    }
+}
+
+fn ensure_no_inner_trailing_bytes(_reader: &[u8]) -> Result<(), ParseError> {
+    // Content slice passed to the `read_contents` function should not
+    // contain extra bytes.
+    #[cfg(feature = "strict")]
+    if !_reader.is_empty() {
+        return Err(ParseError::InvalidPacket(
+            "Frame content length mismatch content".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Helper trait for having a common interface to read/write on Frames
@@ -471,14 +521,34 @@ impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
+        ensure_no_inner_trailing_bytes(reader)?;
         let message = str::from_utf8(message_bytes)?;
 
         Ok(ConnectionCloseFrame { code, message })
     }
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
-        buf.put_u8(self.code as u8);
+        buf.put_u8(self.code.into());
         buf.put_var_octet_string(self.message.as_bytes());
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct UnknownFrameData<'a> {
+    frame_type: u8,
+    content: &'a [u8],
+}
+
+impl<'a> UnknownFrameData<'a> {
+    fn put_contents(&self, buf: &mut impl MutBufOerExt) {
+        buf.put(self.content)
+    }
+
+    fn store_raw_contents(frame_type: u8, content: &'a [u8]) -> Self {
+        UnknownFrameData {
+            frame_type,
+            content,
+        }
     }
 }
 
@@ -492,6 +562,7 @@ pub struct ConnectionNewAddressFrame {
 impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_account = reader.read_var_octet_string()?;
+        ensure_no_inner_trailing_bytes(reader)?;
         let source_account = Address::try_from(source_account)?;
 
         Ok(ConnectionNewAddressFrame { source_account })
@@ -527,10 +598,11 @@ impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
         let source_asset_code = str::from_utf8(reader.read_var_octet_string()?)?;
         let source_asset_scale = reader.read_u8()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionAssetDetailsFrame {
-            source_asset_scale,
             source_asset_code,
+            source_asset_scale,
         })
     }
 
@@ -550,6 +622,7 @@ pub struct ConnectionMaxDataFrame {
 impl<'a> SerializableFrame<'a> for ConnectionMaxDataFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_offset = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionMaxDataFrame { max_offset })
     }
@@ -569,6 +642,7 @@ pub struct ConnectionDataBlockedFrame {
 impl<'a> SerializableFrame<'a> for ConnectionDataBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_offset = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionDataBlockedFrame { max_offset })
     }
@@ -588,6 +662,7 @@ pub struct ConnectionMaxStreamIdFrame {
 impl<'a> SerializableFrame<'a> for ConnectionMaxStreamIdFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_stream_id = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionMaxStreamIdFrame { max_stream_id })
     }
@@ -607,6 +682,7 @@ pub struct ConnectionStreamIdBlockedFrame {
 impl<'a> SerializableFrame<'a> for ConnectionStreamIdBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let max_stream_id = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionStreamIdBlockedFrame { max_stream_id })
     }
@@ -634,6 +710,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
         let stream_id = reader.read_var_uint()?;
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
+        ensure_no_inner_trailing_bytes(reader)?;
         let message = str::from_utf8(message_bytes)?;
 
         Ok(StreamCloseFrame {
@@ -645,7 +722,7 @@ impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
 
     fn put_contents(&self, buf: &mut impl MutBufOerExt) {
         buf.put_var_uint(self.stream_id);
-        buf.put_u8(self.code as u8);
+        buf.put_u8(self.code.into());
         buf.put_var_octet_string(self.message.as_bytes());
     }
 }
@@ -676,6 +753,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let shares = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMoneyFrame { stream_id, shares })
     }
@@ -709,6 +787,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
         let stream_id = reader.read_var_uint()?;
         let receive_max = saturating_read_var_uint(&mut reader)?;
         let total_received = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMaxMoneyFrame {
             stream_id,
@@ -742,6 +821,7 @@ impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
         let stream_id = reader.read_var_uint()?;
         let send_max = saturating_read_var_uint(&mut reader)?;
         let total_sent = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMoneyBlockedFrame {
             stream_id,
@@ -788,6 +868,7 @@ impl<'a> SerializableFrame<'a> for StreamDataFrame<'a> {
         let stream_id = reader.read_var_uint()?;
         let offset = reader.read_var_uint()?;
         let data = reader.read_var_octet_string()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamDataFrame {
             stream_id,
@@ -816,6 +897,7 @@ impl<'a> SerializableFrame<'a> for StreamMaxDataFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamMaxDataFrame {
             stream_id,
@@ -842,6 +924,7 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
     fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
+        ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(StreamDataBlockedFrame {
             stream_id,
@@ -859,7 +942,17 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
 fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, ParseError> {
     if reader.peek_var_octet_string()?.len() > 8 {
         reader.skip_var_octet_string()?;
-        Ok(u64::MAX)
+
+        if cfg!(feature = "roundtrip-only") {
+            // This is needed because the returned value u64::MAX
+            // will make roundtrip fail, i.e. BytesMut::from(packet)
+            // will not equal to the original data.
+            Err(ParseError::WrongType(
+                "Fuzzing roundtrip for var_uint larger than u64::MAX unavailable".to_string(),
+            ))
+        } else {
+            Ok(u64::MAX)
+        }
     } else {
         Ok(reader.read_var_uint()?)
     }
@@ -868,47 +961,156 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
 #[cfg(test)]
 mod fuzzing {
     use super::{StreamPacket, StreamPacketBuilder};
+    use bytes::{Buf, BytesMut};
 
     #[test]
-    #[ignore]
     fn fuzzed_0_extra_trailer_bytes() {
-        // junk trailer mentioned in RFC might be applicable here, see
-        // fuzzed_1_unknown_frames_dont_roundtrip
-        roundtrip(&[
-            1, 14, 3, 19, 5, 3, 1, 14, 3, 0, 0, 0, 0, 14, 3, 0, 14, 5, 17,
-        ]);
+        // From the [RFC]'s it sounds like the at least trailer junk should be kept around,
+        // but only under the condition that they are zero-bytes and MUST be ignored in parsing.
+        // For Fuzzing, at least, we remove the extra bytes for roundtripping support.
+        //
+        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 0, 1, 0,
+            // num frames
+            1, 0,
+            // junk data since zero frames
+            0, 31, 31, 31, 0, 96, 17];
 
-        // roundtripped version looks like:
-        //
-        // [1, 14, 3, 19, 5, 3, 1, 14, 1, 0]
-        //                             ^
-        //                              differs, was 3
-        //
-        // which is almost &input[0..10] except
+        roundtrip(input);
     }
 
     #[test]
-    #[ignore]
     fn fuzzed_1_unknown_frames_dont_roundtrip() {
-        // from the [RFC]'s it sounds like the at least trailer junk should be kept around,
-        // it would help if unknown frames would be kept around as well for fuzzing at least.
-        //
-        // [RFC]: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#52-stream-packet
+        #[rustfmt::skip]
         roundtrip(&[
-            1, 14, 3, 5, 0, 0, 3, 5, 14, 9, 1, 3, 1, 3, 0, 4, 20, 3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
+            // Version, packet type, sequence and prepare amount
+            1, 14, 3, 5, 0, 0, 3, 5, 14, 9,
+            // num frames
+            1, 3,
+            // first frame, frame type is unknown
+            10, 3, 0, 4, 20,
+            // second frame and data
+            1, 5, 1, 3, 111, 111, 112,
+            // Third frame and data
+            2, 13, 12, 101, 120, 97, 109, 112, 108, 101, 46, 98, 108, 97, 104,
         ]);
+    }
 
-        // roundtripped version looks like:
-        //
-        // [1, 14, 3, 5, 0, 0, 3, 5, 14, 9, 1, 3]
-        //
-        // which is &input[0..12]
+    #[test]
+    fn fuzzed_2_frame_data_with_parse_error_should_error() {
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version
+            1,
+            // Packet type
+            14,
+            // len + Sequence
+            3, 5, 0, 0,
+            // len + Prepare amount
+            3, 5, 14, 9,
+            // len + num frame
+            1, 3,
+            // frame type - ConnectionClose
+            1,
+            // len + frame content
+            // This content does not parse successfully as ConnectionCloseFrame
+            3, 0, 4, 20,
+            // rest of frames and junk data
+            3, 7, 14, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            format!("{}", pkt.unwrap_err())
+        );
+    }
+
+    #[test]
+    #[cfg(features = "strict")]
+    fn fuzzed_3_frame_content_length_prefix_should_not_have_extra_bytes() {
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 14, 1, 14,
+            // num frames
+            1, 1,
+            // frame data (frame type, ConnectionCloseFrame)
+            1,
+            // frame data length
+            14,
+            // ErrorCode
+            1,
+            // Content length is zero here
+            0,
+            // Here are all the extra bytes that
+            // frame data length included but not in content
+            1, 1, 4, 0, 255, 255, 255, 255, 255, 128, 255, 128
+            ];
+
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            &pkt.unwrap_err().to_string()
+        );
+    }
+
+    #[test]
+    fn fuzzed_4_handles_unknown_error_code() {
+        #[rustfmt::skip]
+        roundtrip(&[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 0, 1, 14,
+            // num frames
+            1, 1,
+            // frame type
+            1,
+            // frame data
+            2,
+            // errorcode
+            89,
+            // content
+            0,
+        ]);
+    }
+
+    #[test]
+    #[cfg(feature = "roundtrip-only")]
+    fn fuzzed_5_saturating_read_var_uint_replacement_cannot_roundtrip() {
+        #[rustfmt::skip]
+        let input: &[u8] = &[
+            // Version, packet type, sequence and prepare amount
+            1, 14, 1, 0, 1, 14,
+            // num frames
+            1, 1,
+            // frame type - 0x13
+            19,
+            // frame data length
+            17,
+            // some frame data
+            1, 1,
+            // other frame data varuint length is 12, > 8
+            12, 1, 153, 14, 0, 0, 0, 58, 0, 0, 91, 24, 0,
+            // other frame data
+            1, 0
+        ];
+
+        let b = BytesMut::from(input);
+        let pkt = StreamPacket::from_decrypted(b);
+
+        assert_eq!(
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            &pkt.unwrap_err().to_string()
+        );
     }
 
     fn roundtrip(input: &[u8]) {
-        use bytes::{Buf, BytesMut};
-
         // this started off as almost copy  of crate::fuzz_decrypted_stream_packet but should be
         // extended if necessary
         let b = BytesMut::from(input);
@@ -1008,6 +1210,46 @@ mod serialization {
         )
     });
 
+    static UNKNOWN_FRAME_PACKET: Lazy<StreamPacket> = Lazy::new(|| {
+        StreamPacketBuilder {
+            sequence: 1,
+            ilp_packet_type: IlpPacketType::try_from(12).unwrap(),
+            prepare_amount: 99,
+            frames: &[Frame::Unknown(UnknownFrameData {
+                frame_type: 89,
+                content: &[1, 2, 3],
+            })],
+        }
+        .build()
+    });
+
+    static SERIALIZED_UNKNOWN_FRAME_PACKET: Lazy<BytesMut> = Lazy::new(|| {
+        BytesMut::from(
+            &[
+                1, 12, 1, 1, 1, 99, // Version, type, sequence amount
+                1, 1,  // num frames
+                89, // frame type - Unknown
+                3, 1, 2, 3, // frame data
+            ][..],
+        )
+    });
+
+    #[test]
+    fn it_serializes_unknown_frame_data() {
+        assert_eq!(
+            UNKNOWN_FRAME_PACKET.buffer_unencrypted,
+            *SERIALIZED_UNKNOWN_FRAME_PACKET
+        );
+    }
+
+    #[test]
+    fn it_deserializes_packets_with_unknown_frame_data() {
+        assert_eq!(
+            StreamPacket::from_bytes_unencrypted(SERIALIZED_UNKNOWN_FRAME_PACKET.clone()).unwrap(),
+            *UNKNOWN_FRAME_PACKET
+        );
+    }
+
     #[test]
     fn it_serializes_to_same_as_javascript() {
         assert_eq!(PACKET.buffer_unencrypted, *SERIALIZED);
@@ -1042,6 +1284,7 @@ mod serialization {
     }
 
     #[test]
+    #[cfg(not(feature = "roundtrip-only"))]
     fn it_saturates_max_money_frame_receive_max() {
         let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id
@@ -1057,6 +1300,7 @@ mod serialization {
     }
 
     #[test]
+    #[cfg(not(feature = "roundtrip-only"))]
     fn it_saturates_money_blocked_frame_send_max() {
         let mut buffer = BytesMut::new();
         buffer.put_var_uint(123); // stream_id

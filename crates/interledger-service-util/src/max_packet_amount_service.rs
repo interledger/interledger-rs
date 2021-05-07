@@ -26,7 +26,7 @@ pub struct MaxPacketAmountService<I, S> {
 impl<I, S> MaxPacketAmountService<I, S> {
     /// Simple constructor
     pub fn new(store: S, next: I) -> Self {
-        MaxPacketAmountService { store, next }
+        MaxPacketAmountService { next, store }
     }
 }
 

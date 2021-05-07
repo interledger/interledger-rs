@@ -54,6 +54,22 @@ jobs:
       - name: Test
         run: timeout 15m cargo test --all --all-features
 
+      - name: Test with subset of features (interledger-packet)
+        run: |
+          timeout 15m cargo test -p interledger-packet
+          timeout 15m cargo test -p interledger-packet --features strict
+
+      - name: Test with subset of features (interledger-btp)
+        run: |
+          timeout 15m cargo test -p interledger-btp
+          timeout 15m cargo test -p interledger-btp --features strict
+
+      - name: Test with subset of features (interledger-stream)
+        run: |
+          timeout 15m cargo test -p interledger-stream
+          timeout 15m cargo test -p interledger-stream --features strict
+          timeout 15m cargo test -p interledger-stream --features roundtrip-only
+
   test-md:
     runs-on: ubuntu-latest
     steps:

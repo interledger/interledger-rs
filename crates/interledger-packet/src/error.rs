@@ -13,9 +13,15 @@ pub enum ErrorClass {
 }
 
 impl ErrorCode {
-    #[inline]
-    pub const fn new(bytes: [u8; 3]) -> Self {
-        ErrorCode(bytes)
+    /// Returns a `Some(ErrorCode)` value if the given bytes are IA5String or 7-bit ascii
+    pub fn new(bytes: [u8; 3]) -> Option<Self> {
+        if bytes.iter().all(|&b| b < 128) {
+            // asn.1 defintion says IA5String which means 7-bit ascii
+            // https://github.com/interledger/rfcs/blob/2473d2963a65e5534076c483f3c08a81b8e0cc88/asn1/InterledgerProtocol.asn#L43
+            Some(ErrorCode(bytes))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -92,9 +98,10 @@ impl fmt::Debug for ErrorCode {
             ErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT => "R01 (Insufficient Source Amount)",
             ErrorCode::R02_INSUFFICIENT_TIMEOUT => "R02 (Insufficient Timeout)",
             ErrorCode::R99_APPLICATION_ERROR => "R99 (Application Error)",
-            _ => str::from_utf8(&self.0[..]).map_err(|_| fmt::Error)?,
-        }
-        .to_owned();
+            _ => {
+                str::from_utf8(&self.0[..]).expect("ErrorCode::new accepts only IA5String or ascii")
+            }
+        };
         formatter
             .debug_tuple("ErrorCode")
             .field(&error_str)
@@ -104,8 +111,14 @@ impl fmt::Debug for ErrorCode {
 
 impl fmt::Display for ErrorCode {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        let as_str = str::from_utf8(&self.0[..]).map_err(|_| fmt::Error)?;
-        formatter.write_str(as_str)
+        let as_str =
+            str::from_utf8(&self.0[..]).expect("ErrorCode::new accepts only IA5String or ascii");
+        if as_str.chars().any(|c| c.is_ascii_control()) {
+            // escape control characters not to garbage any raw output readers
+            write!(formatter, "{:?}", as_str)
+        } else {
+            formatter.write_str(as_str)
+        }
     }
 }
 
@@ -121,7 +134,29 @@ mod test_error_code {
             ErrorCode::R00_TRANSFER_TIMED_OUT.class(),
             ErrorClass::Relative
         );
-        assert_eq!(ErrorCode::new(*b"???").class(), ErrorClass::Unknown);
+        assert_eq!(
+            ErrorCode::new(*b"???")
+                .expect("questionmarks are accepted")
+                .class(),
+            ErrorClass::Unknown
+        );
+    }
+
+    #[test]
+    fn rejects_non_ia5string() {
+        use std::convert::TryInto;
+        let bytes = "ä1".as_bytes().try_into().unwrap();
+        assert_eq!(ErrorCode::new(bytes), None);
+    }
+
+    #[test]
+    fn control_characters_escaped() {
+        let bogus = ErrorCode::new(*b"\x00\x01\x02").unwrap();
+        assert_eq!(&bogus.to_string(), "\"\\u{0}\\u{1}\\u{2}\"");
+        assert_eq!(&format!("{:?}", bogus), "ErrorCode(\"\\u{0}\\u{1}\\u{2}\")");
+
+        let good = ErrorCode::new(*b"T01").unwrap();
+        assert_eq!(&good.to_string(), "T01");
     }
 
     #[test]

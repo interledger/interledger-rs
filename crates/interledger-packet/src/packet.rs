@@ -419,7 +419,10 @@ impl TryFrom<BytesMut> for Reject {
 
         let mut code = [0; 3];
         content.read_exact(&mut code)?;
-        let code = ErrorCode::new(code);
+
+        let code = ErrorCode::new(code).ok_or_else(|| {
+            ParseError::InvalidPacket("Reject.ErrorCode was not IA5String".into())
+        })?;
 
         let triggered_by_offset = content_offset + content_len - content.len();
         Address::try_from(content.read_var_octet_string()?)?;
@@ -433,8 +436,8 @@ impl TryFrom<BytesMut> for Reject {
         Ok(Reject {
             buffer,
             code,
-            triggered_by_offset,
             message_offset,
+            triggered_by_offset,
             data_offset,
         })
     }
@@ -640,6 +643,33 @@ impl MaxPacketAmountDetails {
 impl From<Prepare> for BytesMut {
     fn from(prepare: Prepare) -> Self {
         prepare.buffer
+    }
+}
+
+#[cfg(test)]
+mod fuzzed {
+    use super::Packet;
+    use bytes::BytesMut;
+    use std::convert::TryFrom;
+
+    #[test]
+    fn fuzzed_0_non_utf8_error_code() {
+        #[rustfmt::skip]
+        let orig = [
+            // reject
+            14,
+            // varlen for the content
+            13,
+            // the invalid error code
+            116, 119, 255,
+            6, 116, 101, 115, 116, 46, 116, 0, 0, 42,
+        ];
+
+        let e = Packet::try_from(BytesMut::from(&orig[..])).unwrap_err();
+        assert_eq!(
+            &e.to_string(),
+            "Invalid Packet: Reject.ErrorCode was not IA5String"
+        );
     }
 }
 

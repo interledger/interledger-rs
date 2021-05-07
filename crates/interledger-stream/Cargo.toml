@@ -10,6 +10,9 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 # Optional feature to log connection statistics using a CSV file
 [features]
 strict = ["interledger-packet/strict"]
+# Only applicable for roundtripping in fuzzing
+# Deliberate error for valid replacement of data, such as `saturating_read_var_uint`.
+roundtrip-only = ["strict"] 
 
 [dependencies]
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false, features = ["serde"] }
