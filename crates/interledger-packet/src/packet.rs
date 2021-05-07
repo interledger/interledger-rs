@@ -707,7 +707,7 @@ mod fuzzed {
     }
 
     #[test]
-    fn fuzzed_0_with_fixed_errorcode() {
+    fn fuzzed_1_with_fixed_errorcode() {
         #[rustfmt::skip]
         let orig = [
             // reject
@@ -740,7 +740,7 @@ mod fuzzed {
 
     #[test]
     #[cfg(feature = "roundtrip-only")]
-    fn fuzzed_1_chrono_60s_rollover() {
+    fn fuzzed_2_chrono_60s_rollover() {
         // this has been reduced from the original
         #[rustfmt::skip]
         let orig = [
