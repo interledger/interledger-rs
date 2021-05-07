@@ -436,8 +436,8 @@ impl TryFrom<BytesMut> for Reject {
         Ok(Reject {
             buffer,
             code,
-            triggered_by_offset,
             message_offset,
+            triggered_by_offset,
             data_offset,
         })
     }
