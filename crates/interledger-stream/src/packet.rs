@@ -601,8 +601,8 @@ impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
         ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionAssetDetailsFrame {
-            source_asset_scale,
             source_asset_code,
+            source_asset_scale,
         })
     }
 

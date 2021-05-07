@@ -53,7 +53,7 @@ use redis_crate::{
 };
 use secrecy::{ExposeSecret, Secret, SecretBytesMut};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, iter, str, str::FromStr, sync::Arc, time::Duration};
+use std::{borrow::Cow, str, str::FromStr, sync::Arc, time::Duration};
 use std::{collections::HashMap, fmt::Display};
 use tokio::sync::broadcast;
 use tracing::{debug, error, trace, warn};
@@ -1983,14 +1983,11 @@ async fn update_routes(
     );
     // If there is a default route set in the db,
     // set the entry for "" in the routing table to route to that account
-    let default_route_iter = iter::once(default_route)
-        .filter_map(|r| r)
-        .map(|rid| (String::new(), rid.0));
     let routes = routes
         .into_iter()
         .map(|(s, rid)| (s, rid.0))
         // Include the default route if there is one
-        .chain(default_route_iter)
+        .chain(default_route.map(|rid| (String::new(), rid.0)))
         // Having the static_routes inserted after ensures that they will overwrite
         // any routes with the same prefix from the first set
         .chain(static_routes.into_iter().map(|(s, rid)| (s, rid.0)))
