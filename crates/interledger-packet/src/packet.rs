@@ -135,10 +135,10 @@ impl TryFrom<BytesMut> for Prepare {
 
         // Fixed Length DateTime format - RFC 0027
         // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
-        let mut expires_at = [0x00; 17];
-        content.read_exact(&mut expires_at)?;
+        let mut read_expires_at = [0x00; 17];
+        content.read_exact(&mut read_expires_at)?;
 
-        if !expires_at
+        if !read_expires_at
             .iter()
             .map(|e| (b'0'..=b'9').contains(e))
             .fold(true, |a, b| a & b)
@@ -146,10 +146,29 @@ impl TryFrom<BytesMut> for Prepare {
             return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
         }
 
-        let expires_at = str::from_utf8(&expires_at[..])?;
+        let expires_at = str::from_utf8(&read_expires_at[..])?;
         let expires_at: DateTime<Utc> =
             Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
         let expires_at = SystemTime::from(expires_at);
+
+        if cfg!(feature = "roundtrip-only") {
+            // chrono will leniently parse some timestamps into forms which don't roundtrip.
+            // this works around the class of fuzzer findings demonstrated by
+            // fuzzed_1_chrono_60s_rollover.
+            let mut roundtripped = [0u8; 17];
+            write!(
+                &mut roundtripped[..],
+                "{}",
+                DateTime::<Utc>::from(expires_at).format(INTERLEDGER_TIMESTAMP_FORMAT),
+            )
+            .unwrap();
+
+            if roundtripped != read_expires_at {
+                return Err(ParseError::InvalidPacket(
+                    "Non-roundtripping datetime".into(),
+                ));
+            }
+        }
 
         // Skip execution condition.
         content.skip(CONDITION_LEN)?;
@@ -159,6 +178,8 @@ impl TryFrom<BytesMut> for Prepare {
         // Skip the data.
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
+
+        ensure_no_inner_trailing_bytes(content)?;
 
         Ok(Prepare {
             buffer,
@@ -313,11 +334,7 @@ impl TryFrom<BytesMut> for Fulfill {
         content.skip(FULFILLMENT_LEN)?;
         content.skip_var_octet_string()?;
 
-        if !content.is_empty() {
-            return Err(ParseError::InvalidPacket(
-                "Packet contains trailing bytes".into(),
-            ));
-        }
+        ensure_no_inner_trailing_bytes(content)?;
 
         Ok(Fulfill {
             buffer,
@@ -432,6 +449,8 @@ impl TryFrom<BytesMut> for Reject {
 
         let data_offset = content_offset + content_len - content.len();
         content.skip_var_octet_string()?;
+
+        ensure_no_inner_trailing_bytes(content)?;
 
         Ok(Reject {
             buffer,
@@ -573,17 +592,7 @@ fn deserialize_envelope(
 
     let content = reader.read_var_octet_string()?;
 
-    #[cfg(feature = "strict")]
-    {
-        // Trailing bytes in the reader but not counted in length prefix
-        // is allowed for creating packet structs as it is not prohibited
-        // in specs but required to return error for roundtripping in fuzzing
-        if !reader.is_empty() {
-            return Err(ParseError::InvalidPacket(
-                "Packet contains unaccounted for trailing bytes".into(),
-            ));
-        }
-    }
+    ensure_no_outer_trailing_bytes(reader)?;
 
     Ok((content_offset, content))
 }
@@ -646,6 +655,31 @@ impl From<Prepare> for BytesMut {
     }
 }
 
+/// Called at the end of each parse to ensure that the given buffer is empty, as in there are no
+/// trailing bytes. Calling these bytes as the "inner" bytes as opposed to "outer" bytes seen by
+/// the [`deserialize_envelope`].
+fn ensure_no_inner_trailing_bytes(content: &[u8]) -> Result<(), ParseError> {
+    if content.is_empty() || !cfg!(feature = "strict") {
+        Ok(())
+    } else {
+        Err(ParseError::InvalidPacket(
+            "Unexpected inner trailing bytes".into(),
+        ))
+    }
+}
+
+/// Called at the end of [`deserialize_envelope`] to make sure that there are no trailing bytes
+/// after the outermost variable length container which are called "outer".
+fn ensure_no_outer_trailing_bytes(reader: &[u8]) -> Result<(), ParseError> {
+    if reader.is_empty() || !cfg!(feature = "strict") {
+        Ok(())
+    } else {
+        Err(ParseError::InvalidPacket(
+            "Unexpected outer trailing bytes".into(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod fuzzed {
     use super::Packet;
@@ -653,7 +687,7 @@ mod fuzzed {
     use std::convert::TryFrom;
 
     #[test]
-    fn fuzzed_0_non_utf8_error_code() {
+    fn fuzzed_0_non_ascii_error_code() {
         #[rustfmt::skip]
         let orig = [
             // reject
@@ -667,9 +701,70 @@ mod fuzzed {
 
         let e = Packet::try_from(BytesMut::from(&orig[..])).unwrap_err();
         assert_eq!(
+            "Invalid Packet: Reject.ErrorCode was not IA5String",
             &e.to_string(),
-            "Invalid Packet: Reject.ErrorCode was not IA5String"
         );
+    }
+
+    #[test]
+    fn fuzzed_1_with_fixed_errorcode() {
+        #[rustfmt::skip]
+        let orig = [
+            // reject
+            14,
+            // varlen for the content
+            13,
+            // fixed error code
+            116, 119, 127,
+            // varlen address
+            6, 116, 101, 115, 116, 46, 116,
+            // varlen message
+            0,
+            // varlen data
+            0,
+            // extra byte in the end
+            42,
+        ];
+
+        let res = Packet::try_from(BytesMut::from(&orig[..]));
+
+        if cfg!(feature = "strict") {
+            assert_eq!(
+                "Invalid Packet: Unexpected inner trailing bytes",
+                &res.unwrap_err().to_string(),
+            );
+        } else {
+            res.unwrap();
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "roundtrip-only")]
+    fn fuzzed_2_chrono_60s_rollover() {
+        // this has been reduced from the original
+        #[rustfmt::skip]
+        let orig = [
+            // prepare
+            12,
+            // variable length len
+            65,
+            // amount
+            0, 0, 0, 0, 0, 0, 0, 1,
+            // timestamp, "2000-05-31T16:01:60.251" which is parsed and later formatted as
+            // "2000-05-31T16:02:00.251" (dashes, T, colons and dot added for readability)
+            50, 48, 48, 48, 48, 53, 51, 49, 49, 54, 48, 49, 54, 48, 50, 53, 49,
+            // execution condition
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            // destination varlen
+            6,
+            // destination "test.a"
+            116, 101, 115, 116, 46, 97,
+            // data varlen
+            0,
+        ];
+
+        crate::lenient_packet_roundtrips(&orig[..]).unwrap_err();
     }
 }
 
@@ -689,7 +784,7 @@ mod test_packet_type {
     fn try_from_empty() {
         assert_eq!(
             "Invalid Packet: Unknown packet type: None",
-            format!("{}", PacketType::try_from(&[][..]).unwrap_err())
+            &PacketType::try_from(&[][..]).unwrap_err().to_string()
         );
     }
 }
@@ -787,8 +882,8 @@ mod test_prepare {
         #[cfg(feature = "strict")]
         {
             assert_eq!(
-                "Invalid Packet: Packet contains unaccounted for trailing bytes",
-                format!("{}", with_junk_data.unwrap_err())
+                "Invalid Packet: Unexpected outer trailing bytes",
+                &with_junk_data.unwrap_err().to_string()
             );
         }
 
@@ -888,16 +983,12 @@ mod test_fulfill {
 
         // feature = "strict" is used when fuzzing and is tested here to ensure
         // error is returned instead of roundtripping when junk data is added
-        #[cfg(feature = "strict")]
-        {
+        if cfg!(feature = "strict") {
             assert_eq!(
-                "Invalid Packet: Packet contains unaccounted for trailing bytes",
-                format!("{}", with_junk_data.unwrap_err())
+                "Invalid Packet: Unexpected outer trailing bytes",
+                &with_junk_data.unwrap_err().to_string()
             );
-        }
-
-        #[cfg(not(feature = "strict"))]
-        {
+        } else {
             let with_junk_data = with_junk_data.unwrap();
             assert_eq!(with_junk_data.fulfillment(), fixtures::FULFILLMENT);
             assert_eq!(with_junk_data.data(), fixtures::DATA);
@@ -938,13 +1029,16 @@ mod test_fulfill {
             0, 93, 0, 14, 40, 40, 40,
         ];
 
-        assert_eq!(
-            "Invalid Packet: Packet contains trailing bytes",
-            format!(
-                "{}",
-                Fulfill::try_from(BytesMut::from(with_trailing_bytes)).unwrap_err()
-            )
-        );
+        let res = Fulfill::try_from(BytesMut::from(with_trailing_bytes));
+
+        if cfg!(feature = "strict") {
+            assert_eq!(
+                "Invalid Packet: Unexpected inner trailing bytes",
+                &res.unwrap_err().to_string()
+            );
+        } else {
+            res.unwrap();
+        }
     }
 
     #[test]
@@ -989,16 +1083,12 @@ mod test_reject {
 
         // feature = "strict" is used when fuzzing and is tested here to ensure
         // error is returned instead of roundtripping when junk data is added
-        #[cfg(feature = "strict")]
-        {
+        if cfg!(feature = "strict") {
             assert_eq!(
-                "Invalid Packet: Packet contains unaccounted for trailing bytes",
-                format!("{}", with_junk_data.unwrap_err())
+                "Invalid Packet: Unexpected outer trailing bytes",
+                &with_junk_data.unwrap_err().to_string()
             );
-        }
-
-        #[cfg(not(feature = "strict"))]
-        {
+        } else {
             let with_junk_data = with_junk_data.unwrap();
             assert_eq!(with_junk_data.code(), REJECT_BUILDER.code);
             assert_eq!(with_junk_data.message(), REJECT_BUILDER.message);

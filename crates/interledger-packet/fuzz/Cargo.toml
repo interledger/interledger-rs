@@ -15,7 +15,7 @@ bytes = "0.5"
 
 [dependencies.interledger-packet]
 path = ".."
-features = ["strict"]
+features = ["roundtrip-only"]
 
 # Prevent this from interfering with workspaces
 [workspace]

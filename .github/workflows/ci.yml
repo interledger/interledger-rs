@@ -58,6 +58,7 @@ jobs:
         run: |
           timeout 15m cargo test -p interledger-packet
           timeout 15m cargo test -p interledger-packet --features strict
+          timeout 15m cargo test -p interledger-packet --features roundtrip-only
 
       - name: Test with subset of features (interledger-btp)
         run: |
