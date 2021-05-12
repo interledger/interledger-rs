@@ -9,7 +9,7 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use crate::hex::HexString;
 use crate::oer::{self, BufOerExt, MutBufOerExt};
-use crate::{Address, ErrorCode, ParseError};
+use crate::{Address, DataTypeError, ErrorCode, PacketTypeError, ParseError, TrailingBytesError};
 use std::convert::TryFrom;
 
 const AMOUNT_LEN: usize = 8;
@@ -32,29 +32,24 @@ pub enum PacketType {
 
 // Gets the packet type from a u8 array
 impl TryFrom<&[u8]> for PacketType {
-    type Error = ParseError;
+    type Error = PacketTypeError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let first = bytes
-            .first()
-            .ok_or_else(|| ParseError::InvalidPacket("Unknown packet type: None".into()))?;
+        let first = bytes.first().ok_or(PacketTypeError::EOF)?;
 
         PacketType::try_from(*first)
     }
 }
 
 impl TryFrom<u8> for PacketType {
-    type Error = ParseError;
+    type Error = PacketTypeError;
 
     fn try_from(byte: u8) -> Result<Self, Self::Error> {
         match byte {
             12 => Ok(PacketType::Prepare),
             13 => Ok(PacketType::Fulfill),
             14 => Ok(PacketType::Reject),
-            byte => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {:?}",
-                Some(byte),
-            ))),
+            byte => Err(PacketTypeError::Unknown(byte)),
         }
     }
 }
@@ -143,10 +138,11 @@ impl TryFrom<BytesMut> for Prepare {
             .map(|e| (b'0'..=b'9').contains(e))
             .fold(true, |a, b| a & b)
         {
-            return Err(ParseError::InvalidPacket("DateTime must be numeric".into()));
+            return Err(DataTypeError::ASCII.into());
         }
 
-        let expires_at = str::from_utf8(&read_expires_at[..])?;
+        let expires_at = str::from_utf8(&read_expires_at[..])
+            .expect("read_expires_at matches only ascii, utf8 conversion must succeed");
         let expires_at: DateTime<Utc> =
             Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
         let expires_at = SystemTime::from(expires_at);
@@ -164,9 +160,7 @@ impl TryFrom<BytesMut> for Prepare {
             .unwrap();
 
             if roundtripped != read_expires_at {
-                return Err(ParseError::InvalidPacket(
-                    "Non-roundtripping datetime".into(),
-                ));
+                return Err(ParseError::RoundtripError);
             }
         }
 
@@ -437,9 +431,7 @@ impl TryFrom<BytesMut> for Reject {
         let mut code = [0; 3];
         content.read_exact(&mut code)?;
 
-        let code = ErrorCode::new(code).ok_or_else(|| {
-            ParseError::InvalidPacket("Reject.ErrorCode was not IA5String".into())
-        })?;
+        let code = ErrorCode::new(code).ok_or_else(|| DataTypeError::IA5String)?;
 
         let triggered_by_offset = content_offset + content_len - content.len();
         Address::try_from(content.read_var_octet_string()?)?;
@@ -576,10 +568,7 @@ fn deserialize_envelope(
     let got_type = reader.read_u8()?;
 
     if got_type != packet_type as u8 {
-        return Err(ParseError::InvalidPacket(format!(
-            "Unexpected packet type: {:?}",
-            got_type,
-        )));
+        return Err(PacketTypeError::Unexpected(got_type, packet_type as u8).into());
     }
 
     let content_offset = 1 + {
@@ -658,25 +647,21 @@ impl From<Prepare> for BytesMut {
 /// Called at the end of each parse to ensure that the given buffer is empty, as in there are no
 /// trailing bytes. Calling these bytes as the "inner" bytes as opposed to "outer" bytes seen by
 /// the [`deserialize_envelope`].
-fn ensure_no_inner_trailing_bytes(content: &[u8]) -> Result<(), ParseError> {
+fn ensure_no_inner_trailing_bytes(content: &[u8]) -> Result<(), TrailingBytesError> {
     if content.is_empty() || !cfg!(feature = "strict") {
         Ok(())
     } else {
-        Err(ParseError::InvalidPacket(
-            "Unexpected inner trailing bytes".into(),
-        ))
+        Err(TrailingBytesError::Inner)
     }
 }
 
 /// Called at the end of [`deserialize_envelope`] to make sure that there are no trailing bytes
 /// after the outermost variable length container which are called "outer".
-fn ensure_no_outer_trailing_bytes(reader: &[u8]) -> Result<(), ParseError> {
+fn ensure_no_outer_trailing_bytes(reader: &[u8]) -> Result<(), TrailingBytesError> {
     if reader.is_empty() || !cfg!(feature = "strict") {
         Ok(())
     } else {
-        Err(ParseError::InvalidPacket(
-            "Unexpected outer trailing bytes".into(),
-        ))
+        Err(TrailingBytesError::Outer)
     }
 }
 
@@ -700,10 +685,7 @@ mod fuzzed {
         ];
 
         let e = Packet::try_from(BytesMut::from(&orig[..])).unwrap_err();
-        assert_eq!(
-            "Invalid Packet: Reject.ErrorCode was not IA5String",
-            &e.to_string(),
-        );
+        assert_eq!("Data Type Error: Should be IA5String", &e.to_string());
     }
 
     #[test]
@@ -729,10 +711,7 @@ mod fuzzed {
         let res = Packet::try_from(BytesMut::from(&orig[..]));
 
         if cfg!(feature = "strict") {
-            assert_eq!(
-                "Invalid Packet: Unexpected inner trailing bytes",
-                &res.unwrap_err().to_string(),
-            );
+            assert_eq!("Trailing Bytes Error: Inner", &res.unwrap_err().to_string(),);
         } else {
             res.unwrap();
         }
@@ -783,7 +762,7 @@ mod test_packet_type {
     #[test]
     fn try_from_empty() {
         assert_eq!(
-            "Invalid Packet: Unknown packet type: None",
+            "PacketType data not found",
             &PacketType::try_from(&[][..]).unwrap_err().to_string()
         );
     }
@@ -851,7 +830,7 @@ mod test_prepare {
             let mut prep = BytesMut::from(PREPARE_BYTES);
             prep[i] = 9; // convert a byte from the address to a junk character
             let err = Prepare::try_from(prep).unwrap_err();
-            assert_eq!("Invalid Packet: DateTime must be numeric", &err.to_string());
+            assert_eq!("Data Type Error: Should be ASCII", &err.to_string());
         }
     }
 
@@ -882,7 +861,7 @@ mod test_prepare {
         #[cfg(feature = "strict")]
         {
             assert_eq!(
-                "Invalid Packet: Unexpected outer trailing bytes",
+                "Trailing Bytes Error: Outer",
                 &with_junk_data.unwrap_err().to_string()
             );
         }
@@ -985,7 +964,7 @@ mod test_fulfill {
         // error is returned instead of roundtripping when junk data is added
         if cfg!(feature = "strict") {
             assert_eq!(
-                "Invalid Packet: Unexpected outer trailing bytes",
+                "Trailing Bytes Error: Outer",
                 &with_junk_data.unwrap_err().to_string()
             );
         } else {
@@ -1032,10 +1011,7 @@ mod test_fulfill {
         let res = Fulfill::try_from(BytesMut::from(with_trailing_bytes));
 
         if cfg!(feature = "strict") {
-            assert_eq!(
-                "Invalid Packet: Unexpected inner trailing bytes",
-                &res.unwrap_err().to_string()
-            );
+            assert_eq!("Trailing Bytes Error: Inner", &res.unwrap_err().to_string());
         } else {
             res.unwrap();
         }
@@ -1085,7 +1061,7 @@ mod test_reject {
         // error is returned instead of roundtripping when junk data is added
         if cfg!(feature = "strict") {
             assert_eq!(
-                "Invalid Packet: Unexpected outer trailing bytes",
+                "Trailing Bytes Error: Outer",
                 &with_junk_data.unwrap_err().to_string()
             );
         } else {
