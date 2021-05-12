@@ -431,7 +431,7 @@ impl TryFrom<BytesMut> for Reject {
         let mut code = [0; 3];
         content.read_exact(&mut code)?;
 
-        let code = ErrorCode::new(code).ok_or_else(|| DataTypeError::IA5String)?;
+        let code = ErrorCode::new(code).ok_or(DataTypeError::IA5String)?;
 
         let triggered_by_offset = content_offset + content_len - content.len();
         Address::try_from(content.read_var_octet_string()?)?;

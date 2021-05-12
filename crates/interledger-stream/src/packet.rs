@@ -1,9 +1,12 @@
-use super::crypto::{decrypt, encrypt};
+use super::{
+    crypto::{decrypt, encrypt},
+    StreamPacketError,
+};
 use byteorder::ReadBytesExt;
 use bytes::{BufMut, BytesMut};
 use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
-    Address, PacketType as IlpPacketType, ParseError,
+    Address, PacketType as IlpPacketType,
 };
 #[cfg(test)]
 use once_cell::sync::Lazy;
@@ -142,15 +145,18 @@ impl StreamPacket {
     /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
     /// 1. If the decryption fails
     /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
-    pub fn from_encrypted(shared_secret: &[u8], ciphertext: BytesMut) -> Result<Self, ParseError> {
+    pub fn from_encrypted(
+        shared_secret: &[u8],
+        ciphertext: BytesMut,
+    ) -> Result<Self, StreamPacketError> {
         // TODO handle decryption failure
-        let decrypted = decrypt(shared_secret, ciphertext)
-            .map_err(|_| ParseError::InvalidPacket(String::from("Unable to decrypt packet")))?;
+        let decrypted =
+            decrypt(shared_secret, ciphertext).map_err(|_| StreamPacketError::FailedToDecrypt)?;
         StreamPacket::from_bytes_unencrypted(decrypted)
     }
 
     #[cfg(any(fuzzing, test))]
-    pub fn from_decrypted(data: BytesMut) -> Result<Self, ParseError> {
+    pub fn from_decrypted(data: BytesMut) -> Result<Self, StreamPacketError> {
         Self::from_bytes_unencrypted(data)
     }
 
@@ -159,15 +165,12 @@ impl StreamPacket {
     /// # Errors
     /// 1. If the version of Stream Protocol doesn't match the hardcoded [stream version](constant.STREAM_VERSION.html)
     /// 1. If the decrypted bytes cannot be parsed to an unencrypted [Stream Packet](./struct.StreamPacket.html)
-    fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, ParseError> {
+    fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, StreamPacketError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
         let version = reader.read_u8()?;
         if version != STREAM_VERSION {
-            return Err(ParseError::InvalidPacket(format!(
-                "Unsupported STREAM version: {}",
-                version
-            )));
+            return Err(StreamPacketError::UnsupportedVersion);
         }
         let ilp_packet_type = IlpPacketType::try_from(reader.read_u8()?)?;
         let sequence = reader.read_var_uint()?;
@@ -207,9 +210,7 @@ impl StreamPacket {
                 frames_offset,
             })
         } else {
-            Err(ParseError::InvalidPacket(
-                "Incorrect number of frames or unable to parse all frames".to_string(),
-            ))
+            Err(StreamPacketError::NotEnoughValidFrames)
         }
     }
 
@@ -263,7 +264,7 @@ pub struct FrameIterator<'a> {
 impl<'a> FrameIterator<'a> {
     /// Reads a u8 from the iterator's buffer, and depending on the type it returns
     /// a [`Frame`](./enum.Frame.html)
-    fn try_read_next_frame(&mut self) -> Result<Frame<'a>, ParseError> {
+    fn try_read_next_frame(&mut self) -> Result<Frame<'a>, StreamPacketError> {
         let frame_type = self.buffer.read_u8()?;
         let contents: &'a [u8] = self.buffer.read_var_octet_string()?;
         let frame: Frame<'a> = match FrameType::from(frame_type) {
@@ -488,14 +489,12 @@ impl From<ErrorCode> for u8 {
     }
 }
 
-fn ensure_no_inner_trailing_bytes(_reader: &[u8]) -> Result<(), ParseError> {
+fn ensure_no_inner_trailing_bytes(_reader: &[u8]) -> Result<(), StreamPacketError> {
     // Content slice passed to the `read_contents` function should not
     // contain extra bytes.
     #[cfg(feature = "strict")]
     if !_reader.is_empty() {
-        return Err(ParseError::InvalidPacket(
-            "Frame content length mismatch content".to_string(),
-        ));
+        return Err(StreamPacketError::TrailingInnerBytes);
     }
     Ok(())
 }
@@ -504,7 +503,7 @@ fn ensure_no_inner_trailing_bytes(_reader: &[u8]) -> Result<(), ParseError> {
 pub trait SerializableFrame<'a>: Sized {
     fn put_contents(&self, buf: &mut impl MutBufOerExt);
 
-    fn read_contents(reader: &'a [u8]) -> Result<Self, ParseError>;
+    fn read_contents(reader: &'a [u8]) -> Result<Self, StreamPacketError>;
 }
 
 /// Frame after which a connection must be closed.
@@ -518,7 +517,7 @@ pub struct ConnectionCloseFrame<'a> {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
-    fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
         ensure_no_inner_trailing_bytes(reader)?;
@@ -560,7 +559,7 @@ pub struct ConnectionNewAddressFrame {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionNewAddressFrame {
-    fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let source_account = reader.read_var_octet_string()?;
         ensure_no_inner_trailing_bytes(reader)?;
         let source_account = Address::try_from(source_account)?;
@@ -595,7 +594,7 @@ pub struct ConnectionAssetDetailsFrame<'a> {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
-    fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let source_asset_code = str::from_utf8(reader.read_var_octet_string()?)?;
         let source_asset_scale = reader.read_u8()?;
         ensure_no_inner_trailing_bytes(reader)?;
@@ -620,7 +619,7 @@ pub struct ConnectionMaxDataFrame {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionMaxDataFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let max_offset = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
 
@@ -640,7 +639,7 @@ pub struct ConnectionDataBlockedFrame {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionDataBlockedFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let max_offset = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
 
@@ -660,7 +659,7 @@ pub struct ConnectionMaxStreamIdFrame {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionMaxStreamIdFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let max_stream_id = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
 
@@ -680,7 +679,7 @@ pub struct ConnectionStreamIdBlockedFrame {
 }
 
 impl<'a> SerializableFrame<'a> for ConnectionStreamIdBlockedFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let max_stream_id = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
 
@@ -706,7 +705,7 @@ pub struct StreamCloseFrame<'a> {
 }
 
 impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
-    fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let code = ErrorCode::from(reader.read_u8()?);
         let message_bytes = reader.read_var_octet_string()?;
@@ -750,7 +749,7 @@ pub struct StreamMoneyFrame {
 }
 
 impl<'a> SerializableFrame<'a> for StreamMoneyFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let shares = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
@@ -783,7 +782,7 @@ pub struct StreamMaxMoneyFrame {
 }
 
 impl<'a> SerializableFrame<'a> for StreamMaxMoneyFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let receive_max = saturating_read_var_uint(&mut reader)?;
         let total_received = reader.read_var_uint()?;
@@ -817,7 +816,7 @@ pub struct StreamMoneyBlockedFrame {
 }
 
 impl<'a> SerializableFrame<'a> for StreamMoneyBlockedFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let send_max = saturating_read_var_uint(&mut reader)?;
         let total_sent = reader.read_var_uint()?;
@@ -864,7 +863,7 @@ pub struct StreamDataFrame<'a> {
 }
 
 impl<'a> SerializableFrame<'a> for StreamDataFrame<'a> {
-    fn read_contents(mut reader: &'a [u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let offset = reader.read_var_uint()?;
         let data = reader.read_var_octet_string()?;
@@ -894,7 +893,7 @@ pub struct StreamMaxDataFrame {
 }
 
 impl<'a> SerializableFrame<'a> for StreamMaxDataFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
@@ -921,7 +920,7 @@ pub struct StreamDataBlockedFrame {
 }
 
 impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
-    fn read_contents(mut reader: &[u8]) -> Result<Self, ParseError> {
+    fn read_contents(mut reader: &[u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
         let max_offset = reader.read_var_uint()?;
         ensure_no_inner_trailing_bytes(reader)?;
@@ -939,7 +938,7 @@ impl<'a> SerializableFrame<'a> for StreamDataBlockedFrame {
 }
 
 /// See: https://github.com/interledger/rfcs/blob/master/0029-stream/0029-stream.md#514-maximum-varuint-size
-fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, ParseError> {
+fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, StreamPacketError> {
     if reader.peek_var_octet_string()?.len() > 8 {
         reader.skip_var_octet_string()?;
 
@@ -947,9 +946,7 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
             // This is needed because the returned value u64::MAX
             // will make roundtrip fail, i.e. BytesMut::from(packet)
             // will not equal to the original data.
-            Err(ParseError::WrongType(
-                "Fuzzing roundtrip for var_uint larger than u64::MAX unavailable".to_string(),
-            ))
+            Err(StreamPacketError::RoundtripError)
         } else {
             Ok(u64::MAX)
         }
@@ -1025,7 +1022,7 @@ mod fuzzing {
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
-            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            "Frames Error: Not enough successfully parsed frames",
             format!("{}", pkt.unwrap_err())
         );
     }
@@ -1056,7 +1053,7 @@ mod fuzzing {
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
-            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            "Frames Error: Not enough successfully parsed frames",
             &pkt.unwrap_err().to_string()
         );
     }
@@ -1105,7 +1102,7 @@ mod fuzzing {
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
-            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
+            "Frames Error: Not enough successfully parsed frames",
             &pkt.unwrap_err().to_string()
         );
     }
