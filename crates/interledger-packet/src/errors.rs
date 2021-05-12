@@ -12,6 +12,7 @@ pub enum ParseError {
     PacketTypeError(#[from] PacketTypeError),
     #[error("Trailing Bytes Error: {0}")]
     TrailingBytesError(#[from] TrailingBytesError),
+    // TODO: use specific errors for timestamp etc
     #[error("Data Type Error: {0}")]
     DataTypeError(#[from] DataTypeError),
     #[error("Wrong Type: {0}")]
