@@ -7,7 +7,7 @@ use interledger_packet::{
 };
 use once_cell::sync::Lazy;
 use std::{
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     fmt::{self, Debug},
     io::Read,
     str::{self, FromStr},
@@ -39,50 +39,55 @@ pub static CCP_UPDATE_DESTINATION: Lazy<Address> =
     Lazy::new(|| Address::from_str("peer.route.update").unwrap());
 
 #[derive(Debug)]
-pub enum CCPPacketErr {
+pub enum CcpPacketError {
     UnexpectedMode(u8),
     PacketExpired,
     UnexpectedDestination(Address),
-    UnexpectedCondition,
+    UnexpectedCondition([u8; 32]),
     IOError,
     Utf8Conversion,
     AddresssInvalid(AddressError),
 }
 
-// TODO: better error messages
-impl fmt::Display for CCPPacketErr {
+impl fmt::Display for CcpPacketError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CCPPacketErr::UnexpectedMode(val) => write!(fmt, "Unexpected Mode found: {}", val),
-            CCPPacketErr::PacketExpired => write!(fmt, "Packet expired"),
-            CCPPacketErr::UnexpectedDestination(address) => {
-                write!(fmt, "Packet is not a CCP message. Destination: {}", address)
+            CcpPacketError::UnexpectedMode(val) => {
+                write!(fmt, "Invalid Packet: Unexpected Mode found: {}", val)
             }
-            CCPPacketErr::UnexpectedCondition => {
-                write!(fmt, "Packet has an unexpected execution condition",)
+            CcpPacketError::PacketExpired => write!(fmt, "Invalid Packet: Packet expired"),
+            CcpPacketError::UnexpectedDestination(address) => {
+                write!(
+                    fmt,
+                    "Invalid Packet: Packet is not a CCP message. Destination: {}",
+                    address
+                )
             }
-            CCPPacketErr::IOError => write!(fmt, "IOError"),
-            CCPPacketErr::Utf8Conversion => write!(fmt, "Unable to convert data to utf-8"),
-            CCPPacketErr::AddresssInvalid(err) => write!(fmt, "Address Invalid {:?}", err),
+            CcpPacketError::UnexpectedCondition(c) => {
+                write!(fmt, "Invalid Packet: Wrong condition: {:?}", HexString(c))
+            }
+            CcpPacketError::IOError => write!(fmt, "I/O Error"),
+            CcpPacketError::Utf8Conversion => write!(fmt, "Utf-8 Conversion Error"),
+            CcpPacketError::AddresssInvalid(err) => write!(fmt, "Address Invalid {:?}", err),
         }
     }
 }
 
-impl From<std::io::Error> for CCPPacketErr {
+impl From<std::io::Error> for CcpPacketError {
     fn from(_err: std::io::Error) -> Self {
-        CCPPacketErr::IOError
+        CcpPacketError::IOError
     }
 }
 
-impl From<std::str::Utf8Error> for CCPPacketErr {
+impl From<std::str::Utf8Error> for CcpPacketError {
     fn from(_err: std::str::Utf8Error) -> Self {
-        CCPPacketErr::Utf8Conversion
+        CcpPacketError::Utf8Conversion
     }
 }
 
-impl From<AddressError> for CCPPacketErr {
+impl From<AddressError> for CcpPacketError {
     fn from(err: AddressError) -> Self {
-        CCPPacketErr::AddresssInvalid(err)
+        CcpPacketError::AddresssInvalid(err)
     }
 }
 
@@ -97,13 +102,13 @@ pub enum Mode {
 }
 
 impl TryFrom<u8> for Mode {
-    type Error = CCPPacketErr;
+    type Error = CcpPacketError;
 
     fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
             0 => Ok(Mode::Idle),
             1 => Ok(Mode::Sync),
-            _ => Err(CCPPacketErr::UnexpectedMode(val)),
+            _ => Err(CcpPacketError::UnexpectedMode(val)),
         }
     }
 }
@@ -134,26 +139,31 @@ impl Debug for RouteControlRequest {
 }
 
 impl TryFrom<&Prepare> for RouteControlRequest {
-    type Error = CCPPacketErr;
+    type Error = CcpPacketError;
 
     fn try_from(prepare: &Prepare) -> Result<Self, Self::Error> {
         if prepare.expires_at() < SystemTime::now() {
-            return Err(CCPPacketErr::PacketExpired);
+            return Err(CcpPacketError::PacketExpired);
         }
         RouteControlRequest::try_from_without_expiry(prepare)
     }
 }
 
 impl RouteControlRequest {
-    pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, CCPPacketErr> {
+    pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, CcpPacketError> {
         let destination = prepare.destination();
         if destination != *CCP_CONTROL_DESTINATION {
-            return Err(CCPPacketErr::UnexpectedDestination(destination));
+            return Err(CcpPacketError::UnexpectedDestination(destination));
         }
 
         if prepare.execution_condition() != PEER_PROTOCOL_CONDITION {
             error!("Unexpected condition: {:x?}", prepare.execution_condition());
-            return Err(CCPPacketErr::UnexpectedCondition);
+            return Err(CcpPacketError::UnexpectedCondition(
+                prepare
+                    .execution_condition()
+                    .try_into()
+                    .expect("Always return a length of 32"),
+            ));
         }
 
         Self::try_from_data(prepare.data())
@@ -168,7 +178,7 @@ impl RouteControlRequest {
         }
     }
 
-    fn try_from_data(mut data: &[u8]) -> Result<Self, CCPPacketErr> {
+    fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
         let mode = Mode::try_from(data.read_u8()?)?;
         let mut last_known_routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut last_known_routing_table_id)?;
@@ -228,7 +238,7 @@ pub(crate) struct RouteProp {
 }
 
 impl TryFrom<&mut &[u8]> for RouteProp {
-    type Error = CCPPacketErr;
+    type Error = CcpPacketError;
 
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
@@ -299,7 +309,7 @@ impl Debug for Route {
 }
 
 impl TryFrom<&mut &[u8]> for Route {
-    type Error = CCPPacketErr;
+    type Error = CcpPacketError;
 
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
@@ -389,26 +399,31 @@ impl Debug for RouteUpdateRequest {
 }
 
 impl TryFrom<&Prepare> for RouteUpdateRequest {
-    type Error = CCPPacketErr;
+    type Error = CcpPacketError;
 
     fn try_from(prepare: &Prepare) -> Result<Self, Self::Error> {
         if prepare.expires_at() < SystemTime::now() {
-            return Err(CCPPacketErr::PacketExpired);
+            return Err(CcpPacketError::PacketExpired);
         }
         RouteUpdateRequest::try_from_without_expiry(prepare)
     }
 }
 
 impl RouteUpdateRequest {
-    pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, CCPPacketErr> {
+    pub(crate) fn try_from_without_expiry(prepare: &Prepare) -> Result<Self, CcpPacketError> {
         let destination = prepare.destination();
         if destination != *CCP_UPDATE_DESTINATION {
-            return Err(CCPPacketErr::UnexpectedDestination(destination));
+            return Err(CcpPacketError::UnexpectedDestination(destination));
         }
 
         if prepare.execution_condition() != PEER_PROTOCOL_CONDITION {
             error!("Unexpected condition: {:x?}", prepare.execution_condition());
-            return Err(CCPPacketErr::UnexpectedCondition);
+            return Err(CcpPacketError::UnexpectedCondition(
+                prepare
+                    .execution_condition()
+                    .try_into()
+                    .expect("Always return a length of 32"),
+            ));
         }
 
         Self::try_from_data(prepare.data())
@@ -423,7 +438,7 @@ impl RouteUpdateRequest {
         }
     }
 
-    fn try_from_data(mut data: &[u8]) -> Result<Self, CCPPacketErr> {
+    fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
         let mut routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut routing_table_id)?;
         let current_epoch_index = data.read_u32::<BigEndian>()?;
@@ -520,7 +535,7 @@ mod route_control_request {
         let result = RouteControlRequest::try_from_without_expiry(&prepare);
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Packet is not a CCP message. Destination: peer.route.controk"
+            "Invalid Packet: Packet is not a CCP message. Destination: peer.route.controk"
         );
     }
 
@@ -530,7 +545,7 @@ mod route_control_request {
         let result = RouteControlRequest::try_from_without_expiry(&prepare);
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Packet has an unexpected execution condition"
+            "Invalid Packet: Wrong condition: 66687aadf862bd776c8fc18b8e9f8e21089714856ee233b3902a591d0d5f2925"
         );
     }
 
@@ -538,7 +553,10 @@ mod route_control_request {
     fn errors_with_expired_packet() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c6c0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292512706565722e726f7574652e636f6e74726f6c1f0170d1a134a0df4f47964f6e19e2ab379000000020010203666f6f03626172")[..])).unwrap();
         let result = RouteControlRequest::try_from(&prepare);
-        assert_eq!(result.unwrap_err().to_string(), "Packet expired");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid Packet: Packet expired"
+        );
     }
 }
 
@@ -585,7 +603,7 @@ mod route_update_request {
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Packet is not a CCP message. Destination: peer.route.updatd"
+            "Invalid Packet: Packet is not a CCP message. Destination: peer.route.updatd"
         );
     }
 
@@ -593,17 +611,17 @@ mod route_update_request {
     fn errors_with_wrong_condition() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031353036313630303031303030303066687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from_without_expiry(&prepare);
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Packet has an unexpected execution condition"
-        );
+        assert_eq!(result.unwrap_err().to_string(), "Invalid Packet: Wrong condition: 66687aadf862bd776c8fd18b8e9f8e20089714856ee233b3902a591d0d5f2925");
     }
 
     #[test]
     fn errors_with_expired_packet() {
         let prepare = Prepare::try_from(BytesMut::from(&hex!("0c7e0000000000000000323031343036313630303031303030303066687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f292511706565722e726f7574652e7570646174653221e55f8eabcd4e979ab9bf0ff00a224c000000340000003400000034000075300d6578616d706c652e616c69636501000100")[..])).unwrap();
         let result = RouteUpdateRequest::try_from(&prepare);
-        assert_eq!(result.unwrap_err().to_string(), "Packet expired");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid Packet: Packet expired"
+        );
     }
 
     #[test]

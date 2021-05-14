@@ -9,13 +9,13 @@ pub enum BtpPacketError {
     #[error("Chrono Error: {0}")]
     ChronoErr(#[from] chrono::ParseError),
     #[error("PacketType Error: {0}")]
-    PacketTypeError(#[from] PacketTypeError),
+    PacketType(#[from] PacketTypeError),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum PacketTypeError {
     #[error("PacketType {0} is not supported")]
     Unknown(u8),
-    #[error("PacketType {1} expected, found {0}")]
+    #[error("Cannot parse Message from packet of type {0}, expected type {1}")]
     Unexpected(u8, u8),
 }

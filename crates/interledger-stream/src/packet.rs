@@ -170,7 +170,7 @@ impl StreamPacket {
         let mut reader = &buffer_unencrypted[..];
         let version = reader.read_u8()?;
         if version != STREAM_VERSION {
-            return Err(StreamPacketError::UnsupportedVersion);
+            return Err(StreamPacketError::UnsupportedVersion(version));
         }
         let ilp_packet_type = IlpPacketType::try_from(reader.read_u8()?)?;
         let sequence = reader.read_var_uint()?;
@@ -942,14 +942,15 @@ fn saturating_read_var_uint<'a>(reader: &mut impl BufOerExt<'a>) -> Result<u64, 
     if reader.peek_var_octet_string()?.len() > 8 {
         reader.skip_var_octet_string()?;
 
-        if cfg!(feature = "roundtrip-only") {
+        #[cfg(feature = "roundtrip-only")]
+        {
             // This is needed because the returned value u64::MAX
             // will make roundtrip fail, i.e. BytesMut::from(packet)
             // will not equal to the original data.
-            Err(StreamPacketError::RoundtripError)
-        } else {
-            Ok(u64::MAX)
+            Err(StreamPacketError::NonRoundtrippableSaturatingAmount)
         }
+        #[cfg(not(feature = "roundtrip-only"))]
+        Ok(u64::MAX)
     } else {
         Ok(reader.read_var_uint()?)
     }
@@ -1022,7 +1023,7 @@ mod fuzzing {
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
-            "Frames Error: Not enough successfully parsed frames",
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
             format!("{}", pkt.unwrap_err())
         );
     }
@@ -1053,7 +1054,7 @@ mod fuzzing {
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
-            "Frames Error: Not enough successfully parsed frames",
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
             &pkt.unwrap_err().to_string()
         );
     }
@@ -1102,7 +1103,7 @@ mod fuzzing {
         let pkt = StreamPacket::from_decrypted(b);
 
         assert_eq!(
-            "Frames Error: Not enough successfully parsed frames",
+            "Invalid Packet: Incorrect number of frames or unable to parse all frames",
             &pkt.unwrap_err().to_string()
         );
     }

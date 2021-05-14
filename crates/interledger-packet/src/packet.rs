@@ -9,7 +9,7 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use crate::hex::HexString;
 use crate::oer::{self, BufOerExt, MutBufOerExt};
-use crate::{Address, DataTypeError, ErrorCode, PacketTypeError, ParseError, TrailingBytesError};
+use crate::{Address, ErrorCode, PacketTypeError, ParseError, TrailingBytesError};
 use std::convert::TryFrom;
 
 const AMOUNT_LEN: usize = 8;
@@ -35,7 +35,7 @@ impl TryFrom<&[u8]> for PacketType {
     type Error = PacketTypeError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let first = bytes.first().ok_or(PacketTypeError::EOF)?;
+        let first = bytes.first().ok_or(PacketTypeError::Eof)?;
 
         PacketType::try_from(*first)
     }
@@ -138,7 +138,7 @@ impl TryFrom<BytesMut> for Prepare {
             .map(|e| (b'0'..=b'9').contains(e))
             .fold(true, |a, b| a & b)
         {
-            return Err(DataTypeError::ASCII.into());
+            return Err(ParseError::TimestampConversion);
         }
 
         let expires_at = str::from_utf8(&read_expires_at[..])
@@ -147,7 +147,8 @@ impl TryFrom<BytesMut> for Prepare {
             Utc.datetime_from_str(&expires_at, INTERLEDGER_TIMESTAMP_FORMAT)?;
         let expires_at = SystemTime::from(expires_at);
 
-        if cfg!(feature = "roundtrip-only") {
+        #[cfg(feature = "roundtrip-only")]
+        {
             // chrono will leniently parse some timestamps into forms which don't roundtrip.
             // this works around the class of fuzzer findings demonstrated by
             // fuzzed_1_chrono_60s_rollover.
@@ -160,7 +161,7 @@ impl TryFrom<BytesMut> for Prepare {
             .unwrap();
 
             if roundtripped != read_expires_at {
-                return Err(ParseError::RoundtripError);
+                return Err(ParseError::NonRoundtrippableTimestamp);
             }
         }
 
@@ -431,7 +432,7 @@ impl TryFrom<BytesMut> for Reject {
         let mut code = [0; 3];
         content.read_exact(&mut code)?;
 
-        let code = ErrorCode::new(code).ok_or(DataTypeError::IA5String)?;
+        let code = ErrorCode::new(code).ok_or(ParseError::ErrorCodeConversion)?;
 
         let triggered_by_offset = content_offset + content_len - content.len();
         Address::try_from(content.read_var_octet_string()?)?;
@@ -685,7 +686,10 @@ mod fuzzed {
         ];
 
         let e = Packet::try_from(BytesMut::from(&orig[..])).unwrap_err();
-        assert_eq!("Data Type Error: Should be IA5String", &e.to_string());
+        assert_eq!(
+            "Invalid Packet: Reject.ErrorCode was not IA5String",
+            &e.to_string(),
+        );
     }
 
     #[test]
@@ -711,7 +715,10 @@ mod fuzzed {
         let res = Packet::try_from(BytesMut::from(&orig[..]));
 
         if cfg!(feature = "strict") {
-            assert_eq!("Trailing Bytes Error: Inner", &res.unwrap_err().to_string(),);
+            assert_eq!(
+                "Invalid Packet: Unexpected inner trailing bytes",
+                &res.unwrap_err().to_string(),
+            );
         } else {
             res.unwrap();
         }
@@ -762,7 +769,7 @@ mod test_packet_type {
     #[test]
     fn try_from_empty() {
         assert_eq!(
-            "PacketType data not found",
+            "Invalid Packet: Unknown packet type",
             &PacketType::try_from(&[][..]).unwrap_err().to_string()
         );
     }
@@ -830,7 +837,7 @@ mod test_prepare {
             let mut prep = BytesMut::from(PREPARE_BYTES);
             prep[i] = 9; // convert a byte from the address to a junk character
             let err = Prepare::try_from(prep).unwrap_err();
-            assert_eq!("Data Type Error: Should be ASCII", &err.to_string());
+            assert_eq!("Invalid Packet: DateTime must be numeric", &err.to_string());
         }
     }
 
@@ -861,7 +868,7 @@ mod test_prepare {
         #[cfg(feature = "strict")]
         {
             assert_eq!(
-                "Trailing Bytes Error: Outer",
+                "Invalid Packet: Unexpected outer trailing bytes",
                 &with_junk_data.unwrap_err().to_string()
             );
         }
@@ -964,7 +971,7 @@ mod test_fulfill {
         // error is returned instead of roundtripping when junk data is added
         if cfg!(feature = "strict") {
             assert_eq!(
-                "Trailing Bytes Error: Outer",
+                "Invalid Packet: Unexpected outer trailing bytes",
                 &with_junk_data.unwrap_err().to_string()
             );
         } else {
@@ -1011,7 +1018,10 @@ mod test_fulfill {
         let res = Fulfill::try_from(BytesMut::from(with_trailing_bytes));
 
         if cfg!(feature = "strict") {
-            assert_eq!("Trailing Bytes Error: Inner", &res.unwrap_err().to_string());
+            assert_eq!(
+                "Invalid Packet: Unexpected inner trailing bytes",
+                &res.unwrap_err().to_string()
+            );
         } else {
             res.unwrap();
         }
@@ -1061,7 +1071,7 @@ mod test_reject {
         // error is returned instead of roundtripping when junk data is added
         if cfg!(feature = "strict") {
             assert_eq!(
-                "Trailing Bytes Error: Outer",
+                "Invalid Packet: Unexpected outer trailing bytes",
                 &with_junk_data.unwrap_err().to_string()
             );
         } else {
