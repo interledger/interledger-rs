@@ -14,7 +14,7 @@ mod packet;
 
 pub use self::address::{Address, AddressError};
 pub use self::error::{ErrorClass, ErrorCode};
-pub use self::errors::{PacketTypeError, ParseError, TrailingBytesError};
+pub use self::errors::{OerError, PacketTypeError, ParseError, TrailingBytesError};
 
 pub use self::packet::MaxPacketAmountDetails;
 pub use self::packet::{Fulfill, Packet, PacketType, Prepare, Reject};

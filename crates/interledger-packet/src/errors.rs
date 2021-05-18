@@ -2,8 +2,8 @@ use super::AddressError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error("I/O Error: {0}")]
-    IoErr(#[from] std::io::Error),
+    #[error("Oer Error: {0}")]
+    Oer(#[from] OerError),
     #[error("Chrono Error: {0}")]
     ChronoErr(#[from] chrono::ParseError),
     #[error("PacketType Error: {0}")]
@@ -37,4 +37,50 @@ pub enum TrailingBytesError {
     Outer,
     #[error("Unexpected inner trailing bytes")]
     Inner,
+}
+
+#[derive(PartialEq, Debug, thiserror::Error)]
+pub enum OerError {
+    #[error("OerError")]
+    Error,
+    #[error("buffer too small")]
+    UnexpectedEof,
+    #[error("{0}")]
+    LengthPrefix(#[from] LengthPrefixError),
+    #[error("{0}")]
+    VarUint(#[from] VarUintError),
+    #[error("{0}")]
+    VariableLengthTimestamp(#[from] VariableLengthTimestampError),
+}
+
+#[derive(PartialEq, Debug, thiserror::Error)]
+pub enum LengthPrefixError {
+    #[error("indefinite lengths are not allowed")]
+    IndefiniteLength,
+    #[error("length prefix too large")]
+    TooLarge,
+    #[error("length prefix Overflow")]
+    Overflow,
+    #[error("length prefix with leading zero")]
+    LeadingZeros,
+    #[error("variable length prefix with unnecessary multibyte length")]
+    UnexpectedBytes,
+}
+
+#[derive(PartialEq, Debug, thiserror::Error)]
+pub enum VarUintError {
+    #[error("var uint has zero length")]
+    ZeroLength,
+    #[error("var uint too large")]
+    TooLarge,
+}
+
+#[derive(PartialEq, Debug, thiserror::Error)]
+pub enum VariableLengthTimestampError {
+    #[error("Invalid length for variable length timestamp: {0}")]
+    InvalidLength(usize),
+    #[error("Input failed to parse as timestamp")]
+    InvalidInput,
+    #[error("Invalid variable length datetime: {0}")]
+    InvalidTimestamp(String),
 }

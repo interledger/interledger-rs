@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 
+use super::errors::{LengthPrefixError, OerError, VarUintError, VariableLengthTimestampError};
 use std::convert::TryFrom;
-use std::io::{Error, ErrorKind, Result};
+// use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
-use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BufMut, BytesMut};
 use chrono::{TimeZone, Utc};
 
@@ -37,7 +37,7 @@ pub fn predict_var_uint_size(value: u64) -> u8 {
     ((highest_bit + 8 - 1) / 8) as u8
 }
 
-pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
+pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut, OerError> {
     let buffer_length = buffer.len();
     let mut reader = &buffer[..];
     let content_length = reader.read_var_octet_string_length()?;
@@ -45,35 +45,35 @@ pub fn extract_var_octet_string(mut buffer: BytesMut) -> Result<BytesMut> {
 
     let mut remaining = buffer.split_off(content_offset);
     if remaining.len() < content_length {
-        Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
+        Err(OerError::UnexpectedEof)
     } else {
         Ok(remaining.split_to(content_length))
     }
 }
 
 pub trait BufOerExt<'a> {
-    fn peek_var_octet_string(&self) -> Result<&'a [u8]>;
-    fn read_var_octet_string(&mut self) -> Result<&'a [u8]>;
-    fn skip(&mut self, discard_bytes: usize) -> Result<()>;
-    fn skip_var_octet_string(&mut self) -> Result<()>;
-    fn read_var_octet_string_length(&mut self) -> Result<usize>;
-    fn read_var_uint(&mut self) -> Result<u64>;
+    fn peek_var_octet_string(&self) -> Result<&'a [u8], OerError>;
+    fn read_var_octet_string(&mut self) -> Result<&'a [u8], OerError>;
+    fn skip(&mut self, discard_bytes: usize) -> Result<(), OerError>;
+    fn skip_var_octet_string(&mut self) -> Result<(), OerError>;
+    fn read_var_octet_string_length(&mut self) -> Result<usize, OerError>;
+    fn read_var_uint(&mut self) -> Result<u64, OerError>;
 
     /// Decodes a variable length timestamp according to [RFC-0030].
     ///
     /// [RFC-0030]: https://github.com/interledger/rfcs/blob/2473d2963a65e5534076c483f3c08a81b8e0cc88/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md#variable-length-timestamps
-    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp>;
+    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp, OerError>;
 }
 
 impl<'a> BufOerExt<'a> for &'a [u8] {
     /// Decodes variable-length octet string buffer without moving the cursor.
     #[inline]
-    fn peek_var_octet_string(&self) -> Result<&'a [u8]> {
+    fn peek_var_octet_string(&self) -> Result<&'a [u8], OerError> {
         let mut peek = &self[..];
         let actual_length = peek.read_var_octet_string_length()?;
         let offset = self.len() - peek.len();
         if peek.len() < actual_length {
-            Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
+            Err(OerError::UnexpectedEof)
         } else {
             Ok(&self[offset..(offset + actual_length)])
         }
@@ -81,10 +81,10 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
     /// Decodes variable-length octet string.
     #[inline]
-    fn read_var_octet_string(&mut self) -> Result<&'a [u8]> {
+    fn read_var_octet_string(&mut self) -> Result<&'a [u8], OerError> {
         let actual_length = self.read_var_octet_string_length()?;
         if self.len() < actual_length {
-            Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
+            Err(OerError::UnexpectedEof)
         } else {
             let to_return = &self[..actual_length];
             *self = &self[actual_length..];
@@ -93,9 +93,9 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
     }
 
     #[inline]
-    fn skip(&mut self, discard_bytes: usize) -> Result<()> {
+    fn skip(&mut self, discard_bytes: usize) -> Result<(), OerError> {
         if self.len() < discard_bytes {
-            Err(Error::new(ErrorKind::UnexpectedEof, "buffer too small"))
+            Err(OerError::UnexpectedEof)
         } else {
             *self = &self[discard_bytes..];
             Ok(())
@@ -103,49 +103,43 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
     }
 
     #[inline]
-    fn skip_var_octet_string(&mut self) -> Result<()> {
+    fn skip_var_octet_string(&mut self) -> Result<(), OerError> {
         let actual_length = self.read_var_octet_string_length()?;
         self.skip(actual_length)
     }
 
     #[doc(hidden)]
     #[inline]
-    fn read_var_octet_string_length(&mut self) -> Result<usize> {
-        let length = self.read_u8()?;
+    fn read_var_octet_string_length(&mut self) -> Result<usize, OerError> {
+        if self.is_empty() {
+            return Err(OerError::UnexpectedEof);
+        }
+        let length = self.get_u8();
         if length & HIGH_BIT != 0 {
+            // This is above 128
             let length_prefix_length = (length & LOWER_SEVEN_BITS) as usize;
             // TODO check for canonical length
             if length_prefix_length > 8 {
-                Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "length prefix too large",
-                ))
+                Err(LengthPrefixError::TooLarge.into())
             } else if length_prefix_length == 0 {
-                Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "indefinite lengths are not allowed",
-                ))
+                Err(LengthPrefixError::IndefiniteLength.into())
             } else {
-                let uint = self.read_uint::<BigEndian>(length_prefix_length)?;
+                if self.len() < length_prefix_length {
+                    return Err(OerError::UnexpectedEof);
+                }
+
+                let uint = self.get_uint(length_prefix_length);
 
                 check_no_leading_zeroes(length_prefix_length, uint)?;
 
                 if length_prefix_length == 1 && uint < 128 {
                     // this doesn't apply to the var uint which is at minimum two octets (0x00,
                     // 0x00) but var len octet strings.
-                    return Err(Error::new(
-                        ErrorKind::InvalidData,
-                        "variable length prefix with unnecessary multibyte length",
-                    ));
+                    return Err(LengthPrefixError::UnexpectedBytes.into());
                 }
 
                 // it makes no sense for a length to be u64 but usize, and even that is quite a lot
-                let uint = usize::try_from(uint).map_err(|_| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "var octet length overflow",
-                    )
-                })?;
+                let uint = usize::try_from(uint).map_err(|_| LengthPrefixError::Overflow)?;
 
                 Ok(uint)
             }
@@ -156,14 +150,17 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
     /// Decodes variable-length octet unsigned integer to get `u64`.
     #[inline]
-    fn read_var_uint(&mut self) -> Result<u64> {
+    fn read_var_uint(&mut self) -> Result<u64, OerError> {
         let size = self.read_var_octet_string_length()?;
         if size == 0 {
-            Err(Error::new(ErrorKind::InvalidData, "zero-length VarUInt"))
+            Err(VarUintError::ZeroLength.into())
         } else if size > 8 {
-            Err(Error::new(ErrorKind::InvalidData, "VarUInt too large"))
+            Err(VarUintError::TooLarge.into())
         } else {
-            let uint = self.read_uint::<BigEndian>(size)?;
+            if self.len() < size {
+                return Err(OerError::UnexpectedEof);
+            }
+            let uint = self.get_uint(size);
 
             check_no_leading_zeroes(size, uint)?;
 
@@ -171,7 +168,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
         }
     }
 
-    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp> {
+    fn read_variable_length_timestamp(&mut self) -> Result<VariableLengthTimestamp, OerError> {
         use once_cell::sync::OnceCell;
         use regex::bytes::Regex;
 
@@ -182,17 +179,13 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
         let len = match octets.len() {
             15 | 17 | 18 | 19 => Ok(octets.len() as u8),
-            x => Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("Invalid length for variable length timestamp: {}", x),
+            x => Err(OerError::VariableLengthTimestamp(
+                VariableLengthTimestampError::InvalidLength(x),
             )),
         }?;
 
         if !re.is_match(octets) {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Input failed to parse as timestamp",
-            ));
+            return Err(VariableLengthTimestampError::InvalidInput.into());
         }
 
         // the string might still have bad date in it
@@ -202,10 +195,9 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
         let ts = Utc
             .datetime_from_str(s, VARIABLE_LENGTH_TIMESTAMP_FORMAT)
             .map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Invalid variable length datetime: {}", e),
-                )
+                OerError::VariableLengthTimestamp(VariableLengthTimestampError::InvalidTimestamp(
+                    e.to_string(),
+                ))
             })?;
 
         Ok(VariableLengthTimestamp { inner: ts, len })
@@ -252,15 +244,12 @@ impl fmt::Display for VariableLengthTimestamp {
     }
 }
 
-fn check_no_leading_zeroes(_size_on_wire: usize, _uint: u64) -> Result<()> {
+fn check_no_leading_zeroes(_size_on_wire: usize, _uint: u64) -> Result<(), LengthPrefixError> {
     #[cfg(feature = "strict")]
     if _size_on_wire != predict_var_uint_size(_uint) as usize {
         // if we dont check for this fuzzing roundtrip tests will break, as there are
         // "128 | 1, x" class of inputs, where "x" = 0..128
-        return Err(Error::new(
-            ErrorKind::InvalidData,
-            "variable length prefix with leading zeros",
-        ));
+        return Err(LengthPrefixError::LeadingZeros);
     }
     Ok(())
 }
@@ -347,16 +336,12 @@ mod test_functions {
             BytesMut::from(&TWO_BYTE_VARSTR[1..3]),
         );
         assert_eq!(
-            extract_var_octet_string(BytesMut::new())
-                .unwrap_err()
-                .kind(),
-            ErrorKind::UnexpectedEof,
+            extract_var_octet_string(BytesMut::new()).unwrap_err(),
+            OerError::UnexpectedEof,
         );
         assert_eq!(
-            extract_var_octet_string(BytesMut::from(LENGTH_TOO_HIGH_VARSTR))
-                .unwrap_err()
-                .kind(),
-            ErrorKind::UnexpectedEof,
+            extract_var_octet_string(BytesMut::from(LENGTH_TOO_HIGH_VARSTR)).unwrap_err(),
+            OerError::UnexpectedEof,
         );
     }
 }
@@ -395,22 +380,19 @@ mod test_buf_oer_ext {
         }
 
         assert_eq!(
-            (&[][..]).peek_var_octet_string().unwrap_err().kind(),
-            ErrorKind::UnexpectedEof,
+            (&[][..]).peek_var_octet_string().unwrap_err(),
+            OerError::UnexpectedEof,
         );
         assert_eq!(
-            LENGTH_TOO_HIGH_VARSTR
-                .peek_var_octet_string()
-                .unwrap_err()
-                .kind(),
-            ErrorKind::UnexpectedEof,
+            LENGTH_TOO_HIGH_VARSTR.peek_var_octet_string().unwrap_err(),
+            OerError::UnexpectedEof,
         );
     }
 
     #[test]
     fn test_skip() {
         let mut empty = &[][..];
-        assert_eq!(empty.skip(1).unwrap_err().kind(), ErrorKind::UnexpectedEof,);
+        assert_eq!(empty.skip(1).unwrap_err(), OerError::UnexpectedEof);
 
         let mut reader = &[0x01, 0x02, 0x03][..];
         assert!(reader.skip(2).is_ok());
@@ -433,16 +415,16 @@ mod test_buf_oer_ext {
         }
 
         assert_eq!(
-            (&[][..]).skip_var_octet_string().unwrap_err().kind(),
-            ErrorKind::UnexpectedEof,
+            (&[][..]).skip_var_octet_string().unwrap_err(),
+            OerError::UnexpectedEof,
         );
 
         // this is a workaround for clippy::redundant_slicing
         let mut cursor = LENGTH_TOO_HIGH_VARSTR;
 
         assert_eq!(
-            cursor.skip_var_octet_string().unwrap_err().kind(),
-            ErrorKind::UnexpectedEof,
+            cursor.skip_var_octet_string().unwrap_err(),
+            OerError::UnexpectedEof
         );
     }
 
@@ -451,8 +433,20 @@ mod test_buf_oer_ext {
         // The length of the octet string fits in 9 bytes, which is too big.
         let mut too_big: &[u8] = &[HIGH_BIT | 0x09];
         assert_eq!(
-            too_big.read_var_octet_string_length().unwrap_err().kind(),
-            ErrorKind::InvalidData,
+            too_big.read_var_octet_string_length().unwrap_err(),
+            OerError::LengthPrefix(LengthPrefixError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn read_var_octet_string_length_buffer_too_small() {
+        // The length of the octet string fits in 9 bytes, which is too big.
+        let mut too_small = vec![HIGH_BIT | 4];
+        too_small.extend(std::iter::repeat(0xff).take(2));
+        let mut reader = &too_small[..];
+        assert_eq!(
+            reader.read_var_octet_string_length().unwrap_err(),
+            OerError::UnexpectedEof
         );
     }
 
@@ -489,7 +483,10 @@ mod test_buf_oer_ext {
 
         let e = bytes.read_var_octet_string_length().unwrap_err();
 
-        assert_eq!(e.kind(), ErrorKind::InvalidData);
+        assert_eq!(
+            e,
+            OerError::LengthPrefix(LengthPrefixError::IndefiniteLength)
+        );
         assert_eq!("indefinite lengths are not allowed", e.to_string());
     }
 
@@ -567,25 +564,22 @@ mod test_buf_oer_ext {
             assert_eq!(reader.len(), buffer.len() - *offset);
         }
 
-        let tests: &[(&[u8], ErrorKind)] = &[
+        let tests: &[(&[u8], OerError)] = &[
             // VarUint's must have at least 1 byte.
-            (&[0x00], ErrorKind::InvalidData),
+            (&[0x00], OerError::VarUint(VarUintError::ZeroLength)),
             // Data must be present.
-            (&[0x04], ErrorKind::UnexpectedEof),
+            (&[0x04], OerError::UnexpectedEof),
             // Enough bytes must be present.
-            (&[0x04, 0x01, 0x02, 0x03], ErrorKind::UnexpectedEof),
+            (&[0x04, 0x01, 0x02, 0x03], OerError::UnexpectedEof),
             // Too many bytes.
             (
                 &[0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
-                ErrorKind::InvalidData,
+                OerError::VarUint(VarUintError::TooLarge),
             ),
         ];
 
-        for (buffer, error_kind) in tests {
-            assert_eq!(
-                (&buffer[..]).read_var_uint().unwrap_err().kind(),
-                *error_kind,
-            );
+        for (buffer, oer_error) in tests {
+            assert_eq!((&buffer[..]).read_var_uint().unwrap_err(), *oer_error);
         }
     }
 
