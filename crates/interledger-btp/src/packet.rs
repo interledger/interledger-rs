@@ -1,11 +1,9 @@
 use super::errors::{BtpPacketError, PacketTypeError};
-use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use interledger_packet::oer::{BufOerExt, MutBufOerExt, VariableLengthTimestamp};
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::borrow::Cow;
-use std::io::prelude::*;
 use std::str;
 
 pub trait Serializable<T> {
@@ -43,10 +41,7 @@ pub enum BtpPacket {
 impl Serializable<BtpPacket> for BtpPacket {
     fn from_bytes(bytes: &[u8]) -> Result<BtpPacket, BtpPacketError> {
         if bytes.is_empty() {
-            return Err(BtpPacketError::IoErr(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "too short packet",
-            )));
+            return Err(BtpPacketError::UnexpectedEof);
         }
         match PacketType::from(bytes[0]) {
             PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
@@ -119,7 +114,7 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, BtpPacket
             Cow::Owned(protocol_name.to_owned())
         };
 
-        let content_type = ContentType::from(reader.try_read_u8()?);
+        let content_type = ContentType::from(reader.read_u8()?);
         let data = reader.read_var_octet_string()?.to_vec();
         protocol_data.push(ProtocolData {
             protocol_name,
@@ -142,14 +137,11 @@ fn put_protocol_data<T: BufMut>(buf: &mut T, protocol_data: &[ProtocolData]) {
     }
 }
 
-fn check_no_trailing_bytes(buf: &[u8]) -> Result<(), std::io::Error> {
+fn check_no_trailing_bytes(buf: &[u8]) -> Result<(), BtpPacketError> {
     // according to spec, there should not be room for trailing bytes.
     // this certainly helps with fuzzing.
     if !buf.is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "extra trailing bytes",
-        ));
+        return Err(BtpPacketError::TrailingBytesErr);
     }
 
     Ok(())
@@ -164,11 +156,11 @@ pub struct BtpMessage {
 impl Serializable<BtpMessage> for BtpMessage {
     fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.try_read_u8()?;
+        let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Message {
             return Err(PacketTypeError::Unexpected(packet_type, PacketType::Message as u8).into());
         }
-        let request_id = reader.read_u32::<BigEndian>()?;
+        let request_id = reader.read_u32()?;
         let mut contents = reader.read_var_octet_string()?;
 
         check_no_trailing_bytes(reader)?;
@@ -201,13 +193,13 @@ pub struct BtpResponse {
 impl Serializable<BtpResponse> for BtpResponse {
     fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.try_read_u8()?;
+        let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Response {
             return Err(
                 PacketTypeError::Unexpected(packet_type, PacketType::Response as u8).into(),
             );
         }
-        let request_id = reader.read_u32::<BigEndian>()?;
+        let request_id = reader.read_u32()?;
         let mut contents = reader.read_var_octet_string()?;
 
         check_no_trailing_bytes(reader)?;
@@ -242,11 +234,11 @@ pub struct BtpError {
 impl Serializable<BtpError> for BtpError {
     fn from_bytes(bytes: &[u8]) -> Result<BtpError, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.try_read_u8()?;
+        let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Error {
             return Err(PacketTypeError::Unexpected(packet_type, PacketType::Error as u8).into());
         }
-        let request_id = reader.read_u32::<BigEndian>()?;
+        let request_id = reader.read_u32()?;
         let mut contents = reader.read_var_octet_string()?;
 
         check_no_trailing_bytes(reader)?;

@@ -571,7 +571,7 @@ fn deserialize_envelope(
     if reader.is_empty() {
         return Err(PacketTypeError::Eof.into());
     }
-    let got_type = reader.try_read_u8()?;
+    let got_type = reader.read_u8()?;
 
     if got_type != packet_type as u8 {
         return Err(PacketTypeError::Unexpected(got_type, packet_type as u8).into());

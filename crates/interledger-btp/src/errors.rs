@@ -3,8 +3,10 @@ use std::str::Utf8Error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BtpPacketError {
-    #[error("I/O Error: {0}")]
-    IoErr(#[from] std::io::Error),
+    #[error("too short packet")]
+    UnexpectedEof,
+    #[error("extra trailing bytes")]
+    TrailingBytesErr,
     #[error("UTF-8 Error: {0}")]
     Utf8Err(#[from] Utf8Error),
     #[error("Chrono Error: {0}")]

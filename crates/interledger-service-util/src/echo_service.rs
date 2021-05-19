@@ -72,7 +72,7 @@ where
         reader.skip(ECHO_PREFIX_LEN).unwrap();
 
         // check echo packet type
-        let echo_packet_type = match reader.try_read_u8() {
+        let echo_packet_type = match reader.read_u8() {
             Ok(value) => value,
             Err(error) => {
                 eprintln!("Could not read packet type: {:?}", error);

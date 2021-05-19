@@ -94,7 +94,7 @@ impl TryFrom<Bytes> for IldcpResponse {
         let buf = reader.read_var_octet_string()?;
         let ilp_address = Address::try_from(buf)?;
 
-        let asset_scale = reader.try_read_u8()?;
+        let asset_scale = reader.read_u8()?;
 
         let asset_code_offset = buffer_len - reader.len();
         reader.skip_var_octet_string()?;

@@ -1,4 +1,3 @@
-use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, Bytes};
 use interledger_packet::{
     hex::HexString,
@@ -9,7 +8,6 @@ use once_cell::sync::Lazy;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::{self, Debug},
-    io::Read,
     str::{self, FromStr},
     time::{Duration, SystemTime},
 };
@@ -44,7 +42,6 @@ pub enum CcpPacketError {
     PacketExpired,
     UnexpectedDestination(Address),
     UnexpectedCondition([u8; 32]),
-    IOError,
     Oer(OerError),
     Utf8Conversion,
     AddresssInvalid(AddressError),
@@ -67,7 +64,6 @@ impl fmt::Display for CcpPacketError {
             CcpPacketError::UnexpectedCondition(c) => {
                 write!(fmt, "Invalid Packet: Wrong condition: {:?}", HexString(c))
             }
-            CcpPacketError::IOError => write!(fmt, "I/O Error"),
             CcpPacketError::Oer(err) => write!(fmt, "Oer Error {:?}", err),
             CcpPacketError::Utf8Conversion => write!(fmt, "Utf-8 Conversion Error"),
             CcpPacketError::AddresssInvalid(err) => write!(fmt, "Address Invalid {:?}", err),
@@ -78,12 +74,6 @@ impl fmt::Display for CcpPacketError {
 impl From<OerError> for CcpPacketError {
     fn from(err: OerError) -> Self {
         CcpPacketError::Oer(err)
-    }
-}
-
-impl From<std::io::Error> for CcpPacketError {
-    fn from(_err: std::io::Error) -> Self {
-        CcpPacketError::IOError
     }
 }
 
@@ -190,7 +180,7 @@ impl RouteControlRequest {
         let mode = Mode::try_from(data.read_u8()?)?;
         let mut last_known_routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut last_known_routing_table_id)?;
-        let last_known_epoch = data.read_u32::<BigEndian>()?;
+        let last_known_epoch = data.read_u32()?;
 
         // TODO: see discussion for Route::try_from(&mut &[u8])
         let num_features = data.read_var_uint()?;
@@ -257,7 +247,7 @@ impl TryFrom<&mut &[u8]> for RouteProp {
         let is_partial = meta & FLAG_PARTIAL != 0;
         let is_utf8 = meta & FLAG_UTF8 != 0;
 
-        let id = data.read_u16::<BigEndian>()?;
+        let id = data.read_u16()?;
         let value = Bytes::copy_from_slice(data.read_var_octet_string()?);
 
         Ok(RouteProp {
@@ -449,10 +439,10 @@ impl RouteUpdateRequest {
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
         let mut routing_table_id: [u8; 16] = [0; 16];
         data.read_exact(&mut routing_table_id)?;
-        let current_epoch_index = data.read_u32::<BigEndian>()?;
-        let from_epoch_index = data.read_u32::<BigEndian>()?;
-        let to_epoch_index = data.read_u32::<BigEndian>()?;
-        let hold_down_time = data.read_u32::<BigEndian>()?;
+        let current_epoch_index = data.read_u32()?;
+        let from_epoch_index = data.read_u32()?;
+        let to_epoch_index = data.read_u32()?;
+        let hold_down_time = data.read_u32()?;
         let speaker = Address::try_from(data.read_var_octet_string()?)?;
 
         // TODO: see discussion for Route::try_from(&mut &[u8])
