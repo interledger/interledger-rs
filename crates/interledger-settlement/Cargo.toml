@@ -9,7 +9,6 @@ repository = "https://github.com/interledger-rs/interledger-rs"
 
 [dependencies]
 interledger-errors = { path = "../interledger-errors", version = "1.0.0", default-features = false, features = ["redis_errors"] }
-interledger-http = { path = "../interledger-http", version = "1.0.0", default-features = false }
 interledger-packet = { path = "../interledger-packet", version = "1.0.0", default-features = false }
 interledger-service = { path = "../interledger-service", version = "1.0.0", default-features = false }
 
@@ -36,7 +35,6 @@ futures-retry = { version = "0.4.0", default-features = false }
 [dev-dependencies]
 parking_lot = { version = "0.10.0", default-features = false }
 mockito = { version = "0.23.1", default-features = false }
-env_logger = { version = "0.7.0", default-features = false }
 socket2 = "0.3.15"
 rand = { version = "0.7.2", default-features = false }
 

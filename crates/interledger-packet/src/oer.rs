@@ -150,7 +150,6 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
     fn read_var_octet_string_length(&mut self) -> Result<usize, OerError> {
         let length = self.read_u8()?;
         if length & HIGH_BIT != 0 {
-            // This is above 128
             let length_prefix_length = (length & LOWER_SEVEN_BITS) as usize;
             // TODO check for canonical length
             if length_prefix_length > 8 {

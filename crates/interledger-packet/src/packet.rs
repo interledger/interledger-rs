@@ -1,5 +1,4 @@
 use std::fmt;
-use std::io::prelude::*;
 use std::str;
 use std::time::SystemTime;
 
@@ -10,6 +9,7 @@ use crate::hex::HexString;
 use crate::oer::{self, BufOerExt, MutBufOerExt};
 use crate::{Address, ErrorCode, PacketTypeError, ParseError, TrailingBytesError};
 use std::convert::TryFrom;
+use std::io::Write;
 
 const AMOUNT_LEN: usize = 8;
 const EXPIRY_LEN: usize = 17;
@@ -132,7 +132,7 @@ impl TryFrom<BytesMut> for Prepare {
         // Fixed Length DateTime format - RFC 0027
         // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
         let mut read_expires_at = [0x00; 17];
-        content.copy_to_slice(&mut read_expires_at);
+        content.read_exact(&mut read_expires_at)?;
 
         if !read_expires_at
             .iter()
@@ -431,8 +431,7 @@ impl TryFrom<BytesMut> for Reject {
         let content_len = content.len();
 
         let mut code = [0; 3];
-        // TODO: check length
-        content.copy_to_slice(&mut code);
+        content.read_exact(&mut code)?;
 
         let code = ErrorCode::new(code).ok_or(ParseError::ErrorCodeConversion)?;
 
@@ -568,9 +567,6 @@ fn deserialize_envelope(
     packet_type: PacketType,
     mut reader: &[u8],
 ) -> Result<(usize, &[u8]), ParseError> {
-    if reader.is_empty() {
-        return Err(PacketTypeError::Eof.into());
-    }
     let got_type = reader.read_u8()?;
 
     if got_type != packet_type as u8 {
