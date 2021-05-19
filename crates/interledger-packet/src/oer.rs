@@ -58,6 +58,7 @@ pub trait BufOerExt<'a> {
     fn skip_var_octet_string(&mut self) -> Result<(), OerError>;
     fn read_var_octet_string_length(&mut self) -> Result<usize, OerError>;
     fn read_var_uint(&mut self) -> Result<u64, OerError>;
+    fn try_read_u8(&mut self) -> Result<u8, OerError>;
 
     /// Decodes a variable length timestamp according to [RFC-0030].
     ///
@@ -108,13 +109,18 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
         self.skip(actual_length)
     }
 
-    #[doc(hidden)]
     #[inline]
-    fn read_var_octet_string_length(&mut self) -> Result<usize, OerError> {
+    fn try_read_u8(&mut self) -> Result<u8, OerError> {
         if self.is_empty() {
             return Err(OerError::UnexpectedEof);
         }
-        let length = self.get_u8();
+        Ok(self.get_u8())
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    fn read_var_octet_string_length(&mut self) -> Result<usize, OerError> {
+        let length = self.try_read_u8()?;
         if length & HIGH_BIT != 0 {
             // This is above 128
             let length_prefix_length = (length & LOWER_SEVEN_BITS) as usize;

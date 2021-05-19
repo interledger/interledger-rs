@@ -119,7 +119,7 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, BtpPacket
             Cow::Owned(protocol_name.to_owned())
         };
 
-        let content_type = ContentType::from(reader.read_u8()?);
+        let content_type = ContentType::from(reader.try_read_u8()?);
         let data = reader.read_var_octet_string()?.to_vec();
         protocol_data.push(ProtocolData {
             protocol_name,
@@ -164,7 +164,7 @@ pub struct BtpMessage {
 impl Serializable<BtpMessage> for BtpMessage {
     fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.read_u8()?;
+        let packet_type = reader.try_read_u8()?;
         if PacketType::from(packet_type) != PacketType::Message {
             return Err(PacketTypeError::Unexpected(packet_type, PacketType::Message as u8).into());
         }
@@ -201,7 +201,7 @@ pub struct BtpResponse {
 impl Serializable<BtpResponse> for BtpResponse {
     fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.read_u8()?;
+        let packet_type = reader.try_read_u8()?;
         if PacketType::from(packet_type) != PacketType::Response {
             return Err(
                 PacketTypeError::Unexpected(packet_type, PacketType::Response as u8).into(),
@@ -242,7 +242,7 @@ pub struct BtpError {
 impl Serializable<BtpError> for BtpError {
     fn from_bytes(bytes: &[u8]) -> Result<BtpError, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.read_u8()?;
+        let packet_type = reader.try_read_u8()?;
         if PacketType::from(packet_type) != PacketType::Error {
             return Err(PacketTypeError::Unexpected(packet_type, PacketType::Error as u8).into());
         }

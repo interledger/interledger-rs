@@ -1,4 +1,6 @@
-use interledger_packet::{AddressError, ErrorCode, PacketTypeError as IlpPacketTypeError};
+use interledger_packet::{
+    AddressError, ErrorCode, OerError, PacketTypeError as IlpPacketTypeError,
+};
 /// Stream Errors
 use std::str::Utf8Error;
 
@@ -24,8 +26,8 @@ pub enum StreamPacketError {
     NotEnoughValidFrames,
     #[error("Trailing bytes error: Inner")]
     TrailingInnerBytes,
-    #[error("I/O Error: {0}")]
-    IoErr(#[from] std::io::Error),
+    #[error("Oer Error: {0}")]
+    Oer(#[from] OerError),
     #[error("Ilp PacketType Error: {0}")]
     IlpPacketType(#[from] IlpPacketTypeError),
     #[error("Address Error: {0}")]

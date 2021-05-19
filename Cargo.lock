@@ -1268,7 +1268,6 @@ name = "interledger-ildcp"
 version = "1.0.0"
 dependencies = [
  "async-trait",
- "byteorder",
  "bytes 0.5.6",
  "futures 0.3.13",
  "interledger-packet",
@@ -1283,7 +1282,6 @@ dependencies = [
 name = "interledger-packet"
 version = "1.0.0"
 dependencies = [
- "byteorder",
  "bytes 0.5.6",
  "chrono",
  "criterion",
@@ -1346,7 +1344,6 @@ name = "interledger-service-util"
 version = "1.0.0"
 dependencies = [
  "async-trait",
- "byteorder",
  "bytes 0.5.6",
  "chrono",
  "futures 0.3.13",
@@ -1468,7 +1465,6 @@ version = "1.0.0"
 dependencies = [
  "async-trait",
  "base64 0.11.0",
- "byteorder",
  "bytes 0.5.6",
  "chrono",
  "futures 0.3.13",

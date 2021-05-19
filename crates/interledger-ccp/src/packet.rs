@@ -3,7 +3,7 @@ use bytes::{BufMut, Bytes};
 use interledger_packet::{
     hex::HexString,
     oer::{BufOerExt, MutBufOerExt},
-    Address, AddressError, Fulfill, FulfillBuilder, Prepare, PrepareBuilder,
+    Address, AddressError, Fulfill, FulfillBuilder, OerError, Prepare, PrepareBuilder,
 };
 use once_cell::sync::Lazy;
 use std::{
@@ -45,6 +45,7 @@ pub enum CcpPacketError {
     UnexpectedDestination(Address),
     UnexpectedCondition([u8; 32]),
     IOError,
+    Oer(OerError),
     Utf8Conversion,
     AddresssInvalid(AddressError),
 }
@@ -67,9 +68,16 @@ impl fmt::Display for CcpPacketError {
                 write!(fmt, "Invalid Packet: Wrong condition: {:?}", HexString(c))
             }
             CcpPacketError::IOError => write!(fmt, "I/O Error"),
+            CcpPacketError::Oer(err) => write!(fmt, "Oer Error {:?}", err),
             CcpPacketError::Utf8Conversion => write!(fmt, "Utf-8 Conversion Error"),
             CcpPacketError::AddresssInvalid(err) => write!(fmt, "Address Invalid {:?}", err),
         }
+    }
+}
+
+impl From<OerError> for CcpPacketError {
+    fn from(err: OerError) -> Self {
+        CcpPacketError::Oer(err)
     }
 }
 
