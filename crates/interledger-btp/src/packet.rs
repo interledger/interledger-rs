@@ -1,4 +1,4 @@
-use super::errors::ParseError;
+use super::errors::{BtpPacketError, PacketTypeError};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BufMut;
 use interledger_packet::oer::{BufOerExt, MutBufOerExt, VariableLengthTimestamp};
@@ -9,7 +9,7 @@ use std::io::prelude::*;
 use std::str;
 
 pub trait Serializable<T> {
-    fn from_bytes(bytes: &[u8]) -> Result<T, ParseError>;
+    fn from_bytes(bytes: &[u8]) -> Result<T, BtpPacketError>;
 
     fn to_bytes(&self) -> Vec<u8>;
 }
@@ -41,9 +41,9 @@ pub enum BtpPacket {
 }
 
 impl Serializable<BtpPacket> for BtpPacket {
-    fn from_bytes(bytes: &[u8]) -> Result<BtpPacket, ParseError> {
+    fn from_bytes(bytes: &[u8]) -> Result<BtpPacket, BtpPacketError> {
         if bytes.is_empty() {
-            return Err(ParseError::IoErr(std::io::Error::new(
+            return Err(BtpPacketError::IoErr(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "too short packet",
             )));
@@ -52,10 +52,7 @@ impl Serializable<BtpPacket> for BtpPacket {
             PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
             PacketType::Response => Ok(BtpPacket::Response(BtpResponse::from_bytes(bytes)?)),
             PacketType::Error => Ok(BtpPacket::Error(BtpError::from_bytes(bytes)?)),
-            PacketType::Unknown => Err(ParseError::InvalidPacket(format!(
-                "Unknown packet type: {}",
-                bytes[0]
-            ))),
+            PacketType::Unknown => Err(PacketTypeError::Unknown(bytes[0]).into()),
         }
     }
 
@@ -102,7 +99,7 @@ pub struct ProtocolData {
     pub data: Vec<u8>,
 }
 
-fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, ParseError> {
+fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, BtpPacketError> {
     // TODO: using bytes here might make sense
     let mut protocol_data = Vec::new();
 
@@ -165,15 +162,11 @@ pub struct BtpMessage {
 }
 
 impl Serializable<BtpMessage> for BtpMessage {
-    fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, ParseError> {
+    fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, BtpPacketError> {
         let mut reader = bytes;
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Message {
-            return Err(ParseError::InvalidPacket(format!(
-                "Cannot parse Message from packet of type {}, expected type {}",
-                packet_type,
-                PacketType::Message as u8
-            )));
+            return Err(PacketTypeError::Unexpected(packet_type, PacketType::Message as u8).into());
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
@@ -206,15 +199,13 @@ pub struct BtpResponse {
     pub protocol_data: Vec<ProtocolData>,
 }
 impl Serializable<BtpResponse> for BtpResponse {
-    fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, ParseError> {
+    fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, BtpPacketError> {
         let mut reader = bytes;
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Response {
-            return Err(ParseError::InvalidPacket(format!(
-                "Cannot parse Response from packet of type {}, expected type {}",
-                packet_type,
-                PacketType::Response as u8
-            )));
+            return Err(
+                PacketTypeError::Unexpected(packet_type, PacketType::Response as u8).into(),
+            );
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;
@@ -249,15 +240,11 @@ pub struct BtpError {
     pub protocol_data: Vec<ProtocolData>,
 }
 impl Serializable<BtpError> for BtpError {
-    fn from_bytes(bytes: &[u8]) -> Result<BtpError, ParseError> {
+    fn from_bytes(bytes: &[u8]) -> Result<BtpError, BtpPacketError> {
         let mut reader = bytes;
         let packet_type = reader.read_u8()?;
         if PacketType::from(packet_type) != PacketType::Error {
-            return Err(ParseError::InvalidPacket(format!(
-                "Cannot parse Error from packet of type {}, expected type {}",
-                packet_type,
-                PacketType::Error as u8
-            )));
+            return Err(PacketTypeError::Unexpected(packet_type, PacketType::Error as u8).into());
         }
         let request_id = reader.read_u32::<BigEndian>()?;
         let mut contents = reader.read_var_octet_string()?;

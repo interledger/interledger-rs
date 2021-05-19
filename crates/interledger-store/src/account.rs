@@ -116,7 +116,7 @@ impl Account {
             Some(a) => a,
             None => node_ilp_address
                 .with_suffix(details.username.as_bytes())
-                .map_err(CreateAccountError::InvalidSuffix)?,
+                .map_err(|e| CreateAccountError::InvalidSuffix(e.into()))?,
         };
 
         let ilp_over_http_url = if let Some(ref url) = details.ilp_over_http_url {

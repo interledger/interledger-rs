@@ -18,7 +18,7 @@ mod packet;
 mod server;
 
 pub use client::{send_money, StreamDelivery};
-pub use error::Error;
+pub use error::{Error, StreamPacketError};
 pub use server::{
     ConnectionGenerator, PaymentNotification, StreamNotificationsStore, StreamReceiverService,
 };
@@ -338,7 +338,7 @@ mod send_money_to_receiver {
 
         // Connector takes 2% spread, but we're only willing to tolerate 1.4%
         match result {
-            Err(Error::SendMoneyError(_)) => {}
+            Err(Error::PaymentFailFast(_, _)) => {}
             _ => panic!("Payment should fail fast due to poor exchange rates"),
         }
     }

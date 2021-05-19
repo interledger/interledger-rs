@@ -410,17 +410,14 @@ where
             }
             PaymentEvent::Timeout => {
                 // Error if we haven't received a fulfill over a timeout period
-                return Err(Error::TimeoutError(
-                    "Time since last fulfill exceeded the maximum time limit".to_string(),
-                ));
+                return Err(Error::Timeout);
             }
             PaymentEvent::FailFast => {
                 let payment = sender.payment.lock().await;
-                return Err(Error::SendMoneyError(
-                    format!("Terminating payment since too many packets are rejected ({} packets fulfilled, {} packets rejected)",
+                return Err(Error::PaymentFailFast(
                     payment.fulfilled_packets,
                     payment.rejected_packets,
-                )));
+                ));
             }
         }
     }
@@ -613,11 +610,10 @@ where
                     // Other Rxx errors such as timeouts are likely terminal
                     (_, IlpErrorCode::R01_INSUFFICIENT_SOURCE_AMOUNT) => Ok(()),
                     // Any other error will stop the rest of the payment
-                    _ => Err(Error::SendMoneyError(format!(
-                        "Packet was rejected with error: {} {}",
+                    _ => Err(Error::UnexpectedRejection(
                         reject.code(),
-                        str::from_utf8(reject.message()).unwrap_or_default(),
-                    ))),
+                        String::from_utf8_lossy(reject.message()).into_owned(),
+                    )),
                 }
             }
         }
