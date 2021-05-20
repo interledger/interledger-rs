@@ -177,7 +177,7 @@ impl RouteControlRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        // RouteControlRequest: mode (4) + last_known_routing_table_id (16) + last_known_epoch (4)
+        // RouteControlRequest: mode (1) + last_known_routing_table_id (16) + last_known_epoch (4)
         if data.remaining() < 1 + 16 + 4 {
             return Err(OerError::UnexpectedEof.into());
         }
