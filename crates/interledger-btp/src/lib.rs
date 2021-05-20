@@ -50,7 +50,7 @@ pub trait BtpStore {
 
 #[cfg(fuzzing)]
 pub mod fuzzing {
-    pub use crate::errors::ParseError;
+    pub use crate::errors::BtpPacketError;
     pub use crate::packet::{BtpPacket, Serializable};
 
     #[cfg(not(feature = "strict"))]
