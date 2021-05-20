@@ -534,6 +534,15 @@ mod route_control_request {
     use hex_literal::hex;
 
     #[test]
+    fn deserialize_too_short() {
+        let prepare = Prepare::try_from(BytesMut::from(CONTROL_REQUEST_SERIALIZED)).unwrap();
+        let data = prepare.data();
+        for len in 0..data.len() {
+            RouteControlRequest::try_from_data(&data[..len]).unwrap_err();
+        }
+    }
+
+    #[test]
     fn deserialize() {
         let prepare = Prepare::try_from(BytesMut::from(CONTROL_REQUEST_SERIALIZED)).unwrap();
         let request = RouteControlRequest::try_from_without_expiry(&prepare).unwrap();
@@ -587,6 +596,15 @@ mod route_update_request {
     use hex_literal::hex;
 
     #[test]
+    fn deserialize_too_short() {
+        let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_COMPLEX_SERIALIZED)).unwrap();
+        let data = prepare.data();
+        for len in 0..data.len() {
+            RouteUpdateRequest::try_from_data(&data[..len]).unwrap_err();
+        }
+    }
+
+    #[test]
     fn deserialize() {
         let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_SIMPLE_SERIALIZED)).unwrap();
         let request = RouteUpdateRequest::try_from_without_expiry(&prepare).unwrap();
@@ -599,6 +617,15 @@ mod route_update_request {
         let test_prepare =
             Prepare::try_from(BytesMut::from(UPDATE_REQUEST_SIMPLE_SERIALIZED)).unwrap();
         assert_eq!(prepare.data(), test_prepare.data());
+    }
+
+    #[test]
+    fn deserialize_complex_too_short() {
+        let prepare = Prepare::try_from(BytesMut::from(UPDATE_REQUEST_COMPLEX_SERIALIZED)).unwrap();
+        let data = prepare.data();
+        for len in 0..data.len() {
+            RouteUpdateRequest::try_from_data(&data[..len]).unwrap_err();
+        }
     }
 
     #[test]
