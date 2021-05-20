@@ -1,4 +1,4 @@
-use bytes::{BufMut, Bytes};
+use bytes::{Buf, BufMut, Bytes};
 use interledger_packet::{
     hex::HexString,
     oer::{BufOerExt, MutBufOerExt},
@@ -177,10 +177,14 @@ impl RouteControlRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        let mode = Mode::try_from(data.read_u8()?)?;
+        // RouteControlRequest: mode (4) + last_known_routing_table_id (16) + last_known_epoch (4)
+        if data.remaining() < 1 + 16 + 4 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let mode = Mode::try_from(data.get_u8())?;
         let mut last_known_routing_table_id: [u8; 16] = [0; 16];
-        data.read_exact(&mut last_known_routing_table_id)?;
-        let last_known_epoch = data.read_u32()?;
+        data.copy_to_slice(&mut last_known_routing_table_id);
+        let last_known_epoch = data.get_u32();
 
         // TODO: see discussion for Route::try_from(&mut &[u8])
         let num_features = data.read_var_uint()?;
@@ -240,14 +244,18 @@ impl TryFrom<&mut &[u8]> for RouteProp {
 
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
-        let meta = data.read_u8()?;
+        // RouteProp: flag meta data (1) + id (2)
+        if data.remaining() < 1 + 2 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let meta = data.get_u8();
 
         let is_optional = meta & FLAG_OPTIONAL != 0;
         let is_transitive = meta & FLAG_TRANSITIVE != 0;
         let is_partial = meta & FLAG_PARTIAL != 0;
         let is_utf8 = meta & FLAG_UTF8 != 0;
 
-        let id = data.read_u16()?;
+        let id = data.get_u16();
         let value = Bytes::copy_from_slice(data.read_var_octet_string()?);
 
         Ok(RouteProp {
@@ -326,8 +334,11 @@ impl TryFrom<&mut &[u8]> for Route {
         for _i in 0..path_len {
             path.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }
+        if data.remaining() < 32 {
+            return Err(OerError::UnexpectedEof.into());
+        }
         let mut auth: [u8; 32] = [0; 32];
-        data.read_exact(&mut auth)?;
+        data.copy_to_slice(&mut auth);
 
         // TODO: see discussion above
         let prop_len = data.read_var_uint()? as usize;
@@ -437,12 +448,20 @@ impl RouteUpdateRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
+        // RouteUpdateRequest: routing_table (2)
+        // + current_epoch_index (4)
+        // + from_epoch_index (4)
+        // + to_epoch_index (4)
+        // + hold_down_time (4)
+        if data.remaining() < 2 + 4 + 4 + 4 + 4 {
+            return Err(OerError::UnexpectedEof.into());
+        }
         let mut routing_table_id: [u8; 16] = [0; 16];
-        data.read_exact(&mut routing_table_id)?;
-        let current_epoch_index = data.read_u32()?;
-        let from_epoch_index = data.read_u32()?;
-        let to_epoch_index = data.read_u32()?;
-        let hold_down_time = data.read_u32()?;
+        data.copy_to_slice(&mut routing_table_id);
+        let current_epoch_index = data.get_u32();
+        let from_epoch_index = data.get_u32();
+        let to_epoch_index = data.get_u32();
+        let hold_down_time = data.get_u32();
         let speaker = Address::try_from(data.read_var_octet_string()?)?;
 
         // TODO: see discussion for Route::try_from(&mut &[u8])

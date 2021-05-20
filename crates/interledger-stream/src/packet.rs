@@ -2,10 +2,10 @@ use super::{
     crypto::{decrypt, encrypt},
     StreamPacketError,
 };
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use interledger_packet::{
     oer::{BufOerExt, MutBufOerExt},
-    Address, PacketType as IlpPacketType,
+    Address, OerError, PacketType as IlpPacketType,
 };
 #[cfg(test)]
 use once_cell::sync::Lazy;
@@ -167,11 +167,15 @@ impl StreamPacket {
     fn from_bytes_unencrypted(mut buffer_unencrypted: BytesMut) -> Result<Self, StreamPacketError> {
         // TODO don't copy the whole packet again
         let mut reader = &buffer_unencrypted[..];
-        let version = reader.read_u8()?;
+        // StreamPacket: version (1) + ILP Packet type (1) + other data (length checked in Oer)
+        if reader.remaining() < 1 + 1 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let version = reader.get_u8();
         if version != STREAM_VERSION {
             return Err(StreamPacketError::UnsupportedVersion(version));
         }
-        let ilp_packet_type = IlpPacketType::try_from(reader.read_u8()?)?;
+        let ilp_packet_type = IlpPacketType::try_from(reader.get_u8())?;
         let sequence = reader.read_var_uint()?;
         let prepare_amount = reader.read_var_uint()?;
 
@@ -264,7 +268,7 @@ impl<'a> FrameIterator<'a> {
     /// Reads a u8 from the iterator's buffer, and depending on the type it returns
     /// a [`Frame`](./enum.Frame.html)
     fn try_read_next_frame(&mut self) -> Result<Frame<'a>, StreamPacketError> {
-        let frame_type = self.buffer.read_u8()?;
+        let frame_type = self.buffer.get_u8();
         let contents: &'a [u8] = self.buffer.read_var_octet_string()?;
         let frame: Frame<'a> = match FrameType::from(frame_type) {
             FrameType::ConnectionClose => {
@@ -517,7 +521,11 @@ pub struct ConnectionCloseFrame<'a> {
 
 impl<'a> SerializableFrame<'a> for ConnectionCloseFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
-        let code = ErrorCode::from(reader.read_u8()?);
+        // ConnectionCloseFrame: ErrorCode (1) + message (length checked in Oer)
+        if reader.remaining() < 1 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let code = ErrorCode::from(reader.get_u8());
         let message_bytes = reader.read_var_octet_string()?;
         ensure_no_inner_trailing_bytes(reader)?;
         let message = str::from_utf8(message_bytes)?;
@@ -595,7 +603,10 @@ pub struct ConnectionAssetDetailsFrame<'a> {
 impl<'a> SerializableFrame<'a> for ConnectionAssetDetailsFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let source_asset_code = str::from_utf8(reader.read_var_octet_string()?)?;
-        let source_asset_scale = reader.read_u8()?;
+        if reader.remaining() < 1 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let source_asset_scale = reader.get_u8();
         ensure_no_inner_trailing_bytes(reader)?;
 
         Ok(ConnectionAssetDetailsFrame {
@@ -706,7 +717,10 @@ pub struct StreamCloseFrame<'a> {
 impl<'a> SerializableFrame<'a> for StreamCloseFrame<'a> {
     fn read_contents(mut reader: &'a [u8]) -> Result<Self, StreamPacketError> {
         let stream_id = reader.read_var_uint()?;
-        let code = ErrorCode::from(reader.read_u8()?);
+        if reader.remaining() < 1 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let code = ErrorCode::from(reader.get_u8());
         let message_bytes = reader.read_var_octet_string()?;
         ensure_no_inner_trailing_bytes(reader)?;
         let message = str::from_utf8(message_bytes)?;

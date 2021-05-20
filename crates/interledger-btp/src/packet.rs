@@ -1,6 +1,9 @@
 use super::errors::{BtpPacketError, PacketTypeError};
-use bytes::BufMut;
-use interledger_packet::oer::{BufOerExt, MutBufOerExt, VariableLengthTimestamp};
+use bytes::{Buf, BufMut};
+use interledger_packet::{
+    oer::{BufOerExt, MutBufOerExt, VariableLengthTimestamp},
+    OerError,
+};
 #[cfg(test)]
 use once_cell::sync::Lazy;
 use std::borrow::Cow;
@@ -41,7 +44,7 @@ pub enum BtpPacket {
 impl Serializable<BtpPacket> for BtpPacket {
     fn from_bytes(bytes: &[u8]) -> Result<BtpPacket, BtpPacketError> {
         if bytes.is_empty() {
-            return Err(BtpPacketError::UnexpectedEof);
+            return Err(OerError::UnexpectedEof.into());
         }
         match PacketType::from(bytes[0]) {
             PacketType::Message => Ok(BtpPacket::Message(BtpMessage::from_bytes(bytes)?)),
@@ -114,7 +117,10 @@ fn read_protocol_data(reader: &mut &[u8]) -> Result<Vec<ProtocolData>, BtpPacket
             Cow::Owned(protocol_name.to_owned())
         };
 
-        let content_type = ContentType::from(reader.read_u8()?);
+        if reader.remaining() < 1 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let content_type = ContentType::from(reader.get_u8());
         let data = reader.read_var_octet_string()?.to_vec();
         protocol_data.push(ProtocolData {
             protocol_name,
@@ -156,11 +162,15 @@ pub struct BtpMessage {
 impl Serializable<BtpMessage> for BtpMessage {
     fn from_bytes(bytes: &[u8]) -> Result<BtpMessage, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.read_u8()?;
+        // BtpMessage: packet type (1) + request_id (4) + protocol data (length checked in Oer)
+        if reader.remaining() < 1 + 4 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let packet_type = reader.get_u8();
         if PacketType::from(packet_type) != PacketType::Message {
             return Err(PacketTypeError::Unexpected(packet_type, PacketType::Message as u8).into());
         }
-        let request_id = reader.read_u32()?;
+        let request_id = reader.get_u32();
         let mut contents = reader.read_var_octet_string()?;
 
         check_no_trailing_bytes(reader)?;
@@ -193,13 +203,17 @@ pub struct BtpResponse {
 impl Serializable<BtpResponse> for BtpResponse {
     fn from_bytes(bytes: &[u8]) -> Result<BtpResponse, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.read_u8()?;
+        // BtpReponse: packet type (1) + request_id (4) + protocol_data (length checked in Oer)
+        if reader.remaining() < 1 + 4 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let packet_type = reader.get_u8();
         if PacketType::from(packet_type) != PacketType::Response {
             return Err(
                 PacketTypeError::Unexpected(packet_type, PacketType::Response as u8).into(),
             );
         }
-        let request_id = reader.read_u32()?;
+        let request_id = reader.get_u32();
         let mut contents = reader.read_var_octet_string()?;
 
         check_no_trailing_bytes(reader)?;
@@ -234,17 +248,25 @@ pub struct BtpError {
 impl Serializable<BtpError> for BtpError {
     fn from_bytes(bytes: &[u8]) -> Result<BtpError, BtpPacketError> {
         let mut reader = bytes;
-        let packet_type = reader.read_u8()?;
+        // BtpError: packet type (1) + request_id (4) + content (checked in Oer) + code (3) + rest
+        // of data (length checked in Oer)
+        if reader.remaining() < 1 + 4 {
+            return Err(OerError::UnexpectedEof.into());
+        }
+        let packet_type = reader.get_u8();
         if PacketType::from(packet_type) != PacketType::Error {
             return Err(PacketTypeError::Unexpected(packet_type, PacketType::Error as u8).into());
         }
-        let request_id = reader.read_u32()?;
+        let request_id = reader.get_u32();
         let mut contents = reader.read_var_octet_string()?;
 
         check_no_trailing_bytes(reader)?;
 
+        if contents.remaining() < 3 {
+            return Err(OerError::UnexpectedEof.into());
+        }
         let mut code: [u8; 3] = [0; 3];
-        contents.read_exact(&mut code)?;
+        contents.copy_to_slice(&mut code);
         let name = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();
         let triggered_at = contents.read_variable_length_timestamp()?;
         let data = str::from_utf8(contents.read_var_octet_string()?)?.to_owned();

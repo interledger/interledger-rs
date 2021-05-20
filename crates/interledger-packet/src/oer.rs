@@ -57,10 +57,6 @@ pub trait BufOerExt<'a> {
     fn skip_var_octet_string(&mut self) -> Result<(), OerError>;
     fn read_var_octet_string_length(&mut self) -> Result<usize, OerError>;
     fn read_var_uint(&mut self) -> Result<u64, OerError>;
-    fn read_u8(&mut self) -> Result<u8, OerError>;
-    fn read_u16(&mut self) -> Result<u16, OerError>;
-    fn read_u32(&mut self) -> Result<u32, OerError>;
-    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), OerError>;
 
     /// Decodes a variable length timestamp according to [RFC-0030].
     ///
@@ -111,43 +107,13 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
         self.skip(actual_length)
     }
 
-    #[inline]
-    fn read_u8(&mut self) -> Result<u8, OerError> {
-        if self.is_empty() {
-            return Err(OerError::UnexpectedEof);
-        }
-        Ok(self.get_u8())
-    }
-
-    #[inline]
-    fn read_u16(&mut self) -> Result<u16, OerError> {
-        if self.len() < 2 {
-            return Err(OerError::UnexpectedEof);
-        }
-        Ok(self.get_u16())
-    }
-
-    #[inline]
-    fn read_u32(&mut self) -> Result<u32, OerError> {
-        if self.len() < 4 {
-            return Err(OerError::UnexpectedEof);
-        }
-        Ok(self.get_u32())
-    }
-
-    #[inline]
-    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), OerError> {
-        if self.len() < buf.len() {
-            return Err(OerError::UnexpectedEof);
-        }
-        self.copy_to_slice(buf);
-        Ok(())
-    }
-
     #[doc(hidden)]
     #[inline]
     fn read_var_octet_string_length(&mut self) -> Result<usize, OerError> {
-        let length = self.read_u8()?;
+        if self.remaining() < 1 {
+            return Err(OerError::UnexpectedEof);
+        }
+        let length = self.get_u8();
         if length & HIGH_BIT != 0 {
             let length_prefix_length = (length & LOWER_SEVEN_BITS) as usize;
             // TODO check for canonical length
@@ -165,13 +131,13 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
                 check_no_leading_zeroes(length_prefix_length, uint)?;
 
                 if length_prefix_length == 1 && uint < 128 {
-                    // this doesn't apply to the var uint which is at minimum two octets (0x00,
-                    // 0x00) but var len octet strings.
-                    return Err(LengthPrefixError::UnexpectedBytes.into());
+                    // Leading zero should not be used
+                    // https://github.com/interledger/rfcs/blob/master/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md#variable-length-unsigned-integer
+                    return Err(LengthPrefixError::LeadingZeros.into());
                 }
 
                 // it makes no sense for a length to be u64 but usize, and even that is quite a lot
-                let uint = usize::try_from(uint).map_err(|_| LengthPrefixError::Overflow)?;
+                let uint = usize::try_from(uint).map_err(|_| LengthPrefixError::UsizeOverflow)?;
 
                 Ok(uint)
             }
@@ -281,7 +247,7 @@ fn check_no_leading_zeroes(_size_on_wire: usize, _uint: u64) -> Result<(), Lengt
     if _size_on_wire != predict_var_uint_size(_uint) as usize {
         // if we dont check for this fuzzing roundtrip tests will break, as there are
         // "128 | 1, x" class of inputs, where "x" = 0..128
-        return Err(LengthPrefixError::LeadingZeros);
+        return Err(LengthPrefixError::StrictLeadingZeros);
     }
     Ok(())
 }

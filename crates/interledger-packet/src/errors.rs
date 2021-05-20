@@ -45,8 +45,6 @@ pub enum TrailingBytesError {
 /// [RFC-0030]: https://github.com/interledger/rfcs/blob/master/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md
 #[derive(PartialEq, Debug, thiserror::Error)]
 pub enum OerError {
-    #[error("OerError")]
-    Error,
     #[error("buffer too small")]
     UnexpectedEof,
     #[error("{0}")]
@@ -64,11 +62,12 @@ pub enum LengthPrefixError {
     #[error("length prefix too large")]
     TooLarge,
     #[error("length prefix overflow")]
-    Overflow,
-    #[error("length prefix with leading zero")]
-    LeadingZeros,
+    UsizeOverflow,
     #[error("variable length prefix with unnecessary multibyte length")]
-    UnexpectedBytes,
+    LeadingZeros,
+    #[cfg(feature = "strict")]
+    #[cfg_attr(feature = "strict", error("length prefix with leading zero"))]
+    StrictLeadingZeros,
 }
 
 #[derive(PartialEq, Debug, thiserror::Error)]

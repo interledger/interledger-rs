@@ -5,8 +5,8 @@ use std::time::SystemTime;
 use bytes::{Buf, BufMut, BytesMut};
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::hex::HexString;
 use crate::oer::{self, BufOerExt, MutBufOerExt};
+use crate::{hex::HexString, OerError};
 use crate::{Address, ErrorCode, PacketTypeError, ParseError, TrailingBytesError};
 use std::convert::TryFrom;
 use std::io::Write;
@@ -126,13 +126,16 @@ impl TryFrom<BytesMut> for Prepare {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Prepare, &buffer)?;
         let content_len = content.len();
 
-        // This will always return since content was returned by read_var_octet_string
+        // amount (8), datetime (17)
+        if content.remaining() < 8 + 17 {
+            return Err(OerError::UnexpectedEof.into());
+        }
         let amount = content.get_u64();
 
         // Fixed Length DateTime format - RFC 0027
         // https://github.com/interledger/rfcs/blob/2dfdcf47ac52489a4ad473a5d869cd9f0217db67/0027-interledger-protocol-4/0027-interledger-protocol-4.md#ilp-prepare
         let mut read_expires_at = [0x00; 17];
-        content.read_exact(&mut read_expires_at)?;
+        content.copy_to_slice(&mut read_expires_at);
 
         if !read_expires_at
             .iter()
@@ -430,8 +433,11 @@ impl TryFrom<BytesMut> for Reject {
         let (content_offset, mut content) = deserialize_envelope(PacketType::Reject, &buffer)?;
         let content_len = content.len();
 
+        if content.remaining() < 3 {
+            return Err(OerError::UnexpectedEof.into());
+        }
         let mut code = [0; 3];
-        content.read_exact(&mut code)?;
+        content.copy_to_slice(&mut code);
 
         let code = ErrorCode::new(code).ok_or(ParseError::ErrorCodeConversion)?;
 
@@ -567,7 +573,10 @@ fn deserialize_envelope(
     packet_type: PacketType,
     mut reader: &[u8],
 ) -> Result<(usize, &[u8]), ParseError> {
-    let got_type = reader.read_u8()?;
+    if reader.remaining() < 1 {
+        return Err(OerError::UnexpectedEof.into());
+    }
+    let got_type = reader.get_u8();
 
     if got_type != packet_type as u8 {
         return Err(PacketTypeError::Unexpected(got_type, packet_type as u8).into());
