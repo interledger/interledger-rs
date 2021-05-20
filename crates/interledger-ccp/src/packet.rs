@@ -453,7 +453,9 @@ impl RouteUpdateRequest {
         // + from_epoch_index (4)
         // + to_epoch_index (4)
         // + hold_down_time (4)
-        if data.remaining() < 2 + 4 + 4 + 4 + 4 {
+        // + address (1)
+        // + new_routes_len (2)
+        if data.remaining() < 16 + 4 + 4 + 4 + 4 + 1 + 2 {
             return Err(OerError::UnexpectedEof.into());
         }
         let mut routing_table_id: [u8; 16] = [0; 16];
