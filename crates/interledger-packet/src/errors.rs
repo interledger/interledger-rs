@@ -39,6 +39,10 @@ pub enum TrailingBytesError {
     Inner,
 }
 
+/// Object Encoding Rules errors happen with any low level representation reading.
+///
+/// See the [RFC-0030] for details.
+/// [RFC-0030]: https://github.com/interledger/rfcs/blob/master/0030-notes-on-oer-encoding/0030-notes-on-oer-encoding.md
 #[derive(PartialEq, Debug, thiserror::Error)]
 pub enum OerError {
     #[error("OerError")]
@@ -59,7 +63,7 @@ pub enum LengthPrefixError {
     IndefiniteLength,
     #[error("length prefix too large")]
     TooLarge,
-    #[error("length prefix Overflow")]
+    #[error("length prefix overflow")]
     Overflow,
     #[error("length prefix with leading zero")]
     LeadingZeros,

@@ -2,7 +2,6 @@
 
 use super::errors::{LengthPrefixError, OerError, VarUintError, VariableLengthTimestampError};
 use std::convert::TryFrom;
-// use std::io::{Error, ErrorKind, Result};
 use std::u64;
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -122,7 +121,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
     #[inline]
     fn read_u16(&mut self) -> Result<u16, OerError> {
-        if self.len() < 3 {
+        if self.len() < 2 {
             return Err(OerError::UnexpectedEof);
         }
         Ok(self.get_u16())
