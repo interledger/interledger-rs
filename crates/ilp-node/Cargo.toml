@@ -1,6 +1,6 @@
 [package]
 name = "ilp-node"
-version = "1.0.0"
+version = "0.7.0"
 authors = ["Evan Schwartz <evan@ripple.com>"]
 description = "Interledger node (sender, connector, receiver bundle)"
 license = "Apache-2.0"
@@ -37,7 +37,7 @@ required-features = ["redis"]
 vergen = { version = "4.2" }
 
 [dependencies]
-interledger = { path = "../interledger", version = "1.0.0", default-features = false, features = ["node"] }
+interledger = { path = "../interledger", version = "^0.7.0", default-features = false, features = ["node"] }
 
 bytes = { package = "bytes", version = "0.5" }
 cfg-if = { version = "0.1.10", default-features = false }
