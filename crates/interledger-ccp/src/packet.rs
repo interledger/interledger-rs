@@ -448,7 +448,7 @@ impl RouteUpdateRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        // RouteUpdateRequest: routing_table (2)
+        // RouteUpdateRequest: routing_table_ip (16)
         // + current_epoch_index (4)
         // + from_epoch_index (4)
         // + to_epoch_index (4)
