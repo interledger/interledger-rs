@@ -779,7 +779,7 @@ mod test_packet_type {
     #[test]
     fn try_from_empty() {
         assert_eq!(
-            "Invalid Packet: Unknown packet type",
+            "Unknown packet type",
             &PacketType::try_from(&[][..]).unwrap_err().to_string()
         );
     }

@@ -18,9 +18,9 @@ const MAX_ADDRESS_LENGTH: usize = 1023;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AddressError {
-    #[error("Invalid Address: Invalid address length: {0}")]
+    #[error("Invalid address length: {0}")]
     InvalidLength(usize),
-    #[error("Invalid Address: Invalid address format")]
+    #[error("Invalid address format")]
     InvalidFormat,
 }
 
@@ -280,7 +280,7 @@ mod test_address {
         );
         assert_de_tokens_error::<Address>(
             &[Token::BorrowedStr("test.alice ")],
-            "Invalid Address: Invalid address format",
+            "Invalid address format",
         );
     }
 
