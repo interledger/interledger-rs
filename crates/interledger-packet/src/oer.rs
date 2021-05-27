@@ -428,24 +428,32 @@ mod test_buf_oer_ext {
 
     #[test]
     fn read_too_big_var_octet_string_length() {
-        // The length of the octet string fits in 9 bytes, which is too big.
-        let mut too_big: &[u8] = &[HIGH_BIT | 0x09];
-        assert_eq!(
-            too_big.read_var_octet_string_length().unwrap_err(),
-            OerError::LengthPrefix(LengthPrefixError::TooLarge)
-        );
+        // The length of the octet string takes 1 + 9 bytes, which is too big compared to usize
+        // which is the maximum supported.
+        let too_big: &[u8] = &[HIGH_BIT | 9, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+        for len in 1..=too_big.len() {
+            let mut slice = &too_big[..len];
+            assert_eq!(
+                slice.read_var_octet_string_length().unwrap_err(),
+                OerError::LengthPrefix(LengthPrefixError::TooLarge),
+                "error should always be too large prefix regardless of the input length"
+            );
+        }
     }
 
     #[test]
     fn read_var_octet_string_length_buffer_too_small() {
-        // The length of the octet string fits in 9 bytes, which is too big.
+        // The length of the octet string means 1 + 4 bytes of total length, but only at most 1 + 3
+        // can be read.
         let mut too_small = vec![HIGH_BIT | 4];
-        too_small.extend(std::iter::repeat(0xff).take(2));
-        let mut reader = &too_small[..];
-        assert_eq!(
-            reader.read_var_octet_string_length().unwrap_err(),
-            OerError::UnexpectedEof
-        );
+        too_small.extend(std::iter::repeat(0xff).take(3));
+        for len in 0..5 {
+            let mut reader = &too_small[..len];
+            assert_eq!(
+                reader.read_var_octet_string_length().unwrap_err(),
+                OerError::UnexpectedEof
+            );
+        }
     }
 
     #[test]
