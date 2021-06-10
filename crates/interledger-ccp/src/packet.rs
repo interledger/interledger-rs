@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut, Bytes};
 use interledger_packet::{
     hex::HexString,
-    oer::{BufOerExt, MutBufOerExt},
+    oer::{self, BufOerExt, MutBufOerExt},
     Address, AddressError, Fulfill, FulfillBuilder, OerError, Prepare, PrepareBuilder,
 };
 use once_cell::sync::Lazy;
@@ -23,6 +23,13 @@ const FLAG_OPTIONAL: u8 = 0x80;
 const FLAG_TRANSITIVE: u8 = 0x40;
 const FLAG_PARTIAL: u8 = 0x20;
 const FLAG_UTF8: u8 = 0x10;
+
+const ROUTING_TABLE_ID_LEN: usize = 16;
+
+/// All epochs are u32
+const EPOCH_LEN: usize = 4;
+
+const AUTH_LEN: usize = 32;
 
 pub static CCP_RESPONSE: Lazy<Fulfill> = Lazy::new(|| {
     FulfillBuilder {
@@ -99,6 +106,11 @@ pub enum Mode {
     Sync = 1,
 }
 
+impl Mode {
+    /// Length of Mode on the wire (bytes)
+    const LEN: usize = 1;
+}
+
 impl TryFrom<u8> for Mode {
     type Error = CcpPacketError;
 
@@ -117,7 +129,7 @@ impl TryFrom<u8> for Mode {
 #[derive(Clone, PartialEq)]
 pub struct RouteControlRequest {
     pub mode: Mode,
-    pub last_known_routing_table_id: [u8; 16],
+    pub last_known_routing_table_id: [u8; ROUTING_TABLE_ID_LEN],
     pub last_known_epoch: u32,
     pub features: Vec<String>,
 }
@@ -177,12 +189,18 @@ impl RouteControlRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        // RouteControlRequest: mode (1) + last_known_routing_table_id (16) + last_known_epoch (4)
-        if data.remaining() < 1 + 16 + 4 {
+        const MIN_LEN: usize = Mode::LEN
+            + ROUTING_TABLE_ID_LEN
+            // u32
+            + EPOCH_LEN
+            // zero features would be the minimum
+            + oer::MIN_VARUINT_LEN;
+
+        if data.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
         let mode = Mode::try_from(data.get_u8())?;
-        let mut last_known_routing_table_id: [u8; 16] = [0; 16];
+        let mut last_known_routing_table_id = [0; ROUTING_TABLE_ID_LEN];
         data.copy_to_slice(&mut last_known_routing_table_id);
         let last_known_epoch = data.get_u32();
 
@@ -244,10 +262,15 @@ impl TryFrom<&mut &[u8]> for RouteProp {
 
     // Note this takes a mutable ref to the slice so that it advances the cursor in the original slice
     fn try_from(data: &mut &[u8]) -> Result<Self, Self::Error> {
-        // RouteProp: flag meta data (1) + id (2)
-        if data.remaining() < 1 + 2 {
+        const FLAG_LEN: usize = 1;
+        const ID_LEN: usize = 2;
+
+        const MIN_LEN: usize = FLAG_LEN + ID_LEN + oer::EMPTY_VARLEN_OCTETS_LEN;
+
+        if data.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
+
         let meta = data.get_u8();
 
         let is_optional = meta & FLAG_OPTIONAL != 0;
@@ -299,7 +322,7 @@ pub(crate) struct Route {
     // TODO switch this to use the Address type so we don't need separate parsing logic when implementing Debug
     pub(crate) prefix: String,
     pub(crate) path: Vec<String>,
-    pub(crate) auth: [u8; 32],
+    pub(crate) auth: [u8; AUTH_LEN],
     pub(crate) props: Vec<RouteProp>,
 }
 
@@ -334,10 +357,10 @@ impl TryFrom<&mut &[u8]> for Route {
         for _i in 0..path_len {
             path.push(str::from_utf8(data.read_var_octet_string()?)?.to_string());
         }
-        if data.remaining() < 32 {
+        if data.remaining() < AUTH_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
-        let mut auth: [u8; 32] = [0; 32];
+        let mut auth = [0u8; AUTH_LEN];
         data.copy_to_slice(&mut auth);
 
         // TODO: see discussion above
@@ -382,7 +405,7 @@ impl Route {
 
 #[derive(Clone, PartialEq)]
 pub struct RouteUpdateRequest {
-    pub(crate) routing_table_id: [u8; 16],
+    pub(crate) routing_table_id: [u8; ROUTING_TABLE_ID_LEN],
     pub(crate) current_epoch_index: u32,
     pub(crate) from_epoch_index: u32,
     pub(crate) to_epoch_index: u32,
@@ -448,17 +471,22 @@ impl RouteUpdateRequest {
     }
 
     fn try_from_data(mut data: &[u8]) -> Result<Self, CcpPacketError> {
-        // RouteUpdateRequest: routing_table_ip (16)
-        // + current_epoch_index (4)
-        // + from_epoch_index (4)
-        // + to_epoch_index (4)
-        // + hold_down_time (4)
-        // + address (1)
-        // + new_routes_len (2)
-        if data.remaining() < 16 + 4 + 4 + 4 + 4 + 1 + 2 {
+        const HOLD_DOWN_TIME_LEN: usize = 4;
+
+        const MIN_LEN: usize = ROUTING_TABLE_ID_LEN
+            // current_epoch_index, from_epoch_index, to_epoch_index
+            + EPOCH_LEN * 3
+            // hold_down_time
+            + HOLD_DOWN_TIME_LEN
+            + Address::MIN_LEN
+            + interledger_packet::oer::MIN_VARUINT_LEN
+            + interledger_packet::oer::MIN_VARUINT_LEN;
+
+        if data.remaining() < MIN_LEN {
             return Err(OerError::UnexpectedEof.into());
         }
-        let mut routing_table_id: [u8; 16] = [0; 16];
+
+        let mut routing_table_id = [0u8; ROUTING_TABLE_ID_LEN];
         data.copy_to_slice(&mut routing_table_id);
         let current_epoch_index = data.get_u32();
         let from_epoch_index = data.get_u32();
