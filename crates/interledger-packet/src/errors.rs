@@ -83,7 +83,5 @@ pub enum VariableLengthTimestampError {
     #[error("Invalid length for variable length timestamp: {0}")]
     InvalidLength(usize),
     #[error("Input failed to parse as timestamp")]
-    InvalidInput,
-    #[error("Invalid variable length datetime: {0}")]
-    InvalidTimestamp(String),
+    InvalidTimestamp,
 }

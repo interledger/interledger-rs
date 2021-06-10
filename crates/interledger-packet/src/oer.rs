@@ -183,13 +183,11 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
         let len = match octets.len() {
             15 | 17 | 18 | 19 => Ok(octets.len() as u8),
-            x => Err(OerError::VariableLengthTimestamp(
-                VariableLengthTimestampError::InvalidLength(x),
-            )),
+            x => Err(VariableLengthTimestampError::InvalidLength(x)),
         }?;
 
         if !re.is_match(octets) {
-            return Err(VariableLengthTimestampError::InvalidInput.into());
+            return Err(VariableLengthTimestampError::InvalidTimestamp.into());
         }
 
         // the string might still have bad date in it
@@ -198,11 +196,7 @@ impl<'a> BufOerExt<'a> for &'a [u8] {
 
         let ts = Utc
             .datetime_from_str(s, VARIABLE_LENGTH_TIMESTAMP_FORMAT)
-            .map_err(|e| {
-                OerError::VariableLengthTimestamp(VariableLengthTimestampError::InvalidTimestamp(
-                    e.to_string(),
-                ))
-            })?;
+            .map_err(|_| VariableLengthTimestampError::InvalidTimestamp)?;
 
         Ok(VariableLengthTimestamp { inner: ts, len })
     }
@@ -638,10 +632,10 @@ mod test_buf_oer_ext {
             (line!(), b"20171224235312.431+0200", "Invalid length for variable length timestamp: 23"),
             (line!(), b"20171224215312.4318Z",    "Invalid length for variable length timestamp: 20"),
             (line!(), b"20171224161432,279Z",     "Input failed to parse as timestamp"),
-            (line!(), b"20171324161432.279Z",     "Invalid variable length datetime: input is out of range"),
+            (line!(), b"20171324161432.279Z",     "Input failed to parse as timestamp"),
             // (line!(), b"20171224230000.20Z", "according to RFC-0030 this is an invalid timestamp but it doesn't appear to be"),
             (line!(), b"20171224230000.Z",        "Invalid length for variable length timestamp: 16"),
-            (line!(), b"20171224240000Z",         "Invalid variable length datetime: input is out of range"),
+            (line!(), b"20171224240000Z",         "Input failed to parse as timestamp"),
             (line!(), b"2017122421531Z",          "Invalid length for variable length timestamp: 14"),
             (line!(), b"201712242153Z",           "Invalid length for variable length timestamp: 13"),
             (line!(), b"2017122421Z",             "Invalid length for variable length timestamp: 11"),
